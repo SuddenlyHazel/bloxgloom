@@ -6,7 +6,15 @@ Terrain uses coherent multi-scale height fields, rocky uplands, and caves. Saved
 
 ## Run locally
 
-With a recent Rust toolchain, start a server in one terminal:
+With a recent Rust toolchain, run a local game with one command:
+
+```sh
+cargo run
+```
+
+This starts a local server and client in the same process and saves edits in `world/`.
+
+For a dedicated multiplayer server, start the server in one terminal:
 
 ```sh
 cargo run -- server 127.0.0.1:4000 world

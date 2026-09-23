@@ -6,7 +6,7 @@ use crate::protocol::{self, ClientMessage, ServerMessage};
 use crate::world::{AIR, ChunkKey, MAX_TERRAIN_HEIGHT, STONE, World, world_to_chunk};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender, TrySendError};
@@ -61,13 +61,32 @@ struct State {
 
 pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    let connections = Arc::new(AtomicUsize::new(0));
-    let state = Arc::new(Mutex::new(State {
+    let state = server_state(seed, save_dir)?;
+    serve_listener(listener, state)
+}
+
+pub fn start_local_server(
+    seed: u64,
+    save_dir: PathBuf,
+) -> io::Result<(SocketAddr, thread::JoinHandle<io::Result<()>>)> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let addr = listener.local_addr()?;
+    let state = server_state(seed, save_dir)?;
+    let handle = thread::spawn(move || serve_listener(listener, state));
+    Ok((addr, handle))
+}
+
+fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<Arc<Mutex<State>>> {
+    Ok(Arc::new(Mutex::new(State {
         world: World::new(seed, save_dir)?,
         seed,
         clients: HashMap::new(),
         next_id: 1,
-    }));
+    })))
+}
+
+fn serve_listener(listener: TcpListener, state: Arc<Mutex<State>>) -> io::Result<()> {
+    let connections = Arc::new(AtomicUsize::new(0));
     eprintln!("Bloxgloom server listening on {}", listener.local_addr()?);
     for connection in listener.incoming() {
         let socket = match connection {

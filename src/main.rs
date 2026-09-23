@@ -16,12 +16,16 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
+        None => {
+            let (addr, _server) = server::start_local_server(0xB10C_6100, "world".into())?;
+            client::run_client(&addr.to_string())?;
+        }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
             let save_dir = args.next().unwrap_or_else(|| "world".to_string());
             server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
         }
-        Some("client") | None => {
+        Some("client") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
             client::run_client(&addr)?;
         }
