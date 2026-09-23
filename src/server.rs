@@ -3,7 +3,7 @@
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
 use crate::protocol::{self, ClientMessage, ServerMessage};
-use crate::world::{ChunkKey, STONE, World, world_to_chunk};
+use crate::world::{AIR, ChunkKey, MAX_TERRAIN_HEIGHT, STONE, World, world_to_chunk};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -122,15 +122,8 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
             .next_id
             .checked_add(1)
             .ok_or_else(|| io::Error::other("player ID exhausted"))?;
-        let mut spawn_y = 24;
-        for y in (0..=40).rev() {
-            if state.world.get_block(0, y, 0)? != 0 {
-                spawn_y = y + 1;
-                break;
-            }
-        }
-        let position = [0.5, spawn_y as f32, 0.5];
-        let center = world_to_chunk(0, spawn_y, 0).0;
+        let position = spawn_position(&mut state.world)?;
+        let center = world_to_chunk(0, position[1] as i32, 0).0;
         state.clients.insert(
             id,
             Client {
@@ -231,6 +224,29 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
         }
         other => other,
     }
+}
+
+fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
+    const HEADROOM: i32 = 32;
+    let ceiling = MAX_TERRAIN_HEIGHT + HEADROOM;
+    if world.get_block(0, ceiling, 0)? != AIR {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "spawn terrain exceeds scan ceiling",
+        ));
+    }
+    for y in (0..ceiling).rev() {
+        if world.get_block(0, y, 0)? != AIR {
+            let position = [0.5, (y + 1) as f32, 0.5];
+            if !collides(world, position)? {
+                return Ok(position);
+            }
+        }
+    }
+    Err(io::Error::new(
+        ErrorKind::InvalidData,
+        "no safe spawn at world origin",
+    ))
 }
 
 fn stream_one(state: &mut State, id: u64) -> bool {
@@ -460,6 +476,29 @@ mod tests {
         );
         drop(world);
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn spawn_is_above_terrain_with_player_headroom() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        for (index, seed) in [0, 1, 7, 0xB10C_6100, u64::MAX].into_iter().enumerate() {
+            let path = std::env::temp_dir().join(format!(
+                "bloxgloom-spawn-{}-{stamp}-{index}",
+                std::process::id()
+            ));
+            let mut world = World::new(seed, path.clone()).unwrap();
+            let position = spawn_position(&mut world).unwrap();
+            let feet_y = position[1] as i32;
+            assert_eq!(world.get_block(0, feet_y, 0).unwrap(), AIR);
+            assert_eq!(world.get_block(0, feet_y + 1, 0).unwrap(), AIR);
+            assert_ne!(world.get_block(0, feet_y - 1, 0).unwrap(), AIR);
+            assert!(!collides(&mut world, position).unwrap());
+            drop(world);
+            fs::remove_dir_all(path).unwrap();
+        }
     }
 
     #[test]
