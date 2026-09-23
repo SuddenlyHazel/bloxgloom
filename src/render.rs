@@ -42,6 +42,19 @@ pub enum RendererError {
     OutOfMemory,
 }
 
+impl std::fmt::Display for RendererError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Surface(error) => write!(formatter, "surface creation failed: {error}"),
+            Self::Adapter(error) => write!(formatter, "GPU adapter unavailable: {error}"),
+            Self::Device(error) => write!(formatter, "GPU device creation failed: {error}"),
+            Self::OutOfMemory => write!(formatter, "GPU out of memory"),
+        }
+    }
+}
+
+impl std::error::Error for RendererError {}
+
 #[derive(Default, Debug, Clone, Copy)]
 pub struct RenderStats {
     pub visible_chunks: usize,
