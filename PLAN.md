@@ -1,62 +1,51 @@
-# Bloxgloom architecture plan
+# Bloxgloom interface plan
 
-Status: **implementation baseline**. The decisions below are initial targets; measured results may justify changes.
+Status: next implementation plan. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement are already in the repository.
 
-## Goal and constraints
+## Goal
 
-Build a Rust, Minecraft-like voxel game with multiplayer from the start, a large procedural world, persistent block edits, and a 60 FPS target on a modest desktop GPU. `wgpu` is the renderer, `winit` handles the desktop window and input, and `glam` supplies math types.
+Make the current creative building loop usable: a precise crosshair and block target, a visible HUD and hotbar, an inventory for choosing blocks, and an Escape menu with settings and exit. Keep the world responsive at the existing 1280×720, 60 FPS target on an M1-class integrated GPU.
 
-The repository currently contains only a Cargo starter and these dependencies. No game systems or renderer exist yet.
+This phase is **creative mode**. Blocks have no quantities: the inventory is a catalog of placeable block types and the hotbar holds nine chosen types. That matches the current free-flight controls and avoids implying a survival economy that the server does not implement. Item stacks, crafting, health, and survival rules are separate future work.
 
-The 60 FPS target gives each frame about 16.7 ms. Frame-time percentiles, memory use, chunk throughput, and network traffic should be measured throughout development. Chunk dimensions, view distance, compression, and GPU batching are hypotheses until benchmarked on target hardware.
+## What exists now
 
-## Architecture options
+- `src/client.rs` captures the mouse, handles flight and clicks, and sends an edit with block ID `2` for every placement. Escape only releases the cursor. Its aimed-block search samples along a ray in 0.1-block steps.
+- `src/render.rs` renders world chunks but has no screen-space UI pass or target outline.
+- `src/server.rs` validates edit reach and block IDs. `src/protocol.rs` already carries block edits and a server-clamped view-distance setting.
 
-| | A: Server sends chunk snapshots and edits | B: Client generates base terrain and receives edits |
-| --- | --- | --- |
-| World data flow | Server generates or loads chunks, sends snapshots on entry, then versioned deltas | Server sends seed and generator version; client generates chunks and applies server edits |
-| Authority | Server owns simulation, collision, and edits | Server still owns simulation and edits, but clients reproduce terrain |
-| Strength | One canonical block state and straightforward resynchronization | Less terrain data sent for unexplored, unedited areas |
-| Cost | More server work and exploration bandwidth | Generator compatibility, extra client CPU work, harder mismatch recovery |
-| Main failure mode | Slow chunk delivery under load | Clients disagree about terrain after a generator change or bug |
+## Interaction contract
 
-**Recommendation: A.** It keeps the multiplayer consistency model simple while preserving deterministic server generation. Measure bandwidth and server throughput before considering B as an optimization. Both options still need interest management, bounded work queues, and chunk versioning.
+| State | Mouse | Keys | Escape |
+| --- | --- | --- | --- |
+| Playing | Captured; left removes target, right places selected block against target | WASD/Space/Shift move; wheel or 1–9 selects hotbar; E opens inventory | Opens pause menu and releases cursor |
+| Inventory | Free; select a block from the catalog and assign it to a hotbar slot | 1–9 selects destination slot; E closes inventory | Closes inventory and returns to play |
+| Paused | Free; Resume, Settings, and Exit buttons | No movement or edits | Resumes play |
+| Settings | Free; edit local settings | Keyboard navigation and value controls | Returns to pause menu |
 
-## Proposed system boundaries
+Losing window focus releases the cursor and pauses input. Closing a menu attempts to recapture it; if the OS requires a click, show a short “Click to capture mouse” hint. Menus stop local movement and edits but do not pause the authoritative world or other players. “Exit” closes the client; in the one-command local game, the in-process server ends with it, while a dedicated server keeps running.
 
-- **Shared world model:** integer world coordinates, chunk keys, block identifiers, chunk versions, and edit operations. Keep data usable without graphics or a window. Establish rules for negative coordinates and edits at chunk boundaries.
-- **Server:** authoritative player simulation, collision, terrain generation, edit validation, persistence, and per-player chunk interest. It sends chunk snapshots and ordered edit deltas. A reconnect or version gap is repaired with a fresh snapshot.
-- **Client world cache:** stores authoritative chunk data separately from predicted local movement. Applying a server delta advances the expected chunk version; stale or missing data requests resynchronization.
-- **Chunk work pipeline:** generation/loading, lighting if needed, meshing, and upload are distinct stages. Workers operate on stable chunk snapshots; a result carries its source version and is dropped if obsolete. Work is prioritized near the player and bounded so rapid movement cannot grow queues indefinitely.
-- **Renderer:** one mesh per chunk or chunk section, rather than one draw per block. Begin with hidden-face removal and greedy meshing for opaque blocks, a separate transparent path, depth testing, and frustum culling. Budget GPU uploads per frame. Optional GPU features may improve batching later; the baseline must run without them.
-- **Storage:** generated terrain and player edits have separate ownership. Use a versioned format with a recovery strategy for interrupted writes. Define when the server considers an edit durable before promising that an acknowledgment means it is saved.
+## UI and game-state design
 
-The server is the only authority for shared world changes. The client may predict its own movement for responsiveness, then reconcile with server state. The render thread must never wait for terrain generation, disk I/O, networking, or full-chunk meshing.
+- Add a small `UiState` state machine that owns the active screen, focused control, selected hotbar slot, and mouse-capture intent. Route each input event through it before game controls so a click on a menu can never edit a block.
+- Replace the sampled aimed-block search with an exact voxel-grid raycast. One result supplies the center crosshair’s target feedback, a thin world-space target outline, and the left/right-click edit coordinates. Use the same reach as the server or a stricter client limit; the server remains authoritative.
+- Render a screen-space UI pass after the world using the existing `wgpu` device and frame. Draw a centered crosshair, nine-slot hotbar, selected block label, menu panels, and concise status text. Cache glyphs and static geometry; scale from physical window size and a user-configurable UI scale. Keep UI data separate from chunk meshes and uploads.
+- Keep the default HUD honest: crosshair, hotbar, selected block, and a brief edit-rejection or connection message. An optional F3-style debug overlay can show coordinates, FPS/frame percentiles, chunk counts, and latency. Do not draw health, hunger, or stack counts until those systems exist.
+- Use the existing grass, dirt, and stone block IDs in the first inventory catalog. A selected hotbar block replaces the current hard-coded dirt placement; the server still validates the ID and reach. Keep the hotbar mapping and selection in local settings so they survive restart. The server need not trust or persist creative UI layout.
+- Settings in this phase: mouse sensitivity, field of view, view distance, UI scale, and fullscreen/windowed mode. Apply changes immediately, persist them in a versioned local config, and clamp invalid values. Send view-distance changes through the existing `SetView` request, then add a protocol acknowledgment for the server-enforced radius; the current protocol has no response, so the menu cannot truthfully display the effective value without that addition.
 
-## Performance and correctness rules
+## Performance and correctness
 
-- Benchmark candidate chunk dimensions and block representations using realistic terrain, caves, and edits before fixing them. Compare memory per loaded chunk, meshing time, edit remesh cost, draw count, and network payload size.
-- Keep chunk data compact and separate CPU world storage from GPU mesh storage. Avoid allocating or drawing per block in the hot path.
-- Make queue depth, chunk priorities, memory budgets, and upload budgets explicit. Handle cancellation and stale results when players move or blocks change.
-- Test the invariants most likely to fail: coordinate conversion, edits across chunk boundaries, version gaps, persistence recovery, and stale mesh rejection. Add load and frame-time checks where they reveal real regressions.
-- Record at least frame-time percentiles, mesh and upload timings, queued jobs, loaded chunks, bytes per client, and server tick time. Tune against the agreed player count, view distance, and target machine.
+- Keep menu and HUD work bounded: no per-frame font rasterization, no per-block UI draw calls, and no network or disk I/O on the render thread. Measure UI CPU time and GPU frame time during chunk streaming; retain the 60 FPS target rather than assuming a static menu is cheap.
+- Preserve input invariants across focus changes and transitions: no stuck movement keys, hidden cursor, accidental world edit, or movement command while a modal screen is open.
+- Test the voxel raycast on negative coordinates, chunk boundaries, and face selection; test screen transitions and slot selection as pure logic. Test that placement sends the selected block and that the server still rejects invalid edits. Add a config round-trip test because user settings must survive restart.
+- Extend the existing headless GPU preview to capture Playing, Inventory, Pause, and Settings screens. Inspect images at 1280×720 and a smaller window size for readability, alignment, clipping, and crosshair visibility. Do not rely on an unviewable desktop window for visual QA.
 
-## Delivery sequence
+## Delivery order
 
-1. **Contract and benchmark foundation.** Define the world coordinate and chunk contracts, snapshot/delta protocol, and edit ordering. Build representative data benchmarks for chunk layouts and meshing. Decide chunk dimensions from those results.
-2. **Authoritative world loop.** Build a headless server and client world cache with procedural chunks, versioned edits, interest management, and resynchronization. Verify two clients observe the same edits, including at chunk boundaries.
-3. **Rendering pipeline.** Connect the client cache to a `winit`/`wgpu` renderer. Implement chunk meshing, culling, bounded uploads, and camera movement. Measure frame-time spikes during streaming and editing.
-4. **Persistence and movement.** Persist edits with documented durability semantics; add server collision, client movement prediction, and reconciliation. Test reconnect and interrupted-save recovery.
-5. **Scale tuning.** Profile exploration and editing with the agreed player count and view distance on target hardware. Tune storage, mesh layout, queue budgets, and transport from measurements. Consider client terrain generation only if chunk bandwidth is a demonstrated bottleneck.
+1. Extract input routing and the exact block raycast. Add the screen-state transitions and focused tests. World controls work only in Playing.
+2. Add the UI render pass, crosshair, target outline, hotbar, and minimal HUD. Verify with headless screenshots and frame-time measurements.
+3. Add the creative inventory catalog and hotbar assignment. Place the selected block; verify two clients can see each other’s edits through the existing authoritative protocol.
+4. Add Pause and Settings screens, local settings persistence, focus handling, and Exit. Verify menu navigation, resize behavior, and clean shutdown.
 
-The first playable milestone is two clients exploring and editing the same persistent terrain while chunk streaming and frame-time metrics are visible. It is not complete merely because blocks appear on screen.
-
-## Initial product decisions
-
-- **Deployment:** a dedicated native server for LAN/local play. The protocol should remain usable over TCP, but internet hosting, authentication, and hostile-client hardening are outside the first release.
-- **Capacity:** design for 16 concurrent players. Begin with a three-chunk horizontal view radius and make it configurable within server-enforced limits. Measure a representative crowded scene as well as isolated exploration.
-- **Performance target:** 60 FPS at 1280×720 on an Apple M1-class integrated GPU, with frame-time percentiles recorded during streaming and editing. This is a measurement target, not a claim of current performance.
-- **Simulation scope:** procedural terrain, persistent block edits, player movement, and collision. Defer fluids, combat, complex entities, and dynamic lighting until the core world pipeline is measured and stable.
-- **Durability:** an accepted edit acknowledgment means the edit reached durable storage. A failed write rejects the edit rather than showing a change that may disappear on restart.
-
-Revisit view distance, chunk dimensions, capacity, and meshing strategy using measured results. Changes to world or protocol formats require explicit versioning and migration or rejection behavior.
+Done means the default `cargo run` supports the full interaction loop, the dedicated-client path behaves the same way, useful tests pass, the menu/HUD previews have been visually inspected, and streaming plus UI has been measured against the 60 FPS target. Any shortfall is recorded with the hardware and scene used rather than hidden behind an average FPS number.

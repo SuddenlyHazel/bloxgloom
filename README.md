@@ -30,6 +30,6 @@ The server defaults to `127.0.0.1:4000` and saves edits in `world/`. To connect 
 
 Click the window to capture the mouse. Use WASD to fly horizontally, Space and Shift to ascend and descend, left click to remove a block, right click to place dirt, and Escape to release the mouse. Movement is server-authoritative with block collision; gravity and survival systems are not implemented yet.
 
-The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, and meshing checks. The architecture and delivery plan is in [PLAN.md](PLAN.md).
+The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, and meshing checks. The next interface plan is in [PLAN.md](PLAN.md).
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png`. This renders representative terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.
