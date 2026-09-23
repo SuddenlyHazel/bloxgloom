@@ -686,4 +686,29 @@ mod tests {
         chunk.blocks[1] = 1;
         assert_eq!(mesh_chunk(&chunk).triangles(), 12);
     }
+
+    #[test]
+    fn meshing_uses_shared_chunk_layout_and_world_origin() {
+        let mut chunk = Chunk {
+            key: ChunkKey { x: -1, y: 2, z: 3 },
+            version: 7,
+            blocks: vec![0; 16 * 16 * 16],
+        };
+        chunk.blocks[Chunk::index([2, 3, 4]).unwrap()] = 3;
+        let mesh = mesh_chunk(&chunk);
+        let positions = mesh.vertices.chunks_exact(9).map(|vertex| &vertex[..3]);
+        let (min, max) = positions.fold(
+            ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
+            |(mut min, mut max), position| {
+                for axis in 0..3 {
+                    min[axis] = min[axis].min(position[axis]);
+                    max[axis] = max[axis].max(position[axis]);
+                }
+                (min, max)
+            },
+        );
+        assert_eq!(min, [-14.0, 35.0, 52.0]);
+        assert_eq!(max, [-13.0, 36.0, 53.0]);
+        assert_eq!(mesh.version, 7);
+    }
 }
