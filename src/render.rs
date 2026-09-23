@@ -8,7 +8,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
 
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 const UPLOAD_MESHES_PER_FRAME: usize = 4;
 const MAX_PENDING_MESHES: usize = 128;
@@ -39,7 +39,6 @@ pub enum RendererError {
     Surface(wgpu::CreateSurfaceError),
     Adapter(wgpu::RequestAdapterError),
     Device(wgpu::RequestDeviceError),
-    OutOfMemory,
 }
 
 impl std::fmt::Display for RendererError {
@@ -48,7 +47,6 @@ impl std::fmt::Display for RendererError {
             Self::Surface(error) => write!(formatter, "surface creation failed: {error}"),
             Self::Adapter(error) => write!(formatter, "GPU adapter unavailable: {error}"),
             Self::Device(error) => write!(formatter, "GPU device creation failed: {error}"),
-            Self::OutOfMemory => write!(formatter, "GPU out of memory"),
         }
     }
 }
@@ -67,8 +65,8 @@ pub struct RenderStats {
 pub struct ChunkMesh {
     pub key: ChunkKey,
     pub version: u64,
-    vertices: Vec<f32>,
-    indices: Vec<u32>,
+    pub(crate) vertices: Vec<f32>,
+    pub(crate) indices: Vec<u32>,
 }
 
 impl ChunkMesh {
@@ -76,6 +74,7 @@ impl ChunkMesh {
         self.vertices.len() * 4 + self.indices.len() * 4
     }
 
+    #[cfg(test)]
     pub fn triangles(&self) -> usize {
         self.indices.len() / 3
     }
@@ -153,81 +152,7 @@ impl Renderer {
         };
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("opaque voxel shader"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-        });
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("camera matrix"),
-            size: 64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera bind group"),
-            layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("voxel pipeline layout"),
-            bind_group_layouts: &[Some(&camera_layout)],
-            immediate_size: 0,
-        });
-        let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("opaque voxel pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: VERTEX_STRIDE,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attributes,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let (pipeline, camera_buffer, camera_group) = create_voxel_pipeline(&device, format);
         Ok(Self {
             instance,
             window,
@@ -346,14 +271,7 @@ impl Renderer {
         if self.size.width == 0 || self.size.height == 0 {
             return Ok(stats);
         }
-        let view = rh::view::look_to_mat4(camera.position, camera.direction(), Vec3::Y);
-        let projection = rh::proj::directx::perspective(
-            camera.fov_y_radians,
-            self.config.width as f32 / self.config.height as f32,
-            0.05,
-            4096.0,
-        );
-        let view_projection = projection * view;
+        let view_projection = view_projection(camera, self.config.width, self.config.height);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -435,6 +353,99 @@ impl Renderer {
         }
         Ok(stats)
     }
+}
+
+pub(crate) fn create_voxel_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup) {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("opaque voxel shader"),
+        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+    });
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("camera matrix"),
+        size: 64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("camera layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("camera bind group"),
+        layout: &camera_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding(),
+        }],
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("voxel pipeline layout"),
+        bind_group_layouts: &[Some(&camera_layout)],
+        immediate_size: 0,
+    });
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("opaque voxel pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: VERTEX_STRIDE,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            cull_mode: Some(wgpu::Face::Back),
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    (pipeline, camera_buffer, camera_group)
+}
+
+pub(crate) fn view_projection(camera: Camera, width: u32, height: u32) -> Mat4 {
+    let view = rh::view::look_to_mat4(camera.position, camera.direction(), Vec3::Y);
+    let projection = rh::proj::directx::perspective(
+        camera.fov_y_radians,
+        width as f32 / height as f32,
+        0.05,
+        4096.0,
+    );
+    projection * view
 }
 
 fn create_depth(device: &wgpu::Device, width: u32, height: u32) -> wgpu::TextureView {
