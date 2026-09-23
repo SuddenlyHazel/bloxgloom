@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::world::{BlockId, ChunkKey, CHUNK_VOLUME, STONE, TERRAIN_GENERATOR_VERSION};
+use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, STONE, TERRAIN_GENERATOR_VERSION};
 
 const MAGIC: &[u8; 4] = b"BGED";
 const FORMAT_VERSION: u16 = 2;
