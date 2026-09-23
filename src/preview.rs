@@ -63,8 +63,8 @@ async fn render_preview_async(path: &Path) -> Result<(), Box<dyn Error>> {
     });
     let color_view = color.create_view(&Default::default());
     let depth_view = depth.create_view(&Default::default());
-    let camera_xz = (24, 24);
-    let target_xz = (-8, -8);
+    let camera_xz = (40, 16);
+    let target_xz = (8, -16);
     let camera_position = Vec3::new(
         camera_xz.0 as f32 + 0.5,
         surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
