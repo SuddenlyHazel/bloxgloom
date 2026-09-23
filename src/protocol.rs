@@ -3,7 +3,9 @@ use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 1;
+const WIRE_VERSION: u8 = 2;
+pub const MIN_VIEW_DISTANCE: u8 = 1;
+pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
 const BLOCK_COUNT: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
@@ -40,6 +42,9 @@ pub enum ServerMessage {
     },
     EditRejected {
         reason: String,
+    },
+    ViewDistance {
+        radius: u8,
     },
     Pong {
         nonce: u64,
@@ -176,6 +181,13 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             out.push(6);
             out.extend(nonce.to_le_bytes());
         }
+        ServerMessage::ViewDistance { radius } => {
+            if !(MIN_VIEW_DISTANCE..=MAX_VIEW_DISTANCE).contains(radius) {
+                return Err(invalid("invalid view distance"));
+            }
+            out.push(7);
+            out.push(*radius);
+        }
     }
     frame(writer, &out)
 }
@@ -309,6 +321,13 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             reason: c.string()?,
         },
         6 => ServerMessage::Pong { nonce: c.u64()? },
+        7 => {
+            let radius = c.u8()?;
+            if !(MIN_VIEW_DISTANCE..=MAX_VIEW_DISTANCE).contains(&radius) {
+                return Err(invalid("invalid view distance"));
+            }
+            ServerMessage::ViewDistance { radius }
+        }
         _ => return Err(invalid("unknown server message")),
     };
     c.done()?;
@@ -390,6 +409,39 @@ mod tests {
             }
             other => panic!("unexpected message: {other:?}"),
         }
+    }
+
+    #[test]
+    fn view_distance_ack_round_trip_and_validation() {
+        let message = ServerMessage::ViewDistance {
+            radius: MAX_VIEW_DISTANCE,
+        };
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &message).unwrap();
+        assert!(matches!(
+            read_server(bytes.as_slice()).unwrap(),
+            ServerMessage::ViewDistance {
+                radius: MAX_VIEW_DISTANCE
+            }
+        ));
+
+        assert_eq!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::ViewDistance {
+                    radius: MIN_VIEW_DISTANCE - 1,
+                },
+            )
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::InvalidData
+        );
+        let mut malformed = Vec::new();
+        frame(&mut malformed, &[WIRE_VERSION, 7, MAX_VIEW_DISTANCE + 1]).unwrap();
+        assert_eq!(
+            read_server(malformed.as_slice()).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 
     #[test]

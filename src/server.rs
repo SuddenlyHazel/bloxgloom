@@ -2,7 +2,7 @@
 //! every client. Cold chunk generation and durable edits currently serialize on
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
-use crate::protocol::{self, ClientMessage, ServerMessage};
+use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
 use crate::world::{AIR, ChunkKey, MAX_TERRAIN_HEIGHT, STONE, World, world_to_chunk};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
@@ -17,7 +17,6 @@ use std::time::{Duration, Instant};
 const MAX_CLIENTS: usize = 16;
 const OUTBOUND_CAPACITY: usize = 128;
 const DEFAULT_VIEW: u8 = 3;
-const MAX_VIEW: u8 = 6;
 const STREAM_INTERVAL: Duration = Duration::from_millis(20);
 const PLAYER_SPEED: f32 = 10.0;
 const EDIT_REACH: f32 = 8.0;
@@ -167,6 +166,11 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
             x: position[0],
             y: position[1],
             z: position[2],
+        })
+        .map_err(|_| io::Error::other("outbound queue closed"))?;
+    sender
+        .try_send(ServerMessage::ViewDistance {
+            radius: DEFAULT_VIEW,
         })
         .map_err(|_| io::Error::other("outbound queue closed"))?;
     let mut write_socket = socket.try_clone()?;
@@ -343,7 +347,10 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         }
         ClientMessage::SetView { radius } => {
             if let Some(client) = state.clients.get_mut(&id) {
-                client.radius = radius.clamp(1, MAX_VIEW);
+                client.radius = radius.clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE);
+                client.enqueue(ServerMessage::ViewDistance {
+                    radius: client.radius,
+                });
             }
             Ok(())
         }
@@ -498,6 +505,63 @@ mod tests {
     }
 
     #[test]
+    fn set_view_acknowledges_the_clamped_radius() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "bloxgloom-view-distance-{}-{stamp}",
+            std::process::id()
+        ));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (socket, _) = listener.accept().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let id = 1;
+        let mut state = State {
+            world: World::new(7, path.clone()).unwrap(),
+            seed: 7,
+            clients: HashMap::from([(
+                id,
+                Client {
+                    sender,
+                    socket,
+                    sent: HashSet::new(),
+                    center: ChunkKey { x: 0, y: 0, z: 0 },
+                    radius: DEFAULT_VIEW,
+                    position: [0.5, 50.0, 0.5],
+                    last_move: Instant::now(),
+                    last_seq: 0,
+                },
+            )]),
+            next_id: 2,
+        };
+
+        handle_message(&mut state, id, ClientMessage::SetView { radius: u8::MAX }).unwrap();
+        assert_eq!(state.clients[&id].radius, MAX_VIEW_DISTANCE);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            ServerMessage::ViewDistance {
+                radius: MAX_VIEW_DISTANCE
+            }
+        ));
+
+        handle_message(&mut state, id, ClientMessage::SetView { radius: 0 }).unwrap();
+        assert_eq!(state.clients[&id].radius, MIN_VIEW_DISTANCE);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            ServerMessage::ViewDistance {
+                radius: MIN_VIEW_DISTANCE
+            }
+        ));
+
+        drop(peer);
+        drop(state);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
     fn spawn_is_above_terrain_with_player_headroom() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -577,12 +641,24 @@ mod tests {
             other => panic!("expected initial position, got {other:?}"),
         };
         assert!(matches!(
+            protocol::read_server(&mut socket).unwrap(),
+            ServerMessage::ViewDistance {
+                radius: DEFAULT_VIEW
+            }
+        ));
+        assert!(matches!(
             protocol::read_server(&mut peer).unwrap(),
             ServerMessage::Welcome { seed: 7, .. }
         ));
         assert!(matches!(
             protocol::read_server(&mut peer).unwrap(),
             ServerMessage::Position { ack_seq: 0, .. }
+        ));
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::ViewDistance {
+                radius: DEFAULT_VIEW
+            }
         ));
         let block_y = feet_y - 1;
         let (key, local) = world_to_chunk(0, block_y, 0);
