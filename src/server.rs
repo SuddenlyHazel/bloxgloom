@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_edit_delta_and_resync_stay_ordered() {
+    fn two_clients_share_edit_and_resync_stays_ordered() {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -480,17 +480,33 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server_state = Arc::clone(&shared);
         let server = thread::spawn(move || {
-            let (socket, _) = listener.accept().unwrap();
-            serve_client(socket, server_state).unwrap();
+            let mut workers = Vec::new();
+            for _ in 0..2 {
+                let (socket, _) = listener.accept().unwrap();
+                let state = Arc::clone(&server_state);
+                workers.push(thread::spawn(move || serve_client(socket, state).unwrap()));
+            }
+            for worker in workers {
+                worker.join().unwrap();
+            }
         });
         let mut socket = TcpStream::connect(address).unwrap();
+        let mut peer = TcpStream::connect(address).unwrap();
         socket
             .set_read_timeout(Some(Duration::from_secs(3)))
             .unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         protocol::write_client(
             &mut socket,
             &ClientMessage::Hello {
                 name: "Tester".into(),
+            },
+        )
+        .unwrap();
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Hello {
+                name: "Peer".into(),
             },
         )
         .unwrap();
@@ -502,6 +518,14 @@ mod tests {
             ServerMessage::Position { ack_seq: 0, y, .. } => y as i32,
             other => panic!("expected initial position, got {other:?}"),
         };
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::Welcome { seed: 7, .. }
+        ));
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::Position { ack_seq: 0, .. }
+        ));
         let block_y = feet_y - 1;
         let (key, local) = world_to_chunk(0, block_y, 0);
         let version = (0..200)
@@ -513,6 +537,13 @@ mod tests {
                 _ => None,
             })
             .expect("target chunk snapshot");
+        let peer_version = (0..200)
+            .find_map(|_| match protocol::read_server(&mut peer).unwrap() {
+                ServerMessage::Chunk(chunk) if chunk.key == key => Some(chunk.version),
+                _ => None,
+            })
+            .expect("peer target chunk snapshot");
+        assert_eq!(peer_version, version);
         protocol::write_client(
             &mut socket,
             &ClientMessage::Edit {
@@ -541,9 +572,24 @@ mod tests {
             })
             .expect("durable edit delta");
         assert_eq!(new_version, version + 1);
-        protocol::write_client(&mut socket, &ClientMessage::Resync { key }).unwrap();
+        let peer_delta = (0..200)
+            .find_map(|_| match protocol::read_server(&mut peer).unwrap() {
+                ServerMessage::Delta {
+                    key: got,
+                    version,
+                    block,
+                    ..
+                } if got == key => {
+                    assert_eq!(block, 0);
+                    Some(version)
+                }
+                _ => None,
+            })
+            .expect("peer edit delta");
+        assert_eq!(peer_delta, new_version);
+        protocol::write_client(&mut peer, &ClientMessage::Resync { key }).unwrap();
         let refreshed = (0..200)
-            .find_map(|_| match protocol::read_server(&mut socket).unwrap() {
+            .find_map(|_| match protocol::read_server(&mut peer).unwrap() {
                 ServerMessage::Chunk(chunk) if chunk.key == key && chunk.version == new_version => {
                     Some(chunk)
                 }
@@ -555,8 +601,55 @@ mod tests {
             0
         );
         drop(socket);
+        drop(peer);
         server.join().unwrap();
         drop(shared);
+        let restarted = Arc::new(Mutex::new(State {
+            world: World::new(7, path.clone()).unwrap(),
+            seed: 7,
+            clients: HashMap::new(),
+            next_id: 1,
+        }));
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server_state = Arc::clone(&restarted);
+        let server = thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            serve_client(socket, server_state).unwrap();
+        });
+        let mut reconnect = TcpStream::connect(address).unwrap();
+        reconnect
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        protocol::write_client(
+            &mut reconnect,
+            &ClientMessage::Hello {
+                name: "Returning".into(),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            protocol::read_server(&mut reconnect).unwrap(),
+            ServerMessage::Welcome { seed: 7, .. }
+        ));
+        assert!(matches!(
+            protocol::read_server(&mut reconnect).unwrap(),
+            ServerMessage::Position { ack_seq: 0, .. }
+        ));
+        let persisted = (0..200)
+            .find_map(|_| match protocol::read_server(&mut reconnect).unwrap() {
+                ServerMessage::Chunk(chunk) if chunk.key == key => Some(chunk),
+                _ => None,
+            })
+            .expect("persisted chunk after restart");
+        assert_eq!(persisted.version, new_version);
+        assert_eq!(
+            persisted.blocks[crate::world::Chunk::index(local).unwrap()],
+            0
+        );
+        drop(reconnect);
+        server.join().unwrap();
+        drop(restarted);
         fs::remove_dir_all(path).unwrap();
     }
 }
