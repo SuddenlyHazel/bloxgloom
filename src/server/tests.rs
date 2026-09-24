@@ -4,6 +4,22 @@ use std::net::TcpListener;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn drop_snapshot_filter_ignores_age_but_not_authoritative_changes() {
+    let original = DroppedItem {
+        id: 1,
+        item: 2,
+        count: 3,
+        position: [1.0, 2.0, 3.0],
+        age_ms: 20,
+    };
+    let mut changed = original;
+    changed.age_ms = 40;
+    assert!(same_drop_positions(&[original], &[changed]));
+    changed.position[1] -= 0.5;
+    assert!(!same_drop_positions(&[original], &[changed]));
+}
+
+#[test]
 fn delayed_movement_cannot_cross_a_block() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -49,6 +65,7 @@ fn set_view_acknowledges_the_clamped_radius() {
                 inventory: Inventory::default(),
                 last_drops_revision: u64::MAX,
                 last_drop_anchor: [i32::MAX; 3],
+                last_sent_drops: Vec::new(),
                 sender,
                 socket,
                 sent: HashSet::new(),
@@ -60,6 +77,9 @@ fn set_view_acknowledges_the_clamped_radius() {
             },
         )]),
         next_id: 2,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     };
 
     handle_message(&mut state, id, ClientMessage::SetView { radius: u8::MAX }).unwrap();
@@ -102,6 +122,9 @@ fn client_with_different_content_catalog_is_rejected_before_joining() {
         seed: 7,
         clients: HashMap::new(),
         next_id: 1,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     }));
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
@@ -192,6 +215,7 @@ fn planted_flower_has_no_collision_and_falls_with_its_soil() {
                 inventory,
                 last_drops_revision: u64::MAX,
                 last_drop_anchor: [i32::MAX; 3],
+                last_sent_drops: Vec::new(),
                 sender,
                 socket,
                 sent: HashSet::from([world_to_chunk(0, y, 0).0, world_to_chunk(0, y - 1, 0).0]),
@@ -203,6 +227,9 @@ fn planted_flower_has_no_collision_and_falls_with_its_soil() {
             },
         )]),
         next_id: 2,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     };
     handle_message(
         &mut state,
@@ -287,6 +314,7 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
                 inventory: Inventory::default(),
                 last_drops_revision: u64::MAX,
                 last_drop_anchor: [i32::MAX; 3],
+                last_sent_drops: Vec::new(),
                 sender,
                 socket,
                 sent: HashSet::new(),
@@ -298,6 +326,9 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
             },
         )]),
         next_id: 2,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     };
     handle_message(
         &mut state,
@@ -422,6 +453,7 @@ fn non_placeable_foliage_loot_is_picked_up_and_persisted() {
                 inventory: Inventory::default(),
                 last_drops_revision: u64::MAX,
                 last_drop_anchor: [i32::MAX; 3],
+                last_sent_drops: Vec::new(),
                 sender,
                 socket,
                 sent: HashSet::from([world_to_chunk(0, position[1] as i32, 0).0]),
@@ -433,6 +465,9 @@ fn non_placeable_foliage_loot_is_picked_up_and_persisted() {
             },
         )]),
         next_id: 2,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     };
     for item in [SEEDS, SAPLING, STICK] {
         state.drops.spawn(position, item, 1, Duration::ZERO);
@@ -494,6 +529,9 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         seed: 7,
         clients: HashMap::new(),
         next_id: 1,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     }));
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -655,6 +693,9 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         seed: 7,
         clients: HashMap::new(),
         next_id: 1,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     }));
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();

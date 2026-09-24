@@ -2,7 +2,8 @@
 use crate::inventory::STACK_LIMIT;
 use crate::items::valid_item;
 use crate::protocol::DroppedItem;
-use std::collections::HashMap;
+use crate::world::{World, is_solid};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -18,10 +19,14 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const PICKUP_RANGE_SQ: f32 = 2.25 * 2.25;
 const VIEW_RANGE_SQ: f32 = 64.0 * 64.0;
 const LIFETIME: Duration = Duration::from_secs(600);
+const DROP_RADIUS: f32 = 0.18;
+const GRAVITY: f32 = 24.0;
+const TERMINAL_SPEED: f32 = 30.0;
 
 #[derive(Clone)]
 struct Entry {
     item: DroppedItem,
+    vertical_speed: f32,
     created: Instant,
     created_unix_ms: u64,
     pickup_delay: Duration,
@@ -30,6 +35,7 @@ struct Entry {
 #[derive(Clone)]
 pub(super) struct Drops {
     entries: HashMap<u64, Entry>,
+    active: HashSet<u64>,
     next_id: u64,
     revision: u64,
     path: Option<PathBuf>,
@@ -40,6 +46,7 @@ impl Drops {
     pub(super) fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            active: HashSet::new(),
             next_id: 1,
             revision: 0,
             path: None,
@@ -75,6 +82,7 @@ impl Drops {
         }
         let mut drops = Self {
             entries: HashMap::with_capacity(count),
+            active: HashSet::with_capacity(count),
             next_id: u64::from_le_bytes(bytes[14..22].try_into().unwrap()),
             revision: u64::from_le_bytes(bytes[6..14].try_into().unwrap()),
             path: Some(path),
@@ -113,6 +121,7 @@ impl Drops {
                     item.id,
                     Entry {
                         item,
+                        vertical_speed: 0.0,
                         created,
                         created_unix_ms: born,
                         pickup_delay: Duration::from_millis(u64::from(delay)),
@@ -123,6 +132,7 @@ impl Drops {
                 return Err(invalid("duplicate drop ID"));
             }
             drops.next_id = drops.next_id.max(item.id.saturating_add(1));
+            drops.active.insert(item.id);
         }
         drops.next_id = drops.next_id.max(1);
         Ok(drops)
@@ -216,11 +226,13 @@ impl Drops {
                         position,
                         age_ms: 0,
                     },
+                    vertical_speed: 0.0,
                     created: Instant::now(),
                     created_unix_ms: unix_ms(),
                     pickup_delay,
                 },
             );
+            self.active.insert(id);
             count -= taken;
             self.revision = self.revision.wrapping_add(1);
         }
@@ -258,6 +270,7 @@ impl Drops {
         if let Some(entry) = self.entries.get_mut(&id) {
             if count >= entry.item.count {
                 self.entries.remove(&id);
+                self.active.remove(&id);
             } else {
                 entry.item.count -= count;
             }
@@ -268,6 +281,7 @@ impl Drops {
         let before = self.entries.len();
         self.entries
             .retain(|_, entry| entry.created.elapsed() < LIFETIME);
+        self.active.retain(|id| self.entries.contains_key(id));
         if self.entries.len() != before {
             self.revision = self.revision.wrapping_add(1);
             true
@@ -284,6 +298,89 @@ impl Drops {
             .values()
             .any(|entry| entry.created.elapsed() >= LIFETIME)
     }
+
+    /// Advances only airborne drops. Positions, not visual animation, are authoritative.
+    pub(super) fn step(
+        &mut self,
+        world: &mut World,
+        elapsed: Duration,
+    ) -> io::Result<(bool, bool)> {
+        if self.active.is_empty() {
+            return Ok((false, false));
+        }
+        let dt = elapsed.as_secs_f32().min(0.1);
+        if dt <= 0.0 {
+            return Ok((false, false));
+        }
+        let mut moved = false;
+        let mut landed = false;
+        let mut settled = Vec::new();
+        for id in &self.active {
+            let entry = self.entries.get_mut(id).expect("active drop exists");
+            let start = entry.item.position[1] - DROP_RADIUS;
+            let speed = (entry.vertical_speed - GRAVITY * dt).max(-TERMINAL_SPEED);
+            let end = start + speed * dt;
+            if let Some(top) = first_solid_top(world, entry.item.position, start, end)? {
+                let new_y = top + DROP_RADIUS;
+                moved |= (entry.item.position[1] - new_y).abs() > 0.000_1;
+                entry.item.position[1] = new_y;
+                entry.vertical_speed = 0.0;
+                settled.push(*id);
+                landed = true;
+            } else {
+                entry.item.position[1] = end + DROP_RADIUS;
+                entry.vertical_speed = speed;
+                moved = true;
+            }
+        }
+        for id in settled {
+            self.active.remove(&id);
+        }
+        if moved {
+            self.revision = self.revision.wrapping_add(1);
+        }
+        Ok((moved, landed))
+    }
+
+    /// An edited voxel can remove support or intersect an otherwise sleeping drop.
+    pub(super) fn wake_near(&mut self, block: [i32; 3]) {
+        for (&id, entry) in &self.entries {
+            let [x, y, z] = entry.item.position;
+            if x + DROP_RADIUS > block[0] as f32
+                && x - DROP_RADIUS < block[0] as f32 + 1.0
+                && z + DROP_RADIUS > block[2] as f32
+                && z - DROP_RADIUS < block[2] as f32 + 1.0
+                && (y - (block[1] as f32 + 1.0 + DROP_RADIUS)).abs() < 1.1
+            {
+                self.active.insert(id);
+            }
+        }
+    }
+}
+
+fn first_solid_top(
+    world: &mut World,
+    position: [f32; 3],
+    start_bottom: f32,
+    end_bottom: f32,
+) -> io::Result<Option<f32>> {
+    let mut hit: Option<f32> = None;
+    let bottom = end_bottom.floor() as i32;
+    let top = start_bottom.floor() as i32;
+    for y in (bottom..=top).rev() {
+        let block_top = y as f32 + 1.0;
+        if block_top < end_bottom {
+            continue;
+        }
+        for x in [position[0] - DROP_RADIUS, position[0] + DROP_RADIUS] {
+            for z in [position[2] - DROP_RADIUS, position[2] + DROP_RADIUS] {
+                if is_solid(world.get_block(x.floor() as i32, y, z.floor() as i32)?) {
+                    hit = Some(hit.map_or(block_top, |previous| previous.max(block_top)));
+                }
+            }
+        }
+    }
+    Ok(hit)
 }
 
 impl Entry {
@@ -318,6 +415,7 @@ fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::{AIR, MAX_GENERATED_HEIGHT, STONE};
 
     #[test]
     fn drops_survive_restart_and_are_still_collectible() {
@@ -349,6 +447,37 @@ mod tests {
         bytes[HEADER] ^= 1;
         fs::write(root.join("drops.bin"), bytes).unwrap();
         assert!(Drops::open(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn airborne_drop_lands_and_falls_again_when_support_is_removed() {
+        let root = std::env::temp_dir().join(format!(
+            "bloxgloom-drop-gravity-{}-{}",
+            std::process::id(),
+            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let mut world = World::new(19, root.clone()).unwrap();
+        let ground = MAX_GENERATED_HEIGHT + 12;
+        world.edit(0, ground, 0, STONE).unwrap();
+        let mut drops = Drops::open(&root).unwrap();
+        drops.spawn([0.5, ground as f32 + 5.0, 0.5], 2, 1, Duration::ZERO);
+        for _ in 0..100 {
+            drops.step(&mut world, Duration::from_millis(20)).unwrap();
+        }
+        let landed_y = ground as f32 + 1.0 + DROP_RADIUS;
+        assert!((drops.entries[&1].item.position[1] - landed_y).abs() < 0.001);
+        assert!(drops.active.is_empty());
+        drops.save().unwrap();
+        let loaded = Drops::open(&root).unwrap();
+        assert!((loaded.entries[&1].item.position[1] - landed_y).abs() < 0.001);
+
+        world.edit(0, ground, 0, AIR).unwrap();
+        drops.wake_near([0, ground, 0]);
+        assert!(drops.active.contains(&1));
+        drops.step(&mut world, Duration::from_millis(20)).unwrap();
+        assert!(drops.entries[&1].item.position[1] < landed_y);
         fs::remove_dir_all(root).unwrap();
     }
 }

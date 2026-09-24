@@ -2,10 +2,12 @@
 use crate::protocol::DroppedItem;
 use crate::render::VisualDrop;
 use glam::Vec3;
+use std::collections::HashMap;
 use std::time::Instant;
 
 const POP: f32 = 0.55;
 const PICKUP: f32 = 0.34;
+const POSITION_BLEND: f32 = 0.08;
 
 struct PickupFlight {
     start: VisualDrop,
@@ -14,6 +16,7 @@ struct PickupFlight {
 
 pub(crate) struct DropAnimator {
     items: Vec<DroppedItem>,
+    previous_positions: HashMap<u64, Vec3>,
     snapshot_at: Instant,
     pickups: Vec<PickupFlight>,
 }
@@ -22,14 +25,30 @@ impl DropAnimator {
     pub(crate) fn new(now: Instant) -> Self {
         Self {
             items: Vec::new(),
+            previous_positions: HashMap::new(),
             snapshot_at: now,
             pickups: Vec::new(),
         }
     }
 
     pub(crate) fn snapshot(&mut self, items: Vec<DroppedItem>, now: Instant) {
+        let previous = self
+            .items
+            .iter()
+            .map(|item| (item.id, self.position_for(item, now)))
+            .collect();
+        self.previous_positions = previous;
         self.items = items;
         self.snapshot_at = now;
+    }
+
+    fn position_for(&self, item: &DroppedItem, now: Instant) -> Vec3 {
+        let target = Vec3::from_array(item.position);
+        let Some(start) = self.previous_positions.get(&item.id) else {
+            return target;
+        };
+        let t = (now.duration_since(self.snapshot_at).as_secs_f32() / POSITION_BLEND).min(1.0);
+        start.lerp(target, t)
     }
 
     pub(crate) fn picked_up(&mut self, items: Vec<DroppedItem>, now: Instant) {
@@ -41,7 +60,9 @@ impl DropAnimator {
                 .map(|live| {
                     let age = live.age_ms as f32 / 1000.0
                         + now.duration_since(self.snapshot_at).as_secs_f32();
-                    live_visual(live, age)
+                    let mut visual = live_visual(live, age);
+                    visual.center += self.position_for(live, now) - Vec3::from_array(live.position);
+                    visual
                 })
                 .unwrap_or_else(|| live_visual(&item, item.age_ms as f32 / 1000.0));
             if let Some(live) = self.items.iter_mut().find(|live| live.id == item.id) {
@@ -68,7 +89,9 @@ impl DropAnimator {
             .min(u32::MAX as u128);
         for item in &self.items {
             let age = (u128::from(item.age_ms) + elapsed_ms) as f32 / 1000.0;
-            result.push(live_visual(item, age));
+            let mut visual = live_visual(item, age);
+            visual.center += self.position_for(item, now) - Vec3::from_array(item.position);
+            result.push(visual);
         }
         let target = player + Vec3::new(0.0, 1.25, 0.0);
         for flight in &self.pickups {
@@ -150,5 +173,20 @@ mod tests {
         animator.snapshot(vec![item(90_100)], now + Duration::from_millis(100));
         let after = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].angle;
         assert!((before - after).abs() < 0.001);
+    }
+
+    #[test]
+    fn moving_drop_blends_between_authoritative_positions() {
+        let now = Instant::now();
+        let mut animator = DropAnimator::new(now);
+        let first = item(2000);
+        animator.snapshot(vec![first], now);
+        let mut next = first;
+        next.position[1] -= 1.0;
+        animator.snapshot(vec![next], now + Duration::from_millis(20));
+        let visual_start = animator.visuals(now + Duration::from_millis(20), Vec3::ZERO)[0].center;
+        let visual_mid = animator.visuals(now + Duration::from_millis(60), Vec3::ZERO)[0].center;
+        let visual_end = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].center;
+        assert!(visual_start.y > visual_mid.y && visual_mid.y > visual_end.y);
     }
 }

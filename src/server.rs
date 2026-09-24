@@ -6,7 +6,9 @@ mod drops;
 mod loot;
 
 use crate::inventory::{Inventory, InventoryStore};
-use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
+use crate::protocol::{
+    self, ClientMessage, DroppedItem, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage,
+};
 #[cfg(test)]
 use crate::world::STONE;
 use crate::world::{
@@ -36,6 +38,7 @@ struct Client {
     inventory: Inventory,
     last_drops_revision: u64,
     last_drop_anchor: [i32; 3],
+    last_sent_drops: Vec<DroppedItem>,
     sender: SyncSender<ServerMessage>,
     socket: TcpStream,
     sent: HashSet<ChunkKey>,
@@ -72,6 +75,9 @@ struct State {
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
+    last_drop_step: Instant,
+    last_drop_save: Instant,
+    moving_drops_dirty: bool,
 }
 
 pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
@@ -101,6 +107,9 @@ fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<Arc<Mutex<State>>> {
         seed,
         clients: HashMap::new(),
         next_id: 1,
+        last_drop_step: Instant::now(),
+        last_drop_save: Instant::now(),
+        moving_drops_dirty: false,
     })))
 }
 
@@ -191,6 +200,7 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
                 inventory: inventory.clone(),
                 last_drops_revision: u64::MAX,
                 last_drop_anchor: [i32::MAX; 3],
+                last_sent_drops: Vec::new(),
                 sender: sender.clone(),
                 socket: socket.try_clone()?,
                 sent: HashSet::new(),
@@ -325,6 +335,13 @@ fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
 }
 
 fn stream_one(state: &mut State, id: u64) -> bool {
+    if let Err(error) = advance_drops(state) {
+        eprintln!("advance drops: {error}");
+        if let Some(client) = state.clients.get(&id) {
+            let _ = client.socket.shutdown(Shutdown::Both);
+        }
+        return false;
+    }
     if state.drops.has_expired() {
         let before_expiry = state.drops.clone();
         if state.drops.expire()
@@ -354,11 +371,14 @@ fn stream_one(state: &mut State, id: u64) -> bool {
     let drop_revision = state.drops.revision();
     if client.last_drops_revision != drop_revision || client.last_drop_anchor != anchor {
         let items = state.drops.nearby(client.position);
-        if !client.enqueue(ServerMessage::Drops {
-            revision: drop_revision,
-            items,
-        }) {
-            return false;
+        if !same_drop_positions(&items, &client.last_sent_drops) {
+            if !client.enqueue(ServerMessage::Drops {
+                revision: drop_revision,
+                items: items.clone(),
+            }) {
+                return false;
+            }
+            client.last_sent_drops = items;
         }
         client.last_drops_revision = drop_revision;
         client.last_drop_anchor = anchor;
@@ -419,6 +439,42 @@ fn stream_one(state: &mut State, id: u64) -> bool {
             false
         }
     }
+}
+
+fn same_drop_positions(a: &[DroppedItem], b: &[DroppedItem]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(a, b)| {
+            a.id == b.id && a.item == b.item && a.count == b.count && a.position == b.position
+        })
+}
+
+fn advance_drops(state: &mut State) -> io::Result<()> {
+    let now = Instant::now();
+    let elapsed = now.duration_since(state.last_drop_step);
+    if elapsed < STREAM_INTERVAL {
+        return Ok(());
+    }
+    state.last_drop_step = now;
+    let before = state.drops.clone();
+    let (moved, landed) = match state.drops.step(&mut state.world, elapsed) {
+        Ok(result) => result,
+        Err(error) => {
+            state.drops = before;
+            return Err(error);
+        }
+    };
+    state.moving_drops_dirty |= moved;
+    if state.moving_drops_dirty
+        && (landed || now.duration_since(state.last_drop_save) >= Duration::from_secs(1))
+    {
+        if let Err(error) = state.drops.save() {
+            state.drops = before;
+            return Err(error);
+        }
+        state.last_drop_save = now;
+        state.moving_drops_dirty = false;
+    }
+    Ok(())
 }
 
 fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
@@ -805,6 +861,10 @@ fn edit_block(
         }
         result
     };
+    state.drops.wake_near([x, y, z]);
+    if let Some((_, _, above_y, _)) = removed_above {
+        state.drops.wake_near([x, above_y, z]);
+    }
     let (_, local) = world_to_chunk(x, y, z);
     let delta = ServerMessage::Delta {
         key,
