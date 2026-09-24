@@ -6,7 +6,7 @@ use super::registry::{
 };
 use super::types::{
     EntityError, EntityId, EntityLocation, EntityOwnership, EntityPayload, EntityPublicView,
-    TickPolicy,
+    TRANSIENT_ENTITY_ID_BIT, TickPolicy,
 };
 use crate::content::EntityTypeId;
 use crate::world::ChunkKey;
@@ -199,9 +199,13 @@ impl PlayerEntityStore {
         }
         ids.iter()
             .map(|id| {
+                // The transient ID encodes the session key. Looking it up
+                // directly keeps a crowded chunk snapshot O(k log n), not
+                // O(k * n) across every connected player.
+                let session_id = id.get() & !TRANSIENT_ENTITY_ID_BIT;
                 self.by_session
-                    .values()
-                    .find(|view| view.id == *id)
+                    .get(&session_id)
+                    .filter(|view| view.id == *id)
                     .cloned()
                     .ok_or(EntityError::InvalidTransaction)
             })
@@ -292,6 +296,66 @@ mod tests {
                 codec: Arc::new(PlayerPayloadCodec),
             }),
             Err(EntityError::UnknownType(EntityTypeId(70_000)))
+        );
+    }
+
+    #[test]
+    fn session_move_and_disconnect_update_public_chunk_ownership() {
+        let mut players = PlayerEntityStore::default();
+        let old_chunk = ChunkKey { x: 0, y: 4, z: 0 };
+        let new_chunk = ChunkKey { x: 1, y: 4, z: 0 };
+        let (id, spawned) = players.spawn_session(42, [15.5, 65.0, 0.5]).unwrap();
+        assert_eq!(id.get(), TRANSIENT_ENTITY_ID_BIT | 42);
+        assert!(matches!(spawned, EntityDelta::Spawned(view) if view.id == id));
+        assert_eq!(
+            players
+                .public_views_for_chunk_bounded(old_chunk, 1)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let moved = players.update_position(42, [16.5, 65.0, 0.5]).unwrap();
+        assert!(
+            matches!(moved, Some(EntityDelta::Transferred { view, .. }) if view.id == id && view.owner.chunk() == new_chunk)
+        );
+        assert!(
+            players
+                .public_views_for_chunk_bounded(old_chunk, 1)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            players
+                .public_views_for_chunk_bounded(new_chunk, 1)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            players
+                .update_position(42, [16.5, 65.0, 0.5])
+                .unwrap()
+                .is_none()
+        );
+
+        assert!(
+            matches!(players.despawn_session(42).unwrap(), Some(EntityDelta::Despawned { id: removed, .. }) if removed == id)
+        );
+        assert!(
+            players
+                .public_views_for_chunk_bounded(new_chunk, 1)
+                .unwrap()
+                .is_empty()
+        );
+        let (replacement, _) = players.spawn_session(43, [16.5, 65.0, 0.5]).unwrap();
+        assert_ne!(id, replacement);
+        assert_eq!(
+            players
+                .public_views_for_chunk_bounded(new_chunk, 1)
+                .unwrap()[0]
+                .id,
+            replacement
         );
     }
 }
