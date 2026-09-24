@@ -738,6 +738,14 @@ impl World {
         Some(entry.chunk.clone())
     }
 
+    /// Reads the version of an already-resident authoritative chunk without
+    /// loading terrain or copying its block array. Phase barriers use this to
+    /// reject worker results computed from superseded voxel snapshots.
+    #[inline]
+    pub fn cached_version(&self, key: ChunkKey) -> Option<u64> {
+        self.cache.get(&key).map(|entry| entry.chunk.version)
+    }
+
     /// Loads and generates without consulting or mutating this world's cache.
     /// Intended for the loader workers, which keep independent `World` values.
     pub fn load_chunk_uncached(&self, key: ChunkKey) -> io::Result<LoadedChunk> {
