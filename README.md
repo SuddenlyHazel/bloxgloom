@@ -2,13 +2,13 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
-The proposed fixed-step, parallel server architecture is documented in [docs/server-simulation.md](docs/server-simulation.md). It is a design target, not the current implementation.
+The fixed-step multiplayer server architecture, its implementation status, and remaining acceptance gates are documented in [docs/server-simulation.md](docs/server-simulation.md).
 
 The world generates on demand as players travel, with no fixed horizontal boundary. Temperature, moisture, and uplift create plains, forests, deserts, tundra, and rocky highlands with distinct landforms and surface layers. A deterministic wave-function-collapse pass makes constrained ground-cover patches that match across independently generated regions. Biome-aware flowers, ferns, grass, and broadleaf trees add vegetation that stays consistent across chunk borders; plants can be broken and collected. Caves remain below the surface, but the new-world spawn has a solid floor beneath it; the world has an immutable solid bottom at Y = −64. Fifteen block types use pixel-art assets in `assets/textures/`. Opaque blocks use greedy chunk meshes; foliage uses a separate cutout mesh. The sky has world-anchored clouds and shares a fixed sun direction with terrain lighting, so the sun moves across the view when you turn.
 
 Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. This is the default lighting mode. In Settings, `LIGHTING: BOUNCED` enables a more expensive single diffuse RGB bounce from block surfaces, including color bleed. It is a voxel approximation, not path tracing or multi-bounce GI. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits or quality changes, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
 
-Terrain generator v4 changes the baseline world to include vegetation. The default save directory is `world-v4/`, leaving older saves untouched. Passing an incompatible save directory explicitly is rejected rather than silently changing existing terrain under saved edits. Repo-local development saves may be removed when a fresh world is desired; external saves are not disposable.
+Terrain generator v4 changes the baseline world to include vegetation. The default save directory is `world-v4/`, leaving older saves untouched. Passing an incompatible save directory explicitly is rejected rather than silently changing existing terrain under saved edits. Repo-local saves are player data too; development checks and benchmarks use separate temporary directories rather than deleting them.
 
 Blocks, items, and texture layers now have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. This is a foundation for future mod loading, not a mod-file format or scripting API yet. Current save and wire IDs are still one byte, so widening them is required before a public, large-scale mod ecosystem.
 
@@ -42,6 +42,8 @@ E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select 
 
 Blocks are now finite: the server owns inventory, drops, pickup, and placement. Breaking a block pops its drop upward; resting drops hover and spin, then fly toward the player when picked up. A full inventory leaves drops in the world. Inventory and world drops persist in the server save directory; drops expire after ten minutes. Each OS user has a persistent local profile ID for their inventory; simultaneous connections with that same profile are rejected. Movement remains server-authoritative with block collision; gravity and other survival systems are not implemented yet. The inventory/drop protocol is versioned; older clients must be rebuilt.
 
+The server advances at 50 Hz even with no clients connected. A coordinator orders durable actions and publishes only after the write-ahead log confirms them; movement jobs run in a bounded worker pool over authoritative terrain views. Checkpoint file I/O, chunk loading, and socket I/O stay off the coordinator's tick path. Fire, growth, cross-chunk block entities, and public mod hooks are future systems, not shipped gameplay.
+
 The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, UI, and meshing checks. The interface implementation and validation record are in [PLAN.md](PLAN.md).
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png` or `cargo run -- preview desert.png -928 -1024` to center the render near specified world coordinates. This renders terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.
@@ -57,5 +59,7 @@ Run `cargo run -- drop-preview drops.png` to render a few textured world drops t
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 
 Run `cargo run --release -- perf 300 6` to measure headless 1280×720 chunk-upload, world-render, target-outline, and HUD work at the maximum supported view radius. It reports CPU submit-side and GPU render-pass frame-time percentiles, adapter, and scene size. It does not measure window presentation or live gameplay FPS.
+
+Run `cargo run --release -- server-perf 300` to measure separate 16-player clustered and spread authoritative server workloads at 50 Hz. It uses isolated temporary saves and reports tick, backlog, worker, chunk-load, WAL, and replication metrics. This headless benchmark does not measure TCP socket writes or client graphics.
 
 Append `bounced` to benchmark the optional lighting mode, for example `cargo run --release -- perf 300 6 bounced`. Scene setup includes light-field construction and meshing; its time is reported separately from steady frame samples.

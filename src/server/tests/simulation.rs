@@ -1,0 +1,161 @@
+use super::*;
+
+#[test]
+fn zero_client_tick_advances_world_drops() {
+    let save = TestSave::new("unattended-tick");
+    let mut state = state_for(&save, 7);
+    assert!(state.clients.is_empty());
+    let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
+    state
+        .drops
+        .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+    let before = state.drops.nearby(position)[0].position[1];
+
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+
+    let after = state.drops.nearby(position)[0].position[1];
+    assert!(
+        after < before,
+        "drop did not advance during an unattended tick"
+    );
+}
+
+#[test]
+fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
+    let save = TestSave::new("landed-drop-rotation");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let surface_y = state.spawn_anchor[1] as i32;
+    state.drops.spawn(
+        [0.5, surface_y as f32 + 0.25, 0.5],
+        crate::world::STONE,
+        1,
+        Duration::ZERO,
+    );
+
+    for _ in 0..200 {
+        run_empty_tick(&mut state, &mut tick);
+        if state.drops.active_len() == 0
+            && !state.moving_drops_dirty
+            && state.durability.dirty_checkpoints.is_empty()
+            && state.durability.checkpoint_inflight.is_empty()
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(state.drops.active_len(), 0);
+    assert!(!state.moving_drops_dirty);
+    assert!(state.durability.dirty_checkpoints.is_empty());
+
+    state.durability.rotation_requested = true;
+    for _ in 0..200 {
+        run_empty_tick(&mut state, &mut tick);
+        if !state.durability.rotation_requested {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!state.durability.rotation_requested);
+    assert!(state.durability.rotation_receipt.is_none());
+
+    let session = join(&mut state, &mut tick, 3003);
+    let output = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        1,
+        8_001,
+        ClientMessage::Edit {
+            action_id: 8_001,
+            x: 0,
+            y: surface_y - 1,
+            z: 0,
+            block: AIR,
+            slot: 0,
+        },
+    );
+    assert_eq!(action_result(&output, 8_001), Some(true));
+}
+
+#[test]
+fn player_count_does_not_change_authoritative_drop_trajectory() {
+    let empty_save = TestSave::new("drop-no-clients");
+    let populated_save = TestSave::new("drop-sixteen-clients");
+    let mut empty = state_for(&empty_save, 7);
+    let mut populated = state_for(&populated_save, 7);
+    let mut populated_tick = 1;
+    let sessions: Vec<_> = (1..=16)
+        .map(|profile| join(&mut populated, &mut populated_tick, profile))
+        .collect();
+    assert_eq!(populated.clients.len(), 16);
+
+    let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
+    for state in [&mut empty, &mut populated] {
+        state
+            .drops
+            .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+    }
+    for offset in 0..8 {
+        tick_once(&mut empty, TickId::new(1 + offset), Instant::now()).unwrap();
+        tick_once(
+            &mut populated,
+            TickId::new(populated_tick + offset),
+            Instant::now(),
+        )
+        .unwrap();
+        let empty_drop = empty.drops.nearby(position);
+        let populated_drop = populated.drops.nearby(position);
+        assert_eq!(empty_drop.len(), 1);
+        assert_eq!(populated_drop.len(), 1);
+        assert_eq!(
+            (
+                empty_drop[0].id,
+                empty_drop[0].item,
+                empty_drop[0].count,
+                empty_drop[0].position,
+            ),
+            (
+                populated_drop[0].id,
+                populated_drop[0].item,
+                populated_drop[0].count,
+                populated_drop[0].position,
+            ),
+            "player count changed drop state at step {offset}"
+        );
+    }
+    drop(sessions);
+}
+
+#[test]
+fn coordinator_records_real_movement_worker_capacity() {
+    let save = TestSave::new("movement-worker-telemetry");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, 501);
+
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Command {
+            id: session.id,
+            sequence: 1,
+            message: ClientMessage::Move {
+                seq: 1,
+                dx: 0.1,
+                dy: 0.0,
+                dz: 0.0,
+            },
+        }],
+    );
+
+    let sample = state.metrics.latest().unwrap();
+    assert!(sample.movement_worker_capacity_nanos > 0);
+    assert!(sample.movement_worker_busy_nanos <= sample.movement_worker_capacity_nanos);
+    assert!(
+        state
+            .metrics
+            .movement_worker_utilization_percent()
+            .is_some()
+    );
+}

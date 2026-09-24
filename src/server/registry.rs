@@ -83,6 +83,9 @@ pub enum OwnerPartition {
     #[allow(dead_code)]
     Chunk,
     Entity,
+    /// Reserved for profile-local systems; today's inventory transactions
+    /// also touch chunks and drops, so their actual batch is global.
+    #[allow(dead_code)]
     Profile,
     Global,
 }

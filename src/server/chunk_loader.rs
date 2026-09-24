@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 #[cfg(test)]
 #[path = "chunk_loader/tests.rs"]
@@ -24,6 +25,7 @@ pub(super) struct ChunkLoadTicket {
     pub(super) key: ChunkKey,
     pub(super) generation: u64,
     pub(super) edit_epoch: u64,
+    pub(super) requested_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -157,6 +159,7 @@ impl ChunkLoader {
             key,
             generation,
             edit_epoch,
+            requested_at: Instant::now(),
         };
         let job = Job {
             ticket,
@@ -183,6 +186,7 @@ impl ChunkLoader {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn is_pending(&self, key: ChunkKey) -> bool {
         self.pending.contains_key(&key)
     }
@@ -202,6 +206,7 @@ impl ChunkLoader {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub(super) const fn capacity(&self) -> usize {
         self.capacity
     }

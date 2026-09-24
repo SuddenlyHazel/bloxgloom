@@ -30,11 +30,13 @@ pub(super) enum CheckpointSubmitError {
     Closed,
 }
 
+type CheckpointWrite = Box<dyn FnOnce(&[u8]) -> io::Result<()> + Send + 'static>;
+
 struct CheckpointJob {
     key: StateKey,
     revision: u64,
     snapshot: Vec<u8>,
-    write: Box<dyn FnOnce(&[u8]) -> io::Result<()> + Send + 'static>,
+    write: CheckpointWrite,
 }
 
 /// One FIFO checkpoint thread with a strict bound on all accepted, unconsumed

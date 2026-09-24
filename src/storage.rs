@@ -197,6 +197,7 @@ impl Storage {
         Ok(SavedEdits { version, blocks })
     }
 
+    #[cfg(test)]
     pub fn save(&self, key: ChunkKey, edits: &SavedEdits) -> io::Result<()> {
         let snapshot = self.encode_snapshot(edits)?;
         self.replace_snapshot(key, snapshot.as_deref())

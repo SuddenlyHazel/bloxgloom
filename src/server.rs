@@ -1,37 +1,81 @@
-//! Authoritative TCP server. A single world lock orders snapshots and edits for
-//! every client. Cold chunk generation and durable edits currently serialize on
-//! that lock; the per-client stream rate is bounded, and stream tick timings are
-//! reported so this limit is visible under the 16-player target load.
+//! Authoritative TCP server. The simulation coordinator owns mutable world,
+//! inventory, and drop state; chunk loading and journal fsync run on bounded
+//! workers. Durable actions become visible only after their WAL receipt.
+mod builtins;
+mod checkpoint;
+mod chunk_loader;
 mod drops;
+mod durable;
+mod effects;
+mod interest;
+mod journal;
 mod loot;
+mod metrics;
+mod movement;
+mod net;
+mod outbound;
+mod parallel;
+mod perf;
+mod registry;
+mod runtime;
+mod simulation;
+mod spawn;
+mod streaming;
+mod voxel_view;
+
+pub use perf::run_perf_benchmark;
 
 use crate::inventory::{Inventory, InventoryStore};
-use crate::protocol::{
-    self, ClientMessage, DroppedItem, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage,
-};
 #[cfg(test)]
-use crate::world::STONE;
-use crate::world::{
-    AIR, BEDROCK_Y, ChunkKey, MAX_GENERATED_HEIGHT, World, is_plant, is_replaceable, is_solid,
-    supports_plant, world_to_chunk,
+use crate::protocol;
+use crate::protocol::{
+    ClientMessage, DroppedItem, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage,
 };
+use crate::world::{AIR, BEDROCK_Y, ChunkKey, World, world_to_chunk};
+use builtins::builtin_phase_plan;
+use chunk_loader::ChunkLoader;
 use drops::Drops;
-use std::collections::{HashMap, HashSet};
+use durable::{
+    Durability, handle_live_message, process_durable_actions, publish_committed,
+    queue_interaction_actions, remember_drops_checkpoint,
+};
+use effects::CellCoord;
+use metrics::MetricsRecorder;
+use movement::{MovementBatch, MovementCommand, MovementState};
+use net::serve_listener;
+use outbound::{OutboundFrame, OutboundTelemetry};
+use parallel::PhaseExecutor;
+use registry::PhasePlan;
+use runtime::run_simulation_ticks;
+#[cfg(test)]
+use runtime::tick_once;
+#[cfg(test)]
+use runtime::tick_with_inputs;
+use simulation::{FIXED_STEP, Phase, TickId};
+#[cfg(test)]
+use spawn::collides;
+use spawn::{spawn_position, spawn_position_cached};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{self, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(test)]
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const MAX_CLIENTS: usize = 16;
 const OUTBOUND_CAPACITY: usize = 128;
 const DEFAULT_VIEW: u8 = 3;
-const STREAM_INTERVAL: Duration = Duration::from_millis(20);
-const PLAYER_SPEED: f32 = 10.0;
+const STREAM_INTERVAL: Duration = FIXED_STEP;
+const INPUT_CAPACITY: usize = 1024;
+const MAX_CATCH_UP_TICKS: usize = 3;
 const EDIT_REACH: f32 = 8.0;
+const SERVER_CHUNK_CACHE: usize = 16_384;
+const LOADER_CAPACITY: usize = 256;
+const MOVEMENT_QUEUE_CAPACITY: usize = 256;
 
 struct Client {
     profile: u128,
@@ -39,25 +83,28 @@ struct Client {
     last_drops_revision: u64,
     last_drop_anchor: [i32; 3],
     last_sent_drops: Vec<DroppedItem>,
-    sender: SyncSender<ServerMessage>,
+    sender: SyncSender<OutboundFrame>,
+    outbound: Arc<OutboundTelemetry>,
     socket: TcpStream,
     sent: HashSet<ChunkKey>,
     center: ChunkKey,
     radius: u8,
-    position: [f32; 3],
-    last_move: Instant,
-    last_seq: u64,
+    movement: MovementState,
+    pending_moves: VecDeque<MovementCommand>,
 }
 
 impl Client {
+    fn position(&self) -> [f32; 3] {
+        self.movement.position()
+    }
+
     fn enqueue(&self, message: ServerMessage) -> bool {
-        match self.sender.try_send(message) {
-            Ok(()) => true,
-            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
-                eprintln!("disconnecting slow client: outbound queue full or closed");
-                let _ = self.socket.shutdown(Shutdown::Both);
-                false
-            }
+        if self.outbound.try_send(&self.sender, message) {
+            true
+        } else {
+            eprintln!("disconnecting slow client: outbound queue full or closed");
+            let _ = self.socket.shutdown(Shutdown::Both);
+            false
         }
     }
 
@@ -75,9 +122,65 @@ struct State {
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
-    last_drop_step: Instant,
     last_drop_save: Instant,
     moving_drops_dirty: bool,
+    drops_landed_dirty: bool,
+    pending_block_changes: Vec<CellCoord>,
+    durability: Durability,
+    phase_plan: PhasePlan,
+    loader: ChunkLoader,
+    movement_executor: PhaseExecutor<MovementBatch, ()>,
+    metrics: MetricsRecorder,
+    stream_cursor: u64,
+    spawn_anchor: [f32; 3],
+    pending_joins: VecDeque<PendingJoin>,
+    tick_backlog: u64,
+    outbound: Arc<OutboundTelemetry>,
+    last_sent_bytes: u64,
+    last_rejections: u64,
+}
+
+struct PendingJoin {
+    profile: u128,
+    inventory: Inventory,
+    sender: SyncSender<OutboundFrame>,
+    socket: TcpStream,
+    reply: SyncSender<JoinResponse>,
+    queued_at: Instant,
+}
+
+struct JoinReply {
+    id: u64,
+    seed: u64,
+    position: [f32; 3],
+    inventory: Inventory,
+}
+
+/// A socket thread may have read its BGIN snapshot before a newer WAL action
+/// checkpointed. Refresh is explicit so a delayed join never reuses that
+/// captured inventory after the coordinator's overlay has been released.
+enum JoinResponse {
+    Completed(Box<io::Result<JoinReply>>),
+    RefreshInventory,
+}
+
+enum SimulationInput {
+    Join {
+        profile: u128,
+        inventory: Inventory,
+        sender: SyncSender<OutboundFrame>,
+        socket: TcpStream,
+        reply: SyncSender<JoinResponse>,
+    },
+    Command {
+        id: u64,
+        sequence: u64,
+        message: ClientMessage,
+    },
+    Leave {
+        id: u64,
+        sequence: u64,
+    },
 }
 
 pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
@@ -97,427 +200,115 @@ pub fn start_local_server(
     Ok((addr, handle))
 }
 
-fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<Arc<Mutex<State>>> {
-    let world = World::new(seed, save_dir.clone())?;
+fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<State> {
+    let mut world = World::with_capacity(seed, save_dir.clone(), SERVER_CHUNK_CACHE)?;
     let inventory_store = InventoryStore::new(&save_dir)?;
-    Ok(Arc::new(Mutex::new(State {
+    let mut drops = Drops::open(&save_dir)?;
+    let durability = Durability::open(&save_dir, &mut world, &inventory_store, &mut drops)?;
+    // Only startup may synchronously load the origin terrain. Each live join
+    // validates against resident authoritative chunks and defers cache misses.
+    let spawn_anchor = spawn_position(&mut world)?;
+    let phase_plan = builtin_phase_plan()?;
+    let loader = ChunkLoader::new(seed, save_dir, LOADER_CAPACITY)?;
+    let worker_count = thread::available_parallelism()
+        .map_or(2, |count| count.get())
+        .clamp(1, 8);
+    let movement_executor = PhaseExecutor::new(worker_count, 64, 64)
+        .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
+    Ok(State {
         world,
         inventory_store,
-        drops: Drops::open(&save_dir)?,
+        drops,
         seed,
         clients: HashMap::new(),
         next_id: 1,
-        last_drop_step: Instant::now(),
         last_drop_save: Instant::now(),
         moving_drops_dirty: false,
-    })))
+        drops_landed_dirty: false,
+        pending_block_changes: Vec::new(),
+        durability,
+        phase_plan,
+        loader,
+        movement_executor,
+        metrics: MetricsRecorder::new(),
+        stream_cursor: 0,
+        spawn_anchor,
+        pending_joins: VecDeque::new(),
+        tick_backlog: 0,
+        outbound: Arc::new(OutboundTelemetry::default()),
+        last_sent_bytes: 0,
+        last_rejections: 0,
+    })
 }
 
-fn serve_listener(listener: TcpListener, state: Arc<Mutex<State>>) -> io::Result<()> {
-    let connections = Arc::new(AtomicUsize::new(0));
-    eprintln!("Bloxgloom server listening on {}", listener.local_addr()?);
-    for connection in listener.incoming() {
-        let socket = match connection {
-            Ok(socket) => socket,
-            Err(error) => {
-                eprintln!("accept: {error}");
-                continue;
-            }
-        };
-        if connections.fetch_add(1, Ordering::AcqRel) >= MAX_CLIENTS {
-            connections.fetch_sub(1, Ordering::AcqRel);
-            let _ = socket.shutdown(Shutdown::Both);
-            continue;
-        }
-        if let Err(error) = socket.set_nodelay(true) {
-            connections.fetch_sub(1, Ordering::AcqRel);
-            eprintln!("client socket: {error}");
-            continue;
-        }
-        let shared = Arc::clone(&state);
-        let connections = Arc::clone(&connections);
-        thread::spawn(move || {
-            if let Err(error) = serve_client(socket, shared) {
-                eprintln!("client: {error}");
-            }
-            connections.fetch_sub(1, Ordering::AcqRel);
-        });
-    }
-    Ok(())
-}
-
-fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<()> {
-    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let ClientMessage::Hello {
-        name,
-        profile,
-        content_fingerprint,
-    } = protocol::read_client(&mut socket)?
-    else {
-        return Err(io::Error::new(ErrorKind::InvalidData, "expected Hello"));
-    };
-    if content_fingerprint != crate::content::catalog().fingerprint() {
+fn join_client(
+    state: &mut State,
+    profile: u128,
+    loaded_inventory: Inventory,
+    sender: SyncSender<OutboundFrame>,
+    socket: &TcpStream,
+) -> io::Result<JoinReply> {
+    if state.durability.failed {
         return Err(io::Error::new(
-            ErrorKind::InvalidData,
-            "client content catalog does not match server",
+            ErrorKind::ConnectionAborted,
+            "durability subsystem failed; restart required",
         ));
     }
-    if name.is_empty() || name.chars().any(char::is_control) || profile == 0 {
+    if state.clients.len() >= MAX_CLIENTS {
+        return Err(io::Error::new(ErrorKind::ConnectionRefused, "server full"));
+    }
+    if state
+        .clients
+        .values()
+        .any(|client| client.profile == profile)
+    {
         return Err(io::Error::new(
-            ErrorKind::InvalidData,
-            "invalid player name",
+            ErrorKind::AlreadyExists,
+            "profile already connected",
         ));
     }
-    socket.set_read_timeout(None)?;
-    let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
-    let (id, seed, position, inventory) = {
-        let mut state = shared.lock().unwrap();
-        if state.clients.len() >= MAX_CLIENTS {
-            return Err(io::Error::new(ErrorKind::ConnectionRefused, "server full"));
-        }
-        if state
-            .clients
-            .values()
-            .any(|client| client.profile == profile)
-        {
-            return Err(io::Error::new(
-                ErrorKind::AlreadyExists,
-                "profile already connected",
-            ));
-        }
-        let inventory = state.inventory_store.load(profile)?;
-        let id = state.next_id;
-        state.next_id = state
-            .next_id
-            .checked_add(1)
-            .ok_or_else(|| io::Error::other("player ID exhausted"))?;
-        let position = spawn_position(&mut state.world)?;
-        let center = world_to_chunk(0, position[1] as i32, 0).0;
-        state.clients.insert(
-            id,
-            Client {
-                profile,
-                inventory: inventory.clone(),
-                last_drops_revision: u64::MAX,
-                last_drop_anchor: [i32::MAX; 3],
-                last_sent_drops: Vec::new(),
-                sender: sender.clone(),
-                socket: socket.try_clone()?,
-                sent: HashSet::new(),
-                center,
-                radius: DEFAULT_VIEW,
-                position,
-                last_move: Instant::now(),
-                last_seq: 0,
-            },
-        );
-        (id, state.seed, position, inventory)
+    if state.durability.profile_reserved(profile) {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "profile has a pending durable action; retry join",
+        ));
+    }
+    let inventory = match state.durability.inventory_overlay.get(&profile) {
+        Some(inventory) => inventory.clone(),
+        None => loaded_inventory,
     };
-    sender
-        .try_send(ServerMessage::Welcome { id, seed })
-        .map_err(|_| io::Error::other("outbound queue closed"))?;
-    sender
-        .try_send(ServerMessage::Position {
-            ack_seq: 0,
-            x: position[0],
-            y: position[1],
-            z: position[2],
-        })
-        .map_err(|_| io::Error::other("outbound queue closed"))?;
-    sender
-        .try_send(ServerMessage::ViewDistance {
+    let position = spawn_position_cached(state)?;
+    let id = state.next_id;
+    state.next_id = state
+        .next_id
+        .checked_add(1)
+        .ok_or_else(|| io::Error::other("player ID exhausted"))?;
+    let center = world_to_chunk(0, position[1] as i32, 0).0;
+    let socket = socket.try_clone()?;
+    state.clients.insert(
+        id,
+        Client {
+            profile,
+            inventory: inventory.clone(),
+            last_drops_revision: u64::MAX,
+            last_drop_anchor: [i32::MAX; 3],
+            last_sent_drops: Vec::new(),
+            sender,
+            outbound: Arc::clone(&state.outbound),
+            socket,
+            sent: HashSet::new(),
+            center,
             radius: DEFAULT_VIEW,
-        })
-        .map_err(|_| io::Error::other("outbound queue closed"))?;
-    sender
-        .try_send(ServerMessage::Inventory {
-            revision: inventory.revision,
-            slots: inventory.slots,
-        })
-        .map_err(|_| io::Error::other("outbound queue closed"))?;
-    let mut write_socket = socket.try_clone()?;
-    write_socket.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let writer = thread::spawn(move || {
-        for message in receiver {
-            if protocol::write_server(&mut write_socket, &message).is_err() {
-                let _ = write_socket.shutdown(Shutdown::Both);
-                break;
-            }
-        }
-    });
-    let stream_state = Arc::clone(&shared);
-    let streamer = thread::spawn(move || {
-        let mut ticks = 0u64;
-        let mut total = Duration::ZERO;
-        let mut peak = Duration::ZERO;
-        let mut report_at = Instant::now();
-        loop {
-            thread::sleep(STREAM_INTERVAL);
-            let started = Instant::now();
-            let active = {
-                let mut state = stream_state.lock().unwrap();
-                stream_one(&mut state, id)
-            };
-            let elapsed = started.elapsed();
-            ticks += 1;
-            total += elapsed;
-            peak = peak.max(elapsed);
-            if report_at.elapsed() >= Duration::from_secs(5) {
-                eprintln!(
-                    "client {id}: {ticks} stream ticks, avg {:.2} ms, max {:.2} ms",
-                    total.as_secs_f64() * 1000.0 / ticks as f64,
-                    peak.as_secs_f64() * 1000.0
-                );
-                ticks = 0;
-                total = Duration::ZERO;
-                peak = Duration::ZERO;
-                report_at = Instant::now();
-            }
-            if !active {
-                break;
-            }
-        }
-    });
-
-    let result = loop {
-        match protocol::read_client(&mut socket) {
-            Ok(message) => {
-                let mut state = shared.lock().unwrap();
-                if let Err(error) = handle_message(&mut state, id, message) {
-                    break Err(error);
-                }
-            }
-            Err(error) => break Err(error),
-        }
-    };
-    {
-        let mut state = shared.lock().unwrap();
-        state.clients.remove(&id);
-    }
-    let _ = socket.shutdown(Shutdown::Both);
-    let _ = streamer.join();
-    drop(sender);
-    let _ = writer.join();
-    match result {
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset | ErrorKind::BrokenPipe
-            ) =>
-        {
-            Ok(())
-        }
-        other => other,
-    }
-}
-
-fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
-    const HEADROOM: i32 = 32;
-    let ceiling = MAX_GENERATED_HEIGHT + HEADROOM;
-    if is_solid(world.get_block(0, ceiling, 0)?) {
-        return Err(io::Error::new(
-            ErrorKind::InvalidData,
-            "spawn terrain exceeds scan ceiling",
-        ));
-    }
-    for y in (0..ceiling).rev() {
-        if is_solid(world.get_block(0, y, 0)?) {
-            let position = [0.5, (y + 1) as f32, 0.5];
-            if !collides(world, position)? {
-                return Ok(position);
-            }
-        }
-    }
-    Err(io::Error::new(
-        ErrorKind::InvalidData,
-        "no safe spawn at world origin",
-    ))
-}
-
-fn stream_one(state: &mut State, id: u64) -> bool {
-    if let Err(error) = advance_drops(state) {
-        eprintln!("advance drops: {error}");
-        if let Some(client) = state.clients.get(&id) {
-            let _ = client.socket.shutdown(Shutdown::Both);
-        }
-        return false;
-    }
-    if state.drops.has_expired() {
-        let before_expiry = state.drops.clone();
-        if state.drops.expire()
-            && let Err(error) = state.drops.save()
-        {
-            state.drops = before_expiry;
-            eprintln!("expire drops: {error}");
-            if let Some(client) = state.clients.get(&id) {
-                let _ = client.socket.shutdown(Shutdown::Both);
-            }
-            return false;
-        }
-    }
-    if let Err(error) = collect_nearby(state, id) {
-        eprintln!("collect drops: {error}");
-        if let Some(client) = state.clients.get(&id) {
-            let _ = client.socket.shutdown(Shutdown::Both);
-        }
-        return false;
-    }
-    let Some(client) = state.clients.get_mut(&id) else {
-        return false;
-    };
-    let anchor = client
-        .position
-        .map(|coordinate| (coordinate / 4.0).floor() as i32);
-    let drop_revision = state.drops.revision();
-    if client.last_drops_revision != drop_revision || client.last_drop_anchor != anchor {
-        let items = state.drops.nearby(client.position);
-        if !same_drop_positions(&items, &client.last_sent_drops) {
-            if !client.enqueue(ServerMessage::Drops {
-                revision: drop_revision,
-                items: items.clone(),
-            }) {
-                return false;
-            }
-            client.last_sent_drops = items;
-        }
-        client.last_drops_revision = drop_revision;
-        client.last_drop_anchor = anchor;
-    }
-    let center = client.center;
-    let radius = client.radius as i32;
-    client.sent.retain(|key| {
-        (key.x as i64 - center.x as i64).abs() <= radius as i64
-            && (key.y as i64 - center.y as i64).abs() <= 1
-            && (key.z as i64 - center.z as i64).abs() <= radius as i64
-    });
-    let mut next = None;
-    // Increasing distance lets nearby chunks appear first. The bounded view makes this cheap.
-    'search: for distance in 0..=(radius * 2 + 1) {
-        for y in -1i32..=1 {
-            for z in -radius..=radius {
-                for x in -radius..=radius {
-                    if x.abs() + y.abs() + z.abs() != distance {
-                        continue;
-                    }
-                    let Some(kx) = center.x.checked_add(x) else {
-                        continue;
-                    };
-                    let Some(ky) = center.y.checked_add(y) else {
-                        continue;
-                    };
-                    let Some(kz) = center.z.checked_add(z) else {
-                        continue;
-                    };
-                    let key = ChunkKey {
-                        x: kx,
-                        y: ky,
-                        z: kz,
-                    };
-                    if !client.sent.contains(&key) {
-                        next = Some(key);
-                        break 'search;
-                    }
-                }
-            }
-        }
-    }
-    let Some(key) = next else {
-        return true;
-    };
-    match state.world.get_chunk(key) {
-        Ok(chunk) => {
-            if client.enqueue(ServerMessage::Chunk(chunk)) {
-                client.sent.insert(key);
-                true
-            } else {
-                false
-            }
-        }
-        Err(error) => {
-            eprintln!("stream chunk {key:?}: {error}");
-            let _ = client.socket.shutdown(Shutdown::Both);
-            false
-        }
-    }
-}
-
-fn same_drop_positions(a: &[DroppedItem], b: &[DroppedItem]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(a, b)| {
-            a.id == b.id && a.item == b.item && a.count == b.count && a.position == b.position
-        })
-}
-
-fn advance_drops(state: &mut State) -> io::Result<()> {
-    let now = Instant::now();
-    let elapsed = now.duration_since(state.last_drop_step);
-    if elapsed < STREAM_INTERVAL {
-        return Ok(());
-    }
-    state.last_drop_step = now;
-    let before = state.drops.clone();
-    let (moved, landed) = match state.drops.step(&mut state.world, elapsed) {
-        Ok(result) => result,
-        Err(error) => {
-            state.drops = before;
-            return Err(error);
-        }
-    };
-    state.moving_drops_dirty |= moved;
-    if state.moving_drops_dirty
-        && (landed || now.duration_since(state.last_drop_save) >= Duration::from_secs(1))
-    {
-        if let Err(error) = state.drops.save() {
-            state.drops = before;
-            return Err(error);
-        }
-        state.last_drop_save = now;
-        state.moving_drops_dirty = false;
-    }
-    Ok(())
-}
-
-fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
-    let Some(client) = state.clients.get(&id) else {
-        return Ok(());
-    };
-    let (profile, position, mut updated) =
-        (client.profile, client.position, client.inventory.clone());
-    let mut taken = Vec::new();
-    for item in state.drops.pickup_candidates(position) {
-        let remaining = updated.insert(item.item, item.count);
-        if remaining != item.count {
-            taken.push(crate::protocol::DroppedItem {
-                count: item.count - remaining,
-                ..item
-            });
-        }
-    }
-    if taken.is_empty() {
-        return Ok(());
-    }
-    let before_drops = state.drops.clone();
-    for item in &taken {
-        state.drops.take(item.id, item.count);
-    }
-    if let Err(error) = state.drops.save() {
-        state.drops = before_drops;
-        return Err(error);
-    }
-    if let Err(error) = state.inventory_store.save(profile, &updated) {
-        state.drops = before_drops;
-        state.drops.save()?;
-        return Err(error);
-    }
-    if let Some(client) = state.clients.get_mut(&id) {
-        client.inventory = updated;
-        client.enqueue(ServerMessage::Pickups { items: taken });
-        client.enqueue(ServerMessage::Inventory {
-            revision: client.inventory.revision,
-            slots: client.inventory.slots,
-        });
-    }
-    Ok(())
+            movement: MovementState::new(position, 0),
+            pending_moves: VecDeque::new(),
+        },
+    );
+    Ok(JoinReply {
+        id,
+        seed: state.seed,
+        position,
+        inventory,
+    })
 }
 
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {
@@ -548,366 +339,38 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             }
             Ok(())
         }
-        ClientMessage::Move { seq, dx, dy, dz } => move_player(state, id, seq, [dx, dy, dz]),
-        ClientMessage::Edit {
-            x,
-            y,
-            z,
-            block,
-            slot,
-        } => edit_block(state, id, x, y, z, block, slot),
-        ClientMessage::InventoryMove { from, to, count } => move_stack(state, id, from, to, count),
-        ClientMessage::DropStack { slot, count } => drop_stack(state, id, slot, count),
+        ClientMessage::Move { seq, dx, dy, dz } => queue_move(state, id, seq, [dx, dy, dz]),
+        ClientMessage::Edit { .. }
+        | ClientMessage::InventoryMove { .. }
+        | ClientMessage::DropStack { .. } => Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "durable action bypassed coordinator staging",
+        )),
     }
 }
 
-fn move_stack(state: &mut State, id: u64, from: u8, to: u8, count: u16) -> io::Result<()> {
-    let Some(client) = state.clients.get(&id) else {
-        return Ok(());
-    };
-    let mut next = client.inventory.clone();
-    if !next.transfer(from, to, count) {
-        return Ok(());
-    }
-    state.inventory_store.save(client.profile, &next)?;
-    if let Some(client) = state.clients.get_mut(&id) {
-        client.inventory = next;
-        client.enqueue(ServerMessage::Inventory {
-            revision: client.inventory.revision,
-            slots: client.inventory.slots,
-        });
-    }
-    Ok(())
-}
-
-fn drop_stack(state: &mut State, id: u64, slot: u8, count: u16) -> io::Result<()> {
-    let Some(client) = state.clients.get(&id) else {
-        return Ok(());
-    };
-    let Some(stack) = client.inventory.slots.get(slot as usize).copied().flatten() else {
-        return Ok(());
-    };
-    if count == 0 || count > stack.count {
-        return Ok(());
-    }
-    let mut next = client.inventory.clone();
-    next.slots[slot as usize] = (count < stack.count).then_some(crate::inventory::Stack {
-        count: stack.count - count,
-        ..stack
-    });
-    next.revision = next.revision.wrapping_add(1);
-    state.inventory_store.save(client.profile, &next)?;
-    let position = [
-        client.position[0],
-        client.position[1] + 0.8,
-        client.position[2],
-    ];
-    let before_drops = state.drops.clone();
-    state
-        .drops
-        .spawn(position, stack.item, count, Duration::from_millis(1500));
-    if let Err(error) = state.drops.save() {
-        state.drops = before_drops;
-        state
-            .inventory_store
-            .save(client.profile, &client.inventory)?;
-        return Err(error);
-    }
-    if let Some(client) = state.clients.get_mut(&id) {
-        client.inventory = next;
-        client.enqueue(ServerMessage::Inventory {
-            revision: client.inventory.revision,
-            slots: client.inventory.slots,
-        });
-    }
-    Ok(())
-}
-
-fn move_player(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Result<()> {
+fn queue_move(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Result<()> {
     let Some(client) = state.clients.get_mut(&id) else {
         return Ok(());
     };
-    if seq <= client.last_seq {
-        return Ok(());
-    }
-    client.last_seq = seq;
-    let now = Instant::now();
-    let elapsed = now.duration_since(client.last_move).as_secs_f32().min(0.25);
-    client.last_move = now;
-    let length_sq = delta.iter().map(|v| v * v).sum::<f32>();
-    if length_sq > (PLAYER_SPEED * elapsed + 0.2).powi(2) {
-        let [x, y, z] = client.position;
-        client.enqueue(ServerMessage::Position {
-            ack_seq: seq,
-            x,
-            y,
-            z,
-        });
-        return Ok(());
-    }
-    client.position = resolve_movement(&mut state.world, client.position, delta)?;
-    let [x, y, z] = client.position;
-    client.center = world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32).0;
-    client.enqueue(ServerMessage::Position {
-        ack_seq: seq,
-        x,
-        y,
-        z,
-    });
-    Ok(())
-}
-
-fn resolve_movement(
-    world: &mut World,
-    mut position: [f32; 3],
-    delta: [f32; 3],
-) -> io::Result<[f32; 3]> {
-    // Resolve in short axis-aligned steps so even a delayed input cannot tunnel
-    // through a one-block wall.
-    for axis in [0, 2, 1] {
-        let steps = (delta[axis].abs() / 0.25).ceil().max(1.0) as usize;
-        let step = delta[axis] / steps as f32;
-        for _ in 0..steps {
-            let mut candidate = position;
-            candidate[axis] += step;
-            if candidate.iter().any(|v| v.abs() >= 1_000_000.0) || collides(world, candidate)? {
-                break;
-            }
-            position = candidate;
-        }
-    }
-    Ok(position)
-}
-
-fn collides(world: &mut World, feet: [f32; 3]) -> io::Result<bool> {
-    for x in [feet[0] - 0.3, feet[0] + 0.3] {
-        for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
-            for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if is_solid(world.get_block(
-                    x.floor() as i32,
-                    y.floor() as i32,
-                    z.floor() as i32,
-                )?) {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-    Ok(false)
-}
-
-fn edit_block(
-    state: &mut State,
-    id: u64,
-    x: i32,
-    y: i32,
-    z: i32,
-    block: u8,
-    slot: u8,
-) -> io::Result<()> {
-    let Some(client) = state.clients.get(&id) else {
-        return Ok(());
-    };
-    if !crate::world::valid_block(block) {
-        client.enqueue(ServerMessage::EditRejected {
-            reason: "unknown block type".into(),
-        });
-        return Ok(());
-    }
-    if y <= BEDROCK_Y {
-        client.enqueue(ServerMessage::EditRejected {
-            reason: "world bottom is immutable".into(),
-        });
-        return Ok(());
-    }
-    let [px, py, pz] = client.position;
-    let distance_sq = (x as f32 + 0.5 - px).powi(2)
-        + (y as f32 + 0.5 - (py + 1.6)).powi(2)
-        + (z as f32 + 0.5 - pz).powi(2);
-    if distance_sq > EDIT_REACH * EDIT_REACH || !client.interested(world_to_chunk(x, y, z).0) {
-        client.enqueue(ServerMessage::EditRejected {
-            reason: "block out of reach".into(),
-        });
-        return Ok(());
-    }
-    let previous = state.world.get_block(x, y, z)?;
-    if previous == block {
-        return Ok(());
-    }
-    let dangling_plant = if block == AIR && supports_plant(previous) {
-        y.checked_add(1)
-            .map(|above_y| state.world.get_block(x, above_y, z))
-            .transpose()?
-            .filter(|&above| is_plant(above))
-    } else {
-        None
-    };
-    let mut removed_above = None;
-    let (key, version) = if block != AIR {
-        if !is_replaceable(previous) {
-            client.enqueue(ServerMessage::EditRejected {
-                reason: "target block cannot be replaced".into(),
-            });
-            return Ok(());
-        }
-        if is_plant(block)
-            && (y == i32::MIN || !supports_plant(state.world.get_block(x, y - 1, z)?))
-        {
-            client.enqueue(ServerMessage::EditRejected {
-                reason: "plants need soil below".into(),
-            });
-            return Ok(());
-        }
-        if is_solid(block)
-            && state
-                .clients
-                .values()
-                .any(|other| block_intersects_player([x, y, z], other.position))
-        {
-            client.enqueue(ServerMessage::EditRejected {
-                reason: "block overlaps a player".into(),
-            });
-            return Ok(());
-        }
-        let selected = client
-            .inventory
-            .slots
-            .get(slot as usize)
-            .copied()
-            .flatten()
-            .filter(|stack| {
-                (slot as usize) < crate::inventory::HOTBAR_SLOTS
-                    && crate::items::placeable_block(stack.item) == Some(block)
-            });
-        let Some(selected) = selected else {
-            client.enqueue(ServerMessage::EditRejected {
-                reason: "selected stack is empty".into(),
-            });
-            return Ok(());
-        };
-        let mut next = client.inventory.clone();
-        next.consume(slot, selected.item);
-        state.inventory_store.save(client.profile, &next)?;
-        let result = match state.world.edit(x, y, z, block) {
-            Ok(result) => result,
-            Err(error) => {
-                // Refund if the world write fails; a saved inventory is never spent silently.
-                state
-                    .inventory_store
-                    .save(client.profile, &client.inventory)?;
-                return Err(error);
-            }
-        };
-        if is_plant(previous) {
-            let before_drops = state.drops.clone();
-            spawn_harvest(&mut state.drops, previous, [x, y, z], result.1, state.seed);
-            if state.drops.revision() != before_drops.revision()
-                && let Err(error) = state.drops.save()
-            {
-                state.drops = before_drops;
-                state.world.edit(x, y, z, previous)?;
-                state
-                    .inventory_store
-                    .save(client.profile, &client.inventory)?;
-                return Err(error);
-            }
-        }
-        if let Some(client) = state.clients.get_mut(&id) {
-            client.inventory = next;
-            client.enqueue(ServerMessage::Inventory {
-                revision: client.inventory.revision,
-                slots: client.inventory.slots,
-            });
-        }
-        result
-    } else {
-        let result = state.world.edit(x, y, z, block)?;
-        if let Some(plant) = dangling_plant {
-            let above_y = y + 1;
-            match state.world.edit(x, above_y, z, AIR) {
-                Ok((above_key, above_version)) => {
-                    removed_above = Some((above_key, above_version, above_y, plant));
-                }
-                Err(error) => {
-                    state.world.edit(x, y, z, previous)?;
-                    return Err(error);
-                }
-            }
-        }
-        if previous != AIR || dangling_plant.is_some() {
-            let before_drops = state.drops.clone();
-            if previous != AIR {
-                spawn_harvest(&mut state.drops, previous, [x, y, z], result.1, state.seed);
-            }
-            if let Some((_, above_version, above_y, plant)) = removed_above {
-                spawn_harvest(
-                    &mut state.drops,
-                    plant,
-                    [x, above_y, z],
-                    above_version,
-                    state.seed,
-                );
-            }
-            if state.drops.revision() != before_drops.revision()
-                && let Err(error) = state.drops.save()
-            {
-                state.drops = before_drops;
-                state.world.edit(x, y, z, previous)?;
-                if let Some((_, _, above_y, plant)) = removed_above {
-                    state.world.edit(x, above_y, z, plant)?;
-                }
-                return Err(error);
-            }
-        }
-        result
-    };
-    state.drops.wake_near([x, y, z]);
-    if let Some((_, _, above_y, _)) = removed_above {
-        state.drops.wake_near([x, above_y, z]);
-    }
-    let (_, local) = world_to_chunk(x, y, z);
-    let delta = ServerMessage::Delta {
-        key,
-        version,
-        x: local[0] as u8,
-        y: local[1] as u8,
-        z: local[2] as u8,
-        block,
-    };
-    // Each connection's FIFO writer preserves snapshot -> edit order.
-    for client in state.clients.values() {
-        if client.sent.contains(&key) {
-            client.enqueue(delta.clone());
-        }
-        if let Some((above_key, above_version, above_y, _)) = removed_above
-            && client.sent.contains(&above_key)
-        {
-            let (_, above_local) = world_to_chunk(x, above_y, z);
-            client.enqueue(ServerMessage::Delta {
-                key: above_key,
-                version: above_version,
-                x: above_local[0] as u8,
-                y: above_local[1] as u8,
-                z: above_local[2] as u8,
-                block: AIR,
-            });
-        }
-    }
-    Ok(())
-}
-
-fn spawn_harvest(drops: &mut Drops, block: u8, position: [i32; 3], version: u64, seed: u64) {
-    for (item, count) in loot::harvest(block, position, version, seed)
-        .into_iter()
-        .flatten()
+    if seq <= client.movement.last_seq()
+        || client
+            .pending_moves
+            .back()
+            .is_some_and(|pending| seq <= pending.seq)
     {
-        drops.spawn(
-            position.map(|coordinate| coordinate as f32 + 0.5),
-            item,
-            count,
-            Duration::from_millis(250),
-        );
+        return Ok(());
     }
+    if client.pending_moves.len() == MOVEMENT_QUEUE_CAPACITY {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "movement input queue full",
+        ));
+    }
+    client
+        .pending_moves
+        .push_back(MovementCommand { seq, delta });
+    Ok(())
 }
 
 fn block_intersects_player(block: [i32; 3], player: [f32; 3]) -> bool {

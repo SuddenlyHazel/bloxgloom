@@ -35,6 +35,7 @@ impl Journal {
             initial_latest,
             base_anchor,
             generation,
+            drop_owner_set_closed,
             mut physical_records,
             next_id_watermark,
         ) = if let Some(manifest) = &manifest {
@@ -53,6 +54,7 @@ impl Journal {
                 base.values.clone(),
                 base.values,
                 manifest.generation,
+                base.drop_owner_set_closed,
                 manifest.cut_sequence,
                 manifest.next_transaction_id,
             )
@@ -62,7 +64,7 @@ impl Journal {
             if length > MAX_JOURNAL_BYTES {
                 return Err(invalid_data("journal exceeds its configured size limit"));
             }
-            (file, HashMap::new(), HashMap::new(), 0, 0, 1)
+            (file, HashMap::new(), HashMap::new(), 0, false, 0, 1)
         };
         let mut next_transaction_id = next_id_watermark;
         let mut latest = initial_latest;
@@ -187,6 +189,7 @@ impl Journal {
             manifest,
             generation,
             base_anchor,
+            drop_owner_set_closed,
             next_transaction_id,
             records,
             known,

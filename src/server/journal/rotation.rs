@@ -11,6 +11,8 @@ const MANIFEST_MAGIC: &[u8; 4] = b"BGWM";
 const BASE_MAGIC: &[u8; 4] = b"BGWB";
 const TAIL_MAGIC: &[u8; 4] = b"BGWT";
 const FORMAT_VERSION: u16 = 1;
+const BASE_FORMAT_VERSION_LEGACY: u16 = 1;
+const BASE_FORMAT_VERSION: u16 = 2;
 const MANIFEST_MAX_BYTES: usize = 4096;
 /// Separate fail-closed bound for one materialized latest-state base; this is
 /// independent of the 256 MiB append-tail cap and prevents unbounded file reads.
@@ -31,6 +33,7 @@ pub(super) struct Base {
     pub(super) generation: u64,
     pub(super) cut_sequence: u64,
     pub(super) next_transaction_id: u128,
+    pub(super) drop_owner_set_closed: bool,
     pub(super) values: HashMap<StateKey, Vec<u8>>,
 }
 
@@ -118,14 +121,32 @@ pub(super) fn read_base(wal_path: &Path, manifest: &Manifest) -> io::Result<Base
     check_checksum(&bytes, "journal generation base")?;
     let body_len = bytes.len() - 4;
     let mut reader = Reader::new(&bytes[..body_len]);
-    if reader.take(4)? != BASE_MAGIC || reader.u16()? != FORMAT_VERSION {
+    if reader.take(4)? != BASE_MAGIC {
         return Err(invalid_data(
             "invalid or unsupported journal generation base",
         ));
     }
+    let base_format = reader.u16()?;
     let generation = reader.u64()?;
     let cut_sequence = reader.u64()?;
     let next_transaction_id = reader.u128()?;
+    let drop_owner_set_closed = match base_format {
+        BASE_FORMAT_VERSION_LEGACY => false,
+        BASE_FORMAT_VERSION => match reader.u8()? {
+            0 => false,
+            1 => true,
+            _ => {
+                return Err(invalid_data(
+                    "invalid drop owner-set marker in journal base",
+                ));
+            }
+        },
+        _ => {
+            return Err(invalid_data(
+                "invalid or unsupported journal generation base",
+            ));
+        }
+    };
     let count = usize::try_from(reader.u64()?)
         .map_err(|_| invalid_data("journal generation base key count overflow"))?;
     if generation != manifest.generation
@@ -167,6 +188,7 @@ pub(super) fn read_base(wal_path: &Path, manifest: &Manifest) -> io::Result<Base
         generation,
         cut_sequence,
         next_transaction_id,
+        drop_owner_set_closed,
         values,
     })
 }
@@ -208,6 +230,7 @@ pub(super) fn rotate(
     cut_sequence: u64,
     next_transaction_id: u128,
     values: &HashMap<StateKey, Vec<u8>>,
+    drop_owner_set_closed: bool,
 ) -> io::Result<SwitchedGeneration> {
     rotate_inner(
         wal_path,
@@ -215,6 +238,7 @@ pub(super) fn rotate(
         cut_sequence,
         next_transaction_id,
         values,
+        drop_owner_set_closed,
         #[cfg(test)]
         None,
     )
@@ -227,6 +251,7 @@ pub(super) fn rotate_crashing_at(
     cut_sequence: u64,
     next_transaction_id: u128,
     values: &HashMap<StateKey, Vec<u8>>,
+    drop_owner_set_closed: bool,
     crash_at: CrashPoint,
 ) -> io::Result<SwitchedGeneration> {
     rotate_inner(
@@ -235,6 +260,7 @@ pub(super) fn rotate_crashing_at(
         cut_sequence,
         next_transaction_id,
         values,
+        drop_owner_set_closed,
         Some(crash_at),
     )
 }
@@ -245,6 +271,7 @@ fn rotate_inner(
     cut_sequence: u64,
     next_transaction_id: u128,
     values: &HashMap<StateKey, Vec<u8>>,
+    drop_owner_set_closed: bool,
     #[cfg(test)] crash_at: Option<CrashPoint>,
 ) -> io::Result<SwitchedGeneration> {
     if next_transaction_id == 0 {
@@ -278,7 +305,7 @@ fn rotate_inner(
         base_name,
         tail_name,
     };
-    let base_bytes = encode_base(&manifest, values)?;
+    let base_bytes = encode_base(&manifest, values, drop_owner_set_closed)?;
     let base_final = base_path(wal_path, &manifest)?;
     let tail_final = tail_path(wal_path, &manifest)?;
     let manifest_final = manifest_path(wal_path)?;
@@ -350,15 +377,20 @@ pub(super) fn cleanup_old_files(wal_path: &Path, files: &[PathBuf]) {
     }
 }
 
-fn encode_base(manifest: &Manifest, values: &HashMap<StateKey, Vec<u8>>) -> io::Result<Vec<u8>> {
+fn encode_base(
+    manifest: &Manifest,
+    values: &HashMap<StateKey, Vec<u8>>,
+    drop_owner_set_closed: bool,
+) -> io::Result<Vec<u8>> {
     let mut entries = values.iter().collect::<Vec<_>>();
     entries.sort_by(|(left, _), (right, _)| left.cmp(right));
     let mut bytes = Vec::new();
     bytes.extend_from_slice(BASE_MAGIC);
-    bytes.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&BASE_FORMAT_VERSION.to_le_bytes());
     bytes.extend_from_slice(&manifest.generation.to_le_bytes());
     bytes.extend_from_slice(&manifest.cut_sequence.to_le_bytes());
     bytes.extend_from_slice(&manifest.next_transaction_id.to_le_bytes());
+    bytes.push(u8::from(drop_owner_set_closed));
     bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
     for (key, value) in entries {
         validate_key(key)?;

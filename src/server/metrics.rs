@@ -29,8 +29,16 @@ pub(super) struct TickSample {
     pub(super) backlog_ticks: u64,
     pub(super) input_queue_depth: u64,
     pub(super) pending_durable_actions: u64,
+    pub(super) pending_world_snapshots: u64,
+    pub(super) wal_tail_bytes: u64,
     pub(super) loader_outstanding: u64,
+    pub(super) resident_chunks: u64,
+    pub(super) active_clients: u64,
     pub(super) active_drops: u64,
+    /// Movement-job closure time summed across workers.
+    pub(super) movement_worker_busy_nanos: u64,
+    /// Configured movement workers multiplied by dispatch-to-barrier time.
+    pub(super) movement_worker_capacity_nanos: u64,
     pub(super) replication_bytes_queued: u64,
     pub(super) replication_bytes_sent: u64,
     pub(super) replication_queue_depth: u64,
@@ -56,14 +64,21 @@ impl TickSample {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)] // Full scalar query surface is consumed by the planned headless server benchmark.
 pub(super) enum Metric {
     TickTotalNanos,
     PhaseNanos(usize),
     BacklogTicks,
     InputQueueDepth,
     PendingDurableActions,
+    PendingWorldSnapshots,
+    WalTailBytes,
     LoaderOutstanding,
+    ResidentChunks,
+    ActiveClients,
     ActiveDrops,
+    MovementWorkerBusyNanos,
+    MovementWorkerCapacityNanos,
     ReplicationBytesQueued,
     ReplicationBytesSent,
     ReplicationQueueDepth,
@@ -79,8 +94,14 @@ impl Metric {
             Self::BacklogTicks => Some(sample.backlog_ticks),
             Self::InputQueueDepth => Some(sample.input_queue_depth),
             Self::PendingDurableActions => Some(sample.pending_durable_actions),
+            Self::PendingWorldSnapshots => Some(sample.pending_world_snapshots),
+            Self::WalTailBytes => Some(sample.wal_tail_bytes),
             Self::LoaderOutstanding => Some(sample.loader_outstanding),
+            Self::ResidentChunks => Some(sample.resident_chunks),
+            Self::ActiveClients => Some(sample.active_clients),
             Self::ActiveDrops => Some(sample.active_drops),
+            Self::MovementWorkerBusyNanos => Some(sample.movement_worker_busy_nanos),
+            Self::MovementWorkerCapacityNanos => Some(sample.movement_worker_capacity_nanos),
             Self::ReplicationBytesQueued => Some(sample.replication_bytes_queued),
             Self::ReplicationBytesSent => Some(sample.replication_bytes_sent),
             Self::ReplicationQueueDepth => Some(sample.replication_queue_depth),
@@ -179,8 +200,14 @@ impl MetricsRecorder {
                 backlog_ticks: 0,
                 input_queue_depth: 0,
                 pending_durable_actions: 0,
+                pending_world_snapshots: 0,
+                wal_tail_bytes: 0,
                 loader_outstanding: 0,
+                resident_chunks: 0,
+                active_clients: 0,
                 active_drops: 0,
+                movement_worker_busy_nanos: 0,
+                movement_worker_capacity_nanos: 0,
                 replication_bytes_queued: 0,
                 replication_bytes_sent: 0,
                 replication_queue_depth: 0,
@@ -203,6 +230,7 @@ impl MetricsRecorder {
         }
     }
 
+    #[cfg(test)]
     pub(super) const fn len(&self) -> usize {
         self.len
     }
@@ -214,6 +242,20 @@ impl MetricsRecorder {
             let index = (self.start + self.len - 1) % SAMPLE_CAPACITY;
             Some(self.samples[index])
         }
+    }
+
+    /// Utilization of the movement worker pool over sampled active dispatch
+    /// intervals. Other worker pools are not included in this percentage.
+    pub(super) fn movement_worker_utilization_percent(&self) -> Option<f64> {
+        let (busy, capacity) = self
+            .iter()
+            .fold((0u128, 0u128), |(busy, capacity), sample| {
+                (
+                    busy + u128::from(sample.movement_worker_busy_nanos),
+                    capacity + u128::from(sample.movement_worker_capacity_nanos),
+                )
+            });
+        (capacity != 0).then_some(busy as f64 * 100.0 / capacity as f64)
     }
 
     /// Number of currently retained samples whose individual tick duration

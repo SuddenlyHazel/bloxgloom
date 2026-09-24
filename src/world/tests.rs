@@ -282,6 +282,42 @@ fn prepared_edit_is_rejected_after_newer_edit_and_cache_eviction() {
 }
 
 #[test]
+fn prepared_edit_survives_stale_loader_epoch_retirement() {
+    let path = test_dir();
+    let mut world = World::with_capacity(23, path.clone(), 1).unwrap();
+    let (x, y, z) = (0, 113, 0);
+    let key = world_to_chunk(x, y, z).0;
+    let original = world.get_block(x, y, z).unwrap();
+    let first = [AIR, DIRT, STONE]
+        .into_iter()
+        .find(|&block| block != original)
+        .unwrap();
+    let second = [AIR, DIRT, STONE]
+        .into_iter()
+        .find(|&block| block != original && block != first)
+        .unwrap();
+    let prepared_first = world.prepare_edit(x, y, z, first).unwrap();
+
+    world.get_chunk(ChunkKey { x: 20, y: 0, z: 20 }).unwrap();
+    let old_loaded = world.load_chunk_uncached(key).unwrap();
+    let (old_epoch, _) = world.begin_chunk_load(key).unwrap();
+    world.apply_prepared_edit(prepared_first).unwrap();
+    let prepared_second = world.prepare_edit(x, y, z, second).unwrap();
+    assert!(
+        !world
+            .install_loaded_if_absent(old_loaded, old_epoch)
+            .unwrap()
+    );
+    assert_eq!(world.edit_epoch(key), 0);
+
+    world.apply_prepared_edit(prepared_second).unwrap();
+    assert_eq!(world.cached_block(x, y, z), Some(second));
+    assert_eq!(world.cached_version(key), Some(2));
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn pre_edit_loader_result_is_rejected_after_edit_and_cache_eviction() {
     let path = test_dir();
     let mut world = World::with_capacity(29, path.clone(), 1).unwrap();

@@ -55,6 +55,65 @@ pub struct StateKey {
     pub bytes: Vec<u8>,
 }
 
+/// Checkpointed drop state used to compact owner tombstones and spawn
+/// positions at a generation boundary. This is built from the server-owned
+/// drop store only after its BGDP checkpoint has been synced.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DropCompaction {
+    pub(crate) drops: Vec<CompactedDrop>,
+    pub(crate) next_id: u64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CompactedDrop {
+    pub(crate) id: u64,
+    pub(crate) owner: Vec<u8>,
+    pub(crate) position: [f32; 3],
+}
+
+impl DropCompaction {
+    fn into_values(self) -> io::Result<HashMap<StateKey, Vec<u8>>> {
+        if self.next_id == 0 {
+            return Err(invalid_data("invalid compacted drop allocator"));
+        }
+        let mut values = HashMap::with_capacity(self.drops.len().saturating_mul(2) + 1);
+        let mut max_id = 0;
+        for drop in self.drops {
+            if drop.id == 0
+                || drop.id >= self.next_id
+                || drop.owner.is_empty()
+                || drop
+                    .position
+                    .iter()
+                    .any(|coordinate| !coordinate.is_finite())
+            {
+                return Err(invalid_data("invalid compacted drop owner"));
+            }
+            max_id = max_id.max(drop.id);
+            let owner_key = StateKey::new("bloxgloom:drop_owner", drop.id.to_le_bytes().to_vec());
+            let position_key =
+                StateKey::new("bloxgloom:drop_position", drop.id.to_le_bytes().to_vec());
+            let mut position = Vec::with_capacity(12);
+            for coordinate in drop.position {
+                position.extend(coordinate.to_le_bytes());
+            }
+            if values.insert(owner_key, drop.owner).is_some()
+                || values.insert(position_key, position).is_some()
+            {
+                return Err(invalid_data("duplicate compacted drop ID"));
+            }
+        }
+        if self.next_id <= max_id {
+            return Err(invalid_data("compacted drop allocator is behind live IDs"));
+        }
+        values.insert(
+            StateKey::new("bloxgloom:drop_allocator", Vec::new()),
+            self.next_id.to_le_bytes().to_vec(),
+        );
+        Ok(values)
+    }
+}
+
 impl StateKey {
     pub fn new(domain: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
         Self {
@@ -180,6 +239,7 @@ pub struct Journal {
     manifest: Option<rotation::Manifest>,
     generation: u64,
     base_anchor: HashMap<StateKey, Vec<u8>>,
+    drop_owner_set_closed: bool,
     next_transaction_id: u128,
     records: Vec<Transaction>,
     known: HashMap<u128, KnownRecord>,
@@ -222,6 +282,13 @@ impl Journal {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect()
+    }
+
+    /// Whether the selected base proves that every drop ID in its checkpoint
+    /// was materialized in the journal. Legacy WALs and version-1 bases do not
+    /// carry this guarantee.
+    pub fn drop_owner_set_closed(&self) -> bool {
+        self.drop_owner_set_closed
     }
 
     /// Replays each unique transaction in the current tail in log order.

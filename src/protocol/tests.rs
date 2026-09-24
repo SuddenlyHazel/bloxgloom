@@ -1,6 +1,64 @@
 use super::*;
 
 #[test]
+fn outbound_wire_lengths_match_serialized_frames() {
+    let key = ChunkKey { x: -2, y: 3, z: 4 };
+    let drop = DroppedItem {
+        id: 7,
+        item: crate::items::STICK,
+        count: 2,
+        position: [1.0, 2.0, 3.0],
+        age_ms: 12,
+    };
+    let messages = vec![
+        ServerMessage::Welcome { id: 1, seed: 2 },
+        ServerMessage::Position {
+            ack_seq: 3,
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        },
+        ServerMessage::Chunk(Chunk {
+            key,
+            version: 4,
+            blocks: vec![0; BLOCK_COUNT],
+        }),
+        ServerMessage::Delta {
+            key,
+            version: 5,
+            x: 1,
+            y: 2,
+            z: 3,
+            block: 0,
+        },
+        ServerMessage::EditRejected {
+            reason: "no".into(),
+        },
+        ServerMessage::ActionResult {
+            action_id: 6,
+            accepted: false,
+            reason: "retry".into(),
+        },
+        ServerMessage::Pong { nonce: 7 },
+        ServerMessage::ViewDistance { radius: 3 },
+        ServerMessage::Inventory {
+            revision: 8,
+            slots: [None; SLOTS],
+        },
+        ServerMessage::Drops {
+            revision: 9,
+            items: vec![drop],
+        },
+        ServerMessage::Pickups { items: vec![drop] },
+    ];
+    for message in messages {
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &message).unwrap();
+        assert_eq!(server_wire_len(&message), bytes.len(), "{message:?}");
+    }
+}
+
+#[test]
 fn client_messages_round_trip() {
     let messages = [
         ClientMessage::Hello {

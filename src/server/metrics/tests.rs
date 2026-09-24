@@ -25,6 +25,38 @@ fn nearest_rank_percentiles_use_one_based_ceiling_ranks() {
 }
 
 #[test]
+fn resident_and_entity_counters_are_sampled_without_recounting_world_state() {
+    let mut metrics = MetricsRecorder::new();
+    metrics.record(TickSample {
+        resident_chunks: 317,
+        active_clients: 16,
+        active_drops: 42,
+        ..TickSample::default()
+    });
+
+    assert_eq!(metrics.summary(Metric::ResidentChunks).unwrap().max, 317);
+    assert_eq!(metrics.summary(Metric::ActiveClients).unwrap().max, 16);
+    assert_eq!(metrics.summary(Metric::ActiveDrops).unwrap().max, 42);
+}
+
+#[test]
+fn movement_worker_utilization_uses_busy_over_available_worker_time() {
+    let mut metrics = MetricsRecorder::new();
+    assert_eq!(metrics.movement_worker_utilization_percent(), None);
+    metrics.record(TickSample {
+        movement_worker_busy_nanos: 50,
+        movement_worker_capacity_nanos: 100,
+        ..TickSample::default()
+    });
+    metrics.record(TickSample {
+        movement_worker_busy_nanos: 100,
+        movement_worker_capacity_nanos: 200,
+        ..TickSample::default()
+    });
+    assert_eq!(metrics.movement_worker_utilization_percent(), Some(50.0));
+}
+
+#[test]
 fn ring_keeps_only_the_last_fixed_capacity_samples() {
     let mut metrics = MetricsRecorder::new();
     for tick in 1..=(SAMPLE_CAPACITY as u64 + 3) {

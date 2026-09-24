@@ -146,7 +146,6 @@ pub struct PreparedEdit {
     pub before_snapshot: Vec<u8>,
     pub after_snapshot: Vec<u8>,
     pub changed: bool,
-    expected_edit_epoch: u64,
     expected_revision: u64,
     revision: Arc<AtomicU64>,
     before_edits: BTreeMap<u16, BlockId>,
@@ -558,7 +557,6 @@ impl World {
                 .unwrap_or_default();
 
             let expected_version = entry.chunk.version;
-            let expected_edit_epoch = self.edit_epoch(key);
             let (revision, expected_revision) = self.prepared_revision(key);
             prepared.push(PreparedEdit {
                 key,
@@ -567,7 +565,6 @@ impl World {
                 before_snapshot,
                 after_snapshot,
                 changed,
-                expected_edit_epoch,
                 expected_revision,
                 revision,
                 before_edits,
@@ -656,12 +653,10 @@ impl World {
                 "prepared edit was invalidated by a newer chunk edit",
             ));
         }
-        if self.edit_epoch(prepared.key) != prepared.expected_edit_epoch {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "prepared edit was invalidated by a newer chunk edit",
-            ));
-        }
+        // Load epochs are only for rejecting stale loader results. They may
+        // reset to zero when the last load completes, even while a WAL-backed
+        // edit is pending. The Arc revision above tracks actual edits across
+        // eviction and is the authoritative prepared-edit invalidator.
         if let Some(entry) = self.cache.get(&prepared.key)
             && (entry.chunk.version != prepared.expected_version
                 || entry.edits != prepared.before_edits)

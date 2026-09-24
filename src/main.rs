@@ -34,6 +34,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let save_dir = args.next().unwrap_or_else(|| "world-v4".to_string());
             server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
         }
+        Some("server-perf") => {
+            let steady_ticks = args
+                .next()
+                .map(|value| value.parse::<usize>())
+                .transpose()?
+                .unwrap_or(300);
+            if args.next().is_some() {
+                return Err("usage: server-perf [steady-ticks (min 300)]".into());
+            }
+            server::run_perf_benchmark(steady_ticks)?;
+        }
         Some("client") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
             client::run_client(&addr)?;
@@ -123,7 +134,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::run_perf_benchmark(steady_frames, radius, bounced)?;
         }
         Some(other) => {
-            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
+            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `server-perf [steady-ticks]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
         }
     }
     Ok(())

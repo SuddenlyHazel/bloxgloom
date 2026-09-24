@@ -1,0 +1,476 @@
+use super::*;
+use std::fs;
+
+#[test]
+fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
+    let save = TestSave::new("stale-join-inventory");
+    let profile = 611;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: crate::world::STONE,
+        count: 2,
+    });
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let stale = state.inventory_store.load(profile).unwrap();
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+
+    let result = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        1,
+        612,
+        ClientMessage::InventoryMove {
+            action_id: 612,
+            from: 0,
+            to: 1,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&result, 612), Some(true));
+    state.clients.remove(&session.id);
+
+    for _ in 0..500 {
+        if !state.durability.inventory_overlay.contains_key(&profile) {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        !state.durability.inventory_overlay.contains_key(&profile),
+        "inventory checkpoint did not complete"
+    );
+    let fresh = state.inventory_store.load(profile).unwrap();
+    assert_ne!(fresh.revision, stale.revision);
+    assert_eq!(
+        state.durability.inventory_revisions.get(&profile),
+        Some(&fresh.revision)
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let _peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (sender, _receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
+    let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Join {
+            profile,
+            inventory: stale,
+            sender,
+            socket,
+            reply: reply_sender,
+        }],
+    );
+    assert!(matches!(
+        reply_receiver.try_recv().unwrap(),
+        JoinResponse::RefreshInventory
+    ));
+    assert!(state.clients.is_empty());
+
+    let rejoined = join(&mut state, &mut tick, profile);
+    assert_eq!(rejoined.joined.inventory, fresh);
+}
+
+#[test]
+fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
+    let save = TestSave::new("profile-fifo");
+    let profile = 42;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: crate::world::STONE,
+        count: 2,
+    });
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let _ = messages(&session);
+
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![
+            SimulationInput::Command {
+                id: session.id,
+                sequence: 1,
+                message: ClientMessage::InventoryMove {
+                    action_id: 101,
+                    from: 0,
+                    to: 1,
+                    count: 1,
+                },
+            },
+            SimulationInput::Command {
+                id: session.id,
+                sequence: 2,
+                message: ClientMessage::InventoryMove {
+                    action_id: 102,
+                    from: 1,
+                    to: 2,
+                    count: 1,
+                },
+            },
+        ],
+    );
+
+    assert_eq!(state.durability.pending.len(), 1);
+    let queued_command_ids: Vec<_> = state
+        .durability
+        .queued
+        .iter()
+        .filter_map(|request| match request {
+            DurableRequest::Command { message, .. } => match message {
+                ClientMessage::Edit { action_id, .. }
+                | ClientMessage::InventoryMove { action_id, .. }
+                | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
+                _ => None,
+            },
+            DurableRequest::Pickup { .. } | DurableRequest::Expire => None,
+        })
+        .collect();
+    assert_eq!(queued_command_ids, [102]);
+    assert_eq!(
+        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        2
+    );
+    wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
+        inventory.slots[0].is_some_and(|stack| stack.count == 1)
+            && inventory.slots[1].is_none()
+            && inventory.slots[2].is_some_and(|stack| stack.count == 1)
+    });
+
+    let output = messages(&session);
+    assert_eq!(action_result(&output, 101), Some(true));
+    assert_eq!(action_result(&output, 102), Some(true));
+}
+
+#[test]
+fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
+    let save = TestSave::new("inventory-recovery");
+    let profile = 73;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: crate::world::STONE,
+        count: 2,
+    });
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let _ = messages(&session);
+    let command = ClientMessage::InventoryMove {
+        action_id: 901,
+        from: 0,
+        to: 1,
+        count: 1,
+    };
+
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Command {
+            id: session.id,
+            sequence: 1,
+            message: command.clone(),
+        }],
+    );
+    assert_eq!(
+        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        2
+    );
+    assert!(
+        !messages(&session)
+            .iter()
+            .any(|message| matches!(message, ServerMessage::ActionResult { action_id: 901, .. }))
+    );
+    wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
+        inventory.slots[0].is_some_and(|stack| stack.count == 1)
+            && inventory.slots[1].is_some_and(|stack| stack.count == 1)
+    });
+    assert_eq!(action_result(&messages(&session), 901), Some(true));
+
+    let exact_retry = command_and_wait(&mut state, &mut tick, &session, 2, 901, command.clone());
+    assert_eq!(action_result(&exact_retry, 901), Some(true));
+    assert_eq!(
+        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        1
+    );
+    let changed_retry = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        3,
+        901,
+        ClientMessage::InventoryMove {
+            action_id: 901,
+            from: 0,
+            to: 2,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&changed_retry, 901), Some(false));
+    assert!(state.clients[&session.id].inventory.slots[2].is_none());
+
+    drop(session);
+    drop(state);
+
+    let mut restarted = state_for(&save, 7);
+    let mut restart_tick = 1;
+    let restored = join(&mut restarted, &mut restart_tick, profile);
+    assert_eq!(restored.joined.inventory.slots[0].unwrap().count, 1);
+    assert_eq!(restored.joined.inventory.slots[1].unwrap().count, 1);
+    let retry_after_restart = command_and_wait(
+        &mut restarted,
+        &mut restart_tick,
+        &restored,
+        1,
+        901,
+        command,
+    );
+    assert_eq!(action_result(&retry_after_restart, 901), Some(true));
+    assert_eq!(
+        restarted.clients[&restored.id].inventory.slots[1]
+            .unwrap()
+            .count,
+        1
+    );
+}
+
+#[test]
+fn live_placement_harvest_and_drop_stack_survive_restart() {
+    let save = TestSave::new("edit-drop-recovery");
+    let profile = 84;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: crate::world::STONE,
+        count: 2,
+    });
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let _ = messages(&session);
+    let feet_y = session.joined.position[1] as i32;
+    let target_y = feet_y + 2;
+    let target_key = world_to_chunk(0, target_y, 0).0;
+    state
+        .clients
+        .get_mut(&session.id)
+        .unwrap()
+        .sent
+        .insert(target_key);
+
+    let placed = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        1,
+        1_001,
+        ClientMessage::Edit {
+            action_id: 1_001,
+            x: 0,
+            y: target_y,
+            z: 0,
+            block: crate::world::STONE,
+            slot: 0,
+        },
+    );
+    assert_eq!(action_result(&placed, 1_001), Some(true));
+    assert_eq!(
+        state.world.cached_block(0, target_y, 0),
+        Some(crate::world::STONE)
+    );
+    assert_eq!(
+        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        1
+    );
+
+    let harvested = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        2,
+        1_002,
+        ClientMessage::Edit {
+            action_id: 1_002,
+            x: 0,
+            y: target_y,
+            z: 0,
+            block: AIR,
+            slot: 0,
+        },
+    );
+    assert_eq!(action_result(&harvested, 1_002), Some(true));
+    assert_eq!(state.world.cached_block(0, target_y, 0), Some(AIR));
+    assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
+
+    let thrown = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        3,
+        1_003,
+        ClientMessage::DropStack {
+            action_id: 1_003,
+            slot: 0,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&thrown, 1_003), Some(true));
+    assert!(state.clients[&session.id].inventory.slots[0].is_none());
+    assert_eq!(state.drops.nearby(session.joined.position).len(), 2);
+
+    drop(session);
+    drop(state);
+
+    let mut restarted = state_for(&save, 7);
+    assert_eq!(restarted.world.get_block(0, target_y, 0).unwrap(), AIR);
+    let restored_inventory = restarted.inventory_store.load(profile).unwrap();
+    assert!(restored_inventory.slots[0].is_none());
+    assert_eq!(restarted.drops.nearby([0.5, target_y as f32, 0.5]).len(), 2);
+}
+
+#[test]
+fn pickup_commits_inventory_and_drop_removal_before_restart() {
+    let save = TestSave::new("pickup-recovery");
+    let profile = 95;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: crate::world::STONE,
+        count: 1,
+    });
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let _ = messages(&session);
+
+    let thrown = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        1,
+        2_001,
+        ClientMessage::DropStack {
+            action_id: 2_001,
+            slot: 0,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&thrown, 2_001), Some(true));
+    assert!(state.clients[&session.id].inventory.slots[0].is_none());
+    assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
+
+    std::thread::sleep(Duration::from_millis(1_510));
+    wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
+        inventory.slots[0]
+            .is_some_and(|stack| stack.item == crate::world::STONE && stack.count == 1)
+    });
+    assert!(state.drops.nearby(session.joined.position).is_empty());
+    assert!(
+        messages(&session)
+            .iter()
+            .any(|message| matches!(message, ServerMessage::Pickups { items } if items.len() == 1))
+    );
+
+    let pickup_position = session.joined.position;
+    drop(session);
+    drop(state);
+
+    let restarted = state_for(&save, 7);
+    let restored_inventory = restarted.inventory_store.load(profile).unwrap();
+    assert_eq!(
+        restored_inventory.slots[0],
+        Some(crate::inventory::Stack {
+            item: crate::world::STONE,
+            count: 1
+        })
+    );
+    assert!(restarted.drops.nearby(pickup_position).is_empty());
+}
+
+#[test]
+fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() {
+    let save = TestSave::new("closed-drop-set-lagging-pickup");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, 713);
+    let position = session.joined.position;
+
+    // This starts as a legacy BGDP-only drop. The forced generation cut must
+    // materialize it in the base before pruning historical owner keys.
+    // Join queued the normal pickup probe while no drops existed; rotation
+    // holds it until the new base is durable.
+    state.durability.retry_pickups.insert(session.id);
+    assert!(
+        state
+            .durability
+            .queued
+            .iter()
+            .any(|request| matches!(request, DurableRequest::Pickup { id } if *id == session.id))
+    );
+    state
+        .drops
+        .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+    state.durability.rotation_requested = true;
+    for _ in 0..2_000 {
+        run_empty_tick(&mut state, &mut tick);
+        if !state.durability.rotation_requested {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        !state.durability.rotation_requested,
+        "closed-owner-set rotation did not finish"
+    );
+    assert!(state.durability.dirty_checkpoints.is_empty());
+    assert!(state.durability.checkpoint_inflight.is_empty());
+    assert_eq!(state.drops.nearby(position).len(), 1);
+    let old_drops_snapshot = fs::read(save.path().join("drops.bin")).unwrap();
+
+    // Commit a post-cut pickup, then allow its checkpoint to finish so the
+    // test can restore the exact older but checksum-valid BGDP bytes below.
+    // That recreates a crash after the WAL sync but before drop checkpointing.
+    let mut completed = false;
+    for _ in 0..1_000 {
+        run_empty_tick(&mut state, &mut tick);
+        if state.durability.pending.is_empty()
+            && state.durability.dirty_checkpoints.is_empty()
+            && state.durability.checkpoint_inflight.is_empty()
+            && state.drops.nearby(position).is_empty()
+        {
+            completed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(completed, "post-cut pickup/checkpoint did not complete");
+    assert_eq!(
+        state.clients[&session.id].inventory.slots[0],
+        Some(crate::inventory::Stack {
+            item: crate::world::STONE,
+            count: 1,
+        })
+    );
+    Drops::write_snapshot(&save.path().join("drops.bin"), &old_drops_snapshot).unwrap();
+
+    drop(session);
+    drop(state);
+    let restarted = state_for(&save, 7);
+    assert!(restarted.drops.nearby(position).is_empty());
+    assert_eq!(
+        restarted.inventory_store.load(713).unwrap().slots[0],
+        Some(crate::inventory::Stack {
+            item: crate::world::STONE,
+            count: 1,
+        })
+    );
+    let recovered_drops = Drops::open(save.path()).unwrap();
+    assert!(recovered_drops.nearby(position).is_empty());
+}

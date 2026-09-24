@@ -112,6 +112,28 @@ pub enum ServerMessage {
     },
 }
 
+/// Exact frame length for a valid server message, including its four-byte
+/// length prefix. Outbound telemetry uses this without serializing a chunk a
+/// second time on the simulation thread.
+pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
+    const HEADER: usize = 4 + 2; // length, wire version, message tag
+    const DROP_ITEM: usize = 8 + 1 + 2 + 12 + 4;
+    HEADER
+        + match message {
+            ServerMessage::Welcome { .. } => 8 + 8,
+            ServerMessage::Position { .. } => 8 + 12,
+            ServerMessage::Chunk(chunk) => 12 + 8 + chunk.blocks.len(),
+            ServerMessage::Delta { .. } => 12 + 8 + 4,
+            ServerMessage::EditRejected { reason } => 1 + reason.len(),
+            ServerMessage::ActionResult { reason, .. } => 16 + 1 + 1 + reason.len(),
+            ServerMessage::Pong { .. } => 8,
+            ServerMessage::ViewDistance { .. } => 1,
+            ServerMessage::Inventory { .. } => 8 + SLOTS * 3,
+            ServerMessage::Drops { items, .. } => 8 + 2 + items.len() * DROP_ITEM,
+            ServerMessage::Pickups { items } => 2 + items.len() * DROP_ITEM,
+        }
+}
+
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
