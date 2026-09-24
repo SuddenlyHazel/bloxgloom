@@ -1,5 +1,6 @@
 //! Shared fixtures and coordinator-driving helpers for server integration tests.
 
+use super::super::outbound::OutboundFrame;
 use super::super::*;
 use std::fs;
 use std::net::TcpListener;
@@ -36,6 +37,7 @@ impl Drop for TestSave {
 
 pub(super) struct Session {
     pub(super) id: u64,
+    pub(super) action_epoch: u64,
     pub(super) joined: JoinedSnapshot,
     pub(super) receiver: Receiver<OutboundFrame>,
     _peer: TcpStream,
@@ -82,7 +84,12 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (socket, _) = listener.accept().unwrap();
-    let (sender, receiver) = mpsc::sync_channel(4096);
+    // These in-process sessions deliberately do not run socket readers while
+    // other joins advance many ticks. Give the fixture room for their ordered
+    // terrain frames; slow-peer tests install a deliberately tiny queue.
+    let (sender, receiver) = state
+        .outbound
+        .client_queue_with_limits(1024, 8 * 1024 * 1024);
     let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
     let inventory = state.inventory_store.load(profile).unwrap();
     run_tick(
@@ -104,6 +111,7 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
                     let client = state.clients.get(&joined.id).unwrap();
                     return Session {
                         id: joined.id,
+                        action_epoch: state.durability.receipt_ledger(profile).current_epoch(),
                         joined: JoinedSnapshot {
                             position: client.position(),
                             inventory: client.inventory.clone(),
@@ -124,6 +132,12 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
         std::thread::sleep(Duration::from_millis(1));
     }
     panic!("coordinator did not finish the test join");
+}
+
+impl Session {
+    pub(super) fn action_id(&self, sequence: u64) -> u128 {
+        (u128::from(self.action_epoch) << 64) | u128::from(sequence)
+    }
 }
 
 pub(super) fn messages(session: &Session) -> Vec<ServerMessage> {

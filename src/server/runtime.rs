@@ -28,7 +28,9 @@ pub(super) fn run_simulation_ticks(
             state.tick_backlog = batch.backlog_ticks;
             let mut disconnected = false;
             let mut rejected = Vec::new();
-            for _ in 0..INPUT_CAPACITY {
+            // Queue capacity absorbs bursts; tick work remains separately
+            // bounded so a burst of socket input cannot monopolize a frame.
+            for _ in 0..MAX_INPUTS_PER_TICK {
                 let command = match input.try_recv() {
                     Ok(command) => command,
                     Err(TryRecvError::Empty) => break,
@@ -169,7 +171,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
             socket,
             reply,
         } => {
-            if state.pending_joins.len() >= MAX_CLIENTS {
+            if state.pending_joins.len() >= state.admission_limit {
                 let _ = reply.try_send(JoinResponse::Completed(Box::new(Err(io::Error::new(
                     ErrorKind::WouldBlock,
                     "server join queue full",
@@ -199,7 +201,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
     }
 }
 
-fn process_pending_joins(state: &mut State) {
+fn process_pending_joins(state: &mut State, tick: TickId) {
     const JOIN_DEFER_TIMEOUT: Duration = Duration::from_secs(4);
     let attempts = state.pending_joins.len();
     for _ in 0..attempts {
@@ -228,9 +230,39 @@ fn process_pending_joins(state: &mut State) {
             let _ = join.reply.try_send(JoinResponse::RefreshInventory);
             continue;
         }
+        // Granting an epoch is itself durable: it closes the prior action
+        // namespace. Never grant a second epoch while that profile is live.
+        if state
+            .clients
+            .values()
+            .any(|client| client.profile == join.profile)
+        {
+            let _ = join
+                .reply
+                .try_send(JoinResponse::Completed(Box::new(Err(io::Error::new(
+                    ErrorKind::AlreadyExists,
+                    "profile already connected",
+                )))));
+            continue;
+        }
+        let action_epoch =
+            match state.durability.request_epoch_grant(join.profile, tick) {
+                Ok(Some(epoch)) => epoch,
+                Ok(None) | Err(durable::StageError::Conflict | durable::StageError::Full) => {
+                    state.pending_joins.push_back(join);
+                    continue;
+                }
+                Err(error) => {
+                    let _ = join.reply.try_send(JoinResponse::Completed(Box::new(Err(
+                        io::Error::other(format!("action session grant failed: {error:?}")),
+                    ))));
+                    continue;
+                }
+            };
         match join_client(
             state,
             join.profile,
+            action_epoch,
             join.inventory.clone(),
             join.sender.clone(),
             &join.socket,
@@ -243,6 +275,9 @@ fn process_pending_joins(state: &mut State) {
                     .is_err()
                 {
                     state.clients.remove(&id);
+                } else {
+                    let claimed = state.durability.claim_epoch_grant(join.profile);
+                    debug_assert_eq!(claimed, Some(action_epoch));
                 }
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -295,7 +330,7 @@ pub(super) fn tick_with_inputs(
                     for input in ready.take().unwrap_or_default() {
                         apply_simulation_input(state, input, tick);
                     }
-                    process_pending_joins(state);
+                    process_pending_joins(state, tick);
                 }
                 BuiltinHandler::DurableActions => {
                     process_durable_actions(state, tick, now)?;

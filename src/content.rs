@@ -1,18 +1,25 @@
-//! Startup-built content catalog. Hot-path lookups are dense and read-only after installation.
-//!
-//! A future mod loader can register named content before `install`; the client and server then
-//! share the same frozen definitions. Numeric IDs remain the current save/wire IDs, so the
-//! catalog rejects collisions instead of silently changing their meaning.
+//! Startup-built content definitions and compiled, read-only state lookups.
 
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::OnceLock;
 
 use crate::world::{self, BlockId};
 
 mod builtins;
+mod ids;
+mod manifest;
+pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
+#[allow(unused_imports)] // Public extension and manifest-inspection API.
+pub use manifest::{ContentEntry, ContentManifest, MAX_MANIFEST_BYTES};
 
-pub type TextureId = u8;
+pub const MAX_BLOCK_TYPES: usize = 32_768;
+pub const MAX_BLOCK_STATES: usize = 131_072;
+pub const MAX_ITEMS: usize = 32_768;
+pub const MAX_ENTITY_TYPES: usize = 32_768;
+pub const MAX_TEXTURES: usize = 8_192;
+pub const MAX_ASSIGNED_ID: u32 = 1_048_576;
 
 pub(crate) const SOLID: u8 = 1;
 pub(crate) const OPAQUE: u8 = 2;
@@ -79,7 +86,7 @@ pub struct BlockTextures {
 
 #[derive(Clone, Debug)]
 pub struct BlockDef {
-    pub id: BlockId,
+    pub id: BlockTypeId,
     pub key: Cow<'static, str>,
     pub name: Cow<'static, str>,
     pub swatch: [f32; 4],
@@ -92,17 +99,56 @@ pub struct BlockDef {
     pub supports_plant: bool,
     pub emission: u8,
     pub reflectance: [u8; 3],
+    /// A bounded set of named choices from which legal state keys are compiled.
+    pub properties: Vec<PropertyDef>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PropertyDef {
+    pub name: Cow<'static, str>,
+    pub values: Vec<Cow<'static, str>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StateDef {
+    pub id: BlockStateId,
+    pub block_type: BlockTypeId,
+    pub key: String,
+    pub properties: Vec<(String, String)>,
+    pub textures: BlockTextures,
+    /// Compiled face textures in [-X, +X, -Y, +Y, -Z, +Z] order.
+    pub face_textures: [TextureId; 6],
+    pub flags: u8,
+    pub emission: u8,
+    pub reflectance: [u8; 3],
+}
+
+impl StateDef {
+    #[inline]
+    pub fn face_texture(&self, axis: usize, side: i32) -> Option<TextureId> {
+        self.face_textures
+            .get(axis.checked_mul(2)? + usize::from(side > 0))
+            .copied()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct ItemDef {
-    pub id: u8,
+    pub id: ItemId,
     pub key: Cow<'static, str>,
     pub name: Cow<'static, str>,
     pub swatch: [f32; 4],
     pub texture: TextureId,
-    pub placeable: Option<BlockId>,
+    pub placeable: Option<BlockStateId>,
     pub sprite: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct EntityTypeDef {
+    pub id: EntityTypeId,
+    pub key: Cow<'static, str>,
+    pub schema_version: u16,
+    pub schema_fingerprint: u64,
 }
 
 #[allow(dead_code)] // Registration failures are part of the pre-loader catalog API.
@@ -117,28 +163,53 @@ pub enum RegistrationError {
     InvalidKey,
     InvalidTexture,
     InvalidDefinition,
+    TooManyDefinitions,
+    InvalidState,
 }
 
+#[derive(Clone, Debug)]
 pub struct Catalog {
     blocks: Vec<Option<BlockDef>>,
+    states: Vec<Option<StateDef>>,
     items: Vec<Option<ItemDef>>,
-    block_flags: [u8; 256],
-    block_emission: [u8; 256],
-    block_reflectance: [[u8; 3]; 256],
-    primary_block_items: [Option<u8>; 256],
+    entities: Vec<Option<EntityTypeDef>>,
+    primary_block_items: Vec<Option<ItemId>>,
     textures: Vec<TextureDef>,
+    texture_fingerprints: Vec<u64>,
+    block_keys: HashSet<String>,
+    state_keys: HashSet<String>,
+    state_by_key: HashMap<String, BlockStateId>,
+    item_keys: HashSet<String>,
+    entity_keys: HashSet<String>,
+    texture_keys: HashSet<String>,
+    state_counts: HashMap<BlockTypeId, usize>,
+    block_count: usize,
+    state_count: usize,
+    item_count: usize,
+    entity_count: usize,
 }
 
 impl Catalog {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            blocks: vec![None; 256],
-            items: vec![None; 256],
-            block_flags: [0; 256],
-            block_emission: [0; 256],
-            block_reflectance: [[115, 120, 128]; 256],
-            primary_block_items: [None; 256],
+            blocks: Vec::new(),
+            states: Vec::new(),
+            items: Vec::new(),
+            entities: Vec::new(),
+            primary_block_items: Vec::new(),
             textures: Vec::new(),
+            texture_fingerprints: Vec::new(),
+            block_keys: HashSet::new(),
+            state_keys: HashSet::new(),
+            state_by_key: HashMap::new(),
+            item_keys: HashSet::new(),
+            entity_keys: HashSet::new(),
+            texture_keys: HashSet::new(),
+            state_counts: HashMap::new(),
+            block_count: 0,
+            state_count: 0,
+            item_count: 0,
+            entity_count: 0,
         }
     }
 
@@ -150,16 +221,17 @@ impl Catalog {
         if !valid_key(&definition.key) {
             return Err(RegistrationError::InvalidKey);
         }
-        if self
-            .textures
-            .iter()
-            .any(|other| other.key == definition.key)
-        {
+        if self.texture_keys.contains(definition.key.as_ref()) {
             return Err(RegistrationError::DuplicateKey);
         }
         validate_texture(&definition.png)?;
-        let id = TextureId::try_from(self.textures.len())
-            .map_err(|_| RegistrationError::TooManyTextures)?;
+        if self.textures.len() >= MAX_TEXTURES {
+            return Err(RegistrationError::TooManyTextures);
+        }
+        let id = TextureId(self.textures.len() as u32);
+        self.texture_keys.insert(definition.key.to_string());
+        self.texture_fingerprints
+            .push(fingerprint_texture(&definition));
         self.textures.push(definition);
         Ok(id)
     }
@@ -175,15 +247,17 @@ impl Catalog {
         {
             return Err(RegistrationError::InvalidDefinition);
         }
-        if self.blocks[definition.id as usize].is_some() {
+        let id = checked_id(definition.id.0)?;
+        if self.blocks.get(id).is_some_and(Option::is_some) {
             return Err(RegistrationError::DuplicateId);
         }
-        if self
-            .blocks
-            .iter()
-            .flatten()
-            .any(|other| other.key == definition.key)
-        {
+        if self.block_count >= MAX_BLOCK_TYPES {
+            return Err(RegistrationError::TooManyDefinitions);
+        }
+        if definition.properties.len() > 8 || !valid_properties(&definition.properties) {
+            return Err(RegistrationError::InvalidDefinition);
+        }
+        if self.block_keys.contains(definition.key.as_ref()) {
             return Err(RegistrationError::DuplicateKey);
         }
         if [
@@ -196,30 +270,127 @@ impl Catalog {
         {
             return Err(RegistrationError::UnknownTexture);
         }
-        let id = definition.id as usize;
-        self.block_flags[id] = flags(&definition);
-        self.block_emission[id] = definition.emission;
-        self.block_reflectance[id] = definition.reflectance;
+        if self.blocks.len() <= id {
+            self.blocks.resize_with(id + 1, || None);
+        }
+        if self.primary_block_items.len() <= id {
+            self.primary_block_items.resize(id + 1, None);
+        }
+        self.block_keys.insert(definition.key.to_string());
+        self.block_count += 1;
         self.blocks[id] = Some(definition);
         Ok(())
     }
 
+    /// State keys are canonical: block key followed by sorted `name=value` pairs.
+    pub fn register_state(
+        &mut self,
+        id: BlockStateId,
+        block_type: BlockTypeId,
+        mut properties: Vec<(String, String)>,
+        textures: Option<BlockTextures>,
+    ) -> Result<(), RegistrationError> {
+        let index = checked_id(id.0)?;
+        if self.states.get(index).is_some_and(Option::is_some) {
+            return Err(RegistrationError::DuplicateId);
+        }
+        if self.state_count >= MAX_BLOCK_STATES {
+            return Err(RegistrationError::TooManyDefinitions);
+        }
+        let block = self
+            .block_type(block_type)
+            .ok_or(RegistrationError::UnknownBlock)?;
+        properties.sort();
+        if properties.len() != block.properties.len()
+            || !properties
+                .iter()
+                .zip(&block.properties)
+                .all(|((name, value), schema)| {
+                    name == schema.name.as_ref()
+                        && schema
+                            .values
+                            .iter()
+                            .any(|candidate| candidate.as_ref() == value)
+                })
+            || self
+                .state_counts
+                .get(&block_type)
+                .is_some_and(|&count| count >= 4_096)
+        {
+            return Err(RegistrationError::InvalidState);
+        }
+        let mut key = block.key.to_string();
+        if !properties.is_empty() {
+            key.push('[');
+            for (index, (name, value)) in properties.iter().enumerate() {
+                if index != 0 {
+                    key.push(',');
+                }
+                key.push_str(name);
+                key.push('=');
+                key.push_str(value);
+            }
+            key.push(']');
+        }
+        if key.len() > 512 || self.state_keys.contains(&key) {
+            return Err(RegistrationError::DuplicateKey);
+        }
+        let textures = textures.unwrap_or(block.textures);
+        if [textures.top, textures.side, textures.bottom]
+            .iter()
+            .any(|&texture| self.texture(texture).is_none())
+        {
+            return Err(RegistrationError::UnknownTexture);
+        }
+        let cap_axis =
+            properties
+                .iter()
+                .find(|(name, _)| name == "axis")
+                .map_or(1, |(_, value)| match value.as_str() {
+                    "x" => 0,
+                    "z" => 2,
+                    _ => 1,
+                });
+        let mut face_textures = [textures.side; 6];
+        face_textures[cap_axis * 2] = textures.bottom;
+        face_textures[cap_axis * 2 + 1] = textures.top;
+        let state = StateDef {
+            id,
+            block_type,
+            key,
+            properties,
+            textures,
+            face_textures,
+            flags: flags(block),
+            emission: block.emission,
+            reflectance: block.reflectance,
+        };
+        if self.states.len() <= index {
+            self.states.resize_with(index + 1, || None);
+        }
+        self.state_keys.insert(state.key.clone());
+        self.state_by_key.insert(state.key.clone(), id);
+        *self.state_counts.entry(block_type).or_default() += 1;
+        self.state_count += 1;
+        self.states[index] = Some(state);
+        Ok(())
+    }
+
     pub fn register_item(&mut self, definition: ItemDef) -> Result<(), RegistrationError> {
-        if definition.id == 0 {
+        if definition.id.0 == 0 {
             return Err(RegistrationError::ReservedId);
         }
         if !valid_key(&definition.key) {
             return Err(RegistrationError::InvalidKey);
         }
-        if self.items[definition.id as usize].is_some() {
+        let id = checked_id(definition.id.0)?;
+        if self.items.get(id).is_some_and(Option::is_some) {
             return Err(RegistrationError::DuplicateId);
         }
-        if self
-            .items
-            .iter()
-            .flatten()
-            .any(|other| other.key == definition.key)
-        {
+        if self.item_count >= MAX_ITEMS {
+            return Err(RegistrationError::TooManyDefinitions);
+        }
+        if self.item_keys.contains(definition.key.as_ref()) {
             return Err(RegistrationError::DuplicateKey);
         }
         if self.texture(definition.texture).is_none() {
@@ -227,123 +398,347 @@ impl Catalog {
         }
         if definition
             .placeable
-            .is_some_and(|id| self.block(id).is_none())
+            .is_some_and(|id| self.state(id).is_none())
         {
             return Err(RegistrationError::UnknownBlock);
         }
         if let Some(block) = definition.placeable {
-            let primary = &mut self.primary_block_items[block as usize];
+            let type_id = self.state(block).expect("checked state").block_type;
+            let primary = &mut self.primary_block_items[type_id.0 as usize];
             *primary = Some(primary.map_or(definition.id, |old| old.min(definition.id)));
         }
-        let id = definition.id as usize;
+        if self.items.len() <= id {
+            self.items.resize_with(id + 1, || None);
+        }
+        self.item_keys.insert(definition.key.to_string());
+        self.item_count += 1;
         self.items[id] = Some(definition);
         Ok(())
     }
 
-    #[inline]
-    pub fn block(&self, id: BlockId) -> Option<&BlockDef> {
-        self.blocks[id as usize].as_ref()
+    pub fn register_entity_type(
+        &mut self,
+        definition: EntityTypeDef,
+    ) -> Result<(), RegistrationError> {
+        if definition.id.0 == 0 {
+            return Err(RegistrationError::ReservedId);
+        }
+        let id = checked_id(definition.id.0)?;
+        if !valid_key(&definition.key) || definition.schema_version == 0 {
+            return Err(RegistrationError::InvalidDefinition);
+        }
+        if self.entities.get(id).is_some_and(Option::is_some) {
+            return Err(RegistrationError::DuplicateId);
+        }
+        if self.entity_count >= MAX_ENTITY_TYPES {
+            return Err(RegistrationError::TooManyDefinitions);
+        }
+        if self.entity_keys.contains(definition.key.as_ref()) {
+            return Err(RegistrationError::DuplicateKey);
+        }
+        if self.entities.len() <= id {
+            self.entities.resize_with(id + 1, || None);
+        }
+        self.entity_keys.insert(definition.key.to_string());
+        self.entity_count += 1;
+        self.entities[id] = Some(definition);
+        Ok(())
     }
 
     #[inline]
-    fn block_flags(&self, id: BlockId) -> u8 {
-        self.block_flags[id as usize]
+    pub fn block(&self, id: BlockStateId) -> Option<&BlockDef> {
+        let state = self.state(id)?;
+        self.block_type(state.block_type)
     }
 
     #[inline]
-    fn emission(&self, id: BlockId) -> u8 {
-        self.block_emission[id as usize]
+    pub fn block_type(&self, id: BlockTypeId) -> Option<&BlockDef> {
+        self.blocks.get(id.0 as usize)?.as_ref()
     }
 
     #[inline]
-    fn reflectance(&self, id: BlockId) -> [u8; 3] {
-        self.block_reflectance[id as usize]
+    pub fn state(&self, id: BlockStateId) -> Option<&StateDef> {
+        self.states.get(id.0 as usize)?.as_ref()
+    }
+
+    /// Resolves one legal property change without putting property maps in voxel loops.
+    pub fn state_with_property(
+        &self,
+        state: BlockStateId,
+        name: &str,
+        value: &str,
+    ) -> Option<BlockStateId> {
+        let source = self.state(state)?;
+        let mut properties = source.properties.clone();
+        let property = properties.iter_mut().find(|(key, _)| key == name)?;
+        property.1 = value.to_owned();
+        let mut key = self.block_type(source.block_type)?.key.to_string();
+        key.push('[');
+        for (index, (name, value)) in properties.iter().enumerate() {
+            if index != 0 {
+                key.push(',');
+            }
+            key.push_str(name);
+            key.push('=');
+            key.push_str(value);
+        }
+        key.push(']');
+        self.state_by_key.get(&key).copied()
+    }
+
+    pub fn validate(&self) -> Result<(), RegistrationError> {
+        if self
+            .state(BlockStateId(0))
+            .is_none_or(|state| state.block_type != BlockTypeId(0))
+            || self.item(ItemId(0)).is_some()
+            || self.textures.len() != self.texture_fingerprints.len()
+            || self.blocks.iter().flatten().any(|block| {
+                self.state_counts
+                    .get(&block.id)
+                    .is_none_or(|&count| count == 0)
+            })
+        {
+            return Err(RegistrationError::InvalidDefinition);
+        }
+        Ok(())
     }
 
     #[inline]
-    pub fn item(&self, id: u8) -> Option<&ItemDef> {
-        self.items[id as usize].as_ref()
+    pub fn block_flags(&self, id: BlockStateId) -> u8 {
+        self.state(id).map_or(0, |state| state.flags)
+    }
+
+    #[inline]
+    pub fn emission(&self, id: BlockStateId) -> u8 {
+        self.state(id).map_or(0, |state| state.emission)
+    }
+
+    #[inline]
+    pub fn reflectance(&self, id: BlockStateId) -> [u8; 3] {
+        self.state(id)
+            .map_or([115, 120, 128], |state| state.reflectance)
+    }
+
+    #[inline]
+    pub fn item(&self, id: ItemId) -> Option<&ItemDef> {
+        self.items.get(id.0 as usize)?.as_ref()
+    }
+
+    #[inline]
+    pub fn entity_type(&self, id: EntityTypeId) -> Option<&EntityTypeDef> {
+        self.entities.get(id.0 as usize)?.as_ref()
     }
 
     #[inline]
     pub fn texture(&self, id: TextureId) -> Option<&TextureDef> {
-        self.textures.get(id as usize)
+        self.textures.get(id.0 as usize)
     }
 
     pub fn textures(&self) -> &[TextureDef] {
         &self.textures
     }
 
-    pub fn primary_block_item(&self, block: BlockId) -> Option<u8> {
-        self.primary_block_items[block as usize]
+    pub fn primary_block_item(&self, block: BlockStateId) -> Option<ItemId> {
+        let type_id = self.state(block)?.block_type;
+        self.primary_block_items
+            .get(type_id.0 as usize)
+            .copied()
+            .flatten()
     }
 
-    /// Wire compatibility, not an art checksum: IDs, behavior, and texture layer ordering must
-    /// agree on both sides of a connection.
+    /// Assigned IDs and schema/behavior/material definitions used by a connection.
     pub fn fingerprint(&self) -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
-        let mut add = |bytes: &[u8]| {
-            for &byte in bytes {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-            }
-        };
-        for (layer, texture) in self.textures.iter().enumerate() {
-            add(&[b'T', layer as u8]);
-            add(texture.key.as_bytes());
-            add(&[0, texture.alpha_cutout as u8]);
+        let mut textures = self
+            .textures
+            .iter()
+            .zip(&self.texture_fingerprints)
+            .collect::<Vec<_>>();
+        textures.sort_unstable_by_key(|(texture, _)| texture.key.as_ref());
+        for (texture, fingerprint) in textures {
+            hash_bytes(&mut hash, texture.key.as_bytes());
+            hash_bytes(&mut hash, &fingerprint.to_le_bytes());
         }
-        for (id, definition) in self.blocks.iter().enumerate() {
-            if let Some(block) = definition {
-                add(&[b'B', id as u8]);
-                add(block.key.as_bytes());
-                add(&[
-                    0,
-                    block.textures.top,
-                    block.textures.side,
-                    block.textures.bottom,
-                    block.solid as u8,
-                    block.opaque as u8,
-                    block.cutout as u8,
-                    block.plant as u8,
-                    block.replaceable as u8,
-                    block.supports_plant as u8,
-                    block.emission,
-                ]);
-                add(&block.reflectance);
-            }
-        }
-        for (id, definition) in self.items.iter().enumerate() {
-            if let Some(item) = definition {
-                add(&[b'I', id as u8]);
-                add(item.key.as_bytes());
-                add(&[
-                    0,
-                    item.texture,
-                    item.placeable.unwrap_or(0),
-                    item.sprite as u8,
-                ]);
-            }
+        let mut identities = self.identities();
+        identities.sort_unstable_by_key(|(kind, id, _, _)| (*kind, *id));
+        for (kind, id, key, fingerprint) in identities {
+            hash_bytes(&mut hash, &[kind]);
+            hash_bytes(&mut hash, &id.to_le_bytes());
+            hash_bytes(&mut hash, key.as_bytes());
+            hash_bytes(&mut hash, &fingerprint.to_le_bytes());
         }
         hash
     }
 
-    /// Stable save identities. Adding definitions is compatible; assigning an existing ID to a
-    /// different key is not.
-    pub fn identities(&self) -> Vec<(u8, u8, &str)> {
+    /// Stable save identities, including schema and compiled behavior in each fingerprint.
+    pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         let mut entries = Vec::new();
         for (id, definition) in self.blocks.iter().enumerate() {
             if let Some(block) = definition {
-                entries.push((b'B', id as u8, block.key.as_ref()));
+                entries.push((
+                    b'B',
+                    id as u32,
+                    block.key.as_ref(),
+                    self.definition_fingerprint(b'B', id as u32),
+                ));
+            }
+        }
+        for (id, definition) in self.states.iter().enumerate() {
+            if let Some(state) = definition {
+                debug_assert_eq!(state.id.0, id as u32);
+                entries.push((
+                    b'S',
+                    state.id.0,
+                    state.key.as_str(),
+                    self.definition_fingerprint(b'S', state.id.0),
+                ));
             }
         }
         for (id, definition) in self.items.iter().enumerate() {
             if let Some(item) = definition {
-                entries.push((b'I', id as u8, item.key.as_ref()));
+                entries.push((
+                    b'I',
+                    id as u32,
+                    item.key.as_ref(),
+                    self.definition_fingerprint(b'I', id as u32),
+                ));
+            }
+        }
+        for (id, definition) in self.entities.iter().enumerate() {
+            if let Some(entity) = definition {
+                entries.push((
+                    b'E',
+                    id as u32,
+                    entity.key.as_ref(),
+                    self.definition_fingerprint(b'E', id as u32),
+                ));
             }
         }
         entries
     }
+
+    fn definition_fingerprint(&self, kind: u8, id: u32) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        let mut add = |bytes: &[u8]| hash_bytes(&mut hash, bytes);
+        match kind {
+            b'B' => {
+                let block = self.block_type(BlockTypeId(id)).unwrap();
+                add(block.key.as_bytes());
+                add(&[flags(block), block.emission]);
+                add(&block.reflectance);
+                for texture in [
+                    block.textures.top,
+                    block.textures.side,
+                    block.textures.bottom,
+                ] {
+                    add(&self.texture_fingerprints[texture.0 as usize].to_le_bytes());
+                }
+                for property in &block.properties {
+                    add(property.name.as_bytes());
+                    add(&[0]);
+                    for value in &property.values {
+                        add(value.as_bytes());
+                        add(&[0]);
+                    }
+                }
+            }
+            b'S' => {
+                let state = self.state(BlockStateId(id)).unwrap();
+                add(state.key.as_bytes());
+                add(self.block_type(state.block_type).unwrap().key.as_bytes());
+                add(&[state.flags, state.emission]);
+                add(&state.reflectance);
+                for texture in [
+                    state.textures.top,
+                    state.textures.side,
+                    state.textures.bottom,
+                ] {
+                    add(&self.texture_fingerprints[texture.0 as usize].to_le_bytes());
+                }
+            }
+            b'I' => {
+                let item = self.item(ItemId(id)).unwrap();
+                add(item.key.as_bytes());
+                add(&self.texture_fingerprints[item.texture.0 as usize].to_le_bytes());
+                if let Some(state) = item.placeable {
+                    add(self.state(state).unwrap().key.as_bytes());
+                }
+                add(&[item.sprite as u8]);
+            }
+            b'E' => {
+                let entity = self.entity_type(EntityTypeId(id)).unwrap();
+                add(entity.key.as_bytes());
+                add(&entity.schema_version.to_le_bytes());
+                add(&entity.schema_fingerprint.to_le_bytes());
+            }
+            _ => unreachable!(),
+        }
+        hash
+    }
+}
+
+fn hash_bytes(hash: &mut u64, bytes: &[u8]) {
+    for &byte in bytes {
+        *hash = (*hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+}
+
+fn fingerprint_texture(texture: &TextureDef) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    hash_bytes(&mut hash, texture.key.as_bytes());
+    hash_bytes(
+        &mut hash,
+        &[
+            texture.stitch_edges as u8,
+            texture.stitch_vertical as u8,
+            texture.alpha_cutout as u8,
+        ],
+    );
+    hash_bytes(&mut hash, &texture.png);
+    hash
+}
+
+fn checked_id(id: u32) -> Result<usize, RegistrationError> {
+    if id >= MAX_ASSIGNED_ID {
+        return Err(RegistrationError::TooManyDefinitions);
+    }
+    Ok(id as usize)
+}
+
+fn valid_properties(properties: &[PropertyDef]) -> bool {
+    let mut last = "";
+    let mut state_count = 1usize;
+    for property in properties {
+        let name = property.name.as_ref();
+        if !valid_property_token(name) || name <= last || property.values.is_empty() {
+            return false;
+        }
+        last = name;
+        state_count = state_count.saturating_mul(property.values.len());
+        if state_count > 4_096 {
+            return false;
+        }
+        let mut values = property
+            .values
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>();
+        if values.iter().any(|value| !valid_property_token(value)) {
+            return false;
+        }
+        values.sort_unstable();
+        if values.windows(2).any(|pair| pair[0] == pair[1]) {
+            return false;
+        }
+    }
+    true
+}
+
+fn valid_property_token(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn valid_key(key: &str) -> bool {
@@ -442,14 +837,14 @@ pub fn block_def(id: BlockId) -> Option<&'static BlockDef> {
 }
 
 #[inline]
-pub fn item_def(id: u8) -> Option<&'static ItemDef> {
+pub fn item_def(id: ItemId) -> Option<&'static ItemDef> {
     catalog().item(id)
 }
 
 #[inline]
 pub fn block_flags(id: BlockId) -> u8 {
     if id <= world::MAX_BUILTIN_BLOCK {
-        BUILTIN_FLAGS[id as usize]
+        BUILTIN_FLAGS[id.0 as usize]
     } else {
         catalog().block_flags(id)
     }
@@ -458,7 +853,7 @@ pub fn block_flags(id: BlockId) -> u8 {
 #[inline]
 pub fn emission(id: BlockId) -> u8 {
     if id <= world::MAX_BUILTIN_BLOCK {
-        BUILTIN_EMISSION[id as usize]
+        BUILTIN_EMISSION[id.0 as usize]
     } else {
         catalog().emission(id)
     }
@@ -467,7 +862,7 @@ pub fn emission(id: BlockId) -> u8 {
 #[inline]
 pub fn reflectance(id: BlockId) -> [u8; 3] {
     if id <= world::MAX_BUILTIN_BLOCK {
-        BUILTIN_REFLECTANCE[id as usize]
+        BUILTIN_REFLECTANCE[id.0 as usize]
     } else {
         catalog().reflectance(id)
     }

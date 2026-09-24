@@ -3,7 +3,12 @@
 use super::*;
 
 impl UiBuilder<'_> {
-    pub(super) fn draw_inventory(&mut self, frame: &UiFrame<'_>, layout: &UiLayout) {
+    pub(super) fn draw_inventory(
+        &mut self,
+        frame: &UiFrame<'_>,
+        layout: &UiLayout,
+        catalog: &crate::content::Catalog,
+    ) {
         self.screen_dim();
         let panel = layout.inventory_panel();
         self.panel(panel);
@@ -55,9 +60,9 @@ impl UiBuilder<'_> {
                     1.0 * self.scale
                 },
             );
-            if let Some(stack) = frame.inventory[index as usize] {
+            if let Some(stack) = frame.inventory[index as usize].as_ref() {
                 let swatch = inset(rect, rect.width * 0.23, rect.height * 0.23);
-                self.draw_item_swatch(swatch, stack.item);
+                self.draw_item_swatch(swatch, stack.item, catalog);
                 let count = stack.count.to_string();
                 self.text(
                     &count,

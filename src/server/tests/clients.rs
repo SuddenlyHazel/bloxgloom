@@ -54,12 +54,15 @@ fn full_outbound_queue_disconnects_only_the_slow_client() {
     let healthy = join(&mut state, &mut tick, 2);
     let _ = messages(&healthy);
 
-    let (sender, held_receiver) = mpsc::sync_channel(1);
+    let (sender, held_receiver) = state.outbound.client_queue_with_limits(1, 2 * 1024 * 1024);
     state.clients.get_mut(&slow.id).unwrap().sender = sender;
     assert!(state.clients[&slow.id].enqueue(ServerMessage::Pong { nonce: 1 }));
-    state
-        .drops
-        .spawn(slow.joined.position, crate::world::STONE, 1, Duration::ZERO);
+    state.drops.spawn(
+        slow.joined.position,
+        crate::items::ItemId::new(crate::world::STONE.get()),
+        1,
+        Duration::ZERO,
+    );
     run_empty_tick(&mut state, &mut tick);
 
     assert!(!state.clients.contains_key(&slow.id));
@@ -79,11 +82,11 @@ fn failed_startup_queue_does_not_register_a_ghost_profile() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let _peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (socket, _) = listener.accept().unwrap();
-    let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
+    let (sender, receiver) = state.outbound.client_queue();
     drop(receiver);
 
     let next_id = state.next_id;
-    let error = join_client(&mut state, 99, Inventory::default(), sender, &socket)
+    let error = join_client(&mut state, 99, 1, Inventory::default(), sender, &socket)
         .err()
         .unwrap();
     assert_eq!(error.kind(), ErrorKind::BrokenPipe);
@@ -108,14 +111,59 @@ fn mismatched_catalog_is_rejected_before_a_join_enters_the_coordinator_queue() {
         },
     )
     .unwrap();
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::ContentReady {
+            fingerprint: crate::content::catalog().fingerprint() ^ 1,
+        },
+    )
+    .unwrap();
 
-    let error = net::serve_client(socket, store, input).unwrap_err();
+    let error = net::serve_client(
+        socket,
+        store,
+        input,
+        Arc::new(OutboundTelemetry::default()),
+        net::ContentHandshake::from_local_catalog().unwrap(),
+    )
+    .unwrap_err();
 
     assert_eq!(error.kind(), ErrorKind::InvalidData);
     assert!(matches!(
         receiver.try_recv(),
         Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected)
     ));
+}
+
+#[test]
+fn admission_limit_defaults_to_128_and_guards_256_without_allocating_clients() {
+    let save = TestSave::new("admission-limit");
+    assert_eq!(
+        server_state(7, save.path().to_path_buf())
+            .unwrap()
+            .admission_limit,
+        128
+    );
+    assert_eq!(
+        server_state_with_limit(7, save.path().to_path_buf(), 256)
+            .unwrap()
+            .admission_limit,
+        256
+    );
+    assert_eq!(
+        server_state_with_limit(7, save.path().to_path_buf(), 0)
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::InvalidInput
+    );
+    assert_eq!(
+        server_state_with_limit(7, save.path().to_path_buf(), 257)
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::InvalidInput
+    );
 }
 
 #[test]
@@ -155,9 +203,9 @@ fn joins_find_lower_safe_surface_after_origin_support_is_mined() {
         &mut tick,
         &first,
         1,
-        4_001,
+        first.action_id(1),
         ClientMessage::Edit {
-            action_id: 4_001,
+            action_id: first.action_id(1),
             x: 0,
             y: original_y - 1,
             z: 0,
@@ -165,7 +213,7 @@ fn joins_find_lower_safe_surface_after_origin_support_is_mined() {
             slot: 0,
         },
     );
-    assert_eq!(action_result(&output, 4_001), Some(true));
+    assert_eq!(action_result(&output, first.action_id(1)), Some(true));
     assert_eq!(state.world.cached_block(0, original_y - 1, 0), Some(AIR));
 
     let second = join(&mut state, &mut tick, 2);
@@ -222,7 +270,7 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
             id: first.id,
             sequence: 1,
             message: ClientMessage::Edit {
-                action_id: 3_001,
+                action_id: first.action_id(1),
                 x: 0,
                 y: block_y,
                 z: 0,
@@ -258,13 +306,16 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
                 } if *received_key == key && *version == original_version + 1
             )
         });
-        if first_delta && second_delta && action_result(&first_output, 3_001) == Some(true) {
+        if first_delta
+            && second_delta
+            && action_result(&first_output, first.action_id(1)) == Some(true)
+        {
             break;
         }
         run_empty_tick(&mut state, &mut tick);
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert_eq!(action_result(&first_output, 3_001), Some(true));
+    assert_eq!(action_result(&first_output, first.action_id(1)), Some(true));
     assert!(first_output.iter().any(|message| matches!(
         message,
         ServerMessage::Delta {

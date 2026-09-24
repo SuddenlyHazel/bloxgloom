@@ -9,8 +9,10 @@ use std::sync::{Arc, Weak};
 use crate::storage::{SavedEdits, Storage};
 
 mod cache;
+mod palette;
 mod terrain;
 use cache::ChunkCache;
+pub use palette::{PaletteView, PalettedBlocks};
 pub use terrain::generate_chunk;
 use terrain::generated_block;
 pub(crate) use terrain::terrain_height;
@@ -26,28 +28,30 @@ pub const MAX_TERRAIN_HEIGHT: i32 = 64;
 pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 10;
 pub const BEDROCK_Y: i32 = -64;
 pub const TERRAIN_GENERATOR_VERSION: u16 = 4;
-pub type BlockId = u8;
-pub const AIR: BlockId = 0;
-pub const GRASS: BlockId = 1;
-pub const DIRT: BlockId = 2;
-pub const STONE: BlockId = 3;
-pub const SAND: BlockId = 4;
-pub const SNOW: BlockId = 5;
-pub const MOSS: BlockId = 6;
-pub const GRAVEL: BlockId = 7;
-pub const GLOWSTONE: BlockId = 8;
-pub const WOOD: BlockId = 9;
-pub const LEAVES: BlockId = 10;
-pub const RED_FLOWER: BlockId = 11;
-pub const YELLOW_FLOWER: BlockId = 12;
-pub const BLUE_FLOWER: BlockId = 13;
-pub const FERN: BlockId = 14;
-pub const TALL_GRASS: BlockId = 15;
+pub type BlockId = crate::content::BlockStateId;
+pub const AIR: BlockId = crate::content::BlockStateId(0);
+pub const GRASS: BlockId = crate::content::BlockStateId(1);
+pub const DIRT: BlockId = crate::content::BlockStateId(2);
+pub const STONE: BlockId = crate::content::BlockStateId(3);
+pub const SAND: BlockId = crate::content::BlockStateId(4);
+pub const SNOW: BlockId = crate::content::BlockStateId(5);
+pub const MOSS: BlockId = crate::content::BlockStateId(6);
+pub const GRAVEL: BlockId = crate::content::BlockStateId(7);
+pub const GLOWSTONE: BlockId = crate::content::BlockStateId(8);
+pub const WOOD: BlockId = crate::content::BlockStateId(9);
+pub const LEAVES: BlockId = crate::content::BlockStateId(10);
+pub const RED_FLOWER: BlockId = crate::content::BlockStateId(11);
+pub const YELLOW_FLOWER: BlockId = crate::content::BlockStateId(12);
+pub const BLUE_FLOWER: BlockId = crate::content::BlockStateId(13);
+pub const FERN: BlockId = crate::content::BlockStateId(14);
+pub const TALL_GRASS: BlockId = crate::content::BlockStateId(15);
+pub const WOOD_X: BlockId = crate::content::BlockStateId(256);
+pub const WOOD_Z: BlockId = crate::content::BlockStateId(257);
 pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
 
 #[inline]
 pub fn valid_block(block: BlockId) -> bool {
-    block <= MAX_BUILTIN_BLOCK || crate::content::block_def(block).is_some()
+    block <= MAX_BUILTIN_BLOCK || crate::content::catalog().state(block).is_some()
 }
 
 #[inline]
@@ -80,7 +84,7 @@ pub fn supports_plant(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::SUPPORTS_PLANT != 0
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ChunkKey {
     pub x: i32,
     pub y: i32,
@@ -91,10 +95,18 @@ pub struct ChunkKey {
 pub struct Chunk {
     pub key: ChunkKey,
     pub version: u64,
-    pub blocks: Vec<BlockId>,
+    pub blocks: PalettedBlocks,
 }
 
 impl Chunk {
+    pub fn from_blocks(key: ChunkKey, version: u64, blocks: Vec<BlockId>) -> Self {
+        Self {
+            key,
+            version,
+            blocks: PalettedBlocks::from(blocks),
+        }
+    }
+
     /// Local x changes fastest, followed by z, then y.
     pub fn index(local: [usize; 3]) -> Option<usize> {
         let [x, y, z] = local;
@@ -106,7 +118,11 @@ impl Chunk {
     }
 
     pub fn block(&self, local: [usize; 3]) -> Option<BlockId> {
-        Self::index(local).map(|index| self.blocks[index])
+        self.blocks.get(Self::index(local)?)
+    }
+
+    pub fn block_index(&self, index: usize) -> Option<BlockId> {
+        self.blocks.get(index)
     }
 
     /// Returns the new version; an unchanged value does not advance it.
@@ -117,7 +133,7 @@ impl Chunk {
         let index = Self::index(local)?;
         if self.blocks[index] != block {
             let version = self.version.checked_add(1)?;
-            self.blocks[index] = block;
+            self.blocks.set(index, block)?;
             self.version = version;
         }
         Some(self.version)
@@ -134,7 +150,7 @@ pub struct LoadedChunk {
 
 /// A validated block edit staged from the authoritative cached chunk.
 ///
-/// `before_snapshot` and `after_snapshot` are exact BGED v2 file bytes, with an
+/// `before_snapshot` and `after_snapshot` are exact BGED v3 file bytes, with an
 /// empty vector representing a missing override file. The private fields keep
 /// the prepared in-memory state tied to the version and per-chunk edit epoch
 /// from which it was computed.
@@ -174,6 +190,7 @@ pub fn world_to_chunk(x: i32, y: i32, z: i32) -> (ChunkKey, [usize; 3]) {
 pub struct World {
     seed: u64,
     storage: Storage,
+    catalog: Arc<crate::content::Catalog>,
     cache: ChunkCache,
     /// Per-key epochs exist only while asynchronous loads for that key are in flight.
     edit_epochs: HashMap<ChunkKey, u64>,
@@ -190,15 +207,32 @@ impl World {
     }
 
     pub fn with_capacity(seed: u64, path: PathBuf, max_cached_chunks: usize) -> io::Result<Self> {
+        Self::with_capacity_and_catalog(
+            seed,
+            path,
+            max_cached_chunks,
+            Arc::new(crate::content::catalog().clone()),
+        )
+    }
+
+    pub fn with_capacity_and_catalog(
+        seed: u64,
+        path: PathBuf,
+        max_cached_chunks: usize,
+        catalog: Arc<crate::content::Catalog>,
+    ) -> io::Result<Self> {
         if max_cached_chunks == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "cache capacity must be positive",
             ));
         }
+        let storage = Storage::with_catalog(path, seed, catalog)?;
+        let catalog = storage.catalog_arc();
         Ok(Self {
             seed,
-            storage: Storage::new(path, seed)?,
+            storage,
+            catalog,
             cache: ChunkCache::new(max_cached_chunks),
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
@@ -206,6 +240,40 @@ impl World {
             pending_snapshots: HashMap::new(),
             prepared_revisions: HashMap::new(),
         })
+    }
+
+    pub fn catalog_arc(&self) -> Arc<crate::content::Catalog> {
+        Arc::clone(&self.catalog)
+    }
+
+    /// Independent cache for a loader worker, sharing the already locked
+    /// authoritative storage handle. Opening the save again would incorrectly
+    /// compete with this world's exclusive writer lock.
+    pub(crate) fn loader_view(&self) -> Self {
+        Self {
+            seed: self.seed,
+            storage: self.storage.clone(),
+            catalog: Arc::clone(&self.catalog),
+            cache: ChunkCache::new(1),
+            edit_epochs: HashMap::new(),
+            in_flight_by_key: HashMap::new(),
+            in_flight_loads: HashMap::new(),
+            pending_snapshots: HashMap::new(),
+            prepared_revisions: HashMap::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_cache_for_test(&mut self, capacity: usize) {
+        assert!(capacity > 0);
+        assert!(self.in_flight_loads.is_empty());
+        assert!(self.pending_snapshots.is_empty());
+        self.cache = ChunkCache::new(capacity);
+    }
+
+    #[inline]
+    pub fn catalog(&self) -> &crate::content::Catalog {
+        &self.catalog
     }
 
     /// Returns an owned, stable snapshot suitable for sending or meshing.
@@ -348,11 +416,14 @@ impl World {
     ) -> io::Result<bool> {
         let key = loaded.chunk.key;
         if loaded.chunk.blocks.len() != CHUNK_VOLUME
-            || loaded.chunk.blocks.iter().any(|&block| !valid_block(block))
             || loaded
-                .edits
+                .chunk
+                .blocks
                 .iter()
-                .any(|(&index, &block)| index as usize >= CHUNK_VOLUME || !valid_block(block))
+                .any(|&block| self.catalog.state(block).is_none())
+            || loaded.edits.iter().any(|(&index, &block)| {
+                index as usize >= CHUNK_VOLUME || self.catalog.state(block).is_none()
+            })
         {
             self.finish_chunk_load(key, expected_edit_epoch);
             return Err(io::Error::new(
@@ -475,7 +546,7 @@ impl World {
         let mut grouped: HashMap<ChunkKey, Vec<LocatedEdit>> = HashMap::new();
         let mut coordinates = HashSet::with_capacity(edits.len());
         for &(x, y, z, block) in edits {
-            if !valid_block(block) {
+            if self.catalog.state(block).is_none() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "unknown block identifier",
@@ -521,9 +592,9 @@ impl World {
                     continue;
                 }
                 changed = true;
-                after_chunk
-                    .set_block(local, block)
-                    .expect("prepared edits were validated and have a bounded block count");
+                // Validation used this world's frozen catalog above. The generic
+                // Chunk helper has no catalog context and is only for local views.
+                after_chunk.blocks.set(index, block);
                 let baseline = generated_block(i64::from(x), i64::from(y), i64::from(z), self.seed);
                 if block == baseline {
                     after_edits.remove(&(index as u16));
@@ -722,7 +793,7 @@ impl World {
     fn assemble_loaded_chunk(key: ChunkKey, seed: u64, saved: SavedEdits) -> LoadedChunk {
         let mut chunk = generate_chunk(key, seed);
         for (&index, &block) in &saved.blocks {
-            chunk.blocks[index as usize] = block;
+            chunk.blocks.set(index as usize, block);
         }
         chunk.version = saved.version;
         LoadedChunk {

@@ -7,10 +7,12 @@ mod chunk_loader;
 mod drops;
 mod durable;
 mod effects;
+mod entities;
 mod interest;
 mod journal;
 mod loot;
 mod metrics;
+pub(crate) mod migration;
 mod movement;
 mod net;
 mod outbound;
@@ -43,7 +45,7 @@ use effects::CellCoord;
 use metrics::MetricsRecorder;
 use movement::{MovementBatch, MovementCommand, MovementState};
 use net::serve_listener;
-use outbound::{OutboundFrame, OutboundTelemetry};
+use outbound::{OutboundQueue, OutboundTelemetry};
 use parallel::PhaseExecutor;
 use registry::PhasePlan;
 use runtime::run_simulation_ticks;
@@ -66,14 +68,21 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-const MAX_CLIENTS: usize = 16;
+// Admission is deliberately separate from the measured throughput target.
+// The foundation gate still requires 128 *real TCP clients* to pass a paced
+// soak before we claim this capacity performs well.
+const DEFAULT_CLIENTS: usize = 128;
+const MAX_CLIENTS: usize = 256;
 const OUTBOUND_CAPACITY: usize = 128;
 const DEFAULT_VIEW: u8 = 3;
 const STREAM_INTERVAL: Duration = FIXED_STEP;
-const INPUT_CAPACITY: usize = 1024;
+const INPUT_CAPACITY: usize = 8192;
+const MAX_INPUTS_PER_TICK: usize = 1024;
 const MAX_CATCH_UP_TICKS: usize = 3;
 const EDIT_REACH: f32 = 8.0;
-const SERVER_CHUNK_CACHE: usize = 16_384;
+// 128 spread clients at the default 7×3×7 view can request more than 16,384
+// distinct chunks even before edits or loading overlap.
+const SERVER_CHUNK_CACHE: usize = 65_536;
 const LOADER_CAPACITY: usize = 256;
 const MOVEMENT_QUEUE_CAPACITY: usize = 256;
 
@@ -83,8 +92,7 @@ struct Client {
     last_drops_revision: u64,
     last_drop_anchor: [i32; 3],
     last_sent_drops: Vec<DroppedItem>,
-    sender: SyncSender<OutboundFrame>,
-    outbound: Arc<OutboundTelemetry>,
+    sender: OutboundQueue,
     socket: TcpStream,
     sent: HashSet<ChunkKey>,
     center: ChunkKey,
@@ -99,12 +107,17 @@ impl Client {
     }
 
     fn enqueue(&self, message: ServerMessage) -> bool {
-        if self.outbound.try_send(&self.sender, message) {
-            true
-        } else {
-            eprintln!("disconnecting client: outbound queue full or receiver closed");
-            let _ = self.socket.shutdown(Shutdown::Both);
-            false
+        match self.sender.try_send(message) {
+            Ok(()) => true,
+            Err(error) => {
+                let queued = self.sender.snapshot();
+                eprintln!(
+                    "disconnecting client: outbound {error:?}, {} frames / {} bytes queued",
+                    queued.queued_frames, queued.queued_bytes
+                );
+                let _ = self.socket.shutdown(Shutdown::Both);
+                false
+            }
         }
     }
 
@@ -116,6 +129,7 @@ impl Client {
 }
 
 struct State {
+    admission_limit: usize,
     world: World,
     inventory_store: InventoryStore,
     drops: Drops,
@@ -143,7 +157,7 @@ struct State {
 struct PendingJoin {
     profile: u128,
     inventory: Inventory,
-    sender: SyncSender<OutboundFrame>,
+    sender: OutboundQueue,
     socket: TcpStream,
     reply: SyncSender<JoinResponse>,
     queued_at: Instant,
@@ -165,7 +179,7 @@ enum SimulationInput {
     Join {
         profile: u128,
         inventory: Inventory,
-        sender: SyncSender<OutboundFrame>,
+        sender: OutboundQueue,
         socket: TcpStream,
         reply: SyncSender<JoinResponse>,
     },
@@ -181,8 +195,17 @@ enum SimulationInput {
 }
 
 pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
+    run_server_with_limit(addr, seed, save_dir, DEFAULT_CLIENTS)
+}
+
+pub fn run_server_with_limit(
+    addr: &str,
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    let state = server_state(seed, save_dir)?;
+    let state = server_state_with_limit(seed, save_dir, admission_limit)?;
     serve_listener(listener, state)
 }
 
@@ -198,21 +221,40 @@ pub fn start_local_server(
 }
 
 fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<State> {
+    server_state_with_limit(seed, save_dir, DEFAULT_CLIENTS)
+}
+
+fn server_state_with_limit(
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+) -> io::Result<State> {
+    if !(1..=MAX_CLIENTS).contains(&admission_limit) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "admission limit must be 1..=256",
+        ));
+    }
     let mut world = World::with_capacity(seed, save_dir.clone(), SERVER_CHUNK_CACHE)?;
-    let inventory_store = InventoryStore::new(&save_dir)?;
-    let mut drops = Drops::open(&save_dir)?;
+    let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
+    let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let durability = Durability::open(&save_dir, &mut world, &inventory_store, &mut drops)?;
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
     let phase_plan = builtin_phase_plan()?;
-    let loader = ChunkLoader::new(seed, save_dir, LOADER_CAPACITY)?;
+    let loader = ChunkLoader::new(&world, LOADER_CAPACITY)?;
     let worker_count = thread::available_parallelism()
         .map_or(2, |count| count.get())
         .clamp(1, 8);
-    let movement_executor = PhaseExecutor::new(worker_count, 64, 64)
-        .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
+    // One active movement job and one result can be produced per client in a
+    // tick. Leave headroom for barrier hand-off without imposing a 64-player
+    // failure threshold below admission capacity.
+    let movement_executor =
+        PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
+            .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
     Ok(State {
+        admission_limit,
         world,
         inventory_store,
         drops,
@@ -241,8 +283,9 @@ fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<State> {
 fn join_client(
     state: &mut State,
     profile: u128,
+    action_epoch: u64,
     loaded_inventory: Inventory,
-    sender: SyncSender<OutboundFrame>,
+    sender: OutboundQueue,
     socket: &TcpStream,
 ) -> io::Result<JoinReply> {
     if state.durability.failed {
@@ -251,7 +294,7 @@ fn join_client(
             "durability subsystem failed; restart required",
         ));
     }
-    if state.clients.len() >= MAX_CLIENTS {
+    if state.clients.len() >= state.admission_limit {
         return Err(io::Error::new(ErrorKind::ConnectionRefused, "server full"));
     }
     if state
@@ -290,6 +333,11 @@ fn join_client(
             id,
             seed: state.seed,
         },
+        ServerMessage::ActionSession {
+            epoch: action_epoch,
+            next_seq: 1,
+            acked_seq: 0,
+        },
         ServerMessage::Position {
             ack_seq: 0,
             x: position[0],
@@ -301,10 +349,10 @@ fn join_client(
         },
         ServerMessage::Inventory {
             revision: inventory.revision,
-            slots: inventory.slots,
+            slots: inventory.slots.clone(),
         },
     ] {
-        if !state.outbound.try_send(&sender, message) {
+        if sender.try_send(message).is_err() {
             return Err(io::Error::new(
                 ErrorKind::BrokenPipe,
                 "client startup queue closed",
@@ -321,7 +369,6 @@ fn join_client(
             last_drop_anchor: [i32::MAX; 3],
             last_sent_drops: Vec::new(),
             sender,
-            outbound: Arc::clone(&state.outbound),
             socket,
             sent: HashSet::new(),
             center,
@@ -338,6 +385,10 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         ClientMessage::Hello { .. } => {
             Err(io::Error::new(ErrorKind::InvalidData, "duplicate Hello"))
         }
+        ClientMessage::ContentReady { .. } => Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "duplicate content readiness",
+        )),
         ClientMessage::Ping { nonce } => {
             if let Some(client) = state.clients.get(&id) {
                 client.enqueue(ServerMessage::Pong { nonce });
@@ -364,7 +415,8 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         ClientMessage::Move { seq, dx, dy, dz } => queue_move(state, id, seq, [dx, dy, dz]),
         ClientMessage::Edit { .. }
         | ClientMessage::InventoryMove { .. }
-        | ClientMessage::DropStack { .. } => Err(io::Error::new(
+        | ClientMessage::DropStack { .. }
+        | ClientMessage::ActionAck { .. } => Err(io::Error::new(
             ErrorKind::InvalidData,
             "durable action bypassed coordinator staging",
         )),

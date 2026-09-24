@@ -1,171 +1,116 @@
 //! Listener and per-connection lifecycle for the authoritative server.
 //!
-//! Network threads exchange bounded messages with the simulation coordinator.
-//! They never hold or inspect gameplay state.
+//! The socket reactor exchanges bounded messages with the simulation
+//! coordinator and never holds or inspects gameplay state.
 
-use super::{
-    INPUT_CAPACITY, JoinReply, JoinResponse, MAX_CLIENTS, OUTBOUND_CAPACITY, SimulationInput,
-    State, run_simulation_ticks,
-};
+use super::State;
+use crate::content::{Catalog, ContentManifest};
+#[cfg(test)]
 use crate::inventory::InventoryStore;
 #[cfg(test)]
-use crate::protocol::ServerMessage;
-use crate::protocol::{self, ClientMessage};
-use std::collections::HashMap;
-use std::io::{self, ErrorKind};
-use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use crate::protocol::ClientMessage;
+use crate::protocol::{self, MAX_MANIFEST_PART, ServerMessage};
+use std::io;
+#[cfg(test)]
+use std::io::{ErrorKind, Write};
+use std::net::TcpListener;
+#[cfg(test)]
+use std::net::{Shutdown, TcpStream};
+use std::sync::Arc;
+#[cfg(test)]
 use std::sync::mpsc::{self, SyncSender};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+#[cfg(test)]
+use std::thread;
+use std::time::Duration;
+#[cfg(test)]
+use std::time::Instant;
 
-const ACCEPT_RETRY: Duration = Duration::from_millis(2);
+mod reactor;
+
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(test)]
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Owns only cloned socket handles so coordinator shutdown can wake blocked
-/// readers. The lock is held only while cloning/inserting/removing handles;
-/// socket I/O and thread joins happen after it is released.
-#[derive(Clone, Default)]
-struct SocketRegistry {
-    sockets: Arc<Mutex<HashMap<u64, TcpStream>>>,
+/// Shared encoded manifest sent to every connection before it can join. The
+/// catalog is frozen at startup, so encoding once keeps the handshake bounded
+/// without doing manifest work on each socket thread.
+#[derive(Clone)]
+pub(super) struct ContentHandshake {
+    fingerprint: u64,
+    manifest_frames: Arc<[Arc<[u8]>]>,
+    catalog: Arc<Catalog>,
 }
 
-impl SocketRegistry {
-    fn register(&self, id: u64, socket: &TcpStream) -> io::Result<()> {
-        let tracked = socket.try_clone()?;
-        self.sockets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id, tracked);
+impl ContentHandshake {
+    pub(super) fn from_catalog(catalog: Arc<Catalog>) -> io::Result<Arc<Self>> {
+        let manifest = ContentManifest::from_catalog(&catalog).encode()?;
+        let fingerprint = catalog.fingerprint();
+        let total_len = u32::try_from(manifest.len())
+            .map_err(|_| io::Error::other("content manifest length exceeds wire limit"))?;
+        let mut manifest_frames = Vec::new();
+        for offset in (0..manifest.len()).step_by(MAX_MANIFEST_PART) {
+            let end = (offset + MAX_MANIFEST_PART).min(manifest.len());
+            let offset_wire = u32::try_from(offset)
+                .map_err(|_| io::Error::other("content manifest offset exceeds wire limit"))?;
+            let part = ServerMessage::ContentManifestPart {
+                fingerprint,
+                total_len,
+                offset: offset_wire,
+                bytes: manifest[offset..end].to_vec(),
+            };
+            let mut frame = Vec::new();
+            protocol::write_server_with_catalog(&mut frame, &part, &catalog)?;
+            manifest_frames.push(Arc::from(frame));
+        }
+        Ok(Arc::new(Self {
+            fingerprint,
+            manifest_frames: Arc::from(manifest_frames),
+            catalog,
+        }))
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_local_catalog() -> io::Result<Arc<Self>> {
+        Self::from_catalog(Arc::new(crate::content::catalog().clone()))
+    }
+
+    #[cfg(test)]
+    fn send_parts(&self, socket: &mut TcpStream) -> io::Result<()> {
+        for frame in self.manifest_frames.iter() {
+            socket.write_all(frame)?;
+        }
         Ok(())
     }
 
-    fn unregister(&self, id: u64) {
-        self.sockets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&id);
-    }
-
-    fn shutdown_all(&self) {
-        let sockets: Vec<_> = {
-            let sockets = self
-                .sockets
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            sockets
-                .values()
-                .filter_map(|socket| socket.try_clone().ok())
-                .collect()
-        };
-        for socket in sockets {
-            let _ = socket.shutdown(Shutdown::Both);
+    #[cfg(test)]
+    fn validate_ready(&self, message: ClientMessage) -> io::Result<()> {
+        match message {
+            ClientMessage::ContentReady { fingerprint } if fingerprint == self.fingerprint => {
+                Ok(())
+            }
+            _ => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "expected matching ContentReady before joining",
+            )),
         }
     }
 }
 
-/// Runs a nonblocking accept loop while one dedicated thread owns all
-/// simulation state. Returning from the coordinator closes every connection;
-/// returning from the listener also releases the coordinator's input channel.
+/// Runs the fixed-thread nonblocking socket reactor alongside the coordinator.
 pub(super) fn serve_listener(listener: TcpListener, state: State) -> io::Result<()> {
-    listener.set_nonblocking(true)?;
-    let address = listener.local_addr()?;
-    let inventory_store = state.inventory_store.clone();
-    let (input_sender, input_receiver) = mpsc::sync_channel(INPUT_CAPACITY);
-    let sockets = SocketRegistry::default();
-    let next_connection = AtomicU64::new(1);
-    let active_connections = Arc::new(AtomicUsize::new(0));
-
-    let coordinator_sockets = sockets.clone();
-    let coordinator = thread::spawn(move || {
-        let result = run_simulation_ticks(state, input_receiver);
-        coordinator_sockets.shutdown_all();
-        result
-    });
-
-    eprintln!("Bloxgloom server listening on {address}");
-    let mut accept_error = None;
-    loop {
-        if coordinator.is_finished() {
-            break;
-        }
-
-        match listener.accept() {
-            Ok((socket, _peer)) => {
-                if !reserve_connection(&active_connections) {
-                    let _ = socket.shutdown(Shutdown::Both);
-                    continue;
-                }
-                if let Err(error) = socket.set_nodelay(true) {
-                    active_connections.fetch_sub(1, Ordering::AcqRel);
-                    eprintln!("client socket: {error}");
-                    continue;
-                }
-
-                let connection_id = next_connection.fetch_add(1, Ordering::Relaxed);
-                if let Err(error) = sockets.register(connection_id, &socket) {
-                    active_connections.fetch_sub(1, Ordering::AcqRel);
-                    eprintln!("client socket tracking: {error}");
-                    let _ = socket.shutdown(Shutdown::Both);
-                    continue;
-                }
-
-                let input = input_sender.clone();
-                let store = inventory_store.clone();
-                let sockets = sockets.clone();
-                let active_connections = Arc::clone(&active_connections);
-                thread::spawn(move || {
-                    if let Err(error) = serve_client(socket, store, input) {
-                        eprintln!("client: {error}");
-                    }
-                    sockets.unregister(connection_id);
-                    active_connections.fetch_sub(1, Ordering::AcqRel);
-                });
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                thread::sleep(ACCEPT_RETRY);
-            }
-            Err(error) if error.kind() == ErrorKind::Interrupted => {
-                thread::sleep(ACCEPT_RETRY);
-            }
-            Err(error) => {
-                accept_error = Some(error);
-                break;
-            }
-        }
-    }
-
-    // No lock is held while shutting down sockets or joining the coordinator.
-    sockets.shutdown_all();
-    drop(input_sender);
-    let coordinator_result = join_coordinator(coordinator);
-    match accept_error {
-        Some(error) => Err(error),
-        None => coordinator_result,
-    }
+    reactor::serve_listener(listener, state)
 }
 
-fn reserve_connection(active: &AtomicUsize) -> bool {
-    active
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
-            (count < MAX_CLIENTS).then_some(count + 1)
-        })
-        .is_ok()
-}
-
-fn join_coordinator(coordinator: JoinHandle<io::Result<()>>) -> io::Result<()> {
-    coordinator
-        .join()
-        .map_err(|_| io::Error::other("simulation coordinator panicked"))?
-}
-
+#[cfg(test)]
+use super::{JoinReply, JoinResponse, SimulationInput};
+#[cfg(test)]
 pub(super) fn serve_client(
     mut socket: TcpStream,
     inventory_store: InventoryStore,
     input: SyncSender<SimulationInput>,
+    outbound: Arc<super::outbound::OutboundTelemetry>,
+    content: Arc<ContentHandshake>,
 ) -> io::Result<()> {
     // On macOS, an accepted stream inherits the listener's nonblocking mode.
     // The connection reader uses blocking framed reads, so normalize the
@@ -175,17 +120,11 @@ pub(super) fn serve_client(
     let ClientMessage::Hello {
         name,
         profile,
-        content_fingerprint,
-    } = protocol::read_client(&mut socket)?
+        content_fingerprint: _,
+    } = protocol::read_client_with_catalog(&mut socket, &content.catalog)?
     else {
         return Err(io::Error::new(ErrorKind::InvalidData, "expected Hello"));
     };
-    if content_fingerprint != crate::content::catalog().fingerprint() {
-        return Err(io::Error::new(
-            ErrorKind::InvalidData,
-            "client content catalog does not match server",
-        ));
-    }
     if name.is_empty() || name.chars().any(char::is_control) || profile == 0 {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
@@ -193,13 +132,21 @@ pub(super) fn serve_client(
         ));
     }
 
+    socket.set_write_timeout(Some(HELLO_TIMEOUT))?;
+    content.send_parts(&mut socket)?;
+    content.validate_ready(protocol::read_client_with_catalog(
+        &mut socket,
+        &content.catalog,
+    )?)?;
+    socket.set_read_timeout(None)?;
+    socket.set_write_timeout(None)?;
+
     // Disk access stays on this connection thread. A delayed Join may outlive
     // both a newer WAL commit and its BGIN checkpoint, so the coordinator can
     // request a fresh read instead of trusting this captured snapshot.
     let join_deadline = Instant::now() + JOIN_TIMEOUT;
     let mut loaded_inventory = inventory_store.load(profile)?;
-    socket.set_read_timeout(None)?;
-    let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
+    let (sender, receiver) = outbound.client_queue();
     let JoinReply { id } = loop {
         let remaining = join_deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -232,10 +179,16 @@ pub(super) fn serve_client(
 
     let mut write_socket = socket.try_clone()?;
     write_socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
+    let writer_catalog = Arc::clone(&content.catalog);
     let writer = thread::spawn(move || {
-        for mut frame in receiver {
-            frame.dequeue();
-            if protocol::write_server(&mut write_socket, frame.message()).is_err() {
+        for frame in receiver {
+            if protocol::write_server_with_catalog(
+                &mut write_socket,
+                frame.message(),
+                &writer_catalog,
+            )
+            .is_err()
+            {
                 let _ = write_socket.shutdown(Shutdown::Both);
                 break;
             }
@@ -245,7 +198,7 @@ pub(super) fn serve_client(
 
     let mut sequence = 0u64;
     let result = loop {
-        match protocol::read_client(&mut socket) {
+        match protocol::read_client_with_catalog(&mut socket, &content.catalog) {
             Ok(message) => {
                 let Some(next_sequence) = sequence.checked_add(1) else {
                     break Err(io::Error::other("client command sequence exhausted"));
@@ -287,6 +240,7 @@ pub(super) fn serve_client(
     }
 }
 
+#[cfg(test)]
 struct JoinCleanup {
     id: u64,
     leave_sequence: u64,
@@ -294,6 +248,7 @@ struct JoinCleanup {
     armed: bool,
 }
 
+#[cfg(test)]
 impl JoinCleanup {
     fn leave_now(&mut self) {
         if !self.armed {
@@ -309,6 +264,7 @@ impl JoinCleanup {
     }
 }
 
+#[cfg(test)]
 impl Drop for JoinCleanup {
     fn drop(&mut self) {
         self.leave_now();

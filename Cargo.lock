@@ -170,6 +170,7 @@ dependencies = [
  "getrandom 0.3.4",
  "glam",
  "png",
+ "polling",
  "pollster",
  "wgpu",
  "winit",

@@ -132,7 +132,7 @@ mod tests {
     fn item(age_ms: u32) -> DroppedItem {
         DroppedItem {
             id: 7,
-            item: 2,
+            item: crate::items::ItemId::new(2),
             count: 4,
             position: [1.0, 2.0, 3.0],
             age_ms,

@@ -10,6 +10,10 @@ pub(super) fn temp_root(prefix: &str) -> std::path::PathBuf {
     ))
 }
 
+pub(super) const fn item(id: u32) -> ItemId {
+    ItemId::new(id)
+}
+
 pub(super) fn insert_entry(
     drops: &mut Drops,
     id: u64,
@@ -26,11 +30,12 @@ pub(super) fn insert_entry(
         Entry {
             item: DroppedItem {
                 id,
-                item,
+                item: ItemId::new(u32::from(item)),
                 count,
                 position,
                 age_ms: 0,
             },
+            components: None,
             vertical_speed: 0.0,
             age_at_load: age,
             age_since,
@@ -59,7 +64,7 @@ pub(super) fn assert_spatial_members_match_entries(drops: &Drops) {
     }
 }
 
-pub(super) fn stable_items(items: &[DroppedItem]) -> Vec<(u64, u8, u16, [f32; 3])> {
+pub(super) fn stable_items(items: &[DroppedItem]) -> Vec<(u64, ItemId, u16, [f32; 3])> {
     items
         .iter()
         .map(|item| (item.id, item.item, item.count, item.position))

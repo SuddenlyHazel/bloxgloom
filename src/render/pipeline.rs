@@ -1,6 +1,7 @@
 use super::material;
 use super::shader::with_voxel_constants;
 use super::{DEPTH_FORMAT, VERTEX_FLOATS};
+use crate::content::Catalog;
 
 const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
 
@@ -15,9 +16,26 @@ pub(crate) fn create_voxel_pipeline(
     wgpu::BindGroup,
     wgpu::BindGroup,
 ) {
+    create_voxel_pipeline_with_catalog(device, queue, format, &Catalog::builtins())
+}
+
+pub(crate) fn create_voxel_pipeline_with_catalog(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    format: wgpu::TextureFormat,
+    catalog: &Catalog,
+) -> (
+    wgpu::RenderPipeline,
+    wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::BindGroup,
+    wgpu::BindGroup,
+) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(with_voxel_constants(SHADER).into()),
+        source: wgpu::ShaderSource::Wgsl(
+            with_voxel_constants(SHADER, material::glowstone_layer_for(catalog)).into(),
+        ),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
@@ -51,7 +69,7 @@ pub(crate) fn create_voxel_pipeline(
         size: wgpu::Extent3d {
             width: material::TEXTURE_SIZE,
             height: material::TEXTURE_SIZE,
-            depth_or_array_layers: material::texture_layers(),
+            depth_or_array_layers: material::texture_layers_for(catalog),
         },
         mip_level_count: material::TEXTURE_MIPS,
         sample_count: 1,
@@ -60,10 +78,10 @@ pub(crate) fn create_voxel_pipeline(
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    for (level, pixels) in material::material_mips().iter().enumerate() {
+    for (level, pixels) in material::material_mips_for(catalog).iter().enumerate() {
         let size = material::TEXTURE_SIZE >> level;
         let layer_bytes = (size * size * 4) as usize;
-        for layer in 0..material::texture_layers() {
+        for layer in 0..material::texture_layers_for(catalog) {
             let start = layer as usize * layer_bytes;
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {

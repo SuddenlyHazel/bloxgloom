@@ -4,7 +4,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use crate::world::{self, CHUNK_SIZE, Chunk, ChunkKey, STONE};
+use crate::content::{self, Catalog};
+use crate::world::{self, BlockId, CHUNK_SIZE, Chunk, ChunkKey, STONE};
 
 const SIDE: usize = CHUNK_SIZE * 3;
 const PLANE: usize = SIDE * SIDE;
@@ -29,7 +30,16 @@ impl LightField {
     /// not yet streamed use the deterministic baseline until their snapshot
     /// arrives, at which point the client re-lights affected neighbors.
     pub fn build(key: ChunkKey, known: &HashMap<ChunkKey, Arc<Chunk>>, seed: u64) -> Self {
-        Self::build_with_bounce(key, known, seed, false)
+        Self::build_with_catalog(key, known, seed, content::catalog())
+    }
+
+    pub fn build_with_catalog(
+        key: ChunkKey,
+        known: &HashMap<ChunkKey, Arc<Chunk>>,
+        seed: u64,
+        catalog: &Catalog,
+    ) -> Self {
+        Self::build_with_bounce_and_catalog(key, known, seed, false, catalog)
     }
 
     pub fn build_with_bounce(
@@ -37,6 +47,16 @@ impl LightField {
         known: &HashMap<ChunkKey, Arc<Chunk>>,
         seed: u64,
         bounced: bool,
+    ) -> Self {
+        Self::build_with_bounce_and_catalog(key, known, seed, bounced, content::catalog())
+    }
+
+    pub fn build_with_bounce_and_catalog(
+        key: ChunkKey,
+        known: &HashMap<ChunkKey, Arc<Chunk>>,
+        seed: u64,
+        bounced: bool,
+        catalog: &Catalog,
     ) -> Self {
         let mut blocks = vec![STONE; VOLUME];
         for cy in 0..3 {
@@ -59,8 +79,13 @@ impl LightField {
                             let source = Chunk::index([0, y, z]).unwrap();
                             let target =
                                 index(cx * CHUNK_SIZE, cy * CHUNK_SIZE + y, cz * CHUNK_SIZE + z);
-                            blocks[target..target + CHUNK_SIZE]
-                                .copy_from_slice(&chunk.blocks[source..source + CHUNK_SIZE]);
+                            chunk
+                                .blocks
+                                .copy_range_to(
+                                    source..source + CHUNK_SIZE,
+                                    &mut blocks[target..target + CHUNK_SIZE],
+                                )
+                                .expect("complete chunk row");
                         }
                     }
                 }
@@ -80,12 +105,12 @@ impl LightField {
                         <= top_world_y;
                 for y in (0..SIDE).rev() {
                     let at = index(x, y, z);
-                    let emission = crate::content::emission(blocks[at]);
+                    let emission = catalog.emission(blocks[at]);
                     if emission != 0 {
                         glow[at] = emission;
                         glow_frontier.push_back(at);
                     }
-                    if world::is_opaque(blocks[at]) {
+                    if is_opaque(catalog, blocks[at]) {
                         open_to_sky = false;
                     } else if open_to_sky {
                         sky[at] = MAX_LIGHT;
@@ -94,9 +119,9 @@ impl LightField {
                 }
             }
         }
-        propagate(&blocks, &mut sky, sky_frontier);
-        propagate(&blocks, &mut glow, glow_frontier);
-        let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow));
+        propagate(&blocks, &mut sky, sky_frontier, catalog);
+        propagate(&blocks, &mut glow, glow_frontier, catalog);
+        let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow, catalog));
         Self { sky, glow, bounce }
     }
 
@@ -159,14 +184,14 @@ impl LightField {
 
 /// One diffuse reflection from opaque surfaces. Sources are derived only from
 /// direct/propagated sky and emission; bounced light cannot bounce again.
-fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
+fn build_bounce(blocks: &[BlockId], sky: &[u8], glow: &[u8], catalog: &Catalog) -> Vec<[u8; 3]> {
     let mut bounce = vec![[0u8; 3]; VOLUME];
     let mut frontier = VecDeque::new();
     for y in 1..SIDE - 1 {
         for z in 1..SIDE - 1 {
             for x in 1..SIDE - 1 {
                 let at = index(x, y, z);
-                if world::is_opaque(blocks[at]) {
+                if is_opaque(catalog, blocks[at]) {
                     continue;
                 }
                 // Keep reflected energy well below incident energy, even where
@@ -175,10 +200,10 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
                     continue;
                 }
                 for neighbor in [at - 1, at + 1, at - SIDE, at + SIDE, at - PLANE, at + PLANE] {
-                    if !world::is_opaque(blocks[neighbor]) {
+                    if !is_opaque(catalog, blocks[neighbor]) {
                         continue;
                     }
-                    let reflectance = reflectance(blocks[neighbor]);
+                    let reflectance = catalog.reflectance(blocks[neighbor]);
                     for channel in 0..3 {
                         let sky_color = [82u16, 105, 145][channel];
                         let glow_color = [205u16, 125, 65][channel];
@@ -216,7 +241,7 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
         .into_iter()
         .flatten()
         {
-            if world::is_opaque(blocks[neighbor]) {
+            if is_opaque(catalog, blocks[neighbor]) {
                 continue;
             }
             let mut changed = false;
@@ -234,8 +259,9 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
     bounce
 }
 
-fn reflectance(block: u8) -> [u8; 3] {
-    crate::content::reflectance(block)
+#[inline]
+fn is_opaque(catalog: &Catalog, block: BlockId) -> bool {
+    catalog.block_flags(block) & content::OPAQUE != 0
 }
 
 fn key_offset(key: ChunkKey, x: i32, y: i32, z: i32) -> Option<ChunkKey> {
@@ -251,7 +277,12 @@ fn index(x: usize, y: usize, z: usize) -> usize {
     x + SIDE * z + PLANE * y
 }
 
-fn propagate(blocks: &[u8], light: &mut [u8], mut frontier: VecDeque<usize>) {
+fn propagate(
+    blocks: &[BlockId],
+    light: &mut [u8],
+    mut frontier: VecDeque<usize>,
+    catalog: &Catalog,
+) {
     while let Some(at) = frontier.pop_front() {
         let next = light[at].saturating_sub(1);
         if next == 0 {
@@ -271,7 +302,7 @@ fn propagate(blocks: &[u8], light: &mut [u8], mut frontier: VecDeque<usize>) {
         .into_iter()
         .flatten()
         {
-            if !world::is_opaque(blocks[neighbor]) && light[neighbor] < next {
+            if !is_opaque(catalog, blocks[neighbor]) && light[neighbor] < next {
                 light[neighbor] = next;
                 frontier.push_back(neighbor);
             }

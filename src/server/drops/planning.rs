@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::inventory::STACK_LIMIT;
-use crate::items::valid_item;
+use crate::inventory::{STACK_LIMIT, Stack};
+use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
 use super::{Drops, Entry, LIFETIME, distance_sq, invalid, journal, spatial, unix_ms};
@@ -32,26 +32,47 @@ impl Drops {
     pub(in crate::server) fn plan_spawn(
         &self,
         position: [f32; 3],
-        item: u8,
+        item: ItemId,
         count: u16,
         pickup_delay: Duration,
     ) -> io::Result<DropPlan> {
         self.plan_spawns(&[(position, item, count, pickup_delay)])
     }
 
+    pub(in crate::server) fn plan_spawn_stack(
+        &self,
+        position: [f32; 3],
+        stack: Stack,
+        pickup_delay: Duration,
+    ) -> io::Result<DropPlan> {
+        self.plan_stack_spawns(&[(position, stack, pickup_delay)])
+    }
+
     /// Plans a group of loot outputs as one per-action delta. Same-item outputs
     /// share merge targets and newly allocated IDs deterministically.
     pub(in crate::server) fn plan_spawns(
         &self,
-        spawns: &[([f32; 3], u8, u16, Duration)],
+        spawns: &[([f32; 3], ItemId, u16, Duration)],
     ) -> io::Result<DropPlan> {
+        let stacks: Vec<_> = spawns
+            .iter()
+            .map(|&(position, item, count, delay)| (position, Stack::new(item, count), delay))
+            .collect();
+        self.plan_stack_spawns(&stacks)
+    }
+
+    fn plan_stack_spawns(&self, spawns: &[([f32; 3], Stack, Duration)]) -> io::Result<DropPlan> {
         let mut changed = BTreeMap::<u64, Entry>::new();
         let mut spawned = spatial::DropSpatialIndex::with_bucket_size(self.spatial.bucket_size());
         let original_next = self.next_id;
         let mut next_id = original_next;
         let mut mutations = Vec::new();
-        for &(position, item, mut count, pickup_delay) in spawns {
-            if !valid_item(item) || position.iter().any(|coordinate| !coordinate.is_finite()) {
+        for (position, stack, pickup_delay) in spawns {
+            let (position, item, mut count, pickup_delay) =
+                (*position, stack.item, stack.count, *pickup_delay);
+            if !stack.valid_in(&self.catalog)
+                || position.iter().any(|coordinate| !coordinate.is_finite())
+            {
                 return Err(invalid("invalid durable drop spawn"));
             }
             let min = position.map(|coordinate| coordinate - 1.0);
@@ -65,6 +86,7 @@ impl Drops {
                     let entry = changed.get(id).or_else(|| self.entries.get(id));
                     entry.is_some_and(|entry| {
                         entry.item.item == item
+                            && entry.components == stack.components
                             && entry.age() < LIFETIME
                             && entry.item.count < STACK_LIMIT
                             && distance_sq(entry.item.position, position) < 1.0
@@ -101,6 +123,7 @@ impl Drops {
                             position,
                             age_ms: 0,
                         },
+                        components: stack.components.clone(),
                         vertical_speed: 0.0,
                         age_at_load: Duration::ZERO,
                         age_since: Instant::now(),
@@ -213,7 +236,7 @@ impl Drops {
                 return Err(invalid("drop changed before durable apply"));
             }
             if !mutation.after.is_empty() {
-                journal::decode_owner(mutation.id, &mutation.after)?;
+                journal::decode_owner_with_catalog(mutation.id, &mutation.after, &self.catalog)?;
                 if !self.entries.contains_key(&mutation.id) && mutation.initial_position.is_none() {
                     return Err(invalid("new drop mutation has no initial position"));
                 }
@@ -237,11 +260,13 @@ impl Drops {
                 self.active.remove(&mutation.id);
                 continue;
             }
-            let (item, count, born, delay) = journal::decode_owner(mutation.id, &mutation.after)
-                .expect("prevalidated owner bytes");
+            let (item, count, born, delay, components) =
+                journal::decode_owner_with_catalog(mutation.id, &mutation.after, &self.catalog)
+                    .expect("prevalidated owner bytes");
             if let Some(entry) = self.entries.get_mut(&mutation.id) {
                 entry.item.item = item;
                 entry.item.count = count;
+                entry.components = components;
                 entry.created_unix_ms = born;
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 entry.age_at_load = age;
@@ -271,6 +296,7 @@ impl Drops {
                             position,
                             age_ms: 0,
                         },
+                        components,
                         vertical_speed: 0.0,
                         age_at_load: age,
                         age_since: Instant::now(),

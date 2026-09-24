@@ -4,10 +4,14 @@ use super::{CommitAction, StateKey};
 use crate::inventory::{InventoryStore, SLOTS, STACK_LIMIT};
 use crate::protocol::ClientMessage;
 use crate::server::journal::Change;
+use crate::world::BlockId;
 use crate::world::ChunkKey;
 use std::io::{self, ErrorKind};
 
-pub(in crate::server) fn action_changes(action: &CommitAction) -> io::Result<Vec<Change>> {
+pub(in crate::server) fn action_changes(
+    action: &CommitAction,
+    catalog: &crate::content::Catalog,
+) -> io::Result<Vec<Change>> {
     let mut changes = Vec::new();
     for edit in &action.world_edits {
         if edit.changed {
@@ -29,7 +33,7 @@ pub(in crate::server) fn action_changes(action: &CommitAction) -> io::Result<Vec
         changes.push(Change::new(
             inventory_state_key(profile),
             before,
-            InventoryStore::encode_snapshot(inventory)?,
+            InventoryStore::encode_snapshot_with_catalog(inventory, catalog)?,
         ));
     }
     for mutation in &action.drops.changes {
@@ -53,18 +57,16 @@ pub(in crate::server) fn action_changes(action: &CommitAction) -> io::Result<Vec
             after.to_le_bytes().to_vec(),
         ));
     }
-    if let (Some(profile), Some(action_id), Some(value)) = (
-        action.profile,
-        action.action_id,
-        action.receipt_value.clone(),
-    ) {
+    if let Some(transition) = &action.receipt_transition {
         changes.push(Change::new(
-            action_receipt_state_key(profile, action_id),
-            Vec::new(),
-            value,
+            super::receipts::state_key(transition.profile),
+            transition.before.clone(),
+            transition.after.clone(),
         ));
     } else if action.action_id.is_some() {
-        return Err(invalid_data("client durable action has no receipt payload"));
+        return Err(invalid_data(
+            "client durable action has no receipt transition",
+        ));
     }
     Ok(changes)
 }
@@ -93,19 +95,20 @@ fn drop_allocator_state_key() -> StateKey {
     StateKey::new("bloxgloom:drop_allocator", Vec::new())
 }
 
-pub(in crate::server) fn action_receipt_state_key(profile: u128, action_id: u128) -> StateKey {
-    let mut bytes = Vec::with_capacity(32);
-    bytes.extend(profile.to_le_bytes());
-    bytes.extend(action_id.to_le_bytes());
-    StateKey::new("bloxgloom:action_receipt", bytes)
-}
-
 pub(in crate::server) fn drops_checkpoint_key() -> StateKey {
     StateKey::new("bloxgloom:drops_snapshot", Vec::new())
 }
 
+#[cfg(test)]
 pub(in crate::server) fn encode_action_receipt(message: &ClientMessage) -> io::Result<Vec<u8>> {
-    let mut value = vec![1];
+    encode_action_receipt_with_catalog(message, crate::content::catalog())
+}
+
+pub(in crate::server) fn encode_action_receipt_with_catalog(
+    message: &ClientMessage,
+    catalog: &crate::content::Catalog,
+) -> io::Result<Vec<u8>> {
+    let mut value = vec![2];
     match message {
         ClientMessage::Edit {
             x,
@@ -119,7 +122,7 @@ pub(in crate::server) fn encode_action_receipt(message: &ClientMessage) -> io::R
             value.extend(x.to_le_bytes());
             value.extend(y.to_le_bytes());
             value.extend(z.to_le_bytes());
-            value.push(*block);
+            value.extend(block.get().to_le_bytes());
             value.push(*slot);
         }
         ClientMessage::InventoryMove {
@@ -134,7 +137,7 @@ pub(in crate::server) fn encode_action_receipt(message: &ClientMessage) -> io::R
         }
         _ => return Err(invalid_data("cannot create receipt for this command")),
     }
-    if !valid_action_receipt(&value) {
+    if !valid_action_receipt_with_catalog(&value, catalog) {
         return Err(invalid_data("invalid client durable action payload"));
     }
     Ok(value)
@@ -143,36 +146,28 @@ pub(in crate::server) fn encode_action_receipt(message: &ClientMessage) -> io::R
 pub(in crate::server) fn is_checkpoint_key(key: &StateKey) -> bool {
     matches!(
         key.domain.as_str(),
-        "bloxgloom:chunk_snapshot" | "bloxgloom:inventory" | "bloxgloom:drops_snapshot"
+        "bloxgloom:chunk_snapshot"
+            | "bloxgloom:inventory"
+            | "bloxgloom:drops_snapshot"
+            | "bloxgloom:action_ledger"
     )
 }
 
-pub(in crate::server::durable) fn valid_action_receipt(value: &[u8]) -> bool {
+pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
+    value: &[u8],
+    catalog: &crate::content::Catalog,
+) -> bool {
     match value {
-        [
-            1,
-            0,
-            _x0,
-            _x1,
-            _x2,
-            _x3,
-            _y0,
-            _y1,
-            _y2,
-            _y3,
-            _z0,
-            _z1,
-            _z2,
-            _z3,
-            block,
-            slot,
-        ] => crate::world::valid_block(*block) && usize::from(*slot) < SLOTS,
-        [1, 1, from, to, count0, count1] => {
+        [2, 0, ..] if value.len() == 19 => {
+            let block = BlockId::new(u32::from_le_bytes(value[14..18].try_into().unwrap()));
+            catalog.state(block).is_some() && usize::from(value[18]) < SLOTS
+        }
+        [2, 1, from, to, count0, count1] => {
             usize::from(*from) < SLOTS
                 && usize::from(*to) < SLOTS
                 && (1..=STACK_LIMIT).contains(&u16::from_le_bytes([*count0, *count1]))
         }
-        [1, 2, slot, count0, count1] => {
+        [2, 2, slot, count0, count1] => {
             usize::from(*slot) < SLOTS
                 && (1..=STACK_LIMIT).contains(&u16::from_le_bytes([*count0, *count1]))
         }

@@ -63,18 +63,30 @@ pub(super) fn apply_committed_action(
         }
         state.durability.remember_checkpoint(
             durable::inventory_state_key(profile),
-            InventoryStore::encode_snapshot(inventory)?,
+            InventoryStore::encode_snapshot_with_catalog(inventory, state.world.catalog())?,
         );
     }
-    if let (Some(profile), Some(action_id), Some(value)) = (
-        action.profile,
-        action.action_id,
-        action.receipt_value.clone(),
-    ) {
+    let mut result = None;
+    if let Some(transition) = action.receipt_transition.take() {
+        let profile = transition.profile;
         state
             .durability
-            .action_receipts
-            .insert((profile, action_id), value);
+            .receipt_ledgers
+            .insert(profile, transition.ledger.clone());
+        state
+            .durability
+            .remember_checkpoint(super::receipts::state_key(profile), transition.after);
+        match transition.event {
+            super::receipts::ReceiptEvent::Result(record) => result = Some(record),
+            super::receipts::ReceiptEvent::EpochGrant => {
+                state.durability.pending_grants.remove(&profile);
+                state
+                    .durability
+                    .ready_grants
+                    .insert(profile, transition.ledger.epoch);
+            }
+            super::receipts::ReceiptEvent::Ack => {}
+        }
     }
     for (key, snapshot) in chunk_checkpoints {
         state
@@ -85,13 +97,14 @@ pub(super) fn apply_committed_action(
         state.moving_drops_dirty = true;
     }
     state.pending_block_changes.extend(action.changed_cells);
-    let completed_pickup = action.action_id.is_none() && action.profile.is_some();
+    let completed_pickup =
+        action.action_id.is_none() && action.profile.is_some() && action.inventory.is_some();
     state.durability.publish_queue.push(PublishEffects {
         client_id: action.client_id,
         profile: action.profile,
         action_id: action.action_id,
-        accepted: true,
-        reason: String::new(),
+        accepted: result.as_ref().is_none_or(|record| record.accepted),
+        reason: result.map_or_else(String::new, |record| record.reason),
         inventory: action.inventory,
         chunks: full_chunks,
         deltas: action.deltas,

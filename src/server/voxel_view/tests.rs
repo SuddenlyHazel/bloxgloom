@@ -93,7 +93,7 @@ fn block_lookup_never_fills_missing_chunks_with_terrain_or_bedrock() {
 #[test]
 fn snapshot_rejects_unknown_block_ids_instead_of_treating_them_as_air() {
     let mut chunk = air_chunk(key(2, 0, -1), 0);
-    chunk.blocks[17] = u8::MAX;
+    chunk.blocks.set(17, crate::world::BlockId::new(u32::MAX));
 
     let error = VoxelView::from_chunks([chunk]).unwrap_err();
 
@@ -102,7 +102,7 @@ fn snapshot_rejects_unknown_block_ids_instead_of_treating_them_as_air() {
         SnapshotError::InvalidBlock {
             key: key(2, 0, -1),
             index: 17,
-            block: u8::MAX,
+            block: crate::world::BlockId::new(u32::MAX),
         }
     );
 }

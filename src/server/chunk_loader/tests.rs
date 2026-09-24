@@ -1,6 +1,7 @@
 use super::*;
 use crate::world::{AIR, DIRT, STONE};
 use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -25,7 +26,7 @@ fn requests_are_deduplicated_and_negative_chunks_load_asynchronously() {
     let path = test_dir();
     let mut world = World::new(37, path.clone()).unwrap();
     let key = ChunkKey { x: -2, y: 8, z: -3 };
-    let mut loader = ChunkLoader::new(37, path.clone(), 4).unwrap();
+    let mut loader = ChunkLoader::new(&world, 4).unwrap();
     let ticket = match loader.request(&mut world, key).unwrap() {
         RequestStatus::Enqueued(ticket) => ticket,
         RequestStatus::AlreadyPending(_) => panic!("first request cannot be a duplicate"),
@@ -66,7 +67,7 @@ fn requests_are_deduplicated_and_negative_chunks_load_asynchronously() {
 fn accepted_work_budget_has_explicit_nonblocking_overflow() {
     let path = test_dir();
     let mut world = World::new(41, path.clone()).unwrap();
-    let mut loader = ChunkLoader::new(41, path.clone(), 2).unwrap();
+    let mut loader = ChunkLoader::new(&world, 2).unwrap();
     for key in [
         ChunkKey {
             x: -10,
@@ -115,7 +116,7 @@ fn worker_load_uses_uncheckpointed_authoritative_snapshot_after_eviction() {
     assert_eq!(world.storage_handle().read_snapshot(key).unwrap(), None);
     world.get_chunk(ChunkKey { x: 40, y: 0, z: 40 }).unwrap();
 
-    let mut loader = ChunkLoader::new(43, path.clone(), 2).unwrap();
+    let mut loader = ChunkLoader::new(&world, 2).unwrap();
     let ticket = match loader.request(&mut world, key).unwrap() {
         RequestStatus::Enqueued(ticket) => ticket,
         RequestStatus::AlreadyPending(_) => panic!("request should be new"),
@@ -143,7 +144,7 @@ fn pre_edit_worker_result_is_rejected_after_uncheckpointed_edit() {
     let (x, y, z) = (32, 113, -48);
     let mut world = World::with_capacity(47, path.clone(), 1).unwrap();
     let original = world.get_block(x, y, z).unwrap();
-    let mut loader = ChunkLoader::new(47, path.clone(), 2).unwrap();
+    let mut loader = ChunkLoader::new(&world, 2).unwrap();
     let ticket = match loader.request(&mut world, key).unwrap() {
         RequestStatus::Enqueued(ticket) => ticket,
         RequestStatus::AlreadyPending(_) => panic!("request should be new"),

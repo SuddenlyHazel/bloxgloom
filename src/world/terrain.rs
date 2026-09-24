@@ -13,18 +13,10 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
     let bottom = i64::from(key.y) * CHUNK_SIZE as i64;
     if bottom + CHUNK_SIZE as i64 <= i64::from(BEDROCK_Y) {
         blocks.fill(STONE);
-        return Chunk {
-            key,
-            version: 0,
-            blocks,
-        };
+        return Chunk::from_blocks(key, 0, blocks);
     }
     if bottom > i64::from(MAX_GENERATED_HEIGHT) {
-        return Chunk {
-            key,
-            version: 0,
-            blocks,
-        };
+        return Chunk::from_blocks(key, 0, blocks);
     }
     let mut patterns = HashMap::new();
     for z in 0..CHUNK_SIZE {
@@ -47,11 +39,7 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
         }
     }
     decorate_chunk(key, seed, &mut blocks, &mut patterns);
-    Chunk {
-        key,
-        version: 0,
-        blocks,
-    }
+    Chunk::from_blocks(key, 0, blocks)
 }
 
 pub(super) fn generated_block(x: i64, y: i64, z: i64, seed: u64) -> BlockId {

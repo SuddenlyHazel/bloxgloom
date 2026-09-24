@@ -19,6 +19,7 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::content::Catalog;
 use crate::ui::{UiFrame, UiRenderer};
 use crate::world::ChunkKey;
 
@@ -29,8 +30,9 @@ pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
-pub use mesh::{ChunkMesh, mesh_chunk_lit};
+pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
 pub(crate) use pipeline::create_voxel_pipeline;
+pub(crate) use pipeline::create_voxel_pipeline_with_catalog;
 pub(crate) use sky::{create_sky_pipeline, sky_camera_data};
 pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
@@ -95,6 +97,7 @@ pub struct RenderStats {
     pub drawn_triangles: usize,
 }
 pub struct Renderer {
+    catalog: Arc<Catalog>,
     instance: wgpu::Instance,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -129,6 +132,13 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new(window: Arc<Window>) -> Result<Self, RendererError> {
+        Self::new_with_catalog(window, Arc::new(Catalog::builtins())).await
+    }
+
+    pub async fn new_with_catalog(
+        window: Arc<Window>,
+        catalog: Arc<Catalog>,
+    ) -> Result<Self, RendererError> {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -177,10 +187,10 @@ impl Renderer {
         let depth = create_depth(&device, config.width, config.height);
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, format);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
-            create_voxel_pipeline(&device, &queue, format);
+            create_voxel_pipeline_with_catalog(&device, &queue, format, &catalog);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
-        let ui = UiRenderer::new(&device, &queue, format);
+        let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
             size: drops::MAX_VERTEX_BYTES,
@@ -206,6 +216,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
         Ok(Self {
+            catalog,
             instance,
             window,
             surface,
@@ -251,7 +262,7 @@ impl Renderer {
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
-        let meshes = drops::mesh(items);
+        let meshes = drops::mesh_with_catalog(items, &self.catalog);
         if !meshes.opaque_vertices.is_empty() {
             self.queue.write_buffer(
                 &self.drop_vertices,

@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, fs, time::Duration};
 #[test]
 fn recovered_journal_noop_keeps_drop_revision_and_snapshot_unchanged() {
     let mut drops = Drops::new();
-    drops.spawn([-2.0, 3.0, -4.0], 2, 9, Duration::from_millis(100));
+    drops.spawn([-2.0, 3.0, -4.0], item(2), 9, Duration::from_millis(100));
     let revision = drops.revision();
     let snapshot = drops.snapshot_bytes().unwrap();
     let mut values = BTreeMap::new();

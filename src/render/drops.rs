@@ -1,9 +1,7 @@
 //! Small textured block meshes for nearby dropped items.
-use super::{
-    VERTEX_FLOATS,
-    material::{face_uv, item_material_layer},
-};
-use crate::world::is_plant;
+use super::{VERTEX_FLOATS, material::face_uv};
+use crate::content::{self, Catalog};
+use crate::items::ItemId;
 use glam::Vec3;
 
 pub(super) const MAX_ITEMS: usize = 512;
@@ -21,23 +19,29 @@ pub(crate) struct DropMeshes {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualDrop {
-    pub item: u8,
+    pub item: ItemId,
     pub center: Vec3,
     pub angle: f32,
     pub scale: f32,
 }
 
-fn is_sprite_item(item: u8) -> bool {
-    crate::content::item_def(item).is_some_and(|definition| definition.sprite)
+fn is_sprite_item(item: ItemId, catalog: &Catalog) -> bool {
+    catalog
+        .item(item)
+        .is_some_and(|definition| definition.sprite)
 }
 
 pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
+    mesh_with_catalog(items, content::catalog())
+}
+
+pub(crate) fn mesh_with_catalog(items: &[VisualDrop], catalog: &Catalog) -> DropMeshes {
     let (cutout_count, opaque_count) =
         items
             .iter()
             .take(MAX_ITEMS)
             .fold((0, 0), |(cutout, opaque), item| {
-                if is_sprite_item(item.item) {
+                if is_sprite_item(item.item, catalog) {
                     (cutout + 1, opaque)
                 } else {
                     (cutout, opaque + 1)
@@ -48,8 +52,8 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
     let mut cutout_vertices = Vec::with_capacity(cutout_count * 8 * VERTEX_FLOATS);
     let mut cutout_indices = Vec::with_capacity(cutout_count * 12);
     for item in items.iter().take(MAX_ITEMS) {
-        if is_sprite_item(item.item) {
-            emit_cutout_drop(item, &mut cutout_vertices, &mut cutout_indices);
+        if is_sprite_item(item.item, catalog) {
+            emit_cutout_drop(item, &mut cutout_vertices, &mut cutout_indices, catalog);
             continue;
         }
         let (sin, cos) = item.angle.sin_cos();
@@ -84,7 +88,8 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
                     vertices.extend([
                         texture_u,
                         texture_v,
-                        item_material_layer(item.item, axis, side) as f32,
+                        super::material::item_material_layer_for(catalog, item.item, axis, side)
+                            as f32,
                         0.72,
                         0.0,
                         0.0,
@@ -106,12 +111,18 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
     }
 }
 
-fn emit_cutout_drop(item: &VisualDrop, vertices: &mut Vec<f32>, indices: &mut Vec<u32>) {
+fn emit_cutout_drop(
+    item: &VisualDrop,
+    vertices: &mut Vec<f32>,
+    indices: &mut Vec<u32>,
+    catalog: &Catalog,
+) {
     let (sin, cos) = item.angle.sin_cos();
-    let layer = item_material_layer(item.item, 1, 1) as f32;
-    let half_size = if crate::content::item_def(item.item)
+    let layer = super::material::item_material_layer_for(catalog, item.item, 1, 1) as f32;
+    let half_size = if catalog
+        .item(item.item)
         .and_then(|definition| definition.placeable)
-        .is_some_and(is_plant)
+        .is_some_and(|state| catalog.block_flags(state) & content::PLANT != 0)
     {
         0.32
     } else {
@@ -149,7 +160,7 @@ mod tests {
     #[test]
     fn rotated_drop_stays_bounded_and_uses_all_six_faces() {
         let drop = VisualDrop {
-            item: 2,
+            item: ItemId::new(2),
             center: Vec3::new(10.0, 5.0, -2.0),
             angle: 0.7,
             scale: 1.0,
@@ -166,7 +177,7 @@ mod tests {
     #[test]
     fn grass_side_band_is_at_the_top_on_both_side_axes() {
         let vertices = mesh(&[VisualDrop {
-            item: GRASS,
+            item: ItemId::new(GRASS.get()),
             center: Vec3::ZERO,
             angle: 0.0,
             scale: 1.0,
@@ -185,7 +196,7 @@ mod tests {
     #[test]
     fn flower_pickup_uses_cutout_crosses_instead_of_cube_faces() {
         let mesh = mesh(&[VisualDrop {
-            item: crate::world::RED_FLOWER,
+            item: ItemId::new(crate::world::RED_FLOWER.get()),
             center: Vec3::new(4.0, 2.0, -1.0),
             angle: 0.35,
             scale: 1.0,

@@ -2,8 +2,9 @@
 
 use super::super::movement::MovementState;
 use super::super::outbound::OutboundFrame;
-use super::super::{Client, OUTBOUND_CAPACITY, SimulationInput, State};
+use super::super::{Client, SimulationInput, State};
 use crate::inventory::{Inventory, SLOTS, Stack};
+use crate::items::ItemId;
 use crate::protocol::{self, ClientMessage, ServerMessage};
 use crate::world::{
     AIR, CHUNK_SIZE, ChunkKey, DIRT, MAX_GENERATED_HEIGHT, STONE, World, is_solid, terrain_height,
@@ -14,18 +15,19 @@ use std::fs;
 use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub(super) const PLAYER_COUNT: usize = 16;
 pub(super) const MIN_STEADY_TICKS: usize = 300;
-pub(super) const MAX_STEADY_TICKS: usize = 10_000;
+pub(super) const MAX_STEADY_TICKS: usize = 15_000;
 const STREAM_RADIUS: u8 = 2;
 pub(super) const ACTION_INTERVAL: usize = 30;
 pub(super) const DROP_HEIGHTS: [f32; 4] = [0.0, 70.0, 140.0, 210.0];
 pub(super) const SEED: u64 = 0xB10C_6100;
+const STONE_ITEM: ItemId = ItemId::new(STONE.get());
+const DIRT_ITEM: ItemId = ItemId::new(DIRT.get());
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -258,8 +260,7 @@ fn add_clients_and_seed_drops(
     for (index, position) in positions.into_iter().enumerate() {
         let peer = TcpStream::connect(address)?;
         let (socket, _) = listener.accept()?;
-        let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
-        let outbound = Arc::clone(&state.outbound);
+        let (sender, receiver) = state.outbound.client_queue();
         let center = world_to_chunk(
             position[0].floor() as i32,
             position[1].floor() as i32,
@@ -270,8 +271,8 @@ fn add_clients_and_seed_drops(
         let profile = 0xB10C_6100_0000_0000u128 + index as u128 + 1;
         let mut inventory = Inventory::default();
         for slot in 0..SLOTS {
-            let item = if slot % 2 == 0 { STONE } else { DIRT };
-            inventory.slots[slot] = Some(Stack { item, count: 128 });
+            let item = if slot % 2 == 0 { STONE_ITEM } else { DIRT_ITEM };
+            inventory.slots[slot] = Some(Stack::new(item, 128));
         }
         // Durable replay expects the initial before-value to exist in the
         // checkpoint baseline before the first WAL inventory transition.
@@ -288,7 +289,6 @@ fn add_clients_and_seed_drops(
                 last_drop_anchor: [i32::MAX; 3],
                 last_sent_drops: Vec::new(),
                 sender,
-                outbound,
                 socket,
                 sent: HashSet::new(),
                 center,
@@ -307,7 +307,7 @@ fn add_clients_and_seed_drops(
         for height in DROP_HEIGHTS {
             spawn_requests.push((
                 [position[0], position[1] + height, position[2]],
-                STONE,
+                STONE_ITEM,
                 1,
                 Duration::ZERO,
             ));
@@ -372,13 +372,15 @@ pub(super) fn tick_inputs(
             },
             1 if current_block == Some(AIR) => {
                 let inventory = &state.clients[&id].inventory;
-                let Some(stack) = inventory.slots[0] else {
+                let Some(stack) = inventory.slots[0].as_ref() else {
                     return Err(io::Error::other("server-perf inventory unexpectedly empty"));
                 };
-                let block = match stack.item {
-                    STONE => STONE,
-                    DIRT => DIRT,
-                    _ => return Err(io::Error::other("server-perf selected item is not a block")),
+                let block = if stack.item == STONE_ITEM {
+                    STONE
+                } else if stack.item == DIRT_ITEM {
+                    DIRT
+                } else {
+                    return Err(io::Error::other("server-perf selected item is not a block"));
                 };
                 ClientMessage::Edit {
                     action_id,

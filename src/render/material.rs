@@ -1,13 +1,18 @@
 use std::io::Cursor;
 
 use crate::content;
+use crate::items::ItemId;
+use crate::world::BlockId;
 
 pub(super) const TEXTURE_SIZE: u32 = 128;
 pub(super) const TEXTURE_MIPS: u32 = 8;
-pub(super) const GLOWSTONE_LAYER: u8 = 8;
-
+#[cfg(test)]
 pub(super) fn texture_layers() -> u32 {
     content::catalog().textures().len() as u32
+}
+
+pub(super) fn texture_layers_for(catalog: &content::Catalog) -> u32 {
+    catalog.textures().len() as u32
 }
 
 /// Keep directional block textures upright on both terrain quads and item cubes.
@@ -20,41 +25,34 @@ pub(super) fn face_uv(axis: usize, du: f32, dv: f32, width: f32, height: f32) ->
     }
 }
 
-pub(super) fn material_layer(block_id: u8, axis: usize, side: i32) -> u8 {
+#[cfg(test)]
+pub(super) fn material_layer(block_id: BlockId, axis: usize, side: i32) -> u32 {
     material_layer_for(content::catalog(), block_id, axis, side)
 }
 
 pub(super) fn material_layer_for(
     catalog: &content::Catalog,
-    block_id: u8,
+    block_id: BlockId,
     axis: usize,
     side: i32,
-) -> u8 {
-    if let Some(block) = catalog.block(block_id) {
-        if axis == 1 {
-            if side > 0 {
-                block.textures.top
-            } else {
-                block.textures.bottom
-            }
-        } else {
-            block.textures.side
-        }
-    } else {
-        3
-    }
+) -> u32 {
+    catalog
+        .state(block_id)
+        .and_then(|state| state.face_texture(axis, side))
+        .map_or(3, |texture| texture.get())
 }
 
-pub(super) fn item_material_layer(item_id: u8, axis: usize, side: i32) -> u8 {
+#[cfg(test)]
+pub(super) fn item_material_layer(item_id: ItemId, axis: usize, side: i32) -> u32 {
     item_material_layer_for(content::catalog(), item_id, axis, side)
 }
 
 pub(super) fn item_material_layer_for(
     catalog: &content::Catalog,
-    item_id: u8,
+    item_id: ItemId,
     axis: usize,
     side: i32,
-) -> u8 {
+) -> u32 {
     let Some(item) = catalog.item(item_id) else {
         return 3;
     };
@@ -63,10 +61,11 @@ pub(super) fn item_material_layer_for(
     {
         material_layer_for(catalog, block, axis, side)
     } else {
-        item.texture
+        item.texture.get()
     }
 }
 
+#[cfg(test)]
 pub(super) fn material_tiles() -> Vec<u8> {
     material_tiles_for(content::catalog())
 }
@@ -109,6 +108,19 @@ pub(super) fn material_tiles_for(catalog: &content::Catalog) -> Vec<u8> {
     pixels
 }
 
+pub(super) fn glowstone_layer_for(catalog: &content::Catalog) -> u32 {
+    catalog
+        .identities()
+        .into_iter()
+        .find_map(|(kind, id, key, _)| {
+            (kind == b'S' && key == "bloxgloom:glowstone")
+                .then_some(crate::content::BlockStateId::new(id))
+        })
+        .and_then(|state| catalog.state(state))
+        .and_then(|state| state.face_texture(1, 1))
+        .map_or(3, |texture| texture.get())
+}
+
 fn stitch_material_edges(pixels: &mut [u8], stitch_vertical: bool) {
     let size = TEXTURE_SIZE as usize;
     const BAND: usize = 4;
@@ -140,16 +152,22 @@ fn blend_opposite_pixels(pixels: &mut [u8], a: usize, b: usize, weight: usize, t
     }
 }
 
+#[cfg(test)]
 pub(super) fn material_mips() -> Vec<Vec<u8>> {
+    material_mips_for(content::catalog())
+}
+
+pub(super) fn material_mips_for(catalog: &content::Catalog) -> Vec<Vec<u8>> {
     let mut levels = Vec::with_capacity(TEXTURE_MIPS as usize);
-    levels.push(material_tiles());
+    levels.push(material_tiles_for(catalog));
     for level in 1..TEXTURE_MIPS {
         let previous_size = TEXTURE_SIZE >> (level - 1);
         let size = TEXTURE_SIZE >> level;
         let previous = levels.last().unwrap();
         let previous_layer_bytes = (previous_size * previous_size * 4) as usize;
-        let mut pixels = Vec::with_capacity((size * size * texture_layers() * 4) as usize);
-        for layer in 0..texture_layers() as usize {
+        let mut pixels =
+            Vec::with_capacity((size * size * texture_layers_for(catalog) * 4) as usize);
+        for layer in 0..texture_layers_for(catalog) as usize {
             for y in 0..size {
                 for x in 0..size {
                     let offsets = [(0, 0), (1, 0), (0, 1), (1, 1)];

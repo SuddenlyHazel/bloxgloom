@@ -1,6 +1,7 @@
 //! Exact grid traversal for selecting voxels with a ray.
 
-use crate::world::{self, TALL_GRASS};
+use crate::content::{self, Catalog};
+use crate::world::{AIR, BlockId};
 use glam::Vec3;
 
 /// The longest ray the client will cast. The server currently accepts edits
@@ -37,7 +38,7 @@ pub struct Hit {
     pub block: [i32; 3],
     /// The cell one voxel out from `face`, suitable for placement.
     pub adjacent: [i32; 3],
-    pub block_id: u8,
+    pub block_id: BlockId,
     /// Distance from `origin` in world units.
     pub distance: f32,
     /// The outward-facing side of `block` crossed by the ray.
@@ -56,7 +57,17 @@ pub fn raycast(
     origin: Vec3,
     direction: Vec3,
     max_distance: f32,
-    mut sample: impl FnMut(i32, i32, i32) -> Option<u8>,
+    sample: impl FnMut(i32, i32, i32) -> Option<BlockId>,
+) -> Option<Hit> {
+    raycast_with_catalog(origin, direction, max_distance, sample, content::catalog())
+}
+
+pub fn raycast_with_catalog(
+    origin: Vec3,
+    direction: Vec3,
+    max_distance: f32,
+    mut sample: impl FnMut(i32, i32, i32) -> Option<BlockId>,
+    catalog: &Catalog,
 ) -> Option<Hit> {
     if !origin.is_finite()
         || !direction.is_finite()
@@ -113,11 +124,12 @@ pub fn raycast(
     }
 
     let initial_block = sample(cell[0], cell[1], cell[2])?;
-    if initial_block != 0 && !world::is_plant(initial_block) {
+    if initial_block != AIR && !is_plant(catalog, initial_block) {
         let face = initial_face.unwrap_or_else(|| nearest_face(origin, cell));
         return make_hit(cell, initial_block, 0.0, face);
-    } else if world::is_plant(initial_block)
-        && let Some((distance, face)) = plant_intersection(origin, direction, cell, initial_block)
+    } else if is_plant(catalog, initial_block)
+        && let Some((distance, face)) =
+            plant_intersection(origin, direction, cell, initial_block, catalog)
         && distance <= reach
     {
         return make_hit(cell, initial_block, distance, face);
@@ -161,11 +173,11 @@ pub fn raycast(
             positive_face(axis)
         };
         let block_id = sample(cell[0], cell[1], cell[2])?;
-        if block_id != 0 && !world::is_plant(block_id) {
+        if block_id != AIR && !is_plant(catalog, block_id) {
             return make_hit(cell, block_id, distance, face);
-        } else if world::is_plant(block_id)
+        } else if is_plant(catalog, block_id)
             && let Some((plant_distance, plant_face)) =
-                plant_intersection(origin, direction, cell, block_id)
+                plant_intersection(origin, direction, cell, block_id, catalog)
             && plant_distance <= reach
         {
             return make_hit(cell, block_id, plant_distance, plant_face);
@@ -179,9 +191,14 @@ fn plant_intersection(
     origin: [f64; 3],
     direction: [f64; 3],
     cell: [i32; 3],
-    block: u8,
+    block: BlockId,
+    catalog: &Catalog,
 ) -> Option<(f64, Face)> {
-    let margin = if block == TALL_GRASS { 0.35 } else { 0.22 };
+    let tall_grass = catalog
+        .state(block)
+        .and_then(|state| catalog.block_type(state.block_type))
+        .is_some_and(|definition| definition.key == "bloxgloom:tall_grass");
+    let margin = if tall_grass { 0.35 } else { 0.22 };
     let lower = [margin, 0.0, margin];
     let upper = [1.0 - margin, 0.9, 1.0 - margin];
     let mut enter = f64::NEG_INFINITY;
@@ -212,7 +229,12 @@ fn plant_intersection(
     (leave >= enter && leave >= 0.0).then_some((enter.max(0.0), face))
 }
 
-fn make_hit(block: [i32; 3], block_id: u8, distance: f64, face: Face) -> Option<Hit> {
+#[inline]
+fn is_plant(catalog: &Catalog, block: BlockId) -> bool {
+    catalog.block_flags(block) & content::PLANT != 0
+}
+
+fn make_hit(block: [i32; 3], block_id: BlockId, distance: f64, face: Face) -> Option<Hit> {
     let normal = face.normal();
     Some(Hit {
         block,

@@ -1,5 +1,33 @@
 use super::*;
 
+fn catalog_with_many_states(count: usize) -> Catalog {
+    let mut catalog = Catalog::builtins();
+    let mut block = catalog
+        .block_type(crate::content::BlockTypeId(3))
+        .unwrap()
+        .clone();
+    block.id = crate::content::BlockTypeId(16);
+    block.key = "test:palette".into();
+    block.properties = vec![crate::content::PropertyDef {
+        name: "variant".into(),
+        values: (0..count)
+            .map(|index| format!("v{index:03}").into())
+            .collect(),
+    }];
+    catalog.register_block(block).unwrap();
+    for index in 0..count {
+        catalog
+            .register_state(
+                BlockStateId(100_000 + index as u32),
+                crate::content::BlockTypeId(16),
+                vec![("variant".into(), format!("v{index:03}"))],
+                None,
+            )
+            .unwrap();
+    }
+    catalog
+}
+
 #[test]
 fn outbound_wire_lengths_match_serialized_frames() {
     let key = ChunkKey { x: -2, y: 3, z: 4 };
@@ -18,32 +46,40 @@ fn outbound_wire_lengths_match_serialized_frames() {
             y: 2.0,
             z: 3.0,
         },
-        ServerMessage::Chunk(Chunk {
+        ServerMessage::Chunk(Chunk::from_blocks(
             key,
-            version: 4,
-            blocks: vec![0; BLOCK_COUNT],
-        }),
+            4,
+            vec![crate::world::AIR; BLOCK_COUNT],
+        )),
         ServerMessage::Delta {
             key,
             version: 5,
             x: 1,
             y: 2,
             z: 3,
-            block: 0,
+            block: crate::world::AIR,
         },
         ServerMessage::EditRejected {
             reason: "no".into(),
         },
         ServerMessage::ActionResult {
-            action_id: 6,
+            action_id: (1u128 << 64) | 6,
             accepted: false,
             reason: "retry".into(),
+        },
+        ServerMessage::ActionSession {
+            epoch: 2,
+            next_seq: 1,
+            acked_seq: 0,
+        },
+        ServerMessage::ActionDeferred {
+            action_id: (1u128 << 64) | 7,
         },
         ServerMessage::Pong { nonce: 7 },
         ServerMessage::ViewDistance { radius: 3 },
         ServerMessage::Inventory {
             revision: 8,
-            slots: [None; SLOTS],
+            slots: std::array::from_fn(|_| None),
         },
         ServerMessage::Drops {
             revision: 9,
@@ -73,11 +109,11 @@ fn client_messages_round_trip() {
             dz: 2.0,
         },
         ClientMessage::Edit {
-            action_id: 0x1234,
+            action_id: (1u128 << 64) | 0x1234,
             x: -17,
             y: 12,
             z: 31,
-            block: 2,
+            block: crate::world::DIRT,
             slot: 4,
         },
         ClientMessage::Resync {
@@ -86,15 +122,19 @@ fn client_messages_round_trip() {
         ClientMessage::SetView { radius: 6 },
         ClientMessage::Ping { nonce: u64::MAX },
         ClientMessage::InventoryMove {
-            action_id: 0x1235,
+            action_id: (1u128 << 64) | 0x1235,
             from: 1,
             to: 35,
             count: 64,
         },
         ClientMessage::DropStack {
-            action_id: 0x1236,
+            action_id: (1u128 << 64) | 0x1236,
             slot: 3,
             count: 2,
+        },
+        ClientMessage::ActionAck {
+            epoch: 3,
+            through_seq: 8,
         },
     ];
     for message in messages {
@@ -107,11 +147,7 @@ fn client_messages_round_trip() {
 #[test]
 fn snapshot_and_delta_round_trip() {
     let key = ChunkKey { x: -2, y: 3, z: 4 };
-    let chunk = Chunk {
-        key,
-        version: 99,
-        blocks: vec![3; BLOCK_COUNT],
-    };
+    let chunk = Chunk::from_blocks(key, 99, vec![crate::world::STONE; BLOCK_COUNT]);
     let mut bytes = Vec::new();
     write_server(&mut bytes, &ServerMessage::Chunk(chunk.clone())).unwrap();
     match read_server(bytes.as_slice()).unwrap() {
@@ -127,7 +163,7 @@ fn snapshot_and_delta_round_trip() {
             x: 15,
             y: 0,
             z: 4,
-            block: 0,
+            block: crate::world::AIR,
         },
     )
     .unwrap();
@@ -140,7 +176,10 @@ fn snapshot_and_delta_round_trip() {
             z,
             block,
         } => {
-            assert_eq!((got, version, x, y, z, block), (key, 100, 15, 0, 4, 0));
+            assert_eq!(
+                (got, version, x, y, z, block),
+                (key, 100, 15, 0, 4, crate::world::AIR)
+            );
         }
         other => panic!("unexpected message: {other:?}"),
     }
@@ -197,21 +236,15 @@ fn rejects_oversized_and_malformed_frames_before_allocating_payload() {
 
 #[test]
 fn inventory_and_drop_snapshots_round_trip_with_bounds() {
-    let mut slots = [None; SLOTS];
-    slots[0] = Some(Stack {
-        item: 3,
-        count: 128,
-    });
-    slots[35] = Some(Stack {
-        item: crate::items::SEEDS,
-        count: 1,
-    });
+    let mut slots = std::array::from_fn(|_| None);
+    slots[0] = Some(Stack::new(ItemId(3), 128));
+    slots[35] = Some(Stack::new(crate::items::SEEDS, 1));
     let mut bytes = Vec::new();
     write_server(
         &mut bytes,
         &ServerMessage::Inventory {
             revision: 12,
-            slots,
+            slots: slots.clone(),
         },
     )
     .unwrap();
@@ -263,11 +296,8 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
         ServerMessage::Pickups { items: got } => assert_eq!(got, items),
         other => panic!("unexpected {other:?}"),
     }
-    let mut bad = [None; SLOTS];
-    bad[0] = Some(Stack {
-        item: 1,
-        count: 129,
-    });
+    let mut bad = std::array::from_fn(|_| None);
+    bad[0] = Some(Stack::new(ItemId(1), 129));
     assert!(
         write_server(
             Vec::new(),
@@ -299,17 +329,17 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
         assert!(
             matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::Pickups { items } if items == [drop])
         );
-        bytes[16] = 16;
+        bytes[16] = 0;
         assert!(read_server(bytes.as_slice()).is_err());
         assert!(
             write_client(
                 Vec::new(),
                 &ClientMessage::Edit {
-                    action_id: 1,
+                    action_id: (1u128 << 64) | 1,
                     x: 0,
                     y: 0,
                     z: 0,
-                    block: item,
+                    block: BlockStateId(item.0),
                     slot: 0
                 }
             )
@@ -319,7 +349,7 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
     for invalid_item in [0, 16, 127, 131, 255] {
         let drop = DroppedItem {
             id: 1,
-            item: invalid_item,
+            item: ItemId(invalid_item),
             count: 1,
             position: [0.0; 3],
             age_ms: 0,
@@ -332,12 +362,12 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
 fn action_receipts_round_trip_and_reject_invalid_ids() {
     for message in [
         ServerMessage::ActionResult {
-            action_id: 42,
+            action_id: (1u128 << 64) | 42,
             accepted: true,
             reason: String::new(),
         },
         ServerMessage::ActionResult {
-            action_id: 43,
+            action_id: (1u128 << 64) | 43,
             accepted: false,
             reason: "out of reach".into(),
         },
@@ -387,11 +417,237 @@ fn action_receipts_round_trip_and_reject_invalid_ids() {
     );
     let mut malformed = Vec::new();
     let mut payload = vec![WIRE_VERSION, 11];
-    payload.extend(9u128.to_le_bytes());
+    payload.extend(((1u128 << 64) | 9).to_le_bytes());
     payload.extend([2, 0]);
     frame(&mut malformed, &payload).unwrap();
     assert_eq!(
         read_server(malformed.as_slice()).unwrap_err().kind(),
         io::ErrorKind::InvalidData
+    );
+    for message in [
+        ServerMessage::ActionSession {
+            epoch: 2,
+            next_seq: 9,
+            acked_seq: 8,
+        },
+        ServerMessage::ActionDeferred {
+            action_id: (2u128 << 64) | 9,
+        },
+    ] {
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &message).unwrap();
+        assert!(matches!(
+            (&message, read_server(bytes.as_slice()).unwrap()),
+            (
+                ServerMessage::ActionSession { .. },
+                ServerMessage::ActionSession { .. }
+            ) | (
+                ServerMessage::ActionDeferred { .. },
+                ServerMessage::ActionDeferred { .. }
+            )
+        ));
+    }
+    assert!(
+        write_client(
+            Vec::new(),
+            &ClientMessage::ActionAck {
+                epoch: 0,
+                through_seq: 1
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        write_client(
+            Vec::new(),
+            &ClientMessage::InventoryMove {
+                action_id: 1,
+                from: 0,
+                to: 1,
+                count: 1
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::ActionSession {
+                epoch: 1,
+                next_seq: 1,
+                acked_seq: 1
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn wide_palette_indices_upgrade_at_257_and_cover_full_chunk() {
+    for (unique, expected_width) in [(255, 1), (256, 1), (257, 2), (4_096, 2)] {
+        let blocks = (0..BLOCK_COUNT)
+            .map(|index| BlockStateId(65_536 + (index % unique) as u32))
+            .collect::<Vec<_>>();
+        assert_eq!(PalettedBlocks::from(blocks.clone()).unique_states(), unique);
+        let mut bytes = vec![WIRE_VERSION, 3];
+        write_palette(&mut bytes, &blocks).unwrap();
+        assert_eq!(bytes[4], expected_width);
+        let mut cursor = Cursor::new(&bytes);
+        assert_eq!(read_palette_with(&mut cursor, |_| true).unwrap(), blocks);
+        cursor.done().unwrap();
+        let expected = 2 + 2 + 1 + unique * 4 + BLOCK_COUNT * expected_width as usize;
+        assert_eq!(bytes.len(), expected);
+        assert!(bytes.len() < MAX_FRAME);
+    }
+}
+
+#[test]
+fn resident_palette_mutation_keeps_wire_length_exact_without_rescanning() {
+    let key = ChunkKey { x: 7, y: -2, z: 1 };
+    let mut blocks = PalettedBlocks::uniform(crate::world::AIR);
+    for index in 0..257 {
+        blocks.set(index, BlockStateId(100_000 + index as u32));
+    }
+    let message = ServerMessage::Chunk(Chunk {
+        key,
+        version: 4,
+        blocks,
+    });
+    let mut encoded = Vec::new();
+    let catalog = catalog_with_many_states(257);
+    write_server_with_catalog(&mut encoded, &message, &catalog).unwrap();
+    assert_eq!(server_wire_len(&message), encoded.len());
+    let expected = match &message {
+        ServerMessage::Chunk(chunk) => chunk.clone(),
+        _ => unreachable!(),
+    };
+    assert!(
+        matches!(read_server_with_catalog(encoded.as_slice(), &catalog).unwrap(), ServerMessage::Chunk(decoded) if decoded == expected)
+    );
+}
+
+#[test]
+fn palette_rejects_duplicate_unknown_and_out_of_range_indices() {
+    let blocks = vec![BlockStateId(65_536); BLOCK_COUNT];
+    let mut bytes = vec![WIRE_VERSION, 3];
+    write_palette(&mut bytes, &blocks).unwrap();
+    let mut cursor = Cursor::new(&bytes);
+    assert!(read_palette_with(&mut cursor, |_| false).is_err());
+    let mut out_of_range = bytes.clone();
+    *out_of_range.last_mut().unwrap() = 1;
+    let mut cursor = Cursor::new(&out_of_range);
+    assert!(read_palette_with(&mut cursor, |_| true).is_err());
+    let mut truncated = bytes;
+    truncated.pop();
+    let mut cursor = Cursor::new(&truncated);
+    assert!(read_palette_with(&mut cursor, |_| true).is_err());
+}
+
+#[test]
+fn content_parts_and_ready_round_trip_with_bounds() {
+    let part = ServerMessage::ContentManifestPart {
+        fingerprint: 73,
+        total_len: 6,
+        offset: 2,
+        bytes: vec![1, 2, 3, 4],
+    };
+    let mut bytes = Vec::new();
+    write_server(&mut bytes, &part).unwrap();
+    assert_eq!(server_wire_len(&part), bytes.len());
+    assert!(matches!(read_server(bytes.as_slice()).unwrap(),
+        ServerMessage::ContentManifestPart { fingerprint: 73, total_len: 6, offset: 2, bytes } if bytes == [1, 2, 3, 4]));
+    let mut ready = Vec::new();
+    write_client(&mut ready, &ClientMessage::ContentReady { fingerprint: 73 }).unwrap();
+    assert_eq!(
+        read_client(ready.as_slice()).unwrap(),
+        ClientMessage::ContentReady { fingerprint: 73 }
+    );
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::ContentManifestPart {
+                fingerprint: 73,
+                total_len: 6,
+                offset: 4,
+                bytes: vec![1, 2, 3, 4],
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn remapped_ids_above_65535_survive_wire_v8() {
+    let local = Catalog::builtins();
+    let mut manifest = crate::content::ContentManifest::from_catalog(&local);
+    for entry in &mut manifest.entries {
+        match (entry.kind, entry.key.as_str()) {
+            (b'B', "bloxgloom:stone") => entry.id = 65_536,
+            (b'S', "bloxgloom:stone") => entry.id = 65_537,
+            (b'I', "bloxgloom:stone") => entry.id = 65_538,
+            _ => {}
+        }
+    }
+    manifest
+        .entries
+        .sort_unstable_by_key(|entry| (entry.kind, entry.id));
+    let catalog = manifest.resolve_catalog(&local).unwrap();
+    let state = BlockStateId(65_537);
+    let item = ItemId(65_538);
+    let key = ChunkKey { x: -1, y: 2, z: 3 };
+    let chunk = Chunk::from_blocks(key, 11, vec![state; BLOCK_COUNT]);
+    let mut bytes = Vec::new();
+    write_server_with_catalog(&mut bytes, &ServerMessage::Chunk(chunk.clone()), &catalog).unwrap();
+    assert!(
+        matches!(read_server_with_catalog(bytes.as_slice(), &catalog).unwrap(), ServerMessage::Chunk(got) if got == chunk)
+    );
+    bytes.clear();
+    let edit = ClientMessage::Edit {
+        action_id: (1u128 << 64) | 9,
+        x: -1,
+        y: 2,
+        z: 3,
+        block: state,
+        slot: 0,
+    };
+    write_client_with_catalog(&mut bytes, &edit, &catalog).unwrap();
+    assert_eq!(
+        read_client_with_catalog(bytes.as_slice(), &catalog).unwrap(),
+        edit
+    );
+    bytes.clear();
+    let mut slots = std::array::from_fn(|_| None);
+    slots[0] = Some(Stack::with_components(item, 128, 2, vec![7, 8, 9]).unwrap());
+    write_server_with_catalog(
+        &mut bytes,
+        &ServerMessage::Inventory {
+            revision: 4,
+            slots: slots.clone(),
+        },
+        &catalog,
+    )
+    .unwrap();
+    assert!(
+        matches!(read_server_with_catalog(bytes.as_slice(), &catalog).unwrap(), ServerMessage::Inventory { revision: 4, slots: got } if got == slots)
+    );
+    let mut oversized_component = bytes.clone();
+    oversized_component[22..24].copy_from_slice(&((MAX_COMPONENT_BYTES + 1) as u16).to_le_bytes());
+    assert!(read_server_with_catalog(oversized_component.as_slice(), &catalog).is_err());
+    bytes.clear();
+    let drop = DroppedItem {
+        id: 1,
+        item,
+        count: 1,
+        position: [0.0; 3],
+        age_ms: 1,
+    };
+    write_server_with_catalog(
+        &mut bytes,
+        &ServerMessage::Pickups { items: vec![drop] },
+        &catalog,
+    )
+    .unwrap();
+    assert!(
+        matches!(read_server_with_catalog(bytes.as_slice(), &catalog).unwrap(), ServerMessage::Pickups { items } if items == [drop])
     );
 }

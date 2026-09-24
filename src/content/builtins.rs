@@ -148,13 +148,18 @@ impl Catalog {
         for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS {
             // Embedded assets are exercised by the renderer's material tests; avoid decoding
             // them once here and again during GPU upload on every startup.
-            catalog.textures.push(TextureDef {
+            let texture = TextureDef {
                 key: format!("bloxgloom:{name}").into(),
                 png: Cow::Borrowed(png),
                 stitch_edges,
                 stitch_vertical,
                 alpha_cutout,
-            });
+            };
+            catalog.texture_keys.insert(texture.key.to_string());
+            catalog
+                .texture_fingerprints
+                .push(fingerprint_texture(&texture));
+            catalog.textures.push(texture);
         }
 
         let blocks = [
@@ -270,15 +275,37 @@ impl Catalog {
                 .register_block(definition)
                 .expect("unique builtin block");
         }
-        for id in 1..=world::MAX_BUILTIN_BLOCK {
-            let definition = catalog.block(id).unwrap();
+        for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
+            let block = BlockTypeId(id);
+            let properties = if block == BlockTypeId(world::WOOD.0) {
+                vec![("axis".to_owned(), "y".to_owned())]
+            } else {
+                Vec::new()
+            };
+            catalog
+                .register_state(BlockStateId(id), block, properties, None)
+                .expect("unique builtin default state");
+        }
+        for (id, axis) in [(256, "x"), (257, "z")] {
+            catalog
+                .register_state(
+                    BlockStateId(id),
+                    BlockTypeId(world::WOOD.0),
+                    vec![("axis".to_owned(), axis.to_owned())],
+                    None,
+                )
+                .expect("unique builtin wood orientation");
+        }
+        for id in 1..=world::MAX_BUILTIN_BLOCK.0 {
+            let state = BlockStateId(id);
+            let definition = catalog.block(state).unwrap();
             let item = ItemDef {
-                id,
+                id: ItemId(id),
                 key: definition.key.clone(),
                 name: definition.name.clone(),
                 swatch: definition.swatch,
                 texture: definition.textures.top,
-                placeable: Some(id),
+                placeable: Some(state),
                 sprite: definition.cutout,
             };
             catalog
@@ -314,11 +341,21 @@ impl Catalog {
                     key: format!("bloxgloom:{name}").into(),
                     name: label.into(),
                     swatch: color,
-                    texture: layer,
+                    texture: TextureId(layer),
                     placeable: None,
                     sprite: true,
                 })
                 .expect("unique builtin item");
+        }
+        for (id, key) in [(1, "bloxgloom:drop"), (2, "bloxgloom:player")] {
+            catalog
+                .register_entity_type(EntityTypeDef {
+                    id: EntityTypeId(id),
+                    key: key.into(),
+                    schema_version: 1,
+                    schema_fingerprint: 0x4247_454e_0000_0001,
+                })
+                .expect("unique builtin entity type");
         }
         catalog
     }
@@ -329,22 +366,34 @@ fn block(
     key: &'static str,
     name: &'static str,
     swatch: [f32; 4],
-    [top, side, bottom]: [TextureId; 3],
+    [top, side, bottom]: [u32; 3],
 ) -> BlockDef {
-    let flags = BUILTIN_FLAGS[id as usize];
+    let flags = BUILTIN_FLAGS[id.0 as usize];
     BlockDef {
-        id,
+        id: BlockTypeId(id.0),
         key: format!("bloxgloom:{key}").into(),
         name: name.into(),
         swatch,
-        textures: BlockTextures { top, side, bottom },
+        textures: BlockTextures {
+            top: TextureId(top),
+            side: TextureId(side),
+            bottom: TextureId(bottom),
+        },
         solid: flags & SOLID != 0,
         opaque: flags & OPAQUE != 0,
         cutout: flags & CUTOUT != 0,
         plant: flags & PLANT != 0,
         replaceable: flags & REPLACEABLE != 0,
         supports_plant: flags & SUPPORTS_PLANT != 0,
-        emission: BUILTIN_EMISSION[id as usize],
-        reflectance: BUILTIN_REFLECTANCE[id as usize],
+        emission: BUILTIN_EMISSION[id.0 as usize],
+        reflectance: BUILTIN_REFLECTANCE[id.0 as usize],
+        properties: if id == world::WOOD {
+            vec![PropertyDef {
+                name: "axis".into(),
+                values: vec!["x".into(), "y".into(), "z".into()],
+            }]
+        } else {
+            Vec::new()
+        },
     }
 }

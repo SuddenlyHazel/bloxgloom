@@ -4,7 +4,7 @@ use super::*;
 fn drop_replication_ignores_age_but_not_authoritative_changes() {
     let original = DroppedItem {
         id: 1,
-        item: 2,
+        item: crate::items::ItemId::new(2),
         count: 3,
         position: [1.0, 2.0, 3.0],
         age_ms: 20,

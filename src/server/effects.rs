@@ -9,6 +9,16 @@ use super::simulation::{OrderKey, Phase, TickId};
 use crate::world::{self, BlockId, CHUNK_SIZE, ChunkKey, world_to_chunk};
 use std::collections::{HashMap, HashSet};
 
+mod registered;
+#[allow(unused_imports)]
+pub(super) use registered::{
+    EffectConsumerBatch, EffectConsumerOutput, EffectConsumerScratch, EffectKindId,
+    EffectKindRegistry, EffectKindRegistryFrozen, EffectRegistryError, RegisteredEffectBuffer,
+    RegisteredEffectError, RegisteredEffectIntent, RegisteredEffectLimits,
+    RegisteredEffectOrderKey, RouteRegisteredError, RoutedEffectBatch, RoutedEffectIntent,
+    RoutedOwnerEffects, route_registered_effects,
+};
+
 pub const MAX_EFFECTS_PER_PRODUCER_TICK: usize = 4_096;
 pub const MAX_EFFECTS_PER_BATCH: usize = 16_384;
 pub const MAX_EFFECTS_PER_OWNER: usize = 4_096;

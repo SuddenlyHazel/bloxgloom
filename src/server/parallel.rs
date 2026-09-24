@@ -6,7 +6,6 @@
 //! changes a job's stable ordering key.
 
 use super::simulation::{Phase, TickId};
-use crate::world::ChunkKey;
 use std::any::Any;
 use std::cmp::Ordering as CmpOrdering;
 use std::collections::{HashMap, HashSet};
@@ -16,6 +15,11 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+mod owner_wave;
+pub(super) use owner_wave::*;
+mod owner_store;
+pub(super) use owner_store::{OwnerStore, OwnerStoreError};
 
 pub const MAX_PHASE_WORKERS: usize = 64;
 pub const MAX_PHASE_QUEUE_CAPACITY: usize = 16_384;
@@ -66,16 +70,21 @@ impl BatchId {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct JobKey {
     pub batch: BatchId,
-    pub owner: ChunkKey,
+    pub owner: OwnerKey,
     pub job_id: u64,
     pub snapshot_revision: u64,
 }
 
 impl JobKey {
-    pub const fn new(batch: BatchId, owner: ChunkKey, job_id: u64, snapshot_revision: u64) -> Self {
+    pub fn new(
+        batch: BatchId,
+        owner: impl Into<OwnerKey>,
+        job_id: u64,
+        snapshot_revision: u64,
+    ) -> Self {
         Self {
             batch,
-            owner,
+            owner: owner.into(),
             job_id,
             snapshot_revision,
         }
@@ -92,14 +101,10 @@ impl Ord for JobKey {
     fn cmp(&self, other: &Self) -> CmpOrdering {
         self.batch
             .cmp(&other.batch)
-            .then_with(|| owner_order(self.owner).cmp(&owner_order(other.owner)))
+            .then_with(|| self.owner.cmp(&other.owner))
             .then_with(|| self.job_id.cmp(&other.job_id))
             .then_with(|| self.snapshot_revision.cmp(&other.snapshot_revision))
     }
-}
-
-fn owner_order(owner: ChunkKey) -> (i32, i32, i32) {
-    (owner.x, owner.y, owner.z)
 }
 
 /// Cooperative cancellation shared with one job. Workers also check this token
@@ -172,7 +177,7 @@ pub struct JobCompletion<R, E> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnerResults<R, E> {
-    pub owner: ChunkKey,
+    pub owner: OwnerKey,
     /// Jobs are ordered by stable job ID (then snapshot revision).
     pub jobs: Vec<JobCompletion<R, E>>,
 }

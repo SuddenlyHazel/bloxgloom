@@ -1,11 +1,12 @@
 //! Planning for durable gameplay commands and their exact WAL participants.
 
 use super::*;
+use crate::items::ItemId;
 use crate::server::streaming::request_chunk;
 use crate::server::{
     AIR, BEDROCK_Y, EDIT_REACH, State, block_intersects_player, loot, world_to_chunk,
 };
-use crate::world::{is_plant, is_replaceable, is_solid, supports_plant};
+use crate::world::BlockId;
 
 #[cfg(test)]
 #[path = "actions/tests.rs"]
@@ -38,17 +39,9 @@ pub(in crate::server) fn plan_durable_request(
                     "action ID must be nonzero",
                 ));
             }
-            let receipt_value = encode_action_receipt(message)?;
-            if state
-                .durability
-                .action_receipt(profile, action_id)
-                .is_some()
-            {
-                return Ok(None);
-            }
-            if state.durability.action_receipt_reserved(profile, action_id)
-                || state.durability.profile_reserved(profile)
-            {
+            let receipt_value =
+                super::state::encode_action_receipt_with_catalog(message, state.world.catalog())?;
+            if state.durability.profile_reserved(profile) {
                 return Err(io::Error::new(
                     ErrorKind::WouldBlock,
                     "profile has a pending durable action",
@@ -63,6 +56,7 @@ pub(in crate::server) fn plan_durable_request(
                 profile: Some(profile),
                 action_id: Some(action_id),
                 receipt_value: Some(receipt_value.clone()),
+                receipt_transition: None,
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
@@ -75,7 +69,10 @@ pub(in crate::server) fn plan_durable_request(
                 ClientMessage::InventoryMove {
                     from, to, count, ..
                 } => {
-                    action.inventory_before = Some(InventoryStore::encode_snapshot(&inventory)?);
+                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
+                        &inventory,
+                        state.world.catalog(),
+                    )?);
                     let mut next = inventory;
                     if !next.transfer(*from, *to, *count) {
                         return Ok(None);
@@ -83,25 +80,29 @@ pub(in crate::server) fn plan_durable_request(
                     action.inventory = Some(next);
                 }
                 ClientMessage::DropStack { slot, count, .. } => {
-                    let Some(stack) = inventory.slots.get(*slot as usize).copied().flatten() else {
+                    let Some(stack) = inventory.slots.get(*slot as usize).cloned().flatten() else {
                         return Ok(None);
                     };
                     if *count == 0 || *count > stack.count {
                         return Ok(None);
                     }
-                    action.inventory_before = Some(InventoryStore::encode_snapshot(&inventory)?);
+                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
+                        &inventory,
+                        state.world.catalog(),
+                    )?);
                     let mut next = inventory;
-                    next.slots[*slot as usize] =
-                        (*count < stack.count).then_some(crate::inventory::Stack {
-                            item: stack.item,
-                            count: stack.count - *count,
-                        });
+                    next.slots[*slot as usize] = (*count < stack.count).then(|| {
+                        let mut remainder = stack.clone();
+                        remainder.count -= *count;
+                        remainder
+                    });
                     next.revision = next.revision.wrapping_add(1);
                     action.inventory = Some(next);
-                    action.drops = state.drops.plan_spawn(
+                    let mut dropped = stack;
+                    dropped.count = *count;
+                    action.drops = state.drops.plan_spawn_stack(
                         [position[0], position[1] + 0.8, position[2]],
-                        stack.item,
-                        *count,
+                        dropped,
                         Duration::from_millis(1_500),
                     )?;
                 }
@@ -147,10 +148,15 @@ pub(in crate::server) fn plan_durable_request(
             let original = client.inventory.clone();
             let position = client.position();
             let mut updated = original.clone();
+            let catalog = state.world.catalog_arc();
             let mut taken = Vec::new();
             let mut takes = Vec::new();
             for item in state.drops.pickup_candidates(position) {
-                let remaining = updated.insert(item.item, item.count);
+                let mut stack = state.drops.stack(item.id).ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidData, "pickup candidate disappeared")
+                })?;
+                stack.count = item.count;
+                let remaining = updated.insert_stack(&stack, &catalog);
                 if remaining != item.count {
                     let amount = item.count - remaining;
                     takes.push((item.id, amount));
@@ -168,7 +174,11 @@ pub(in crate::server) fn plan_durable_request(
                 profile: Some(profile),
                 action_id: None,
                 receipt_value: None,
-                inventory_before: Some(InventoryStore::encode_snapshot(&original)?),
+                receipt_transition: None,
+                inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
+                    &original,
+                    state.world.catalog(),
+                )?),
                 inventory: Some(updated),
                 world_edits: Vec::new(),
                 drops: state.drops.plan_take(&takes)?,
@@ -189,6 +199,7 @@ pub(in crate::server) fn plan_durable_request(
                 profile: None,
                 action_id: None,
                 receipt_value: None,
+                receipt_transition: None,
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
@@ -209,7 +220,7 @@ struct BlockEditCommand {
     x: i32,
     y: i32,
     z: i32,
-    block: u8,
+    block: BlockId,
     slot: u8,
 }
 
@@ -228,7 +239,9 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
     let client = state.clients.get(&id).expect("command client exists");
     let position = client.position();
     let inventory_before = client.inventory.clone();
-    if !crate::world::valid_block(block) || y <= BEDROCK_Y {
+    let catalog = state.world.catalog_arc();
+    let has = |state_id: BlockId, flag: u8| catalog.block_flags(state_id) & flag != 0;
+    if catalog.state(block).is_none() || y <= BEDROCK_Y {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
             "invalid block edit",
@@ -253,33 +266,30 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
     let mut coords = vec![(x, y, z, block)];
     let mut removed_plants = Vec::new();
     if block != AIR {
-        if !is_replaceable(previous) {
+        if !has(previous, crate::content::REPLACEABLE) {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
                 "target cannot be replaced",
             ));
         }
-        if is_plant(block) {
+        if has(block, crate::content::PLANT) {
             if y == i32::MIN {
                 return Err(io::Error::new(
                     ErrorKind::PermissionDenied,
                     "plant needs soil below",
                 ));
             }
-            if !supports_plant(cached_block_or_request(
-                state,
-                x,
-                y - 1,
-                z,
-                "plant support chunk is not resident",
-            )?) {
+            if !has(
+                cached_block_or_request(state, x, y - 1, z, "plant support chunk is not resident")?,
+                crate::content::SUPPORTS_PLANT,
+            ) {
                 return Err(io::Error::new(
                     ErrorKind::PermissionDenied,
                     "plant needs soil below",
                 ));
             }
         }
-        if is_solid(block)
+        if has(block, crate::content::SOLID)
             && state
                 .clients
                 .values()
@@ -293,11 +303,11 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
         let selected = inventory_before
             .slots
             .get(slot as usize)
-            .copied()
+            .cloned()
             .flatten()
             .filter(|stack| {
                 (slot as usize) < crate::inventory::HOTBAR_SLOTS
-                    && crate::items::placeable_block(stack.item) == Some(block)
+                    && crate::items::placeable_block_in(stack.item, &catalog) == Some(block)
             })
             .ok_or_else(|| {
                 io::Error::new(ErrorKind::PermissionDenied, "selected stack mismatch")
@@ -309,7 +319,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
                 "selected stack empty",
             ));
         }
-        if is_plant(previous) {
+        if has(previous, crate::content::PLANT) {
             removed_plants.push((previous, [x, y, z]));
         }
         let prepared = state.world.prepare_edits(&coords)?;
@@ -321,7 +331,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
                 .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
                 .map(|edit| edit.new_version)
                 .unwrap_or(0);
-            push_harvest_spawns(&mut drop_spawns, plant, at, version, state.seed);
+            push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
         }
         let drops = state.drops.plan_spawns(&drop_spawns)?;
         return Ok(CommitAction {
@@ -329,7 +339,11 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             profile: Some(profile),
             action_id: Some(action_id),
             receipt_value: Some(receipt_value),
-            inventory_before: Some(InventoryStore::encode_snapshot(&inventory_before)?),
+            receipt_transition: None,
+            inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
+                &inventory_before,
+                &catalog,
+            )?),
             inventory: Some(updated),
             world_edits: prepared,
             drops,
@@ -345,12 +359,12 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             "target is already air",
         ));
     }
-    if supports_plant(previous)
+    if has(previous, crate::content::SUPPORTS_PLANT)
         && let Some(above_y) = y.checked_add(1)
     {
         let above =
             cached_block_or_request(state, x, above_y, z, "plant-check chunk is not resident")?;
-        if is_plant(above) {
+        if has(above, crate::content::PLANT) {
             coords.push((x, above_y, z, AIR));
             removed_plants.push((above, [x, above_y, z]));
         }
@@ -365,6 +379,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
         .unwrap_or(0);
     push_harvest_spawns(
         &mut drop_spawns,
+        &catalog,
         previous,
         [x, y, z],
         base_version,
@@ -376,7 +391,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
             .map(|edit| edit.new_version)
             .unwrap_or(0);
-        push_harvest_spawns(&mut drop_spawns, plant, at, version, state.seed);
+        push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
     }
     let drops = state.drops.plan_spawns(&drop_spawns)?;
     Ok(CommitAction {
@@ -384,6 +399,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
         profile: Some(profile),
         action_id: Some(action_id),
         receipt_value: Some(receipt_value),
+        receipt_transition: None,
         inventory_before: None,
         inventory: None,
         world_edits: prepared,
@@ -407,7 +423,7 @@ fn cached_block_or_request(
     y: i32,
     z: i32,
     reason: &'static str,
-) -> io::Result<u8> {
+) -> io::Result<BlockId> {
     if let Some(block) = state.world.cached_block(x, y, z) {
         return Ok(block);
     }
@@ -416,7 +432,10 @@ fn cached_block_or_request(
     Err(io::Error::new(ErrorKind::WouldBlock, reason))
 }
 
-fn prepared_deltas(coords: &[(i32, i32, i32, u8)], prepared: &[PreparedEdit]) -> Vec<BlockDelta> {
+fn prepared_deltas(
+    coords: &[(i32, i32, i32, BlockId)],
+    prepared: &[PreparedEdit],
+) -> Vec<BlockDelta> {
     coords
         .iter()
         .filter_map(|&(x, y, z, block)| {
@@ -433,17 +452,24 @@ fn prepared_deltas(coords: &[(i32, i32, i32, u8)], prepared: &[PreparedEdit]) ->
 }
 
 fn push_harvest_spawns(
-    output: &mut Vec<([f32; 3], u8, u16, Duration)>,
-    block: u8,
+    output: &mut Vec<([f32; 3], ItemId, u16, Duration)>,
+    catalog: &crate::content::Catalog,
+    block: BlockId,
     position: [i32; 3],
     version: u64,
     seed: u64,
 ) {
     let position = position.map(|coordinate| coordinate as f32 + 0.5);
     output.extend(
-        loot::harvest(block, position.map(|n| n.floor() as i32), version, seed)
-            .into_iter()
-            .flatten()
-            .map(|(item, count)| (position, item, count, Duration::from_millis(250))),
+        loot::harvest_with_catalog(
+            catalog,
+            block,
+            position.map(|n| n.floor() as i32),
+            version,
+            seed,
+        )
+        .into_iter()
+        .flatten()
+        .map(|(item, count)| (position, item, count, Duration::from_millis(250))),
     );
 }

@@ -1,7 +1,7 @@
 //! Authoritative chunk loading and bounded per-tick interest publication.
 //!
 //! No path here reads or generates a chunk on the coordinator. Loader workers
-//! supply resident chunks; the window/network writer threads serialize them.
+//! supply resident chunks; the socket reactor serializes them.
 
 use super::chunk_loader::{RequestError, RequestStatus};
 use super::metrics::LatencyEvent;

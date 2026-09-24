@@ -1,35 +1,122 @@
 use super::*;
+
+const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 use std::fs;
+
+fn action_id(state: &State, profile: u128, seq: u64) -> u128 {
+    (u128::from(state.durability.receipt_ledger(profile).current_epoch()) << 64) | u128::from(seq)
+}
+
+#[test]
+fn rejected_action_is_durable_then_acknowledged_without_reopening_its_sequence() {
+    let save = TestSave::new("rejected-receipt-ack");
+    let profile = 991;
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let rejected_id = action_id(&state, profile, 1);
+    let rejected = command_and_wait(
+        &mut state,
+        &mut tick,
+        &session,
+        1,
+        rejected_id,
+        ClientMessage::InventoryMove {
+            action_id: rejected_id,
+            from: 0,
+            to: 1,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&rejected, rejected_id), Some(false));
+    assert_eq!(
+        state.durability.receipt_ledger(profile).outstanding_len(),
+        1
+    );
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Command {
+            id: session.id,
+            sequence: 2,
+            message: ClientMessage::ActionAck {
+                epoch: (rejected_id >> 64) as u64,
+                through_seq: 1,
+            },
+        }],
+    );
+    for _ in 0..500 {
+        if state.durability.receipt_ledger(profile).acknowledged_seq() == 1 {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        state.durability.receipt_ledger(profile).acknowledged_seq(),
+        1
+    );
+    assert_eq!(
+        state.durability.receipt_ledger(profile).outstanding_len(),
+        0
+    );
+    drop(session);
+    drop(state);
+
+    let mut restarted = state_for(&save, 7);
+    let mut restarted_tick = 1;
+    let rejoined = join(&mut restarted, &mut restarted_tick, profile);
+    assert_ne!(action_id(&restarted, profile, 1), rejected_id);
+    let stale = command_and_wait(
+        &mut restarted,
+        &mut restarted_tick,
+        &rejoined,
+        1,
+        rejected_id,
+        ClientMessage::InventoryMove {
+            action_id: rejected_id,
+            from: 0,
+            to: 1,
+            count: 1,
+        },
+    );
+    assert_eq!(action_result(&stale, rejected_id), Some(false));
+    assert_eq!(
+        restarted
+            .durability
+            .receipt_ledger(profile)
+            .outstanding_len(),
+        0
+    );
+}
 
 #[test]
 fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
     let save = TestSave::new("stale-join-inventory");
     let profile = 611;
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: crate::world::STONE,
-        count: 2,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
     save_inventory(&save, profile, &inventory);
     let mut state = state_for(&save, 7);
     let stale = state.inventory_store.load(profile).unwrap();
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
+    let move_id = action_id(&state, profile, 1);
 
     let result = command_and_wait(
         &mut state,
         &mut tick,
         &session,
         1,
-        612,
+        move_id,
         ClientMessage::InventoryMove {
-            action_id: 612,
+            action_id: move_id,
             from: 0,
             to: 1,
             count: 1,
         },
     );
-    assert_eq!(action_result(&result, 612), Some(true));
+    assert_eq!(action_result(&result, move_id), Some(true));
     state.clients.remove(&session.id);
 
     for _ in 0..500 {
@@ -53,7 +140,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let _peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (socket, _) = listener.accept().unwrap();
-    let (sender, _receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
+    let (sender, _receiver) = state.outbound.client_queue();
     let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
     run_tick(
         &mut state,
@@ -81,14 +168,13 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
     let save = TestSave::new("profile-fifo");
     let profile = 42;
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: crate::world::STONE,
-        count: 2,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
     save_inventory(&save, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
+    let first_id = action_id(&state, profile, 1);
+    let second_id = action_id(&state, profile, 2);
     let _ = messages(&session);
 
     run_tick(
@@ -99,7 +185,7 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
                 id: session.id,
                 sequence: 1,
                 message: ClientMessage::InventoryMove {
-                    action_id: 101,
+                    action_id: first_id,
                     from: 0,
                     to: 1,
                     count: 1,
@@ -109,7 +195,7 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
                 id: session.id,
                 sequence: 2,
                 message: ClientMessage::InventoryMove {
-                    action_id: 102,
+                    action_id: second_id,
                     from: 1,
                     to: 2,
                     count: 1,
@@ -133,20 +219,27 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
             DurableRequest::Pickup { .. } | DurableRequest::Expire => None,
         })
         .collect();
-    assert_eq!(queued_command_ids, [102]);
+    assert_eq!(queued_command_ids, [second_id]);
     assert_eq!(
-        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        state.clients[&session.id].inventory.slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
         2
     );
     wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
-        inventory.slots[0].is_some_and(|stack| stack.count == 1)
+        inventory.slots[0]
+            .as_ref()
+            .is_some_and(|stack| stack.count == 1)
             && inventory.slots[1].is_none()
-            && inventory.slots[2].is_some_and(|stack| stack.count == 1)
+            && inventory.slots[2]
+                .as_ref()
+                .is_some_and(|stack| stack.count == 1)
     });
 
     let output = messages(&session);
-    assert_eq!(action_result(&output, 101), Some(true));
-    assert_eq!(action_result(&output, 102), Some(true));
+    assert_eq!(action_result(&output, first_id), Some(true));
+    assert_eq!(action_result(&output, second_id), Some(true));
 }
 
 #[test]
@@ -154,17 +247,15 @@ fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
     let save = TestSave::new("inventory-recovery");
     let profile = 73;
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: crate::world::STONE,
-        count: 2,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
     save_inventory(&save, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
+    let move_id = action_id(&state, profile, 1);
     let _ = messages(&session);
     let command = ClientMessage::InventoryMove {
-        action_id: 901,
+        action_id: move_id,
         from: 0,
         to: 1,
         count: 1,
@@ -180,24 +271,35 @@ fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
         }],
     );
     assert_eq!(
-        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        state.clients[&session.id].inventory.slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
         2
     );
     assert!(
         !messages(&session)
             .iter()
-            .any(|message| matches!(message, ServerMessage::ActionResult { action_id: 901, .. }))
+            .any(|message| matches!(message, ServerMessage::ActionResult { action_id, .. } if *action_id == move_id))
     );
     wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
-        inventory.slots[0].is_some_and(|stack| stack.count == 1)
-            && inventory.slots[1].is_some_and(|stack| stack.count == 1)
+        inventory.slots[0]
+            .as_ref()
+            .is_some_and(|stack| stack.count == 1)
+            && inventory.slots[1]
+                .as_ref()
+                .is_some_and(|stack| stack.count == 1)
     });
-    assert_eq!(action_result(&messages(&session), 901), Some(true));
+    assert_eq!(action_result(&messages(&session), move_id), Some(true));
 
-    let exact_retry = command_and_wait(&mut state, &mut tick, &session, 2, 901, command.clone());
-    assert_eq!(action_result(&exact_retry, 901), Some(true));
+    let exact_retry =
+        command_and_wait(&mut state, &mut tick, &session, 2, move_id, command.clone());
+    assert_eq!(action_result(&exact_retry, move_id), Some(true));
     assert_eq!(
-        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        state.clients[&session.id].inventory.slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
         1
     );
     let changed_retry = command_and_wait(
@@ -205,15 +307,15 @@ fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
         &mut tick,
         &session,
         3,
-        901,
+        move_id,
         ClientMessage::InventoryMove {
-            action_id: 901,
+            action_id: move_id,
             from: 0,
             to: 2,
             count: 1,
         },
     );
-    assert_eq!(action_result(&changed_retry, 901), Some(false));
+    assert_eq!(action_result(&changed_retry, move_id), Some(false));
     assert!(state.clients[&session.id].inventory.slots[2].is_none());
 
     drop(session);
@@ -222,19 +324,27 @@ fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
     let mut restarted = state_for(&save, 7);
     let mut restart_tick = 1;
     let restored = join(&mut restarted, &mut restart_tick, profile);
-    assert_eq!(restored.joined.inventory.slots[0].unwrap().count, 1);
-    assert_eq!(restored.joined.inventory.slots[1].unwrap().count, 1);
+    assert_ne!(action_id(&restarted, profile, 1), move_id);
+    assert_eq!(
+        restored.joined.inventory.slots[0].as_ref().unwrap().count,
+        1
+    );
+    assert_eq!(
+        restored.joined.inventory.slots[1].as_ref().unwrap().count,
+        1
+    );
     let retry_after_restart = command_and_wait(
         &mut restarted,
         &mut restart_tick,
         &restored,
         1,
-        901,
+        move_id,
         command,
     );
-    assert_eq!(action_result(&retry_after_restart, 901), Some(true));
+    assert_eq!(action_result(&retry_after_restart, move_id), Some(false));
     assert_eq!(
         restarted.clients[&restored.id].inventory.slots[1]
+            .as_ref()
             .unwrap()
             .count,
         1
@@ -246,14 +356,14 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     let save = TestSave::new("edit-drop-recovery");
     let profile = 84;
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: crate::world::STONE,
-        count: 2,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
     save_inventory(&save, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
+    let place_id = action_id(&state, profile, 1);
+    let harvest_id = action_id(&state, profile, 2);
+    let drop_id = action_id(&state, profile, 3);
     let _ = messages(&session);
     let feet_y = session.joined.position[1] as i32;
     let target_y = feet_y + 2;
@@ -270,9 +380,9 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
         &mut tick,
         &session,
         1,
-        1_001,
+        place_id,
         ClientMessage::Edit {
-            action_id: 1_001,
+            action_id: place_id,
             x: 0,
             y: target_y,
             z: 0,
@@ -280,13 +390,16 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
             slot: 0,
         },
     );
-    assert_eq!(action_result(&placed, 1_001), Some(true));
+    assert_eq!(action_result(&placed, place_id), Some(true));
     assert_eq!(
         state.world.cached_block(0, target_y, 0),
         Some(crate::world::STONE)
     );
     assert_eq!(
-        state.clients[&session.id].inventory.slots[0].unwrap().count,
+        state.clients[&session.id].inventory.slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
         1
     );
 
@@ -295,9 +408,9 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
         &mut tick,
         &session,
         2,
-        1_002,
+        harvest_id,
         ClientMessage::Edit {
-            action_id: 1_002,
+            action_id: harvest_id,
             x: 0,
             y: target_y,
             z: 0,
@@ -305,7 +418,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
             slot: 0,
         },
     );
-    assert_eq!(action_result(&harvested, 1_002), Some(true));
+    assert_eq!(action_result(&harvested, harvest_id), Some(true));
     assert_eq!(state.world.cached_block(0, target_y, 0), Some(AIR));
     assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
 
@@ -314,14 +427,14 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
         &mut tick,
         &session,
         3,
-        1_003,
+        drop_id,
         ClientMessage::DropStack {
-            action_id: 1_003,
+            action_id: drop_id,
             slot: 0,
             count: 1,
         },
     );
-    assert_eq!(action_result(&thrown, 1_003), Some(true));
+    assert_eq!(action_result(&thrown, drop_id), Some(true));
     assert!(state.clients[&session.id].inventory.slots[0].is_none());
     assert_eq!(state.drops.nearby(session.joined.position).len(), 2);
 
@@ -340,14 +453,12 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
     let save = TestSave::new("pickup-recovery");
     let profile = 95;
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: crate::world::STONE,
-        count: 1,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 1));
     save_inventory(&save, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
+    let drop_id = action_id(&state, profile, 1);
     let _ = messages(&session);
 
     let thrown = command_and_wait(
@@ -355,21 +466,22 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
         &mut tick,
         &session,
         1,
-        2_001,
+        drop_id,
         ClientMessage::DropStack {
-            action_id: 2_001,
+            action_id: drop_id,
             slot: 0,
             count: 1,
         },
     );
-    assert_eq!(action_result(&thrown, 2_001), Some(true));
+    assert_eq!(action_result(&thrown, drop_id), Some(true));
     assert!(state.clients[&session.id].inventory.slots[0].is_none());
     assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
 
     std::thread::sleep(Duration::from_millis(1_510));
     wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
         inventory.slots[0]
-            .is_some_and(|stack| stack.item == crate::world::STONE && stack.count == 1)
+            .as_ref()
+            .is_some_and(|stack| stack.item == STONE_ITEM && stack.count == 1)
     });
     assert!(state.drops.nearby(session.joined.position).is_empty());
     assert!(
@@ -386,10 +498,7 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
     let restored_inventory = restarted.inventory_store.load(profile).unwrap();
     assert_eq!(
         restored_inventory.slots[0],
-        Some(crate::inventory::Stack {
-            item: crate::world::STONE,
-            count: 1
-        })
+        Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
     assert!(restarted.drops.nearby(pickup_position).is_empty());
 }
@@ -414,9 +523,7 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
             .iter()
             .any(|request| matches!(request, DurableRequest::Pickup { id } if *id == session.id))
     );
-    state
-        .drops
-        .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+    state.drops.spawn(position, STONE_ITEM, 1, Duration::ZERO);
     state.durability.rotation_requested = true;
     for _ in 0..2_000 {
         run_empty_tick(&mut state, &mut tick);
@@ -453,10 +560,7 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     assert!(completed, "post-cut pickup/checkpoint did not complete");
     assert_eq!(
         state.clients[&session.id].inventory.slots[0],
-        Some(crate::inventory::Stack {
-            item: crate::world::STONE,
-            count: 1,
-        })
+        Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
     Drops::write_snapshot(&save.path().join("drops.bin"), &old_drops_snapshot).unwrap();
 
@@ -466,10 +570,7 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     assert!(restarted.drops.nearby(position).is_empty());
     assert_eq!(
         restarted.inventory_store.load(713).unwrap().slots[0],
-        Some(crate::inventory::Stack {
-            item: crate::world::STONE,
-            count: 1,
-        })
+        Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
     let recovered_drops = Drops::open(save.path()).unwrap();
     assert!(recovered_drops.nearby(position).is_empty());

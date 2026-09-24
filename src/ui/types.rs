@@ -67,7 +67,7 @@ pub struct UiDebug {
 }
 
 /// Values needed to draw a frame. Borrow status text to avoid per-frame string allocation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
     pub screen: UiScreen,
     pub selected_slot: usize,
@@ -85,7 +85,7 @@ impl Default for UiFrame<'_> {
         Self {
             screen: UiScreen::Playing,
             selected_slot: 0,
-            inventory: [None; SLOTS],
+            inventory: std::array::from_fn(|_| None),
             inventory_source: None,
             target: None,
             status: None,

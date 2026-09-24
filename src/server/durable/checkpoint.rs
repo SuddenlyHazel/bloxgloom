@@ -45,7 +45,11 @@ pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
                                     .inventory_overlay
                                     .get(&profile)
                                     .and_then(|inventory| {
-                                        InventoryStore::encode_snapshot(inventory).ok()
+                                        InventoryStore::encode_snapshot_with_catalog(
+                                            inventory,
+                                            state.world.catalog(),
+                                        )
+                                        .ok()
                                     })
                                     .as_deref()
                                     == Some(snapshot.as_slice())
@@ -105,6 +109,19 @@ pub(super) fn submit_dirty_checkpoints(state: &mut State) {
                 match state
                     .durability
                     .submit_checkpoint(key, move |bytes| Drops::write_snapshot(&path, bytes))
+                {
+                    Ok(_) | Err(CheckpointSubmitError::Full) => {}
+                    Err(CheckpointSubmitError::Closed) => state.durability.failed = true,
+                }
+            }
+            "bloxgloom:action_ledger" => {
+                let Some(profile) = decode_inventory_checkpoint_key(&key.bytes) else {
+                    continue;
+                };
+                let store = state.durability.receipt_store.clone();
+                match state
+                    .durability
+                    .submit_checkpoint(key, move |bytes| store.write(profile, bytes))
                 {
                     Ok(_) | Err(CheckpointSubmitError::Full) => {}
                     Err(CheckpointSubmitError::Closed) => state.durability.failed = true,

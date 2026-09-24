@@ -13,7 +13,7 @@ fn air_chunk(key: ChunkKey) -> Chunk {
     Chunk {
         key,
         version: 1,
-        blocks: vec![AIR; CHUNK_VOLUME],
+        blocks: vec![AIR; CHUNK_VOLUME].into(),
     }
 }
 

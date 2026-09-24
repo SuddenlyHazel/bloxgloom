@@ -7,7 +7,6 @@
 use crate::world::{ChunkKey, LoadedChunk, World};
 use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -82,7 +81,7 @@ pub(super) struct ChunkLoader {
 }
 
 impl ChunkLoader {
-    pub(super) fn new(seed: u64, save_dir: PathBuf, capacity: usize) -> io::Result<Self> {
+    pub(super) fn new(world: &World, capacity: usize) -> io::Result<Self> {
         if capacity == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -97,13 +96,7 @@ impl ChunkLoader {
         let mut workers = Vec::with_capacity(WORKER_COUNT);
 
         for worker_id in 0..WORKER_COUNT {
-            let world = match World::with_capacity(seed, save_dir.clone(), 1) {
-                Ok(world) => world,
-                Err(error) => {
-                    stop_workers(&stopping, &mut workers, job_sender, result_receiver);
-                    return Err(error);
-                }
-            };
+            let world = world.loader_view();
             let jobs = Arc::clone(&job_receiver);
             let results = result_sender.clone();
             let stopping_flag = Arc::clone(&stopping);

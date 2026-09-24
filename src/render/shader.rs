@@ -1,5 +1,4 @@
 use super::SUN_DIRECTION;
-use super::material::GLOWSTONE_LAYER;
 
 pub(super) fn with_world_sun(source: &str) -> String {
     format!(
@@ -8,9 +7,9 @@ pub(super) fn with_world_sun(source: &str) -> String {
     )
 }
 
-pub(super) fn with_voxel_constants(source: &str) -> String {
+pub(super) fn with_voxel_constants(source: &str, glowstone_layer: u32) -> String {
     format!(
-        "const GLOWSTONE_LAYER: i32 = {GLOWSTONE_LAYER};\n{}",
+        "const GLOWSTONE_LAYER: i32 = {glowstone_layer};\n{}",
         with_world_sun(source)
     )
 }

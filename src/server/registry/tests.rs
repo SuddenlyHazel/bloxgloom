@@ -1,5 +1,10 @@
+use super::super::parallel::{
+    BatchId, JobKey, OwnerJob, OwnerKey, OwnerPatch, OwnerRevision, OwnerSnapshot, PatchUsage,
+};
+use super::super::simulation::TickId;
 use super::*;
 use crate::world::world_to_chunk;
+use std::sync::Arc;
 
 fn system_id(value: &str) -> SystemId {
     SystemId::new(value).unwrap()
@@ -11,6 +16,14 @@ fn resource(value: &str) -> ResourceId {
 
 fn descriptor(id: &str, phase: Phase) -> SystemDescriptor {
     SystemDescriptor::new(system_id(id), phase, OwnerPartition::Chunk, 1, 0)
+}
+
+fn noop_handler(job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
+    Ok(OwnerPatch::new(job, (), PatchUsage::default()))
+}
+
+fn register(registry: &mut SystemRegistry, descriptor: SystemDescriptor) {
+    registry.register_handler(descriptor, noop_handler).unwrap();
 }
 
 fn deterministic_plan(reverse_registration: bool) -> PhasePlan {
@@ -38,7 +51,7 @@ fn deterministic_plan(reverse_registration: bool) -> PhasePlan {
 
     let mut registry = SystemRegistry::new();
     for declaration in declarations {
-        registry.register(declaration).unwrap();
+        register(&mut registry, declaration);
     }
     registry.freeze().unwrap()
 }
@@ -47,7 +60,36 @@ fn deterministic_plan(reverse_registration: bool) -> PhasePlan {
 fn freeze_is_registration_order_independent_and_accepts_transitive_conflict_order() {
     let forward = deterministic_plan(false);
     let reverse = deterministic_plan(true);
-    assert_eq!(forward, reverse);
+    for phase in Phase::ALL {
+        let forward_ids: Vec<_> = forward
+            .systems(phase)
+            .iter()
+            .map(|system| system.id().as_str())
+            .collect();
+        let reverse_ids: Vec<_> = reverse
+            .systems(phase)
+            .iter()
+            .map(|system| system.id().as_str())
+            .collect();
+        assert_eq!(forward_ids, reverse_ids);
+    }
+    let simulation_waves: Vec<Vec<_>> = forward
+        .waves(Phase::Simulation)
+        .map(|wave| {
+            wave.systems()
+                .iter()
+                .map(|system| system.id().as_str())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        simulation_waves,
+        [
+            vec!["builtin:alpha", "builtin:independent"],
+            vec!["builtin:middle"],
+            vec!["builtin:omega"],
+        ]
+    );
 
     let simulation = forward.systems(Phase::Simulation);
     let ids: Vec<_> = simulation
@@ -104,18 +146,22 @@ fn unordered_read_write_and_write_write_conflicts_are_rejected() {
 #[test]
 fn disjoint_and_read_only_accesses_can_share_a_phase() {
     let mut registry = SystemRegistry::new();
-    registry
-        .register(descriptor("builtin:read-a", Phase::Simulation).read(resource("builtin:a")))
-        .unwrap();
-    registry
-        .register(descriptor("builtin:read-b", Phase::Simulation).read(resource("builtin:a")))
-        .unwrap();
-    registry
-        .register(descriptor("builtin:write-c", Phase::Simulation).write(resource("builtin:c")))
-        .unwrap();
+    register(
+        &mut registry,
+        descriptor("builtin:read-a", Phase::Simulation).read(resource("builtin:a")),
+    );
+    register(
+        &mut registry,
+        descriptor("builtin:read-b", Phase::Simulation).read(resource("builtin:a")),
+    );
+    register(
+        &mut registry,
+        descriptor("builtin:write-c", Phase::Simulation).write(resource("builtin:c")),
+    );
 
     let plan = registry.freeze().unwrap();
     assert_eq!(plan.systems(Phase::Simulation).len(), 3);
+    assert_eq!(plan.waves(Phase::Simulation).count(), 1);
 }
 
 #[test]
@@ -179,6 +225,141 @@ fn duplicate_ids_and_invalid_namespaced_ids_are_rejected() {
         ResourceId::new(format!("builtin:{}", "x".repeat(MAX_STABLE_ID_BYTES))),
         Err(IdentifierError::TooLong { .. })
     ));
+}
+
+#[test]
+fn freeze_rejects_metadata_without_an_executable_handler() {
+    let mut registry = SystemRegistry::new();
+    registry
+        .register(descriptor("builtin:metadata-only", Phase::Simulation))
+        .unwrap();
+
+    assert_eq!(
+        registry.freeze().unwrap_err(),
+        RegistryError::MissingHandler {
+            system: system_id("builtin:metadata-only"),
+        }
+    );
+}
+
+#[test]
+fn legacy_freeze_requires_an_exact_adapter_allowlist_and_never_prepares_it() {
+    let legacy_id = system_id("builtin:legacy");
+    let mut registry = SystemRegistry::new();
+    registry
+        .register(descriptor("builtin:legacy", Phase::Simulation))
+        .unwrap();
+    registry
+        .register_handler(descriptor("builtin:real", Phase::Simulation), noop_handler)
+        .unwrap();
+
+    let plan = registry
+        .freeze_legacy([legacy_id.clone()])
+        .expect("the explicitly listed metadata adapter is permitted");
+    let legacy = plan.system(&legacy_id).unwrap();
+    let real_id = system_id("builtin:real");
+    let real = plan.system(&real_id).unwrap();
+    assert!(legacy.is_coordinator_adapter());
+    assert!(!legacy.has_executable_handler());
+    assert!(legacy.handler().is_none());
+    assert!(!real.is_coordinator_adapter());
+    assert!(real.has_executable_handler());
+    assert!(real.handler().is_some());
+
+    let owner = OwnerKey::chunk(world_to_chunk(0, 0, 0).0);
+    let job = OwnerJob::new(
+        legacy_id.clone(),
+        JobKey::new(
+            BatchId::new(TickId::new(1), Phase::Simulation, 0),
+            owner,
+            0,
+            0,
+        ),
+        vec![OwnerSnapshot::new(owner, 0, Arc::new(()))],
+    )
+    .unwrap();
+    assert!(matches!(
+        legacy.prepare(&job),
+        Err(SystemHandlerError::CoordinatorAdapterOnly { system }) if system == legacy_id
+    ));
+}
+
+#[test]
+fn legacy_freeze_rejects_unlisted_unknown_and_executable_adapter_ids() {
+    let missing_id = system_id("builtin:missing");
+    let mut missing = SystemRegistry::new();
+    missing
+        .register(descriptor("builtin:missing", Phase::Simulation))
+        .unwrap();
+    assert!(matches!(
+        missing.freeze_legacy([]),
+        Err(RegistryError::MissingHandler { system }) if system == missing_id
+    ));
+
+    let mut unknown = SystemRegistry::new();
+    unknown
+        .register(descriptor("builtin:present", Phase::Simulation))
+        .unwrap();
+    assert!(matches!(
+        unknown.freeze_legacy([system_id("builtin:unknown")]),
+        Err(RegistryError::UnknownLegacyAdapter { system })
+            if system == system_id("builtin:unknown")
+    ));
+
+    let real_id = system_id("builtin:real");
+    let mut executable = SystemRegistry::new();
+    executable
+        .register_handler(descriptor("builtin:real", Phase::Simulation), noop_handler)
+        .unwrap();
+    assert!(matches!(
+        executable.freeze_legacy([real_id.clone()]),
+        Err(RegistryError::LegacyAdapterHasHandler { system }) if system == real_id
+    ));
+}
+
+#[test]
+fn frozen_registry_dispatches_the_registered_typed_owner_handler() {
+    let owner = OwnerKey::chunk(world_to_chunk(-1, 0, 0).0);
+    let mut registry = SystemRegistry::new();
+    registry
+        .register_handler(
+            descriptor("builtin:typed", Phase::Simulation),
+            move |job: &OwnerJob| {
+                let value = job
+                    .snapshot(owner)
+                    .and_then(|snapshot| snapshot.value::<u64>())
+                    .copied()
+                    .ok_or_else(|| SystemHandlerError::Rejected("missing typed view".into()))?;
+                Ok(OwnerPatch::new(job, value + 1, PatchUsage::default()))
+            },
+        )
+        .unwrap();
+    let plan = registry.freeze().unwrap();
+
+    let key = JobKey::new(
+        BatchId::new(TickId::new(4), Phase::Simulation, 0),
+        owner,
+        0,
+        12,
+    );
+    let system = system_id("builtin:typed");
+    let job = OwnerJob::new(
+        system.clone(),
+        key,
+        vec![OwnerSnapshot::new(owner, 12, Arc::new(41_u64))],
+    )
+    .unwrap();
+    let patch = plan.system(&system).unwrap().prepare(&job).unwrap();
+
+    assert_eq!(patch.owner(), owner);
+    assert_eq!(
+        patch.revisions(),
+        &[OwnerRevision {
+            owner,
+            revision: 12,
+        }]
+    );
+    assert_eq!(patch.payload::<u64>(), Some(&42));
 }
 
 #[test]
@@ -292,9 +473,10 @@ fn zero_effect_budget_is_an_explicit_no_effect_contract_and_chunk_owners_can_be_
     assert_eq!(owner.x, -1);
 
     let mut registry = SystemRegistry::new();
-    registry
-        .register(descriptor("builtin:negative-chunk-job", Phase::Simulation).neighbor_radius(1))
-        .unwrap();
+    register(
+        &mut registry,
+        descriptor("builtin:negative-chunk-job", Phase::Simulation).neighbor_radius(1),
+    );
     let plan = registry.freeze().unwrap();
     let scheduled = &plan.systems(Phase::Simulation)[0];
     assert_eq!(scheduled.partition(), OwnerPartition::Chunk);

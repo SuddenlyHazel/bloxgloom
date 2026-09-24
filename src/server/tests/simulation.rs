@@ -6,9 +6,12 @@ fn zero_client_tick_advances_world_drops() {
     let mut state = state_for(&save, 7);
     assert!(state.clients.is_empty());
     let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
-    state
-        .drops
-        .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+    state.drops.spawn(
+        position,
+        crate::items::ItemId::new(crate::world::STONE.get()),
+        1,
+        Duration::ZERO,
+    );
     let before = state.drops.nearby(position)[0].position[1];
 
     tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
@@ -28,7 +31,7 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
     let surface_y = state.spawn_anchor[1] as i32;
     state.drops.spawn(
         [0.5, surface_y as f32 + 0.25, 0.5],
-        crate::world::STONE,
+        crate::items::ItemId::new(crate::world::STONE.get()),
         1,
         Duration::ZERO,
     );
@@ -65,9 +68,9 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
         &mut tick,
         &session,
         1,
-        8_001,
+        session.action_id(1),
         ClientMessage::Edit {
-            action_id: 8_001,
+            action_id: session.action_id(1),
             x: 0,
             y: surface_y - 1,
             z: 0,
@@ -75,7 +78,7 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
             slot: 0,
         },
     );
-    assert_eq!(action_result(&output, 8_001), Some(true));
+    assert_eq!(action_result(&output, session.action_id(1)), Some(true));
 }
 
 #[test]
@@ -92,9 +95,12 @@ fn player_count_does_not_change_authoritative_drop_trajectory() {
 
     let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
     for state in [&mut empty, &mut populated] {
-        state
-            .drops
-            .spawn(position, crate::world::STONE, 1, Duration::ZERO);
+        state.drops.spawn(
+            position,
+            crate::items::ItemId::new(crate::world::STONE.get()),
+            1,
+            Duration::ZERO,
+        );
     }
     for offset in 0..8 {
         tick_once(&mut empty, TickId::new(1 + offset), Instant::now()).unwrap();

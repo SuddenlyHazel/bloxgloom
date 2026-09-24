@@ -8,7 +8,12 @@ fn checkpoint_generation_changes_with_serialized_drop_state() {
     assert!(!drops.matches_checkpoint_generation(&empty[..10]));
 
     let spawn = drops
-        .plan_spawns(&[([0.0, 12.0, 0.0], crate::world::STONE, 1, Duration::ZERO)])
+        .plan_spawns(&[(
+            [0.0, 12.0, 0.0],
+            crate::items::ItemId::new(crate::world::STONE.get()),
+            1,
+            Duration::ZERO,
+        )])
         .unwrap();
     drops.apply_plan(&spawn).unwrap();
     assert!(!drops.matches_checkpoint_generation(&empty));

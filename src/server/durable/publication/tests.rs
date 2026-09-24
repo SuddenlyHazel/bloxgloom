@@ -35,6 +35,7 @@ fn several_cells_in_one_chunk_publish_one_authoritative_chunk_snapshot() {
         profile: None,
         action_id: None,
         receipt_value: None,
+        receipt_transition: None,
         inventory_before: None,
         inventory: None,
         world_edits: prepared,

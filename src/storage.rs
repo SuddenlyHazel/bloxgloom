@@ -2,19 +2,29 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, TERRAIN_GENERATOR_VERSION, valid_block};
+use crate::content::{Catalog, ContentManifest, MAX_MANIFEST_BYTES};
+use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, TERRAIN_GENERATOR_VERSION};
+
+pub mod legacy;
 
 const MAGIC: &[u8; 4] = b"BGED";
-const FORMAT_VERSION: u16 = 2;
+// BGED v3: magic[4], format u16, terrain generator u16, seed u64,
+// revision u64, count u16, sorted `(cell_index u16, state_id u32)` records,
+// FNV-1a checksum u32. v4 BGED v2 is only accepted by the offline converter.
+const FORMAT_VERSION: u16 = 3;
 const HEADER_LEN: usize = 4 + 2 + 2 + 8 + 8 + 2;
+const MAX_SNAPSHOT_BYTES: usize = HEADER_LEN + CHUNK_VOLUME * 6 + 4;
 const WORLD_MAGIC: &[u8; 4] = b"BGWD";
 const WORLD_META: &str = "world.meta";
-const CONTENT_MAGIC: &[u8; 4] = b"BGCM";
 const CONTENT_MAP: &str = "content.map";
+pub(crate) const WORLD_LOCK: &str = ".world.lock";
+pub(crate) const CONVERSION_INCOMPLETE: &str = ".conversion-incomplete";
+const SAVE_FORMAT_VERSION: u16 = 5;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -27,27 +37,70 @@ pub struct SavedEdits {
 pub struct Storage {
     root: PathBuf,
     seed: u64,
+    catalog: Arc<Catalog>,
+    // Clones share one open lock descriptor; an active server must exclude
+    // offline conversion and a second writer for the entire world lifetime.
+    _world_lock: Arc<File>,
 }
 
 impl Storage {
     pub fn new(root: impl AsRef<Path>, seed: u64) -> io::Result<Self> {
-        fs::create_dir_all(root.as_ref())?;
+        Self::with_catalog(root, seed, Arc::new(crate::content::catalog().clone()))
+    }
+
+    pub fn with_catalog(
+        root: impl AsRef<Path>,
+        seed: u64,
+        catalog: Arc<Catalog>,
+    ) -> io::Result<Self> {
+        catalog
+            .validate()
+            .map_err(|_| invalid_data("incomplete content catalog"))?;
         let root = root.as_ref().to_owned();
+        if root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".partial"))
+        {
+            return Err(invalid_data(
+                "incomplete conversion stage cannot be opened as a world",
+            ));
+        }
+        fs::create_dir_all(&root)?;
+        if root.join(CONVERSION_INCOMPLETE).exists() {
+            return Err(invalid_data("world conversion is incomplete"));
+        }
+        let world_lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(root.join(WORLD_LOCK))?;
+        world_lock.try_lock().map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::WouldBlock,
+                format!("world is already open by another writer: {error}"),
+            )
+        })?;
         let metadata_path = root.join(WORLD_META);
-        match fs::read(&metadata_path) {
-            Ok(bytes) => {
-                if bytes.len() != 14 || &bytes[..4] != WORLD_MAGIC {
+        let catalog = match File::open(&metadata_path) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take(17).read_to_end(&mut bytes)?;
+                if bytes.len() != 16 || &bytes[..4] != WORLD_MAGIC {
                     return Err(invalid_data("invalid world metadata"));
                 }
-                let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
-                if version != TERRAIN_GENERATOR_VERSION {
+                let save_version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
+                let generator_version = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
+                if save_version != SAVE_FORMAT_VERSION
+                    || generator_version != TERRAIN_GENERATOR_VERSION
+                {
                     return Err(invalid_data("incompatible terrain generator version"));
                 }
-                let saved_seed = u64::from_le_bytes(bytes[6..14].try_into().unwrap());
+                let saved_seed = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
                 if saved_seed != seed {
                     return Err(invalid_data("world directory belongs to another seed"));
                 }
-                verify_content_map(&root, false)?;
+                resolve_content_map_with(&root, false, &catalog)?
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 for entry in fs::read_dir(&root)? {
@@ -62,9 +115,10 @@ impl Storage {
                         ));
                     }
                 }
-                verify_content_map(&root, true)?;
-                let mut bytes = Vec::with_capacity(14);
+                let resolved = resolve_content_map_with(&root, true, &catalog)?;
+                let mut bytes = Vec::with_capacity(16);
                 bytes.extend_from_slice(WORLD_MAGIC);
+                bytes.extend_from_slice(&SAVE_FORMAT_VERSION.to_le_bytes());
                 bytes.extend_from_slice(&TERRAIN_GENERATOR_VERSION.to_le_bytes());
                 bytes.extend_from_slice(&seed.to_le_bytes());
                 let temp_id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -88,10 +142,20 @@ impl Storage {
                     let _ = fs::remove_file(&temp_path);
                 }
                 result?;
+                resolved
             }
             Err(error) => return Err(error),
-        }
-        Ok(Self { root, seed })
+        };
+        Ok(Self {
+            root,
+            seed,
+            catalog,
+            _world_lock: Arc::new(world_lock),
+        })
+    }
+
+    pub fn catalog_arc(&self) -> Arc<Catalog> {
+        Arc::clone(&self.catalog)
     }
 
     fn path(&self, key: ChunkKey) -> PathBuf {
@@ -112,14 +176,22 @@ impl Storage {
     }
 
     fn read_snapshot_bytes(&self, key: ChunkKey) -> io::Result<Option<Vec<u8>>> {
-        match fs::read(self.path(key)) {
-            Ok(bytes) => Ok(Some(bytes)),
+        match File::open(self.path(key)) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take((MAX_SNAPSHOT_BYTES + 1) as u64)
+                    .read_to_end(&mut bytes)?;
+                if bytes.len() > MAX_SNAPSHOT_BYTES {
+                    return Err(invalid_data("chunk edits file too large"));
+                }
+                Ok(Some(bytes))
+            }
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err),
         }
     }
 
-    /// Encodes sparse edits using the current BGED v2 format. A pristine chunk
+    /// Encodes sparse edits using the BGED v3 format. A pristine chunk
     /// has no persisted override file and is represented as `None`.
     pub fn encode_snapshot(&self, edits: &SavedEdits) -> io::Result<Option<Vec<u8>>> {
         if edits.blocks.len() > CHUNK_VOLUME {
@@ -129,7 +201,7 @@ impl Storage {
             return Ok(None);
         }
 
-        let mut bytes = Vec::with_capacity(HEADER_LEN + edits.blocks.len() * 3 + 4);
+        let mut bytes = Vec::with_capacity(HEADER_LEN + edits.blocks.len() * 6 + 4);
         bytes.extend_from_slice(MAGIC);
         bytes.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
         bytes.extend_from_slice(&TERRAIN_GENERATOR_VERSION.to_le_bytes());
@@ -137,11 +209,11 @@ impl Storage {
         bytes.extend_from_slice(&edits.version.to_le_bytes());
         bytes.extend_from_slice(&(edits.blocks.len() as u16).to_le_bytes());
         for (&index, &block) in &edits.blocks {
-            if index as usize >= CHUNK_VOLUME || !valid_block(block) {
+            if index as usize >= CHUNK_VOLUME || self.catalog.state(block).is_none() {
                 return Err(invalid_data("invalid chunk edit"));
             }
             bytes.extend_from_slice(&index.to_le_bytes());
-            bytes.push(block);
+            bytes.extend_from_slice(&block.0.to_le_bytes());
         }
         let checksum = checksum(&bytes);
         bytes.extend_from_slice(&checksum.to_le_bytes());
@@ -176,7 +248,7 @@ impl Storage {
         }
         let version = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
         let count = u16::from_le_bytes(bytes[24..26].try_into().unwrap()) as usize;
-        if count > CHUNK_VOLUME || bytes.len() != HEADER_LEN + count * 3 + 4 {
+        if count > CHUNK_VOLUME || bytes.len() != HEADER_LEN + count * 6 + 4 {
             return Err(invalid_data("invalid chunk edits length"));
         }
         let checksum_offset = bytes.len() - 4;
@@ -185,14 +257,19 @@ impl Storage {
             return Err(invalid_data("chunk edits checksum mismatch"));
         }
         let mut blocks = BTreeMap::new();
-        for record in bytes[HEADER_LEN..checksum_offset].chunks_exact(3) {
+        let mut previous = None;
+        for record in bytes[HEADER_LEN..checksum_offset].chunks_exact(6) {
             let index = u16::from_le_bytes([record[0], record[1]]);
+            let state =
+                crate::content::BlockStateId(u32::from_le_bytes(record[2..6].try_into().unwrap()));
             if index as usize >= CHUNK_VOLUME
-                || !valid_block(record[2])
-                || blocks.insert(index, record[2]).is_some()
+                || previous.is_some_and(|old| index <= old)
+                || self.catalog.state(state).is_none()
+                || blocks.insert(index, state).is_some()
             {
                 return Err(invalid_data("invalid or duplicate chunk edit index"));
             }
+            previous = Some(index);
         }
         Ok(SavedEdits { version, blocks })
     }
@@ -249,60 +326,50 @@ impl Storage {
     }
 }
 
-fn verify_content_map(root: &Path, new_world: bool) -> io::Result<()> {
-    verify_content_map_with(root, new_world, crate::content::catalog())
-}
-
+#[cfg(test)]
 fn verify_content_map_with(
     root: &Path,
     new_world: bool,
     catalog: &crate::content::Catalog,
 ) -> io::Result<()> {
+    resolve_content_map_with(root, new_world, catalog).map(|_| ())
+}
+
+fn resolve_content_map_with(
+    root: &Path,
+    new_world: bool,
+    catalog: &Catalog,
+) -> io::Result<Arc<Catalog>> {
     let path = root.join(CONTENT_MAP);
-    let current = catalog.identities();
-    match fs::read(&path) {
-        Ok(bytes) => {
-            let saved = decode_content_map(&bytes)?;
-            for (&(kind, id), key) in &saved {
-                let definition = current
-                    .iter()
-                    .find(|&&(other_kind, other_id, _)| other_kind == kind && other_id == id);
-                if definition.is_none_or(|entry| entry.2 != key) {
-                    return Err(invalid_data(
-                        "world content ID changed or content is missing",
-                    ));
-                }
+    let current = ContentManifest::from_catalog(catalog);
+    match File::open(&path) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.take((MAX_MANIFEST_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > MAX_MANIFEST_BYTES {
+                return Err(invalid_data("content manifest too large"));
             }
-            if saved.len() != current.len() {
-                write_content_map(root, &current)?;
+            let mut saved = ContentManifest::decode(&bytes)?;
+            let (resolved, changed) = saved.resolve_world_catalog(catalog)?;
+            if changed {
+                write_content_map(root, &saved)?;
             }
+            Ok(Arc::new(resolved))
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             if !new_world {
-                // Old v4 worlds predate the manifest. They are safe with the exact builtin
-                // catalog, but must not silently reinterpret IDs under a modded catalog.
-                if current != crate::content::Catalog::builtins().identities() {
-                    return Err(invalid_data("legacy world needs builtin content catalog"));
-                }
-            } else {
-                write_content_map(root, &current)?;
+                return Err(invalid_data("v5 world is missing content manifest"));
             }
+            write_content_map(root, &current)?;
+            Ok(Arc::new(catalog.clone()))
         }
-        Err(error) => return Err(error),
+        Err(error) => Err(error),
     }
-    Ok(())
 }
 
-fn write_content_map(root: &Path, entries: &[(u8, u8, &str)]) -> io::Result<()> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(CONTENT_MAGIC);
-    bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&(entries.len() as u16).to_le_bytes());
-    for &(kind, id, key) in entries {
-        bytes.extend([kind, id, key.len() as u8]);
-        bytes.extend_from_slice(key.as_bytes());
-    }
-    bytes.extend_from_slice(&checksum(&bytes).to_le_bytes());
+fn write_content_map(root: &Path, manifest: &ContentManifest) -> io::Result<()> {
+    let bytes = manifest.encode()?;
     let temporary = root.join(format!(
         ".content-map.{}.{}.tmp",
         std::process::id(),
@@ -323,45 +390,6 @@ fn write_content_map(root: &Path, entries: &[(u8, u8, &str)]) -> io::Result<()> 
         let _ = fs::remove_file(&temporary);
     }
     result
-}
-
-fn decode_content_map(bytes: &[u8]) -> io::Result<BTreeMap<(u8, u8), String>> {
-    if bytes.len() < 12 || &bytes[..4] != CONTENT_MAGIC {
-        return Err(invalid_data("invalid content map"));
-    }
-    if u16::from_le_bytes([bytes[4], bytes[5]]) != 1 {
-        return Err(invalid_data("unsupported content map format"));
-    }
-    let body_end = bytes.len() - 4;
-    if u32::from_le_bytes(bytes[body_end..].try_into().unwrap()) != checksum(&bytes[..body_end]) {
-        return Err(invalid_data("content map checksum mismatch"));
-    }
-    let count = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
-    if count > 512 {
-        return Err(invalid_data("too many content identities"));
-    }
-    let mut offset = 8;
-    let mut entries = BTreeMap::new();
-    for _ in 0..count {
-        if offset + 3 > body_end {
-            return Err(invalid_data("truncated content map"));
-        }
-        let (kind, id, length) = (bytes[offset], bytes[offset + 1], bytes[offset + 2] as usize);
-        offset += 3;
-        if !matches!(kind, b'B' | b'I') || offset + length > body_end {
-            return Err(invalid_data("invalid content map entry"));
-        }
-        let key = std::str::from_utf8(&bytes[offset..offset + length])
-            .map_err(|_| invalid_data("invalid content key"))?;
-        offset += length;
-        if entries.insert((kind, id), key.to_owned()).is_some() {
-            return Err(invalid_data("duplicate content identity"));
-        }
-    }
-    if offset != body_end {
-        return Err(invalid_data("trailing content map bytes"));
-    }
-    Ok(entries)
 }
 
 fn checksum(bytes: &[u8]) -> u32 {

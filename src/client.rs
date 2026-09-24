@@ -5,9 +5,9 @@ use crate::protocol::{ClientMessage, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{Camera, ChunkMesh, Renderer};
 use crate::ui::{SettingId, UiControl, UiDebug, UiFrame, UiLayout, UiScreen, UiSettings};
-use crate::world::{Chunk, ChunkKey};
+use crate::world::{AIR, BlockId, Chunk, ChunkKey};
 use glam::Vec3;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::TrySendError;
@@ -21,6 +21,7 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SPEED: f32 = 8.0;
 const MAX_CHUNKS: usize = 512;
+const MAX_OUTSTANDING_ACTIONS: usize = 128;
 
 pub(crate) mod drops;
 use drops::DropAnimator;
@@ -32,12 +33,31 @@ fn edit_for_hit(
     slot: u8,
     action_id: u128,
 ) -> Option<ClientMessage> {
+    edit_for_hit_with_catalog(
+        hit,
+        place,
+        selected_item,
+        slot,
+        action_id,
+        crate::content::catalog(),
+    )
+}
+
+fn edit_for_hit_with_catalog(
+    hit: Hit,
+    place: bool,
+    selected_item: Option<crate::items::ItemId>,
+    slot: u8,
+    action_id: u128,
+    catalog: &crate::content::Catalog,
+) -> Option<ClientMessage> {
     let block = if place {
-        crate::items::placeable_block(selected_item?)?
+        crate::items::placeable_block_in(selected_item?, catalog)?
     } else {
-        0
+        AIR
     };
-    let [x, y, z] = if place && !crate::world::is_replaceable(hit.block_id) {
+    let [x, y, z] = if place && catalog.block_flags(hit.block_id) & crate::content::REPLACEABLE == 0
+    {
         hit.adjacent
     } else {
         hit.block
@@ -90,10 +110,69 @@ fn chunk_in_view(key: ChunkKey, center: ChunkKey, radius: u8) -> bool {
         && (i64::from(key.z) - i64::from(center.z)).abs() <= radius
 }
 
-/// High bits identify one random client process session; low bits preserve
-/// action order within that session for durable replay and future compaction.
+/// High bits identify the server-issued durable session; low bits preserve
+/// action order within that session.
 fn action_id(session: u64, sequence: u64) -> u128 {
     (u128::from(session) << 64) | u128::from(sequence)
+}
+
+fn command_action_id(message: &ClientMessage) -> Option<u128> {
+    match message {
+        ClientMessage::Edit { action_id, .. }
+        | ClientMessage::InventoryMove { action_id, .. }
+        | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
+        _ => None,
+    }
+}
+
+#[derive(Default)]
+struct ActionTracker {
+    epoch: u64,
+    next_seq: u64,
+    acknowledged: u64,
+    terminal: BTreeSet<u64>,
+}
+
+impl ActionTracker {
+    fn install_fresh_session(
+        &mut self,
+        epoch: u64,
+        next_seq: u64,
+        acked_seq: u64,
+    ) -> Result<(), &'static str> {
+        if epoch == 0 || next_seq != 1 || acked_seq != 0 || self.epoch != 0 {
+            return Err("invalid fresh action session");
+        }
+        self.epoch = epoch;
+        self.next_seq = next_seq;
+        Ok(())
+    }
+
+    fn allocate(&mut self) -> Option<u128> {
+        if self.epoch == 0 || self.next_seq == u64::MAX {
+            return None;
+        }
+        let id = action_id(self.epoch, self.next_seq);
+        self.next_seq += 1;
+        Some(id)
+    }
+
+    fn terminal_result(&mut self, id: u128) -> Result<Option<u64>, &'static str> {
+        let epoch = (id >> 64) as u64;
+        let seq = id as u64;
+        if epoch != self.epoch || seq == 0 || seq >= self.next_seq {
+            return Err("result outside the current action session");
+        }
+        if seq <= self.acknowledged {
+            return Ok(None);
+        }
+        self.terminal.insert(seq);
+        let before = self.acknowledged;
+        while self.terminal.remove(&(self.acknowledged + 1)) {
+            self.acknowledged += 1;
+        }
+        Ok((self.acknowledged != before).then_some(self.acknowledged))
+    }
 }
 
 mod workers;
@@ -110,6 +189,7 @@ struct Keys {
 }
 
 struct ClientApp {
+    catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
     drops_revision: u64,
@@ -145,8 +225,9 @@ struct ClientApp {
     next_frame: Instant,
     last_frame: Instant,
     next_seq: u64,
-    action_session: u64,
-    next_action_sequence: u64,
+    actions: ActionTracker,
+    pending_actions: BTreeMap<u128, ClientMessage>,
+    deferred_actions: BTreeMap<u128, Instant>,
     unacked: VecDeque<(u64, Vec3)>,
     frame_count: u64,
     last_report: Instant,
@@ -155,11 +236,13 @@ struct ClientApp {
 }
 
 impl ClientApp {
-    fn new(network: Network, config: Config, config_path: PathBuf, action_session: u64) -> Self {
+    fn new(network: Network, config: Config, config_path: PathBuf) -> Self {
         let now = Instant::now();
+        let catalog = Arc::clone(&network.catalog);
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
         Self {
+            catalog,
             inventory: Inventory::default(),
             drop_animator: DropAnimator::new(now),
             drops_revision: 0,
@@ -195,8 +278,9 @@ impl ClientApp {
             next_frame: now,
             last_frame: now,
             next_seq: 1,
-            action_session: action_session.max(1),
-            next_action_sequence: 1,
+            actions: ActionTracker::default(),
+            pending_actions: BTreeMap::new(),
+            deferred_actions: BTreeMap::new(),
             unacked: VecDeque::new(),
             frame_count: 0,
             last_report: now,
@@ -272,13 +356,16 @@ impl ClientApp {
             }
             Some(source) if source == slot => self.inventory_source = None,
             Some(source) => {
-                if let Some(stack) = self.inventory.slots[source as usize] {
+                if let Some(stack) = self.inventory.slots[source as usize].as_ref() {
                     let count = if split {
                         stack.count.div_ceil(2)
                     } else {
                         stack.count
                     };
-                    let action_id = self.allocate_action_id();
+                    let Some(action_id) = self.allocate_action_id() else {
+                        self.show_status("Action session pending or busy");
+                        return;
+                    };
                     self.queue_command(ClientMessage::InventoryMove {
                         action_id,
                         from: source,
@@ -418,6 +505,12 @@ impl ClientApp {
         {
             return;
         }
+        if let Some(action_id) = command_action_id(&message) {
+            self.pending_actions.insert(action_id, message.clone());
+            if self.pending_commands.contains(&message) {
+                return;
+            }
+        }
         if !self.pending_commands.is_empty() || !self.network.send(message.clone()) {
             if self.pending_commands.len() < 128 {
                 self.pending_commands.push_back(message);
@@ -428,13 +521,11 @@ impl ClientApp {
         }
     }
 
-    fn allocate_action_id(&mut self) -> u128 {
-        let id = action_id(self.action_session, self.next_action_sequence);
-        self.next_action_sequence = self
-            .next_action_sequence
-            .checked_add(1)
-            .expect("action IDs exhausted");
-        id
+    fn allocate_action_id(&mut self) -> Option<u128> {
+        if self.pending_actions.len() >= MAX_OUTSTANDING_ACTIONS {
+            return None;
+        }
+        self.actions.allocate()
     }
 
     fn queue_relight(&mut self, key: ChunkKey, include_neighbors: bool) {
@@ -487,9 +578,26 @@ impl ClientApp {
 
     fn accept(&mut self, message: ServerMessage) {
         match message {
+            ServerMessage::ContentManifestPart { .. } => {
+                self.disconnected = true;
+                self.show_status("Unexpected content manifest after handshake");
+            }
             ServerMessage::Welcome { id, seed } => {
                 self.world_seed = Some(seed);
                 eprintln!("connected as player {id}, world seed {seed}")
+            }
+            ServerMessage::ActionSession {
+                epoch,
+                next_seq,
+                acked_seq,
+            } => {
+                if let Err(error) = self
+                    .actions
+                    .install_fresh_session(epoch, next_seq, acked_seq)
+                {
+                    eprintln!("action session: {error}");
+                    self.disconnected = true;
+                }
             }
             ServerMessage::Position { ack_seq, x, y, z } => {
                 while self.unacked.front().is_some_and(|(seq, _)| *seq <= ack_seq) {
@@ -525,7 +633,7 @@ impl ClientApp {
                     if version == chunk.version + 1 {
                         if let Some(index) = Chunk::index([x as usize, y as usize, z as usize]) {
                             let updated = Arc::make_mut(chunk);
-                            updated.blocks[index] = block;
+                            updated.blocks.set(index, block);
                             updated.version = version;
                             self.queue_relight(key, true);
                         }
@@ -540,12 +648,31 @@ impl ClientApp {
                 self.show_status(format!("Edit rejected: {reason}"));
             }
             ServerMessage::ActionResult {
-                action_id: _,
+                action_id,
                 accepted,
                 reason,
             } => {
                 if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
+                }
+                self.pending_actions.remove(&action_id);
+                self.deferred_actions.remove(&action_id);
+                match self.actions.terminal_result(action_id) {
+                    Ok(Some(through_seq)) => self.queue_command(ClientMessage::ActionAck {
+                        epoch: self.actions.epoch,
+                        through_seq,
+                    }),
+                    Ok(None) => {}
+                    Err(error) => {
+                        eprintln!("action result: {error}");
+                        self.disconnected = true;
+                    }
+                }
+            }
+            ServerMessage::ActionDeferred { action_id } => {
+                if self.pending_actions.contains_key(&action_id) {
+                    self.deferred_actions
+                        .insert(action_id, Instant::now() + Duration::from_millis(50));
                 }
             }
             ServerMessage::ViewDistance { radius } => {
@@ -570,6 +697,18 @@ impl ClientApp {
     }
 
     fn poll_work(&mut self) {
+        let now = Instant::now();
+        let due: Vec<_> = self
+            .deferred_actions
+            .iter()
+            .filter_map(|(&id, &at)| (at <= now).then_some(id))
+            .collect();
+        for id in due {
+            self.deferred_actions.remove(&id);
+            if let Some(command) = self.pending_actions.get(&id).cloned() {
+                self.queue_command(command);
+            }
+        }
         while let Some(message) = self.pending_commands.front().cloned() {
             if !self.network.send(message) {
                 break;
@@ -651,6 +790,7 @@ impl ClientApp {
             let job = MesherJob {
                 chunk,
                 known: self.lighting_snapshot(key),
+                catalog: Arc::clone(&self.catalog),
                 seed,
                 revision,
                 bounced_gi: self.config.bounced_gi,
@@ -713,16 +853,20 @@ impl ClientApp {
         }
     }
 
-    fn block_at(&self, x: i32, y: i32, z: i32) -> Option<u8> {
+    fn block_at(&self, x: i32, y: i32, z: i32) -> Option<BlockId> {
         let (key, local) = crate::world::world_to_chunk(x, y, z);
         self.chunks.get(&key)?.block(local)
     }
 
     fn aimed_block(&self) -> Option<Hit> {
         let camera = self.camera();
-        raycast::raycast(camera.position, camera.direction(), 7.0, |x, y, z| {
-            self.block_at(x, y, z)
-        })
+        raycast::raycast_with_catalog(
+            camera.position,
+            camera.direction(),
+            7.0,
+            |x, y, z| self.block_at(x, y, z),
+            &self.catalog,
+        )
     }
 
     fn edit_aimed_block(&mut self, place: bool) {
@@ -730,11 +874,24 @@ impl ClientApp {
             return;
         }
         if let Some(hit) = self.aimed_block() {
-            let item = self.inventory.slots[self.config.selected_slot].map(|stack| stack.item);
-            let action_id = self.allocate_action_id();
-            if let Some(command) =
-                edit_for_hit(hit, place, item, self.config.selected_slot as u8, action_id)
-            {
+            let item = self.inventory.slots[self.config.selected_slot]
+                .as_ref()
+                .map(|stack| stack.item);
+            if let Some(mut command) = edit_for_hit_with_catalog(
+                hit,
+                place,
+                item,
+                self.config.selected_slot as u8,
+                0,
+                &self.catalog,
+            ) {
+                let Some(action_id) = self.allocate_action_id() else {
+                    self.show_status("Action session pending or busy");
+                    return;
+                };
+                if let ClientMessage::Edit { action_id: id, .. } = &mut command {
+                    *id = action_id;
+                }
                 self.queue_command(command);
             } else {
                 self.show_status(if item.is_some() {
@@ -769,7 +926,7 @@ impl ClientApp {
         let ui = UiFrame {
             screen: self.screen,
             selected_slot: self.config.selected_slot,
-            inventory: self.inventory.slots,
+            inventory: self.inventory.slots.clone(),
             inventory_source: self.inventory_source,
             target,
             status,
@@ -835,17 +992,8 @@ pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&config_path);
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
-    let mut action_session_bytes = [0u8; 8];
-    getrandom::fill(&mut action_session_bytes)
-        .map_err(|error| std::io::Error::other(error.to_string()))?;
-    let action_session = u64::from_le_bytes(action_session_bytes).max(1);
     let event_loop = EventLoop::new()?;
-    event_loop.run_app(&mut ClientApp::new(
-        network,
-        config,
-        config_path,
-        action_session,
-    ))?;
+    event_loop.run_app(&mut ClientApp::new(network, config, config_path))?;
     Ok(())
 }
 

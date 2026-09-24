@@ -13,6 +13,23 @@ fn action_ids_keep_session_and_order_without_reuse() {
 }
 
 #[test]
+fn action_results_ack_only_a_contiguous_server_issued_session() {
+    let mut tracker = ActionTracker::default();
+    assert!(tracker.allocate().is_none());
+    assert!(tracker.install_fresh_session(17, 1, 0).is_ok());
+    assert!(tracker.install_fresh_session(18, 1, 0).is_err());
+    let first = tracker.allocate().unwrap();
+    let second = tracker.allocate().unwrap();
+    assert_eq!(first, action_id(17, 1));
+    assert_eq!(second, action_id(17, 2));
+    assert_eq!(tracker.terminal_result(second).unwrap(), None);
+    assert_eq!(tracker.terminal_result(first).unwrap(), Some(2));
+    assert_eq!(tracker.terminal_result(first).unwrap(), None);
+    assert!(tracker.terminal_result(action_id(16, 1)).is_err());
+    assert!(tracker.terminal_result(action_id(17, 3)).is_err());
+}
+
+#[test]
 fn escape_and_inventory_transitions_preserve_menu_flow() {
     assert_eq!(escape_screen(UiScreen::Playing), UiScreen::Pause);
     assert_eq!(escape_screen(UiScreen::Pause), UiScreen::Playing);
@@ -28,29 +45,29 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
     let hit = Hit {
         block: [2, 3, 4],
         adjacent: [1, 3, 4],
-        block_id: 3,
+        block_id: crate::world::BlockId::new(3),
         distance: 2.5,
         face: Face::NegX,
     };
     assert_eq!(
-        edit_for_hit(hit, true, Some(1), 2, 71),
+        edit_for_hit(hit, true, Some(crate::items::ItemId::new(1)), 2, 71),
         Some(ClientMessage::Edit {
             action_id: 71,
             x: 1,
             y: 3,
             z: 4,
-            block: 1,
+            block: crate::world::BlockId::new(1),
             slot: 2,
         })
     );
     assert_eq!(
-        edit_for_hit(hit, false, Some(1), 2, 72),
+        edit_for_hit(hit, false, Some(crate::items::ItemId::new(1)), 2, 72),
         Some(ClientMessage::Edit {
             action_id: 72,
             x: 2,
             y: 3,
             z: 4,
-            block: 0,
+            block: crate::world::AIR,
             slot: 2,
         })
     );
@@ -66,7 +83,13 @@ fn placing_on_a_replaceable_flower_targets_its_cell() {
         face: Face::PosY,
     };
     assert_eq!(
-        edit_for_hit(hit, true, Some(crate::world::WOOD), 0, 73),
+        edit_for_hit(
+            hit,
+            true,
+            Some(crate::items::ItemId::new(crate::world::WOOD.get())),
+            0,
+            73
+        ),
         Some(ClientMessage::Edit {
             action_id: 73,
             x: 2,
@@ -89,6 +112,58 @@ fn placing_on_a_replaceable_flower_targets_its_cell() {
         None
     );
     assert!(edit_for_hit(hit, false, Some(crate::items::SEEDS), 0, 77).is_some());
+}
+
+#[test]
+fn mapped_server_item_and_replaceable_state_drive_placement_preview() {
+    use crate::content::{BlockStateId, ContentManifest};
+    use crate::items::ItemId;
+    use glam::Vec3;
+
+    let local = crate::content::Catalog::builtins();
+    let mut manifest = ContentManifest::from_catalog(&local);
+    for entry in &mut manifest.entries {
+        match (entry.kind, entry.key.as_str()) {
+            (b'B', "bloxgloom:red_flower") => entry.id = 65_536,
+            (b'S', "bloxgloom:red_flower") => entry.id = 65_537,
+            (b'I', "bloxgloom:red_flower") => entry.id = 65_538,
+            _ => {}
+        }
+    }
+    manifest
+        .entries
+        .sort_unstable_by_key(|entry| (entry.kind, entry.id));
+    let catalog = manifest.resolve_catalog(&local).unwrap();
+    let flower = BlockStateId::new(65_537);
+    let item = ItemId::new(65_538);
+    assert!(catalog.state(crate::world::RED_FLOWER).is_none());
+
+    let hit = raycast::raycast_with_catalog(
+        Vec3::new(0.5, 0.5, 0.5),
+        Vec3::X,
+        7.0,
+        |x, y, z| {
+            Some(if x == 2 && y == 0 && z == 0 {
+                flower
+            } else {
+                crate::world::AIR
+            })
+        },
+        &catalog,
+    )
+    .unwrap();
+    assert_eq!(hit.block_id, flower);
+    assert_eq!(
+        edit_for_hit_with_catalog(hit, true, Some(item), 0, 91, &catalog),
+        Some(ClientMessage::Edit {
+            action_id: 91,
+            x: 2,
+            y: 0,
+            z: 0,
+            block: flower,
+            slot: 0,
+        })
+    );
 }
 
 #[test]

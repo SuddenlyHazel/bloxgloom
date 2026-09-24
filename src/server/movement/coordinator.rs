@@ -61,7 +61,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
         }
     }
     let view = Arc::new(
-        VoxelView::from_resident_chunks(chunks)
+        VoxelView::from_resident_chunks_in(chunks, state.world.catalog_arc())
             .map_err(|error| io::Error::other(format!("resident voxel view: {error:?}")))?,
     );
     let batch_id = BatchId::new(tick, Phase::Simulation, 0);

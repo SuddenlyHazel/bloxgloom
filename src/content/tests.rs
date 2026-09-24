@@ -1,28 +1,131 @@
 use super::*;
 
 #[test]
-fn builtin_catalog_preserves_world_and_item_ids() {
+fn wood_axis_compiles_six_face_textures_once() {
     let catalog = Catalog::builtins();
-    assert_eq!(catalog.textures().len(), 20);
-    for id in 0..=world::MAX_BUILTIN_BLOCK {
-        assert!(catalog.block(id).is_some());
-        assert_eq!(catalog.block_flags(id), BUILTIN_FLAGS[id as usize]);
-        if id != world::AIR {
-            assert_eq!(catalog.item(id).unwrap().placeable, Some(id));
+    for (state, cap_axis) in [
+        (world::WOOD_X, 0usize),
+        (world::WOOD, 1usize),
+        (world::WOOD_Z, 2usize),
+    ] {
+        let state = catalog.state(state).unwrap();
+        for axis in 0..3 {
+            for side in [-1, 1] {
+                let expected = if axis == cap_axis {
+                    if side > 0 {
+                        state.textures.top
+                    } else {
+                        state.textures.bottom
+                    }
+                } else {
+                    state.textures.side
+                };
+                assert_eq!(state.face_texture(axis, side), Some(expected));
+            }
         }
+        assert_eq!(state.face_texture(3, 1), None);
     }
-    assert!(catalog.block(16).is_none());
-    assert!(
-        catalog
-            .item(crate::items::SEEDS)
-            .unwrap()
-            .placeable
-            .is_none()
-    );
 }
 
 #[test]
-fn custom_content_registers_before_freeze_and_rejects_collisions() {
+fn nonmonotonic_registration_never_truncates_prior_definitions() {
+    let mut catalog = Catalog::builtins();
+    let mut high = catalog.block_type(BlockTypeId(3)).unwrap().clone();
+    high.id = BlockTypeId(70_000);
+    high.key = "test:high".into();
+    catalog.register_block(high).unwrap();
+    let mut low = catalog.block_type(BlockTypeId(3)).unwrap().clone();
+    low.id = BlockTypeId(16);
+    low.key = "test:low".into();
+    catalog.register_block(low).unwrap();
+    assert!(catalog.block_type(BlockTypeId(70_000)).is_some());
+    catalog
+        .register_state(BlockStateId(70_001), BlockTypeId(70_000), vec![], None)
+        .unwrap();
+    catalog
+        .register_state(BlockStateId(258), BlockTypeId(16), vec![], None)
+        .unwrap();
+    assert!(catalog.state(BlockStateId(70_001)).is_some());
+    let texture = catalog.block_type(BlockTypeId(3)).unwrap().textures.top;
+    catalog
+        .register_item(ItemDef {
+            id: ItemId(70_002),
+            key: "test:high".into(),
+            name: "HIGH".into(),
+            swatch: [1.0; 4],
+            texture,
+            placeable: Some(BlockStateId(70_001)),
+            sprite: false,
+        })
+        .unwrap();
+    catalog
+        .register_item(ItemDef {
+            id: ItemId(16),
+            key: "test:low".into(),
+            name: "LOW".into(),
+            swatch: [1.0; 4],
+            texture,
+            placeable: Some(BlockStateId(258)),
+            sprite: false,
+        })
+        .unwrap();
+    assert!(catalog.item(ItemId(70_002)).is_some());
+    assert_eq!(
+        catalog.primary_block_item(BlockStateId(70_001)),
+        Some(ItemId(70_002))
+    );
+    catalog
+        .register_entity_type(EntityTypeDef {
+            id: EntityTypeId(70_003),
+            key: "test:high".into(),
+            schema_version: 1,
+            schema_fingerprint: 12,
+        })
+        .unwrap();
+    catalog
+        .register_entity_type(EntityTypeDef {
+            id: EntityTypeId(3),
+            key: "test:low".into(),
+            schema_version: 1,
+            schema_fingerprint: 13,
+        })
+        .unwrap();
+    assert!(catalog.entity_type(EntityTypeId(70_003)).is_some());
+    assert!(catalog.validate().is_ok());
+    let manifest = ContentManifest::from_catalog(&catalog);
+    assert!(manifest.entries.iter().any(|entry| entry.id == 70_003));
+}
+
+#[test]
+fn builtin_catalog_preserves_default_state_and_item_ids() {
+    let catalog = Catalog::builtins();
+    assert_eq!(catalog.textures().len(), 20);
+    for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
+        let state = BlockStateId(id);
+        assert!(catalog.block(state).is_some());
+        assert_eq!(catalog.block_flags(state), BUILTIN_FLAGS[id as usize]);
+        assert_eq!(catalog.state(state).unwrap().block_type, BlockTypeId(id));
+        if state != world::AIR {
+            assert_eq!(catalog.item(ItemId(id)).unwrap().placeable, Some(state));
+        }
+    }
+    assert!(catalog.block(BlockStateId(16)).is_none());
+    for (state, axis) in [
+        (world::WOOD_X, "x"),
+        (world::WOOD, "y"),
+        (world::WOOD_Z, "z"),
+    ] {
+        let definition = catalog.state(state).unwrap();
+        assert_eq!(definition.block_type, BlockTypeId(world::WOOD.0));
+        assert_eq!(definition.key, format!("bloxgloom:wood[axis={axis}]"));
+        assert_eq!(definition.flags, catalog.state(world::WOOD).unwrap().flags);
+    }
+    assert!(catalog.entity_type(EntityTypeId(1)).is_some());
+    assert!(catalog.entity_type(EntityTypeId(2)).is_some());
+}
+
+#[test]
+fn registration_rejects_collisions_and_invalid_state_schema() {
     let mut catalog = Catalog::builtins();
     let builtin_fingerprint = catalog.fingerprint();
     let layer = catalog
@@ -34,9 +137,9 @@ fn custom_content_registers_before_freeze_and_rejects_collisions() {
             alpha_cutout: false,
         })
         .unwrap();
-    assert_eq!(layer, 20);
+    assert_eq!(layer, TextureId(20));
     let marble = BlockDef {
-        id: 16,
+        id: BlockTypeId(16),
         key: "example:marble".into(),
         name: "MARBLE".into(),
         swatch: [0.9, 0.85, 0.8, 1.0],
@@ -53,39 +156,42 @@ fn custom_content_registers_before_freeze_and_rejects_collisions() {
         supports_plant: false,
         emission: 0,
         reflectance: [180, 180, 180],
+        properties: Vec::new(),
     };
     catalog.register_block(marble.clone()).unwrap();
     assert_eq!(
         catalog.register_block(marble),
         Err(RegistrationError::DuplicateId)
     );
+    let state = BlockStateId(258);
+    catalog
+        .register_state(state, BlockTypeId(16), Vec::new(), None)
+        .unwrap();
+    assert_eq!(
+        catalog.register_state(state, BlockTypeId(16), Vec::new(), None),
+        Err(RegistrationError::DuplicateId)
+    );
+    assert_eq!(
+        catalog.register_state(
+            BlockStateId(259),
+            BlockTypeId(16),
+            vec![("axis".into(), "x".into())],
+            None
+        ),
+        Err(RegistrationError::InvalidState)
+    );
     catalog
         .register_item(ItemDef {
-            id: 131,
+            id: ItemId(131),
             key: "example:marble".into(),
             name: "MARBLE".into(),
             swatch: [0.9, 0.85, 0.8, 1.0],
             texture: layer,
-            placeable: Some(16),
+            placeable: Some(state),
             sprite: false,
         })
         .unwrap();
-    assert_eq!(catalog.block(16).unwrap().textures.top, 20);
-    assert_eq!(catalog.item(131).unwrap().placeable, Some(16));
-    assert_eq!(catalog.primary_block_item(16), Some(131));
-    catalog
-        .register_item(ItemDef {
-            id: 20,
-            key: "example:alternate_marble".into(),
-            name: "ALTERNATE MARBLE".into(),
-            swatch: [0.9, 0.85, 0.8, 1.0],
-            texture: layer,
-            placeable: Some(16),
-            sprite: false,
-        })
-        .unwrap();
-    assert_eq!(catalog.primary_block_item(16), Some(20));
-    assert_eq!(catalog.textures().len(), 21);
+    assert_eq!(catalog.primary_block_item(state), Some(ItemId(131)));
     assert_ne!(catalog.fingerprint(), builtin_fingerprint);
     assert_eq!(
         catalog.register_texture(TextureDef {
@@ -96,15 +202,5 @@ fn custom_content_registers_before_freeze_and_rejects_collisions() {
             alpha_cutout: false,
         }),
         Err(RegistrationError::DuplicateKey)
-    );
-    assert_eq!(
-        catalog.register_texture(TextureDef {
-            key: "example:broken".into(),
-            png: Cow::Borrowed(b"not a PNG"),
-            stitch_edges: false,
-            stitch_vertical: false,
-            alpha_cutout: false,
-        }),
-        Err(RegistrationError::InvalidTexture)
     );
 }

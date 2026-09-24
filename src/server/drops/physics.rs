@@ -1,5 +1,5 @@
 //! Authoritative drop motion and edit-triggered wakeups.
-use crate::world::{ChunkKey, World, is_solid, world_to_chunk};
+use crate::world::{ChunkKey, World, world_to_chunk};
 use std::time::Duration;
 
 use super::{DROP_RADIUS, Drops, GRAVITY, TERMINAL_SPEED};
@@ -134,7 +134,9 @@ fn first_solid_top(
                 let x = x.floor() as i32;
                 let z = z.floor() as i32;
                 match world.cached_block(x, y, z) {
-                    Some(block) if is_solid(block) => {
+                    Some(block)
+                        if world.catalog().block_flags(block) & crate::content::SOLID != 0 =>
+                    {
                         hit = Some(hit.map_or(block_top, |previous| previous.max(block_top)));
                     }
                     Some(_) => {}

@@ -3,10 +3,11 @@ use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::inventory::STACK_LIMIT;
-use crate::items::valid_item;
+use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT};
+use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 use crate::server::journal::{CompactedDrop, DropCompaction, StateKey};
+use std::sync::Arc;
 
 use super::{Drops, Entry, LIFETIME, invalid, unix_ms};
 
@@ -43,6 +44,7 @@ impl Drops {
                 "bloxgloom:chunk_snapshot"
                 | "bloxgloom:inventory"
                 | "bloxgloom:action_receipt"
+                | "bloxgloom:action_ledger"
                 | "bloxgloom:drops_snapshot" => {}
                 domain => {
                     return Err(io::Error::new(
@@ -67,10 +69,12 @@ impl Drops {
             if current == owner {
                 continue;
             }
-            let (item, count, born, delay) = decode_owner(id, &owner)?;
+            let (item, count, born, delay, components) =
+                decode_owner_with_catalog(id, &owner, &self.catalog)?;
             if let Some(entry) = self.entries.get_mut(&id) {
                 entry.item.item = item;
                 entry.item.count = count;
+                entry.components = components;
                 entry.created_unix_ms = born;
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 entry.age_at_load = age;
@@ -101,6 +105,7 @@ impl Drops {
                             position,
                             age_ms: 0,
                         },
+                        components,
                         vertical_speed: 0.0,
                         age_at_load: age,
                         age_since,
@@ -143,7 +148,7 @@ impl Drops {
                         return Err(invalid("invalid journaled drop key"));
                     }
                     if !value.is_empty() {
-                        decode_owner(id, value)?;
+                        decode_owner_with_catalog(id, value, &self.catalog)?;
                     }
                     owners.insert(id, value);
                 }
@@ -166,6 +171,7 @@ impl Drops {
                 "bloxgloom:chunk_snapshot"
                 | "bloxgloom:inventory"
                 | "bloxgloom:action_receipt"
+                | "bloxgloom:action_ledger"
                 | "bloxgloom:drops_snapshot" => {}
                 domain => {
                     return Err(io::Error::new(
@@ -225,27 +231,66 @@ impl Drops {
 }
 
 pub(super) fn encode_owner(entry: &Entry) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(1 + 1 + 2 + 8 + 2);
-    bytes.push(1);
-    bytes.push(entry.item.item);
+    let component_bytes = entry
+        .components
+        .as_ref()
+        .map_or(0, |payload| payload.bytes.len());
+    let mut bytes = Vec::with_capacity(21 + component_bytes);
+    bytes.push(3);
+    bytes.extend(entry.item.item.get().to_le_bytes());
     bytes.extend(entry.item.count.to_le_bytes());
     bytes.extend(entry.created_unix_ms.to_le_bytes());
     bytes.extend((entry.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes());
+    if let Some(payload) = &entry.components {
+        bytes.extend(payload.version.to_le_bytes());
+        bytes.extend((payload.bytes.len() as u16).to_le_bytes());
+        bytes.extend(&payload.bytes);
+    } else {
+        bytes.extend(0u16.to_le_bytes());
+        bytes.extend(0u16.to_le_bytes());
+    }
     bytes
 }
 
-pub(in crate::server) fn decode_owner(id: u64, bytes: &[u8]) -> io::Result<(u8, u16, u64, u16)> {
-    if bytes.len() != 14 || bytes[0] != 1 {
+pub(in crate::server) fn decode_owner(
+    id: u64,
+    bytes: &[u8],
+) -> io::Result<(ItemId, u16, u64, u16, Option<Arc<ComponentPayload>>)> {
+    decode_owner_with_catalog(id, bytes, crate::content::catalog())
+}
+
+pub(in crate::server) fn decode_owner_with_catalog(
+    id: u64,
+    bytes: &[u8],
+    catalog: &crate::content::Catalog,
+) -> io::Result<(ItemId, u16, u64, u16, Option<Arc<ComponentPayload>>)> {
+    if bytes.len() < 21 || bytes[0] != 3 {
         return Err(invalid("invalid journaled drop ownership"));
     }
-    let item = bytes[1];
-    let count = u16::from_le_bytes(bytes[2..4].try_into().unwrap());
-    let born = u64::from_le_bytes(bytes[4..12].try_into().unwrap());
-    let delay = u16::from_le_bytes(bytes[12..14].try_into().unwrap());
-    if id == 0 || !valid_item(item) || !(1..=STACK_LIMIT).contains(&count) {
+    let item = ItemId::new(u32::from_le_bytes(bytes[1..5].try_into().unwrap()));
+    let count = u16::from_le_bytes(bytes[5..7].try_into().unwrap());
+    let born = u64::from_le_bytes(bytes[7..15].try_into().unwrap());
+    let delay = u16::from_le_bytes(bytes[15..17].try_into().unwrap());
+    let component_version = u16::from_le_bytes(bytes[17..19].try_into().unwrap());
+    let component_len = u16::from_le_bytes(bytes[19..21].try_into().unwrap()) as usize;
+    if id == 0 || catalog.item(item).is_none() || !(1..=STACK_LIMIT).contains(&count) {
         return Err(invalid("invalid journaled drop ownership"));
     }
-    Ok((item, count, born, delay))
+    if bytes.len() != 21 + component_len || component_len > MAX_COMPONENT_BYTES {
+        return Err(invalid("invalid journaled drop component length"));
+    }
+    let components = if component_len == 0 {
+        if component_version != 0 {
+            return Err(invalid("invalid empty drop components"));
+        }
+        None
+    } else {
+        Some(Arc::new(
+            ComponentPayload::new(component_version, bytes[21..].to_vec())
+                .ok_or_else(|| invalid("invalid drop components"))?,
+        ))
+    };
+    Ok((item, count, born, delay, components))
 }
 
 fn decode_drop_id(bytes: &[u8]) -> io::Result<u64> {

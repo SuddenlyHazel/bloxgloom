@@ -1,7 +1,8 @@
 //! Startup validation and replay of the durable journal.
 
 use super::state::{
-    decode_chunk_key, decode_drop_key, decode_profile_key, invalid_data, valid_action_receipt,
+    decode_chunk_key, decode_drop_key, decode_profile_key, invalid_data,
+    valid_action_receipt_with_catalog,
 };
 use super::*;
 use crate::server::journal::Journal;
@@ -14,7 +15,9 @@ pub(super) fn open(
 ) -> io::Result<Durability> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
-    let mut action_receipts = HashMap::new();
+    let receipt_store = receipts::ReceiptStore::new(root)?;
+    let mut receipt_ledgers = HashMap::new();
+    let mut receipt_replay = Vec::new();
     let mut inventory_revisions = HashMap::new();
     let storage = world.storage_handle();
     let mut chunk_replay = Vec::new();
@@ -43,13 +46,17 @@ pub(super) fn open(
                 let current_opt = inventory_store.read_snapshot(profile)?;
                 let current = match current_opt.as_ref() {
                     Some(existing) => {
-                        InventoryStore::decode_snapshot(existing)?;
+                        InventoryStore::decode_snapshot_with_catalog(existing, world.catalog())?;
                         existing.clone()
                     }
-                    None => InventoryStore::encode_snapshot(&Inventory::default())?,
+                    None => InventoryStore::encode_snapshot_with_catalog(
+                        &Inventory::default(),
+                        world.catalog(),
+                    )?,
                 };
                 journal.validate_snapshot(key, &current)?;
-                let recovered = InventoryStore::decode_snapshot(value)?;
+                let recovered =
+                    InventoryStore::decode_snapshot_with_catalog(value, world.catalog())?;
                 inventory_revisions.insert(profile, recovered.revision);
                 if current != *value {
                     inventory_replay.push((profile, value.clone()));
@@ -77,18 +84,32 @@ pub(super) fn open(
                 }
             }
             "bloxgloom:action_receipt" => {
-                if key.bytes.len() != 32 || !valid_action_receipt(value) {
-                    return Err(invalid_data("invalid durable action receipt"));
+                return Err(invalid_data(
+                    "legacy action receipts require explicit save conversion",
+                ));
+            }
+            "bloxgloom:action_ledger" => {
+                let profile = decode_profile_key(&key.bytes)?;
+                let current = receipt_store.read(profile)?.unwrap_or_default();
+                if !current.is_empty() {
+                    let checkpoint = receipts::ReceiptLedger::decode(&current)?;
+                    for record in &checkpoint.results {
+                        if !valid_action_receipt_with_catalog(&record.payload, world.catalog()) {
+                            return Err(invalid_data("invalid checkpointed action result payload"));
+                        }
+                    }
                 }
-                let profile = u128::from_le_bytes(key.bytes[..16].try_into().unwrap());
-                let action_id = u128::from_le_bytes(key.bytes[16..].try_into().unwrap());
-                if profile == 0 || action_id == 0 {
-                    return Err(invalid_data("invalid durable action receipt key"));
+                journal.validate_snapshot(key, &current)?;
+                let ledger = receipts::ReceiptLedger::decode(value)?;
+                for record in &ledger.results {
+                    if !valid_action_receipt_with_catalog(&record.payload, world.catalog()) {
+                        return Err(invalid_data("invalid durable action result payload"));
+                    }
                 }
-                if action_receipts.len() >= MAX_ACTION_RECEIPTS {
-                    return Err(invalid_data("durable action receipt limit exceeded"));
+                receipt_ledgers.insert(profile, ledger);
+                if current != *value {
+                    receipt_replay.push((profile, value.clone()));
                 }
-                action_receipts.insert((profile, action_id), value.clone());
             }
             "bloxgloom:drops_snapshot" => {
                 return Err(invalid_data(
@@ -103,6 +124,7 @@ pub(super) fn open(
             }
         }
     }
+    receipt_store.validate_no_orphans(&latest)?;
     let drop_owner_set_closed = journal.drop_owner_set_closed();
     drops.validate_recovered_journal(&latest, drop_owner_set_closed)?;
 
@@ -112,12 +134,16 @@ pub(super) fn open(
     for (profile, value) in inventory_replay {
         inventory_store.checkpoint_snapshot(profile, &value)?;
     }
+    for (profile, value) in receipt_replay {
+        receipt_store.write(profile, &value)?;
+    }
     if drops.apply_recovered_journal(&latest, drop_owner_set_closed)? {
         drops.save()?;
     }
     let next_id = journal.next_id()?;
     let writer = journal.into_writer(128, Duration::from_millis(3))?;
     Ok(Durability {
+        catalog: world.catalog_arc(),
         writer,
         next_id,
         inventory_overlay: HashMap::new(),
@@ -133,7 +159,11 @@ pub(super) fn open(
         dirty_checkpoints: HashMap::new(),
         checkpoint_inflight: HashMap::new(),
         next_checkpoint_revision: 1,
-        action_receipts,
+        receipt_store,
+        receipt_ledgers,
+        pending_grants: HashSet::new(),
+        ready_grants: HashMap::new(),
+        pending_acks: HashMap::new(),
         rotation_requested: false,
         rotation_snapshot_ready: false,
         rotation_receipt: None,

@@ -10,10 +10,14 @@ pub(super) use planning::DropPlan;
 
 #[cfg(test)]
 use crate::inventory::STACK_LIMIT;
+use crate::inventory::{ComponentPayload, Stack};
+#[cfg(test)]
+use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PICKUP_RANGE_SQ: f32 = 2.25 * 2.25;
@@ -27,6 +31,7 @@ pub(super) const TERMINAL_SPEED: f32 = 30.0;
 #[derive(Clone)]
 struct Entry {
     item: DroppedItem,
+    components: Option<Arc<ComponentPayload>>,
     vertical_speed: f32,
     age_at_load: Duration,
     age_since: Instant,
@@ -43,11 +48,16 @@ pub(super) struct Drops {
     next_id: u64,
     revision: u64,
     path: Option<PathBuf>,
+    catalog: Arc<crate::content::Catalog>,
     last_gc: Instant,
 }
 
 impl Drops {
     pub(super) fn new() -> Self {
+        Self::new_with_catalog(Arc::new(crate::content::catalog().clone()))
+    }
+
+    pub(super) fn new_with_catalog(catalog: Arc<crate::content::Catalog>) -> Self {
         Self {
             entries: HashMap::new(),
             active: BTreeSet::new(),
@@ -56,6 +66,7 @@ impl Drops {
             next_id: 1,
             revision: 0,
             path: None,
+            catalog,
             last_gc: Instant::now(),
         }
     }
@@ -82,7 +93,7 @@ impl Drops {
     pub(super) fn spawn(
         &mut self,
         position: [f32; 3],
-        item: u8,
+        item: ItemId,
         mut count: u16,
         pickup_delay: Duration,
     ) {
@@ -122,6 +133,7 @@ impl Drops {
                         position,
                         age_ms: 0,
                     },
+                    components: None,
                     vertical_speed: 0.0,
                     age_at_load: Duration::ZERO,
                     age_since,
@@ -175,6 +187,14 @@ impl Drops {
         items.sort_by_key(|item| item.id);
         items.truncate(256);
         items
+    }
+
+    pub(super) fn stack(&self, id: u64) -> Option<Stack> {
+        self.entries.get(&id).map(|entry| Stack {
+            item: entry.item.item,
+            count: entry.item.count,
+            components: entry.components.clone(),
+        })
     }
     #[cfg(test)]
     pub(super) fn take(&mut self, id: u64, count: u16) {

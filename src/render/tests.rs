@@ -2,18 +2,48 @@ use glam::Vec3;
 
 use crate::items::{SAPLING, SEEDS, STICK};
 use crate::world::{
-    CHUNK_SIZE, Chunk, ChunkKey, DIRT, FERN, GLOWSTONE, GRASS, GRAVEL, LEAVES, MOSS, RED_FLOWER,
-    SAND, SNOW, STONE, TALL_GRASS, WOOD,
+    AIR, CHUNK_SIZE, Chunk, ChunkKey, DIRT, FERN, GLOWSTONE, GRASS, GRAVEL, LEAVES, MOSS,
+    RED_FLOWER, SAND, SNOW, STONE, TALL_GRASS, WOOD, WOOD_X, WOOD_Z,
 };
 
 use super::*;
+
+fn mapped_builtin(
+    name: &str,
+) -> (
+    crate::content::Catalog,
+    crate::content::BlockStateId,
+    crate::items::ItemId,
+) {
+    use crate::content::{BlockStateId, ContentManifest, ItemId};
+
+    let local = crate::content::Catalog::builtins();
+    let key = format!("bloxgloom:{name}");
+    let mut manifest = ContentManifest::from_catalog(&local);
+    for entry in &mut manifest.entries {
+        match (entry.kind, entry.key.as_str()) {
+            (b'B', candidate) if candidate == key => entry.id = 65_536,
+            (b'S', candidate) if candidate == key => entry.id = 65_537,
+            (b'I', candidate) if candidate == key => entry.id = 65_538,
+            _ => {}
+        }
+    }
+    manifest
+        .entries
+        .sort_unstable_by_key(|entry| (entry.kind, entry.id));
+    (
+        manifest.resolve_catalog(&local).unwrap(),
+        BlockStateId::new(65_537),
+        ItemId::new(65_538),
+    )
+}
 
 #[test]
 fn solid_chunk_merges_to_six_quads() {
     let chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![1; 16 * 16 * 16],
+        blocks: vec![GRASS; 16 * 16 * 16].into(),
     };
     assert_eq!(mesh_chunk(&chunk).triangles(), 12);
 }
@@ -23,10 +53,10 @@ fn adjacent_blocks_have_no_internal_faces() {
     let mut chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![0; 16 * 16 * 16],
+        blocks: vec![AIR; 16 * 16 * 16].into(),
     };
-    chunk.blocks[0] = 1;
-    chunk.blocks[1] = 1;
+    chunk.blocks.set(0, GRASS);
+    chunk.blocks.set(1, GRASS);
     assert_eq!(mesh_chunk(&chunk).triangles(), 12);
 }
 
@@ -35,9 +65,9 @@ fn meshing_uses_shared_chunk_layout_and_world_origin() {
     let mut chunk = Chunk {
         key: ChunkKey { x: -1, y: 2, z: 3 },
         version: 7,
-        blocks: vec![0; 16 * 16 * 16],
+        blocks: vec![AIR; 16 * 16 * 16].into(),
     };
-    chunk.blocks[Chunk::index([2, 3, 4]).unwrap()] = 3;
+    chunk.blocks.set(Chunk::index([2, 3, 4]).unwrap(), STONE);
     let mesh = mesh_chunk(&chunk);
     let positions = mesh
         .vertices
@@ -73,6 +103,10 @@ fn grass_uses_top_side_and_underlying_dirt_tiles() {
     assert_eq!(material::material_layer(GLOWSTONE, 1, 1), 8);
     assert_eq!(material::material_layer(WOOD, 0, 1), 9);
     assert_eq!(material::material_layer(WOOD, 1, 1), 10);
+    assert_eq!(material::material_layer(WOOD_X, 0, 1), 10);
+    assert_eq!(material::material_layer(WOOD_X, 1, 1), 9);
+    assert_eq!(material::material_layer(WOOD_Z, 2, 1), 10);
+    assert_eq!(material::material_layer(WOOD_Z, 1, 1), 9);
     assert_eq!(material::material_layer(LEAVES, 1, 1), 11);
     assert_eq!(material::material_layer(RED_FLOWER, 1, 1), 12);
     assert_eq!(material::material_layer(FERN, 1, 1), 15);
@@ -87,9 +121,9 @@ fn grass_side_is_upright_on_both_wall_axes() {
     let mut chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+        blocks: vec![AIR; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE].into(),
     };
-    chunk.blocks[Chunk::index([1, 1, 1]).unwrap()] = GRASS;
+    chunk.blocks.set(Chunk::index([1, 1, 1]).unwrap(), GRASS);
     let mesh = mesh_chunk(&chunk);
     for wall_axis in [0, 2] {
         let vertices = mesh
@@ -111,7 +145,7 @@ fn greedy_quads_repeat_material_once_per_voxel() {
     let chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![STONE; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+        blocks: vec![STONE; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE].into(),
     };
     let mesh = mesh_chunk(&chunk);
     let vertices = mesh
@@ -163,7 +197,10 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
 
 #[test]
 fn registered_texture_and_block_extend_material_array_without_shader_changes() {
-    use crate::content::{BlockDef, BlockTextures, Catalog, ItemDef, TextureDef};
+    use crate::content::{
+        BlockDef, BlockStateId, BlockTextures, BlockTypeId, Catalog, ItemDef, TextureDef, TextureId,
+    };
+    use crate::items::ItemId;
     use std::borrow::Cow;
 
     let mut catalog = Catalog::builtins();
@@ -178,7 +215,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
         .unwrap();
     catalog
         .register_block(BlockDef {
-            id: 16,
+            id: BlockTypeId::new(16),
             key: "example:marble".into(),
             name: "MARBLE".into(),
             swatch: [0.9, 0.9, 0.9, 1.0],
@@ -195,36 +232,97 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             supports_plant: false,
             emission: 0,
             reflectance: [180, 180, 180],
+            properties: Vec::new(),
         })
         .unwrap();
     catalog
+        .register_state(
+            BlockStateId::new(16),
+            BlockTypeId::new(16),
+            Vec::new(),
+            None,
+        )
+        .unwrap();
+    catalog
         .register_item(ItemDef {
-            id: 131,
+            id: ItemId::new(131),
             key: "example:marble".into(),
             name: "MARBLE".into(),
             swatch: [0.9, 0.9, 0.9, 1.0],
             texture: layer,
-            placeable: Some(16),
+            placeable: Some(BlockStateId::new(16)),
             sprite: false,
         })
         .unwrap();
     catalog
         .register_item(ItemDef {
-            id: 16,
+            id: ItemId::new(16),
             key: "example:token".into(),
             name: "TOKEN".into(),
             swatch: [0.8, 0.6, 0.2, 1.0],
-            texture: 17,
+            texture: TextureId::new(17),
             placeable: None,
             sprite: true,
         })
         .unwrap();
-    assert_eq!(material::material_layer_for(&catalog, 16, 0, 1), 20);
-    assert_eq!(material::item_material_layer_for(&catalog, 131, 1, 1), 20);
-    assert_eq!(material::item_material_layer_for(&catalog, 16, 1, 1), 17);
+    assert_eq!(
+        material::material_layer_for(&catalog, BlockStateId::new(16), 0, 1),
+        20
+    );
+    assert_eq!(
+        catalog.item(ItemId::new(131)).unwrap().placeable,
+        Some(BlockStateId::new(16))
+    );
+    assert_eq!(
+        material::item_material_layer_for(&catalog, ItemId::new(131), 1, 1),
+        20
+    );
+    assert_eq!(
+        material::item_material_layer_for(&catalog, ItemId::new(16), 1, 1),
+        17
+    );
     assert_eq!(
         material::material_tiles_for(&catalog).len(),
         (21 * material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize
+    );
+}
+
+#[test]
+fn remapped_connection_catalog_drives_foliage_meshes_and_drop_art() {
+    use crate::lighting::LightField;
+    use crate::world::Chunk;
+
+    let (catalog, flower, item) = mapped_builtin("red_flower");
+    let key = ChunkKey { x: 0, y: 0, z: 0 };
+    let mut chunk = Chunk::from_blocks(key, 3, vec![AIR; CHUNK_SIZE.pow(3)]);
+    chunk.blocks.set(Chunk::index([3, 4, 5]).unwrap(), flower);
+    let known = std::collections::HashMap::from([(key, std::sync::Arc::new(chunk.clone()))]);
+    let light = LightField::build_with_catalog(key, &known, 12, &catalog);
+    let mesh = mesh_chunk_lit_with_catalog(&chunk, &light, 8, &catalog);
+
+    assert!(catalog.state(crate::world::RED_FLOWER).is_none());
+    assert_eq!(mesh.cutout_indices.len(), 12);
+    assert!(
+        mesh.cutout_vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .all(|vertex| vertex[8] == 12.0)
+    );
+
+    let drop = super::drops::mesh_with_catalog(
+        &[VisualDrop {
+            item,
+            center: Vec3::new(4.0, 5.0, 6.0),
+            angle: 0.3,
+            scale: 1.0,
+        }],
+        &catalog,
+    );
+    assert!(drop.opaque_indices.is_empty());
+    assert_eq!(drop.cutout_indices.len(), 12);
+    assert!(
+        drop.cutout_vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .all(|vertex| vertex[8] == 12.0)
     );
 }
 
@@ -255,10 +353,12 @@ fn plants_have_two_crossed_cutout_quads_and_do_not_hide_ground() {
     let mut chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+        blocks: vec![AIR; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE].into(),
     };
-    chunk.blocks[Chunk::index([3, 2, 4]).unwrap()] = GRASS;
-    chunk.blocks[Chunk::index([3, 3, 4]).unwrap()] = RED_FLOWER;
+    chunk.blocks.set(Chunk::index([3, 2, 4]).unwrap(), GRASS);
+    chunk
+        .blocks
+        .set(Chunk::index([3, 3, 4]).unwrap(), RED_FLOWER);
     let mesh = mesh_chunk(&chunk);
     assert_eq!(mesh.indices.len(), 36);
     assert_eq!(mesh.cutout_indices.len(), 12);
@@ -275,10 +375,10 @@ fn adjacent_leaves_skip_interior_cutout_faces() {
     let mut chunk = Chunk {
         key: ChunkKey { x: 0, y: 0, z: 0 },
         version: 0,
-        blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+        blocks: vec![AIR; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE].into(),
     };
-    chunk.blocks[Chunk::index([3, 2, 4]).unwrap()] = LEAVES;
-    chunk.blocks[Chunk::index([4, 2, 4]).unwrap()] = LEAVES;
+    chunk.blocks.set(Chunk::index([3, 2, 4]).unwrap(), LEAVES);
+    chunk.blocks.set(Chunk::index([4, 2, 4]).unwrap(), LEAVES);
     let mesh = mesh_chunk(&chunk);
     assert!(mesh.indices.is_empty());
     assert_eq!(mesh.cutout_indices.len(), 60);

@@ -7,9 +7,11 @@ use super::{
     layout::{UiLayout, effective_ui_scale},
     types::{UiControl, UiDebug, UiFrame, UiScreen, UiSettings},
 };
+use crate::content::Catalog;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct UiCacheKey {
     width: u32,
     height: u32,
@@ -25,6 +27,7 @@ struct UiCacheKey {
 
 /// The UI uses one alpha blended draw call and a static 8x8 ASCII font atlas.
 pub(crate) struct UiRenderer {
+    catalog: Arc<Catalog>,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
@@ -41,6 +44,15 @@ impl UiRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_catalog(device, queue, format, Arc::new(Catalog::builtins()))
+    }
+
+    pub(crate) fn new_with_catalog(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        catalog: Arc<Catalog>,
     ) -> Self {
         let atlas_bytes = make_font_atlas();
         let atlas = device.create_texture_with_data(
@@ -156,6 +168,7 @@ impl UiRenderer {
             mapped_at_creation: false,
         });
         Self {
+            catalog,
             pipeline,
             bind_group,
             vertex_buffer,
@@ -184,13 +197,13 @@ impl UiRenderer {
             scale_bits: scale.to_bits(),
             screen: frame.screen,
             selected_slot: frame.selected_slot,
-            inventory: frame.inventory,
+            inventory: frame.inventory.clone(),
             inventory_source: frame.inventory_source,
             debug: frame.debug,
             settings: frame.settings,
             hovered: frame.hovered,
         };
-        if self.cache_key == Some(key) && self.cached_status.as_deref() == frame.status {
+        if self.cache_key.as_ref() == Some(&key) && self.cached_status.as_deref() == frame.status {
             return;
         }
         let rebuild_layout = self.layout.as_ref().is_none_or(|layout| {
@@ -210,7 +223,7 @@ impl UiRenderer {
             height: self.height as f32,
             scale,
         };
-        builder.draw_frame(frame, layout);
+        builder.draw_frame(frame, layout, &self.catalog);
         if self.vertices.len() > MAX_UI_VERTICES {
             self.vertices
                 .truncate(MAX_UI_VERTICES - MAX_UI_VERTICES % 6);

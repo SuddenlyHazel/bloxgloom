@@ -16,7 +16,12 @@ fn tiny_motion_advances_the_checkpoint_generation() {
     world.get_block(1, 511, 1).unwrap();
 
     let mut drops = Drops::new();
-    drops.spawn([1.0, 512.05, 1.0], crate::world::STONE, 1, Duration::ZERO);
+    drops.spawn(
+        [1.0, 512.05, 1.0],
+        crate::items::ItemId::new(crate::world::STONE.get()),
+        1,
+        Duration::ZERO,
+    );
     let old = drops.snapshot_bytes().unwrap();
     let old_y = drops.entries[&1].item.position[1];
     let step = drops.step(&world, Duration::from_micros(1_700));

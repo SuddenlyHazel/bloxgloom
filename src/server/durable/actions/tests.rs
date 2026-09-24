@@ -1,12 +1,9 @@
 use super::*;
 use crate::server::movement::MovementState;
-use crate::server::outbound::OutboundTelemetry;
 use crate::server::{Client, DEFAULT_VIEW, State, server_state};
-use crate::world::{GRASS, MAX_GENERATED_HEIGHT, RED_FLOWER, World};
+use crate::world::{GRASS, MAX_GENERATED_HEIGHT, RED_FLOWER};
 use std::fs;
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
-use std::sync::mpsc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_save_dir(label: &str) -> std::path::PathBuf {
@@ -21,7 +18,7 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (socket, _) = listener.accept().unwrap();
-    let (sender, _receiver) = mpsc::sync_channel(8);
+    let (sender, _receiver) = state.outbound.client_queue();
     let center = world_to_chunk(
         position[0].floor() as i32,
         position[1].floor() as i32,
@@ -37,7 +34,6 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
             last_drop_anchor: [i32::MAX; 3],
             last_sent_drops: Vec::new(),
             sender,
-            outbound: Arc::new(OutboundTelemetry::default()),
             socket,
             sent: Default::default(),
             center,
@@ -61,7 +57,7 @@ fn edit_request(message: ClientMessage) -> DurableRequest {
 fn missing_plant_support_requests_its_exact_vertical_neighbor() {
     let path = temp_save_dir("edit-support-prefetch");
     let mut state = server_state(23, path.clone()).unwrap();
-    state.world = World::with_capacity(23, path.clone(), 1).unwrap();
+    state.world.reset_cache_for_test(1);
     let target_y = ((MAX_GENERATED_HEIGHT / 16) + 1) * 16;
     let target = world_to_chunk(0, target_y, 0).0;
     let support = world_to_chunk(0, target_y - 1, 0).0;
@@ -69,10 +65,10 @@ fn missing_plant_support_requests_its_exact_vertical_neighbor() {
     state.world.get_chunk(target).unwrap();
 
     let mut inventory = Inventory::default();
-    inventory.slots[0] = Some(crate::inventory::Stack {
-        item: RED_FLOWER,
-        count: 1,
-    });
+    inventory.slots[0] = Some(crate::inventory::Stack::new(
+        crate::items::ItemId::new(RED_FLOWER.get()),
+        1,
+    ));
     let peer = add_test_client(&mut state, [0.5, target_y as f32, 0.5], inventory);
     let request = edit_request(ClientMessage::Edit {
         action_id: 1,
@@ -100,7 +96,7 @@ fn missing_plant_check_requests_the_exact_above_chunk() {
     let mut state = server_state(29, path.clone()).unwrap();
     // A one-chunk cache lets the test keep the harvest target resident while
     // its vertical neighbor remains absent.
-    state.world = World::with_capacity(29, path.clone(), 1).unwrap();
+    state.world.reset_cache_for_test(1);
     let target_y = ((MAX_GENERATED_HEIGHT / 16) + 1) * 16 - 1;
     let target = world_to_chunk(0, target_y, 0).0;
     let above = world_to_chunk(0, target_y + 1, 0).0;

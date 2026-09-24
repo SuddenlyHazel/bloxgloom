@@ -1,10 +1,19 @@
-//! Frozen startup contracts for deterministic server systems.
+//! Executable startup contracts for deterministic server systems.
 //!
-//! The registry describes phase ordering and bounded access; it does not own
-//! an executor and never gives systems access to mutable world state.
+//! The registry freezes descriptors and their handlers together. A handler
+//! receives immutable, revisioned owner views and may only return scratch data;
+//! the runtime owns validation and application.
 
+use super::parallel::{
+    MAX_EFFECTS_PER_OWNER_JOB, MAX_OWNER_WAVE_PATCH_BYTES, OwnerJob, OwnerKey, OwnerPatch,
+    OwnerWaveLimits,
+};
 use super::simulation::Phase;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+use std::ops::Deref;
+use std::ops::Range;
+use std::sync::Arc;
 
 pub const MAX_REGISTERED_SYSTEMS: usize = 256;
 pub const MAX_SYSTEM_JOBS_PER_TICK: usize = 16_384;
@@ -15,6 +24,49 @@ pub const MAX_NEIGHBOR_RADIUS: u8 = 8;
 pub const MAX_STABLE_ID_BYTES: usize = 128;
 pub const MAX_RESOURCE_DOMAINS_PER_SYSTEM: usize = 128;
 pub const MAX_DEPENDENCIES_PER_SYSTEM: usize = 64;
+
+/// A bounded rejection returned by a handler before its result can enter a wave.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SystemHandlerError {
+    Rejected(String),
+    WrongSystem {
+        expected: SystemId,
+        actual: SystemId,
+    },
+    WrongPhase {
+        expected: Phase,
+        actual: Phase,
+    },
+    WrongWave {
+        expected: u16,
+        actual: u16,
+    },
+    WrongPartition {
+        expected: OwnerPartition,
+        actual: OwnerKey,
+    },
+    CoordinatorAdapterOnly {
+        system: SystemId,
+    },
+}
+
+/// Runtime implementation attached to one frozen system descriptor.
+///
+/// Implementations are called only with immutable owner jobs. They cannot
+/// access live server state through this interface and return typed scratch
+/// patches for the runtime's post-validation apply step.
+pub trait SystemHandler: Send + Sync + 'static {
+    fn prepare(&self, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError>;
+}
+
+impl<F> SystemHandler for F
+where
+    F: Fn(&OwnerJob) -> Result<OwnerPatch, SystemHandlerError> + Send + Sync + 'static,
+{
+    fn prepare(&self, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
+        self(job)
+    }
+}
 
 /// Stable, lowercase `namespace:name` identity for a server system.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -103,6 +155,7 @@ pub struct SystemDescriptor {
     max_jobs_per_tick: usize,
     /// Zero is valid and means this system is not permitted to emit effects.
     max_effects_per_tick: usize,
+    max_effects_per_job: usize,
 }
 
 impl SystemDescriptor {
@@ -123,6 +176,7 @@ impl SystemDescriptor {
             neighbor_radius: 0,
             max_jobs_per_tick,
             max_effects_per_tick,
+            max_effects_per_job: max_effects_per_tick.min(MAX_EFFECTS_PER_OWNER_JOB),
         }
     }
 
@@ -133,6 +187,13 @@ impl SystemDescriptor {
 
     pub fn write(mut self, resource: ResourceId) -> Self {
         self.writes.insert(resource);
+        self
+    }
+
+    /// Limits effects emitted by any one owner job. The constructor defaults
+    /// this to the system bound capped at the initial per-producer ceiling.
+    pub const fn effects_per_job(mut self, maximum: usize) -> Self {
+        self.max_effects_per_job = maximum;
         self
     }
 
@@ -200,12 +261,26 @@ impl SystemDescriptor {
     pub const fn max_effects_per_tick(&self) -> usize {
         self.max_effects_per_tick
     }
+
+    pub const fn max_effects_per_job(&self) -> usize {
+        self.max_effects_per_job
+    }
+
+    pub fn accepts_owner(&self, owner: OwnerKey) -> bool {
+        match self.partition {
+            OwnerPartition::Chunk => matches!(owner, OwnerKey::Chunk(_)),
+            OwnerPartition::Entity => matches!(owner, OwnerKey::Entity(_)),
+            OwnerPartition::Profile => matches!(owner, OwnerKey::Profile(_)),
+            OwnerPartition::Global => true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BudgetKind {
     Jobs,
     Effects,
+    EffectsPerJob,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -225,6 +300,15 @@ pub enum RegistryError {
     },
     DuplicateSystem {
         id: SystemId,
+    },
+    MissingHandler {
+        system: SystemId,
+    },
+    UnknownLegacyAdapter {
+        system: SystemId,
+    },
+    LegacyAdapterHasHandler {
+        system: SystemId,
     },
     ZeroJobBudget {
         system: SystemId,
@@ -276,11 +360,112 @@ pub enum AccessKind {
     Write,
 }
 
-/// Mutable builder used during startup. `freeze` is the only way to obtain the
-/// deterministic, immutable plan used by the tick coordinator.
+struct PendingSystem {
+    descriptor: SystemDescriptor,
+    handler: Option<Arc<dyn SystemHandler>>,
+}
+
+#[derive(Clone)]
+enum RegisteredHandler {
+    Executable(Arc<dyn SystemHandler>),
+    /// Explicit transitional mode for a coordinator-owned implementation.
+    /// `prepare` rejects this mode; it is not a placeholder no-op handler.
+    CoordinatorAdapter,
+}
+
+/// A registered descriptor and its executable implementation.
+#[derive(Clone)]
+pub struct ExecutableSystem {
+    descriptor: SystemDescriptor,
+    handler: RegisteredHandler,
+    wave_index: u16,
+}
+
+impl ExecutableSystem {
+    pub fn handler(&self) -> Option<&dyn SystemHandler> {
+        match &self.handler {
+            RegisteredHandler::Executable(handler) => Some(handler.as_ref()),
+            RegisteredHandler::CoordinatorAdapter => None,
+        }
+    }
+
+    pub fn shared_handler(&self) -> Option<Arc<dyn SystemHandler>> {
+        match &self.handler {
+            RegisteredHandler::Executable(handler) => Some(Arc::clone(handler)),
+            RegisteredHandler::CoordinatorAdapter => None,
+        }
+    }
+
+    pub const fn has_executable_handler(&self) -> bool {
+        matches!(&self.handler, RegisteredHandler::Executable(_))
+    }
+
+    pub const fn is_coordinator_adapter(&self) -> bool {
+        matches!(&self.handler, RegisteredHandler::CoordinatorAdapter)
+    }
+
+    pub fn prepare(&self, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
+        if job.system() != self.id() {
+            return Err(SystemHandlerError::WrongSystem {
+                expected: self.id().clone(),
+                actual: job.system().clone(),
+            });
+        }
+        if job.key().batch.phase() != self.phase() {
+            return Err(SystemHandlerError::WrongPhase {
+                expected: self.phase(),
+                actual: job.key().batch.phase(),
+            });
+        }
+        if job.key().batch.wave() != self.wave_index {
+            return Err(SystemHandlerError::WrongWave {
+                expected: self.wave_index,
+                actual: job.key().batch.wave(),
+            });
+        }
+        if !self.accepts_owner(job.owner()) {
+            return Err(SystemHandlerError::WrongPartition {
+                expected: self.partition(),
+                actual: job.owner(),
+            });
+        }
+        match &self.handler {
+            RegisteredHandler::Executable(handler) => handler.prepare(job),
+            RegisteredHandler::CoordinatorAdapter => {
+                Err(SystemHandlerError::CoordinatorAdapterOnly {
+                    system: self.id().clone(),
+                })
+            }
+        }
+    }
+
+    pub const fn wave_index(&self) -> u16 {
+        self.wave_index
+    }
+}
+
+impl Deref for ExecutableSystem {
+    type Target = SystemDescriptor;
+
+    fn deref(&self) -> &Self::Target {
+        &self.descriptor
+    }
+}
+
+impl fmt::Debug for ExecutableSystem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExecutableSystem")
+            .field("descriptor", &self.descriptor)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Mutable startup builder. Every descriptor must have a handler before it
+/// can be frozen into the deterministic tick plan.
 #[derive(Default)]
 pub struct SystemRegistry {
-    systems: BTreeMap<SystemId, SystemDescriptor>,
+    systems: BTreeMap<SystemId, PendingSystem>,
 }
 
 impl SystemRegistry {
@@ -289,6 +474,33 @@ impl SystemRegistry {
     }
 
     pub fn register(&mut self, descriptor: SystemDescriptor) -> Result<(), RegistryError> {
+        self.insert(descriptor, None)
+    }
+
+    /// Registers an executable handler with its descriptor.
+    pub fn register_handler<H: SystemHandler>(
+        &mut self,
+        descriptor: SystemDescriptor,
+        handler: H,
+    ) -> Result<(), RegistryError> {
+        self.insert(descriptor, Some(Arc::new(handler)))
+    }
+
+    /// Registers an already shared handler, useful when the same immutable
+    /// implementation is configured for more than one system identity.
+    pub fn register_shared_handler(
+        &mut self,
+        descriptor: SystemDescriptor,
+        handler: Arc<dyn SystemHandler>,
+    ) -> Result<(), RegistryError> {
+        self.insert(descriptor, Some(handler))
+    }
+
+    fn insert(
+        &mut self,
+        descriptor: SystemDescriptor,
+        handler: Option<Arc<dyn SystemHandler>>,
+    ) -> Result<(), RegistryError> {
         if self.systems.contains_key(&descriptor.id) {
             return Err(RegistryError::DuplicateSystem { id: descriptor.id });
         }
@@ -297,26 +509,107 @@ impl SystemRegistry {
                 maximum: MAX_REGISTERED_SYSTEMS,
             });
         }
-        self.systems.insert(descriptor.id.clone(), descriptor);
+        self.systems.insert(
+            descriptor.id.clone(),
+            PendingSystem {
+                descriptor,
+                handler,
+            },
+        );
         Ok(())
     }
 
     pub fn freeze(self) -> Result<PhasePlan, RegistryError> {
+        self.freeze_inner(BTreeSet::new())
+    }
+
+    /// Transitional schedule for systems whose real implementation still
+    /// runs through an explicit coordinator adapter. Only listed metadata-only
+    /// systems may be frozen this way; their `prepare` entrypoint rejects,
+    /// keeping this state distinct from executable registration.
+    pub fn freeze_legacy(
+        self,
+        coordinator_adapters: impl IntoIterator<Item = SystemId>,
+    ) -> Result<PhasePlan, RegistryError> {
+        self.freeze_inner(coordinator_adapters.into_iter().collect())
+    }
+
+    fn freeze_inner(
+        self,
+        coordinator_adapters: BTreeSet<SystemId>,
+    ) -> Result<PhasePlan, RegistryError> {
         self.validate_budgets()?;
         let dependencies = self.validate_dependencies()?;
+        let ordered_phases = Phase::ALL
+            .into_iter()
+            .map(|phase| self.sorted_phase(phase, &dependencies))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let mut phases = Vec::with_capacity(Phase::ALL.len());
-        for phase in Phase::ALL {
-            phases.push(self.sorted_phase(phase, &dependencies)?);
-        }
         self.validate_conflicts(&dependencies)?;
-        Ok(PhasePlan { phases })
+        self.validate_handlers(&coordinator_adapters)?;
+        let mut phases = Vec::with_capacity(Phase::ALL.len());
+        let mut system_indexes = BTreeMap::new();
+        for ordered_waves in ordered_phases {
+            let phase_index = phases.len();
+            let mut systems = Vec::new();
+            let mut wave_ranges = Vec::with_capacity(ordered_waves.len());
+            for (wave_index, wave) in ordered_waves.into_iter().enumerate() {
+                let start = systems.len();
+                for id in wave {
+                    let system_index = systems.len();
+                    let pending = self
+                        .systems
+                        .get(&id)
+                        .expect("sorted system came from registry");
+                    systems.push(ExecutableSystem {
+                        descriptor: pending.descriptor.clone(),
+                        handler: match &pending.handler {
+                            Some(handler) => RegisteredHandler::Executable(Arc::clone(handler)),
+                            None => RegisteredHandler::CoordinatorAdapter,
+                        },
+                        wave_index: u16::try_from(wave_index)
+                            .expect("system count bounds phase wave count"),
+                    });
+                    system_indexes.insert(id, (phase_index, system_index));
+                }
+                wave_ranges.push(start..systems.len());
+            }
+            phases.push(PhaseSchedule {
+                systems,
+                wave_ranges,
+            });
+        }
+        Ok(PhasePlan {
+            phases,
+            system_indexes,
+        })
+    }
+
+    fn validate_handlers(
+        &self,
+        coordinator_adapters: &BTreeSet<SystemId>,
+    ) -> Result<(), RegistryError> {
+        for id in coordinator_adapters {
+            let Some(pending) = self.systems.get(id) else {
+                return Err(RegistryError::UnknownLegacyAdapter { system: id.clone() });
+            };
+            if pending.handler.is_some() {
+                return Err(RegistryError::LegacyAdapterHasHandler { system: id.clone() });
+            }
+        }
+        for (id, pending) in &self.systems {
+            if pending.handler.is_none() && !coordinator_adapters.contains(id) {
+                return Err(RegistryError::MissingHandler { system: id.clone() });
+            }
+        }
+        Ok(())
     }
 
     fn validate_budgets(&self) -> Result<(), RegistryError> {
         let mut phase_jobs = BTreeMap::<Phase, usize>::new();
         let mut phase_effects = BTreeMap::<Phase, usize>::new();
-        for descriptor in self.systems.values() {
+        for pending in self.systems.values() {
+            let descriptor = &pending.descriptor;
             let access_domains = descriptor.reads.union(&descriptor.writes).count();
             if access_domains > MAX_RESOURCE_DOMAINS_PER_SYSTEM {
                 return Err(RegistryError::TooManyResourceDomains {
@@ -351,6 +644,16 @@ impl SystemRegistry {
                     kind: BudgetKind::Effects,
                     requested: descriptor.max_effects_per_tick,
                     maximum: MAX_SYSTEM_EFFECTS_PER_TICK,
+                });
+            }
+            if descriptor.max_effects_per_job > MAX_EFFECTS_PER_OWNER_JOB
+                || descriptor.max_effects_per_job > descriptor.max_effects_per_tick
+            {
+                return Err(RegistryError::SystemBudgetTooLarge {
+                    system: descriptor.id.clone(),
+                    kind: BudgetKind::EffectsPerJob,
+                    requested: descriptor.max_effects_per_job,
+                    maximum: MAX_EFFECTS_PER_OWNER_JOB.min(descriptor.max_effects_per_tick),
                 });
             }
             if descriptor.neighbor_radius > MAX_NEIGHBOR_RADIUS {
@@ -389,14 +692,16 @@ impl SystemRegistry {
         &self,
     ) -> Result<BTreeMap<SystemId, BTreeSet<SystemId>>, RegistryError> {
         let mut dependencies = BTreeMap::new();
-        for descriptor in self.systems.values() {
+        for pending in self.systems.values() {
+            let descriptor = &pending.descriptor;
             for dependency in &descriptor.after {
-                let Some(dependency_descriptor) = self.systems.get(dependency) else {
+                let Some(dependency_system) = self.systems.get(dependency) else {
                     return Err(RegistryError::MissingDependency {
                         system: descriptor.id.clone(),
                         dependency: dependency.clone(),
                     });
                 };
+                let dependency_descriptor = &dependency_system.descriptor;
                 if dependency_descriptor.phase > descriptor.phase {
                     return Err(RegistryError::DependencyInLaterPhase {
                         system: descriptor.id.clone(),
@@ -415,30 +720,37 @@ impl SystemRegistry {
         &self,
         phase: Phase,
         dependencies: &BTreeMap<SystemId, BTreeSet<SystemId>>,
-    ) -> Result<Vec<SystemDescriptor>, RegistryError> {
+    ) -> Result<Vec<Vec<SystemId>>, RegistryError> {
         let mut remaining: BTreeSet<SystemId> = self
             .systems
             .values()
-            .filter(|descriptor| descriptor.phase == phase)
-            .map(|descriptor| descriptor.id.clone())
+            .filter(|pending| pending.descriptor.phase == phase)
+            .map(|pending| pending.descriptor.id.clone())
             .collect();
-        let mut ordered = Vec::with_capacity(remaining.len());
+        let mut waves = Vec::new();
 
         while !remaining.is_empty() {
-            let ready = remaining.iter().find(|system| {
-                dependencies[*system].iter().all(|dependency| {
-                    self.systems[dependency].phase < phase || !remaining.contains(dependency)
+            let ready: Vec<_> = remaining
+                .iter()
+                .filter(|system| {
+                    dependencies[*system].iter().all(|dependency| {
+                        self.systems[dependency].descriptor.phase < phase
+                            || !remaining.contains(dependency)
+                    })
                 })
-            });
-            let Some(system) = ready.cloned() else {
+                .cloned()
+                .collect();
+            if ready.is_empty() {
                 return Err(RegistryError::DependencyCycle {
                     systems: remaining.into_iter().collect(),
                 });
-            };
-            remaining.remove(&system);
-            ordered.push(self.systems[&system].clone());
+            }
+            for system in &ready {
+                remaining.remove(system);
+            }
+            waves.push(ready);
         }
-        Ok(ordered)
+        Ok(waves)
     }
 
     fn validate_conflicts(
@@ -449,7 +761,8 @@ impl SystemRegistry {
             let systems: Vec<_> = self
                 .systems
                 .values()
-                .filter(|descriptor| descriptor.phase == phase)
+                .filter(|pending| pending.descriptor.phase == phase)
+                .map(|pending| &pending.descriptor)
                 .collect();
             for (index, first) in systems.iter().enumerate() {
                 for second in systems.iter().skip(index + 1) {
@@ -519,14 +832,79 @@ fn depends_on(
 
 /// Immutable deterministic schedule. One coordinator may use this plan with a
 /// shared fixed worker pool; registration never constructs per-system threads.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PhasePlan {
-    phases: Vec<Vec<SystemDescriptor>>,
+    phases: Vec<PhaseSchedule>,
+    system_indexes: BTreeMap<SystemId, (usize, usize)>,
+}
+
+#[derive(Clone, Debug)]
+struct PhaseSchedule {
+    systems: Vec<ExecutableSystem>,
+    wave_ranges: Vec<Range<usize>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SystemWave<'a> {
+    index: u16,
+    systems: &'a [ExecutableSystem],
+}
+
+impl<'a> SystemWave<'a> {
+    pub const fn index(self) -> u16 {
+        self.index
+    }
+
+    pub const fn systems(self) -> &'a [ExecutableSystem] {
+        self.systems
+    }
 }
 
 impl PhasePlan {
-    pub fn systems(&self, phase: Phase) -> &[SystemDescriptor] {
-        &self.phases[phase_index(phase)]
+    pub fn systems(&self, phase: Phase) -> &[ExecutableSystem] {
+        &self.phases[phase_index(phase)].systems
+    }
+
+    /// Dependency waves are stable and contain only systems that can run
+    /// concurrently under the frozen access declarations.
+    pub fn waves(&self, phase: Phase) -> impl Iterator<Item = SystemWave<'_>> {
+        let schedule = &self.phases[phase_index(phase)];
+        schedule
+            .wave_ranges
+            .iter()
+            .enumerate()
+            .map(move |(index, range)| SystemWave {
+                index: u16::try_from(index).expect("registry caps system count"),
+                systems: &schedule.systems[range.clone()],
+            })
+    }
+
+    pub fn system(&self, id: &SystemId) -> Option<&ExecutableSystem> {
+        let (phase, index) = self.system_indexes.get(id).copied()?;
+        self.phases.get(phase)?.systems.get(index)
+    }
+
+    pub fn handler(&self, id: &SystemId) -> Option<&dyn SystemHandler> {
+        self.system(id).and_then(ExecutableSystem::handler)
+    }
+
+    pub fn prepare(&self, id: &SystemId, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
+        self.system(id)
+            .ok_or_else(|| SystemHandlerError::Rejected(format!("unregistered system {id:?}")))?
+            .prepare(job)
+    }
+
+    pub fn owner_wave_limits(&self, id: &SystemId) -> Option<OwnerWaveLimits> {
+        self.system(id).map(|system| OwnerWaveLimits {
+            max_jobs: system.max_jobs_per_tick,
+            max_effects_per_job: system.max_effects_per_job,
+            max_effect_deliveries: system.max_effects_per_tick,
+            ..OwnerWaveLimits::new(
+                system.max_jobs_per_tick,
+                system.max_effects_per_tick,
+                MAX_OWNER_WAVE_PATCH_BYTES,
+            )
+        })
     }
 
     /// Aggregate bound exposed for runtime admission control. Built-in
@@ -535,7 +913,7 @@ impl PhasePlan {
     pub fn phase_job_budget(&self, phase: Phase) -> usize {
         self.systems(phase)
             .iter()
-            .map(SystemDescriptor::max_jobs_per_tick)
+            .map(|system| system.max_jobs_per_tick())
             .sum()
     }
 
@@ -545,7 +923,7 @@ impl PhasePlan {
     pub fn phase_effect_budget(&self, phase: Phase) -> usize {
         self.systems(phase)
             .iter()
-            .map(SystemDescriptor::max_effects_per_tick)
+            .map(|system| system.max_effects_per_tick())
             .sum()
     }
 }

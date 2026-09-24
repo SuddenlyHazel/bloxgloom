@@ -14,10 +14,11 @@ use super::journal::{
 use super::simulation::TickId;
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{ClientMessage, DroppedItem};
-use crate::world::{Chunk, ChunkKey, PreparedEdit, World};
+use crate::world::{BlockId, Chunk, ChunkKey, PreparedEdit, World};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, ErrorKind};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,8 @@ pub(super) mod coordinator;
 mod publication;
 #[path = "durable/receipt.rs"]
 mod receipt;
+#[path = "durable/receipts.rs"]
+mod receipts;
 #[path = "durable/recovery.rs"]
 mod recovery;
 #[path = "durable/rotation.rs"]
@@ -42,25 +45,21 @@ pub(super) use coordinator::{
     handle_live_message, process_durable_actions, queue_interaction_actions,
 };
 pub(super) use publication::publish_committed;
+pub(in crate::server) use receipts::closed_legacy_ledger_bytes;
+#[cfg(test)]
+pub(super) use state::encode_action_receipt;
 pub(super) use state::{
-    action_changes, action_receipt_state_key, chunk_state_key, drops_checkpoint_key,
-    encode_action_receipt, inventory_state_key, is_checkpoint_key,
+    action_changes, chunk_state_key, drops_checkpoint_key, inventory_state_key, is_checkpoint_key,
 };
 
 pub(super) const MAX_PENDING_DURABLE_ACTIONS: usize = 256;
 pub(super) const MAX_DEFERRED_DURABLE_ACTIONS: usize = 256;
 pub(super) const MAX_DIRTY_CHECKPOINT_KEYS: usize = 1_024;
 pub(super) const MAX_DIRTY_CHECKPOINT_BYTES: usize = 128 * 1024 * 1024;
-// Receipt values remain replayable across restart; reject new client actions
-// at this bound until a compact per-session receipt representation exists.
-const MAX_ACTION_RECEIPTS: usize = 1_000_000;
 const CHECKPOINT_QUEUE_CAPACITY: usize = 16;
 
-fn action_receipt_limit_reached(committed: usize, pending: usize, limit: usize) -> bool {
-    committed.saturating_add(pending) >= limit
-}
-
 pub(super) struct Durability {
+    catalog: Arc<crate::content::Catalog>,
     pub(super) writer: JournalWriter,
     pub(super) next_id: u128,
     pub(super) inventory_overlay: HashMap<u128, Inventory>,
@@ -78,7 +77,13 @@ pub(super) struct Durability {
     pub(super) dirty_checkpoints: HashMap<StateKey, DirtyCheckpoint>,
     pub(super) checkpoint_inflight: HashMap<StateKey, u64>,
     pub(super) next_checkpoint_revision: u64,
-    pub(super) action_receipts: HashMap<(u128, u128), Vec<u8>>,
+    pub(super) receipt_store: receipts::ReceiptStore,
+    pub(super) receipt_ledgers: HashMap<u128, receipts::ReceiptLedger>,
+    pub(super) pending_grants: HashSet<u128>,
+    pub(super) ready_grants: HashMap<u128, u64>,
+    /// One coalesced contiguous ACK per connected profile, independent of the
+    /// gameplay command queue so a full window can always make progress.
+    pub(super) pending_acks: HashMap<u128, (u64, u64)>,
     pub(super) rotation_requested: bool,
     pub(super) rotation_snapshot_ready: bool,
     pub(super) rotation_receipt: Option<Receiver<io::Result<RotationReceipt>>>,
@@ -105,6 +110,7 @@ pub(super) struct CommitAction {
     pub(super) profile: Option<u128>,
     pub(super) action_id: Option<u128>,
     pub(super) receipt_value: Option<Vec<u8>>,
+    pub(super) receipt_transition: Option<receipts::ReceiptTransition>,
     pub(super) inventory_before: Option<Vec<u8>>,
     pub(super) inventory: Option<Inventory>,
     pub(super) world_edits: Vec<PreparedEdit>,
@@ -114,12 +120,31 @@ pub(super) struct CommitAction {
     pub(super) pickups: Vec<DroppedItem>,
 }
 
+impl CommitAction {
+    fn receipt_only(transition: receipts::ReceiptTransition) -> Self {
+        Self {
+            client_id: None,
+            profile: Some(transition.profile),
+            action_id: None,
+            receipt_value: None,
+            receipt_transition: Some(transition),
+            inventory_before: None,
+            inventory: None,
+            world_edits: Vec::new(),
+            drops: Default::default(),
+            deltas: Vec::new(),
+            changed_cells: Vec::new(),
+            pickups: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct BlockDelta {
     pub(super) key: ChunkKey,
     pub(super) version: u64,
     pub(super) local: [u8; 3],
-    pub(super) block: u8,
+    pub(super) block: BlockId,
 }
 
 pub(super) struct PublishEffects {
@@ -151,13 +176,75 @@ pub(super) enum DurableRequest {
 pub(super) enum StageError {
     Conflict,
     Full,
-    ReceiptLimit,
     Closed,
     Invalid(io::Error),
     IdExhausted,
 }
 
 impl Durability {
+    /// Begin a new server-issued session, or return its WAL-synced epoch.
+    /// The caller retries on later ticks while this returns `Ok(None)`.
+    pub(super) fn request_epoch_grant(
+        &mut self,
+        profile: u128,
+        tick: TickId,
+    ) -> Result<Option<u64>, StageError> {
+        if profile == 0 {
+            return Err(StageError::Invalid(io::Error::new(
+                ErrorKind::InvalidInput,
+                "missing profile",
+            )));
+        }
+        if let Some(epoch) = self.ready_grants.get(&profile) {
+            return Ok(Some(*epoch));
+        }
+        if self.pending_grants.contains(&profile) || self.profile_pending(profile) {
+            return Ok(None);
+        }
+        let before = self.receipt_ledger(profile);
+        let after = before.grant_next_epoch().map_err(StageError::Invalid)?;
+        let transition = receipts::ReceiptTransition::new(
+            profile,
+            &before,
+            after,
+            receipts::ReceiptEvent::EpochGrant,
+        )
+        .map_err(StageError::Invalid)?;
+        match self.try_stage(tick, &CommitAction::receipt_only(transition), None)? {
+            true => {
+                self.pending_grants.insert(profile);
+                Ok(None)
+            }
+            false => Err(StageError::Invalid(io::Error::other("empty epoch grant"))),
+        }
+    }
+
+    pub(super) fn claim_epoch_grant(&mut self, profile: u128) -> Option<u64> {
+        self.ready_grants.remove(&profile)
+    }
+
+    pub(super) fn stage_action_ack(
+        &mut self,
+        profile: u128,
+        epoch: u64,
+        through_seq: u64,
+        tick: TickId,
+    ) -> Result<bool, StageError> {
+        if self.profile_pending(profile) {
+            return Err(StageError::Conflict);
+        }
+        let before = self.receipt_ledger(profile);
+        let Some(after) = before
+            .acknowledge(epoch, through_seq)
+            .map_err(StageError::Invalid)?
+        else {
+            return Ok(false);
+        };
+        let transition =
+            receipts::ReceiptTransition::new(profile, &before, after, receipts::ReceiptEvent::Ack)
+                .map_err(StageError::Invalid)?;
+        self.try_stage(tick, &CommitAction::receipt_only(transition), None)
+    }
     /// Opens and recovers all journal-backed after-values before the server can
     /// accept clients. Existing saves are decoded before any replay replacement.
     pub(super) fn open(
@@ -177,7 +264,7 @@ impl Durability {
         action: &CommitAction,
         projected_drop_snapshot_size: Option<usize>,
     ) -> Result<bool, StageError> {
-        let changes = action_changes(action).map_err(StageError::Invalid)?;
+        let changes = action_changes(action, &self.catalog).map_err(StageError::Invalid)?;
         if changes.is_empty() {
             return Ok(false);
         }
@@ -186,20 +273,6 @@ impl Durability {
         }
         if self.rotation_requested {
             return Err(StageError::Full);
-        }
-        // Reserve capacity for every in-flight durable action before accepting
-        // another receipt-bearing request. `pending.len()` is intentionally a
-        // conservative O(1) upper bound; otherwise a full WAL batch could push
-        // the persisted receipt count over the startup limit before receipts
-        // are polled into `action_receipts`.
-        if action.action_id.is_some()
-            && action_receipt_limit_reached(
-                self.action_receipts.len(),
-                self.pending.len(),
-                MAX_ACTION_RECEIPTS,
-            )
-        {
-            return Err(StageError::ReceiptLimit);
         }
         if self.pending.len() >= MAX_PENDING_DURABLE_ACTIONS {
             return Err(StageError::Full);
@@ -292,15 +365,11 @@ impl Durability {
             .any(|commit| commit.action.profile == Some(profile))
     }
 
-    pub(super) fn action_receipt(&self, profile: u128, action_id: u128) -> Option<&[u8]> {
-        self.action_receipts
-            .get(&(profile, action_id))
-            .map(Vec::as_slice)
-    }
-
-    pub(super) fn action_receipt_reserved(&self, profile: u128, action_id: u128) -> bool {
-        self.reserved
-            .contains(&action_receipt_state_key(profile, action_id))
+    pub(super) fn receipt_ledger(&self, profile: u128) -> receipts::ReceiptLedger {
+        self.receipt_ledgers
+            .get(&profile)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub(super) fn poll_checkpoints(&mut self) -> Vec<CheckpointReceipt> {

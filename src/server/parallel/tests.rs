@@ -2,7 +2,7 @@ use super::super::effects::{
     Effect, EffectBatch, EffectBuffer, EffectEnvelope, EffectLimits, route_effects,
 };
 use super::*;
-use crate::world::world_to_chunk;
+use crate::world::{ChunkKey, world_to_chunk};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::time::Duration;
@@ -250,8 +250,16 @@ fn owner_results_are_stable_across_regions_and_completion_orders() {
     for pair in first.windows(2) {
         assert!(pair[0].0 < pair[1].0);
     }
-    assert!(first.iter().any(|(key, _)| key.owner.x < 0));
-    assert!(first.iter().any(|(key, _)| key.owner.x > 0));
+    assert!(
+        first
+            .iter()
+            .any(|(key, _)| { key.owner.as_chunk().is_some_and(|owner| owner.x < 0) })
+    );
+    assert!(
+        first
+            .iter()
+            .any(|(key, _)| { key.owner.as_chunk().is_some_and(|owner| owner.x > 0) })
+    );
 }
 
 #[test]

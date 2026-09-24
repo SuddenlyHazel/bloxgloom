@@ -11,7 +11,10 @@ impl ApplicationHandler for ClientApp {
         match event_loop.create_window(attributes) {
             Ok(window) => {
                 let window = Arc::new(window);
-                match pollster::block_on(Renderer::new(Arc::clone(&window))) {
+                match pollster::block_on(Renderer::new_with_catalog(
+                    Arc::clone(&window),
+                    Arc::clone(&self.catalog),
+                )) {
                     Ok(renderer) => {
                         self.renderer = Some(renderer);
                         self.window = Some(window);
@@ -96,13 +99,18 @@ impl ApplicationHandler for ClientApp {
                                     })
                                 };
                                 if let Some(slot) = slot
-                                    && let Some(stack) = self.inventory.slots[slot as usize]
+                                    && let Some(stack) =
+                                        self.inventory.slots[slot as usize].as_ref()
                                 {
-                                    let action_id = self.allocate_action_id();
+                                    let count = if self.shift_down { stack.count } else { 1 };
+                                    let Some(action_id) = self.allocate_action_id() else {
+                                        self.show_status("Action session pending or busy");
+                                        return;
+                                    };
                                     self.queue_command(ClientMessage::DropStack {
                                         action_id,
                                         slot,
-                                        count: if self.shift_down { stack.count } else { 1 },
+                                        count,
                                     });
                                     self.inventory_source = None;
                                 }

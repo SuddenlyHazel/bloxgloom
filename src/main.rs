@@ -26,13 +26,42 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {
-            let (addr, _server) = server::start_local_server(0xB10C_6100, "world-v4".into())?;
+            let (addr, _server) = server::start_local_server(0xB10C_6100, "world-v5".into())?;
             client::run_client(&addr.to_string())?;
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
-            let save_dir = args.next().unwrap_or_else(|| "world-v4".to_string());
-            server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
+            let save_dir = args.next().unwrap_or_else(|| "world-v5".to_string());
+            let admission_limit = args
+                .next()
+                .map(|value| value.parse::<usize>())
+                .transpose()?;
+            if args.next().is_some() {
+                return Err("usage: server [address] [save-dir] [max-clients: 1..=256]".into());
+            }
+            if let Some(limit) = admission_limit {
+                server::run_server_with_limit(&addr, 0xB10C_6100, save_dir.into(), limit)?;
+            } else {
+                server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
+            }
+        }
+        Some("migrate-v4") => {
+            let usage =
+                "usage: migrate-v4 <source-world-v4> <destination-world-v5> --source-stopped";
+            let source = args.next().ok_or(usage)?;
+            let destination = args.next().ok_or(usage)?;
+            if args.next().as_deref() != Some("--source-stopped") || args.next().is_some() {
+                return Err(usage.into());
+            }
+            let report = server::migration::migrate_v4(source, destination, true)?;
+            println!(
+                "converted {} source files: {} edited chunks, {} inventories, {} drops, {} closed legacy action receipts",
+                report.source_files,
+                report.edited_chunks,
+                report.inventories,
+                report.drops,
+                report.legacy_action_receipts,
+            );
         }
         Some("server-perf") => {
             let steady_ticks = args
@@ -134,7 +163,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::run_perf_benchmark(steady_frames, radius, bounced)?;
         }
         Some(other) => {
-            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `server-perf [steady-ticks]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
+            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `migrate-v4 <source> <destination> --source-stopped`, `server-perf [steady-ticks]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
         }
     }
     Ok(())

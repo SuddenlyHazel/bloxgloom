@@ -5,7 +5,8 @@
 //! captured set is an error, so callers must reject work that cannot be
 //! completed from authoritative snapshots.
 
-use crate::world::{self, BlockId, CHUNK_VOLUME, Chunk, ChunkKey, is_solid};
+use crate::content::Catalog;
+use crate::world::{self, BlockId, CHUNK_VOLUME, Chunk, ChunkKey};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -43,6 +44,7 @@ pub enum SnapshotError {
 pub struct VoxelView {
     chunks: HashMap<ChunkKey, Arc<Chunk>>,
     revisions: Vec<(ChunkKey, u64)>,
+    catalog: Arc<Catalog>,
 }
 
 impl VoxelView {
@@ -56,7 +58,15 @@ impl VoxelView {
         I: IntoIterator<Item = C>,
         C: Into<Arc<Chunk>>,
     {
-        Self::build(chunks, true)
+        Self::build(chunks, Arc::new(crate::content::catalog().clone()), true)
+    }
+
+    pub fn from_chunks_in<I, C>(chunks: I, catalog: Arc<Catalog>) -> Result<Self, SnapshotError>
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<Arc<Chunk>>,
+    {
+        Self::build(chunks, catalog, true)
     }
 
     /// Fast path for chunks obtained only from `World::cached_arc_chunk`.
@@ -66,10 +76,24 @@ impl VoxelView {
     where
         I: IntoIterator<Item = Arc<Chunk>>,
     {
-        Self::build(chunks, false)
+        Self::build(chunks, Arc::new(crate::content::catalog().clone()), false)
     }
 
-    fn build<I, C>(chunks: I, validate_voxels: bool) -> Result<Self, SnapshotError>
+    pub(super) fn from_resident_chunks_in<I>(
+        chunks: I,
+        catalog: Arc<Catalog>,
+    ) -> Result<Self, SnapshotError>
+    where
+        I: IntoIterator<Item = Arc<Chunk>>,
+    {
+        Self::build(chunks, catalog, false)
+    }
+
+    fn build<I, C>(
+        chunks: I,
+        catalog: Arc<Catalog>,
+        validate_voxels: bool,
+    ) -> Result<Self, SnapshotError>
     where
         I: IntoIterator<Item = C>,
         C: Into<Arc<Chunk>>,
@@ -90,7 +114,7 @@ impl VoxelView {
                     .iter()
                     .copied()
                     .enumerate()
-                    .find(|(_, block)| !world::valid_block(*block))
+                    .find(|(_, block)| catalog.state(*block).is_none())
             {
                 return Err(SnapshotError::InvalidBlock {
                     key: chunk.key,
@@ -112,6 +136,7 @@ impl VoxelView {
         Ok(Self {
             chunks: by_key,
             revisions,
+            catalog,
         })
     }
 
@@ -210,7 +235,13 @@ pub fn player_collides(view: &VoxelView, feet: [f32; 3]) -> Result<bool, Missing
     for x in [feet[0] - 0.3, feet[0] + 0.3] {
         for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
             for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if is_solid(view.block(x.floor() as i32, y.floor() as i32, z.floor() as i32)?) {
+                if view.catalog.block_flags(view.block(
+                    x.floor() as i32,
+                    y.floor() as i32,
+                    z.floor() as i32,
+                )?) & crate::content::SOLID
+                    != 0
+                {
                     return Ok(true);
                 }
             }
@@ -227,14 +258,14 @@ fn air_chunk(key: ChunkKey, version: u64) -> Chunk {
     Chunk {
         key,
         version,
-        blocks: vec![AIR; CHUNK_VOLUME],
+        blocks: vec![AIR; CHUNK_VOLUME].into(),
     }
 }
 
 #[cfg(test)]
 fn set_block(chunk: &mut Chunk, local: [usize; 3], block: BlockId) {
     let index = Chunk::index(local).unwrap();
-    chunk.blocks[index] = block;
+    chunk.blocks.set(index, block);
 }
 
 #[cfg(test)]

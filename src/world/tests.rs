@@ -129,7 +129,7 @@ fn chunk_cache_unlinks_and_reinserts_entries_at_each_lru_position() {
             Arc::new(Chunk {
                 key,
                 version: 0,
-                blocks: vec![AIR; CHUNK_VOLUME],
+                blocks: PalettedBlocks::uniform(AIR),
             }),
             BTreeMap::new(),
         );
@@ -485,14 +485,14 @@ fn biome_plants_are_reproducible_and_non_solid() {
             let y = column.height + 1;
             let soil = generated_block_in_column(x, column.height, z, column, seed);
             let candidate = ground_plant(x, z, seed, column.biome, soil);
-            if candidate == AIR || seen[(candidate - RED_FLOWER) as usize] {
+            if candidate == AIR || seen[(candidate.0 - RED_FLOWER.0) as usize] {
                 continue;
             }
             let plant = generated_block(x, y, z, seed);
             if is_plant(plant) {
                 let (key, local) = world_to_chunk(x as i32, y as i32, z as i32);
                 assert_eq!(generate_chunk(key, seed).block(local), Some(plant));
-                seen[(plant - RED_FLOWER) as usize] = true;
+                seen[(plant.0 - RED_FLOWER.0) as usize] = true;
                 assert!(supports_plant(soil));
                 assert!(matches!(column.biome, Biome::Plains | Biome::Forest));
             }
@@ -645,6 +645,31 @@ fn glowstone_edit_survives_restart() {
     let mut reopened = World::new(19, path.clone()).unwrap();
     assert_eq!(reopened.get_block(2, 35, 3).unwrap(), GLOWSTONE);
     std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn log_axis_states_survive_negative_and_positive_chunk_seams() {
+    let path = test_dir();
+    let mut world = World::new(61, path.clone()).unwrap();
+    for (x, z, state) in [
+        (-1, 0, WOOD_X),
+        (0, 0, WOOD),
+        (15, -1, WOOD_Z),
+        (16, -1, WOOD_X),
+    ] {
+        world.edit(x, 100, z, state).unwrap();
+    }
+    drop(world);
+    let mut reopened = World::new(61, path.clone()).unwrap();
+    for (x, z, state) in [
+        (-1, 0, WOOD_X),
+        (0, 0, WOOD),
+        (15, -1, WOOD_Z),
+        (16, -1, WOOD_X),
+    ] {
+        assert_eq!(reopened.get_block(x, 100, z).unwrap(), state);
+    }
+    fs::remove_dir_all(path).unwrap();
 }
 
 #[test]

@@ -421,25 +421,30 @@ async fn render_previews(
     }
 
     let drop_gpu_mesh = if let PreviewScene::Drops(phase) = scene {
-        let items: Vec<_> = [world::RED_FLOWER, world::STONE, world::GLOWSTONE, SEEDS]
-            .into_iter()
-            .enumerate()
-            .map(|(index, item)| DroppedItem {
-                id: index as u64 + 1,
-                item,
-                count: 1,
-                position: [
-                    target_xz.0 as f32 + index as f32 - 0.5,
-                    target_height as f32 + 1.2 + index as f32 * 0.2,
-                    target_xz.1 as f32 + 0.5,
-                ],
-                age_ms: if matches!(phase, DropPhase::Pop) {
-                    0
-                } else {
-                    2000
-                },
-            })
-            .collect();
+        let items: Vec<_> = [
+            crate::items::ItemId::new(world::RED_FLOWER.get()),
+            crate::items::ItemId::new(world::STONE.get()),
+            crate::items::ItemId::new(world::GLOWSTONE.get()),
+            SEEDS,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| DroppedItem {
+            id: index as u64 + 1,
+            item,
+            count: 1,
+            position: [
+                target_xz.0 as f32 + index as f32 - 0.5,
+                target_height as f32 + 1.2 + index as f32 * 0.2,
+                target_xz.1 as f32 + 0.5,
+            ],
+            age_ms: if matches!(phase, DropPhase::Pop) {
+                0
+            } else {
+                2000
+            },
+        })
+        .collect();
         let now = Instant::now();
         let mut animator = DropAnimator::new(now);
         animator.snapshot(items.clone(), now);
@@ -716,7 +721,7 @@ async fn render_previews(
 }
 
 fn sample_inventory() -> [Option<Stack>; SLOTS] {
-    let mut slots = [None; SLOTS];
+    let mut slots = std::array::from_fn(|_| None);
     for (index, item, count) in [
         (0, 1, 128),
         (1, 2, 73),
@@ -731,7 +736,7 @@ fn sample_inventory() -> [Option<Stack>; SLOTS] {
         (20, 4, 7),
         (29, 6, 128),
     ] {
-        slots[index] = Some(Stack { item, count });
+        slots[index] = Some(Stack::new(crate::items::ItemId::new(item), count));
     }
     slots
 }
@@ -794,7 +799,7 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     }
     let mut rebuilt_samples = Vec::with_capacity(300);
     for index in 0..300 {
-        let mut changed = frame;
+        let mut changed = frame.clone();
         changed.hovered = Some(if index % 2 == 0 {
             UiControl::Increase(SettingId::FieldOfView)
         } else {
@@ -833,11 +838,11 @@ fn set_preview_block(
     x: i32,
     y: i32,
     z: i32,
-    block: u8,
+    block: world::BlockId,
 ) {
     let (key, local) = world::world_to_chunk(x, y, z);
     let chunk = Arc::make_mut(chunks.get_mut(&key).expect("preview scene chunk exists"));
-    chunk.blocks[world::Chunk::index(local).unwrap()] = block;
+    chunk.blocks.set(world::Chunk::index(local).unwrap(), block);
 }
 
 fn surface_height(x: i32, z: i32) -> i32 {

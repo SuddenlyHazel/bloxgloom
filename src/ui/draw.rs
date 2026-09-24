@@ -1,6 +1,7 @@
 //! CPU-side UI drawing and bitmap font geometry.
 
-use crate::items::{SAPLING, SEEDS, STICK};
+use crate::content::Catalog;
+use crate::items::ItemId;
 use bytemuck::{Pod, Zeroable};
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 
@@ -32,11 +33,11 @@ pub(super) struct UiBuilder<'a> {
 }
 
 impl UiBuilder<'_> {
-    pub(super) fn draw_frame(&mut self, frame: &UiFrame<'_>, layout: &UiLayout) {
-        self.draw_hud(frame, layout);
+    pub(super) fn draw_frame(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
+        self.draw_hud(frame, layout, catalog);
         match frame.screen {
             UiScreen::Playing => {}
-            UiScreen::Inventory => self.draw_inventory(frame, layout),
+            UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
             UiScreen::Settings => self.draw_settings(frame, layout),
         }
@@ -45,7 +46,7 @@ impl UiBuilder<'_> {
         }
     }
 
-    fn draw_hud(&mut self, frame: &UiFrame<'_>, layout: &UiLayout) {
+    fn draw_hud(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
         let center_x = self.width * 0.5;
         let center_y = self.height * 0.5;
         if frame.screen == UiScreen::Playing {
@@ -114,8 +115,8 @@ impl UiBuilder<'_> {
                     1.5 * self.scale,
                 );
                 let swatch = inset(rect, 10.0 * self.scale, 10.0 * self.scale);
-                if let Some(stack) = frame.inventory[index] {
-                    self.draw_item_swatch(swatch, stack.item);
+                if let Some(stack) = frame.inventory[index].as_ref() {
+                    self.draw_item_swatch(swatch, stack.item, catalog);
                     self.text(
                         &stack.count.to_string(),
                         rect.x + 3.0 * self.scale,
@@ -135,12 +136,14 @@ impl UiBuilder<'_> {
                     1,
                 );
             }
-            let selected_item = frame.inventory[frame.selected_slot.min(8)].map(|stack| stack.item);
+            let selected_item = frame.inventory[frame.selected_slot.min(8)]
+                .as_ref()
+                .map(|stack| stack.item);
             let label_y = layout
                 .rect(UiControl::HotbarSlot(0))
                 .map_or(self.height - 86.0 * self.scale, |r| r.y - 29.0 * self.scale);
             self.center_text(
-                selected_item.map_or("EMPTY HAND", item_name),
+                selected_item.map_or("EMPTY HAND", |item| item_name_for(item, catalog)),
                 self.width * 0.5,
                 label_y,
                 0.96,
@@ -165,9 +168,12 @@ impl UiBuilder<'_> {
         }
     }
 
-    pub(super) fn draw_item_swatch(&mut self, rect: UiRect, item: u8) {
-        let rows: &[&str] = match item {
-            9 => &[
+    pub(super) fn draw_item_swatch(&mut self, rect: UiRect, item: ItemId, catalog: &Catalog) {
+        let key = catalog
+            .item(item)
+            .map_or("", |definition| definition.key.as_ref());
+        let rows: &[&str] = match key {
+            "bloxgloom:wood" => &[
                 "..bbbbbbbb..",
                 ".bmmllmmbb.",
                 "bmmlbbllmmb.",
@@ -181,7 +187,7 @@ impl UiBuilder<'_> {
                 ".bmmllmmbb.",
                 "..bbbbbbbb..",
             ],
-            10 => &[
+            "bloxgloom:leaves" => &[
                 "...ddddd....",
                 ".ddggggddd..",
                 "dggllggggdd.",
@@ -195,7 +201,7 @@ impl UiBuilder<'_> {
                 "...ddggdd...",
                 "....dddd....",
             ],
-            11 => &[
+            "bloxgloom:red_flower" => &[
                 ".....rr.....",
                 "...rrrrrr...",
                 "..rrrRrrr...",
@@ -209,7 +215,7 @@ impl UiBuilder<'_> {
                 "...gggg......",
                 "....gg......",
             ],
-            12 => &[
+            "bloxgloom:yellow_flower" => &[
                 "....yyyy....",
                 "..yyyyyyyy..",
                 ".yyyyyyyyyy.",
@@ -223,7 +229,7 @@ impl UiBuilder<'_> {
                 "....gggg.....",
                 ".....gg......",
             ],
-            13 => &[
+            "bloxgloom:blue_flower" => &[
                 "....bb.......",
                 "...bbbb......",
                 "..bbbbbb.....",
@@ -237,7 +243,7 @@ impl UiBuilder<'_> {
                 ".....gg.......",
                 "....ggg.......",
             ],
-            14 => &[
+            "bloxgloom:fern" => &[
                 ".....gg......",
                 "....gglg.....",
                 "...ggllgg....",
@@ -251,7 +257,7 @@ impl UiBuilder<'_> {
                 ".......ggllgg.",
                 "........ggg...",
             ],
-            15 => &[
+            "bloxgloom:tall_grass" => &[
                 "..g.....g....",
                 "..g...ggg....",
                 "..g..gg.g....",
@@ -265,7 +271,7 @@ impl UiBuilder<'_> {
                 "gggg..ggg....",
                 "..gg..gg.....",
             ],
-            SEEDS => &[
+            "bloxgloom:seeds" => &[
                 "....ssss....",
                 "...stttss...",
                 "..stuuuttss..",
@@ -279,7 +285,7 @@ impl UiBuilder<'_> {
                 "....sss.......",
                 "..............",
             ],
-            SAPLING => &[
+            "bloxgloom:sapling" => &[
                 "....dddd......",
                 "..ddggggdd....",
                 ".dggllggggd...",
@@ -293,7 +299,7 @@ impl UiBuilder<'_> {
                 "....mmbmm.......",
                 ".....bbb........",
             ],
-            STICK => &[
+            "bloxgloom:stick" => &[
                 "........b.....",
                 ".......bbm....",
                 "......bbmmk...",
@@ -310,7 +316,13 @@ impl UiBuilder<'_> {
             _ => &[],
         };
         if rows.is_empty() {
-            self.rect(rect.x, rect.y, rect.width, rect.height, item_color(item));
+            self.rect(
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                item_color_for(item, catalog),
+            );
             return;
         }
         let columns = rows.iter().map(|row| row.len()).max().unwrap_or(1) as f32;
@@ -320,10 +332,10 @@ impl UiBuilder<'_> {
             let row_offset = (rect.width - row.len() as f32 * cell_w) * 0.5;
             for (x, pixel) in row.chars().enumerate() {
                 let color = match pixel {
-                    'b' if item == 13 => Some([0.25, 0.47, 0.81, 1.0]),
+                    'b' if key == "bloxgloom:blue_flower" => Some([0.25, 0.47, 0.81, 1.0]),
                     'b' => Some([0.31, 0.19, 0.12, 1.0]),
                     'm' => Some([0.55, 0.34, 0.19, 1.0]),
-                    'l' if item == 9 => Some([0.72, 0.48, 0.27, 1.0]),
+                    'l' if key == "bloxgloom:wood" => Some([0.72, 0.48, 0.27, 1.0]),
                     'l' => Some([0.46, 0.78, 0.40, 1.0]),
                     'd' => Some([0.19, 0.40, 0.25, 1.0]),
                     'g' => Some([0.29, 0.62, 0.33, 1.0]),
@@ -601,12 +613,26 @@ fn inset(rect: UiRect, x: f32, y: f32) -> UiRect {
     }
 }
 
-pub(super) fn item_name(item: u8) -> &'static str {
-    crate::content::item_def(item).map_or("UNKNOWN", |definition| &definition.name)
+#[cfg(test)]
+pub(super) fn item_name(item: ItemId) -> &'static str {
+    item_name_for(item, crate::content::catalog())
 }
 
-pub(super) fn item_color(item: u8) -> [f32; 4] {
-    crate::content::item_def(item).map_or([0.6, 0.3, 0.8, 1.0], |definition| definition.swatch)
+#[cfg(test)]
+pub(super) fn item_color(item: ItemId) -> [f32; 4] {
+    item_color_for(item, crate::content::catalog())
+}
+
+pub(super) fn item_name_for<'a>(item: ItemId, catalog: &'a Catalog) -> &'a str {
+    catalog
+        .item(item)
+        .map_or("UNKNOWN", |definition| definition.name.as_ref())
+}
+
+pub(super) fn item_color_for(item: ItemId, catalog: &Catalog) -> [f32; 4] {
+    catalog
+        .item(item)
+        .map_or([0.6, 0.3, 0.8, 1.0], |definition| definition.swatch)
 }
 
 fn text_width(text: &str, scale: f32, font_scale: f32) -> f32 {

@@ -1,13 +1,14 @@
-//! Legacy BGDP snapshot framing, validation, and atomic checkpoint writes.
+//! Versioned BGDP snapshot framing, validation, and atomic checkpoint writes.
 use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::inventory::STACK_LIMIT;
-use crate::items::valid_item;
+use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT};
+use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
 use super::{DropPlan, Drops, Entry, LIFETIME, expiry, invalid, spatial, unix_ms};
@@ -17,18 +18,26 @@ use super::{DropPlan, Drops, Entry, LIFETIME, expiry, invalid, spatial, unix_ms}
 mod tests;
 
 pub(super) const MAGIC: &[u8; 4] = b"BGDP";
-pub(super) const FORMAT: u16 = 1;
+pub(super) const FORMAT: u16 = 3;
 pub(super) const HEADER: usize = 4 + 2 + 8 + 8 + 4;
-pub(super) const RECORD: usize = 8 + 1 + 2 + 12 + 8 + 2;
+pub(super) const RECORD: usize = 8 + 4 + 2 + 12 + 8 + 2 + 2 + 2;
+const MAX_SNAPSHOT_BYTES: usize = 256 * 1024 * 1024;
 pub(super) static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 impl Drops {
     pub(in crate::server) fn open(root: &Path) -> io::Result<Self> {
+        Self::open_with_catalog(root, Arc::new(crate::content::catalog().clone()))
+    }
+
+    pub(in crate::server) fn open_with_catalog(
+        root: &Path,
+        catalog: Arc<crate::content::Catalog>,
+    ) -> io::Result<Self> {
         let path = root.join("drops.bin");
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                let mut drops = Self::new();
+                let mut drops = Self::new_with_catalog(catalog);
                 drops.path = Some(path);
                 return Ok(drops);
             }
@@ -41,7 +50,10 @@ impl Drops {
             return Err(invalid("invalid drops file"));
         }
         let count = u32::from_le_bytes(bytes[22..26].try_into().unwrap()) as usize;
-        if count > 1_000_000 || bytes.len() != HEADER + count * RECORD + 4 {
+        if count > 1_000_000
+            || bytes.len() > MAX_SNAPSHOT_BYTES
+            || bytes.len() < HEADER + count * RECORD + 4
+        {
             return Err(invalid("invalid drops length"));
         }
         let checksum_at = bytes.len() - 4;
@@ -58,25 +70,55 @@ impl Drops {
             next_id: u64::from_le_bytes(bytes[14..22].try_into().unwrap()),
             revision: u64::from_le_bytes(bytes[6..14].try_into().unwrap()),
             path: Some(path),
+            catalog,
             last_gc: Instant::now(),
         };
         let now_ms = unix_ms();
-        for record in bytes[HEADER..checksum_at].chunks_exact(RECORD) {
+        let mut offset = HEADER;
+        for _ in 0..count {
+            let record_end = offset
+                .checked_add(RECORD)
+                .ok_or_else(|| invalid("invalid drops length"))?;
+            let record = bytes
+                .get(offset..record_end)
+                .ok_or_else(|| invalid("truncated drop record"))?;
+            let component_len = u16::from_le_bytes(record[38..40].try_into().unwrap()) as usize;
+            if component_len > MAX_COMPONENT_BYTES {
+                return Err(invalid("invalid drop component length"));
+            }
+            let component_end = record_end
+                .checked_add(component_len)
+                .ok_or_else(|| invalid("invalid drops length"))?;
+            let component_bytes = bytes
+                .get(record_end..component_end)
+                .ok_or_else(|| invalid("truncated drop components"))?;
+            let component_version = u16::from_le_bytes(record[36..38].try_into().unwrap());
+            let components = if component_len == 0 {
+                if component_version != 0 {
+                    return Err(invalid("invalid empty drop components"));
+                }
+                None
+            } else {
+                Some(Arc::new(
+                    ComponentPayload::new(component_version, component_bytes.to_vec())
+                        .ok_or_else(|| invalid("invalid drop components"))?,
+                ))
+            };
             let item = DroppedItem {
                 id: u64::from_le_bytes(record[0..8].try_into().unwrap()),
-                item: record[8],
-                count: u16::from_le_bytes(record[9..11].try_into().unwrap()),
+                item: ItemId::new(u32::from_le_bytes(record[8..12].try_into().unwrap())),
+                count: u16::from_le_bytes(record[12..14].try_into().unwrap()),
                 position: [
-                    f32::from_le_bytes(record[11..15].try_into().unwrap()),
-                    f32::from_le_bytes(record[15..19].try_into().unwrap()),
-                    f32::from_le_bytes(record[19..23].try_into().unwrap()),
+                    f32::from_le_bytes(record[14..18].try_into().unwrap()),
+                    f32::from_le_bytes(record[18..22].try_into().unwrap()),
+                    f32::from_le_bytes(record[22..26].try_into().unwrap()),
                 ],
                 age_ms: 0,
             };
-            let born = u64::from_le_bytes(record[23..31].try_into().unwrap());
-            let delay = u16::from_le_bytes(record[31..33].try_into().unwrap());
+            let born = u64::from_le_bytes(record[26..34].try_into().unwrap());
+            let delay = u16::from_le_bytes(record[34..36].try_into().unwrap());
             if item.id == 0
-                || !valid_item(item.item)
+                || drops.catalog.item(item.item).is_none()
                 || !(1..=STACK_LIMIT).contains(&item.count)
                 || item.position.iter().any(|n| !n.is_finite())
             {
@@ -90,6 +132,7 @@ impl Drops {
                     item.id,
                     Entry {
                         item,
+                        components,
                         vertical_speed: 0.0,
                         age_at_load: age,
                         age_since,
@@ -107,6 +150,10 @@ impl Drops {
             if age < LIFETIME {
                 drops.active.insert(item.id);
             }
+            offset = component_end;
+        }
+        if offset != checksum_at {
+            return Err(invalid("invalid drops record count"));
         }
         drops.next_id = drops.next_id.max(1);
         Ok(drops)
@@ -119,13 +166,29 @@ impl Drops {
         Self::write_snapshot(path, &self.snapshot_bytes()?)
     }
 
-    /// Captures the exact legacy BGDP checkpoint, including motion position.
+    /// Captures the exact BGDP checkpoint, including motion position and components.
     /// Runtime callers send these bytes through the shared checkpoint worker.
     pub(in crate::server) fn snapshot_bytes(&self) -> io::Result<Vec<u8>> {
         if self.entries.len() > 1_000_000 {
             return Err(invalid("too many drops"));
         }
-        let mut bytes = Vec::with_capacity(HEADER + self.entries.len() * RECORD + 4);
+        let projected = HEADER
+            + self
+                .entries
+                .values()
+                .map(|entry| {
+                    RECORD
+                        + entry
+                            .components
+                            .as_ref()
+                            .map_or(0, |component| component.bytes.len())
+                })
+                .sum::<usize>()
+            + 4;
+        if projected > MAX_SNAPSHOT_BYTES {
+            return Err(invalid("drops snapshot too large"));
+        }
+        let mut bytes = Vec::with_capacity(projected);
         bytes.extend(MAGIC);
         bytes.extend(FORMAT.to_le_bytes());
         bytes.extend(self.revision.to_le_bytes());
@@ -136,7 +199,7 @@ impl Drops {
         for entry in entries {
             let item = entry.item;
             bytes.extend(item.id.to_le_bytes());
-            bytes.push(item.item);
+            bytes.extend(item.item.get().to_le_bytes());
             bytes.extend(item.count.to_le_bytes());
             for n in item.position {
                 bytes.extend(n.to_le_bytes());
@@ -145,6 +208,14 @@ impl Drops {
             bytes.extend(
                 (entry.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes(),
             );
+            if let Some(component) = &entry.components {
+                bytes.extend(component.version.to_le_bytes());
+                bytes.extend((component.bytes.len() as u16).to_le_bytes());
+                bytes.extend(&component.bytes);
+            } else {
+                bytes.extend(0u16.to_le_bytes());
+                bytes.extend(0u16.to_le_bytes());
+            }
         }
         bytes.extend(checksum(&bytes).to_le_bytes());
         Ok(bytes)
@@ -163,10 +234,8 @@ impl Drops {
         let revision = u64::from_le_bytes(bytes[6..14].try_into().unwrap());
         let next_id = u64::from_le_bytes(bytes[14..22].try_into().unwrap());
         let count = u32::from_le_bytes(bytes[22..26].try_into().unwrap()) as usize;
-        count
-            .checked_mul(RECORD)
-            .and_then(|records| records.checked_add(HEADER + 4))
-            == Some(bytes.len())
+        bytes.len() >= HEADER + count * RECORD + 4
+            && bytes.len() <= MAX_SNAPSHOT_BYTES
             && revision == self.revision
             && next_id == self.next_id
             && count == self.entries.len()
@@ -186,7 +255,33 @@ impl Drops {
         if count > 1_000_000 {
             return Err(invalid("too many drops"));
         }
-        Ok(HEADER + count * RECORD + 4)
+        let mut size = HEADER + 4;
+        for entry in self.entries.values() {
+            size += RECORD
+                + entry
+                    .components
+                    .as_ref()
+                    .map_or(0, |component| component.bytes.len());
+        }
+        for mutation in &plan.changes {
+            let old = self.entries.get(&mutation.id).map_or(0, |entry| {
+                RECORD
+                    + entry
+                        .components
+                        .as_ref()
+                        .map_or(0, |component| component.bytes.len())
+            });
+            let new = if mutation.after.is_empty() {
+                0
+            } else {
+                RECORD + mutation.after.len() - 21
+            };
+            size = size - old + new;
+        }
+        if size > MAX_SNAPSHOT_BYTES {
+            return Err(invalid("drops snapshot too large"));
+        }
+        Ok(size)
     }
 
     pub(in crate::server) fn checkpoint_path(&self) -> Option<PathBuf> {
@@ -204,10 +299,35 @@ impl Drops {
             return Err(invalid("invalid drops checkpoint"));
         }
         let count = u32::from_le_bytes(bytes[22..26].try_into().unwrap()) as usize;
-        if count > 1_000_000 || bytes.len() != HEADER + count * RECORD + 4 {
+        if count > 1_000_000
+            || bytes.len() > MAX_SNAPSHOT_BYTES
+            || bytes.len() < HEADER + count * RECORD + 4
+        {
             return Err(invalid("invalid drops checkpoint length"));
         }
         let checksum_at = bytes.len() - 4;
+        let mut offset = HEADER;
+        for _ in 0..count {
+            let record_end = offset
+                .checked_add(RECORD)
+                .ok_or_else(|| invalid("invalid drops checkpoint length"))?;
+            let record = bytes
+                .get(offset..record_end)
+                .ok_or_else(|| invalid("truncated drops checkpoint"))?;
+            let len = u16::from_le_bytes(record[38..40].try_into().unwrap()) as usize;
+            if len > MAX_COMPONENT_BYTES {
+                return Err(invalid("invalid drops checkpoint component length"));
+            }
+            offset = record_end
+                .checked_add(len)
+                .ok_or_else(|| invalid("invalid drops checkpoint length"))?;
+            if offset > checksum_at {
+                return Err(invalid("truncated drops checkpoint components"));
+            }
+        }
+        if offset != checksum_at {
+            return Err(invalid("invalid drops checkpoint record count"));
+        }
         if u32::from_le_bytes(bytes[checksum_at..].try_into().unwrap())
             != checksum(&bytes[..checksum_at])
         {

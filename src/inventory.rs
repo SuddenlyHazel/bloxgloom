@@ -1,6 +1,7 @@
 //! Server-owned item stacks. Slot moves are atomic, bounded, and never create items.
 
 use crate::items::{ItemId, valid_item};
+use std::sync::Arc;
 
 mod store;
 pub use store::InventoryStore;
@@ -11,16 +12,71 @@ mod tests;
 pub const SLOTS: usize = 36;
 pub const HOTBAR_SLOTS: usize = 9;
 pub const STACK_LIMIT: u16 = 128;
+pub const MAX_COMPONENT_BYTES: usize = 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComponentPayload {
+    pub version: u16,
+    pub bytes: Box<[u8]>,
+}
+
+impl ComponentPayload {
+    pub fn new(version: u16, bytes: impl Into<Box<[u8]>>) -> Option<Self> {
+        let bytes = bytes.into();
+        if version == 0 || bytes.is_empty() || bytes.len() > MAX_COMPONENT_BYTES {
+            return None;
+        }
+        Some(Self { version, bytes })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack {
     pub item: ItemId,
     pub count: u16,
+    /// None has no heap allocation and represents the canonical empty payload.
+    pub components: Option<Arc<ComponentPayload>>,
 }
 
 impl Stack {
-    pub fn valid(self) -> bool {
-        valid_item(self.item) && (1..=STACK_LIMIT).contains(&self.count)
+    pub fn new(item: ItemId, count: u16) -> Self {
+        Self {
+            item,
+            count,
+            components: None,
+        }
+    }
+
+    pub fn with_components(
+        item: ItemId,
+        count: u16,
+        version: u16,
+        bytes: impl Into<Box<[u8]>>,
+    ) -> Option<Self> {
+        let components = Arc::new(ComponentPayload::new(version, bytes)?);
+        Some(Self {
+            item,
+            count,
+            components: Some(components),
+        })
+    }
+
+    pub fn valid(&self) -> bool {
+        valid_item(self.item) && (1..=STACK_LIMIT).contains(&self.count) && self.valid_components()
+    }
+
+    pub fn valid_in(&self, catalog: &crate::content::Catalog) -> bool {
+        catalog.item(self.item).is_some()
+            && (1..=STACK_LIMIT).contains(&self.count)
+            && self.valid_components()
+    }
+
+    fn valid_components(&self) -> bool {
+        self.components.as_ref().is_none_or(|payload| {
+            payload.version != 0
+                && !payload.bytes.is_empty()
+                && payload.bytes.len() <= MAX_COMPONENT_BYTES
+        })
     }
 }
 
@@ -33,7 +89,7 @@ pub struct Inventory {
 impl Default for Inventory {
     fn default() -> Self {
         Self {
-            slots: [None; SLOTS],
+            slots: std::array::from_fn(|_| None),
             revision: 0,
         }
     }
@@ -41,13 +97,32 @@ impl Default for Inventory {
 
 impl Inventory {
     pub fn insert(&mut self, item: ItemId, count: u16) -> u16 {
-        if !valid_item(item) || self.revision == u64::MAX {
-            return count;
+        self.insert_with_catalog(item, count, crate::content::catalog())
+    }
+
+    pub fn insert_with_catalog(
+        &mut self,
+        item: ItemId,
+        count: u16,
+        catalog: &crate::content::Catalog,
+    ) -> u16 {
+        self.insert_stack(&Stack::new(item, count), catalog)
+    }
+
+    /// Inserts one stack, preserving its component payload and matching it
+    /// exactly when merging with existing stacks.
+    pub fn insert_stack(&mut self, incoming: &Stack, catalog: &crate::content::Catalog) -> u16 {
+        if catalog.item(incoming.item).is_none()
+            || !incoming.valid_components()
+            || self.revision == u64::MAX
+        {
+            return incoming.count;
         }
-        let mut remaining = count;
+        let mut remaining = incoming.count;
         for slot in &mut self.slots {
             if let Some(stack) = slot
-                && stack.item == item
+                && stack.item == incoming.item
+                && stack.components == incoming.components
                 && stack.count < STACK_LIMIT
             {
                 let added = remaining.min(STACK_LIMIT - stack.count);
@@ -62,7 +137,9 @@ impl Inventory {
             for slot in &mut self.slots {
                 if slot.is_none() {
                     let added = remaining.min(STACK_LIMIT);
-                    *slot = Some(Stack { item, count: added });
+                    let mut stack = incoming.clone();
+                    stack.count = added;
+                    *slot = Some(stack);
                     remaining -= added;
                     if remaining == 0 {
                         break;
@@ -70,7 +147,7 @@ impl Inventory {
                 }
             }
         }
-        if remaining != count {
+        if remaining != incoming.count {
             self.revision += 1;
         }
         remaining
@@ -106,35 +183,37 @@ impl Inventory {
         if from >= SLOTS || to >= SLOTS || from == to || amount == 0 {
             return false;
         }
-        let Some(source) = self.slots[from] else {
+        let Some(source) = self.slots[from].clone() else {
             return false;
         };
         if amount > source.count {
             return false;
         }
-        match self.slots[to] {
+        match self.slots[to].clone() {
             None => {
-                self.slots[to] = Some(Stack {
-                    item: source.item,
-                    count: amount,
-                });
-                self.slots[from] = (source.count > amount).then_some(Stack {
-                    item: source.item,
-                    count: source.count - amount,
+                let mut moved = source.clone();
+                moved.count = amount;
+                self.slots[to] = Some(moved);
+                self.slots[from] = (source.count > amount).then(|| {
+                    let mut rest = source;
+                    rest.count -= amount;
+                    rest
                 });
             }
-            Some(target) if target.item == source.item => {
+            Some(target)
+                if target.item == source.item && target.components == source.components =>
+            {
                 let moved = amount.min(STACK_LIMIT - target.count);
                 if moved == 0 {
                     return false;
                 }
-                self.slots[to] = Some(Stack {
-                    count: target.count + moved,
-                    ..target
-                });
-                self.slots[from] = (source.count > moved).then_some(Stack {
-                    count: source.count - moved,
-                    ..source
+                let mut merged = target;
+                merged.count += moved;
+                self.slots[to] = Some(merged);
+                self.slots[from] = (source.count > moved).then(|| {
+                    let mut rest = source;
+                    rest.count -= moved;
+                    rest
                 });
             }
             Some(target) if amount == source.count => {

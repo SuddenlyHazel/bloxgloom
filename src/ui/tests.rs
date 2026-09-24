@@ -9,13 +9,41 @@ use super::{
 #[test]
 fn world_and_inventory_items_have_distinct_hud_names_and_swatch_colors() {
     let vegetation = [
-        (9, "WOOD", [0.55, 0.34, 0.19, 1.0]),
-        (10, "LEAVES", [0.30, 0.62, 0.34, 1.0]),
-        (11, "RED FLOWER", [0.86, 0.20, 0.29, 1.0]),
-        (12, "YELLOW FLOWER", [0.96, 0.68, 0.14, 1.0]),
-        (13, "BLUE FLOWER", [0.33, 0.56, 0.88, 1.0]),
-        (14, "FERN", [0.34, 0.66, 0.37, 1.0]),
-        (15, "TALL GRASS", [0.38, 0.69, 0.34, 1.0]),
+        (
+            crate::items::ItemId::new(9),
+            "WOOD",
+            [0.55, 0.34, 0.19, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(10),
+            "LEAVES",
+            [0.30, 0.62, 0.34, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(11),
+            "RED FLOWER",
+            [0.86, 0.20, 0.29, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(12),
+            "YELLOW FLOWER",
+            [0.96, 0.68, 0.14, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(13),
+            "BLUE FLOWER",
+            [0.33, 0.56, 0.88, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(14),
+            "FERN",
+            [0.34, 0.66, 0.37, 1.0],
+        ),
+        (
+            crate::items::ItemId::new(15),
+            "TALL GRASS",
+            [0.38, 0.69, 0.34, 1.0],
+        ),
         (crate::items::SEEDS, "SEEDS", [0.77, 0.52, 0.27, 1.0]),
         (crate::items::SAPLING, "SAPLING", [0.33, 0.65, 0.38, 1.0]),
         (crate::items::STICK, "STICK", [0.61, 0.39, 0.22, 1.0]),
@@ -24,6 +52,52 @@ fn world_and_inventory_items_have_distinct_hud_names_and_swatch_colors() {
         assert_eq!(item_name(item), name);
         assert_eq!(item_color(item), color);
     }
+}
+
+#[test]
+fn remapped_inventory_item_uses_connection_name_color_and_builtin_art() {
+    use crate::content::ContentManifest;
+    use crate::items::ItemId;
+
+    let local = crate::content::Catalog::builtins();
+    let mut manifest = ContentManifest::from_catalog(&local);
+    for entry in &mut manifest.entries {
+        if entry.kind == b'I' && entry.key == "bloxgloom:red_flower" {
+            entry.id = 65_538;
+        }
+    }
+    manifest
+        .entries
+        .sort_unstable_by_key(|entry| (entry.kind, entry.id));
+    let catalog = manifest.resolve_catalog(&local).unwrap();
+    let item = ItemId::new(65_538);
+
+    assert_eq!(super::draw::item_name_for(item, &catalog), "RED FLOWER");
+    assert_eq!(
+        super::draw::item_color_for(item, &catalog),
+        [0.86, 0.20, 0.29, 1.0]
+    );
+    let mut vertices = Vec::new();
+    let mut builder = UiBuilder {
+        vertices: &mut vertices,
+        width: 1280.0,
+        height: 720.0,
+        scale: 1.0,
+    };
+    builder.draw_item_swatch(
+        super::types::UiRect {
+            x: 10.0,
+            y: 10.0,
+            width: 64.0,
+            height: 64.0,
+        },
+        item,
+        &catalog,
+    );
+    assert!(
+        vertices.len() > 6,
+        "mapped builtin art should draw its pixel swatch"
+    );
 }
 
 #[test]
@@ -165,7 +239,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             let frame = UiFrame {
                 screen,
                 selected_slot: 8,
-                inventory: [None; crate::inventory::SLOTS],
+                inventory: std::array::from_fn(|_| None),
                 inventory_source: None,
                 target: Some([10, 20, -30]),
                 status: Some(long_status),
@@ -184,7 +258,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 height: height as f32,
                 scale,
             };
-            builder.draw_frame(&frame, &layout);
+            builder.draw_frame(&frame, &layout, &crate::content::Catalog::builtins());
             assert!(
                 vertices.len() < MAX_UI_VERTICES / 2,
                 "{screen:?} at {width}x{height}: {} vertices",

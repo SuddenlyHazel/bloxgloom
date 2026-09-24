@@ -131,7 +131,7 @@ fn durable_spawn_merges_local_targets_in_id_order_and_tracks_new_stacks() {
         Duration::ZERO,
     );
     let plan = drops
-        .plan_spawn([-16.0, 4.0, -0.1], 2, 2, Duration::from_millis(25))
+        .plan_spawn([-16.0, 4.0, -0.1], item(2), 2, Duration::from_millis(25))
         .unwrap();
     assert_eq!(
         plan.changes
@@ -152,8 +152,8 @@ fn durable_spawn_merges_local_targets_in_id_order_and_tracks_new_stacks() {
     let mut empty = Drops::new();
     let plan = empty
         .plan_spawns(&[
-            ([-0.1, 0.0, 0.0], 2, 120, Duration::ZERO),
-            ([-0.1, 0.0, 0.0], 2, 20, Duration::ZERO),
+            ([-0.1, 0.0, 0.0], item(2), 120, Duration::ZERO),
+            ([-0.1, 0.0, 0.0], item(2), 20, Duration::ZERO),
         ])
         .unwrap();
     assert_eq!(plan.changes.len(), 2);
@@ -185,7 +185,7 @@ fn expiry_index_refreshes_on_merge_and_drains_backlog_in_bounded_batches() {
         Duration::ZERO,
     );
     let refresh = drops
-        .plan_spawn([-0.25, 4.0, 0.0], 2, 1, Duration::ZERO)
+        .plan_spawn([-0.25, 4.0, 0.0], item(2), 1, Duration::ZERO)
         .unwrap();
     drops.apply_plan(&refresh).unwrap();
     assert!(drops.plan_expired(1).changes.is_empty());
@@ -250,7 +250,7 @@ fn durable_count_change_does_not_wake_a_settled_drop() {
     assert!(!drops.active.contains(&1));
 
     let merge = drops
-        .plan_spawn([-0.25, 4.0, 0.0], 2, 1, Duration::ZERO)
+        .plan_spawn([-0.25, 4.0, 0.0], item(2), 1, Duration::ZERO)
         .unwrap();
     drops.apply_plan(&merge).unwrap();
     assert!(!drops.active.contains(&1));

@@ -41,7 +41,14 @@ pub(super) fn builtin_phase_plan() -> io::Result<PhasePlan> {
     let mut registry = SystemRegistry::new();
     register_builtin_systems(&mut registry)?;
     registry
-        .freeze()
+        .freeze_legacy([
+            SystemId::new("builtin:input_authorization").unwrap(),
+            SystemId::new("builtin:durable_actions").unwrap(),
+            SystemId::new("builtin:player_movement").unwrap(),
+            SystemId::new("builtin:drop_simulation").unwrap(),
+            SystemId::new("builtin:interaction_commit").unwrap(),
+            SystemId::new("builtin:publish").unwrap(),
+        ])
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))
 }
 

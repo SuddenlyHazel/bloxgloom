@@ -110,7 +110,7 @@ fn falling_drop_moves_between_vertical_spatial_buckets() {
     let mut world = World::new(19, root.clone()).unwrap();
     world.get_block(1, 511, 1).unwrap();
     let mut drops = Drops::new();
-    drops.spawn([1.0, 512.05, 1.0], 2, 1, Duration::ZERO);
+    drops.spawn([1.0, 512.05, 1.0], item(2), 1, Duration::ZERO);
     assert_eq!(
         drops
             .spatial
@@ -218,7 +218,7 @@ fn airborne_drop_lands_and_falls_again_when_support_is_removed() {
     let ground = MAX_GENERATED_HEIGHT + 12;
     world.edit(0, ground, 0, STONE).unwrap();
     let mut drops = Drops::open(&root).unwrap();
-    drops.spawn([0.5, ground as f32 + 5.0, 0.5], 2, 1, Duration::ZERO);
+    drops.spawn([0.5, ground as f32 + 5.0, 0.5], item(2), 1, Duration::ZERO);
     assert_eq!(drops.active_len(), 1);
     for _ in 0..100 {
         let result = drops.step(&world, Duration::from_millis(20));

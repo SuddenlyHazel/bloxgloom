@@ -1,5 +1,7 @@
 use super::*;
-use crate::server::{DEFAULT_VIEW, outbound::OutboundTelemetry};
+use crate::server::DEFAULT_VIEW;
+use crate::server::outbound::OutboundTelemetry;
+use crate::server::{INPUT_CAPACITY, run_simulation_ticks};
 use std::sync::mpsc::TryRecvError;
 
 #[test]
@@ -30,7 +32,10 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
     };
     let (input, receiver) = mpsc::sync_channel(8);
     let worker_store = store.clone();
-    let worker = thread::spawn(move || serve_client(socket, worker_store, input));
+    let outbound = Arc::new(OutboundTelemetry::default());
+    let content = ContentHandshake::from_local_catalog().unwrap();
+    let worker =
+        thread::spawn(move || serve_client(socket, worker_store, input, outbound, content));
 
     protocol::write_client(
         &mut peer,
@@ -41,6 +46,7 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
         },
     )
     .unwrap();
+    complete_content_handshake(&mut peer);
     let first = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
     let SimulationInput::Join {
         inventory: first_inventory,
@@ -58,7 +64,10 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
     drop(first_socket);
 
     let mut updated = first_inventory;
-    assert_eq!(updated.insert(crate::world::STONE, 1), 0);
+    assert_eq!(
+        updated.insert(crate::items::ItemId::new(crate::world::STONE.get()), 1),
+        0
+    );
     store.save(profile, &updated).unwrap();
     first_reply.send(JoinResponse::RefreshInventory).unwrap();
 
@@ -75,7 +84,6 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
     };
     assert_eq!(second_profile, profile);
     assert_eq!(refreshed, updated);
-    let telemetry = Arc::new(OutboundTelemetry::default());
     for message in [
         ServerMessage::Welcome { id: 9, seed: 1 },
         ServerMessage::Position {
@@ -92,7 +100,7 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
             slots: refreshed.slots,
         },
     ] {
-        assert!(telemetry.try_send(&second_sender, message));
+        second_sender.try_send(message).unwrap();
     }
     drop(second_sender);
     drop(second_socket);
@@ -154,14 +162,67 @@ fn join_cleanup_enqueues_one_leave_with_the_next_sequence() {
 
 #[test]
 fn connection_admission_never_exceeds_the_client_limit() {
-    let active = AtomicUsize::new(0);
+    let mut active = 0;
 
-    for _ in 0..MAX_CLIENTS {
-        assert!(reserve_connection(&active));
+    for _ in 0..crate::server::DEFAULT_CLIENTS {
+        assert!(reactor::has_admission_capacity(active, 0));
+        active += 1;
     }
 
-    assert!(!reserve_connection(&active));
-    assert_eq!(active.load(Ordering::Acquire), MAX_CLIENTS);
+    assert!(!reactor::has_admission_capacity(active, 0));
+    assert!(!reactor::has_admission_capacity(
+        crate::server::DEFAULT_CLIENTS - 1,
+        1
+    ));
+}
+
+#[test]
+fn client_commands_are_rejected_until_content_ready_matches() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-content-ready-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&save).unwrap();
+    let store = InventoryStore::new(&save).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (input, receiver) = mpsc::sync_channel(8);
+    let worker = thread::spawn(move || {
+        serve_client(
+            socket,
+            store,
+            input,
+            Arc::new(OutboundTelemetry::default()),
+            ContentHandshake::from_local_catalog().unwrap(),
+        )
+    });
+
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Hello {
+            name: "not-ready".into(),
+            profile: 0x9988,
+            content_fingerprint: 0,
+        },
+    )
+    .unwrap();
+    let (_fingerprint, manifest) = receive_content_manifest(&mut peer);
+    assert!(!manifest.is_empty());
+    protocol::write_client(&mut peer, &ClientMessage::SetView { radius: 1 }).unwrap();
+
+    let error = worker.join().unwrap().unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert!(matches!(
+        receiver.try_recv(),
+        Err(TryRecvError::Disconnected)
+    ));
+    std::fs::remove_dir_all(save).unwrap();
 }
 
 #[test]
@@ -177,6 +238,7 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
     std::fs::create_dir(&save).unwrap();
     let state = super::super::server_state(7, save.clone()).unwrap();
     let store = state.inventory_store.clone();
+    let outbound = Arc::clone(&state.outbound);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
@@ -193,7 +255,9 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
     let (input, receiver) = mpsc::sync_channel(INPUT_CAPACITY);
     let coordinator = thread::spawn(move || run_simulation_ticks(state, receiver));
     let socket_input = input.clone();
-    let connection = thread::spawn(move || serve_client(socket, store, socket_input));
+    let content = ContentHandshake::from_local_catalog().unwrap();
+    let connection =
+        thread::spawn(move || serve_client(socket, store, socket_input, outbound, content));
 
     protocol::write_client(
         &mut peer,
@@ -204,10 +268,19 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
         },
     )
     .unwrap();
+    complete_content_handshake(&mut peer);
     assert!(matches!(
         protocol::read_server(&mut peer).unwrap(),
         ServerMessage::Welcome { .. }
     ));
+    let action_epoch = match protocol::read_server(&mut peer).unwrap() {
+        ServerMessage::ActionSession {
+            epoch,
+            next_seq: 1,
+            acked_seq: 0,
+        } => epoch,
+        other => panic!("expected durable action session, got {other:?}"),
+    };
     let position = match protocol::read_server(&mut peer).unwrap() {
         ServerMessage::Position { x, y, z, .. } => [x, y, z],
         other => panic!("expected startup position, got {other:?}"),
@@ -246,7 +319,7 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
         position[1].floor() as i32 - 1,
         position[2].floor() as i32,
     ];
-    let action_id = 0x5678u128;
+    let action_id = u128::from(action_epoch) << 64 | 1;
     protocol::write_client(
         &mut peer,
         &ClientMessage::Edit {
@@ -290,4 +363,43 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
     );
     drop(restarted);
     std::fs::remove_dir_all(save).unwrap();
+}
+
+fn complete_content_handshake(peer: &mut TcpStream) {
+    let fingerprint = crate::content::catalog().fingerprint();
+    let expected_manifest =
+        crate::content::ContentManifest::from_catalog(crate::content::catalog())
+            .encode()
+            .unwrap();
+    let (received_fingerprint, manifest) = receive_content_manifest(peer);
+    assert_eq!(received_fingerprint, fingerprint);
+    assert_eq!(manifest, expected_manifest);
+    protocol::write_client(peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
+}
+
+fn receive_content_manifest(peer: &mut TcpStream) -> (u64, Vec<u8>) {
+    let mut manifest = Vec::new();
+    let mut total_len = None;
+    let mut fingerprint = None;
+    loop {
+        let ServerMessage::ContentManifestPart {
+            fingerprint: part_fingerprint,
+            total_len: part_total_len,
+            offset,
+            bytes,
+        } = protocol::read_server(&mut *peer).unwrap()
+        else {
+            panic!("expected content manifest part");
+        };
+        assert!(fingerprint.is_none_or(|expected| expected == part_fingerprint));
+        fingerprint = Some(part_fingerprint);
+        assert_eq!(offset as usize, manifest.len());
+        assert!(total_len.is_none_or(|expected| expected == part_total_len as usize));
+        total_len = Some(part_total_len as usize);
+        manifest.extend(bytes);
+        if manifest.len() == total_len.unwrap() {
+            break;
+        }
+    }
+    (fingerprint.unwrap(), manifest)
 }
