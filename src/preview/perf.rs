@@ -1,6 +1,11 @@
 use super::*;
 
 struct PerfGpuMesh {
+    opaque: Option<PerfGpuSubmesh>,
+    cutout: Option<PerfGpuSubmesh>,
+}
+
+struct PerfGpuSubmesh {
     vertex: wgpu::Buffer,
     index: wgpu::Buffer,
     indices: u32,
@@ -112,21 +117,30 @@ pub(super) async fn run_perf_benchmark_async(
     let generation_ms = generation_started.elapsed().as_secs_f64() * 1_000.0;
     let nonempty_meshes = precomputed_meshes
         .iter()
-        .filter(|mesh| !mesh.indices.is_empty())
+        .filter(|mesh| !mesh.indices.is_empty() || !mesh.cutout_indices.is_empty())
         .count();
     let (mesh_bytes, vertex_count, index_count) = precomputed_meshes.iter().fold(
         (0usize, 0usize, 0usize),
         |(bytes, vertices, indices), mesh| {
             (
                 bytes + mesh.byte_len(),
-                vertices + mesh.vertices.len() / render::VERTEX_FLOATS,
-                indices + mesh.indices.len(),
+                vertices
+                    + (mesh.vertices.len() + mesh.cutout_vertices.len()) / render::VERTEX_FLOATS,
+                indices + mesh.indices.len() + mesh.cutout_indices.len(),
             )
         },
     );
+    let cutout_vertex_count = precomputed_meshes
+        .iter()
+        .map(|mesh| mesh.cutout_vertices.len() / render::VERTEX_FLOATS)
+        .sum::<usize>();
+    let cutout_index_count = precomputed_meshes
+        .iter()
+        .map(|mesh| mesh.cutout_indices.len())
+        .sum::<usize>();
 
     let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
-    let (pipeline, camera_buffer, camera_group, texture_group) =
+    let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
@@ -243,26 +257,33 @@ pub(super) async fn run_perf_benchmark_async(
                 break;
             }
             let mesh = pending_render.pop_front().unwrap();
-            if mesh.indices.is_empty() {
+            if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 gpu_meshes.remove(&mesh.key);
                 continue;
             }
-            let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("perf chunk vertices"),
-                contents: bytemuck::cast_slice(&mesh.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("perf chunk indices"),
-                contents: bytemuck::cast_slice(&mesh.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let upload = |vertices: &[f32], indices: &[u32]| {
+                if indices.is_empty() {
+                    return None;
+                }
+                Some(PerfGpuSubmesh {
+                    vertex: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("perf chunk vertices"),
+                        contents: bytemuck::cast_slice(vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                    index: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("perf chunk indices"),
+                        contents: bytemuck::cast_slice(indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
+                    indices: indices.len() as u32,
+                })
+            };
             gpu_meshes.insert(
                 mesh.key,
                 PerfGpuMesh {
-                    vertex,
-                    index,
-                    indices: mesh.indices.len() as u32,
+                    opaque: upload(&mesh.vertices, &mesh.indices),
+                    cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices),
                 },
             );
             uploaded_chunks += 1;
@@ -356,11 +377,25 @@ pub(super) async fn run_perf_benchmark_async(
                 if !render::chunk_visible(matrix, *key) {
                     continue;
                 }
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.indices, 0, 0..1);
+                if let Some(opaque) = &mesh.opaque {
+                    pass.set_vertex_buffer(0, opaque.vertex.slice(..));
+                    pass.set_index_buffer(opaque.index.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..opaque.indices, 0, 0..1);
+                    final_triangles += opaque.indices as usize / 3;
+                }
                 final_visible += 1;
-                final_triangles += mesh.indices as usize / 3;
+            }
+            pass.set_pipeline(&cutout_pipeline);
+            for (key, mesh) in &gpu_meshes {
+                if !render::chunk_visible(matrix, *key) {
+                    continue;
+                }
+                if let Some(cutout) = &mesh.cutout {
+                    pass.set_vertex_buffer(0, cutout.vertex.slice(..));
+                    pass.set_index_buffer(cutout.index.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..cutout.indices, 0, 0..1);
+                    final_triangles += cutout.indices as usize / 3;
+                }
             }
         }
         {
@@ -585,11 +620,11 @@ pub(super) async fn run_perf_benchmark_async(
         },
     );
     eprintln!(
-        "scene setup: {} mesh vertices, {} indices, generated in {:.1} ms (excluded from frame samples)",
-        vertex_count, index_count, generation_ms
+        "scene setup: {} mesh vertices ({} cutout), {} indices ({} cutout), generated in {:.1} ms (excluded from frame samples)",
+        vertex_count, cutout_vertex_count, index_count, cutout_index_count, generation_ms
     );
     eprintln!(
-        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover first opaque pass start through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
+        "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
         PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done,
     );
     Ok(())

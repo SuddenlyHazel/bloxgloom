@@ -1,5 +1,6 @@
 //! CPU-side UI drawing and bitmap font geometry.
 
+use crate::items::{SAPLING, SEEDS, STICK};
 use bytemuck::{Pod, Zeroable};
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 
@@ -114,13 +115,7 @@ impl UiBuilder<'_> {
                 );
                 let swatch = inset(rect, 10.0 * self.scale, 10.0 * self.scale);
                 if let Some(stack) = frame.inventory[index] {
-                    self.rect(
-                        swatch.x,
-                        swatch.y,
-                        swatch.width,
-                        swatch.height,
-                        block_color(stack.block),
-                    );
+                    self.draw_item_swatch(swatch, stack.item);
                     self.text(
                         &stack.count.to_string(),
                         rect.x + 3.0 * self.scale,
@@ -140,13 +135,12 @@ impl UiBuilder<'_> {
                     1,
                 );
             }
-            let selected_block =
-                frame.inventory[frame.selected_slot.min(8)].map(|stack| stack.block);
+            let selected_item = frame.inventory[frame.selected_slot.min(8)].map(|stack| stack.item);
             let label_y = layout
                 .rect(UiControl::HotbarSlot(0))
                 .map_or(self.height - 86.0 * self.scale, |r| r.y - 29.0 * self.scale);
             self.center_text(
-                selected_block.map_or("EMPTY HAND", block_name),
+                selected_item.map_or("EMPTY HAND", item_name),
                 self.width * 0.5,
                 label_y,
                 0.96,
@@ -168,6 +162,193 @@ impl UiBuilder<'_> {
                 [0.95, 0.79, 0.47, 1.0],
                 max_chars.min(96),
             );
+        }
+    }
+
+    pub(super) fn draw_item_swatch(&mut self, rect: UiRect, item: u8) {
+        let rows: &[&str] = match item {
+            9 => &[
+                "..bbbbbbbb..",
+                ".bmmllmmbb.",
+                "bmmlbbllmmb.",
+                "bmlbbmbllmb.",
+                "bmlbbmbllmb.",
+                "bmmlbbllmmb.",
+                "bmmbbbbbmmb.",
+                "bmlbbmbllmb.",
+                "bmlbbmbllmb.",
+                "bmmlbbllmmb.",
+                ".bmmllmmbb.",
+                "..bbbbbbbb..",
+            ],
+            10 => &[
+                "...ddddd....",
+                ".ddggggddd..",
+                "dggllggggdd.",
+                "dggggggllgd.",
+                "ddggggggggd.",
+                ".dggllggggdd",
+                "dggggggllggd",
+                "dggggggggggd",
+                ".ddggggggdd.",
+                "..dggggggd..",
+                "...ddggdd...",
+                "....dddd....",
+            ],
+            11 => &[
+                ".....rr.....",
+                "...rrrrrr...",
+                "..rrrRrrr...",
+                ".rrrrRrrrr..",
+                ".rrrRCRrrr..",
+                "..rrrRrrr...",
+                "....gg......",
+                "...ggg......",
+                "....ggg.....",
+                "....gg......",
+                "...gggg......",
+                "....gg......",
+            ],
+            12 => &[
+                "....yyyy....",
+                "..yyyyyyyy..",
+                ".yyyyyyyyyy.",
+                ".yyyhhyyyyy.",
+                "..yyhCChyy..",
+                "...yyCCyy...",
+                ".....gg.....",
+                "....ggg.....",
+                "...gggg......",
+                ".....gg......",
+                "....gggg.....",
+                ".....gg......",
+            ],
+            13 => &[
+                "....bb.......",
+                "...bbbb......",
+                "..bbbbbb.....",
+                ".bbbHHbbb....",
+                ".bbbHHbbb....",
+                "..bbbbbb.....",
+                "...bbbb......",
+                ".....gg......",
+                "....ggg......",
+                "...gggg.......",
+                ".....gg.......",
+                "....ggg.......",
+            ],
+            14 => &[
+                ".....gg......",
+                "....gglg.....",
+                "...ggllgg....",
+                "..ggllllgg...",
+                ".ggllggllgg..",
+                "ggllggggllgg.",
+                "...ggllgg.....",
+                "....ggllgg....",
+                ".....ggllgg...",
+                "......ggllgg..",
+                ".......ggllgg.",
+                "........ggg...",
+            ],
+            15 => &[
+                "..g.....g....",
+                "..g...ggg....",
+                "..g..gg.g....",
+                ".gg..g..g....",
+                ".g..gg..g....",
+                ".g..g...g....",
+                "gg..g..gg....",
+                "g...g..g.....",
+                "g..gg..g.....",
+                "g..g...g.....",
+                "gggg..ggg....",
+                "..gg..gg.....",
+            ],
+            SEEDS => &[
+                "....ssss....",
+                "...stttss...",
+                "..stuuuttss..",
+                "..sttttstss..",
+                "...sssstss...",
+                "......ss.....",
+                "..ssss.......",
+                ".stttss.......",
+                ".stuutss......",
+                "..sstsss......",
+                "....sss.......",
+                "..............",
+            ],
+            SAPLING => &[
+                "....dddd......",
+                "..ddggggdd....",
+                ".dggllggggd...",
+                "dggggggllgd...",
+                "ddggggggggd...",
+                "..dggllggdd...",
+                "...dggggd......",
+                ".....mm........",
+                ".....mm........",
+                ".....mm........",
+                "....mmbmm.......",
+                ".....bbb........",
+            ],
+            STICK => &[
+                "........b.....",
+                ".......bbm....",
+                "......bbmmk...",
+                ".....bbmmk....",
+                "....bbmmk.....",
+                "...bbmmk......",
+                "..bbmmk.......",
+                ".bbmmk........",
+                "bbmmk.........",
+                "bmmk..........",
+                "bk............",
+                "..............",
+            ],
+            _ => &[],
+        };
+        if rows.is_empty() {
+            self.rect(rect.x, rect.y, rect.width, rect.height, item_color(item));
+            return;
+        }
+        let columns = rows.iter().map(|row| row.len()).max().unwrap_or(1) as f32;
+        let cell_w = rect.width / columns;
+        let cell_h = rect.height / rows.len() as f32;
+        for (y, row) in rows.iter().enumerate() {
+            let row_offset = (rect.width - row.len() as f32 * cell_w) * 0.5;
+            for (x, pixel) in row.chars().enumerate() {
+                let color = match pixel {
+                    'b' if item == 13 => Some([0.25, 0.47, 0.81, 1.0]),
+                    'b' => Some([0.31, 0.19, 0.12, 1.0]),
+                    'm' => Some([0.55, 0.34, 0.19, 1.0]),
+                    'l' if item == 9 => Some([0.72, 0.48, 0.27, 1.0]),
+                    'l' => Some([0.46, 0.78, 0.40, 1.0]),
+                    'd' => Some([0.19, 0.40, 0.25, 1.0]),
+                    'g' => Some([0.29, 0.62, 0.33, 1.0]),
+                    'r' => Some([0.70, 0.12, 0.22, 1.0]),
+                    'R' => Some([0.94, 0.29, 0.34, 1.0]),
+                    'y' => Some([0.96, 0.68, 0.14, 1.0]),
+                    'h' => Some([1.0, 0.84, 0.30, 1.0]),
+                    'H' => Some([0.53, 0.77, 0.96, 1.0]),
+                    'C' => Some([0.96, 0.72, 0.22, 1.0]),
+                    's' => Some([0.35, 0.23, 0.15, 1.0]),
+                    't' => Some([0.72, 0.48, 0.24, 1.0]),
+                    'u' => Some([0.92, 0.72, 0.40, 1.0]),
+                    'k' => Some([0.76, 0.52, 0.28, 1.0]),
+                    _ => None,
+                };
+                if let Some(color) = color {
+                    self.rect(
+                        rect.x + row_offset + x as f32 * cell_w,
+                        rect.y + y as f32 * cell_h,
+                        cell_w + 0.5,
+                        cell_h + 0.5,
+                        color,
+                    );
+                }
+            }
         }
     }
 
@@ -420,8 +601,8 @@ fn inset(rect: UiRect, x: f32, y: f32) -> UiRect {
     }
 }
 
-fn block_name(block: u8) -> &'static str {
-    match block {
+pub(super) fn item_name(item: u8) -> &'static str {
+    match item {
         1 => "GRASS",
         2 => "DIRT",
         3 => "STONE",
@@ -430,12 +611,22 @@ fn block_name(block: u8) -> &'static str {
         6 => "MOSS",
         7 => "GRAVEL",
         8 => "GLOWSTONE",
+        9 => "WOOD",
+        10 => "LEAVES",
+        11 => "RED FLOWER",
+        12 => "YELLOW FLOWER",
+        13 => "BLUE FLOWER",
+        14 => "FERN",
+        15 => "TALL GRASS",
+        SEEDS => "SEEDS",
+        SAPLING => "SAPLING",
+        STICK => "STICK",
         _ => "UNKNOWN",
     }
 }
 
-fn block_color(block: u8) -> [f32; 4] {
-    match block {
+pub(super) fn item_color(item: u8) -> [f32; 4] {
+    match item {
         1 => [0.32, 0.62, 0.26, 1.0],
         2 => [0.52, 0.34, 0.21, 1.0],
         3 => [0.48, 0.52, 0.53, 1.0],
@@ -444,15 +635,18 @@ fn block_color(block: u8) -> [f32; 4] {
         6 => [0.27, 0.47, 0.19, 1.0],
         7 => [0.47, 0.43, 0.39, 1.0],
         8 => [1.0, 0.66, 0.22, 1.0],
+        9 => [0.55, 0.34, 0.19, 1.0],
+        10 => [0.30, 0.62, 0.34, 1.0],
+        11 => [0.86, 0.20, 0.29, 1.0],
+        12 => [0.96, 0.68, 0.14, 1.0],
+        13 => [0.33, 0.56, 0.88, 1.0],
+        14 => [0.34, 0.66, 0.37, 1.0],
+        15 => [0.38, 0.69, 0.34, 1.0],
+        SEEDS => [0.77, 0.52, 0.27, 1.0],
+        SAPLING => [0.33, 0.65, 0.38, 1.0],
+        STICK => [0.61, 0.39, 0.22, 1.0],
         _ => [0.6, 0.3, 0.8, 1.0],
     }
-}
-
-fn darken(mut color: [f32; 4], amount: f32) -> [f32; 4] {
-    for channel in &mut color[..3] {
-        *channel *= amount;
-    }
-    color
 }
 
 fn text_width(text: &str, scale: f32, font_scale: f32) -> f32 {

@@ -10,6 +10,7 @@ pub(crate) fn create_voxel_pipeline(
     format: wgpu::TextureFormat,
 ) -> (
     wgpu::RenderPipeline,
+    wgpu::RenderPipeline,
     wgpu::Buffer,
     wgpu::BindGroup,
     wgpu::BindGroup,
@@ -143,45 +144,55 @@ pub(crate) fn create_voxel_pipeline(
         immediate_size: 0,
     });
     let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32];
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("opaque voxel pipeline"),
-        layout: Some(&layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: VERTEX_STRIDE,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &attributes,
-            })],
-        },
-        primitive: wgpu::PrimitiveState {
-            cull_mode: Some(wgpu::Face::Back),
-            ..Default::default()
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
-            depth_compare: Some(wgpu::CompareFunction::Less),
-            stencil: Default::default(),
-            bias: Default::default(),
-        }),
-        multisample: Default::default(),
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
-    (pipeline, camera_buffer, camera_group, texture_group)
+    let make_pipeline = |label, cull_mode, fragment_entry| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: VERTEX_STRIDE,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &attributes,
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipeline = make_pipeline("opaque voxel pipeline", Some(wgpu::Face::Back), "fs_main");
+    let cutout_pipeline = make_pipeline("cutout foliage pipeline", None, "fs_cutout");
+    (
+        pipeline,
+        cutout_pipeline,
+        camera_buffer,
+        camera_group,
+        texture_group,
+    )
 }
 
 const SHADER: &str = r#"
@@ -224,11 +235,19 @@ struct VertexOutput {
     output.sky_level = sky;
     return output;
 }
-@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
+fn shade(input: VertexOutput, albedo: vec3<f32>) -> vec4<f32> {
     let fog = smoothstep(38.0, 135.0, input.distance);
     let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
     let emission = select(vec3<f32>(0.0), albedo * 0.70, input.layer == GLOWSTONE_LAYER);
     return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
+}
+@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
+    return shade(input, albedo);
+}
+@fragment fn fs_cutout(input: VertexOutput) -> @location(0) vec4<f32> {
+    let texel = textureSample(material, material_sampler, input.uv, input.layer);
+    if texel.a < 0.5 { discard; }
+    return shade(input, texel.rgb);
 }
 "#;

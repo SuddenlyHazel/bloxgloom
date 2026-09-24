@@ -1,10 +1,30 @@
 //! Behavior tests for UI layout and bounded geometry generation.
 
 use super::{
-    draw::{MAX_UI_VERTICES, UiBuilder},
+    draw::{MAX_UI_VERTICES, UiBuilder, item_color, item_name},
     layout::{UiLayout, effective_ui_scale},
     types::{SettingId, UiControl, UiDebug, UiFrame, UiScreen, UiSettings},
 };
+
+#[test]
+fn world_and_inventory_items_have_distinct_hud_names_and_swatch_colors() {
+    let vegetation = [
+        (9, "WOOD", [0.55, 0.34, 0.19, 1.0]),
+        (10, "LEAVES", [0.30, 0.62, 0.34, 1.0]),
+        (11, "RED FLOWER", [0.86, 0.20, 0.29, 1.0]),
+        (12, "YELLOW FLOWER", [0.96, 0.68, 0.14, 1.0]),
+        (13, "BLUE FLOWER", [0.33, 0.56, 0.88, 1.0]),
+        (14, "FERN", [0.34, 0.66, 0.37, 1.0]),
+        (15, "TALL GRASS", [0.38, 0.69, 0.34, 1.0]),
+        (crate::items::SEEDS, "SEEDS", [0.77, 0.52, 0.27, 1.0]),
+        (crate::items::SAPLING, "SAPLING", [0.33, 0.65, 0.38, 1.0]),
+        (crate::items::STICK, "STICK", [0.61, 0.39, 0.22, 1.0]),
+    ];
+    for (item, name, color) in vegetation {
+        assert_eq!(item_name(item), name);
+        assert_eq!(item_color(item), color);
+    }
+}
 
 #[test]
 fn hotbar_layout_hit_tests_nine_slots_without_gaps() {

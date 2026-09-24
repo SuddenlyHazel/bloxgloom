@@ -3,13 +3,15 @@
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
 mod drops;
+mod loot;
 
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
 #[cfg(test)]
 use crate::world::STONE;
 use crate::world::{
-    AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_TERRAIN_HEIGHT, World, world_to_chunk,
+    AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_GENERATED_HEIGHT, World, is_plant, is_replaceable,
+    is_solid, supports_plant, world_to_chunk,
 };
 use drops::Drops;
 use std::collections::{HashMap, HashSet};
@@ -290,15 +292,15 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
 
 fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
     const HEADROOM: i32 = 32;
-    let ceiling = MAX_TERRAIN_HEIGHT + HEADROOM;
-    if world.get_block(0, ceiling, 0)? != AIR {
+    let ceiling = MAX_GENERATED_HEIGHT + HEADROOM;
+    if is_solid(world.get_block(0, ceiling, 0)?) {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
             "spawn terrain exceeds scan ceiling",
         ));
     }
     for y in (0..ceiling).rev() {
-        if world.get_block(0, y, 0)? != AIR {
+        if is_solid(world.get_block(0, y, 0)?) {
             let position = [0.5, (y + 1) as f32, 0.5];
             if !collides(world, position)? {
                 return Ok(position);
@@ -416,7 +418,7 @@ fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
         (client.profile, client.position, client.inventory.clone());
     let mut taken = Vec::new();
     for item in state.drops.pickup_candidates(position) {
-        let remaining = updated.insert(item.block, item.count);
+        let remaining = updated.insert(item.item, item.count);
         if remaining != item.count {
             taken.push(crate::protocol::DroppedItem {
                 count: item.count - remaining,
@@ -536,7 +538,7 @@ fn drop_stack(state: &mut State, id: u64, slot: u8, count: u16) -> io::Result<()
     let before_drops = state.drops.clone();
     state
         .drops
-        .spawn(position, stack.block, count, Duration::from_millis(1500));
+        .spawn(position, stack.item, count, Duration::from_millis(1500));
     if let Err(error) = state.drops.save() {
         state.drops = before_drops;
         state
@@ -614,7 +616,11 @@ fn collides(world: &mut World, feet: [f32; 3]) -> io::Result<bool> {
     for x in [feet[0] - 0.3, feet[0] + 0.3] {
         for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
             for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if world.get_block(x.floor() as i32, y.floor() as i32, z.floor() as i32)? != 0 {
+                if is_solid(world.get_block(
+                    x.floor() as i32,
+                    y.floor() as i32,
+                    z.floor() as i32,
+                )?) {
                     return Ok(true);
                 }
             }
@@ -661,17 +667,35 @@ fn edit_block(
     if previous == block {
         return Ok(());
     }
+    let dangling_plant = if block == AIR && supports_plant(previous) {
+        y.checked_add(1)
+            .map(|above_y| state.world.get_block(x, above_y, z))
+            .transpose()?
+            .filter(|&above| is_plant(above))
+    } else {
+        None
+    };
+    let mut removed_above = None;
     let (key, version) = if block != AIR {
-        if previous != AIR {
+        if !is_replaceable(previous) {
             client.enqueue(ServerMessage::EditRejected {
-                reason: "replace only air blocks".into(),
+                reason: "target block cannot be replaced".into(),
             });
             return Ok(());
         }
-        if state
-            .clients
-            .values()
-            .any(|other| block_intersects_player([x, y, z], other.position))
+        if is_plant(block)
+            && (y == i32::MIN || !supports_plant(state.world.get_block(x, y - 1, z)?))
+        {
+            client.enqueue(ServerMessage::EditRejected {
+                reason: "plants need soil below".into(),
+            });
+            return Ok(());
+        }
+        if is_solid(block)
+            && state
+                .clients
+                .values()
+                .any(|other| block_intersects_player([x, y, z], other.position))
         {
             client.enqueue(ServerMessage::EditRejected {
                 reason: "block overlaps a player".into(),
@@ -679,7 +703,7 @@ fn edit_block(
             return Ok(());
         }
         if slot as usize >= crate::inventory::HOTBAR_SLOTS
-            || client.inventory.slots[slot as usize].is_none_or(|stack| stack.block != block)
+            || client.inventory.slots[slot as usize].is_none_or(|stack| stack.item != block)
         {
             client.enqueue(ServerMessage::EditRejected {
                 reason: "selected stack is empty".into(),
@@ -699,6 +723,20 @@ fn edit_block(
                 return Err(error);
             }
         };
+        if is_plant(previous) {
+            let before_drops = state.drops.clone();
+            spawn_harvest(&mut state.drops, previous, [x, y, z], result.1, state.seed);
+            if state.drops.revision() != before_drops.revision()
+                && let Err(error) = state.drops.save()
+            {
+                state.drops = before_drops;
+                state.world.edit(x, y, z, previous)?;
+                state
+                    .inventory_store
+                    .save(client.profile, &client.inventory)?;
+                return Err(error);
+            }
+        }
         if let Some(client) = state.clients.get_mut(&id) {
             client.inventory = next;
             client.enqueue(ServerMessage::Inventory {
@@ -709,17 +747,40 @@ fn edit_block(
         result
     } else {
         let result = state.world.edit(x, y, z, block)?;
-        if previous != AIR {
+        if let Some(plant) = dangling_plant {
+            let above_y = y + 1;
+            match state.world.edit(x, above_y, z, AIR) {
+                Ok((above_key, above_version)) => {
+                    removed_above = Some((above_key, above_version, above_y, plant));
+                }
+                Err(error) => {
+                    state.world.edit(x, y, z, previous)?;
+                    return Err(error);
+                }
+            }
+        }
+        if previous != AIR || dangling_plant.is_some() {
             let before_drops = state.drops.clone();
-            state.drops.spawn(
-                [x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5],
-                previous,
-                1,
-                Duration::from_millis(250),
-            );
-            if let Err(error) = state.drops.save() {
+            if previous != AIR {
+                spawn_harvest(&mut state.drops, previous, [x, y, z], result.1, state.seed);
+            }
+            if let Some((_, above_version, above_y, plant)) = removed_above {
+                spawn_harvest(
+                    &mut state.drops,
+                    plant,
+                    [x, above_y, z],
+                    above_version,
+                    state.seed,
+                );
+            }
+            if state.drops.revision() != before_drops.revision()
+                && let Err(error) = state.drops.save()
+            {
                 state.drops = before_drops;
                 state.world.edit(x, y, z, previous)?;
+                if let Some((_, _, above_y, plant)) = removed_above {
+                    state.world.edit(x, above_y, z, plant)?;
+                }
                 return Err(error);
             }
         }
@@ -739,8 +800,35 @@ fn edit_block(
         if client.sent.contains(&key) {
             client.enqueue(delta.clone());
         }
+        if let Some((above_key, above_version, above_y, _)) = removed_above
+            && client.sent.contains(&above_key)
+        {
+            let (_, above_local) = world_to_chunk(x, above_y, z);
+            client.enqueue(ServerMessage::Delta {
+                key: above_key,
+                version: above_version,
+                x: above_local[0] as u8,
+                y: above_local[1] as u8,
+                z: above_local[2] as u8,
+                block: AIR,
+            });
+        }
     }
     Ok(())
+}
+
+fn spawn_harvest(drops: &mut Drops, block: u8, position: [i32; 3], version: u64, seed: u64) {
+    for (item, count) in loot::harvest(block, position, version, seed)
+        .into_iter()
+        .flatten()
+    {
+        drops.spawn(
+            position.map(|coordinate| coordinate as f32 + 0.5),
+            item,
+            count,
+            Duration::from_millis(250),
+        );
+    }
 }
 
 fn block_intersects_player(block: [i32; 3], player: [f32; 3]) -> bool {

@@ -1,4 +1,4 @@
-//! Opaque voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
+//! Voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
 mod drops;
 mod material;
@@ -22,7 +22,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 use crate::ui::{UiFrame, UiRenderer};
 use crate::world::ChunkKey;
 
-use mesh::GpuMesh;
+use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
 pub(crate) use drops::VisualDrop;
@@ -106,6 +106,7 @@ pub struct Renderer {
     sky_buffer: wgpu::Buffer,
     sky_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
+    cutout_pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
     texture_group: wgpu::BindGroup,
@@ -116,6 +117,9 @@ pub struct Renderer {
     drop_vertices: wgpu::Buffer,
     drop_indices: wgpu::Buffer,
     drop_index_count: u32,
+    drop_cutout_vertices: wgpu::Buffer,
+    drop_cutout_indices: wgpu::Buffer,
+    drop_cutout_index_count: u32,
     ui: UiRenderer,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
@@ -172,7 +176,7 @@ impl Renderer {
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, format);
-        let (pipeline, camera_buffer, camera_group, texture_group) =
+        let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline(&device, &queue, format);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
@@ -189,6 +193,18 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let drop_cutout_vertices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cutout dropped item vertices"),
+            size: drops::MAX_CUTOUT_VERTEX_BYTES,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let drop_cutout_indices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cutout dropped item indices"),
+            size: drops::MAX_CUTOUT_INDEX_BYTES,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         Ok(Self {
             instance,
             window,
@@ -201,6 +217,7 @@ impl Renderer {
             sky_buffer,
             sky_group,
             pipeline,
+            cutout_pipeline,
             camera_buffer,
             camera_group,
             texture_group,
@@ -211,6 +228,9 @@ impl Renderer {
             drop_vertices,
             drop_indices,
             drop_index_count: 0,
+            drop_cutout_vertices,
+            drop_cutout_indices,
+            drop_cutout_index_count: 0,
             ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
@@ -231,19 +251,41 @@ impl Renderer {
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
-        let (vertices, indices) = drops::mesh(items);
-        if !vertices.is_empty() {
-            self.queue
-                .write_buffer(&self.drop_vertices, 0, bytemuck::cast_slice(&vertices));
+        let meshes = drops::mesh(items);
+        if !meshes.opaque_vertices.is_empty() {
+            self.queue.write_buffer(
+                &self.drop_vertices,
+                0,
+                bytemuck::cast_slice(&meshes.opaque_vertices),
+            );
         }
-        if !indices.is_empty() {
-            self.queue
-                .write_buffer(&self.drop_indices, 0, bytemuck::cast_slice(&indices));
+        if !meshes.opaque_indices.is_empty() {
+            self.queue.write_buffer(
+                &self.drop_indices,
+                0,
+                bytemuck::cast_slice(&meshes.opaque_indices),
+            );
         }
-        self.drop_index_count = indices.len() as u32;
+        if !meshes.cutout_vertices.is_empty() {
+            self.queue.write_buffer(
+                &self.drop_cutout_vertices,
+                0,
+                bytemuck::cast_slice(&meshes.cutout_vertices),
+            );
+        }
+        if !meshes.cutout_indices.is_empty() {
+            self.queue.write_buffer(
+                &self.drop_cutout_indices,
+                0,
+                bytemuck::cast_slice(&meshes.cutout_indices),
+            );
+        }
+        self.drop_index_count = meshes.opaque_indices.len() as u32;
+        self.drop_cutout_index_count = meshes.cutout_indices.len() as u32;
     }
 
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
+    #[allow(clippy::result_large_err)] // Returning ownership avoids copying mesh buffers on queue pressure.
     pub fn enqueue_mesh(&mut self, mesh: ChunkMesh) -> Result<(), ChunkMesh> {
         if self
             .meshes
@@ -289,31 +331,38 @@ impl Renderer {
             }
             let mesh = self.pending.remove(&key).unwrap();
             self.pending_order.pop_front();
-            if mesh.indices.is_empty() {
+            if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 self.meshes.remove(&key);
                 continue;
             }
-            let vertex = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("chunk vertices"),
-                    contents: bytemuck::cast_slice(&mesh.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            let index = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("chunk indices"),
-                    contents: bytemuck::cast_slice(&mesh.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+            let upload = |vertices: &[f32], indices: &[u32], label| {
+                if indices.is_empty() {
+                    return None;
+                }
+                Some(GpuSubmesh {
+                    vertex: self
+                        .device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some(label),
+                            contents: bytemuck::cast_slice(vertices),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        }),
+                    index: self
+                        .device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some(label),
+                            contents: bytemuck::cast_slice(indices),
+                            usage: wgpu::BufferUsages::INDEX,
+                        }),
+                    indices: indices.len() as u32,
+                })
+            };
             self.meshes.insert(
                 key,
                 GpuMesh {
                     lighting_revision: mesh.lighting_revision,
-                    vertex,
-                    index,
-                    indices: mesh.indices.len() as u32,
+                    opaque: upload(&mesh.vertices, &mesh.indices, "opaque chunk"),
+                    cutout: upload(&mesh.cutout_vertices, &mesh.cutout_indices, "cutout chunk"),
                 },
             );
             bytes += mesh_bytes;
@@ -426,17 +475,40 @@ impl Renderer {
                 if !chunk_visible(view_projection, *key) {
                     continue;
                 }
-                pass.set_vertex_buffer(0, mesh.vertex.slice(..));
-                pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.indices, 0, 0..1);
+                if let Some(opaque) = &mesh.opaque {
+                    pass.set_vertex_buffer(0, opaque.vertex.slice(..));
+                    pass.set_index_buffer(opaque.index.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..opaque.indices, 0, 0..1);
+                    stats.drawn_triangles += opaque.indices as usize / 3;
+                }
                 stats.visible_chunks += 1;
-                stats.drawn_triangles += mesh.indices as usize / 3;
             }
             if self.drop_index_count > 0 {
                 pass.set_vertex_buffer(0, self.drop_vertices.slice(..));
                 pass.set_index_buffer(self.drop_indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..self.drop_index_count, 0, 0..1);
                 stats.drawn_triangles += self.drop_index_count as usize / 3;
+            }
+            pass.set_pipeline(&self.cutout_pipeline);
+            for (key, mesh) in &self.meshes {
+                if !chunk_visible(view_projection, *key) {
+                    continue;
+                }
+                if let Some(cutout) = &mesh.cutout {
+                    pass.set_vertex_buffer(0, cutout.vertex.slice(..));
+                    pass.set_index_buffer(cutout.index.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..cutout.indices, 0, 0..1);
+                    stats.drawn_triangles += cutout.indices as usize / 3;
+                }
+            }
+            if self.drop_cutout_index_count > 0 {
+                pass.set_vertex_buffer(0, self.drop_cutout_vertices.slice(..));
+                pass.set_index_buffer(
+                    self.drop_cutout_indices.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                pass.draw_indexed(0..self.drop_cutout_index_count, 0, 0..1);
+                stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
         }
         if ui_frame.target.is_some() {

@@ -134,10 +134,13 @@ fn rejects_oversized_and_malformed_frames_before_allocating_payload() {
 fn inventory_and_drop_snapshots_round_trip_with_bounds() {
     let mut slots = [None; SLOTS];
     slots[0] = Some(Stack {
-        block: 3,
+        item: 3,
         count: 128,
     });
-    slots[35] = Some(Stack { block: 8, count: 1 });
+    slots[35] = Some(Stack {
+        item: crate::items::SEEDS,
+        count: 1,
+    });
     let mut bytes = Vec::new();
     write_server(
         &mut bytes,
@@ -160,7 +163,7 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
     bytes.clear();
     let items = vec![DroppedItem {
         id: 99,
-        block: 2,
+        item: crate::items::STICK,
         count: 63,
         position: [-4.5, 7.0, 9.25],
         age_ms: 90_327,
@@ -197,7 +200,7 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
     }
     let mut bad = [None; SLOTS];
     bad[0] = Some(Stack {
-        block: 1,
+        item: 1,
         count: 129,
     });
     assert!(
@@ -210,4 +213,51 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
+    for item in [
+        crate::items::SEEDS,
+        crate::items::SAPLING,
+        crate::items::STICK,
+    ] {
+        let drop = DroppedItem {
+            id: 1,
+            item,
+            count: 1,
+            position: [0.0; 3],
+            age_ms: 0,
+        };
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &ServerMessage::Pickups { items: vec![drop] }).unwrap();
+        assert!(
+            matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::Pickups { items } if items == [drop])
+        );
+        bytes[16] = 16;
+        assert!(read_server(bytes.as_slice()).is_err());
+        assert!(
+            write_client(
+                Vec::new(),
+                &ClientMessage::Edit {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    block: item,
+                    slot: 0
+                }
+            )
+            .is_err()
+        );
+    }
+    for invalid_item in [0, 16, 127, 131, 255] {
+        let drop = DroppedItem {
+            id: 1,
+            item: invalid_item,
+            count: 1,
+            position: [0.0; 3],
+            age_ms: 0,
+        };
+        assert!(write_server(Vec::new(), &ServerMessage::Pickups { items: vec![drop] }).is_err());
+    }
 }

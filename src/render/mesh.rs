@@ -1,5 +1,5 @@
 use crate::lighting::{LightField, LightSample};
-use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
+use crate::world::{self, CHUNK_SIZE, Chunk, ChunkKey, LEAVES};
 
 use super::VERTEX_FLOATS;
 use super::material::{face_uv, material_layer};
@@ -12,20 +12,31 @@ pub struct ChunkMesh {
     pub(crate) lighting_revision: u64,
     pub(crate) vertices: Vec<f32>,
     pub(crate) indices: Vec<u32>,
+    pub(crate) cutout_vertices: Vec<f32>,
+    pub(crate) cutout_indices: Vec<u32>,
 }
 
 impl ChunkMesh {
     pub(crate) fn byte_len(&self) -> usize {
-        self.vertices.len() * 4 + self.indices.len() * 4
+        (self.vertices.len()
+            + self.indices.len()
+            + self.cutout_vertices.len()
+            + self.cutout_indices.len())
+            * 4
     }
 
     #[cfg(test)]
     pub fn triangles(&self) -> usize {
-        self.indices.len() / 3
+        (self.indices.len() + self.cutout_indices.len()) / 3
     }
 }
 pub(super) struct GpuMesh {
     pub(super) lighting_revision: u64,
+    pub(super) opaque: Option<GpuSubmesh>,
+    pub(super) cutout: Option<GpuSubmesh>,
+}
+
+pub(super) struct GpuSubmesh {
     pub(super) vertex: wgpu::Buffer,
     pub(super) index: wgpu::Buffer,
     pub(super) indices: u32,
@@ -54,6 +65,8 @@ fn mesh_chunk_with_light(
         lighting_revision,
         vertices: Vec::new(),
         indices: Vec::new(),
+        cutout_vertices: Vec::new(),
+        cutout_indices: Vec::new(),
     };
     if chunk.blocks.len() != n * n * n {
         return out;
@@ -77,7 +90,7 @@ fn mesh_chunk_with_light(
                         p[u] = i;
                         p[v] = j;
                         let block = block_at(chunk, p, n);
-                        if block == 0 {
+                        if !world::is_opaque(block) {
                             continue;
                         }
                         let edge = if side > 0 { slice + 1 == n } else { slice == 0 };
@@ -86,7 +99,7 @@ fn mesh_chunk_with_light(
                         } else {
                             let mut adjacent = p;
                             adjacent[axis] = (slice as i32 + side) as usize;
-                            block_at(chunk, adjacent, n) == 0
+                            !world::is_opaque(block_at(chunk, adjacent, n))
                         };
                         if exposed {
                             let sample = light.map_or(
@@ -135,11 +148,81 @@ fn mesh_chunk_with_light(
                             }
                         }
                         emit_quad(
-                            &mut out, origin, axis, u, v, side, slice, i, j, width, height,
-                            material, light,
+                            &mut out.vertices,
+                            &mut out.indices,
+                            origin,
+                            axis,
+                            u,
+                            v,
+                            side,
+                            slice,
+                            i,
+                            j,
+                            width,
+                            height,
+                            material,
+                            light,
                         );
                         i += width;
                     }
+                }
+            }
+        }
+    }
+    for y in 0..n {
+        for z in 0..n {
+            for x in 0..n {
+                let p = [x, y, z];
+                let block = block_at(chunk, p, n);
+                if block == LEAVES {
+                    for axis in 0..3 {
+                        let u = (axis + 1) % 3;
+                        let v = (axis + 2) % 3;
+                        for side in [-1, 1] {
+                            let adjacent = p[axis] as i32 + side;
+                            let visible = if (0..n as i32).contains(&adjacent) {
+                                let mut neighbor = p;
+                                neighbor[axis] = adjacent as usize;
+                                let neighbor_block = block_at(chunk, neighbor, n);
+                                neighbor_block != LEAVES && !world::is_opaque(neighbor_block)
+                            } else {
+                                true
+                            };
+                            if visible {
+                                let sample = light.map_or(
+                                    LightSample {
+                                        sky: 15,
+                                        glow: 0,
+                                        bounce: [0; 3],
+                                    },
+                                    |field| field.face(p, axis, side),
+                                );
+                                let bounce = sample.bounce.iter().copied().max().unwrap_or(0) / 16;
+                                let material = u32::from(block)
+                                    | (u32::from(sample.sky) << 8)
+                                    | (u32::from(sample.glow) << 12)
+                                    | (u32::from(bounce) << 16);
+                                emit_quad(
+                                    &mut out.cutout_vertices,
+                                    &mut out.cutout_indices,
+                                    origin,
+                                    axis,
+                                    u,
+                                    v,
+                                    side,
+                                    p[axis],
+                                    p[u],
+                                    p[v],
+                                    1,
+                                    1,
+                                    material,
+                                    light,
+                                );
+                            }
+                        }
+                    }
+                } else if world::is_plant(block) {
+                    emit_plant(&mut out, origin, p, block, light);
                 }
             }
         }
@@ -153,7 +236,8 @@ fn block_at(chunk: &Chunk, p: [usize; 3], n: usize) -> u8 {
 
 #[allow(clippy::too_many_arguments)]
 fn emit_quad(
-    out: &mut ChunkMesh,
+    vertices: &mut Vec<f32>,
+    indices: &mut Vec<u32>,
     origin: [f32; 3],
     axis: usize,
     u: usize,
@@ -167,7 +251,7 @@ fn emit_quad(
     material: u32,
     light: Option<&LightField>,
 ) {
-    let base = (out.vertices.len() / VERTEX_FLOATS) as u32;
+    let base = (vertices.len() / VERTEX_FLOATS) as u32;
     let mut normal = [0.0; 3];
     normal[axis] = side as f32;
     let layer = material_layer((material & 255) as u8, axis, side);
@@ -179,8 +263,8 @@ fn emit_quad(
         position[axis] += (slice + usize::from(side > 0)) as f32;
         position[u] += (i + du) as f32;
         position[v] += (j + dv) as f32;
-        out.vertices.extend_from_slice(&position);
-        out.vertices.extend_from_slice(&normal);
+        vertices.extend_from_slice(&position);
+        vertices.extend_from_slice(&normal);
         let (texture_u, texture_v) =
             face_uv(axis, du as f32, dv as f32, width as f32, height as f32);
         let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0], |field| {
@@ -191,7 +275,7 @@ fn emit_quad(
         let packed_bounce = (corner_light[2] * 255.0).round() as u32
             | (((corner_light[3] * 255.0).round() as u32) << 8)
             | (((corner_light[4] * 255.0).round() as u32) << 16);
-        out.vertices.extend_from_slice(&[
+        vertices.extend_from_slice(&[
             texture_u,
             texture_v,
             layer as f32,
@@ -202,10 +286,64 @@ fn emit_quad(
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
     if side > 0 {
-        out.indices
-            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     } else {
-        out.indices
-            .extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
+        indices.extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
+    }
+}
+
+fn emit_plant(
+    out: &mut ChunkMesh,
+    origin: [f32; 3],
+    p: [usize; 3],
+    block: u8,
+    light: Option<&LightField>,
+) {
+    let sample = light.map_or(
+        LightSample {
+            sky: 15,
+            glow: 0,
+            bounce: [0; 3],
+        },
+        |field| field.face(p, 1, 1),
+    );
+    let packed_bounce = u32::from(sample.bounce[0])
+        | (u32::from(sample.bounce[1]) << 8)
+        | (u32::from(sample.bounce[2]) << 16);
+    let layer = material_layer(block, 1, 1) as f32;
+    let world = [
+        origin[0] + p[0] as f32,
+        origin[1] + p[1] as f32,
+        origin[2] + p[2] as f32,
+    ];
+    // Crossed diagonals give each plant a visible silhouette from every angle.
+    // One winding suffices because the cutout pipeline renders both sides.
+    for (start, end) in [([0.08, 0.08], [0.92, 0.92]), ([0.08, 0.92], [0.92, 0.08])] {
+        let base = (out.cutout_vertices.len() / VERTEX_FLOATS) as u32;
+        for (t, height, uv) in [
+            (0.0, 0.02, [0.0, 1.0]),
+            (1.0, 0.02, [1.0, 1.0]),
+            (1.0, 0.98, [1.0, 0.0]),
+            (0.0, 0.98, [0.0, 0.0]),
+        ] {
+            let x = start[0] + (end[0] - start[0]) * t;
+            let z = start[1] + (end[1] - start[1]) * t;
+            out.cutout_vertices.extend_from_slice(&[
+                world[0] + x,
+                world[1] + height,
+                world[2] + z,
+                0.0,
+                1.0,
+                0.0,
+                uv[0],
+                uv[1],
+                layer,
+                f32::from(sample.sky) / 15.0,
+                f32::from(sample.glow) / 15.0,
+                packed_bounce as f32,
+            ]);
+        }
+        out.cutout_indices
+            .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 }

@@ -72,3 +72,17 @@ fn clamps_reach_and_rejects_invalid_rays() {
     assert!(raycast(Vec3::ZERO, Vec3::ZERO, 8.0, |_, _, _| Some(1)).is_none());
     assert!(raycast(Vec3::ZERO, Vec3::X, f32::NAN, |_, _, _| Some(1)).is_none());
 }
+
+#[test]
+fn aiming_past_grass_edges_reaches_ground_but_center_hits_flower() {
+    let blocks = HashMap::from([
+        ([1, 0, 0], TALL_GRASS),
+        ([2, 0, 0], 2),
+        ([1, 0, 1], crate::world::RED_FLOWER),
+    ]);
+    let past_grass = raycast_blocks(Vec3::new(0.5, 0.5, 0.1), Vec3::X, 8.0, &blocks).unwrap();
+    assert_eq!(past_grass.block, [2, 0, 0]);
+    let flower = raycast_blocks(Vec3::new(0.5, 0.5, 1.5), Vec3::X, 8.0, &blocks).unwrap();
+    assert_eq!(flower.block, [1, 0, 1]);
+    assert!(flower.distance > 0.5);
+}

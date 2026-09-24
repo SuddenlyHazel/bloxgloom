@@ -5,7 +5,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::world::{
-    self, AIR, CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
+    self, CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
+    WOOD,
 };
 
 const SIDE: usize = CHUNK_SIZE * 3;
@@ -86,7 +87,7 @@ impl LightField {
                         glow[at] = MAX_LIGHT;
                         glow_frontier.push_back(at);
                     }
-                    if blocks[at] != AIR {
+                    if world::is_opaque(blocks[at]) {
                         open_to_sky = false;
                     } else if open_to_sky {
                         sky[at] = MAX_LIGHT;
@@ -167,7 +168,7 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
         for z in 1..SIDE - 1 {
             for x in 1..SIDE - 1 {
                 let at = index(x, y, z);
-                if blocks[at] != AIR {
+                if world::is_opaque(blocks[at]) {
                     continue;
                 }
                 // Keep reflected energy well below incident energy, even where
@@ -176,7 +177,7 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
                     continue;
                 }
                 for neighbor in [at - 1, at + 1, at - SIDE, at + SIDE, at - PLANE, at + PLANE] {
-                    if blocks[neighbor] == AIR {
+                    if !world::is_opaque(blocks[neighbor]) {
                         continue;
                     }
                     let reflectance = reflectance(blocks[neighbor]);
@@ -217,7 +218,7 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
         .into_iter()
         .flatten()
         {
-            if blocks[neighbor] != AIR {
+            if world::is_opaque(blocks[neighbor]) {
                 continue;
             }
             let mut changed = false;
@@ -242,6 +243,7 @@ fn reflectance(block: u8) -> [u8; 3] {
         SAND => [185, 165, 115],
         SNOW => [180, 200, 220],
         GRAVEL => [105, 110, 115],
+        WOOD => [145, 105, 65],
         GLOWSTONE => [190, 130, 75],
         _ => [115, 120, 128],
     }
@@ -280,7 +282,7 @@ fn propagate(blocks: &[u8], light: &mut [u8], mut frontier: VecDeque<usize>) {
         .into_iter()
         .flatten()
         {
-            if blocks[neighbor] == AIR && light[neighbor] < next {
+            if !world::is_opaque(blocks[neighbor]) && light[neighbor] < next {
                 light[neighbor] = next;
                 frontier.push_back(neighbor);
             }

@@ -57,20 +57,7 @@ impl UiBuilder<'_> {
             );
             if let Some(stack) = frame.inventory[index as usize] {
                 let swatch = inset(rect, rect.width * 0.23, rect.height * 0.23);
-                self.rect(
-                    swatch.x,
-                    swatch.y,
-                    swatch.width,
-                    swatch.height,
-                    block_color(stack.block),
-                );
-                self.rect(
-                    swatch.x,
-                    swatch.y + swatch.height * 0.72,
-                    swatch.width,
-                    swatch.height * 0.28,
-                    darken(block_color(stack.block), 0.7),
-                );
+                self.draw_item_swatch(swatch, stack.item);
                 let count = stack.count.to_string();
                 self.text(
                     &count,

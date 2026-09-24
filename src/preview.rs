@@ -17,6 +17,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     client::drops::DropAnimator,
     inventory::{SLOTS, Stack},
+    items::SEEDS,
     lighting::LightField,
     protocol::DroppedItem,
     render::{self, Camera, ChunkMesh},
@@ -51,6 +52,22 @@ pub fn render_preview(path: &Path, center_x: i32, center_z: i32) -> Result<(), B
         }],
         (center_x.div_euclid(16), center_z.div_euclid(16)),
         PreviewScene::Surface,
+    ))
+}
+
+/// A close, repeatable composition for checking cutout foliage and plant silhouettes.
+pub fn render_vegetation_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Vegetation,
     ))
 }
 
@@ -197,6 +214,7 @@ enum DropPhase {
 #[derive(Clone, Copy)]
 enum PreviewScene {
     Surface,
+    Vegetation,
     Drops(DropPhase),
     Cave { lamp: bool, bounced: bool },
 }
@@ -219,7 +237,7 @@ async fn render_previews(
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
     let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
-    let (pipeline, camera_buffer, camera_group, texture_group) =
+    let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
@@ -229,7 +247,11 @@ async fn render_previews(
     let center_z = center_chunk.1 * 16;
     let camera_xz = (center_x + 40, center_z + 16);
     let target_xz = (center_x + 8, center_z - 16);
-    let target_height = surface_height(target_xz.0, target_xz.1);
+    let target_height = if matches!(scene, PreviewScene::Vegetation) {
+        world::terrain_height(i64::from(target_xz.0), i64::from(target_xz.1), SEED) as i32
+    } else {
+        surface_height(target_xz.0, target_xz.1)
+    };
     let (camera_position, target) = match scene {
         PreviewScene::Surface => (
             Vec3::new(
@@ -243,6 +265,14 @@ async fn render_previews(
                 target_xz.1 as f32 + 0.5,
             ),
         ),
+        PreviewScene::Vegetation => {
+            let target = Vec3::new(
+                target_xz.0 as f32 + 0.5,
+                target_height as f32 + 2.0,
+                target_xz.1 as f32 + 0.5,
+            );
+            (target + Vec3::new(9.0, 5.0, 11.0), target)
+        }
         PreviewScene::Drops(_) => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
@@ -298,6 +328,52 @@ async fn render_previews(
             }
         }
     }
+    if let PreviewScene::Vegetation = scene {
+        let [tree_x, tree_z] = [target_xz.0 - 4, target_xz.1 - 5];
+        let tree_ground = world::terrain_height(i64::from(tree_x), i64::from(tree_z), SEED) as i32;
+        for z in tree_z - 11..=tree_z + 5 {
+            for x in tree_x - 6..=tree_x + 6 {
+                let ground = world::terrain_height(i64::from(x), i64::from(z), SEED) as i32;
+                for y in ground + 1..=ground + 18 {
+                    set_preview_block(&mut chunks, x, y, z, world::AIR);
+                }
+            }
+        }
+        for y in tree_ground + 1..=tree_ground + 5 {
+            set_preview_block(&mut chunks, tree_x, y, tree_z, world::WOOD);
+        }
+        for dy in -2i32..=2 {
+            for dz in -2i32..=2 {
+                for dx in -2i32..=2 {
+                    if dx * dx + dz * dz + dy * dy * 2 <= 8 {
+                        set_preview_block(
+                            &mut chunks,
+                            tree_x + dx,
+                            tree_ground + 5 + dy,
+                            tree_z + dz,
+                            world::LEAVES,
+                        );
+                    }
+                }
+            }
+        }
+        for dz in -5..=5 {
+            for dx in -6..=6 {
+                let x = target_xz.0 + dx;
+                let z = target_xz.1 + dz;
+                let block = match (dx + dz * 3).rem_euclid(11) {
+                    0 => world::RED_FLOWER,
+                    2 => world::YELLOW_FLOWER,
+                    4 => world::BLUE_FLOWER,
+                    6 => world::FERN,
+                    8 | 9 => world::TALL_GRASS,
+                    _ => continue,
+                };
+                let ground = world::terrain_height(i64::from(x), i64::from(z), SEED) as i32;
+                set_preview_block(&mut chunks, x, ground + 1, z, block);
+            }
+        }
+    }
     let mut gpu_meshes = Vec::new();
     for z in -2..=2 {
         for x in -2..=2 {
@@ -315,31 +391,42 @@ async fn render_previews(
                     matches!(scene, PreviewScene::Cave { bounced: true, .. }),
                 );
                 let mesh = render::mesh_chunk_lit(chunk, &light, 0);
-                if mesh.indices.is_empty() {
+                if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                     continue;
                 }
-                let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("preview vertices"),
-                    contents: bytemuck::cast_slice(&mesh.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("preview indices"),
-                    contents: bytemuck::cast_slice(&mesh.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
-                gpu_meshes.push((vertices, indices, mesh.indices.len() as u32));
+                let upload = |vertices: &[f32], indices: &[u32]| {
+                    if indices.is_empty() {
+                        return None;
+                    }
+                    Some((
+                        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("preview vertices"),
+                            contents: bytemuck::cast_slice(vertices),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        }),
+                        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("preview indices"),
+                            contents: bytemuck::cast_slice(indices),
+                            usage: wgpu::BufferUsages::INDEX,
+                        }),
+                        indices.len() as u32,
+                    ))
+                };
+                gpu_meshes.push((
+                    upload(&mesh.vertices, &mesh.indices),
+                    upload(&mesh.cutout_vertices, &mesh.cutout_indices),
+                ));
             }
         }
     }
 
     let drop_gpu_mesh = if let PreviewScene::Drops(phase) = scene {
-        let items: Vec<_> = [world::GRASS, world::STONE, world::GLOWSTONE]
+        let items: Vec<_> = [world::RED_FLOWER, world::STONE, world::GLOWSTONE, SEEDS]
             .into_iter()
             .enumerate()
-            .map(|(index, block)| DroppedItem {
+            .map(|(index, item)| DroppedItem {
                 id: index as u64 + 1,
-                block,
+                item,
                 count: 1,
                 position: [
                     target_xz.0 as f32 + index as f32 - 0.5,
@@ -365,18 +452,29 @@ async fn render_previews(
             }
         };
         let visuals = animator.visuals(moment, camera_position - Vec3::Y * 1.6);
-        let (vertices, indices) = render::mesh_dropped_items(&visuals);
-        let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("preview drops vertices"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("preview drops indices"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        Some((vertex, index, indices.len() as u32))
+        let meshes = render::mesh_dropped_items(&visuals);
+        let upload = |vertices: &[f32], indices: &[u32]| {
+            if indices.is_empty() {
+                return None;
+            }
+            Some((
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("preview drops vertices"),
+                    contents: bytemuck::cast_slice(vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                }),
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("preview drops indices"),
+                    contents: bytemuck::cast_slice(indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                }),
+                indices.len() as u32,
+            ))
+        };
+        Some((
+            upload(&meshes.opaque_vertices, &meshes.opaque_indices),
+            upload(&meshes.cutout_vertices, &meshes.cutout_indices),
+        ))
     } else {
         None
     };
@@ -500,12 +598,31 @@ async fn render_previews(
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
             pass.set_bind_group(1, &texture_group, &[]);
-            for (vertices, indices, count) in &gpu_meshes {
+            for (opaque, _) in &gpu_meshes {
+                if let Some((vertices, indices, count)) = opaque {
+                    pass.set_vertex_buffer(0, vertices.slice(..));
+                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..*count, 0, 0..1);
+                }
+            }
+            if let Some(Some((vertices, indices, count))) =
+                drop_gpu_mesh.as_ref().map(|mesh| &mesh.0)
+            {
                 pass.set_vertex_buffer(0, vertices.slice(..));
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
-            if let Some((vertices, indices, count)) = &drop_gpu_mesh {
+            pass.set_pipeline(&cutout_pipeline);
+            for (_, cutout) in &gpu_meshes {
+                if let Some((vertices, indices, count)) = cutout {
+                    pass.set_vertex_buffer(0, vertices.slice(..));
+                    pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..*count, 0, 0..1);
+                }
+            }
+            if let Some(Some((vertices, indices, count))) =
+                drop_gpu_mesh.as_ref().map(|mesh| &mesh.1)
+            {
                 pass.set_vertex_buffer(0, vertices.slice(..));
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..*count, 0, 0..1);
@@ -600,7 +717,7 @@ async fn render_previews(
 
 fn sample_inventory() -> [Option<Stack>; SLOTS] {
     let mut slots = [None; SLOTS];
-    for (index, block, count) in [
+    for (index, item, count) in [
         (0, 1, 128),
         (1, 2, 73),
         (2, 3, 64),
@@ -614,7 +731,7 @@ fn sample_inventory() -> [Option<Stack>; SLOTS] {
         (20, 4, 7),
         (29, 6, 128),
     ] {
-        slots[index] = Some(Stack { block, count });
+        slots[index] = Some(Stack { item, count });
     }
     slots
 }

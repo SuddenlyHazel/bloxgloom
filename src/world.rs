@@ -9,8 +9,9 @@ use crate::storage::{SavedEdits, Storage};
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 pub const MAX_TERRAIN_HEIGHT: i32 = 64;
+pub const MAX_GENERATED_HEIGHT: i32 = MAX_TERRAIN_HEIGHT + 10;
 pub const BEDROCK_Y: i32 = -64;
-pub const TERRAIN_GENERATOR_VERSION: u16 = 3;
+pub const TERRAIN_GENERATOR_VERSION: u16 = 4;
 pub type BlockId = u8;
 pub const AIR: BlockId = 0;
 pub const GRASS: BlockId = 1;
@@ -21,7 +22,47 @@ pub const SNOW: BlockId = 5;
 pub const MOSS: BlockId = 6;
 pub const GRAVEL: BlockId = 7;
 pub const GLOWSTONE: BlockId = 8;
-pub const MAX_BLOCK: BlockId = GLOWSTONE;
+pub const WOOD: BlockId = 9;
+pub const LEAVES: BlockId = 10;
+pub const RED_FLOWER: BlockId = 11;
+pub const YELLOW_FLOWER: BlockId = 12;
+pub const BLUE_FLOWER: BlockId = 13;
+pub const FERN: BlockId = 14;
+pub const TALL_GRASS: BlockId = 15;
+pub const MAX_BLOCK: BlockId = TALL_GRASS;
+
+#[inline]
+pub const fn is_plant(block: BlockId) -> bool {
+    matches!(
+        block,
+        RED_FLOWER | YELLOW_FLOWER | BLUE_FLOWER | FERN | TALL_GRASS
+    )
+}
+
+#[inline]
+pub const fn is_cutout(block: BlockId) -> bool {
+    is_plant(block) || block == LEAVES
+}
+
+#[inline]
+pub const fn is_opaque(block: BlockId) -> bool {
+    block != AIR && !is_cutout(block)
+}
+
+#[inline]
+pub const fn is_solid(block: BlockId) -> bool {
+    block != AIR && !is_plant(block)
+}
+
+#[inline]
+pub const fn is_replaceable(block: BlockId) -> bool {
+    block == AIR || is_plant(block)
+}
+
+#[inline]
+pub const fn supports_plant(block: BlockId) -> bool {
+    matches!(block, GRASS | DIRT | MOSS)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ChunkKey {
@@ -94,7 +135,7 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
             blocks,
         };
     }
-    if bottom > i64::from(MAX_TERRAIN_HEIGHT) {
+    if bottom > i64::from(MAX_GENERATED_HEIGHT) {
         return Chunk {
             key,
             version: 0,
@@ -121,6 +162,7 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
             }
         }
     }
+    decorate_chunk(key, seed, &mut blocks, &mut patterns);
     Chunk {
         key,
         version: 0,
@@ -129,7 +171,188 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
 }
 
 fn generated_block(x: i64, y: i64, z: i64, seed: u64) -> BlockId {
-    generated_block_in_column(x, y, z, terrain_column(x, z, seed), seed)
+    let column = terrain_column(x, z, seed);
+    let ground = generated_block_in_column(x, y, z, column, seed);
+    if ground != AIR {
+        return ground;
+    }
+    if let Some(tree) = tree_block_at(x, y, z, seed) {
+        return tree;
+    }
+    if y == column.height + 1 {
+        let soil = generated_block_in_column(x, column.height, z, column, seed);
+        return ground_plant(x, z, seed, column.biome, soil);
+    }
+    AIR
+}
+
+const TREE_CELL: i64 = 16;
+const TREE_RADIUS: i64 = 3;
+
+#[derive(Clone, Copy)]
+struct Tree {
+    x: i64,
+    z: i64,
+    ground_y: i64,
+    trunk_top: i64,
+}
+
+fn tree_anchor(cell_x: i64, cell_z: i64, seed: u64) -> Option<Tree> {
+    let hash = lattice_hash(seed ^ 0x906f_89ad, cell_x, 0, cell_z);
+    let x = cell_x * TREE_CELL + 2 + ((hash >> 8) % 13) as i64;
+    let z = cell_z * TREE_CELL + 2 + ((hash >> 16) % 13) as i64;
+    if x.abs() <= 14 && z.abs() <= 14 {
+        return None;
+    }
+    let column = terrain_column(x, z, seed);
+    let frequency = match column.biome {
+        Biome::Forest => 380,
+        Biome::Plains => 45,
+        _ => 0,
+    };
+    if hash % 1000 >= frequency
+        || !supports_plant(generated_block_in_column(x, column.height, z, column, seed))
+    {
+        return None;
+    }
+    Some(Tree {
+        x,
+        z,
+        ground_y: column.height,
+        trunk_top: column.height + 5 + ((hash >> 28) % 3) as i64,
+    })
+}
+
+fn tree_piece(tree: Tree, x: i64, y: i64, z: i64) -> Option<BlockId> {
+    let dx = (x - tree.x).abs();
+    let dz = (z - tree.z).abs();
+    if dx == 0 && dz == 0 && y > tree.ground_y && y <= tree.trunk_top {
+        return Some(WOOD);
+    }
+    let layer = (y - tree.trunk_top).abs();
+    let radius = match layer {
+        0 => 3,
+        1 => 2,
+        2 => 1,
+        _ => return None,
+    };
+    (dx <= radius && dz <= radius && dx + dz <= radius + 1).then_some(LEAVES)
+}
+
+fn tree_block_at(x: i64, y: i64, z: i64, seed: u64) -> Option<BlockId> {
+    let mut leaf = false;
+    for cz in (z - TREE_RADIUS).div_euclid(TREE_CELL)..=(z + TREE_RADIUS).div_euclid(TREE_CELL) {
+        for cx in (x - TREE_RADIUS).div_euclid(TREE_CELL)..=(x + TREE_RADIUS).div_euclid(TREE_CELL)
+        {
+            if let Some(tree) = tree_anchor(cx, cz, seed) {
+                match tree_piece(tree, x, y, z) {
+                    Some(WOOD) => return Some(WOOD),
+                    Some(LEAVES) => leaf = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    leaf.then_some(LEAVES)
+}
+
+fn ground_plant(x: i64, z: i64, seed: u64, biome: Biome, soil: BlockId) -> BlockId {
+    if !supports_plant(soil) || (x.abs() <= 12 && z.abs() <= 12) {
+        return AIR;
+    }
+    let cluster = noise2(x, z, 19, seed ^ 0x36f9_91cb);
+    let hash = lattice_hash(seed ^ 0xc483_f4a2, x, 0, z);
+    let roll = hash % 1000;
+    match biome {
+        Biome::Forest if cluster > -0.3 => match roll {
+            0..=129 => FERN,
+            130..=199 => TALL_GRASS,
+            200..=214 => BLUE_FLOWER,
+            _ => AIR,
+        },
+        Biome::Plains if cluster > -0.15 => match roll {
+            0..=199 => TALL_GRASS,
+            200..=224 => RED_FLOWER,
+            225..=249 => YELLOW_FLOWER,
+            250..=269 => BLUE_FLOWER,
+            _ => AIR,
+        },
+        _ => AIR,
+    }
+}
+
+fn decorate_chunk(
+    key: ChunkKey,
+    seed: u64,
+    blocks: &mut [BlockId],
+    patterns: &mut HashMap<(i64, i64), [u8; 64]>,
+) {
+    let first_x = i64::from(key.x) * CHUNK_SIZE as i64;
+    let first_y = i64::from(key.y) * CHUNK_SIZE as i64;
+    let first_z = i64::from(key.z) * CHUNK_SIZE as i64;
+    let last_x = first_x + CHUNK_SIZE as i64 - 1;
+    let last_z = first_z + CHUNK_SIZE as i64 - 1;
+    for cz in
+        (first_z - TREE_RADIUS).div_euclid(TREE_CELL)..=(last_z + TREE_RADIUS).div_euclid(TREE_CELL)
+    {
+        for cx in (first_x - TREE_RADIUS).div_euclid(TREE_CELL)
+            ..=(last_x + TREE_RADIUS).div_euclid(TREE_CELL)
+        {
+            let Some(tree) = tree_anchor(cx, cz, seed) else {
+                continue;
+            };
+            for z in (tree.z - TREE_RADIUS).max(first_z)..=(tree.z + TREE_RADIUS).min(last_z) {
+                for x in (tree.x - TREE_RADIUS).max(first_x)..=(tree.x + TREE_RADIUS).min(last_x) {
+                    for y in (tree.ground_y + 1).max(first_y)
+                        ..=(tree.trunk_top + 2).min(first_y + CHUNK_SIZE as i64 - 1)
+                    {
+                        if let Some(piece) = tree_piece(tree, x, y, z) {
+                            let local = [
+                                (x - first_x) as usize,
+                                (y - first_y) as usize,
+                                (z - first_z) as usize,
+                            ];
+                            let at = Chunk::index(local).unwrap();
+                            if blocks[at] == AIR || (piece == WOOD && blocks[at] == LEAVES) {
+                                blocks[at] = piece;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for z in 0..CHUNK_SIZE {
+        for x in 0..CHUNK_SIZE {
+            let world_x = first_x + x as i64;
+            let world_z = first_z + z as i64;
+            let column = terrain_column(world_x, world_z, seed);
+            let world_y = column.height + 1;
+            if !(first_y..first_y + CHUNK_SIZE as i64).contains(&world_y) {
+                continue;
+            }
+            let at = Chunk::index([x, (world_y - first_y) as usize, z]).unwrap();
+            if blocks[at] == AIR {
+                let pattern = surface_pattern(world_x, world_z, seed, patterns);
+                let soil = generated_block_with_pattern(
+                    world_x,
+                    column.height,
+                    world_z,
+                    column,
+                    pattern,
+                    seed,
+                );
+                blocks[at] = ground_plant(world_x, world_z, seed, column.biome, soil);
+            }
+        }
+    }
+}
+
+fn lattice_hash(seed: u64, x: i64, y: i64, z: i64) -> u64 {
+    mix(seed
+        ^ (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (y as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
+        ^ (z as u64).wrapping_mul(0x94d0_49bb_1331_11eb))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -400,10 +623,7 @@ fn noise3(x: i64, y: i64, z: i64, scale: i64, seed: u64) -> f64 {
 }
 
 fn lattice(seed: u64, x: i64, y: i64, z: i64) -> f64 {
-    let hash = mix(seed
-        ^ (x as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
-        ^ (y as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
-        ^ (z as u64).wrapping_mul(0x94d0_49bb_1331_11eb));
+    let hash = lattice_hash(seed, x, y, z);
     ((hash >> 40) as f64 / 8_388_607.5) - 1.0
 }
 

@@ -1,7 +1,7 @@
 //! Bounded world drop snapshots and deterministic pickup candidates.
 use crate::inventory::STACK_LIMIT;
+use crate::items::valid_item;
 use crate::protocol::DroppedItem;
-use crate::world::MAX_BLOCK;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -84,7 +84,7 @@ impl Drops {
         for record in bytes[HEADER..checksum_at].chunks_exact(RECORD) {
             let item = DroppedItem {
                 id: u64::from_le_bytes(record[0..8].try_into().unwrap()),
-                block: record[8],
+                item: record[8],
                 count: u16::from_le_bytes(record[9..11].try_into().unwrap()),
                 position: [
                     f32::from_le_bytes(record[11..15].try_into().unwrap()),
@@ -96,7 +96,7 @@ impl Drops {
             let born = u64::from_le_bytes(record[23..31].try_into().unwrap());
             let delay = u16::from_le_bytes(record[31..33].try_into().unwrap());
             if item.id == 0
-                || !(1..=MAX_BLOCK).contains(&item.block)
+                || !valid_item(item.item)
                 || !(1..=STACK_LIMIT).contains(&item.count)
                 || item.position.iter().any(|n| !n.is_finite())
             {
@@ -146,7 +146,7 @@ impl Drops {
         for entry in entries {
             let item = entry.item;
             bytes.extend(item.id.to_le_bytes());
-            bytes.push(item.block);
+            bytes.push(item.item);
             bytes.extend(item.count.to_le_bytes());
             for n in item.position {
                 bytes.extend(n.to_le_bytes());
@@ -185,13 +185,13 @@ impl Drops {
     pub(super) fn spawn(
         &mut self,
         position: [f32; 3],
-        block: u8,
+        item: u8,
         mut count: u16,
         pickup_delay: Duration,
     ) {
         while count > 0 {
             if let Some(entry) = self.entries.values_mut().find(|entry| {
-                entry.item.block == block
+                entry.item.item == item
                     && entry.item.count < STACK_LIMIT
                     && distance_sq(entry.item.position, position) < 1.0
             }) {
@@ -211,7 +211,7 @@ impl Drops {
                 Entry {
                     item: DroppedItem {
                         id,
-                        block,
+                        item,
                         count: taken,
                         position,
                         age_ms: 0,

@@ -22,25 +22,53 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
         face: Face::NegX,
     };
     assert_eq!(
-        edit_for_hit(hit, true, 1, 2),
-        ClientMessage::Edit {
+        edit_for_hit(hit, true, Some(1), 2),
+        Some(ClientMessage::Edit {
             x: 1,
             y: 3,
             z: 4,
             block: 1,
             slot: 2,
-        }
+        })
     );
     assert_eq!(
-        edit_for_hit(hit, false, 1, 2),
-        ClientMessage::Edit {
+        edit_for_hit(hit, false, Some(1), 2),
+        Some(ClientMessage::Edit {
             x: 2,
             y: 3,
             z: 4,
             block: 0,
             slot: 2,
-        }
+        })
     );
+}
+
+#[test]
+fn placing_on_a_replaceable_flower_targets_its_cell() {
+    let hit = Hit {
+        block: [2, 3, 4],
+        adjacent: [2, 4, 4],
+        block_id: crate::world::RED_FLOWER,
+        distance: 2.5,
+        face: Face::PosY,
+    };
+    assert_eq!(
+        edit_for_hit(hit, true, Some(crate::world::WOOD), 0),
+        Some(ClientMessage::Edit {
+            x: 2,
+            y: 3,
+            z: 4,
+            block: crate::world::WOOD,
+            slot: 0,
+        })
+    );
+    assert_eq!(edit_for_hit(hit, true, Some(crate::items::SEEDS), 0), None);
+    assert_eq!(
+        edit_for_hit(hit, true, Some(crate::items::SAPLING), 0),
+        None
+    );
+    assert_eq!(edit_for_hit(hit, true, Some(crate::items::STICK), 0), None);
+    assert!(edit_for_hit(hit, false, Some(crate::items::SEEDS), 0).is_some());
 }
 
 #[test]

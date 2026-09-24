@@ -116,6 +116,107 @@ fn spawn_is_above_terrain_with_player_headroom() {
 }
 
 #[test]
+fn planted_flower_has_no_collision_and_falls_with_its_soil() {
+    use crate::world::{RED_FLOWER, YELLOW_FLOWER};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path =
+        std::env::temp_dir().join(format!("bloxgloom-plants-{}-{stamp}", std::process::id()));
+    let mut world = World::new(7, path.clone()).unwrap();
+    let position = spawn_position(&mut world).unwrap();
+    let y = position[1] as i32;
+    assert!(supports_plant(world.get_block(0, y - 1, 0).unwrap()));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(16);
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack {
+        item: RED_FLOWER,
+        count: 1,
+    });
+    let mut state = State {
+        world,
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::open(&path).unwrap(),
+        seed: 7,
+        clients: HashMap::from([(
+            1,
+            Client {
+                profile: 42,
+                inventory,
+                last_drops_revision: u64::MAX,
+                last_drop_anchor: [i32::MAX; 3],
+                sender,
+                socket,
+                sent: HashSet::from([world_to_chunk(0, y, 0).0, world_to_chunk(0, y - 1, 0).0]),
+                center: world_to_chunk(0, y, 0).0,
+                radius: DEFAULT_VIEW,
+                position,
+                last_move: Instant::now(),
+                last_seq: 0,
+            },
+        )]),
+        next_id: 2,
+    };
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y,
+            z: 0,
+            block: RED_FLOWER,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, y, 0).unwrap(), RED_FLOWER);
+    assert!(!collides(&mut state.world, position).unwrap());
+    assert_eq!(state.clients[&1].inventory.slots[0], None);
+    state.clients.get_mut(&1).unwrap().inventory.slots[0] = Some(crate::inventory::Stack {
+        item: YELLOW_FLOWER,
+        count: 1,
+    });
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y,
+            z: 0,
+            block: YELLOW_FLOWER,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, y, 0).unwrap(), YELLOW_FLOWER);
+    assert_eq!(state.clients[&1].inventory.slots[0], None);
+    assert_eq!(state.drops.nearby(position).len(), 1);
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y: y - 1,
+            z: 0,
+            block: AIR,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, y, 0).unwrap(), AIR);
+    assert_eq!(state.drops.nearby(position).len(), 3);
+    assert!(receiver.try_iter().any(|message| matches!(message, ServerMessage::Delta { y: local_y, block: AIR, .. } if local_y as usize == world_to_chunk(0, y, 0).1[1])));
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -193,7 +294,7 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
     assert_eq!(
         state.clients[&1].inventory.slots[0],
         Some(crate::inventory::Stack {
-            block: original,
+            item: original,
             count: 1
         })
     );
@@ -225,12 +326,12 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
     let mut almost_full = Inventory::default();
     for slot in &mut almost_full.slots {
         *slot = Some(crate::inventory::Stack {
-            block: other,
+            item: other,
             count: crate::inventory::STACK_LIMIT,
         });
     }
     almost_full.slots[0] = Some(crate::inventory::Stack {
-        block: original,
+        item: original,
         count: 127,
     });
     state.clients.get_mut(&1).unwrap().inventory = almost_full;
@@ -244,6 +345,94 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
         message,
         ServerMessage::Pickups { items } if items.len() == 1 && items[0].count == 1
     )));
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn non_placeable_foliage_loot_is_picked_up_and_persisted() {
+    use crate::items::{SAPLING, SEEDS, STICK};
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-foliage-loot-{}-{stamp}",
+        std::process::id()
+    ));
+    let mut world = World::new(7, path.clone()).unwrap();
+    let position = spawn_position(&mut world).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(16);
+    let mut state = State {
+        world,
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::open(&path).unwrap(),
+        seed: 7,
+        clients: HashMap::from([(
+            1,
+            Client {
+                profile: 42,
+                inventory: Inventory::default(),
+                last_drops_revision: u64::MAX,
+                last_drop_anchor: [i32::MAX; 3],
+                sender,
+                socket,
+                sent: HashSet::from([world_to_chunk(0, position[1] as i32, 0).0]),
+                center: world_to_chunk(0, position[1] as i32, 0).0,
+                radius: DEFAULT_VIEW,
+                position,
+                last_move: Instant::now(),
+                last_seq: 0,
+            },
+        )]),
+        next_id: 2,
+    };
+    for item in [SEEDS, SAPLING, STICK] {
+        state.drops.spawn(position, item, 1, Duration::ZERO);
+    }
+    state.drops.save().unwrap();
+    assert_eq!(Drops::open(&path).unwrap().nearby(position).len(), 3);
+    collect_nearby(&mut state, 1).unwrap();
+    assert!(state.drops.nearby(position).is_empty());
+    let inventory = &state.clients[&1].inventory;
+    for item in [SEEDS, SAPLING, STICK] {
+        assert!(
+            inventory
+                .slots
+                .iter()
+                .flatten()
+                .any(|stack| stack.item == item)
+        );
+    }
+    assert_eq!(state.inventory_store.load(42).unwrap(), *inventory);
+    assert!(receiver.try_iter().any(|message| matches!(
+        message,
+        ServerMessage::Pickups { items } if items.len() == 3
+    )));
+    let feet_y = position[1] as i32;
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y: feet_y,
+            z: 0,
+            block: SEEDS,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, feet_y, 0).unwrap(), AIR);
+    assert!(
+        receiver
+            .try_iter()
+            .any(|message| matches!(message, ServerMessage::EditRejected { .. }))
+    );
     drop(peer);
     drop(state);
     fs::remove_dir_all(path).unwrap();

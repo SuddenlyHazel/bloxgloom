@@ -1,7 +1,9 @@
 use glam::Vec3;
 
+use crate::items::{SAPLING, SEEDS, STICK};
 use crate::world::{
-    CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
+    CHUNK_SIZE, Chunk, ChunkKey, DIRT, FERN, GLOWSTONE, GRASS, GRAVEL, LEAVES, MOSS, RED_FLOWER,
+    SAND, SNOW, STONE, TALL_GRASS, WOOD,
 };
 
 use super::*;
@@ -69,6 +71,15 @@ fn grass_uses_top_side_and_underlying_dirt_tiles() {
     assert_eq!(material::material_layer(MOSS, 1, 1), 6);
     assert_eq!(material::material_layer(GRAVEL, 1, 1), 7);
     assert_eq!(material::material_layer(GLOWSTONE, 1, 1), 8);
+    assert_eq!(material::material_layer(WOOD, 0, 1), 9);
+    assert_eq!(material::material_layer(WOOD, 1, 1), 10);
+    assert_eq!(material::material_layer(LEAVES, 1, 1), 11);
+    assert_eq!(material::material_layer(RED_FLOWER, 1, 1), 12);
+    assert_eq!(material::material_layer(FERN, 1, 1), 15);
+    assert_eq!(material::material_layer(TALL_GRASS, 1, 1), 16);
+    assert_eq!(material::material_layer(SEEDS, 1, 1), 17);
+    assert_eq!(material::material_layer(SAPLING, 1, 1), 18);
+    assert_eq!(material::material_layer(STICK, 1, 1), 19);
 }
 
 #[test]
@@ -114,7 +125,7 @@ fn greedy_quads_repeat_material_once_per_voxel() {
 }
 
 #[test]
-fn material_mips_are_complete_and_opaque() {
+fn material_mips_preserve_opaque_and_cutout_layers() {
     let mips = material::material_mips();
     assert_eq!(mips.len(), material::TEXTURE_MIPS as usize);
     for (level, pixels) in mips.iter().enumerate() {
@@ -123,12 +134,31 @@ fn material_mips_are_complete_and_opaque() {
             pixels.len(),
             (size * size * material::TEXTURE_LAYERS * 4) as usize
         );
-        assert!(pixels.chunks_exact(4).all(|pixel| pixel[3] == 255));
+        let layer_bytes = (size * size * 4) as usize;
+        assert!(
+            pixels[..11 * layer_bytes]
+                .chunks_exact(4)
+                .all(|pixel| pixel[3] == 255)
+        );
     }
     assert_ne!(
         &mips[0][..3],
         &mips[0][(material::TEXTURE_SIZE * material::TEXTURE_SIZE * 3 * 4) as usize..][..3]
     );
+    let layer_bytes = (material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize;
+    for layer in 11..material::TEXTURE_LAYERS as usize {
+        let mut alpha = mips[0][layer * layer_bytes..(layer + 1) * layer_bytes]
+            .chunks_exact(4)
+            .map(|pixel| pixel[3]);
+        assert!(
+            alpha.clone().any(|value| value == 0),
+            "layer {layer} needs transparent texels"
+        );
+        assert!(
+            alpha.any(|value| value >= 128),
+            "layer {layer} needs visible texels"
+        );
+    }
 }
 
 #[test]
@@ -136,7 +166,7 @@ fn material_edges_tile_without_seams() {
     let tiles = material::material_tiles();
     let size = material::TEXTURE_SIZE as usize;
     let layer_bytes = size * size * 4;
-    for layer in 0..material::TEXTURE_LAYERS as usize {
+    for layer in 0..11 {
         let pixels = &tiles[layer * layer_bytes..(layer + 1) * layer_bytes];
         for y in 0..size {
             let left = &pixels[y * size * 4..y * size * 4 + 3];
@@ -151,6 +181,40 @@ fn material_edges_tile_without_seams() {
             }
         }
     }
+}
+
+#[test]
+fn plants_have_two_crossed_cutout_quads_and_do_not_hide_ground() {
+    let mut chunk = Chunk {
+        key: ChunkKey { x: 0, y: 0, z: 0 },
+        version: 0,
+        blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+    };
+    chunk.blocks[Chunk::index([3, 2, 4]).unwrap()] = GRASS;
+    chunk.blocks[Chunk::index([3, 3, 4]).unwrap()] = RED_FLOWER;
+    let mesh = mesh_chunk(&chunk);
+    assert_eq!(mesh.indices.len(), 36);
+    assert_eq!(mesh.cutout_indices.len(), 12);
+    assert_eq!(mesh.cutout_vertices.len(), 8 * VERTEX_FLOATS);
+    assert!(
+        mesh.cutout_vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .all(|vertex| vertex[8] == 12.0)
+    );
+}
+
+#[test]
+fn adjacent_leaves_skip_interior_cutout_faces() {
+    let mut chunk = Chunk {
+        key: ChunkKey { x: 0, y: 0, z: 0 },
+        version: 0,
+        blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+    };
+    chunk.blocks[Chunk::index([3, 2, 4]).unwrap()] = LEAVES;
+    chunk.blocks[Chunk::index([4, 2, 4]).unwrap()] = LEAVES;
+    let mesh = mesh_chunk(&chunk);
+    assert!(mesh.indices.is_empty());
+    assert_eq!(mesh.cutout_indices.len(), 60);
 }
 
 #[test]

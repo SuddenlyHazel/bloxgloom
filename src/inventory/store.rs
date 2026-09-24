@@ -53,9 +53,9 @@ impl InventoryStore {
             ..Inventory::default()
         };
         for (index, entry) in bytes[14..checksum_at].chunks_exact(3).enumerate() {
-            let (block, count) = (entry[0], u16::from_le_bytes([entry[1], entry[2]]));
-            if block != 0 || count != 0 {
-                let stack = Stack { block, count };
+            let (item, count) = (entry[0], u16::from_le_bytes([entry[1], entry[2]]));
+            if item != 0 || count != 0 {
+                let stack = Stack { item, count };
                 if !stack.valid() {
                     return Err(invalid("invalid inventory stack"));
                 }
@@ -78,7 +78,7 @@ impl InventoryStore {
                 if !stack.valid() {
                     return Err(invalid("invalid inventory stack"));
                 }
-                bytes.push(stack.block);
+                bytes.push(stack.item);
                 bytes.extend(stack.count.to_le_bytes());
             } else {
                 bytes.extend([0, 0, 0]);
@@ -131,6 +131,7 @@ mod tests {
         let store = InventoryStore::new(&root).unwrap();
         let mut inventory = Inventory::default();
         inventory.insert(3, 129);
+        inventory.insert(crate::items::SAPLING, 2);
         store.save(42, &inventory).unwrap();
         assert_eq!(store.load(42).unwrap(), inventory);
         let path = store.path(42);

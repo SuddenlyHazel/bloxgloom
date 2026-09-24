@@ -25,15 +25,29 @@ const MAX_CHUNKS: usize = 512;
 pub(crate) mod drops;
 use drops::DropAnimator;
 
-fn edit_for_hit(hit: Hit, place: bool, selected_block: u8, slot: u8) -> ClientMessage {
-    let [x, y, z] = if place { hit.adjacent } else { hit.block };
-    ClientMessage::Edit {
+fn edit_for_hit(
+    hit: Hit,
+    place: bool,
+    selected_item: Option<crate::items::ItemId>,
+    slot: u8,
+) -> Option<ClientMessage> {
+    let block = if place {
+        crate::items::placeable_block(selected_item?)?
+    } else {
+        0
+    };
+    let [x, y, z] = if place && !crate::world::is_replaceable(hit.block_id) {
+        hit.adjacent
+    } else {
+        hit.block
+    };
+    Some(ClientMessage::Edit {
         x,
         y,
         z,
-        block: if place { selected_block } else { 0 },
+        block,
         slot,
-    }
+    })
 }
 
 fn escape_screen(screen: UiScreen) -> UiScreen {
@@ -684,18 +698,16 @@ impl ClientApp {
             return;
         }
         if let Some(hit) = self.aimed_block() {
-            let block =
-                self.inventory.slots[self.config.selected_slot].map_or(0, |stack| stack.block);
-            if place && block == 0 {
-                self.show_status("Selected slot is empty");
-                return;
+            let item = self.inventory.slots[self.config.selected_slot].map(|stack| stack.item);
+            if let Some(command) = edit_for_hit(hit, place, item, self.config.selected_slot as u8) {
+                self.queue_command(command);
+            } else {
+                self.show_status(if item.is_some() {
+                    "Selected item cannot be placed"
+                } else {
+                    "Selected slot is empty"
+                });
             }
-            self.queue_command(edit_for_hit(
-                hit,
-                place,
-                block,
-                self.config.selected_slot as u8,
-            ));
         }
     }
 

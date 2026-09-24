@@ -1,6 +1,7 @@
 mod client;
 mod config;
 mod inventory;
+mod items;
 mod lighting;
 mod preview;
 mod protocol;
@@ -22,12 +23,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {
-            let (addr, _server) = server::start_local_server(0xB10C_6100, "world-v3".into())?;
+            let (addr, _server) = server::start_local_server(0xB10C_6100, "world-v4".into())?;
             client::run_client(&addr.to_string())?;
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
-            let save_dir = args.next().unwrap_or_else(|| "world-v3".to_string());
+            let save_dir = args.next().unwrap_or_else(|| "world-v4".to_string());
             server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
         }
         Some("client") => {
@@ -66,6 +67,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_lighting_previews(std::path::Path::new(&directory))?;
             println!("wrote lighting previews to {directory}");
+        }
+        Some("vegetation-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "vegetation-preview.png".to_string());
+            if args.next().is_some() {
+                return Err("usage: vegetation-preview [output.png]".into());
+            }
+            preview::render_vegetation_preview(std::path::Path::new(&path))?;
+            println!("wrote {path}");
         }
         Some("drop-preview") => {
             let path = args

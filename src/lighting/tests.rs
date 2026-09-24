@@ -1,4 +1,5 @@
 use super::*;
+use crate::world::{AIR, LEAVES, RED_FLOWER};
 
 fn sealed_neighborhood(key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
     let mut known = HashMap::new();
@@ -113,4 +114,24 @@ fn emitted_light_crosses_chunk_seams_and_removal_darkens_both_sides() {
     assert_eq!(dark.face([2, 5, 8], 1, 1).glow, 0);
     let bounced_dark = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
     assert_eq!(bounced_dark.face([2, 5, 8], 1, 1).bounce, [0; 3]);
+}
+
+#[test]
+fn plants_and_leaves_transmit_daylight() {
+    let key = ChunkKey { x: 0, y: 2, z: 0 };
+    let mut known = sealed_neighborhood(key);
+    for y in 0..CHUNK_SIZE {
+        let above = key_offset(key, 0, 1, 0).unwrap();
+        Arc::make_mut(known.get_mut(&above).unwrap()).blocks[Chunk::index([8, y, 8]).unwrap()] =
+            AIR;
+        Arc::make_mut(known.get_mut(&key).unwrap()).blocks[Chunk::index([8, y, 8]).unwrap()] = AIR;
+    }
+    let center = Arc::make_mut(known.get_mut(&key).unwrap());
+    center.blocks[Chunk::index([8, 11, 8]).unwrap()] = LEAVES;
+    center.blocks[Chunk::index([8, 6, 8]).unwrap()] = RED_FLOWER;
+    let open = LightField::build(key, &known, 7);
+    assert_eq!(open.face([8, 4, 8], 1, 1).sky, 15);
+    Arc::make_mut(known.get_mut(&key).unwrap()).blocks[Chunk::index([8, 11, 8]).unwrap()] = WOOD;
+    let closed = LightField::build(key, &known, 7);
+    assert_eq!(closed.face([8, 4, 8], 1, 1).sky, 0);
 }

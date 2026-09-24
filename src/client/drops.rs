@@ -75,7 +75,7 @@ impl DropAnimator {
             let t = (now.duration_since(flight.started).as_secs_f32() / PICKUP).clamp(0.0, 1.0);
             let eased = t * t * (3.0 - 2.0 * t);
             result.push(VisualDrop {
-                block: flight.start.block,
+                item: flight.start.item,
                 center: flight.start.center.lerp(target, eased)
                     + Vec3::Y * (0.32 * (std::f32::consts::PI * t).sin()),
                 angle: flight.start.angle + t * 5.0,
@@ -94,7 +94,7 @@ fn live_visual(item: &DroppedItem, age: f32) -> VisualDrop {
         + 0.75 * (std::f32::consts::PI * pop).sin()
         + 0.07 * (age * 2.6 + phase).sin() * ease;
     VisualDrop {
-        block: item.block,
+        item: item.item,
         center: Vec3::from_array(item.position) + Vec3::Y * lift,
         angle: age * 2.1 + phase,
         scale: 0.76 + 0.24 * ease,
@@ -109,7 +109,7 @@ mod tests {
     fn item(age_ms: u32) -> DroppedItem {
         DroppedItem {
             id: 7,
-            block: 2,
+            item: 2,
             count: 4,
             position: [1.0, 2.0, 3.0],
             age_ms,

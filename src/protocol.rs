@@ -1,10 +1,11 @@
 //! Small, versioned, length-prefixed wire format shared by the client and server.
 use crate::inventory::{SLOTS, STACK_LIMIT, Stack};
+use crate::items::{ItemId, valid_item};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, MAX_BLOCK};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 4;
+const WIRE_VERSION: u8 = 5;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
@@ -52,7 +53,7 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DroppedItem {
     pub id: u64,
-    pub block: u8,
+    pub item: ItemId,
     pub count: u16,
     pub position: [f32; 3],
     /// Age at snapshot time; enough range for a stable hover phase until expiry.
@@ -169,6 +170,9 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
             block,
             slot,
         } => {
+            if *block > MAX_BLOCK {
+                return Err(invalid("invalid block type"));
+            }
             out.push(3);
             for n in [x, y, z] {
                 out.extend(n.to_le_bytes());
@@ -246,6 +250,9 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             if [*x, *y, *z].iter().any(|n| *n as usize >= CHUNK_SIZE) {
                 return Err(invalid("invalid local coordinate"));
             }
+            if *block > MAX_BLOCK {
+                return Err(invalid("invalid block type"));
+            }
             out.push(4);
             key(&mut out, *k);
             out.extend(version.to_le_bytes());
@@ -274,7 +281,7 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
                     if !stack.valid() {
                         return Err(invalid("invalid inventory stack"));
                     }
-                    out.push(stack.block);
+                    out.push(stack.item);
                     out.extend(stack.count.to_le_bytes());
                 } else {
                     out.extend([0, 0, 0]);
@@ -300,14 +307,14 @@ fn write_drop_items(out: &mut Vec<u8>, items: &[DroppedItem]) -> io::Result<()> 
     }
     out.extend((items.len() as u16).to_le_bytes());
     for item in items {
-        if !(1..=MAX_BLOCK).contains(&item.block)
+        if !valid_item(item.item)
             || !(1..=STACK_LIMIT).contains(&item.count)
             || item.position.iter().any(|n| !n.is_finite())
         {
             return Err(invalid("invalid dropped item"));
         }
         out.extend(item.id.to_le_bytes());
-        out.push(item.block);
+        out.push(item.item);
         out.extend(item.count.to_le_bytes());
         for n in item.position {
             out.extend(n.to_le_bytes());
@@ -399,13 +406,19 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
             dy: c.f32()?,
             dz: c.f32()?,
         },
-        3 => ClientMessage::Edit {
-            x: c.i32()?,
-            y: c.i32()?,
-            z: c.i32()?,
-            block: c.u8()?,
-            slot: c.u8()?,
-        },
+        3 => {
+            let (x, y, z, block, slot) = (c.i32()?, c.i32()?, c.i32()?, c.u8()?, c.u8()?);
+            if block > MAX_BLOCK {
+                return Err(invalid("invalid block type"));
+            }
+            ClientMessage::Edit {
+                x,
+                y,
+                z,
+                block,
+                slot,
+            }
+        }
         4 => ClientMessage::Resync { key: c.key()? },
         5 => ClientMessage::SetView { radius: c.u8()? },
         6 => ClientMessage::Ping { nonce: c.u64()? },
@@ -458,7 +471,7 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             let key = c.key()?;
             let version = c.u64()?;
             let (x, y, z, block) = (c.u8()?, c.u8()?, c.u8()?, c.u8()?);
-            if [x, y, z].iter().any(|n| *n as usize >= CHUNK_SIZE) {
+            if [x, y, z].iter().any(|n| *n as usize >= CHUNK_SIZE) || block > MAX_BLOCK {
                 return Err(invalid("invalid local coordinate"));
             }
             ServerMessage::Delta {
@@ -485,10 +498,10 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             let revision = c.u64()?;
             let mut slots = [None; SLOTS];
             for slot in &mut slots {
-                let block = c.u8()?;
+                let item = c.u8()?;
                 let count = c.u16()?;
-                if block != 0 || count != 0 {
-                    let stack = Stack { block, count };
+                if item != 0 || count != 0 {
+                    let stack = Stack { item, count };
                     if !stack.valid() {
                         return Err(invalid("invalid inventory stack"));
                     }
@@ -507,14 +520,12 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             for _ in 0..count {
                 let item = DroppedItem {
                     id: c.u64()?,
-                    block: c.u8()?,
+                    item: c.u8()?,
                     count: c.u16()?,
                     position: [c.f32()?, c.f32()?, c.f32()?],
                     age_ms: c.u32()?,
                 };
-                if !(1..=MAX_BLOCK).contains(&item.block)
-                    || !(1..=STACK_LIMIT).contains(&item.count)
-                {
+                if !valid_item(item.item) || !(1..=STACK_LIMIT).contains(&item.count) {
                     return Err(invalid("invalid dropped item"));
                 }
                 items.push(item);
@@ -530,14 +541,12 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             for _ in 0..count {
                 let item = DroppedItem {
                     id: c.u64()?,
-                    block: c.u8()?,
+                    item: c.u8()?,
                     count: c.u16()?,
                     position: [c.f32()?, c.f32()?, c.f32()?],
                     age_ms: c.u32()?,
                 };
-                if !(1..=MAX_BLOCK).contains(&item.block)
-                    || !(1..=STACK_LIMIT).contains(&item.count)
-                {
+                if !valid_item(item.item) || !(1..=STACK_LIMIT).contains(&item.count) {
                     return Err(invalid("invalid picked-up item"));
                 }
                 items.push(item);

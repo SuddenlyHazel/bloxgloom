@@ -135,6 +135,95 @@ fn terrain_is_deterministic_and_continuous_across_chunk_faces() {
 }
 
 #[test]
+fn broadleaf_crowns_cross_chunk_seams_and_match_edit_baseline() {
+    let seed = 0xB10C_6100;
+    let tree = (-20..=20)
+        .flat_map(|z| (-20..=20).map(move |x| (x, z)))
+        .filter_map(|(x, z)| tree_anchor(x, z, seed))
+        .find(|tree| tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        .expect("a tree crown should span a chunk seam");
+    let mut chunks = HashMap::new();
+    let mut leaves = 0;
+    let mut wood = 0;
+    for y in tree.ground_y + 1..=tree.trunk_top + 2 {
+        for z in tree.z - TREE_RADIUS..=tree.z + TREE_RADIUS {
+            for x in tree.x - TREE_RADIUS..=tree.x + TREE_RADIUS {
+                let (key, local) = world_to_chunk(x as i32, y as i32, z as i32);
+                let chunk = chunks
+                    .entry(key)
+                    .or_insert_with(|| generate_chunk(key, seed));
+                let block = chunk.block(local).unwrap();
+                assert_eq!(block, generated_block(x, y, z, seed), "at ({x}, {y}, {z})");
+                leaves += usize::from(block == LEAVES);
+                wood += usize::from(block == WOOD);
+            }
+        }
+    }
+    assert!(leaves > 20 && wood >= 5);
+
+    let path = test_dir();
+    let mut world = World::with_capacity(seed, path.clone(), 1).unwrap();
+    let x = tree.x as i32;
+    let y = (tree.trunk_top + 1) as i32;
+    let z = tree.z as i32;
+    let original = world.get_block(x, y, z).unwrap();
+    assert_eq!(original, LEAVES);
+    world.edit(x, y, z, AIR).unwrap();
+    world
+        .get_chunk(ChunkKey {
+            x: 100,
+            y: 0,
+            z: 100,
+        })
+        .unwrap();
+    assert_eq!(world.get_block(x, y, z).unwrap(), AIR);
+    drop(world);
+    let mut reopened = World::new(seed, path.clone()).unwrap();
+    assert_eq!(reopened.get_block(x, y, z).unwrap(), AIR);
+    reopened.edit(x, y, z, LEAVES).unwrap();
+    assert_eq!(reopened.get_block(x, y, z).unwrap(), LEAVES);
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn biome_plants_are_reproducible_and_non_solid() {
+    assert!(!is_opaque(LEAVES));
+    assert!(is_solid(LEAVES));
+    for plant in [RED_FLOWER, YELLOW_FLOWER, BLUE_FLOWER, FERN, TALL_GRASS] {
+        assert!(is_plant(plant));
+        assert!(is_cutout(plant));
+        assert!(!is_solid(plant));
+        assert!(!is_opaque(plant));
+        assert!(is_replaceable(plant));
+    }
+    let seed = 0xB10C_6100;
+    let mut seen = [false; 5];
+    for z in (-256..=256).step_by(4) {
+        for x in (-256..=256).step_by(4) {
+            let column = terrain_column(x, z, seed);
+            let y = column.height + 1;
+            let soil = generated_block_in_column(x, column.height, z, column, seed);
+            let candidate = ground_plant(x, z, seed, column.biome, soil);
+            if candidate == AIR || seen[(candidate - RED_FLOWER) as usize] {
+                continue;
+            }
+            let plant = generated_block(x, y, z, seed);
+            if is_plant(plant) {
+                let (key, local) = world_to_chunk(x as i32, y as i32, z as i32);
+                assert_eq!(generate_chunk(key, seed).block(local), Some(plant));
+                seen[(plant - RED_FLOWER) as usize] = true;
+                assert!(supports_plant(soil));
+                assert!(matches!(column.biome, Biome::Plains | Biome::Forest));
+            }
+        }
+        if seen.iter().all(|&present| present) {
+            break;
+        }
+    }
+    assert!(seen.into_iter().all(|present| present));
+}
+
+#[test]
 fn terrain_has_broad_variation_and_caves() {
     let seed = 0xB10C_6100;
     let mut min_height = i64::MAX;

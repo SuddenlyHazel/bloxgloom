@@ -1,5 +1,6 @@
 //! Exact grid traversal for selecting voxels with a ray.
 
+use crate::world::{self, TALL_GRASS};
 use glam::Vec3;
 
 /// The longest ray the client will cast. The server currently accepts edits
@@ -112,9 +113,14 @@ pub fn raycast(
     }
 
     let initial_block = sample(cell[0], cell[1], cell[2])?;
-    if initial_block != 0 {
+    if initial_block != 0 && !world::is_plant(initial_block) {
         let face = initial_face.unwrap_or_else(|| nearest_face(origin, cell));
         return make_hit(cell, initial_block, 0.0, face);
+    } else if world::is_plant(initial_block)
+        && let Some((distance, face)) = plant_intersection(origin, direction, cell, initial_block)
+        && distance <= reach
+    {
+        return make_hit(cell, initial_block, distance, face);
     }
 
     let mut step = [0_i32; 3];
@@ -155,10 +161,55 @@ pub fn raycast(
             positive_face(axis)
         };
         let block_id = sample(cell[0], cell[1], cell[2])?;
-        if block_id != 0 {
+        if block_id != 0 && !world::is_plant(block_id) {
             return make_hit(cell, block_id, distance, face);
+        } else if world::is_plant(block_id)
+            && let Some((plant_distance, plant_face)) =
+                plant_intersection(origin, direction, cell, block_id)
+            && plant_distance <= reach
+        {
+            return make_hit(cell, block_id, plant_distance, plant_face);
         }
     }
+}
+
+/// A narrow selectable center lets rays pass the edges of decorative plants.
+/// Their visual crossed quads remain easy to target near the stem.
+fn plant_intersection(
+    origin: [f64; 3],
+    direction: [f64; 3],
+    cell: [i32; 3],
+    block: u8,
+) -> Option<(f64, Face)> {
+    let margin = if block == TALL_GRASS { 0.35 } else { 0.22 };
+    let lower = [margin, 0.0, margin];
+    let upper = [1.0 - margin, 0.9, 1.0 - margin];
+    let mut enter = f64::NEG_INFINITY;
+    let mut leave = f64::INFINITY;
+    let mut face = Face::PosY;
+    for axis in 0..3 {
+        let min = f64::from(cell[axis]) + lower[axis];
+        let max = f64::from(cell[axis]) + upper[axis];
+        if direction[axis] == 0.0 {
+            if origin[axis] < min || origin[axis] > max {
+                return None;
+            }
+            continue;
+        }
+        let near = (min - origin[axis]) / direction[axis];
+        let far = (max - origin[axis]) / direction[axis];
+        let (near, far, near_face) = if near <= far {
+            (near, far, negative_face(axis))
+        } else {
+            (far, near, positive_face(axis))
+        };
+        if near > enter {
+            enter = near;
+            face = near_face;
+        }
+        leave = leave.min(far);
+    }
+    (leave >= enter && leave >= 0.0).then_some((enter.max(0.0), face))
 }
 
 fn make_hit(block: [i32; 3], block_id: u8, distance: f64, face: Face) -> Option<Hit> {
