@@ -42,8 +42,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_ui_previews(std::path::Path::new(&directory))?;
             println!("wrote UI previews to {directory}");
         }
+        Some("perf") => {
+            let steady_frames = args
+                .next()
+                .map(|value| value.parse::<usize>())
+                .transpose()?
+                .unwrap_or(preview::PERF_STEADY_FRAMES);
+            let radius = args
+                .next()
+                .map(|value| value.parse::<u8>())
+                .transpose()?
+                .unwrap_or(preview::PERF_RADIUS);
+            if args.next().is_some() {
+                return Err("usage: perf [steady-frames] [view-radius]".into());
+            }
+            preview::run_perf_benchmark(steady_frames, radius)?;
+        }
         Some(other) => {
-            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, `preview [output.png]`, or `ui-preview [output-dir]`").into());
+            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
         }
     }
     Ok(())
