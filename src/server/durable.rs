@@ -9,7 +9,8 @@ use super::checkpoint::{CheckpointReceipt, CheckpointSubmitError, CheckpointWrit
 use super::drops::{DropPlan, Drops};
 use super::effects::CellCoord;
 use super::entities::{
-    EntityCheckpointStore, EntityStore, EntityTypeRegistry, PreparedEntityBatch,
+    EntityCheckpointStore, EntityCommit, EntityId, EntityStore, EntityTypeRegistry,
+    PreparedEntityBatch,
 };
 use super::entity_checkpoint::{CheckpointTicket, EntityCheckpointMirror, MirrorPermit};
 use super::fire::{FireCheckpointStore, FireRecovered, FireSeed, FireTransaction};
@@ -19,8 +20,8 @@ use super::journal::{
 use super::simulation::TickId;
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{ClientMessage, DroppedItem};
-use crate::world::{BlockId, Chunk, ChunkKey, PreparedEdit, World};
-use std::collections::{HashMap, HashSet, VecDeque};
+use crate::world::{BlockId, ChunkKey, PreparedEdit, World};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::{self, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
@@ -65,6 +66,7 @@ pub(super) const MAX_DEFERRED_DURABLE_ACTIONS: usize = 256;
 pub(super) const MAX_DIRTY_CHECKPOINT_KEYS: usize = 1_024;
 pub(super) const MAX_DIRTY_CHECKPOINT_BYTES: usize = 128 * 1024 * 1024;
 const CHECKPOINT_QUEUE_CAPACITY: usize = 16;
+const CHECKPOINT_WORKERS: usize = 4;
 
 pub(super) struct Durability {
     catalog: Arc<crate::content::Catalog>,
@@ -77,10 +79,14 @@ pub(super) struct Durability {
     pub(super) pending: Vec<PendingCommit>,
     pub(super) reserved: HashSet<StateKey>,
     pub(super) queued: VecDeque<DurableRequest>,
+    /// In-memory round-robin cursor; resets on restart, while entity due
+    /// times remain WAL-owned on each record.
+    pub(super) entity_tick_cursor: Option<(u64, EntityId)>,
     pub(super) retry_pickups: HashSet<u64>,
     pub(super) expire_queued: bool,
     pub(super) expire_again: bool,
     pub(super) publish_queue: Vec<PublishEffects>,
+    pub(super) next_publish_commit_id: u64,
     pub(super) checkpoint_writer: CheckpointWriter,
     pub(super) dirty_checkpoints: HashMap<StateKey, DirtyCheckpoint>,
     pub(super) checkpoint_inflight: HashMap<StateKey, u64>,
@@ -179,8 +185,8 @@ pub(super) struct PublishEffects {
     pub(super) accepted: bool,
     pub(super) reason: String,
     pub(super) inventory: Option<Inventory>,
-    pub(super) chunks: Vec<Chunk>,
     pub(super) deltas: Vec<BlockDelta>,
+    pub(super) entity_commit: Option<EntityCommit>,
     pub(super) pickups: Vec<DroppedItem>,
 }
 
@@ -195,6 +201,9 @@ pub(super) enum DurableRequest {
         id: u64,
     },
     Expire,
+    EntityTick {
+        id: EntityId,
+    },
 }
 
 #[derive(Debug)]
@@ -298,9 +307,15 @@ impl Durability {
             )));
         }
         let changes = action_changes(action, &self.catalog).map_err(StageError::Invalid)?;
+        let read_keys = action
+            .entities
+            .as_ref()
+            .map(|entities| entities.read_keys().cloned().collect())
+            .unwrap_or_default();
         self.try_stage_changes(
             tick,
             changes,
+            read_keys,
             PendingPayload::Action(action.clone()),
             projected_drop_snapshot_size,
             entity_permit,
@@ -311,6 +326,7 @@ impl Durability {
         &mut self,
         tick: TickId,
         changes: Vec<super::journal::Change>,
+        read_keys: Vec<StateKey>,
         payload: PendingPayload,
         projected_drop_snapshot_size: Option<usize>,
         mut entity_permit: Option<MirrorPermit>,
@@ -327,12 +343,18 @@ impl Durability {
         if self.pending.len() >= MAX_PENDING_DURABLE_ACTIONS {
             return Err(StageError::Full);
         }
-        let mut keys = Vec::with_capacity(changes.len());
+        let mut keys = BTreeSet::new();
         for change in &changes {
             if self.reserved.contains(&change.key) {
                 return Err(StageError::Conflict);
             }
-            keys.push(change.key.clone());
+            keys.insert(change.key.clone());
+        }
+        for key in read_keys {
+            if self.reserved.contains(&key) {
+                return Err(StageError::Conflict);
+            }
+            keys.insert(key);
         }
         let drops_key = drops_checkpoint_key();
         let mut projected_checkpoint_keys: HashSet<StateKey> =
@@ -404,7 +426,7 @@ impl Durability {
         self.pending.push(PendingCommit {
             receiver,
             submitted_at: Instant::now(),
-            keys,
+            keys: keys.into_iter().collect(),
             checkpoint_sizes,
             payload,
             entity_permit,

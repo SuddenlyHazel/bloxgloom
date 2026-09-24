@@ -42,6 +42,10 @@ impl fmt::Debug for EntityPayload {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EntityId(u64);
 
+/// The top half of the wire ID space is reserved for runtime-only session
+/// entities. WAL-owned entity allocation is constrained to the lower half.
+pub const TRANSIENT_ENTITY_ID_BIT: u64 = 1 << 63;
+
 impl EntityId {
     pub const fn new(value: u64) -> Option<Self> {
         if value == 0 { None } else { Some(Self(value)) }
@@ -49,6 +53,14 @@ impl EntityId {
 
     pub const fn get(self) -> u64 {
         self.0
+    }
+
+    pub const fn for_player_session(session_id: u64) -> Option<Self> {
+        if session_id == 0 || session_id >= TRANSIENT_ENTITY_ID_BIT {
+            None
+        } else {
+            Some(Self(TRANSIENT_ENTITY_ID_BIT | session_id))
+        }
     }
 }
 

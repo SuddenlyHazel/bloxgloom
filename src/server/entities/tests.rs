@@ -1,6 +1,7 @@
 use super::*;
 use crate::content::{BlockStateId, Catalog, EntityTypeDef, KILN_ENTITY_TYPE};
 use crate::server::entities::registry::EntityTypeRegistration;
+use crate::server::journal::StateKey;
 use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -487,7 +488,7 @@ fn mixed_entity_batch_coalesces_updates_transfer_despawn_and_spawn_atomically() 
     store.apply_committed(initial).unwrap();
     let checkpoint = encode_checkpoint(&store).unwrap();
 
-    let update = store
+    let mut update = store
         .prepare_update(
             EntityId::new(1).unwrap(),
             1,
@@ -497,6 +498,9 @@ fn mixed_entity_batch_coalesces_updates_transfer_despawn_and_spawn_atomically() 
             },
         )
         .unwrap();
+    let footprint_read = StateKey::new("bloxgloom:chunk_snapshot", [9_u8; 12]);
+    update.add_read_key(footprint_read.clone());
+    update.add_read_key(footprint_read.clone());
     let transfer = store
         .prepare_transfer(EntityId::new(2).unwrap(), 1, [16.25, 4.0, 6.0])
         .unwrap();
@@ -512,6 +516,14 @@ fn mixed_entity_batch_coalesces_updates_transfer_despawn_and_spawn_atomically() 
     let batch = store
         .combine_prepared(vec![update, transfer, despawn, spawn])
         .unwrap();
+    let read_keys: Vec<_> = batch.read_keys().cloned().collect();
+    assert_eq!(
+        read_keys
+            .iter()
+            .filter(|key| **key == footprint_read)
+            .count(),
+        1
+    );
     assert_eq!(
         batch.entity_ids(),
         (1..=4)

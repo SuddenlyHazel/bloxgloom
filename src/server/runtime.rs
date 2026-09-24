@@ -1,5 +1,6 @@
-//! Fixed-step coordinator and phase barriers. Only this thread mutates live
-//! world, inventory, and drop state; workers return immutable results.
+//! Fixed-step coordinator and phase barriers. The coordinator owns admission
+//! and publication; validated disjoint owner commits may apply on workers
+//! behind a barrier. Handlers only prepare results from immutable snapshots.
 
 use super::effects::{Effect, EffectBuffer, EffectLimits, route_effects};
 use super::metrics::{Metric, TickSample};
@@ -128,7 +129,7 @@ pub(super) fn run_simulation_ticks(
                     .movement_worker_utilization_percent()
                     .map_or_else(|| "n/a".to_owned(), |percent| format!("{percent:.1}%"));
                 eprintln!(
-                    "simulation: p95 {:.1} ms, p99 {:.1} ms, lagged {}/{} ticks, backlog {} ticks ({:.1} ms); phase p95 {:?} ms; movement workers {}; input {}, durable {}, snapshots {}, WAL {} bytes, loader {}, resident chunks {}, clients {}, drops {}; outbound {}/{} frames, {} queued bytes, {} sent bytes/tick, {} rejects; latency p95 WAL {:.1} ms, load {:.1} ms, barrier {:.1} ms",
+                    "simulation: p95 {:.1} ms, p99 {:.1} ms, lagged {}/{} ticks, backlog {} ticks ({:.1} ms); phase p95 {:?} ms; movement workers {}; input {}, durable {}, snapshots {}, WAL {} bytes, loader {}, resident chunks {} ({} pinned), clients {}, drops {}; outbound {}/{} frames, {} queued bytes, {} sent bytes/tick, {} rejects; latency p95 WAL {:.1} ms, load {:.1} ms, barrier {:.1} ms",
                     summary.p95 as f64 / 1_000_000.0,
                     summary.p99 as f64 / 1_000_000.0,
                     state.metrics.lagged_samples(),
@@ -143,6 +144,7 @@ pub(super) fn run_simulation_ticks(
                     latest.wal_tail_bytes,
                     latest.loader_outstanding,
                     latest.resident_chunks,
+                    latest.pinned_chunks,
                     latest.active_clients,
                     latest.active_drops,
                     latest.replication_queue_depth,
@@ -174,7 +176,7 @@ fn reject_simulation_input(state: &mut State, input: SimulationInput) {
             }
         }
         SimulationInput::Leave { id, .. } => {
-            state.clients.remove(&id);
+            state.remove_client(id);
         }
     }
 }
@@ -196,7 +198,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
             } else {
                 state.pending_joins.push_back(PendingJoin {
                     profile,
-                    inventory,
+                    inventory: *inventory,
                     sender,
                     socket,
                     reply,
@@ -213,7 +215,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
             }
         }
         SimulationInput::Leave { id, .. } => {
-            state.clients.remove(&id);
+            state.remove_client(id);
         }
     }
 }
@@ -291,7 +293,7 @@ fn process_pending_joins(state: &mut State, tick: TickId) {
                     .try_send(JoinResponse::Completed(Box::new(Ok(reply))))
                     .is_err()
                 {
-                    state.clients.remove(&id);
+                    state.remove_client(id);
                 } else {
                     let claimed = state.durability.claim_epoch_grant(join.profile);
                     debug_assert_eq!(claimed, Some(action_epoch));
@@ -374,6 +376,7 @@ pub(super) fn tick_with_inputs(
         wal_rotations: state.durability.completed_rotations,
         loader_outstanding: state.loader.outstanding() as u64,
         resident_chunks: state.world.resident_chunk_count() as u64,
+        pinned_chunks: state.world.pinned_chunk_count() as u64,
         active_clients: state.clients.len() as u64,
         active_drops: state.drops.active_len() as u64,
         entity_mirror_outstanding: entity_mirror.outstanding as u64,

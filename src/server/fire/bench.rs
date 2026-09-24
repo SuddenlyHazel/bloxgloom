@@ -227,6 +227,11 @@ impl Run {
             self.apply_report.worker_barrier += apply.worker_barrier;
             self.apply_report.metadata_finalize += apply.metadata_finalize;
             self.apply_report.worker_run_time += apply.worker_run_time;
+            self.apply_report.submitted_worker_groups += apply.submitted_worker_groups;
+            self.apply_report.max_worker_groups_per_barrier = self
+                .apply_report
+                .max_worker_groups_per_barrier
+                .max(apply.max_worker_groups_per_barrier);
             self.hash.applied_world(world, &source)?;
         }
         // The next matched input has the same forest blocks but a newer

@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::content::{Catalog, ContentManifest, MAX_MANIFEST_BYTES};
-use crate::lighting::LightField;
+use crate::lighting::{LightField, LightSample};
 use crate::protocol::{self, ClientMessage, ServerMessage};
 use crate::render::{self, ChunkMesh};
 use crate::world::{Chunk, ChunkKey};
@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 pub(super) enum Incoming {
-    Message(ServerMessage),
+    Message(Box<ServerMessage>),
     Closed(String),
 }
 
@@ -57,7 +57,10 @@ impl Network {
             loop {
                 match protocol::read_server_with_catalog(&mut reader, &reader_catalog) {
                     Ok(message) => {
-                        if incoming_tx.send(Incoming::Message(message)).is_err() {
+                        if incoming_tx
+                            .send(Incoming::Message(Box::new(message)))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -202,7 +205,14 @@ impl ConfigWriter {
 
 pub(super) struct Mesher {
     pub(super) jobs: SyncSender<MesherJob>,
-    pub(super) results: Receiver<ChunkMesh>,
+    pub(super) results: Receiver<MesherResult>,
+}
+
+pub(super) struct MesherResult {
+    pub(super) mesh: ChunkMesh,
+    /// Interior light samples are compact (~20 KiB/chunk) and let remote
+    /// avatars share the exact worker-built light field with terrain.
+    pub(super) lighting: Box<[LightSample]>,
 }
 
 pub(super) struct MesherJob {
@@ -244,13 +254,26 @@ impl Mesher {
                             &job.catalog,
                         )
                     };
+                    let mesh = render::mesh_chunk_lit_with_catalog(
+                        &job.chunk,
+                        &light,
+                        job.revision,
+                        &job.catalog,
+                    );
+                    let mut lighting = Vec::with_capacity(crate::world::CHUNK_VOLUME);
+                    for y in 0..crate::world::CHUNK_SIZE {
+                        for z in 0..crate::world::CHUNK_SIZE {
+                            for x in 0..crate::world::CHUNK_SIZE {
+                                // Zero face offset samples the interior voxel.
+                                lighting.push(light.face([x, y, z], 1, 0));
+                            }
+                        }
+                    }
                     if results_tx
-                        .send(render::mesh_chunk_lit_with_catalog(
-                            &job.chunk,
-                            &light,
-                            job.revision,
-                            &job.catalog,
-                        ))
+                        .send(MesherResult {
+                            mesh,
+                            lighting: lighting.into_boxed_slice(),
+                        })
                         .is_err()
                     {
                         break;

@@ -8,6 +8,7 @@ use super::types::{
     MAX_ENTITY_PRIVATE_BYTES_PER_CHUNK, MAX_ENTITY_PUBLIC_BYTES_PER_CHUNK,
     MAX_ENTITY_REFERENCES_PER_CHUNK, position_to_cell,
 };
+use crate::content::EntityTypeId;
 use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -146,10 +147,19 @@ pub struct EntityIndexes {
     pub chunks: BTreeMap<ChunkKey, ChunkPage>,
     pub anchored_cells: BTreeMap<CellCoord, EntityId>,
     pub schedule: BTreeMap<u64, BTreeSet<EntityId>>,
+    tick_schedule: BTreeSet<(u64, EntityId)>,
+    tick_types: BTreeSet<EntityTypeId>,
     mobile: MobileSpatialIndex,
 }
 
 impl EntityIndexes {
+    pub fn with_tick_types(tick_types: impl IntoIterator<Item = EntityTypeId>) -> Self {
+        Self {
+            tick_types: tick_types.into_iter().collect(),
+            ..Self::default()
+        }
+    }
+
     pub fn preview_change(
         &self,
         before: Option<&EntityRecord>,
@@ -303,6 +313,9 @@ impl EntityIndexes {
                 .entry(next_tick)
                 .or_default()
                 .insert(record.id);
+            if self.tick_types.contains(&record.entity_type) {
+                self.tick_schedule.insert((next_tick, record.id));
+            }
         }
         Ok(())
     }
@@ -341,7 +354,47 @@ impl EntityIndexes {
                 self.schedule.remove(&next_tick);
             }
         }
+        if let Some(next_tick) = record.next_tick {
+            self.tick_schedule.remove(&(next_tick, record.id));
+        }
         Ok(())
+    }
+
+    /// Read a bounded due slice after `after`, wrapping to the first due key
+    /// when the cursor reaches the end. The caller advances its cursor only
+    /// through entries it actually considered for admission.
+    pub fn due_tick_entries(
+        &self,
+        through_tick: u64,
+        after: Option<(u64, EntityId)>,
+        maximum: usize,
+    ) -> Vec<(u64, EntityId)> {
+        use std::ops::Bound::{Excluded, Unbounded};
+
+        if maximum == 0 {
+            return Vec::new();
+        }
+        let after_cursor: Box<dyn Iterator<Item = &(u64, EntityId)> + '_> = match after {
+            Some(cursor) => Box::new(self.tick_schedule.range((Excluded(cursor), Unbounded))),
+            None => Box::new(self.tick_schedule.iter()),
+        };
+        let mut entries: Vec<_> = after_cursor
+            .take_while(|entry| entry.0 <= through_tick)
+            .take(maximum)
+            .copied()
+            .collect();
+        if entries.len() < maximum {
+            let remaining = maximum - entries.len();
+            entries.extend(
+                self.tick_schedule
+                    .iter()
+                    .take_while(|entry| entry.0 <= through_tick)
+                    .filter(|entry| after.is_none_or(|cursor| **entry <= cursor))
+                    .take(remaining)
+                    .copied(),
+            );
+        }
+        entries
     }
 
     pub fn due(&self, through_tick: u64, maximum: usize) -> Vec<EntityId> {
@@ -360,13 +413,15 @@ impl EntityIndexes {
         &self,
         records: &BTreeMap<EntityId, EntityRecord>,
     ) -> Result<(), EntityError> {
-        let mut rebuilt = Self::default();
+        let mut rebuilt = Self::with_tick_types(self.tick_types.iter().copied());
         for record in records.values() {
             rebuilt.insert(record)?;
         }
         if rebuilt.chunks != self.chunks
             || rebuilt.anchored_cells != self.anchored_cells
             || rebuilt.schedule != self.schedule
+            || rebuilt.tick_schedule != self.tick_schedule
+            || rebuilt.tick_types != self.tick_types
             || rebuilt.mobile != self.mobile
         {
             return Err(EntityError::InvalidTransaction);

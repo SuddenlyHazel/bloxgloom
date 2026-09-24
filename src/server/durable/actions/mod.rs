@@ -27,7 +27,8 @@ pub(in crate::server) fn plan_durable_request(
             let action_id = match message {
                 ClientMessage::Edit { action_id, .. }
                 | ClientMessage::InventoryMove { action_id, .. }
-                | ClientMessage::DropStack { action_id, .. } => *action_id,
+                | ClientMessage::DropStack { action_id, .. }
+                | ClientMessage::EntityInteract { action_id, .. } => *action_id,
                 _ => {
                     return Err(io::Error::new(
                         ErrorKind::InvalidInput,
@@ -135,6 +136,22 @@ pub(in crate::server) fn plan_durable_request(
                     )
                     .map(Some);
                 }
+                ClientMessage::EntityInteract {
+                    action_id,
+                    target,
+                    payload,
+                } => {
+                    return kiln::plan_interact(
+                        state,
+                        *id,
+                        profile,
+                        *action_id,
+                        *target,
+                        payload,
+                        receipt_value,
+                    )
+                    .map(Some);
+                }
                 _ => unreachable!(),
             }
             Ok(Some(action))
@@ -218,6 +235,7 @@ pub(in crate::server) fn plan_durable_request(
                 entities: None,
             }))
         }
+        DurableRequest::EntityTick { id } => kiln::plan_entity_tick(state, *id, tick.get()),
     }
 }
 

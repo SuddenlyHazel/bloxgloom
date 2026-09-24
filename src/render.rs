@@ -1,5 +1,6 @@
 //! Voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
+mod avatars;
 mod drops;
 mod material;
 mod mesh;
@@ -26,6 +27,7 @@ use crate::world::ChunkKey;
 use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
+pub(crate) use avatars::{AvatarRenderer, MAX_AVATARS, VisualAvatar};
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 #[cfg(test)]
@@ -123,6 +125,7 @@ pub struct Renderer {
     drop_cutout_vertices: wgpu::Buffer,
     drop_cutout_indices: wgpu::Buffer,
     drop_cutout_index_count: u32,
+    avatars: avatars::AvatarRenderer,
     ui: UiRenderer,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
@@ -188,6 +191,7 @@ impl Renderer {
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, format);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, format, &catalog);
+        let avatars = avatars::AvatarRenderer::new(&device, format, &camera_buffer);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));
@@ -242,6 +246,7 @@ impl Renderer {
             drop_cutout_vertices,
             drop_cutout_indices,
             drop_cutout_index_count: 0,
+            avatars,
             ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
@@ -293,6 +298,10 @@ impl Renderer {
         }
         self.drop_index_count = meshes.opaque_indices.len() as u32;
         self.drop_cutout_index_count = meshes.cutout_indices.len() as u32;
+    }
+
+    pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {
+        self.avatars.set(&self.queue, avatars);
     }
 
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
@@ -500,6 +509,7 @@ impl Renderer {
                 pass.draw_indexed(0..self.drop_index_count, 0, 0..1);
                 stats.drawn_triangles += self.drop_index_count as usize / 3;
             }
+            stats.drawn_triangles += self.avatars.draw(&mut pass);
             pass.set_pipeline(&self.cutout_pipeline);
             for (key, mesh) in &self.meshes {
                 if !chunk_visible(view_projection, *key) {

@@ -27,6 +27,7 @@ pub(in crate::server) use planning::{
     KilnBreakPlan, KilnInsertPlan, KilnTakePlan, KilnTickPlan, plan_break, plan_insert, plan_take,
     plan_tick,
 };
+use planning::{KilnInteractionPolicy, KilnTickPlanner};
 use std::sync::Arc;
 
 /// Resolve a canonical state from the compiled `facing/half/lit` lattice.
@@ -91,6 +92,15 @@ pub(in crate::server) fn register_entity_type(
     builder: &mut EntityTypeRegistryBuilder<'_>,
     catalog: Arc<Catalog>,
 ) -> Result<(), EntityError> {
+    let recipes = Arc::new(KilnRecipeBook::builtins(&catalog)?);
+    register_entity_type_with_recipes(builder, catalog, recipes)
+}
+
+pub(in crate::server) fn register_entity_type_with_recipes(
+    builder: &mut EntityTypeRegistryBuilder<'_>,
+    catalog: Arc<Catalog>,
+    recipes: Arc<KilnRecipeBook>,
+) -> Result<(), EntityError> {
     let mut compatible_anchor_states = Vec::with_capacity(8);
     for facing in Facing::ALL {
         for lit in [false, true] {
@@ -102,8 +112,12 @@ pub(in crate::server) fn register_entity_type(
         ownership: super::types::EntityOwnership::anchored(compatible_anchor_states, 2),
         tick_policy: super::types::TickPolicy::Interval(KILN_TICK_INTERVAL as u32),
         max_payload_bytes: KILN_MAX_PAYLOAD_BYTES,
-        codec: Arc::new(KilnPayloadCodec { catalog }),
-    })
+        codec: Arc::new(KilnPayloadCodec {
+            catalog: Arc::clone(&catalog),
+        }),
+    })?;
+    builder.register_interaction_policy(KILN_ENTITY_TYPE, Arc::new(KilnInteractionPolicy))?;
+    builder.register_tick_planner(KILN_ENTITY_TYPE, Arc::new(KilnTickPlanner { recipes }))
 }
 
 #[cfg(test)]

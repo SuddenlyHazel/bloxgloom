@@ -78,7 +78,6 @@ const BUILTIN_REFLECTANCE: [[u8; 3]; 16] = [
     [115, 120, 128],
     [115, 120, 128],
 ];
-
 #[derive(Clone, Debug)]
 pub struct TextureDef {
     pub key: Cow<'static, str>,
@@ -862,39 +861,11 @@ pub fn catalog() -> &'static Catalog {
 }
 
 #[inline]
-pub fn block_def(id: BlockId) -> Option<&'static BlockDef> {
-    catalog().block(id)
-}
-
-#[inline]
-pub fn item_def(id: ItemId) -> Option<&'static ItemDef> {
-    catalog().item(id)
-}
-
-#[inline]
 pub fn block_flags(id: BlockId) -> u8 {
     if id <= world::MAX_BUILTIN_BLOCK {
         BUILTIN_FLAGS[id.0 as usize]
     } else {
         catalog().block_flags(id)
-    }
-}
-
-#[inline]
-pub fn emission(id: BlockId) -> u8 {
-    if id <= world::MAX_BUILTIN_BLOCK {
-        BUILTIN_EMISSION[id.0 as usize]
-    } else {
-        catalog().emission(id)
-    }
-}
-
-#[inline]
-pub fn reflectance(id: BlockId) -> [u8; 3] {
-    if id <= world::MAX_BUILTIN_BLOCK {
-        BUILTIN_REFLECTANCE[id.0 as usize]
-    } else {
-        catalog().reflectance(id)
     }
 }
 

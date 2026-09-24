@@ -18,6 +18,7 @@
 - Keep opaque cube-face art in `assets/textures/blocks/`, alpha-cutout leaves/plants in `assets/textures/foliage/`, and non-block pickups in `assets/textures/items/`. Add new assets to the matching folder so the material library stays navigable.
 - Put new code in the focused modules: `src/client/` for workers/events, `src/render/` for mesh/material/pipeline/sky/visibility, `src/ui/` for layout/drawing, and `src/preview/perf.rs` for the headless benchmark. Keep tests in adjacent `src/<module>/tests.rs` files.
 - `world-v3/` and `world-v4/` are local player save data, not disposable build artifacts. Do not delete, reset, or migrate them during development checks; generator compatibility checks should reject incompatible saves rather than silently changing their terrain. Use a unique temporary save directory for tests and benchmarks.
+- This prerelease has no player worlds to upgrade. Do not build world-format or entity-schema converters now: new v5 worlds are the target, and incompatible older data must fail closed without being modified.
 
 ## Verify graphics and performance
 

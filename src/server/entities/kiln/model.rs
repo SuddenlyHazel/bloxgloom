@@ -248,6 +248,15 @@ impl KilnSlot {
             Self::Output => OUTPUT_SLOT_INDEX,
         }
     }
+
+    pub(super) const fn decode(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Fuel),
+            1 => Some(Self::Input),
+            2 => Some(Self::Output),
+            _ => None,
+        }
+    }
 }
 
 /// One-input immutable recipe; `cook_ticks` counts scheduled kiln pulses.
@@ -264,6 +273,17 @@ pub(in crate::server) struct KilnRecipeBook {
 }
 
 impl KilnRecipeBook {
+    pub(in crate::server) fn builtins(catalog: &Catalog) -> Result<Self, EntityError> {
+        Self::new(
+            [KilnRecipe {
+                input: ItemId(world::GRAVEL.0),
+                output: Stack::new(ItemId(world::STONE.0), 1),
+                cook_ticks: 4,
+            }],
+            catalog,
+        )
+    }
+
     pub(in crate::server) fn new(
         recipes: impl IntoIterator<Item = KilnRecipe>,
         catalog: &Catalog,

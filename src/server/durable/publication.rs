@@ -4,7 +4,9 @@ use super::*;
 use crate::protocol::ServerMessage;
 use crate::server::fire::FireTransaction;
 use crate::server::{State, durable};
-use crate::world::ChunkKey;
+
+#[path = "publication/commit.rs"]
+mod commit;
 
 #[cfg(test)]
 #[path = "publication/tests.rs"]
@@ -35,11 +37,14 @@ pub(super) fn apply_committed_action(
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
     state.drops.apply_plan(&action.drops)?;
+    let mut entity_commit = None;
     if let (Some(entities), Some(permit)) = (action.entities.take(), entity_permit) {
-        state
-            .entities
-            .apply_committed(entities.clone())
-            .map_err(io::Error::other)?;
+        entity_commit = Some(
+            state
+                .entities
+                .apply_committed(entities.clone())
+                .map_err(io::Error::other)?,
+        );
         state
             .durability
             .entity_mirror
@@ -53,28 +58,6 @@ pub(super) fn apply_committed_action(
         }
         state.fire.install_seed_synced(seed)?;
     }
-
-    let mut cells_per_chunk = HashMap::<ChunkKey, usize>::new();
-    for delta in &action.deltas {
-        *cells_per_chunk.entry(delta.key).or_default() += 1;
-    }
-    let mut full_keys: Vec<_> = cells_per_chunk
-        .into_iter()
-        .filter_map(|(key, count)| (count > 1).then_some(key))
-        .collect();
-    full_keys.sort_unstable_by_key(|key| (key.x, key.y, key.z));
-    let full_key_set: HashSet<_> = full_keys.iter().copied().collect();
-    let mut full_chunks = Vec::with_capacity(full_keys.len());
-    for key in &full_keys {
-        let chunk = state
-            .world
-            .cached_chunk(*key)
-            .ok_or_else(|| io::Error::other("committed edit chunk vanished before publication"))?;
-        full_chunks.push(chunk);
-    }
-    action
-        .deltas
-        .retain(|delta| !full_key_set.contains(&delta.key));
 
     if let (Some(profile), Some(inventory)) = (action.profile, &action.inventory) {
         state
@@ -137,8 +120,8 @@ pub(super) fn apply_committed_action(
         accepted: result.as_ref().is_none_or(|record| record.accepted),
         reason: result.map_or_else(String::new, |record| record.reason),
         inventory: action.inventory,
-        chunks: full_chunks,
         deltas: action.deltas,
+        entity_commit,
         pickups: action.pickups,
     });
     if completed_pickup && let Some(id) = action.client_id {
@@ -175,6 +158,22 @@ pub(super) fn publish_committed_fire_after_world(
             .world
             .cached_chunk(owner)
             .ok_or_else(|| io::Error::other("committed fire chunk vanished before publication"))?;
+        let mut deltas = Vec::with_capacity(changed_cells.len());
+        for cell in &changed_cells {
+            let (key, local) = crate::world::world_to_chunk(cell.x, cell.y, cell.z);
+            if key != owner {
+                return Err(io::Error::other("fire publish cell crossed owner boundary"));
+            }
+            let block = chunk
+                .block(local)
+                .ok_or_else(|| io::Error::other("fire publish cell outside owner chunk"))?;
+            deltas.push(BlockDelta {
+                key,
+                version: chunk.version,
+                local: local.map(|coordinate| coordinate as u8),
+                block,
+            });
+        }
         state.pending_block_changes.extend(changed_cells);
         state.durability.publish_queue.push(PublishEffects {
             client_id: None,
@@ -183,62 +182,97 @@ pub(super) fn publish_committed_fire_after_world(
             accepted: true,
             reason: String::new(),
             inventory: None,
-            chunks: vec![chunk],
-            deltas: Vec::new(),
+            deltas,
+            entity_commit: None,
             pickups: Vec::new(),
         });
     }
     Ok(())
 }
 
-pub(in crate::server) fn publish_committed(state: &mut State) {
-    for effect in state.durability.publish_queue.drain(..) {
-        if let Some(id) = effect.client_id
-            && let Some(client) = state.clients.get(&id)
-            && effect
-                .profile
-                .is_none_or(|profile| client.profile == profile)
-        {
-            if let Some(action_id) = effect.action_id {
-                client.enqueue(ServerMessage::ActionResult {
-                    action_id,
-                    accepted: effect.accepted,
-                    reason: effect.reason,
-                });
-            }
-            if let Some(inventory) = effect.inventory {
-                client.enqueue(ServerMessage::Inventory {
-                    revision: inventory.revision,
-                    slots: inventory.slots,
-                });
-            }
-            if !effect.pickups.is_empty() {
-                client.enqueue(ServerMessage::Pickups {
-                    items: effect.pickups,
-                });
-            }
-        }
-        for chunk in effect.chunks {
-            let key = chunk.key;
-            for client in state.clients.values() {
-                if client.sent.contains(&key) {
-                    client.enqueue(ServerMessage::Chunk(chunk.clone()));
+pub(in crate::server) fn publish_committed(state: &mut State) -> io::Result<()> {
+    let effects = std::mem::take(&mut state.durability.publish_queue);
+    for effect in effects {
+        let changes = commit::collect(&effect, state.world.catalog())?;
+        let commit_id = if changes.is_empty() {
+            None
+        } else {
+            let id = state.durability.next_publish_commit_id;
+            state.durability.next_publish_commit_id = id
+                .checked_add(1)
+                .ok_or_else(|| io::Error::other("world publication commit ID exhausted"))?;
+            Some(id)
+        };
+        let mut disconnected = Vec::new();
+        let mut released_subscriptions = Vec::new();
+        for (&id, client) in &mut state.clients {
+            let mut healthy = true;
+            if let Some(commit_id) = commit_id {
+                match commit::for_client(&changes, client, commit_id)? {
+                    Some(plan) => {
+                        for part in plan.parts {
+                            if !client.enqueue(ServerMessage::WorldCommitPart(part)) {
+                                healthy = false;
+                                break;
+                            }
+                        }
+                        if healthy {
+                            for (key, block_revision, entity_revision) in plan.revisions {
+                                client.sent_block_versions.insert(key, block_revision);
+                                client.sent_entity_revisions.insert(key, entity_revision);
+                            }
+                        }
+                    }
+                    None => {
+                        // One oversized interested group is not partially visible.
+                        // A fresh epoch for each affected chunk is streamed next.
+                        for key in changes.subscribed_keys(client) {
+                            if client.sent.remove(&key) {
+                                released_subscriptions.push(key);
+                            }
+                            client.sent_epochs.remove(&key);
+                            client.sent_block_versions.remove(&key);
+                            client.sent_entity_revisions.remove(&key);
+                        }
+                    }
                 }
             }
-        }
-        for delta in effect.deltas {
-            for client in state.clients.values() {
-                if client.sent.contains(&delta.key) {
-                    client.enqueue(ServerMessage::Delta {
-                        key: delta.key,
-                        version: delta.version,
-                        x: delta.local[0],
-                        y: delta.local[1],
-                        z: delta.local[2],
-                        block: delta.block,
+            if healthy
+                && effect.client_id == Some(id)
+                && effect
+                    .profile
+                    .is_none_or(|profile| client.profile == profile)
+            {
+                if let Some(action_id) = effect.action_id {
+                    healthy = client.enqueue(ServerMessage::ActionResult {
+                        action_id,
+                        accepted: effect.accepted,
+                        reason: effect.reason.clone(),
+                    });
+                }
+                if healthy && let Some(inventory) = &effect.inventory {
+                    healthy = client.enqueue(ServerMessage::Inventory {
+                        revision: inventory.revision,
+                        slots: inventory.slots.clone(),
+                    });
+                }
+                if healthy && !effect.pickups.is_empty() {
+                    healthy = client.enqueue(ServerMessage::Pickups {
+                        items: effect.pickups.clone(),
                     });
                 }
             }
+            if !healthy {
+                disconnected.push(id);
+            }
+        }
+        for key in released_subscriptions {
+            let released = state.world.unpin_resident_chunk(key);
+            debug_assert!(released, "resnapshot subscription lost its resident chunk");
+        }
+        for id in disconnected {
+            state.remove_client(id);
         }
     }
+    Ok(())
 }

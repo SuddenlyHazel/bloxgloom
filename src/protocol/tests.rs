@@ -86,11 +86,83 @@ fn outbound_wire_lengths_match_serialized_frames() {
             items: vec![drop],
         },
         ServerMessage::Pickups { items: vec![drop] },
+        ServerMessage::OwnedEntity { id: 42 },
     ];
     for message in messages {
         let mut bytes = Vec::new();
         write_server(&mut bytes, &message).unwrap();
         assert_eq!(server_wire_len(&message), bytes.len(), "{message:?}");
+    }
+}
+
+#[test]
+fn owned_entity_identity_is_nonzero_and_round_trips() {
+    let mut wire = Vec::new();
+    write_server(&mut wire, &ServerMessage::OwnedEntity { id: 77 }).unwrap();
+    assert!(matches!(
+        read_server(wire.as_slice()).unwrap(),
+        ServerMessage::OwnedEntity { id: 77 }
+    ));
+    assert!(write_server(Vec::new(), &ServerMessage::OwnedEntity { id: 0 }).is_err());
+}
+
+#[test]
+fn public_entity_snapshot_and_grouped_commit_are_bounded_wire_records() {
+    let catalog = Catalog::builtins();
+    let key = ChunkKey { x: 3, y: -2, z: 7 };
+    let chunk = Chunk::from_blocks(key, 4, vec![crate::world::AIR; BLOCK_COUNT]);
+    let entity = PublicEntity {
+        id: 19,
+        entity_type: crate::content::EntityTypeId(3),
+        revision: 2,
+        motion_revision: 0,
+        location: PublicEntityLocation::Anchored {
+            anchor: [48, -32, 112],
+            anchor_state: crate::content::KILN_DEFAULT_STATE,
+        },
+        // Only the registered public kiln view is sent; private slots are absent.
+        payload: vec![2, 1, 65],
+    };
+    let pages = vec![vec![entity.clone()]];
+    let checksum = snapshot_checksum(&chunk, 9, 12, &pages, &catalog).unwrap();
+    let messages = [
+        ServerMessage::WorldSnapshotStart(WorldSnapshotStart {
+            chunk,
+            epoch: 9,
+            entity_revision: 12,
+            entity_page_count: 1,
+            checksum,
+        }),
+        ServerMessage::EntitySnapshotPage(EntitySnapshotPage {
+            key,
+            epoch: 9,
+            entity_revision: 12,
+            page_index: 0,
+            page_count: 1,
+            checksum,
+            entities: vec![entity.clone()],
+        }),
+        ServerMessage::WorldCommitPart(WorldCommitPart {
+            commit_id: 5,
+            part_index: 0,
+            part_count: 1,
+            key,
+            epoch: 9,
+            block_from: 4,
+            block_to: 4,
+            entity_from: 12,
+            entity_to: 15,
+            blocks: vec![],
+            entities: vec![PublicEntityChange::Upsert(entity)],
+        }),
+    ];
+    for message in messages {
+        let mut wire = Vec::new();
+        write_server_with_catalog(&mut wire, &message, &catalog).unwrap();
+        assert_eq!(server_wire_len(&message), wire.len());
+        assert!(wire.len() <= MAX_FRAME + 4);
+        let decoded = read_server_with_catalog(wire.as_slice(), &catalog).unwrap();
+        assert_eq!(server_wire_len(&decoded), wire.len());
     }
 }
 
@@ -132,6 +204,11 @@ fn client_messages_round_trip() {
             slot: 3,
             count: 2,
         },
+        ClientMessage::EntityInteract {
+            action_id: (1u128 << 64) | 0x1237,
+            target: [-16, 8, 2],
+            payload: vec![1, 0, 1, 4, 2, 0],
+        },
         ClientMessage::ActionAck {
             epoch: 3,
             through_seq: 8,
@@ -142,6 +219,26 @@ fn client_messages_round_trip() {
         write_client(&mut bytes, &message).unwrap();
         assert_eq!(read_client(bytes.as_slice()).unwrap(), message);
     }
+}
+
+#[test]
+fn entity_interaction_rejects_empty_oversized_and_truncated_payloads() {
+    let mut message = ClientMessage::EntityInteract {
+        action_id: (1u128 << 64) | 1,
+        target: [-1, 2, 3],
+        payload: vec![1],
+    };
+    let mut bytes = Vec::new();
+    write_client(&mut bytes, &message).unwrap();
+    assert!(read_client(&bytes[..bytes.len() - 1]).is_err());
+    if let ClientMessage::EntityInteract { payload, .. } = &mut message {
+        payload.clear();
+    }
+    assert!(write_client(Vec::new(), &message).is_err());
+    if let ClientMessage::EntityInteract { payload, .. } = &mut message {
+        payload.resize(MAX_ENTITY_INTERACT_BYTES + 1, 1);
+    }
+    assert!(write_client(Vec::new(), &message).is_err());
 }
 
 #[test]

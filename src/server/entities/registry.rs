@@ -1,10 +1,62 @@
+use super::store::EntitySnapshot;
 use super::types::{
-    EntityError, EntityOwnership, EntityPayload, MAX_ENTITY_FOOTPRINT_CELLS,
+    CellCoord, EntityError, EntityOwnership, EntityPayload, MAX_ENTITY_FOOTPRINT_CELLS,
     MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
 };
-use crate::content::{Catalog, EntityTypeId};
+use crate::content::{BlockStateId, Catalog, EntityTypeId};
+use crate::inventory::Inventory;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+pub const MAX_ENTITY_INTERACTION_REQUEST_BYTES: usize = 256;
+
+/// A validated cell read/write intent emitted by a trusted entity policy.
+/// `before` is checked against the resident world before staging; identical
+/// before/after values are read preconditions and are not journal writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EntityBlockStateChange {
+    pub cell: CellCoord,
+    pub before: BlockStateId,
+    pub after: BlockStateId,
+}
+
+#[derive(Clone, Debug)]
+pub struct EntityInteractionPlan {
+    pub payload: EntityPayload,
+    pub inventory: Inventory,
+    pub block_states: Vec<EntityBlockStateChange>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EntityTickPlan {
+    pub payload: Option<EntityPayload>,
+    pub next_tick: u64,
+    pub anchor_update: Option<super::types::AnchorUpdate>,
+    pub block_states: Vec<EntityBlockStateChange>,
+}
+
+/// Trusted server-only policy for bounded client requests directed at an
+/// entity. The callback receives immutable snapshots and cannot perform I/O.
+pub trait EntityInteractionPolicy: Send + Sync + 'static {
+    fn plan(
+        &self,
+        snapshot: &EntitySnapshot,
+        request: &[u8],
+        inventory: &Inventory,
+        catalog: &Catalog,
+    ) -> Result<EntityInteractionPlan, EntityError>;
+}
+
+/// Trusted deterministic planner for one due tick. The coordinator validates
+/// the returned footprint, block preimages, due-time, and payload before WAL.
+pub trait EntityTickPolicy: Send + Sync + 'static {
+    fn plan(
+        &self,
+        snapshot: &EntitySnapshot,
+        current_tick: u64,
+        catalog: &Catalog,
+    ) -> Result<EntityTickPlan, EntityError>;
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntityCodecError {
@@ -47,6 +99,8 @@ pub struct EntityTypeDescriptor {
     tick_policy: TickPolicy,
     max_payload_bytes: usize,
     codec: Arc<dyn EntityPayloadCodec>,
+    interaction_policy: Option<Arc<dyn EntityInteractionPolicy>>,
+    tick_planner: Option<Arc<dyn EntityTickPolicy>>,
 }
 
 impl EntityTypeDescriptor {
@@ -76,6 +130,42 @@ impl EntityTypeDescriptor {
 
     pub const fn max_payload_bytes(&self) -> usize {
         self.max_payload_bytes
+    }
+
+    pub const fn has_interaction_policy(&self) -> bool {
+        self.interaction_policy.is_some()
+    }
+
+    pub const fn has_tick_planner(&self) -> bool {
+        self.tick_planner.is_some()
+    }
+
+    pub fn plan_interaction(
+        &self,
+        snapshot: &EntitySnapshot,
+        request: &[u8],
+        inventory: &Inventory,
+        catalog: &Catalog,
+    ) -> Result<EntityInteractionPlan, EntityError> {
+        if request.is_empty() || request.len() > MAX_ENTITY_INTERACTION_REQUEST_BYTES {
+            return Err(EntityError::InvalidPayload);
+        }
+        self.interaction_policy
+            .as_ref()
+            .ok_or(EntityError::InvalidType)?
+            .plan(snapshot, request, inventory, catalog)
+    }
+
+    pub fn plan_tick(
+        &self,
+        snapshot: &EntitySnapshot,
+        current_tick: u64,
+        catalog: &Catalog,
+    ) -> Result<EntityTickPlan, EntityError> {
+        self.tick_planner
+            .as_ref()
+            .ok_or(EntityError::InvalidType)?
+            .plan(snapshot, current_tick, catalog)
     }
 
     pub fn encode_payload(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityError> {
@@ -198,8 +288,45 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             tick_policy: registration.tick_policy,
             max_payload_bytes: registration.max_payload_bytes,
             codec: registration.codec,
+            interaction_policy: None,
+            tick_planner: None,
         };
         self.descriptors.insert(registration.id, descriptor);
+        Ok(())
+    }
+
+    pub fn register_interaction_policy(
+        &mut self,
+        id: EntityTypeId,
+        policy: Arc<dyn EntityInteractionPolicy>,
+    ) -> Result<(), EntityError> {
+        let descriptor = self
+            .descriptors
+            .get_mut(&id)
+            .ok_or(EntityError::UnknownType(id))?;
+        if descriptor.interaction_policy.is_some() {
+            return Err(EntityError::DuplicateType(id));
+        }
+        descriptor.interaction_policy = Some(policy);
+        Ok(())
+    }
+
+    pub fn register_tick_planner(
+        &mut self,
+        id: EntityTypeId,
+        planner: Arc<dyn EntityTickPolicy>,
+    ) -> Result<(), EntityError> {
+        let descriptor = self
+            .descriptors
+            .get_mut(&id)
+            .ok_or(EntityError::UnknownType(id))?;
+        if descriptor.tick_planner.is_some() {
+            return Err(EntityError::DuplicateType(id));
+        }
+        if matches!(descriptor.tick_policy, TickPolicy::Never) {
+            return Err(EntityError::InvalidType);
+        }
+        descriptor.tick_planner = Some(planner);
         Ok(())
     }
 
@@ -239,5 +366,12 @@ impl EntityTypeRegistry {
 
     pub fn descriptors(&self) -> impl Iterator<Item = &EntityTypeDescriptor> {
         self.descriptors.values()
+    }
+
+    pub fn tickable_types(&self) -> impl Iterator<Item = EntityTypeId> + '_ {
+        self.descriptors
+            .values()
+            .filter(|descriptor| descriptor.has_tick_planner())
+            .map(EntityTypeDescriptor::id)
     }
 }

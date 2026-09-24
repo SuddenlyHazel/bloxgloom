@@ -5,8 +5,16 @@ use crate::items::ItemId;
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, PaletteView, PalettedBlocks};
 use std::io::{self, Read, Write};
 
+mod entities;
+pub use entities::{
+    BlockCellChange, EntitySnapshotPage, PublicEntity, PublicEntityChange, PublicEntityLocation,
+    WorldCommitPart, WorldSnapshotStart, snapshot_checksum,
+};
+pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_COMMIT_PARTS};
+
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
+pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
 const WIRE_VERSION: u8 = 8;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
@@ -48,6 +56,13 @@ pub enum ClientMessage {
         action_id: u128,
         slot: u8,
         count: u16,
+    },
+    /// Opaque, bounded command for the entity anchored at a touched world cell.
+    /// The server resolves type, reach, and private inventory authority.
+    EntityInteract {
+        action_id: u128,
+        target: [i32; 3],
+        payload: Vec<u8>,
     },
     Resync {
         key: ChunkKey,
@@ -137,6 +152,12 @@ pub enum ServerMessage {
         offset: u32,
         bytes: Vec<u8>,
     },
+    WorldSnapshotStart(WorldSnapshotStart),
+    EntitySnapshotPage(EntitySnapshotPage),
+    WorldCommitPart(WorldCommitPart),
+    OwnedEntity {
+        id: u64,
+    },
 }
 
 /// Exact frame length for a valid server message, including its four-byte
@@ -174,6 +195,10 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             }
             ServerMessage::Drops { items, .. } => 8 + 2 + items.len() * DROP_ITEM,
             ServerMessage::Pickups { items } => 2 + items.len() * DROP_ITEM,
+            ServerMessage::WorldSnapshotStart(start) => entities::snapshot_start_wire_len(start),
+            ServerMessage::EntitySnapshotPage(page) => entities::snapshot_page_wire_len(page),
+            ServerMessage::WorldCommitPart(part) => part.wire_len(),
+            ServerMessage::OwnedEntity { .. } => 8,
         }
 }
 
@@ -329,6 +354,25 @@ pub fn write_client_with_catalog(
             out.push(10);
             out.extend(epoch.to_le_bytes());
             out.extend(through_seq.to_le_bytes());
+        }
+        ClientMessage::EntityInteract {
+            action_id,
+            target,
+            payload,
+        } => {
+            if !valid_action_id(*action_id)
+                || payload.is_empty()
+                || payload.len() > MAX_ENTITY_INTERACT_BYTES
+            {
+                return Err(invalid("invalid entity interaction"));
+            }
+            out.push(11);
+            out.extend(action_id.to_le_bytes());
+            for coordinate in target {
+                out.extend(coordinate.to_le_bytes());
+            }
+            out.extend((payload.len() as u16).to_le_bytes());
+            out.extend(payload);
         }
     }
     frame(writer, &out)
@@ -492,7 +536,27 @@ pub fn write_server_with_catalog(
             out.extend((bytes.len() as u16).to_le_bytes());
             out.extend(bytes);
         }
+        ServerMessage::WorldSnapshotStart(start) => {
+            out.push(15);
+            entities::write_snapshot_start(&mut out, start, content_catalog)?;
+        }
+        ServerMessage::EntitySnapshotPage(page) => {
+            out.push(16);
+            entities::write_snapshot_page(&mut out, page, content_catalog)?;
+        }
+        ServerMessage::WorldCommitPart(part) => {
+            out.push(17);
+            entities::write_commit_part(&mut out, part, content_catalog)?;
+        }
+        ServerMessage::OwnedEntity { id } => {
+            if *id == 0 {
+                return Err(invalid("invalid owned entity id"));
+            }
+            out.push(18);
+            out.extend(id.to_le_bytes());
+        }
     }
+    entities::enforce_frame_size(&out)?;
     frame(writer, &out)
 }
 
@@ -762,6 +826,19 @@ pub fn read_client_with_catalog(
             }
             ClientMessage::ActionAck { epoch, through_seq }
         }
+        11 => {
+            let action_id = c.u128()?;
+            let target = [c.i32()?, c.i32()?, c.i32()?];
+            let len = usize::from(c.u16()?);
+            if !valid_action_id(action_id) || !(1..=MAX_ENTITY_INTERACT_BYTES).contains(&len) {
+                return Err(invalid("invalid entity interaction"));
+            }
+            ClientMessage::EntityInteract {
+                action_id,
+                target,
+                payload: c.take(len)?.to_vec(),
+            }
+        }
         _ => return Err(invalid("unknown client message")),
     };
     c.done()?;
@@ -967,6 +1044,22 @@ pub fn read_server_with_catalog(
                 return Err(invalid("invalid deferred action"));
             }
             ServerMessage::ActionDeferred { action_id }
+        }
+        15 => ServerMessage::WorldSnapshotStart(entities::read_snapshot_start(
+            &mut c,
+            content_catalog,
+        )?),
+        16 => ServerMessage::EntitySnapshotPage(entities::read_snapshot_page(
+            &mut c,
+            content_catalog,
+        )?),
+        17 => ServerMessage::WorldCommitPart(entities::read_commit_part(&mut c, content_catalog)?),
+        18 => {
+            let id = c.u64()?;
+            if id == 0 {
+                return Err(invalid("invalid owned entity id"));
+            }
+            ServerMessage::OwnedEntity { id }
         }
         _ => return Err(invalid("unknown server message")),
     };

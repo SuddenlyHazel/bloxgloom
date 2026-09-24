@@ -5,8 +5,13 @@ use super::model::{
     OUTPUT_SLOT_INDEX, fuel_ticks,
 };
 use crate::content::{Catalog, KILN_ITEM};
-use crate::inventory::{STACK_LIMIT, Stack};
-use crate::server::entities::{CellCoord, EntityError, EntityPatch};
+use crate::inventory::{HOTBAR_SLOTS, Inventory, STACK_LIMIT, Stack};
+use crate::server::entities::{
+    AnchorUpdate, CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan,
+    EntityInteractionPolicy, EntityLocation, EntityPatch, EntityPayload, EntitySnapshot,
+    EntityTickPlan, EntityTickPolicy,
+};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::server) struct KilnInsertPlan {
@@ -31,6 +36,185 @@ pub(in crate::server) struct KilnBreakPlan {
 pub(in crate::server) struct KilnTickPlan {
     pub payload: Option<KilnPayload>,
     pub next_tick: u64,
+}
+
+pub(super) struct KilnInteractionPolicy;
+
+pub(super) struct KilnTickPlanner {
+    pub(super) recipes: Arc<KilnRecipeBook>,
+}
+
+impl EntityInteractionPolicy for KilnInteractionPolicy {
+    fn plan(
+        &self,
+        snapshot: &EntitySnapshot,
+        request: &[u8],
+        inventory: &Inventory,
+        catalog: &Catalog,
+    ) -> Result<EntityInteractionPlan, EntityError> {
+        let payload = snapshot
+            .private_payload
+            .downcast_ref::<KilnPayload>()
+            .ok_or(EntityError::InvalidPayload)?;
+        let mut next_inventory = inventory.clone();
+        let next_payload =
+            plan_interaction_payload(payload, request, &mut next_inventory, catalog)?;
+        let block_states = block_state_changes(snapshot, payload, &next_payload, catalog)?;
+        Ok(EntityInteractionPlan {
+            payload: next_payload.into_entity_payload(),
+            inventory: next_inventory,
+            block_states,
+        })
+    }
+}
+
+impl EntityTickPolicy for KilnTickPlanner {
+    fn plan(
+        &self,
+        snapshot: &EntitySnapshot,
+        current_tick: u64,
+        catalog: &Catalog,
+    ) -> Result<EntityTickPlan, EntityError> {
+        let payload = snapshot
+            .private_payload
+            .downcast_ref::<KilnPayload>()
+            .ok_or(EntityError::InvalidPayload)?;
+        let Some(due_tick) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due_tick {
+            return Err(EntityError::InvalidType);
+        }
+        // Delayed admission catches up from the persisted due time instead of
+        // silently sliding the schedule to whichever tick reached the queue.
+        let tick = plan_tick(payload, &self.recipes, catalog, due_tick)?;
+        let planned_payload = tick
+            .payload
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| payload.clone());
+        let anchor_update = planned_payload.anchor_update(
+            snapshot.anchor().ok_or(EntityError::WrongOwnership)?,
+            catalog,
+        )?;
+        let block_states = block_state_changes(snapshot, payload, &planned_payload, catalog)?;
+        Ok(EntityTickPlan {
+            payload: tick.payload.map(|payload| payload.into_entity_payload()),
+            next_tick: tick.next_tick,
+            anchor_update: Some(anchor_update),
+            block_states,
+        })
+    }
+}
+
+fn plan_interaction_payload(
+    payload: &KilnPayload,
+    request: &[u8],
+    inventory: &mut Inventory,
+    catalog: &Catalog,
+) -> Result<KilnPayload, EntityError> {
+    if request.len() != 6 || request[0] != 1 {
+        return Err(EntityError::InvalidPayload);
+    }
+    let operation = request[1];
+    let kiln_slot = KilnSlot::decode(request[2]).ok_or(EntityError::InvalidPayload)?;
+    let inventory_slot = usize::from(request[3]);
+    let count = u16::from_le_bytes([request[4], request[5]]);
+    if inventory_slot >= HOTBAR_SLOTS || count == 0 || count > STACK_LIMIT {
+        return Err(EntityError::InvalidPayload);
+    }
+    match operation {
+        0 if kiln_slot != KilnSlot::Output => {
+            let source = inventory.slots[inventory_slot]
+                .as_ref()
+                .filter(|stack| stack.count >= count)
+                .ok_or(EntityError::InvalidPayload)?;
+            let mut incoming = source.clone();
+            incoming.count = count;
+            let planned = plan_insert(payload, kiln_slot, &incoming, catalog)?;
+            if planned.remainder.is_some() {
+                return Err(EntityError::InvalidPayload);
+            }
+            let source = inventory.slots[inventory_slot]
+                .as_mut()
+                .ok_or(EntityError::InvalidPayload)?;
+            source.count -= count;
+            if source.count == 0 {
+                inventory.slots[inventory_slot] = None;
+            }
+            bump_inventory_revision(inventory)?;
+            Ok(planned.payload)
+        }
+        1 => {
+            let planned = plan_take(payload, kiln_slot, count, catalog)?;
+            let destination = &mut inventory.slots[inventory_slot];
+            match destination {
+                None => *destination = Some(planned.taken),
+                Some(current)
+                    if current.item == planned.taken.item
+                        && current.components == planned.taken.components
+                        && u32::from(current.count) + u32::from(count)
+                            <= u32::from(STACK_LIMIT) =>
+                {
+                    current.count += count;
+                }
+                Some(_) => return Err(EntityError::InvalidPayload),
+            }
+            bump_inventory_revision(inventory)?;
+            Ok(planned.payload)
+        }
+        _ => Err(EntityError::InvalidPayload),
+    }
+}
+
+fn bump_inventory_revision(inventory: &mut Inventory) -> Result<(), EntityError> {
+    inventory.revision = inventory
+        .revision
+        .checked_add(1)
+        .ok_or(EntityError::RevisionExhausted)?;
+    Ok(())
+}
+
+fn block_state_changes(
+    snapshot: &EntitySnapshot,
+    before: &KilnPayload,
+    after: &KilnPayload,
+    catalog: &Catalog,
+) -> Result<Vec<EntityBlockStateChange>, EntityError> {
+    let (anchor, footprint) = match &snapshot.location {
+        EntityLocation::Anchored {
+            anchor, footprint, ..
+        } => (*anchor, footprint),
+        EntityLocation::Mobile { .. } => return Err(EntityError::WrongOwnership),
+    };
+    let canonical_footprint = super::super::kiln_footprint(anchor)?;
+    if footprint != &canonical_footprint {
+        return Err(EntityError::InvalidLocation);
+    }
+    let before_states = super::super::kiln_block_states(catalog, before)?;
+    let after_states = super::super::kiln_block_states(catalog, after)?;
+    let upper = CellCoord::new(
+        anchor.x,
+        anchor
+            .y
+            .checked_add(1)
+            .ok_or(EntityError::InvalidLocation)?,
+        anchor.z,
+    );
+    let mut changes = vec![
+        EntityBlockStateChange {
+            cell: anchor,
+            before: before_states[0],
+            after: after_states[0],
+        },
+        EntityBlockStateChange {
+            cell: upper,
+            before: before_states[1],
+            after: after_states[1],
+        },
+    ];
+    changes.sort_by_key(|change| change.cell);
+    Ok(changes)
 }
 
 impl KilnTickPlan {

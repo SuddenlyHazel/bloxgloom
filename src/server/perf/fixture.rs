@@ -10,7 +10,7 @@ use crate::world::{
     AIR, CHUNK_SIZE, ChunkKey, DIRT, MAX_GENERATED_HEIGHT, STONE, World, is_solid, terrain_height,
     world_to_chunk,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::net::{TcpListener, TcpStream};
@@ -291,6 +291,10 @@ fn add_clients_and_seed_drops(
                 sender,
                 socket,
                 sent: HashSet::new(),
+                sent_epochs: HashMap::new(),
+                sent_block_versions: HashMap::new(),
+                sent_entity_revisions: HashMap::new(),
+                next_snapshot_epoch: 1,
                 center,
                 radius: STREAM_RADIUS,
                 movement: MovementState::new(position, 0),

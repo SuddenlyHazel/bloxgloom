@@ -141,6 +141,18 @@ pub(in crate::server) fn encode_action_receipt_with_catalog(
             value.extend([2, *slot]);
             value.extend(count.to_le_bytes());
         }
+        ClientMessage::EntityInteract {
+            target, payload, ..
+        } => {
+            value.push(3);
+            for coordinate in target {
+                value.extend(coordinate.to_le_bytes());
+            }
+            let length = u16::try_from(payload.len())
+                .map_err(|_| invalid_data("entity interaction payload is too large"))?;
+            value.extend(length.to_le_bytes());
+            value.extend(payload);
+        }
         _ => return Err(invalid_data("cannot create receipt for this command")),
     }
     if !valid_action_receipt_with_catalog(&value, catalog) {
@@ -179,6 +191,14 @@ pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
         [2, 2, slot, count0, count1] => {
             usize::from(*slot) < SLOTS
                 && (1..=STACK_LIMIT).contains(&u16::from_le_bytes([*count0, *count1]))
+        }
+        [2, 3, ..] if value.len() >= 17 => {
+            let y = i32::from_le_bytes(value[6..10].try_into().unwrap());
+            let payload_len = usize::from(u16::from_le_bytes(value[14..16].try_into().unwrap()));
+            y > crate::world::BEDROCK_Y
+                && (1..=super::super::entities::MAX_ENTITY_INTERACTION_REQUEST_BYTES)
+                    .contains(&payload_len)
+                && value.len() == 16 + payload_len
         }
         _ => false,
     }

@@ -22,12 +22,15 @@ pub(super) use kiln::{
     KilnSlot, KilnTakePlan, KilnTickPlan, kiln_block_states, kiln_entity_type_id, kiln_footprint,
     kiln_payload, kiln_state, plan_break, plan_insert, plan_take, plan_tick,
     register_entity_type as register_kiln_entity_type,
+    register_entity_type_with_recipes as register_kiln_entity_type_with_recipes,
 };
 pub(super) use persistence::{decode_checkpoint, decode_motion_value, encode_checkpoint};
 pub(super) use player::{PlayerEntityPayload, register_player_entity_type};
 pub(super) use registry::{
-    EntityCodecError, EntityPayloadCodec, EntityTypeDescriptor, EntityTypeRegistration,
-    EntityTypeRegistry, EntityTypeRegistryBuilder,
+    EntityBlockStateChange, EntityCodecError, EntityInteractionPlan, EntityInteractionPolicy,
+    EntityPayloadCodec, EntityTickPlan, EntityTickPolicy, EntityTypeDescriptor,
+    EntityTypeRegistration, EntityTypeRegistry, EntityTypeRegistryBuilder,
+    MAX_ENTITY_INTERACTION_REQUEST_BYTES,
 };
 pub(super) use store::{
     ENTITY_ALLOCATOR_DOMAIN, ENTITY_CELL_DOMAIN, ENTITY_CHUNK_DOMAIN, ENTITY_MOTION_DOMAIN,

@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const MAGIC: &[u8; 4] = b"BGAR";
 const VERSION: u16 = 1;
 pub(super) const WINDOW: usize = 128;
-const MAX_PAYLOAD: usize = 64;
+const MAX_PAYLOAD: usize = 16 + crate::server::entities::MAX_ENTITY_INTERACTION_REQUEST_BYTES;
 const MAX_REASON: usize = 32;
 const MAX_SNAPSHOT: usize = 64 + WINDOW * (8 + 1 + 1 + MAX_REASON + 1 + MAX_PAYLOAD);
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -52,7 +52,7 @@ pub(super) enum ReceiptEvent {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ReceiptTransition {
+pub(in crate::server) struct ReceiptTransition {
     pub(super) profile: u128,
     pub(super) before: Vec<u8>,
     pub(super) after: Vec<u8>,
@@ -296,7 +296,7 @@ fn validate_record(record: &ResultRecord) -> io::Result<()> {
 }
 
 #[derive(Clone)]
-pub(super) struct ReceiptStore {
+pub(in crate::server) struct ReceiptStore {
     root: PathBuf,
 }
 

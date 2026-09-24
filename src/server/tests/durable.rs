@@ -147,7 +147,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
         &mut tick,
         vec![SimulationInput::Join {
             profile,
-            inventory: stale,
+            inventory: Box::new(stale),
             sender,
             socket,
             reply: reply_sender,
@@ -216,7 +216,9 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
                 | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
                 _ => None,
             },
-            DurableRequest::Pickup { .. } | DurableRequest::Expire => None,
+            DurableRequest::Pickup { .. }
+            | DurableRequest::Expire
+            | DurableRequest::EntityTick { .. } => None,
         })
         .collect();
     assert_eq!(queued_command_ids, [second_id]);

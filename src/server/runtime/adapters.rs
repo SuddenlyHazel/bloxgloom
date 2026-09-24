@@ -40,7 +40,7 @@ pub(in crate::server) fn interaction_commit(
     context: &mut CoordinatorContext<'_>,
 ) -> io::Result<()> {
     commit_block_effects(context.state, context.tick)?;
-    queue_interaction_actions(context.state);
+    queue_interaction_actions(context.state, context.tick);
     if context.state.moving_drops_dirty
         && (context.state.drops_landed_dirty
             || context.now.duration_since(context.state.last_drop_save) >= Duration::from_secs(1))
@@ -59,6 +59,6 @@ pub(in crate::server) fn fire_delivery(context: &mut CoordinatorContext<'_>) -> 
 }
 
 pub(in crate::server) fn publish(context: &mut CoordinatorContext<'_>) -> io::Result<()> {
-    publish_committed(context.state);
+    publish_committed(context.state)?;
     streaming::publish_streams(context.state)
 }

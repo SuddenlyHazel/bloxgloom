@@ -166,7 +166,7 @@ pub(super) fn serve_client(
         input
             .try_send(SimulationInput::Join {
                 profile,
-                inventory: loaded_inventory,
+                inventory: Box::new(loaded_inventory),
                 sender: sender.clone(),
                 socket: socket.try_clone()?,
                 reply: reply_sender,

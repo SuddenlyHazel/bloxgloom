@@ -261,7 +261,7 @@ impl Connection {
                 let (reply, receiver) = mpsc::sync_channel(1);
                 match input.try_send(SimulationInput::Join {
                     profile,
-                    inventory,
+                    inventory: Box::new(inventory),
                     sender: sender.clone(),
                     socket: self.socket.try_clone()?,
                     reply,
@@ -273,7 +273,7 @@ impl Connection {
                         progress = true;
                     }
                     Err(TrySendError::Full(SimulationInput::Join { inventory, .. })) => {
-                        self.inventory = Some(inventory);
+                        self.inventory = Some(*inventory);
                     }
                     Err(TrySendError::Disconnected(_)) => {
                         return Err(io::Error::new(

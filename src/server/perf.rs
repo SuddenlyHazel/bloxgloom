@@ -4,6 +4,7 @@
 //! separately. Measured ticks call the same `tick_with_inputs` coordinator
 //! function as the live server and are paced at the production 50 Hz rate.
 
+mod fire;
 mod fixture;
 mod report;
 mod tcp;
@@ -51,6 +52,10 @@ pub fn run_tcp_perf(clients: usize, ticks: usize, scene: &str) -> io::Result<()>
             report.reasons.join("; ")
         )))
     }
+}
+
+pub fn run_fire_perf(measured_ticks: usize, warmup: usize) -> io::Result<()> {
+    fire::run(measured_ticks, warmup)
 }
 
 pub fn run_fire_cpu_perf(workers: usize, iterations: usize) -> io::Result<()> {
@@ -120,18 +125,22 @@ pub fn run_fire_cpu_perf(workers: usize, iterations: usize) -> io::Result<()> {
     let applied_single = report.single_worker.post_wal_apply;
     let applied_parallel = report.comparison.post_wal_apply;
     println!(
-        "  owner-apply (source wave): 1-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}], {}-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}]; WAL wait and fixture reset excluded",
+        "  owner-apply (source wave): 1-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}, groups {} / max {} per barrier], {}-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}, groups {} / max {} per barrier]; WAL wait and fixture reset excluded",
         applied_single.total().as_secs_f64(),
         applied_single.capture_and_validate.as_secs_f64(),
         applied_single.worker_barrier.as_secs_f64(),
         applied_single.metadata_finalize.as_secs_f64(),
         applied_single.worker_run_time.as_secs_f64(),
+        applied_single.submitted_worker_groups,
+        applied_single.max_worker_groups_per_barrier,
         report.comparison.workers,
         applied_parallel.total().as_secs_f64(),
         applied_parallel.capture_and_validate.as_secs_f64(),
         applied_parallel.worker_barrier.as_secs_f64(),
         applied_parallel.metadata_finalize.as_secs_f64(),
         applied_parallel.worker_run_time.as_secs_f64(),
+        applied_parallel.submitted_worker_groups,
+        applied_parallel.max_worker_groups_per_barrier,
     );
     if report.outputs_match {
         Ok(())

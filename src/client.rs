@@ -1,6 +1,7 @@
 //! Desktop client: network I/O and meshing stay off the window thread.
 use crate::config::Config;
 use crate::inventory::{HOTBAR_SLOTS, Inventory};
+use crate::lighting::LightSample;
 use crate::protocol::{ClientMessage, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{Camera, ChunkMesh, Renderer};
@@ -137,7 +138,8 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
     match message {
         ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
-        | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
+        | ClientMessage::DropStack { action_id, .. }
+        | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }
 }
@@ -192,7 +194,10 @@ impl ActionTracker {
     }
 }
 
+mod entities;
 mod workers;
+use entities::kiln::KilnCommand;
+use entities::{Assembly, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 
 #[derive(Default)]
@@ -220,10 +225,13 @@ struct ClientApp {
     renderer: Option<Renderer>,
     ui_layout: Option<UiLayout>,
     chunks: HashMap<ChunkKey, Arc<Chunk>>,
+    replicas: Replicas,
     pending_mesh: HashMap<ChunkKey, u64>,
     lighting_revisions: HashMap<ChunkKey, u64>,
+    light_samples: HashMap<ChunkKey, (u64, Box<[LightSample]>)>,
     next_lighting_revision: u64,
     world_seed: Option<u64>,
+    owned_entity_id: Option<u64>,
     pending_upload: VecDeque<ChunkMesh>,
     pending_commands: VecDeque<ClientMessage>,
     position: Vec3,
@@ -273,10 +281,13 @@ impl ClientApp {
             renderer: None,
             ui_layout: None,
             chunks: HashMap::new(),
+            replicas: Replicas::default(),
             pending_mesh: HashMap::new(),
             lighting_revisions: HashMap::new(),
+            light_samples: HashMap::new(),
             next_lighting_revision: 1,
             world_seed: None,
+            owned_entity_id: None,
             pending_upload: VecDeque::new(),
             pending_commands: VecDeque::new(),
             position: Vec3::new(0.5, 40.0, 0.5),
@@ -603,6 +614,14 @@ impl ClientApp {
                 self.world_seed = Some(seed);
                 eprintln!("connected as player {id}, world seed {seed}")
             }
+            ServerMessage::OwnedEntity { id } => {
+                if self.owned_entity_id.is_some_and(|old| old != id) {
+                    self.disconnected = true;
+                    self.show_status("Conflicting owned entity identity");
+                } else {
+                    self.owned_entity_id = Some(id);
+                }
+            }
             ServerMessage::ActionSession {
                 epoch,
                 next_seq,
@@ -637,6 +656,26 @@ impl ClientApp {
                 let modified = chunk.version != 0;
                 self.chunks.insert(key, Arc::new(chunk));
                 self.queue_relight(key, modified);
+            }
+            ServerMessage::WorldSnapshotStart(_)
+            | ServerMessage::EntitySnapshotPage(_)
+            | ServerMessage::WorldCommitPart(_) => {
+                match self
+                    .replicas
+                    .accept(message, &self.catalog, &mut self.chunks)
+                {
+                    Assembly::Waiting => {}
+                    Assembly::Installed(keys) => {
+                        for key in keys {
+                            self.queue_relight(key, true);
+                        }
+                    }
+                    Assembly::Resync(keys) => {
+                        for key in keys {
+                            self.queue_command(ClientMessage::Resync { key });
+                        }
+                    }
+                }
             }
             ServerMessage::Delta {
                 key,
@@ -734,7 +773,7 @@ impl ClientApp {
         }
         for _ in 0..128 {
             match self.network.incoming.try_recv() {
-                Ok(Incoming::Message(message)) => self.accept(message),
+                Ok(Incoming::Message(message)) => self.accept(*message),
                 Ok(Incoming::Closed(reason)) => {
                     eprintln!("disconnected: {reason}");
                     self.disconnected = true;
@@ -758,7 +797,10 @@ impl ClientApp {
             }
             keep
         });
+        self.replicas.retain(|key| self.chunks.contains_key(&key));
         self.lighting_revisions
+            .retain(|key, _| self.chunks.contains_key(key));
+        self.light_samples
             .retain(|key, _| self.chunks.contains_key(key));
         self.pending_mesh
             .retain(|key, _| self.chunks.contains_key(key));
@@ -774,15 +816,18 @@ impl ClientApp {
             self.pending_upload
                 .retain(|mesh| self.chunks.contains_key(&mesh.key));
             for _ in 0..(128usize.saturating_sub(self.pending_upload.len())).min(64) {
-                let Ok(mesh) = self.mesher.results.try_recv() else {
+                let Ok(result) = self.mesher.results.try_recv() else {
                     break;
                 };
+                let mesh = result.mesh;
                 if self
                     .chunks
                     .get(&mesh.key)
                     .is_some_and(|chunk| chunk.version == mesh.version)
                     && self.lighting_revisions.get(&mesh.key) == Some(&mesh.lighting_revision)
                 {
+                    self.light_samples
+                        .insert(mesh.key, (mesh.lighting_revision, result.lighting));
                     self.pending_upload.push_back(mesh);
                 }
             }
@@ -875,6 +920,25 @@ impl ClientApp {
         self.chunks.get(&key)?.block(local)
     }
 
+    fn avatar_light(&self, feet: Vec3) -> LightSample {
+        let head = feet + Vec3::Y * 1.45;
+        let (key, local) = crate::world::world_to_chunk(
+            head.x.floor() as i32,
+            head.y.floor() as i32,
+            head.z.floor() as i32,
+        );
+        let Some((revision, samples)) = self.light_samples.get(&key) else {
+            return LightSample::default();
+        };
+        if self.lighting_revisions.get(&key) != Some(revision) {
+            return LightSample::default();
+        }
+        Chunk::index(local)
+            .and_then(|index| samples.get(index))
+            .copied()
+            .unwrap_or_default()
+    }
+
     fn aimed_block(&self) -> Option<Hit> {
         let camera = self.camera();
         raycast::raycast_with_catalog(
@@ -919,6 +983,28 @@ impl ClientApp {
                 });
             }
         }
+    }
+
+    fn interact_aimed_kiln(&mut self, command: KilnCommand) {
+        if self.screen != UiScreen::Playing || !self.grabbed {
+            return;
+        }
+        let Some(hit) = self.aimed_block() else {
+            return;
+        };
+        if !entities::kiln::is_kiln_hit(hit, &self.catalog) {
+            return;
+        }
+        let Some(action_id) = self.allocate_action_id() else {
+            self.show_status("Action session pending or busy");
+            return;
+        };
+        self.queue_command(entities::kiln::interaction(
+            hit,
+            action_id,
+            self.config.selected_slot as u8,
+            command,
+        ));
     }
 
     fn frame(&mut self) {
@@ -967,8 +1053,17 @@ impl ClientApp {
             hovered: self.focused_control,
         };
         let visual_drops = self.drop_animator.visuals(now, self.position);
+        let mut visual_avatars = self
+            .replicas
+            .visual_avatars(self.position, self.owned_entity_id);
+        for avatar in &mut visual_avatars {
+            let sample = self.avatar_light(avatar.position);
+            avatar.light_levels = [sample.sky, sample.glow, 0, 0];
+            avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
+        }
         if let Some(renderer) = &mut self.renderer {
             renderer.set_drops(&visual_drops);
+            renderer.set_avatars(&visual_avatars);
             match renderer.render(camera, &ui) {
                 Ok(stats) => {
                     self.last_visible_chunks = stats.visible_chunks;

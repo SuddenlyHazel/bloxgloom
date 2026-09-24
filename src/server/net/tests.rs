@@ -304,7 +304,10 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
     for _ in 0..32 {
         match protocol::read_server(&mut peer).unwrap() {
             ServerMessage::ViewDistance { radius: 2 } => acknowledged = true,
-            ServerMessage::Chunk(_) => streamed_chunk = true,
+            ServerMessage::WorldSnapshotStart(start) => {
+                assert_eq!(start.chunk.blocks.len(), crate::world::CHUNK_VOLUME);
+                streamed_chunk = true;
+            }
             _ => {}
         }
         if acknowledged && streamed_chunk {

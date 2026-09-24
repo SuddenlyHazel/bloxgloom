@@ -84,6 +84,22 @@ impl ApplicationHandler for ClientApp {
                                 self.toggle_inventory();
                                 return;
                             }
+                            KeyCode::KeyR if self.screen == UiScreen::Playing => {
+                                self.interact_aimed_kiln(if self.shift_down {
+                                    KilnCommand::TakeOutput
+                                } else {
+                                    KilnCommand::InsertInput
+                                });
+                                return;
+                            }
+                            KeyCode::KeyF if self.screen == UiScreen::Playing => {
+                                self.interact_aimed_kiln(if self.shift_down {
+                                    KilnCommand::TakeFuel
+                                } else {
+                                    KilnCommand::InsertFuel
+                                });
+                                return;
+                            }
                             KeyCode::KeyQ
                                 if matches!(
                                     self.screen,

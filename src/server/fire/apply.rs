@@ -9,6 +9,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 const MAX_APPLY_JOBS_PER_BARRIER: usize = 64;
+const MIN_OWNER_TASKS_PER_WORKER_GROUP: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(in crate::server) struct FireApplyTimings {
@@ -16,6 +17,8 @@ pub(in crate::server) struct FireApplyTimings {
     pub(in crate::server) worker_barrier: Duration,
     pub(in crate::server) metadata_finalize: Duration,
     pub(in crate::server) worker_run_time: Duration,
+    pub(in crate::server) submitted_worker_groups: usize,
+    pub(in crate::server) max_worker_groups_per_barrier: usize,
 }
 
 impl FireApplyTimings {
@@ -59,15 +62,33 @@ impl FireRuntime {
             let batch = BatchId::new(TickId::new(self.apply_sequence), Phase::DurableActions, 0);
             let mut expected = BTreeMap::<ChunkKey, u64>::new();
             let mut admission_error = None;
-            for task in tasks {
-                let owner = task.key();
-                let version = task.expected_version();
+            // A checked Arc swap is small. Keep enough disjoint owner tasks
+            // in each worker closure to amortize queue/barrier scheduling;
+            // larger batches still grow to the configured worker count.
+            let worker_count = tasks
+                .len()
+                .div_ceil(MIN_OWNER_TASKS_PER_WORKER_GROUP)
+                .min(self.apply_executor.worker_count());
+            timings.submitted_worker_groups += worker_count;
+            timings.max_worker_groups_per_barrier =
+                timings.max_worker_groups_per_barrier.max(worker_count);
+            let mut groups: Vec<Vec<_>> = std::iter::repeat_with(Vec::new)
+                .take(worker_count)
+                .collect();
+            for (index, task) in tasks.into_iter().enumerate() {
+                expected.insert(task.key(), task.expected_version());
+                groups[index % worker_count].push(task);
+            }
+            for group in groups {
+                let owner = group[0].key();
+                let version = group[0].expected_version();
                 let key = JobKey::new(batch, owner, 0, version);
-                if let Err(error) = self.apply_executor.try_submit(key, move |_| task.run()) {
+                if let Err(error) = self.apply_executor.try_submit(key, move |_| {
+                    group.into_iter().map(|task| task.run()).collect()
+                }) {
                     admission_error = Some(format!("post-WAL owner worker admission: {error:?}"));
                     break;
                 }
-                expected.insert(owner, version);
             }
             timings.capture_and_validate += capture_started.elapsed();
 
@@ -93,11 +114,15 @@ impl FireRuntime {
                         return Err(io::Error::other("post-WAL owner result key mismatch"));
                     }
                     match job.outcome {
-                        JobOutcome::Completed(receipt) if receipt.key() == chunk => {
-                            receipts.push(receipt)
-                        }
-                        JobOutcome::Completed(_) => {
-                            return Err(io::Error::other("post-WAL owner receipt key mismatch"));
+                        JobOutcome::Completed(group_receipts) => {
+                            for receipt in group_receipts {
+                                if expected.remove(&receipt.key()).is_none() {
+                                    return Err(io::Error::other(
+                                        "post-WAL owner receipt key mismatch or duplicate",
+                                    ));
+                                }
+                                receipts.push(receipt);
+                            }
                         }
                         JobOutcome::Failed(error) => return Err(error),
                         JobOutcome::Panicked(error) => {
@@ -113,7 +138,7 @@ impl FireRuntime {
                     }
                 }
             }
-            if receipts.len() != expected.len() {
+            if !expected.is_empty() {
                 return Err(io::Error::other("post-WAL owner barrier lost a result"));
             }
             let finalize_started = Instant::now();

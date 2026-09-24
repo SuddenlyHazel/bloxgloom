@@ -23,6 +23,11 @@ use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[path = "scheduler/encode.rs"]
+mod encode;
+#[path = "scheduler/fixture.rs"]
+mod fixture;
+
 pub(super) const FIRE_LANES: usize = 32;
 const TOTAL_CURSOR_LANES: usize = FIRE_LANES * 2;
 pub(super) const FIRE_SYSTEM_ID: &str = "bloxgloom:fire_propagate";
@@ -211,10 +216,10 @@ impl FireRecovered {
 }
 
 #[derive(Clone, Debug)]
-struct MailboxUpdate {
-    destination: ChunkKey,
-    source: ChunkKey,
-    after: FirePending,
+pub(super) struct MailboxUpdate {
+    pub(super) destination: ChunkKey,
+    pub(super) source: ChunkKey,
+    pub(super) after: FirePending,
 }
 
 /// Ignitions produced by a validated player edit. These mailbox transitions
@@ -240,10 +245,10 @@ pub(in crate::server) struct FireTransaction {
     pub(in crate::server) changes: Vec<Change>,
     pub(super) emitted_effects: usize,
     pub(super) delivered_effects: usize,
-    frontier_after: FireFrontier,
-    mailboxes: Vec<MailboxUpdate>,
-    cursor_lane: usize,
-    cursor_after: FireCursor,
+    pub(super) frontier_after: FireFrontier,
+    pub(super) mailboxes: Vec<MailboxUpdate>,
+    pub(super) cursor_lane: usize,
+    pub(super) cursor_after: FireCursor,
 }
 
 impl FireTransaction {
@@ -279,6 +284,22 @@ pub(in crate::server) struct FireWave {
     pub(in crate::server) timings: FireWaveTimings,
 }
 
+/// Cumulative admission counters and a point-in-time authoritative fire load.
+/// Benchmark sampling is outside the coordinator's measured phase timing.
+#[derive(Clone, Copy, Debug, Default)]
+pub(in crate::server) struct FireLoadMetrics {
+    pub(in crate::server) frontier_cells: usize,
+    pub(in crate::server) pending_ignitions: usize,
+    pub(in crate::server) inflight_owners: usize,
+    pub(in crate::server) admitted_transactions: u64,
+    pub(in crate::server) deferred_transactions: u64,
+    pub(in crate::server) conflict_deferred_transactions: u64,
+    pub(in crate::server) full_deferred_transactions: u64,
+    pub(in crate::server) deferred_owners: u64,
+    pub(in crate::server) missing_chunks: u64,
+    pub(in crate::server) burned_cells: u64,
+}
+
 pub(in crate::server) struct FireRuntime {
     frontiers: BTreeMap<ChunkKey, Arc<FireFrontier>>,
     pending: BTreeMap<(ChunkKey, ChunkKey), Arc<FirePending>>,
@@ -287,8 +308,10 @@ pub(in crate::server) struct FireRuntime {
     inflight_mailboxes: BTreeSet<(ChunkKey, ChunkKey)>,
     inflight_lanes: BTreeSet<usize>,
     executor: PhaseExecutor<OwnerPatch, SystemHandlerError>,
-    pub(super) apply_executor: PhaseExecutor<OwnerApplyReceipt, io::Error>,
+    encode_executor: PhaseExecutor<Option<FireTransaction>, io::Error>,
+    pub(super) apply_executor: PhaseExecutor<Vec<OwnerApplyReceipt>, io::Error>,
     pub(super) apply_sequence: u64,
+    admission: FireLoadMetrics,
 }
 
 impl FireRuntime {
@@ -297,6 +320,8 @@ impl FireRuntime {
             .map_err(|error| io::Error::other(format!("fire worker pool: {error:?}")))?;
         let apply_executor = PhaseExecutor::new(workers, FIRE_LANES * 2, FIRE_LANES * 2)
             .map_err(|error| io::Error::other(format!("fire apply worker pool: {error:?}")))?;
+        let encode_executor = PhaseExecutor::new(workers, FIRE_LANES * 2, FIRE_LANES * 2)
+            .map_err(|error| io::Error::other(format!("fire encode worker pool: {error:?}")))?;
         Ok(Self {
             frontiers: recovered
                 .frontiers
@@ -313,9 +338,50 @@ impl FireRuntime {
             inflight_mailboxes: BTreeSet::new(),
             inflight_lanes: BTreeSet::new(),
             executor,
+            encode_executor,
             apply_executor,
             apply_sequence: 0,
+            admission: FireLoadMetrics::default(),
         })
+    }
+
+    pub(in crate::server) fn load_metrics(&self) -> FireLoadMetrics {
+        FireLoadMetrics {
+            frontier_cells: self.frontiers.values().map(|frontier| frontier.len()).sum(),
+            pending_ignitions: self.pending.values().map(|mailbox| mailbox.len()).sum(),
+            inflight_owners: self.inflight_frontiers.len(),
+            ..self.admission
+        }
+    }
+
+    pub(in crate::server) fn note_admitted(&mut self, count: usize) {
+        self.admission.admitted_transactions = self
+            .admission
+            .admitted_transactions
+            .saturating_add(count as u64);
+    }
+
+    pub(in crate::server) fn note_deferred(&mut self, count: usize) {
+        self.admission.deferred_transactions = self
+            .admission
+            .deferred_transactions
+            .saturating_add(count as u64);
+    }
+
+    pub(in crate::server) fn note_conflict(&mut self, count: usize) {
+        self.note_deferred(count);
+        self.admission.conflict_deferred_transactions = self
+            .admission
+            .conflict_deferred_transactions
+            .saturating_add(count as u64);
+    }
+
+    pub(in crate::server) fn note_full(&mut self, count: usize) {
+        self.note_deferred(count);
+        self.admission.full_deferred_transactions = self
+            .admission
+            .full_deferred_transactions
+            .saturating_add(count as u64);
     }
 
     /// Called by the edit planner for an actual glowstone placement. The
@@ -487,6 +553,10 @@ impl FireRuntime {
         }
         let captured = Instant::now();
         if expected.is_empty() {
+            self.admission.missing_chunks = self
+                .admission
+                .missing_chunks
+                .saturating_add(missing_chunks.len() as u64);
             return Ok(FireWave {
                 transactions: Vec::new(),
                 missing_chunks,
@@ -550,15 +620,16 @@ impl FireRuntime {
                     .expect("validated fire patch payload"),
             );
         });
-        let mut transactions = Vec::with_capacity(owner_patches.len());
-        let mut deferred_owners = 0;
-        for patch in owner_patches {
-            if let Some(transaction) = self.transaction_for_source(patch, tick.get())? {
-                transactions.push(transaction);
-            } else {
-                deferred_owners += 1;
-            }
-        }
+        let (transactions, deferred_owners) =
+            self.encode_source_patches(owner_patches, tick, batch)?;
+        self.admission.deferred_owners = self
+            .admission
+            .deferred_owners
+            .saturating_add(deferred_owners as u64);
+        self.admission.missing_chunks = self
+            .admission
+            .missing_chunks
+            .saturating_add(missing_chunks.len() as u64);
         let encoded = Instant::now();
         Ok(FireWave {
             transactions,
@@ -632,6 +703,10 @@ impl FireRuntime {
         }
         let captured = Instant::now();
         if expected.is_empty() {
+            self.admission.missing_chunks = self
+                .admission
+                .missing_chunks
+                .saturating_add(missing_chunks.len() as u64);
             return Ok(FireWave {
                 transactions: Vec::new(),
                 missing_chunks,
@@ -700,6 +775,14 @@ impl FireRuntime {
                 deferred_owners += 1;
             }
         }
+        self.admission.deferred_owners = self
+            .admission
+            .deferred_owners
+            .saturating_add(deferred_owners as u64);
+        self.admission.missing_chunks = self
+            .admission
+            .missing_chunks
+            .saturating_add(missing_chunks.len() as u64);
         let encoded = Instant::now();
         Ok(FireWave {
             transactions,
@@ -784,7 +867,7 @@ impl FireRuntime {
             cursor_before.encode(),
             cursor_after.encode(),
         ));
-        Ok(Some(FireTransaction {
+        let transaction = FireTransaction {
             owner: destination,
             burns: Vec::new(),
             changed_cells: Vec::new(),
@@ -800,7 +883,9 @@ impl FireRuntime {
             }],
             cursor_lane: lane,
             cursor_after,
-        }))
+        };
+        validate_transaction(&transaction)?;
+        Ok(Some(transaction))
     }
 
     fn select_due_owners(&self, tick: u64) -> Vec<ChunkKey> {
@@ -839,95 +924,6 @@ impl FireRuntime {
             .filter_map(|(after, before)| after.or(before))
             .take(MAX_SOURCE_OWNERS_PER_WAVE)
             .collect()
-    }
-
-    fn transaction_for_source(
-        &self,
-        patch: FireOwnerPatch,
-        tick: u64,
-    ) -> io::Result<Option<FireTransaction>> {
-        if patch.consumed.is_empty() {
-            return Ok(None);
-        }
-        let source = patch.owner;
-        let lane = owner_lane(source);
-        for destination in patch.mailbox_after.keys().copied() {
-            if self.inflight_mailboxes.contains(&(destination, source)) {
-                return Ok(None);
-            }
-        }
-        let before = self
-            .frontiers
-            .get(&source)
-            .ok_or_else(|| invalid("fire source frontier disappeared"))?;
-        let mut changes = vec![Change::new(
-            frontier_key(source),
-            before.encode(),
-            patch.frontier_after.encode(),
-        )];
-        if let Some(edit) = &patch.world_edit {
-            changes.push(Change::new(
-                StateKey::new("bloxgloom:chunk_snapshot", key_bytes(source).to_vec()),
-                edit.before_snapshot.clone(),
-                edit.after_snapshot.clone(),
-            ));
-        }
-        let mut mailboxes = Vec::with_capacity(patch.mailbox_after.len());
-        for (destination, after) in patch.mailbox_after {
-            let prior = self.pending.get(&(destination, source));
-            let before = prior.map_or_else(Vec::new, |mailbox| mailbox.encode());
-            let encoded_after = after.encode();
-            if before == encoded_after {
-                continue;
-            }
-            changes.push(Change::new(
-                mailbox_key(destination, source),
-                before,
-                encoded_after,
-            ));
-            mailboxes.push(MailboxUpdate {
-                destination,
-                source,
-                after,
-            });
-        }
-        let cursor_before = self.cursors[lane];
-        let cursor_after = FireCursor {
-            last_owner: Some(source),
-            last_source: None,
-            last_tick: tick,
-        };
-        changes.push(Change::new(
-            cursor_key(lane),
-            cursor_before.encode(),
-            cursor_after.encode(),
-        ));
-        // The journal has a strict 1 MiB record ceiling. Leave conservative
-        // envelope room and retain the source when several old mailboxes make
-        // an otherwise valid atomic transition too large.
-        let estimated = changes.iter().fold(0usize, |sum, change| {
-            sum.saturating_add(change.key.domain.len())
-                .saturating_add(change.key.bytes.len())
-                .saturating_add(change.before.len())
-                .saturating_add(change.after.len())
-                .saturating_add(64)
-        });
-        if estimated > 900_000 {
-            return Ok(None);
-        }
-        Ok(Some(FireTransaction {
-            owner: source,
-            burns: patch.burns,
-            changed_cells: patch.changed_cells,
-            world_edit: patch.world_edit,
-            changes,
-            emitted_effects: patch.effect_count,
-            delivered_effects: 0,
-            frontier_after: patch.frontier_after,
-            mailboxes,
-            cursor_lane: lane,
-            cursor_after,
-        }))
     }
 
     /// Reserve after the journal accepted the complete transaction. A failed
@@ -1027,6 +1023,10 @@ impl FireRuntime {
                 );
             }
         }
+        self.admission.burned_cells = self
+            .admission
+            .burned_cells
+            .saturating_add(transaction.burns.len() as u64);
         self.cursors[transaction.cursor_lane] = transaction.cursor_after;
         Ok(())
     }
@@ -1100,4 +1100,19 @@ fn source_destinations(source: ChunkKey) -> BTreeSet<ChunkKey> {
 
 fn cursor_lane(owner: ChunkKey, lane: usize) -> usize {
     owner_lane(owner) + if lane >= FIRE_LANES { FIRE_LANES } else { 0 }
+}
+
+fn validate_transaction(transaction: &FireTransaction) -> io::Result<()> {
+    for change in transaction.changes() {
+        if change.before == change.after {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "fire owner {:?} emitted unchanged {} key {:?}",
+                    transaction.owner, change.key.domain, change.key.bytes
+                ),
+            ));
+        }
+    }
+    Ok(())
 }

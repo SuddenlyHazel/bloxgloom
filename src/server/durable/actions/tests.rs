@@ -1,4 +1,6 @@
 use super::*;
+use crate::items::{ItemId, STICK};
+use crate::server::entities::{CellCoord, KilnSlot, kiln_block_states, kiln_payload};
 use crate::server::movement::MovementState;
 use crate::server::{Client, DEFAULT_VIEW, State, server_state};
 use crate::world::{GRASS, MAX_GENERATED_HEIGHT, RED_FLOWER};
@@ -36,6 +38,10 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
             sender,
             socket,
             sent: Default::default(),
+            sent_epochs: Default::default(),
+            sent_block_versions: Default::default(),
+            sent_entity_revisions: Default::default(),
+            next_snapshot_epoch: 1,
             center,
             radius: DEFAULT_VIEW,
             movement: MovementState::new(position, 0),
@@ -51,6 +57,45 @@ fn edit_request(message: ClientMessage) -> DurableRequest {
         message,
         queued_at: Instant::now(),
     }
+}
+
+fn grant_action_epoch(state: &mut State, profile: u128) -> u64 {
+    assert!(
+        state
+            .durability
+            .request_epoch_grant(profile, TickId::new(1))
+            .unwrap()
+            .is_none()
+    );
+    for _ in 0..2_000 {
+        super::super::receipt::poll_journal_receipts(state).unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    state
+        .durability
+        .request_epoch_grant(profile, TickId::new(2))
+        .unwrap()
+        .unwrap()
+}
+
+fn settle_live_action(state: &mut State, tick: u64, message: ClientMessage) {
+    super::super::coordinator::handle_live_message(state, 1, message, TickId::new(tick)).unwrap();
+    for current in tick..tick + 2_000 {
+        super::super::coordinator::process_durable_actions(
+            state,
+            TickId::new(current),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.queued.is_empty() && state.durability.pending.is_empty() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("live durable action did not settle");
 }
 
 #[test]
@@ -178,5 +223,277 @@ fn kiln_plan_spans_vertical_chunk_seam_without_pre_wal_visibility() {
 
     drop(peer);
     drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
+    let path = temp_save_dir("kiln-live-seam-restart");
+    let profile = 17;
+    let target_y = ((MAX_GENERATED_HEIGHT / 16) + 1) * 16 - 1;
+    let anchor = CellCoord::new(-1, target_y, -1);
+    let upper = CellCoord::new(-1, target_y + 1, -1);
+    let lower_chunk = anchor.chunk();
+    let upper_chunk = upper.chunk();
+    assert_ne!(lower_chunk, upper_chunk);
+
+    let mut state = server_state(53, path.clone()).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(crate::content::KILN_ITEM, 1));
+    inventory.slots[1] = Some(crate::inventory::Stack::new(STICK, 1));
+    inventory.slots[2] = Some(crate::inventory::Stack::new(
+        ItemId(crate::world::GRAVEL.0),
+        1,
+    ));
+    let player_peer = add_test_client(
+        &mut state,
+        [
+            anchor.x as f32 + 0.5,
+            anchor.y as f32,
+            anchor.z as f32 + 3.5,
+        ],
+        inventory,
+    );
+    state.world.get_chunk(lower_chunk).unwrap();
+    state.world.get_chunk(upper_chunk).unwrap();
+    assert_eq!(
+        state.world.cached_block(anchor.x, anchor.y, anchor.z),
+        Some(AIR)
+    );
+    assert_eq!(
+        state.world.cached_block(upper.x, upper.y, upper.z),
+        Some(AIR)
+    );
+
+    let epoch = grant_action_epoch(&mut state, profile);
+    let action_id = |sequence: u64| (u128::from(epoch) << 64) | u128::from(sequence);
+    settle_live_action(
+        &mut state,
+        10,
+        ClientMessage::Edit {
+            action_id: action_id(1),
+            x: anchor.x,
+            y: anchor.y,
+            z: anchor.z,
+            block: crate::content::KILN_DEFAULT_STATE,
+            slot: 0,
+        },
+    );
+    let entity_id = state
+        .entities
+        .anchored_at(anchor)
+        .expect("WAL-installed kiln");
+    assert_eq!(state.entities.anchored_at(upper), Some(entity_id));
+    assert_eq!(
+        state.world.cached_block(anchor.x, anchor.y, anchor.z),
+        Some(crate::content::KILN_DEFAULT_STATE)
+    );
+
+    let fuel_request = ClientMessage::EntityInteract {
+        action_id: action_id(2),
+        target: [anchor.x, anchor.y, anchor.z],
+        payload: vec![1, 0, 0, 1, 1, 0], // insert one stick as fuel
+    };
+    super::super::coordinator::handle_live_message(&mut state, 1, fuel_request, TickId::new(11))
+        .unwrap();
+    super::super::coordinator::process_durable_actions(&mut state, TickId::new(11), Instant::now())
+        .unwrap();
+    let lower_key = super::super::chunk_state_key(lower_chunk);
+    let upper_key = super::super::chunk_state_key(upper_chunk);
+    assert!(state.durability.reserved.contains(&lower_key));
+    assert!(state.durability.reserved.contains(&upper_key));
+    let staged = match &state.durability.pending[0].payload {
+        super::super::PendingPayload::Action(action) => action,
+        super::super::PendingPayload::Fire(_) => panic!("kiln action staged as fire"),
+    };
+    assert!(staged.world_edits.is_empty());
+    assert!(
+        staged
+            .entities
+            .as_ref()
+            .unwrap()
+            .changes()
+            .iter()
+            .all(|change| change.key.domain != "bloxgloom:chunk_snapshot")
+    );
+
+    let overlapping_edit = state
+        .world
+        .prepare_edits(&[(upper.x, upper.y, upper.z, crate::world::STONE)])
+        .unwrap();
+    let overlapping_action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: overlapping_edit,
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: None,
+    };
+    assert!(matches!(
+        state
+            .durability
+            .try_stage(TickId::new(12), &overlapping_action, None, None),
+        Err(super::super::StageError::Conflict)
+    ));
+    for current in 12..2_012 {
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(current),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() && state.durability.queued.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!state.durability.reserved.contains(&lower_key));
+    assert!(!state.durability.reserved.contains(&upper_key));
+    settle_live_action(
+        &mut state,
+        12,
+        ClientMessage::EntityInteract {
+            action_id: action_id(3),
+            target: [anchor.x, anchor.y, anchor.z],
+            payload: vec![1, 0, 1, 2, 1, 0], // insert one gravel input
+        },
+    );
+    assert_eq!(state.clients[&1].inventory.slots[1], None);
+    assert_eq!(state.clients[&1].inventory.slots[2], None);
+
+    for tick in [30, 50, 70, 90] {
+        super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(tick));
+        for current in tick..tick + 2_000 {
+            super::super::coordinator::process_durable_actions(
+                &mut state,
+                TickId::new(current),
+                Instant::now(),
+            )
+            .unwrap();
+            if state.durability.queued.is_empty() && state.durability.pending.is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(state.durability.pending.is_empty());
+        assert!(state.durability.queued.is_empty());
+    }
+    let cooked = state.entities.snapshot(entity_id).unwrap();
+    let payload = kiln_payload(&cooked).unwrap();
+    assert_eq!(
+        payload.slot(KilnSlot::Output),
+        Some(&crate::inventory::Stack::new(
+            ItemId(crate::world::STONE.0),
+            1
+        ))
+    );
+    assert!(payload.is_lit());
+    let lit_states = kiln_block_states(state.world.catalog(), payload).unwrap();
+    assert_eq!(
+        state.world.cached_block(anchor.x, anchor.y, anchor.z),
+        Some(lit_states[0])
+    );
+    assert_eq!(
+        state.world.cached_block(upper.x, upper.y, upper.z),
+        Some(lit_states[1])
+    );
+    assert_eq!(state.durability.receipt_ledger(profile).results.len(), 3);
+    drop(player_peer);
+    drop(state);
+
+    let mut recovered = server_state(53, path.clone()).unwrap();
+    recovered.world.get_chunk(lower_chunk).unwrap();
+    recovered.world.get_chunk(upper_chunk).unwrap();
+    let recovered_id = recovered
+        .entities
+        .anchored_at(anchor)
+        .expect("recovered kiln");
+    assert_eq!(recovered_id, entity_id);
+    let recovered_snapshot = recovered.entities.snapshot(recovered_id).unwrap();
+    let recovered_payload = kiln_payload(&recovered_snapshot).unwrap();
+    assert!(recovered_payload.is_lit());
+    assert_eq!(
+        recovered_payload.slot(KilnSlot::Output),
+        Some(&crate::inventory::Stack::new(
+            ItemId(crate::world::STONE.0),
+            1
+        ))
+    );
+    let recovered_states = kiln_block_states(recovered.world.catalog(), recovered_payload).unwrap();
+    assert_eq!(
+        recovered.world.cached_block(anchor.x, anchor.y, anchor.z),
+        Some(recovered_states[0])
+    );
+    assert_eq!(
+        recovered.world.cached_block(upper.x, upper.y, upper.z),
+        Some(recovered_states[1])
+    );
+
+    let inventory = recovered.inventory_store.load(profile).unwrap();
+    let peer = add_test_client(
+        &mut recovered,
+        [
+            anchor.x as f32 + 0.5,
+            anchor.y as f32,
+            anchor.z as f32 + 3.5,
+        ],
+        inventory,
+    );
+    settle_live_action(
+        &mut recovered,
+        100,
+        ClientMessage::Edit {
+            action_id: action_id(4),
+            x: upper.x,
+            y: upper.y,
+            z: upper.z,
+            block: AIR,
+            slot: 0,
+        },
+    );
+    assert_eq!(recovered.entities.anchored_at(anchor), None);
+    assert_eq!(recovered.entities.anchored_at(upper), None);
+    assert_eq!(
+        recovered.world.cached_block(anchor.x, anchor.y, anchor.z),
+        Some(AIR)
+    );
+    assert_eq!(
+        recovered.world.cached_block(upper.x, upper.y, upper.z),
+        Some(AIR)
+    );
+    let drop_position = [
+        anchor.x as f32 + 0.5,
+        anchor.y as f32 + 0.5,
+        anchor.z as f32 + 0.5,
+    ];
+    let stacks: Vec<_> = recovered
+        .drops
+        .nearby(drop_position)
+        .iter()
+        .map(|drop| recovered.drops.stack(drop.id).unwrap())
+        .collect();
+    assert_eq!(stacks.len(), 2);
+    assert_eq!(stacks.iter().map(|stack| stack.count).sum::<u16>(), 2);
+    assert!(
+        stacks
+            .iter()
+            .any(|stack| stack.item == crate::content::KILN_ITEM)
+    );
+    assert!(
+        stacks
+            .iter()
+            .any(|stack| stack.item == ItemId(crate::world::STONE.0))
+    );
+
+    drop(peer);
+    drop(recovered);
     fs::remove_dir_all(path).unwrap();
 }

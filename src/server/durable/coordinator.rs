@@ -25,7 +25,8 @@ pub(in crate::server) fn handle_live_message(
     let action_id = match &message {
         ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
-        | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
+        | ClientMessage::DropStack { action_id, .. }
+        | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     };
     if let Some(action_id) = action_id {
@@ -365,11 +366,11 @@ fn durable_request_profile(state: &State, request: &DurableRequest) -> Option<u1
         DurableRequest::Command { id, .. } | DurableRequest::Pickup { id } => {
             state.clients.get(id).map(|client| client.profile)
         }
-        DurableRequest::Expire => None,
+        DurableRequest::Expire | DurableRequest::EntityTick { .. } => None,
     }
 }
 
-pub(in crate::server) fn queue_interaction_actions(state: &mut State) {
+pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: TickId) {
     if (state.durability.expire_again || state.drops.has_expired())
         && !state.durability.expire_queued
         && state.durability.queued.len() < MAX_DEFERRED_DURABLE_ACTIONS
@@ -393,6 +394,45 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State) {
             .queued
             .push_back(DurableRequest::Pickup { id });
     }
+    queue_due_entity_ticks(state, tick);
+}
+
+fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
+    let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
+    let scan_limit = available.min(MAX_PENDING_DURABLE_ACTIONS);
+    if scan_limit == 0 {
+        return;
+    }
+    let mut queued_ids: HashSet<_> = state
+        .durability
+        .queued
+        .iter()
+        .filter_map(|request| match request {
+            DurableRequest::EntityTick { id } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    for pending in &state.durability.pending {
+        if let PendingPayload::Action(action) = &pending.payload
+            && let Some(entities) = &action.entities
+        {
+            queued_ids.extend(entities.entity_ids());
+        }
+    }
+    let due = state.entities.due_tick_entries(
+        tick.get(),
+        state.durability.entity_tick_cursor,
+        scan_limit,
+    );
+    for (due_tick, id) in due {
+        state.durability.entity_tick_cursor = Some((due_tick, id));
+        if queued_ids.insert(id) {
+            state
+                .durability
+                .queued
+                .push_back(DurableRequest::EntityTick { id });
+        }
+    }
 }
 
 fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
@@ -405,6 +445,7 @@ fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
             state.durability.expire_queued = false;
             state.durability.expire_again = false;
         }
+        DurableRequest::EntityTick { .. } => {}
     }
 }
 
@@ -412,7 +453,8 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
     match message {
         ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
-        | ClientMessage::DropStack { action_id, .. } => Some(*action_id),
+        | ClientMessage::DropStack { action_id, .. }
+        | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }
 }
@@ -425,8 +467,8 @@ fn queue_action_result(state: &mut State, id: u64, action_id: u128, accepted: bo
         accepted,
         reason: short_action_reason(reason),
         inventory: None,
-        chunks: Vec::new(),
         deltas: Vec::new(),
+        entity_commit: None,
         pickups: Vec::new(),
     });
 }

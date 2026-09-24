@@ -195,6 +195,46 @@ fn chunk_cache_unlinks_and_reinserts_entries_at_each_lru_position() {
 }
 
 #[test]
+fn subscribed_chunks_survive_cache_pressure_until_last_client_unpins() {
+    let mut cache = ChunkCache::new(2);
+    let keys = [
+        ChunkKey { x: 0, y: 0, z: 0 },
+        ChunkKey { x: 1, y: 0, z: 0 },
+        ChunkKey { x: 2, y: 0, z: 0 },
+    ];
+    let insert = |cache: &mut ChunkCache, key| {
+        cache.insert(
+            key,
+            Arc::new(Chunk {
+                key,
+                version: 0,
+                blocks: PalettedBlocks::uniform(AIR),
+            }),
+            BTreeMap::new(),
+        )
+    };
+    assert!(insert(&mut cache, keys[0]));
+    assert!(insert(&mut cache, keys[1]));
+    assert!(cache.pin(keys[0]));
+    assert!(cache.pin(keys[0]));
+    assert!(cache.pin(keys[1]));
+    assert_eq!(cache.pinned_len(), 2);
+    assert!(!cache.can_admit());
+    assert!(!insert(&mut cache, keys[2]));
+    assert!(cache.contains_key(&keys[0]));
+    assert!(cache.contains_key(&keys[1]));
+    assert!(cache.unpin(keys[0]));
+    assert!(!cache.can_admit());
+    assert!(cache.unpin(keys[0]));
+    assert!(cache.can_admit());
+    assert!(insert(&mut cache, keys[2]));
+    assert!(!cache.contains_key(&keys[0]));
+    assert!(cache.contains_key(&keys[1]));
+    assert!(cache.contains_key(&keys[2]));
+    assert_eq!(cache.pinned_len(), 1);
+}
+
+#[test]
 fn edited_chunk_can_be_evicted_and_reloaded_from_its_pending_snapshot() {
     let path = test_dir();
     let mut world = World::with_capacity(42, path.clone(), 2).unwrap();

@@ -40,6 +40,48 @@ fn chunk(x: i32, y: i32, z: i32) -> ChunkKey {
     ChunkKey { x, y, z }
 }
 
+#[test]
+fn benchmark_frontier_bootstrap_precedes_first_live_fire_tick() {
+    let save = TestDir::new();
+    let mut world = World::with_capacity(55, save.0.clone(), 8).unwrap();
+    let owner = chunk(0, 4, 0);
+    world.get_chunk(owner).unwrap();
+    let edits = world.prepare_edits(&[(0, 65, 0, WOOD)]).unwrap();
+    world.apply_prepared_edits(edits).unwrap();
+    let mut fire = FireRuntime::new(FireRecovered::default(), 2).unwrap();
+    let bootstrap = BTreeMap::from([(owner, vec![256])]);
+    let wave = fire
+        .prepare_benchmark_frontier_wave(&bootstrap, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    let transaction = wave.transactions.into_iter().next().unwrap();
+    assert!(
+        transaction
+            .changes()
+            .iter()
+            .all(|change| change.before != change.after)
+    );
+    fire.mark_submitted(&transaction).unwrap();
+    fire.install_synced(transaction).unwrap();
+
+    // The first production tick must be strictly later than the fixture
+    // cursor. Reusing tick 1 could emit an identical cursor WAL transition.
+    let live = fire
+        .prepare_source_wave(
+            &mut world,
+            &crate::server::builtins::builtin_phase_plan().unwrap(),
+            TickId::new(2),
+        )
+        .unwrap();
+    assert_eq!(live.transactions.len(), 1);
+    assert!(
+        live.transactions[0]
+            .changes()
+            .iter()
+            .all(|change| change.before != change.after)
+    );
+}
+
 fn owner_apply_hash(workers: usize) -> u64 {
     let save = TestDir::new();
     let mut world = World::with_capacity(55, save.0.clone(), 8).unwrap();

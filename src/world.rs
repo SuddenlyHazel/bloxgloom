@@ -52,11 +52,6 @@ pub const WOOD_Z: BlockId = crate::content::BlockStateId(257);
 pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
 
 #[inline]
-pub fn valid_block(block: BlockId) -> bool {
-    block <= MAX_BUILTIN_BLOCK || crate::content::catalog().state(block).is_some()
-}
-
-#[inline]
 pub fn is_plant(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::PLANT != 0
 }
@@ -125,20 +120,6 @@ impl Chunk {
 
     pub fn block_index(&self, index: usize) -> Option<BlockId> {
         self.blocks.get(index)
-    }
-
-    /// Returns the new version; an unchanged value does not advance it.
-    pub fn set_block(&mut self, local: [usize; 3], block: BlockId) -> Option<u64> {
-        if !valid_block(block) {
-            return None;
-        }
-        let index = Self::index(local)?;
-        if self.blocks[index] != block {
-            let version = self.version.checked_add(1)?;
-            self.blocks.set(index, block)?;
-            self.version = version;
-        }
-        Some(self.version)
     }
 }
 
@@ -416,6 +397,35 @@ impl World {
         self.cache.len()
     }
 
+    /// Interest subscriptions hold resident owners until every subscriber
+    /// leaves or requests a fresh snapshot. No loader may evict these chunks.
+    pub(crate) fn pin_resident_chunk(&mut self, key: ChunkKey) -> bool {
+        self.cache.pin(key)
+    }
+
+    pub(crate) fn unpin_resident_chunk(&mut self, key: ChunkKey) -> bool {
+        self.cache.unpin(key)
+    }
+
+    pub(crate) fn can_admit_chunk(&self) -> bool {
+        self.cache.can_admit()
+    }
+
+    /// Reserve cache headroom for distinct asynchronous loads. At capacity,
+    /// an in-flight load may consume an unpinned slot, but never a pin.
+    pub(crate) fn can_request_chunk(&self, key: ChunkKey) -> bool {
+        self.in_flight_by_key.contains_key(&key)
+            || self.in_flight_by_key.len()
+                < self
+                    .cache
+                    .capacity()
+                    .saturating_sub(self.cache.pinned_len())
+    }
+
+    pub(crate) fn pinned_chunk_count(&self) -> usize {
+        self.cache.pinned_len()
+    }
+
     /// Resident chunk count for test assertions.
     #[cfg(test)]
     pub fn cached_len(&self) -> usize {
@@ -536,11 +546,9 @@ impl World {
                 "invalid loaded chunk result",
             ));
         }
-        let installed =
+        let eligible =
             !self.cache.contains_key(&key) && self.edit_epoch(key) == expected_edit_epoch;
-        if installed {
-            self.cache_loaded_chunk(loaded);
-        }
+        let installed = eligible && self.cache_loaded_chunk(loaded);
         self.finish_chunk_load(key, expected_edit_epoch);
         Ok(installed)
     }
@@ -776,10 +784,14 @@ impl World {
         } else {
             self.pending_snapshots.remove(&key);
         }
-        self.cache_loaded_chunk(LoadedChunk {
+        if !self.cache_loaded_chunk(LoadedChunk {
             chunk: prepared.after_chunk,
             edits: prepared.after_edits,
-        });
+        }) {
+            return Err(io::Error::other(
+                "WAL-synced chunk could not enter a fully subscribed cache",
+            ));
+        }
         Ok((key, prepared.new_version))
     }
 
@@ -870,9 +882,9 @@ impl World {
         }
     }
 
-    fn cache_loaded_chunk(&mut self, loaded: LoadedChunk) {
+    fn cache_loaded_chunk(&mut self, loaded: LoadedChunk) -> bool {
         self.cache
-            .insert(loaded.chunk.key, Arc::new(loaded.chunk), loaded.edits);
+            .insert(loaded.chunk.key, Arc::new(loaded.chunk), loaded.edits)
     }
 
     fn ensure_loaded(&mut self, key: ChunkKey) -> io::Result<()> {
@@ -885,7 +897,12 @@ impl World {
         } else {
             self.load_chunk_uncached(key)?
         };
-        self.cache_loaded_chunk(loaded);
+        if !self.cache_loaded_chunk(loaded) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "all resident chunks are subscribed",
+            ));
+        }
         Ok(())
     }
 }

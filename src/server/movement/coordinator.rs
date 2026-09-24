@@ -154,7 +154,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
         }
     }
     for id in disconnected {
-        state.clients.remove(&id);
+        state.remove_client(id);
     }
     let mut missing: Vec<_> = missing.into_iter().collect();
     missing.sort_unstable_by_key(|key| (key.x, key.y, key.z));

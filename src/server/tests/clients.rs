@@ -46,6 +46,30 @@ fn view_radius_is_clamped_and_acknowledged_by_the_coordinator() {
 }
 
 #[test]
+fn streamed_interest_pins_release_on_resync_and_disconnect() {
+    let save = TestSave::new("interest-pins");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, 1);
+    for _ in 0..100 {
+        if !state.clients[&session.id].sent.is_empty() {
+            break;
+        }
+        let _ = messages(&session);
+        run_empty_tick(&mut state, &mut tick);
+    }
+    let subscribed = state.clients[&session.id].sent.len();
+    assert!(subscribed > 0);
+    assert_eq!(state.world.pinned_chunk_count(), subscribed);
+    let key = *state.clients[&session.id].sent.iter().next().unwrap();
+    handle_message(&mut state, session.id, ClientMessage::Resync { key }).unwrap();
+    assert!(!state.clients[&session.id].sent.contains(&key));
+    assert_eq!(state.world.pinned_chunk_count(), subscribed - 1);
+    state.remove_client(session.id);
+    assert_eq!(state.world.pinned_chunk_count(), 0);
+}
+
+#[test]
 fn full_outbound_queue_disconnects_only_the_slow_client() {
     let save = TestSave::new("slow-client-isolation");
     let mut state = state_for(&save, 7);
@@ -258,10 +282,13 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
     let block_y = feet_y - 1;
     let key = world_to_chunk(0, block_y, 0).0;
     let local = world_to_chunk(0, block_y, 0).1;
+    let local_wire = local.map(|coordinate| coordinate as u8);
     let original_version = state.world.cached_version(key).unwrap();
     assert_ne!(state.world.cached_block(0, block_y, 0), Some(AIR));
     state.clients.get_mut(&first.id).unwrap().sent.insert(key);
     state.clients.get_mut(&second.id).unwrap().sent.insert(key);
+    assert!(state.world.pin_resident_chunk(key));
+    assert!(state.world.pin_resident_chunk(key));
 
     run_tick(
         &mut state,
@@ -287,23 +314,21 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
         let first_delta = first_output.iter().any(|message| {
             matches!(
                 message,
-                ServerMessage::Delta {
-                    key: received_key,
-                    version,
-                    block: AIR,
-                    ..
-                } if *received_key == key && *version == original_version + 1
+                ServerMessage::WorldCommitPart(part)
+                    if part.key == key
+                        && part.block_from == original_version
+                        && part.block_to == original_version + 1
+                        && part.blocks.iter().any(|cell| cell.local == local_wire && cell.block == AIR)
             )
         });
         let second_delta = second_output.iter().any(|message| {
             matches!(
                 message,
-                ServerMessage::Delta {
-                    key: received_key,
-                    version,
-                    block: AIR,
-                    ..
-                } if *received_key == key && *version == original_version + 1
+                ServerMessage::WorldCommitPart(part)
+                    if part.key == key
+                        && part.block_from == original_version
+                        && part.block_to == original_version + 1
+                        && part.blocks.iter().any(|cell| cell.local == local_wire && cell.block == AIR)
             )
         });
         if first_delta
@@ -318,21 +343,19 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
     assert_eq!(action_result(&first_output, first.action_id(1)), Some(true));
     assert!(first_output.iter().any(|message| matches!(
         message,
-        ServerMessage::Delta {
-            key: received_key,
-            version,
-            block: AIR,
-            ..
-        } if *received_key == key && *version == original_version + 1
+        ServerMessage::WorldCommitPart(part)
+            if part.key == key
+                && part.block_from == original_version
+                && part.block_to == original_version + 1
+                && part.blocks.iter().any(|cell| cell.local == local_wire && cell.block == AIR)
     )));
     assert!(second_output.iter().any(|message| matches!(
         message,
-        ServerMessage::Delta {
-            key: received_key,
-            version,
-            block: AIR,
-            ..
-        } if *received_key == key && *version == original_version + 1
+        ServerMessage::WorldCommitPart(part)
+            if part.key == key
+                && part.block_from == original_version
+                && part.block_to == original_version + 1
+                && part.blocks.iter().any(|cell| cell.local == local_wire && cell.block == AIR)
     )));
 
     run_tick(
@@ -348,7 +371,9 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
         if let Some(chunk) = messages(&second)
             .into_iter()
             .find_map(|message| match message {
-                ServerMessage::Chunk(chunk) if chunk.key == key => Some(chunk),
+                ServerMessage::WorldSnapshotStart(start) if start.chunk.key == key => {
+                    Some(start.chunk)
+                }
                 _ => None,
             })
         {

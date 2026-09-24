@@ -162,6 +162,22 @@ pub fn render_drop_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     ))
 }
 
+/// Inspect the production instanced avatar shader and silhouette offscreen.
+pub fn render_avatar_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Avatars,
+    ))
+}
+
 pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, phase) in [
@@ -216,6 +232,7 @@ enum PreviewScene {
     Surface,
     Vegetation,
     Drops(DropPhase),
+    Avatars,
     Cave { lamp: bool, bounced: bool },
 }
 
@@ -239,6 +256,7 @@ async fn render_previews(
     let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, FORMAT);
+    let mut avatar_renderer = render::AvatarRenderer::new(&device, FORMAT, &camera_buffer);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -273,13 +291,18 @@ async fn render_previews(
             );
             (target + Vec3::new(9.0, 5.0, 11.0), target)
         }
-        PreviewScene::Drops(_) => {
+        PreviewScene::Drops(_) | PreviewScene::Avatars => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
                 target_height as f32 + 1.0,
                 target_xz.1 as f32 + 0.5,
             );
-            (target + Vec3::new(4.0, 2.6, 5.0), target)
+            let offset = if matches!(scene, PreviewScene::Avatars) {
+                Vec3::new(5.5, 3.1, 7.0)
+            } else {
+                Vec3::new(4.0, 2.6, 5.0)
+            };
+            (target + offset, target)
         }
         PreviewScene::Cave { .. } => (Vec3::new(40.5, 12.0, 16.5), Vec3::new(29.5, 12.0, 16.5)),
     };
@@ -483,6 +506,46 @@ async fn render_previews(
     } else {
         None
     };
+    if matches!(scene, PreviewScene::Avatars) {
+        avatar_renderer.set(
+            &queue,
+            &[
+                render::VisualAvatar {
+                    id: 1,
+                    position: Vec3::new(
+                        target_xz.0 as f32 - 1.25,
+                        target_height as f32 + 1.0,
+                        target_xz.1 as f32 + 0.5,
+                    ),
+                    cosmetics: [0, 0, 0, 0],
+                    light_levels: [15, 0, 0, 0],
+                    bounce: [0; 4],
+                },
+                render::VisualAvatar {
+                    id: 2,
+                    position: Vec3::new(
+                        target_xz.0 as f32 + 0.5,
+                        target_height as f32 + 1.0,
+                        target_xz.1 as f32 + 0.5,
+                    ),
+                    cosmetics: [2, 4, 2, 0],
+                    light_levels: [15, 0, 0, 0],
+                    bounce: [0; 4],
+                },
+                render::VisualAvatar {
+                    id: 3,
+                    position: Vec3::new(
+                        target_xz.0 as f32 + 2.25,
+                        target_height as f32 + 1.0,
+                        target_xz.1 as f32 + 0.5,
+                    ),
+                    cosmetics: [4, 1, 4, 0],
+                    light_levels: [15, 0, 0, 0],
+                    bounce: [0; 4],
+                },
+            ],
+        );
+    }
 
     for output in outputs {
         let color = device.create_texture(&wgpu::TextureDescriptor {
@@ -617,6 +680,7 @@ async fn render_previews(
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
+            avatar_renderer.draw(&mut pass);
             pass.set_pipeline(&cutout_pipeline);
             for (_, cutout) in &gpu_meshes {
                 if let Some((vertices, indices, count)) = cutout {

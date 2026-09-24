@@ -13,6 +13,10 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+#[path = "client/world.rs"]
+mod world;
+use world::WorldProbe;
+
 #[derive(Clone, Copy)]
 pub(super) struct Ready {
     pub epoch: u64,
@@ -342,9 +346,12 @@ fn read_until_stop(
     latest_position: Arc<Mutex<[f32; 3]>>,
     initial_position: [f32; 3],
 ) -> io::Result<ClientStats> {
-    let mut stats = ClientStats::default();
-    stats.last_position = Some(initial_position);
+    let mut stats = ClientStats {
+        last_position: Some(initial_position),
+        ..ClientStats::default()
+    };
     let mut revisions: HashMap<ChunkKey, u64> = HashMap::new();
+    let mut world = WorldProbe::default();
     loop {
         let message = match protocol::read_server(&mut socket) {
             Ok(message) => message,
@@ -380,6 +387,27 @@ fn read_until_stop(
                 }
                 revisions.insert(key, version);
                 stats.deltas += 1;
+            }
+            ServerMessage::WorldSnapshotStart(start) => {
+                let update = world.start(start)?;
+                stats.chunks += update.snapshots;
+                stats.revision_regressions += update.regressions;
+            }
+            ServerMessage::EntitySnapshotPage(page) => {
+                let update = world.page(page)?;
+                stats.chunks += update.snapshots;
+            }
+            ServerMessage::WorldCommitPart(part) => {
+                let update = world.commit(part)?;
+                stats.deltas += update.block_changes;
+                stats.revision_gaps += update.gaps;
+                stats.revision_regressions += update.regressions;
+                for key in update.resync {
+                    let mut writer = writer
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    protocol::write_client(&mut *writer, &ClientMessage::Resync { key })?;
+                }
             }
             ServerMessage::Position { x, y, z, .. } => {
                 stats.positions += 1;
@@ -430,6 +458,7 @@ fn read_until_stop(
                 )?;
             }
             ServerMessage::ActionDeferred { .. }
+            | ServerMessage::OwnedEntity { .. }
             | ServerMessage::Inventory { .. }
             | ServerMessage::ViewDistance { .. }
             | ServerMessage::Pong { .. } => {}

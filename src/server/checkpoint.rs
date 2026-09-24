@@ -1,11 +1,12 @@
 //! Bounded asynchronous checkpoint writes.
 //!
-//! A caller submits full snapshots after a durable journal receipt. The worker
-//! writes accepted requests in FIFO order, and reports completion only after the
-//! supplied write closure returns. The outstanding limit includes queued jobs,
-//! the active job, and receipts that the caller has not consumed yet.
+//! A caller submits full snapshots after a durable journal receipt. Key-sharded
+//! workers write independent snapshots concurrently, preserve each key's FIFO
+//! order, and report completion only after the supplied write closure returns.
+//! The outstanding limit includes queued/running jobs and unconsumed receipts.
 
 use super::journal::StateKey;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -39,41 +40,55 @@ struct CheckpointJob {
     write: CheckpointWrite,
 }
 
-/// One FIFO checkpoint thread with a strict bound on all accepted, unconsumed
+/// Key-sharded checkpoint workers with one global bound on accepted, unconsumed
 /// work. `try_recv` releases one slot; callers should keep the newest snapshot
 /// and clear it only when a successful receipt matches that snapshot's key and
 /// revision.
 ///
 /// Dropping or explicitly shutting down the writer closes submission, drains
-/// accepted writes, and joins the worker. The receipt channel has the same
+/// accepted writes, and joins the workers. The receipt channel has the same
 /// capacity as the total outstanding bound, so a worker can always publish all
 /// accepted completions even when the caller has not polled receipts yet.
 pub(super) struct CheckpointWriter {
-    sender: Option<SyncSender<CheckpointJob>>,
+    senders: Vec<SyncSender<CheckpointJob>>,
     receipts: Option<Receiver<CheckpointReceipt>>,
     outstanding: AtomicUsize,
     capacity: usize,
-    worker: Option<JoinHandle<()>>,
+    workers: Vec<JoinHandle<()>>,
 }
 
 impl CheckpointWriter {
-    /// Start a single FIFO checkpoint worker. A zero capacity is normalized to
-    /// one so every constructed writer can make progress.
+    /// One worker keeps small fixtures deterministic.
     pub(super) fn new(capacity: usize) -> Self {
+        Self::new_with_workers(capacity, 1)
+    }
+
+    /// A zero capacity or worker count is normalized to one so the writer can
+    /// always make progress; no more workers than outstanding slots are useful.
+    pub(super) fn new_with_workers(capacity: usize, workers: usize) -> Self {
         let capacity = capacity.max(1);
-        let (job_sender, job_receiver) = mpsc::sync_channel::<CheckpointJob>(capacity);
+        let worker_count = workers.max(1).min(capacity);
         let (receipt_sender, receipt_receiver) = mpsc::sync_channel(capacity);
-        let worker = thread::Builder::new()
-            .name("server-checkpoint".to_owned())
-            .spawn(move || checkpoint_worker(job_receiver, receipt_sender))
-            .expect("failed to start checkpoint worker");
+        let mut senders = Vec::with_capacity(worker_count);
+        let mut handles = Vec::with_capacity(worker_count);
+        for index in 0..worker_count {
+            let (sender, receiver) = mpsc::sync_channel::<CheckpointJob>(capacity);
+            let receipts = receipt_sender.clone();
+            let handle = thread::Builder::new()
+                .name(format!("server-checkpoint-{index}"))
+                .spawn(move || checkpoint_worker(receiver, receipts))
+                .expect("failed to start checkpoint worker");
+            senders.push(sender);
+            handles.push(handle);
+        }
+        drop(receipt_sender);
 
         Self {
-            sender: Some(job_sender),
+            senders,
             receipts: Some(receipt_receiver),
             outstanding: AtomicUsize::new(0),
             capacity,
-            worker: Some(worker),
+            workers: handles,
         }
     }
 
@@ -86,7 +101,11 @@ impl CheckpointWriter {
         snapshot: Vec<u8>,
         write: impl FnOnce(&[u8]) -> io::Result<()> + Send + 'static,
     ) -> Result<(), CheckpointSubmitError> {
-        let sender = self.sender.as_ref().ok_or(CheckpointSubmitError::Closed)?;
+        if self.senders.is_empty() {
+            return Err(CheckpointSubmitError::Closed);
+        }
+        let shard = checkpoint_shard(&key, self.senders.len());
+        let sender = &self.senders[shard];
         let reserved =
             self.outstanding
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
@@ -133,22 +152,31 @@ impl CheckpointWriter {
     /// Stop admission, drain accepted jobs, and join the worker. Completed
     /// receipts remain available through `try_recv` after this returns.
     pub(super) fn shutdown(&mut self) -> io::Result<()> {
-        self.sender.take();
-        if let Some(worker) = self.worker.take() {
-            worker.join().map_err(|payload| {
-                io::Error::other(format!(
-                    "checkpoint worker panicked: {}",
-                    panic_message(payload.as_ref())
-                ))
-            })?;
+        self.senders.clear();
+        let mut first_error = None;
+        for worker in self.workers.drain(..) {
+            if let Err(payload) = worker.join() {
+                first_error.get_or_insert_with(|| {
+                    io::Error::other(format!(
+                        "checkpoint worker panicked: {}",
+                        panic_message(payload.as_ref())
+                    ))
+                });
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     fn release_slot(&self) {
         let previous = self.outstanding.fetch_sub(1, Ordering::AcqRel);
         debug_assert!(previous > 0, "checkpoint reservation underflow");
     }
+}
+
+fn checkpoint_shard(key: &StateKey, count: usize) -> usize {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut hasher);
+    (hasher.finish() as usize) % count
 }
 
 impl Drop for CheckpointWriter {

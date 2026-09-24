@@ -111,7 +111,11 @@ impl Durability {
     }
 }
 
-pub(super) fn stage_wave(state: &mut State, tick: TickId, wave: FireWave) -> io::Result<()> {
+pub(in crate::server) fn stage_wave(
+    state: &mut State,
+    tick: TickId,
+    wave: FireWave,
+) -> io::Result<()> {
     for key in wave.missing_chunks {
         // A full loader is ordinary backpressure. Persistent source/delivery
         // records remain scheduled and the request is retried next tick.
@@ -120,12 +124,14 @@ pub(super) fn stage_wave(state: &mut State, tick: TickId, wave: FireWave) -> io:
     if wave.transactions.is_empty() {
         return Ok(());
     }
+    let attempted = wave.transactions.len();
     let admitted = wave.transactions.clone();
     match state
         .durability
         .try_stage_fire_wave(tick, wave.transactions)
     {
         Ok(true) => {
+            state.fire.note_admitted(attempted);
             for transaction in &admitted {
                 if let Err(error) = state.fire.mark_submitted(transaction) {
                     state.durability.failed = true;
@@ -139,7 +145,8 @@ pub(super) fn stage_wave(state: &mut State, tick: TickId, wave: FireWave) -> io:
             state.durability.failed = true;
             return Err(io::Error::other("nonempty fire wave was not admitted"));
         }
-        Err(StageError::Conflict | StageError::Full) => {}
+        Err(StageError::Conflict) => state.fire.note_conflict(attempted),
+        Err(StageError::Full) => state.fire.note_full(attempted),
         Err(error) => {
             state.durability.failed = true;
             return Err(io::Error::other(format!(

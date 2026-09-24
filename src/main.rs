@@ -68,6 +68,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ticks.ok_or("missing --ticks")?,
                     scene.as_deref().ok_or("missing --scene")?,
                 )?;
+            } else if first.as_deref() == Some("fire") {
+                let measured_ticks = args
+                    .next()
+                    .ok_or("usage: server-perf fire <measured-ticks> [--warmup N]")?
+                    .parse::<usize>()?;
+                let warmup = match args.next() {
+                    None => 300,
+                    Some(flag) if flag == "--warmup" => args
+                        .next()
+                        .ok_or("missing fire benchmark warmup value")?
+                        .parse::<usize>()?,
+                    Some(_) => {
+                        return Err("usage: server-perf fire <measured-ticks> [--warmup N]".into());
+                    }
+                };
+                if args.next().is_some() {
+                    return Err("usage: server-perf fire <measured-ticks> [--warmup N]".into());
+                }
+                server::run_fire_perf(measured_ticks, warmup)?;
             } else if first.as_deref() == Some("fire-cpu") {
                 let mut workers = None;
                 let mut iterations = None;
@@ -166,6 +185,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_drop_animation_previews(std::path::Path::new(&directory))?;
             println!("wrote drop animation previews to {directory}");
+        }
+        Some("avatar-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "avatar-preview.png".to_string());
+            if args.next().is_some() {
+                return Err("usage: avatar-preview [output.png]".into());
+            }
+            preview::render_avatar_preview(std::path::Path::new(&path))?;
+            println!("wrote {path}");
         }
         Some("perf") => {
             let steady_frames = args

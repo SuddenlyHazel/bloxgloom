@@ -27,7 +27,7 @@ mod spawn;
 mod streaming;
 mod voxel_view;
 
-pub use perf::{run_fire_cpu_perf, run_perf_benchmark, run_tcp_perf};
+pub use perf::{run_fire_cpu_perf, run_fire_perf, run_perf_benchmark, run_tcp_perf};
 
 use crate::inventory::{Inventory, InventoryStore};
 #[cfg(test)]
@@ -100,6 +100,10 @@ struct Client {
     sender: OutboundQueue,
     socket: TcpStream,
     sent: HashSet<ChunkKey>,
+    sent_epochs: HashMap<ChunkKey, u64>,
+    sent_block_versions: HashMap<ChunkKey, u64>,
+    sent_entity_revisions: HashMap<ChunkKey, u64>,
+    next_snapshot_epoch: u64,
     center: ChunkKey,
     radius: u8,
     movement: MovementState,
@@ -166,6 +170,19 @@ struct State {
     last_rejections: u64,
 }
 
+impl State {
+    /// Release every authoritative interest pin with the session. Other
+    /// clients' subscriptions keep their own pins on shared chunks.
+    fn remove_client(&mut self, id: u64) -> Option<Client> {
+        let client = self.clients.remove(&id)?;
+        for &key in &client.sent {
+            let released = self.world.unpin_resident_chunk(key);
+            debug_assert!(released, "client subscription lost its resident chunk");
+        }
+        Some(client)
+    }
+}
+
 struct PendingJoin {
     profile: u128,
     inventory: Inventory,
@@ -190,7 +207,7 @@ enum JoinResponse {
 enum SimulationInput {
     Join {
         profile: u128,
-        inventory: Inventory,
+        inventory: Box<Inventory>,
         sender: OutboundQueue,
         socket: TcpStream,
         reply: SyncSender<JoinResponse>,
@@ -419,6 +436,10 @@ fn join_client(
             sender,
             socket,
             sent: HashSet::new(),
+            sent_epochs: HashMap::new(),
+            sent_block_versions: HashMap::new(),
+            sent_entity_revisions: HashMap::new(),
+            next_snapshot_epoch: 1,
             center,
             radius: DEFAULT_VIEW,
             movement: MovementState::new(position, 0),
@@ -444,8 +465,12 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::SetView { radius } => {
+            let requested = radius.clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE);
+            let can_expand = state.world.can_admit_chunk();
             if let Some(client) = state.clients.get_mut(&id) {
-                client.radius = radius.clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE);
+                if requested <= client.radius || can_expand {
+                    client.radius = requested;
+                }
                 client.enqueue(ServerMessage::ViewDistance {
                     radius: client.radius,
                 });
@@ -453,10 +478,18 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::Resync { key } => {
+            let mut removed = false;
             if let Some(client) = state.clients.get_mut(&id)
                 && client.interested(key)
             {
-                client.sent.remove(&key);
+                removed = client.sent.remove(&key);
+                client.sent_epochs.remove(&key);
+                client.sent_block_versions.remove(&key);
+                client.sent_entity_revisions.remove(&key);
+            }
+            if removed {
+                let released = state.world.unpin_resident_chunk(key);
+                debug_assert!(released, "resync subscription lost its resident chunk");
             }
             Ok(())
         }
@@ -464,6 +497,7 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         ClientMessage::Edit { .. }
         | ClientMessage::InventoryMove { .. }
         | ClientMessage::DropStack { .. }
+        | ClientMessage::EntityInteract { .. }
         | ClientMessage::ActionAck { .. } => Err(io::Error::new(
             ErrorKind::InvalidData,
             "durable action bypassed coordinator staging",

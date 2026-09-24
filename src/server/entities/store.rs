@@ -127,9 +127,13 @@ impl EntitySnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub enum EntityDelta {
     Spawned(EntityPublicView),
-    Updated(EntityPublicView),
+    Updated {
+        before_touched_chunks: Vec<ChunkKey>,
+        view: EntityPublicView,
+    },
     Transferred {
         before_owner: EntityOwner,
+        before_touched_chunks: Vec<ChunkKey>,
         view: EntityPublicView,
     },
     Moved(EntityPublicView),
@@ -138,6 +142,7 @@ pub enum EntityDelta {
         entity_type: EntityTypeId,
         revision: u64,
         owner: EntityOwner,
+        touched_chunks: Vec<ChunkKey>,
     },
 }
 
@@ -173,6 +178,7 @@ enum Operation {
 pub struct PreparedEntityTransaction {
     operation: Operation,
     changes: Vec<Change>,
+    additional_read_keys: Vec<StateKey>,
 }
 
 impl PreparedEntityTransaction {
@@ -181,7 +187,10 @@ impl PreparedEntityTransaction {
     }
 
     pub fn read_keys(&self) -> impl Iterator<Item = &StateKey> {
-        self.changes.iter().map(|change| &change.key)
+        self.changes
+            .iter()
+            .map(|change| &change.key)
+            .chain(self.additional_read_keys.iter())
     }
 
     pub fn entity_id(&self) -> EntityId {
@@ -213,6 +222,17 @@ impl PreparedEntityTransaction {
         self.changes = candidate;
         Ok(())
     }
+
+    /// Reserve a read-only precondition key while the prepared change is
+    /// pending. These keys are admission fences, not WAL state transitions.
+    pub fn add_read_key(&mut self, key: StateKey) {
+        if !self.changes.iter().any(|change| change.key == key)
+            && !self.additional_read_keys.contains(&key)
+        {
+            self.additional_read_keys.push(key);
+            self.additional_read_keys.sort();
+        }
+    }
 }
 
 /// A set of entity changes prepared against one store revision and committed
@@ -234,10 +254,11 @@ pub struct EntityStore {
 
 impl EntityStore {
     pub fn new(types: Arc<EntityTypeRegistry>) -> Self {
+        let indexes = EntityIndexes::with_tick_types(types.tickable_types());
         Self {
             types,
             records: BTreeMap::new(),
-            indexes: EntityIndexes::default(),
+            indexes,
             next_id: 1,
             revision: 0,
             durable_sequence: 0,
@@ -293,8 +314,41 @@ impl EntityStore {
             .collect()
     }
 
+    /// Clone at most `limit` public views. A page with more references fails
+    /// closed before any unbounded response allocation can occur.
+    pub fn public_views_for_chunk_bounded(
+        &self,
+        chunk: ChunkKey,
+        limit: usize,
+    ) -> Result<Vec<EntityPublicView>, EntityError> {
+        let Some(page) = self.indexes.chunks.get(&chunk) else {
+            return Ok(Vec::new());
+        };
+        if page.entity_ids.len() > limit {
+            return Err(EntityError::SpatialQueryTooBroad);
+        }
+        let mut views = Vec::with_capacity(page.entity_ids.len());
+        for id in &page.entity_ids {
+            let record = self
+                .records
+                .get(id)
+                .ok_or(EntityError::InvalidTransaction)?;
+            views.push(record.public_view());
+        }
+        Ok(views)
+    }
+
     pub fn due_entities(&self, through_tick: u64, maximum: usize) -> Vec<EntityId> {
         self.indexes.due(through_tick, maximum)
+    }
+
+    pub fn due_tick_entries(
+        &self,
+        through_tick: u64,
+        after: Option<(u64, EntityId)>,
+        maximum: usize,
+    ) -> Vec<(u64, EntityId)> {
+        self.indexes.due_tick_entries(through_tick, after, maximum)
     }
 
     pub fn query_mobile_aabb(
@@ -537,6 +591,7 @@ impl EntityStore {
                 expected_allocator: self.next_id,
             },
             changes,
+            additional_read_keys: Vec::new(),
         };
         self.validate_prepared(&transaction)?;
         Ok(transaction)
@@ -558,8 +613,10 @@ impl EntityStore {
         }
         let mut operations = Vec::new();
         let mut related_changes = BTreeMap::new();
+        let mut additional_read_keys = BTreeSet::new();
         for transaction in transactions {
             self.validate_prepared(&transaction)?;
+            additional_read_keys.extend(transaction.additional_read_keys);
             collect_operations(transaction.operation, &mut operations);
             for change in transaction.changes {
                 if is_entity_state_domain(&change.key.domain) {
@@ -574,6 +631,9 @@ impl EntityStore {
             }
         }
         if operations.is_empty() || operations.len() > MAX_ENTITY_TRANSACTION_CHANGES {
+            return Err(EntityError::TooManyTransactionChanges);
+        }
+        if additional_read_keys.len() > MAX_ENTITY_TRANSACTION_CHANGES {
             return Err(EntityError::TooManyTransactionChanges);
         }
         let mut ids = BTreeSet::new();
@@ -702,6 +762,7 @@ impl EntityStore {
         let batch = PreparedEntityBatch {
             operation: Operation::Batch { operations },
             changes,
+            additional_read_keys: additional_read_keys.into_iter().collect(),
         };
         self.validate_prepared(&batch)?;
         Ok(batch)
@@ -1182,16 +1243,26 @@ impl EntityStore {
                 } else {
                     merge_durable_fields(&current, &after)
                 };
+                let before_touched_chunks =
+                    current.location.touched_chunks()?.into_iter().collect();
                 self.indexes.replace(Some(&current), Some(&applied))?;
                 self.records.insert(applied.id, applied.clone());
                 let delta = if transferred_owner {
                     self.motion_fences.remove(&before.id);
                     EntityDelta::Transferred {
                         before_owner: before.owner,
+                        before_touched_chunks: before
+                            .location
+                            .touched_chunks()?
+                            .into_iter()
+                            .collect(),
                         view: applied.public_view(),
                     }
                 } else {
-                    EntityDelta::Updated(applied.public_view())
+                    EntityDelta::Updated {
+                        before_touched_chunks,
+                        view: applied.public_view(),
+                    }
                 };
                 Ok(vec![delta])
             }
@@ -1211,6 +1282,7 @@ impl EntityStore {
                     entity_type: before.entity_type,
                     revision: removal_revision,
                     owner: before.owner,
+                    touched_chunks: before.location.touched_chunks()?.into_iter().collect(),
                 }])
             }
             Operation::Batch { .. } => Err(EntityError::InvalidTransaction),
@@ -1477,7 +1549,11 @@ impl EntityStore {
             return Err(EntityError::TooManyTransactionChanges);
         }
         validate_transaction_size(&changes)?;
-        Ok(PreparedEntityTransaction { operation, changes })
+        Ok(PreparedEntityTransaction {
+            operation,
+            changes,
+            additional_read_keys: Vec::new(),
+        })
     }
 
     fn expected(&self, id: EntityId, expected_revision: u64) -> Result<EntityRecord, EntityError> {

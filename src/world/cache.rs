@@ -18,6 +18,9 @@ pub(super) struct CacheEntry {
     pub(super) state: Arc<RwLock<OwnerState>>,
     previous: Option<usize>,
     next: Option<usize>,
+    unpinned_previous: Option<usize>,
+    unpinned_next: Option<usize>,
+    pins: usize,
 }
 
 impl CacheEntry {
@@ -43,6 +46,9 @@ pub(super) struct ChunkCache {
     indices: HashMap<ChunkKey, usize>,
     oldest: Option<usize>,
     newest: Option<usize>,
+    oldest_unpinned: Option<usize>,
+    newest_unpinned: Option<usize>,
+    pinned_entries: usize,
     capacity: usize,
 }
 
@@ -55,6 +61,9 @@ impl ChunkCache {
             indices: HashMap::new(),
             oldest: None,
             newest: None,
+            oldest_unpinned: None,
+            newest_unpinned: None,
+            pinned_entries: 0,
             capacity,
         }
     }
@@ -65,6 +74,48 @@ impl ChunkCache {
 
     pub(super) fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    /// A new resident owner may replace only an owner with no subscribers.
+    pub(super) fn can_admit(&self) -> bool {
+        self.len() < self.capacity || self.oldest_unpinned.is_some()
+    }
+
+    pub(super) fn pinned_len(&self) -> usize {
+        self.pinned_entries
+    }
+
+    /// One pin per client subscription. A snapshot may be advertised only
+    /// while its authoritative owner remains resident.
+    pub(super) fn pin(&mut self, key: ChunkKey) -> bool {
+        let Some(&slot) = self.indices.get(&key) else {
+            return false;
+        };
+        let pins = self.slots[slot].as_ref().unwrap().pins;
+        if pins == 0 {
+            self.unlink_unpinned(slot);
+            self.pinned_entries += 1;
+        }
+        self.slots[slot].as_mut().unwrap().pins = pins
+            .checked_add(1)
+            .expect("chunk subscription count exhausted");
+        true
+    }
+
+    pub(super) fn unpin(&mut self, key: ChunkKey) -> bool {
+        let Some(&slot) = self.indices.get(&key) else {
+            return false;
+        };
+        let entry = self.slots[slot].as_mut().unwrap();
+        if entry.pins == 0 {
+            return false;
+        }
+        entry.pins -= 1;
+        if entry.pins == 0 {
+            self.push_unpinned(slot);
+            self.pinned_entries -= 1;
+        }
+        true
     }
 
     pub(super) fn contains_key(&self, key: &ChunkKey) -> bool {
@@ -94,7 +145,7 @@ impl ChunkCache {
         key: ChunkKey,
         chunk: Arc<Chunk>,
         edits: std::collections::BTreeMap<u16, BlockId>,
-    ) {
+    ) -> bool {
         debug_assert_eq!(chunk.key, key);
 
         if let Some(&slot) = self.indices.get(&key) {
@@ -103,11 +154,14 @@ impl ChunkCache {
                 .expect("cache index must point to an occupied slot");
             *entry.write() = OwnerState { chunk, edits };
             self.touch_slot(slot);
-            return;
+            return true;
         }
 
         if self.indices.len() == self.capacity {
-            self.evict_oldest();
+            let Some(slot) = self.oldest_unpinned else {
+                return false;
+            };
+            self.evict_slot(slot);
         }
 
         let slot = if let Some(slot) = self.free_slots.pop() {
@@ -115,6 +169,9 @@ impl ChunkCache {
                 state: Arc::new(RwLock::new(OwnerState { chunk, edits })),
                 previous: None,
                 next: None,
+                unpinned_previous: None,
+                unpinned_next: None,
+                pins: 0,
             });
             slot
         } else {
@@ -123,27 +180,34 @@ impl ChunkCache {
                 state: Arc::new(RwLock::new(OwnerState { chunk, edits })),
                 previous: None,
                 next: None,
+                unpinned_previous: None,
+                unpinned_next: None,
+                pins: 0,
             }));
             slot
         };
         let replaced = self.indices.insert(key, slot);
         debug_assert!(replaced.is_none());
         self.push_newest(slot);
+        self.push_unpinned(slot);
+        true
     }
 
     pub(super) fn remove(&mut self, key: &ChunkKey) {
         let Some(slot) = self.indices.remove(key) else {
             return;
         };
+        if self.slots[slot].as_ref().unwrap().pins == 0 {
+            self.unlink_unpinned(slot);
+        } else {
+            self.pinned_entries -= 1;
+        }
         self.unlink(slot);
         self.slots[slot].take();
         self.free_slots.push(slot);
     }
 
-    fn evict_oldest(&mut self) {
-        let Some(slot) = self.oldest else {
-            return;
-        };
+    fn evict_slot(&mut self, slot: usize) {
         let key = self.slots[slot]
             .as_ref()
             .expect("oldest cache slot must be occupied")
@@ -159,6 +223,10 @@ impl ChunkCache {
         }
         self.unlink(slot);
         self.push_newest(slot);
+        if self.slots[slot].as_ref().unwrap().pins == 0 {
+            self.unlink_unpinned(slot);
+            self.push_unpinned(slot);
+        }
     }
 
     fn unlink(&mut self, slot: usize) {
@@ -209,6 +277,39 @@ impl ChunkCache {
             self.oldest = Some(slot);
         }
         self.newest = Some(slot);
+    }
+
+    fn unlink_unpinned(&mut self, slot: usize) {
+        let entry = self.slots[slot].as_ref().unwrap();
+        let previous = entry.unpinned_previous;
+        let next = entry.unpinned_next;
+        if let Some(previous) = previous {
+            self.slots[previous].as_mut().unwrap().unpinned_next = next;
+        } else {
+            self.oldest_unpinned = next;
+        }
+        if let Some(next) = next {
+            self.slots[next].as_mut().unwrap().unpinned_previous = previous;
+        } else {
+            self.newest_unpinned = previous;
+        }
+        let entry = self.slots[slot].as_mut().unwrap();
+        entry.unpinned_previous = None;
+        entry.unpinned_next = None;
+    }
+
+    fn push_unpinned(&mut self, slot: usize) {
+        let previous = self.newest_unpinned;
+        let entry = self.slots[slot].as_mut().unwrap();
+        debug_assert_eq!(entry.pins, 0);
+        entry.unpinned_previous = previous;
+        entry.unpinned_next = None;
+        if let Some(previous) = previous {
+            self.slots[previous].as_mut().unwrap().unpinned_next = Some(slot);
+        } else {
+            self.oldest_unpinned = Some(slot);
+        }
+        self.newest_unpinned = Some(slot);
     }
 }
 

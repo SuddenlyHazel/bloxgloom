@@ -18,7 +18,7 @@ fn temp_save_dir() -> PathBuf {
 }
 
 #[test]
-fn several_cells_in_one_chunk_publish_one_authoritative_chunk_snapshot() {
+fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
     let path = temp_save_dir();
     let mut state = server_state(53, path.clone()).unwrap();
     let coords = [(10, 80, 10, GRASS), (11, 80, 10, STONE)];
@@ -63,9 +63,14 @@ fn several_cells_in_one_chunk_publish_one_authoritative_chunk_snapshot() {
     apply_committed_action(&mut state, action, None).unwrap();
 
     let published = state.durability.publish_queue.pop().unwrap();
-    assert!(published.deltas.is_empty());
-    assert_eq!(published.chunks.len(), 1);
-    let chunk = &published.chunks[0];
+    assert_eq!(published.deltas.len(), 2);
+    assert!(
+        published
+            .deltas
+            .iter()
+            .all(|delta| delta.version == version)
+    );
+    let chunk = state.world.cached_chunk(key).unwrap();
     assert_eq!(chunk.version, version);
     assert_eq!(chunk.block(first_local), Some(GRASS));
     assert_eq!(chunk.block(second_local), Some(STONE));

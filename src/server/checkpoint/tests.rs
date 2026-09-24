@@ -10,6 +10,13 @@ fn key(name: &str) -> StateKey {
     )
 }
 
+fn key_on_shard(shard: usize, count: usize) -> StateKey {
+    (0..100)
+        .map(|index| key(&format!("shard_{index}")))
+        .find(|key| checkpoint_shard(key, count) == shard)
+        .expect("fixture keys cover both shards")
+}
+
 fn receive(writer: &CheckpointWriter) -> CheckpointReceipt {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -245,4 +252,62 @@ fn zero_capacity_still_has_a_finite_single_slot() {
     );
     release_tx.send(()).unwrap();
     assert!(receive(&writer).result.is_ok());
+}
+
+#[test]
+fn independent_checkpoint_keys_progress_while_another_shard_is_blocked() {
+    let writer = CheckpointWriter::new_with_workers(4, 2);
+    let blocked_key = key_on_shard(0, 2);
+    let free_key = key_on_shard(1, 2);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    writer
+        .try_submit(blocked_key.clone(), 1, vec![], move |_| {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        })
+        .unwrap();
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    writer
+        .try_submit(free_key.clone(), 2, vec![], |_| Ok(()))
+        .unwrap();
+    let first = receive(&writer);
+    assert_eq!(first.key, free_key);
+    assert!(first.result.is_ok());
+    release_tx.send(()).unwrap();
+    let second = receive(&writer);
+    assert_eq!(second.key, blocked_key);
+    assert!(second.result.is_ok());
+}
+
+#[test]
+fn same_key_keeps_submission_order_with_parallel_checkpoint_workers() {
+    let writer = CheckpointWriter::new_with_workers(4, 2);
+    let target = key_on_shard(0, 2);
+    let (started_tx, started_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    writer
+        .try_submit(target.clone(), 1, vec![], move |_| {
+            started_tx.send(1).unwrap();
+            release_rx.recv().unwrap();
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(started_rx.recv_timeout(Duration::from_secs(2)).unwrap(), 1);
+    let (second_started_tx, second_started_rx) = mpsc::channel();
+    writer
+        .try_submit(target, 2, vec![], move |_| {
+            second_started_tx.send(()).unwrap();
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        second_started_rx
+            .recv_timeout(Duration::from_millis(20))
+            .is_err()
+    );
+    release_tx.send(()).unwrap();
+    assert_eq!(receive(&writer).revision, 1);
+    assert_eq!(receive(&writer).revision, 2);
 }
