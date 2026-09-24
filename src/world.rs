@@ -285,7 +285,7 @@ impl World {
             .chunk
             .version
             .checked_add(1)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "chunk version exhausted"))?;
+            .ok_or_else(|| io::Error::other("chunk version exhausted"))?;
         let mut edits = entry.edits.clone();
         let baseline = generated_block(i64::from(x), i64::from(y), i64::from(z), self.seed);
         if block == baseline {
@@ -327,10 +327,10 @@ impl World {
             chunk.blocks[index as usize] = block;
         }
         chunk.version = saved.version;
-        if self.cache.len() >= self.max_cached_chunks {
-            if let Some((&oldest, _)) = self.cache.iter().min_by_key(|(_, entry)| entry.last_used) {
-                self.cache.remove(&oldest);
-            }
+        if self.cache.len() >= self.max_cached_chunks
+            && let Some((&oldest, _)) = self.cache.iter().min_by_key(|(_, entry)| entry.last_used)
+        {
+            self.cache.remove(&oldest);
         }
         self.cache.insert(
             key,

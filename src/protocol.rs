@@ -67,7 +67,7 @@ fn read_frame(mut reader: impl Read) -> io::Result<Vec<u8>> {
     let mut size = [0; 4];
     reader.read_exact(&mut size)?;
     let len = u32::from_le_bytes(size) as usize;
-    if len < 2 || len > MAX_FRAME {
+    if !(2..=MAX_FRAME).contains(&len) {
         return Err(invalid("invalid frame size"));
     }
     let mut payload = vec![0; len];

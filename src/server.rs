@@ -355,10 +355,10 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::Resync { key } => {
-            if let Some(client) = state.clients.get_mut(&id) {
-                if client.interested(key) {
-                    client.sent.remove(&key);
-                }
+            if let Some(client) = state.clients.get_mut(&id)
+                && client.interested(key)
+            {
+                client.sent.remove(&key);
             }
             Ok(())
         }

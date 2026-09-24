@@ -6,6 +6,7 @@ use glam::{Mat4, Vec3, Vec4, camera::rh};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::ui::{UiFrame, UiRenderer};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -98,6 +99,11 @@ pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
+    target_pipeline: wgpu::RenderPipeline,
+    target_camera_buffer: wgpu::Buffer,
+    target_camera_group: wgpu::BindGroup,
+    target_vertices: wgpu::Buffer,
+    ui: UiRenderer,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
     pending_order: VecDeque<ChunkKey>,
@@ -153,6 +159,9 @@ impl Renderer {
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
         let (pipeline, camera_buffer, camera_group) = create_voxel_pipeline(&device, format);
+        let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
+            create_target_pipeline(&device, format);
+        let ui = UiRenderer::new(&device, &queue, format);
         Ok(Self {
             instance,
             window,
@@ -164,6 +173,11 @@ impl Renderer {
             pipeline,
             camera_buffer,
             camera_group,
+            target_pipeline,
+            target_camera_buffer,
+            target_camera_group,
+            target_vertices,
+            ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
             pending_order: VecDeque::new(),
@@ -261,7 +275,11 @@ impl Renderer {
         count
     }
 
-    pub fn render(&mut self, camera: Camera) -> Result<RenderStats, RendererError> {
+    pub fn render(
+        &mut self,
+        camera: Camera,
+        ui_frame: &UiFrame<'_>,
+    ) -> Result<RenderStats, RendererError> {
         let uploaded_chunks = self.upload_pending();
         let mut stats = RenderStats {
             uploaded_chunks,
@@ -272,11 +290,25 @@ impl Renderer {
             return Ok(stats);
         }
         let view_projection = view_projection(camera, self.config.width, self.config.height);
+        self.ui
+            .prepare(&self.queue, self.config.width, self.config.height, ui_frame);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&view_projection.to_cols_array()),
         );
+        if let Some(target) = ui_frame.target {
+            self.queue.write_buffer(
+                &self.target_camera_buffer,
+                0,
+                bytemuck::cast_slice(&view_projection.to_cols_array()),
+            );
+            self.queue.write_buffer(
+                &self.target_vertices,
+                0,
+                bytemuck::cast_slice(&target_outline_vertices(target)),
+            );
+        }
         let mut reconfigure_after_present = false;
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
@@ -345,6 +377,50 @@ impl Renderer {
                 stats.visible_chunks += 1;
                 stats.drawn_triangles += mesh.indices as usize / 3;
             }
+        }
+        if ui_frame.target.is_some() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("target block outline"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            pass.set_pipeline(&self.target_pipeline);
+            pass.set_bind_group(0, &self.target_camera_group, &[]);
+            pass.set_vertex_buffer(0, self.target_vertices.slice(..));
+            pass.draw(0..24, 0..1);
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("screen-space UI"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
+            self.ui.encode(&mut pass);
         }
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);
@@ -437,6 +513,151 @@ pub(crate) fn create_voxel_pipeline(
     (pipeline, camera_buffer, camera_group)
 }
 
+pub(crate) fn create_target_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> (
+    wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::BindGroup,
+    wgpu::Buffer,
+) {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("target outline shader"),
+        source: wgpu::ShaderSource::Wgsl(TARGET_SHADER.into()),
+    });
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("target camera matrix"),
+        size: 64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("target camera layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("target camera bind group"),
+        layout: &camera_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding(),
+        }],
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("target outline pipeline layout"),
+        bind_group_layouts: &[Some(&camera_layout)],
+        immediate_size: 0,
+    });
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3];
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("target outline pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: 3 * std::mem::size_of::<f32>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::LineList,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            stencil: Default::default(),
+            bias: Default::default(),
+        }),
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertices = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("target outline vertices"),
+        size: 24 * 3 * std::mem::size_of::<f32>() as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    (pipeline, camera_buffer, camera_group, vertices)
+}
+
+pub(crate) fn target_outline_vertices(block: [i32; 3]) -> [[f32; 3]; 24] {
+    let [x, y, z] = block.map(|v| v as f32);
+    let e = 0.003;
+    let min = [x - e, y - e, z - e];
+    let max = [x + 1.0 + e, y + 1.0 + e, z + 1.0 + e];
+    let corners = [
+        [min[0], min[1], min[2]],
+        [max[0], min[1], min[2]],
+        [min[0], max[1], min[2]],
+        [max[0], max[1], min[2]],
+        [min[0], min[1], max[2]],
+        [max[0], min[1], max[2]],
+        [min[0], max[1], max[2]],
+        [max[0], max[1], max[2]],
+    ];
+    const EDGES: [(usize, usize); 12] = [
+        (0, 1),
+        (0, 2),
+        (0, 4),
+        (1, 3),
+        (1, 5),
+        (2, 3),
+        (2, 6),
+        (3, 7),
+        (4, 5),
+        (4, 6),
+        (5, 7),
+        (6, 7),
+    ];
+    let mut output = [[0.0; 3]; 24];
+    for (edge, (a, b)) in EDGES.into_iter().enumerate() {
+        output[edge * 2] = corners[a];
+        output[edge * 2 + 1] = corners[b];
+    }
+    output
+}
+
+const TARGET_SHADER: &str = r#"
+struct Camera { view_projection: mat4x4<f32> };
+@group(0) @binding(0) var<uniform> camera: Camera;
+
+@vertex
+fn vs_main(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
+    return camera.view_projection * vec4<f32>(position, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.98, 0.86, 0.39, 0.98);
+}
+"#;
+
 pub(crate) fn view_projection(camera: Camera, width: u32, height: u32) -> Mat4 {
     let view = rh::view::look_to_mat4(camera.position, camera.direction(), Vec3::Y);
     let projection = rh::proj::directx::perspective(
@@ -506,7 +727,7 @@ fn outside_clip(v: Vec4, plane: usize) -> bool {
 /// Greedy mesh opaque blocks, merging coplanar faces with the same block ID.
 /// Uses the shared world model's x, z, y indexing; 0 is air.
 pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
-    let n = CHUNK_SIZE as usize;
+    let n = CHUNK_SIZE;
     let mut out = ChunkMesh {
         key: chunk.key,
         version: chunk.version,

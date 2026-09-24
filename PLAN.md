@@ -1,6 +1,6 @@
 # Bloxgloom interface plan
 
-Status: next implementation plan. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement are already in the repository.
+Status: implemented. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement were already in the repository when this phase began. The live 60 FPS target still needs validation on a visible desktop during chunk streaming; headless previews and UI CPU timing alone cannot establish it.
 
 ## Goal
 
@@ -8,7 +8,7 @@ Make the current creative building loop usable: a precise crosshair and block ta
 
 This phase is **creative mode**. Blocks have no quantities: the inventory is a catalog of placeable block types and the hotbar holds nine chosen types. That matches the current free-flight controls and avoids implying a survival economy that the server does not implement. Item stacks, crafting, health, and survival rules are separate future work.
 
-## What exists now
+## Baseline when this plan was written
 
 - `src/client.rs` captures the mouse, handles flight and clicks, and sends an edit with block ID `2` for every placement. Escape only releases the cursor. Its aimed-block search samples along a ray in 0.1-block steps.
 - `src/render.rs` renders world chunks but has no screen-space UI pass or target outline.
@@ -49,3 +49,10 @@ Losing window focus releases the cursor and pauses input. Closing a menu attempt
 4. Add Pause and Settings screens, local settings persistence, focus handling, and Exit. Verify menu navigation, resize behavior, and clean shutdown.
 
 Done means the default `cargo run` supports the full interaction loop, the dedicated-client path behaves the same way, useful tests pass, the menu/HUD previews have been visually inspected, and streaming plus UI has been measured against the 60 FPS target. Any shortfall is recorded with the hardware and scene used rather than hidden behind an average FPS number.
+
+## Validation record
+
+- The interaction loop, settings persistence, view-distance acknowledgement, exact raycast, server edit propagation, and compact UI hit targets are covered by 35 passing tests.
+- Headless GPU previews of all four screens were inspected at 1280×720 and 640×360. The game window was not opened because this environment cannot inspect a visible desktop window.
+- On this MacBook Pro, 300 warmed 1280×720 Settings-plus-debug frames measured UI CPU preparation at 0.209 µs median / 0.292 µs p95 with cached geometry, and 0.128 ms median / 0.153 ms p95 when rebuilt. This excludes GPU rendering and chunk streaming.
+- Full-frame timing during live chunk streaming remains unverified. The client logs FPS and frame-time p95/p99 every five seconds for that follow-up on a visible desktop.

@@ -51,9 +51,9 @@ impl Config {
     pub fn default_path() -> PathBuf {
         #[cfg(target_os = "macos")]
         {
-            return user_home()
+            user_home()
                 .unwrap_or_else(|| PathBuf::from("."))
-                .join("Library/Application Support/Bloxgloom/config");
+                .join("Library/Application Support/Bloxgloom/config")
         }
 
         #[cfg(target_os = "windows")]

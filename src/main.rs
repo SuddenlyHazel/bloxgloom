@@ -1,9 +1,12 @@
 mod client;
+mod config;
 mod preview;
 mod protocol;
+mod raycast;
 mod render;
 mod server;
 mod storage;
+mod ui;
 mod world;
 
 fn main() {
@@ -34,8 +37,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_preview(std::path::Path::new(&path))?;
             println!("wrote {path}");
         }
+        Some("ui-preview") => {
+            let directory = args.next().unwrap_or_else(|| "ui-previews".to_string());
+            preview::render_ui_previews(std::path::Path::new(&directory))?;
+            println!("wrote UI previews to {directory}");
+        }
         Some(other) => {
-            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, or `preview [output.png]`").into());
+            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, `preview [output.png]`, or `ui-preview [output-dir]`").into());
         }
     }
     Ok(())
