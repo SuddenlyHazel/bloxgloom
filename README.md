@@ -8,6 +8,8 @@ Voxel skylight travels down open columns and diffuses into caves; placeable glow
 
 Terrain generator v4 changes the baseline world to include vegetation. The default save directory is `world-v4/`, leaving older saves untouched. Passing an incompatible save directory explicitly is rejected rather than silently changing existing terrain under saved edits. Repo-local development saves may be removed when a fresh world is desired; external saves are not disposable.
 
+Blocks, items, and texture layers now have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. This is a foundation for future mod loading, not a mod-file format or scripting API yet. Current save and wire IDs are still one byte, so widening them is required before a public, large-scale mod ecosystem.
+
 ## Run locally
 
 With a recent Rust toolchain, run a local game with one command:

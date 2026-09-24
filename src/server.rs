@@ -10,8 +10,8 @@ use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE,
 #[cfg(test)]
 use crate::world::STONE;
 use crate::world::{
-    AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_GENERATED_HEIGHT, World, is_plant, is_replaceable,
-    is_solid, supports_plant, world_to_chunk,
+    AIR, BEDROCK_Y, ChunkKey, MAX_GENERATED_HEIGHT, World, is_plant, is_replaceable, is_solid,
+    supports_plant, world_to_chunk,
 };
 use drops::Drops;
 use std::collections::{HashMap, HashSet};
@@ -139,9 +139,20 @@ fn serve_listener(listener: TcpListener, state: Arc<Mutex<State>>) -> io::Result
 
 fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<()> {
     socket.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let ClientMessage::Hello { name, profile } = protocol::read_client(&mut socket)? else {
+    let ClientMessage::Hello {
+        name,
+        profile,
+        content_fingerprint,
+    } = protocol::read_client(&mut socket)?
+    else {
         return Err(io::Error::new(ErrorKind::InvalidData, "expected Hello"));
     };
+    if content_fingerprint != crate::content::catalog().fingerprint() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "client content catalog does not match server",
+        ));
+    }
     if name.is_empty() || name.chars().any(char::is_control) || profile == 0 {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
@@ -641,7 +652,7 @@ fn edit_block(
     let Some(client) = state.clients.get(&id) else {
         return Ok(());
     };
-    if block > MAX_BLOCK {
+    if !crate::world::valid_block(block) {
         client.enqueue(ServerMessage::EditRejected {
             reason: "unknown block type".into(),
         });
@@ -702,16 +713,24 @@ fn edit_block(
             });
             return Ok(());
         }
-        if slot as usize >= crate::inventory::HOTBAR_SLOTS
-            || client.inventory.slots[slot as usize].is_none_or(|stack| stack.item != block)
-        {
+        let selected = client
+            .inventory
+            .slots
+            .get(slot as usize)
+            .copied()
+            .flatten()
+            .filter(|stack| {
+                (slot as usize) < crate::inventory::HOTBAR_SLOTS
+                    && crate::items::placeable_block(stack.item) == Some(block)
+            });
+        let Some(selected) = selected else {
             client.enqueue(ServerMessage::EditRejected {
                 reason: "selected stack is empty".into(),
             });
             return Ok(());
-        }
+        };
         let mut next = client.inventory.clone();
-        next.consume(slot, block);
+        next.consume(slot, selected.item);
         state.inventory_store.save(client.profile, &next)?;
         let result = match state.world.edit(x, y, z, block) {
             Ok(result) => result,

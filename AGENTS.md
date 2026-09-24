@@ -10,6 +10,7 @@
 
 - The server owns world state, edits, and movement. The client streams snapshots/deltas and must not treat procedural fallback chunks as authoritative.
 - The server also owns finite inventories and world drops. Preserve the 128-block stack cap, do not let placement or slot moves create items, and keep player inventories keyed by stable profile ID.
+- Register blocks, items, and textures in the startup `content::Catalog` before it is installed. Builtin numeric IDs are save/wire identities; never recycle one for a different namespaced key. New worlds persist `content.map` as save data, and client/server catalogs must match at handshake. The catalog is frozen during play so workers can use read-only, constant-time lookups.
 - Drop pop, hover/spin, and pickup flight are presentation-only. The server sends item age and explicit pickup events; do not make client animation timing decide inventory or world-drop ownership.
 - Keep network I/O, config writes, lighting, and meshing off the window thread. Client light/mesh jobs carry revisions so stale results can be discarded; edits must refresh affected chunk seams.
 - Voxel lighting is the default. Bounced lighting is an optional, single-bounce approximation; preserve dark sealed caves and correct relighting after edits when changing either mode.

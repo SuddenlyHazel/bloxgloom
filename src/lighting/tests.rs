@@ -1,5 +1,5 @@
 use super::*;
-use crate::world::{AIR, LEAVES, RED_FLOWER};
+use crate::world::{AIR, GLOWSTONE, LEAVES, MOSS, RED_FLOWER, WOOD};
 
 fn sealed_neighborhood(key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
     let mut known = HashMap::new();

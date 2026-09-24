@@ -55,6 +55,7 @@ impl Network {
             .send(ClientMessage::Hello {
                 name: "Player".into(),
                 profile,
+                content_fingerprint: crate::content::catalog().fingerprint(),
             })
             .map_err(|_| io::Error::other("network writer stopped"))?;
         outgoing

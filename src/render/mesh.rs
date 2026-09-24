@@ -1,5 +1,5 @@
 use crate::lighting::{LightField, LightSample};
-use crate::world::{self, CHUNK_SIZE, Chunk, ChunkKey, LEAVES};
+use crate::world::{self, CHUNK_SIZE, Chunk, ChunkKey};
 
 use super::VERTEX_FLOATS;
 use super::material::{face_uv, material_layer};
@@ -174,7 +174,7 @@ fn mesh_chunk_with_light(
             for x in 0..n {
                 let p = [x, y, z];
                 let block = block_at(chunk, p, n);
-                if block == LEAVES {
+                if world::is_cutout(block) && !world::is_plant(block) {
                     for axis in 0..3 {
                         let u = (axis + 1) % 3;
                         let v = (axis + 2) % 3;
@@ -184,7 +184,7 @@ fn mesh_chunk_with_light(
                                 let mut neighbor = p;
                                 neighbor[axis] = adjacent as usize;
                                 let neighbor_block = block_at(chunk, neighbor, n);
-                                neighbor_block != LEAVES && !world::is_opaque(neighbor_block)
+                                neighbor_block != block && !world::is_opaque(neighbor_block)
                             } else {
                                 true
                             };

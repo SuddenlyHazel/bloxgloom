@@ -29,39 +29,41 @@ pub const YELLOW_FLOWER: BlockId = 12;
 pub const BLUE_FLOWER: BlockId = 13;
 pub const FERN: BlockId = 14;
 pub const TALL_GRASS: BlockId = 15;
-pub const MAX_BLOCK: BlockId = TALL_GRASS;
+pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
 
 #[inline]
-pub const fn is_plant(block: BlockId) -> bool {
-    matches!(
-        block,
-        RED_FLOWER | YELLOW_FLOWER | BLUE_FLOWER | FERN | TALL_GRASS
-    )
+pub fn valid_block(block: BlockId) -> bool {
+    block <= MAX_BUILTIN_BLOCK || crate::content::block_def(block).is_some()
 }
 
 #[inline]
-pub const fn is_cutout(block: BlockId) -> bool {
-    is_plant(block) || block == LEAVES
+pub fn is_plant(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::PLANT != 0
 }
 
 #[inline]
-pub const fn is_opaque(block: BlockId) -> bool {
-    block != AIR && !is_cutout(block)
+pub fn is_cutout(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::CUTOUT != 0
 }
 
 #[inline]
-pub const fn is_solid(block: BlockId) -> bool {
-    block != AIR && !is_plant(block)
+pub fn is_opaque(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::OPAQUE != 0
 }
 
 #[inline]
-pub const fn is_replaceable(block: BlockId) -> bool {
-    block == AIR || is_plant(block)
+pub fn is_solid(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::SOLID != 0
 }
 
 #[inline]
-pub const fn supports_plant(block: BlockId) -> bool {
-    matches!(block, GRASS | DIRT | MOSS)
+pub fn is_replaceable(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::REPLACEABLE != 0
+}
+
+#[inline]
+pub fn supports_plant(block: BlockId) -> bool {
+    crate::content::block_flags(block) & crate::content::SUPPORTS_PLANT != 0
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -95,7 +97,7 @@ impl Chunk {
 
     /// Returns the new version; an unchanged value does not advance it.
     pub fn set_block(&mut self, local: [usize; 3], block: BlockId) -> Option<u64> {
-        if block > MAX_BLOCK {
+        if !valid_block(block) {
             return None;
         }
         let index = Self::index(local)?;
@@ -690,7 +692,7 @@ impl World {
 
     /// A successful return means the changed block and version have been saved.
     pub fn edit(&mut self, x: i32, y: i32, z: i32, block: BlockId) -> io::Result<(ChunkKey, u64)> {
-        if block > MAX_BLOCK {
+        if !valid_block(block) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unknown block identifier",

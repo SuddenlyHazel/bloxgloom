@@ -1,11 +1,11 @@
 //! Small, versioned, length-prefixed wire format shared by the client and server.
 use crate::inventory::{SLOTS, STACK_LIMIT, Stack};
 use crate::items::{ItemId, valid_item};
-use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, MAX_BLOCK};
+use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, valid_block};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 5;
+const WIRE_VERSION: u8 = 6;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
@@ -16,6 +16,7 @@ pub enum ClientMessage {
     Hello {
         name: String,
         profile: u128,
+        content_fingerprint: u64,
     },
     Move {
         seq: u64,
@@ -148,10 +149,15 @@ fn short_string(out: &mut Vec<u8>, value: &str) -> io::Result<()> {
 pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
-        ClientMessage::Hello { name, profile } => {
+        ClientMessage::Hello {
+            name,
+            profile,
+            content_fingerprint,
+        } => {
             out.push(1);
             short_string(&mut out, name)?;
             out.extend(profile.to_le_bytes());
+            out.extend(content_fingerprint.to_le_bytes());
         }
         ClientMessage::Move { seq, dx, dy, dz } => {
             if !dx.is_finite() || !dy.is_finite() || !dz.is_finite() {
@@ -170,7 +176,7 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
             block,
             slot,
         } => {
-            if *block > MAX_BLOCK {
+            if !valid_block(*block) {
                 return Err(invalid("invalid block type"));
             }
             out.push(3);
@@ -231,7 +237,9 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             }
         }
         ServerMessage::Chunk(chunk) => {
-            if chunk.blocks.len() != BLOCK_COUNT {
+            if chunk.blocks.len() != BLOCK_COUNT
+                || chunk.blocks.iter().any(|&block| !valid_block(block))
+            {
                 return Err(invalid("invalid chunk size"));
             }
             out.push(3);
@@ -250,7 +258,7 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             if [*x, *y, *z].iter().any(|n| *n as usize >= CHUNK_SIZE) {
                 return Err(invalid("invalid local coordinate"));
             }
-            if *block > MAX_BLOCK {
+            if !valid_block(*block) {
                 return Err(invalid("invalid block type"));
             }
             out.push(4);
@@ -399,6 +407,7 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
         1 => ClientMessage::Hello {
             name: c.string()?,
             profile: c.u128()?,
+            content_fingerprint: c.u64()?,
         },
         2 => ClientMessage::Move {
             seq: c.u64()?,
@@ -408,7 +417,7 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
         },
         3 => {
             let (x, y, z, block, slot) = (c.i32()?, c.i32()?, c.i32()?, c.u8()?, c.u8()?);
-            if block > MAX_BLOCK {
+            if !valid_block(block) {
                 return Err(invalid("invalid block type"));
             }
             ClientMessage::Edit {
@@ -461,6 +470,9 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             let key = c.key()?;
             let version = c.u64()?;
             let blocks = c.take(BLOCK_COUNT)?.to_vec();
+            if blocks.iter().any(|&block| !valid_block(block)) {
+                return Err(invalid("unknown block in chunk"));
+            }
             ServerMessage::Chunk(Chunk {
                 key,
                 version,
@@ -471,7 +483,7 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
             let key = c.key()?;
             let version = c.u64()?;
             let (x, y, z, block) = (c.u8()?, c.u8()?, c.u8()?, c.u8()?);
-            if [x, y, z].iter().any(|n| *n as usize >= CHUNK_SIZE) || block > MAX_BLOCK {
+            if [x, y, z].iter().any(|n| *n as usize >= CHUNK_SIZE) || !valid_block(block) {
                 return Err(invalid("invalid local coordinate"));
             }
             ServerMessage::Delta {

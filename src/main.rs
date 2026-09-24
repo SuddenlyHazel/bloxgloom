@@ -1,5 +1,6 @@
 mod client;
 mod config;
+mod content;
 mod inventory;
 mod items;
 mod lighting;
@@ -20,6 +21,8 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    content::install(content::Catalog::builtins())
+        .map_err(|_| "content catalog was installed more than once")?;
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {

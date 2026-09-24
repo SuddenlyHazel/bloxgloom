@@ -6,6 +6,7 @@ fn client_messages_round_trip() {
         ClientMessage::Hello {
             name: "Miner".into(),
             profile: 123,
+            content_fingerprint: crate::content::catalog().fingerprint(),
         },
         ClientMessage::Move {
             seq: 42,

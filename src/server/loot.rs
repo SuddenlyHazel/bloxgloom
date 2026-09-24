@@ -22,7 +22,13 @@ pub(super) fn harvest(
             (roll >> 8).is_multiple_of(5).then_some((STICK, 1)),
             (roll >> 16).is_multiple_of(20).then_some((SAPLING, 1)),
         ],
-        _ => [Some((block, 1)), None, None],
+        _ => [
+            crate::content::catalog()
+                .primary_block_item(block)
+                .map(|item| (item, 1)),
+            None,
+            None,
+        ],
     }
 }
 

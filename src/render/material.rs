@@ -1,15 +1,14 @@
 use std::io::Cursor;
 
-use crate::items::{SAPLING, SEEDS, STICK};
-use crate::world::{
-    BLUE_FLOWER, DIRT, FERN, GLOWSTONE, GRASS, GRAVEL, LEAVES, MOSS, RED_FLOWER, SAND, SNOW, STONE,
-    TALL_GRASS, WOOD, YELLOW_FLOWER,
-};
+use crate::content;
 
 pub(super) const TEXTURE_SIZE: u32 = 128;
-pub(super) const TEXTURE_LAYERS: u32 = 20;
 pub(super) const TEXTURE_MIPS: u32 = 8;
 pub(super) const GLOWSTONE_LAYER: u8 = 8;
+
+pub(super) fn texture_layers() -> u32 {
+    content::catalog().textures().len() as u32
+}
 
 /// Keep directional block textures upright on both terrain quads and item cubes.
 #[inline]
@@ -21,61 +20,64 @@ pub(super) fn face_uv(axis: usize, du: f32, dv: f32, width: f32, height: f32) ->
     }
 }
 
-pub(super) fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
-    match block {
-        GRASS if axis == 1 && side > 0 => 0,
-        GRASS if axis == 1 => 2,
-        GRASS => 1,
-        DIRT => 2,
-        STONE => 3,
-        SAND => 4,
-        SNOW => 5,
-        MOSS => 6,
-        GRAVEL => 7,
-        GLOWSTONE => GLOWSTONE_LAYER,
-        WOOD if axis == 1 => 10,
-        WOOD => 9,
-        LEAVES => 11,
-        RED_FLOWER => 12,
-        YELLOW_FLOWER => 13,
-        BLUE_FLOWER => 14,
-        FERN => 15,
-        TALL_GRASS => 16,
-        SEEDS => 17,
-        SAPLING => 18,
-        STICK => 19,
-        _ => 3,
+pub(super) fn material_layer(block_id: u8, axis: usize, side: i32) -> u8 {
+    material_layer_for(content::catalog(), block_id, axis, side)
+}
+
+pub(super) fn material_layer_for(
+    catalog: &content::Catalog,
+    block_id: u8,
+    axis: usize,
+    side: i32,
+) -> u8 {
+    if let Some(block) = catalog.block(block_id) {
+        if axis == 1 {
+            if side > 0 {
+                block.textures.top
+            } else {
+                block.textures.bottom
+            }
+        } else {
+            block.textures.side
+        }
+    } else {
+        3
+    }
+}
+
+pub(super) fn item_material_layer(item_id: u8, axis: usize, side: i32) -> u8 {
+    item_material_layer_for(content::catalog(), item_id, axis, side)
+}
+
+pub(super) fn item_material_layer_for(
+    catalog: &content::Catalog,
+    item_id: u8,
+    axis: usize,
+    side: i32,
+) -> u8 {
+    let Some(item) = catalog.item(item_id) else {
+        return 3;
+    };
+    if let Some(block) = item.placeable
+        && !item.sprite
+    {
+        material_layer_for(catalog, block, axis, side)
+    } else {
+        item.texture
     }
 }
 
 pub(super) fn material_tiles() -> Vec<u8> {
-    const SOURCES: [&[u8]; 20] = [
-        include_bytes!("../../assets/textures/blocks/grass_top.png"),
-        include_bytes!("../../assets/textures/blocks/grass_side.png"),
-        include_bytes!("../../assets/textures/blocks/dirt.png"),
-        include_bytes!("../../assets/textures/blocks/stone.png"),
-        include_bytes!("../../assets/textures/blocks/sand.png"),
-        include_bytes!("../../assets/textures/blocks/snow.png"),
-        include_bytes!("../../assets/textures/blocks/moss.png"),
-        include_bytes!("../../assets/textures/blocks/gravel.png"),
-        include_bytes!("../../assets/textures/blocks/glowstone.png"),
-        include_bytes!("../../assets/textures/blocks/wood_side.png"),
-        include_bytes!("../../assets/textures/blocks/wood_top.png"),
-        include_bytes!("../../assets/textures/foliage/leaves.png"),
-        include_bytes!("../../assets/textures/foliage/flower_red.png"),
-        include_bytes!("../../assets/textures/foliage/flower_yellow.png"),
-        include_bytes!("../../assets/textures/foliage/flower_blue.png"),
-        include_bytes!("../../assets/textures/foliage/fern.png"),
-        include_bytes!("../../assets/textures/foliage/tall_grass.png"),
-        include_bytes!("../../assets/textures/items/seeds.png"),
-        include_bytes!("../../assets/textures/items/sapling.png"),
-        include_bytes!("../../assets/textures/items/stick.png"),
-    ];
-    let mut pixels =
-        Vec::with_capacity((TEXTURE_SIZE * TEXTURE_SIZE * TEXTURE_LAYERS * 4) as usize);
-    for (layer, source) in SOURCES.into_iter().enumerate() {
+    material_tiles_for(content::catalog())
+}
+
+pub(super) fn material_tiles_for(catalog: &content::Catalog) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity(
+        (TEXTURE_SIZE * TEXTURE_SIZE * catalog.textures().len() as u32 * 4) as usize,
+    );
+    for definition in catalog.textures() {
         let layer_start = pixels.len();
-        let mut decoder = png::Decoder::new(Cursor::new(source));
+        let mut decoder = png::Decoder::new(Cursor::new(definition.png.as_ref()));
         decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
         let mut reader = decoder.read_info().expect("embedded material PNG is valid");
         let mut decoded = vec![0; reader.output_buffer_size().expect("material PNG size fits")];
@@ -93,15 +95,15 @@ pub(super) fn material_tiles() -> Vec<u8> {
                 let source_x = ((x * 2 + 1) * info.width / (2 * TEXTURE_SIZE)) as usize;
                 let index = (source_y * info.width as usize + source_x) * channels;
                 pixels.extend_from_slice(&decoded[index..index + 3]);
-                pixels.push(if layer >= 11 && channels == 4 {
+                pixels.push(if definition.alpha_cutout && channels == 4 {
                     decoded[index + 3]
                 } else {
                     255
                 });
             }
         }
-        if layer <= 11 {
-            stitch_material_edges(&mut pixels[layer_start..], layer != 1);
+        if definition.stitch_edges {
+            stitch_material_edges(&mut pixels[layer_start..], definition.stitch_vertical);
         }
     }
     pixels
@@ -146,8 +148,8 @@ pub(super) fn material_mips() -> Vec<Vec<u8>> {
         let size = TEXTURE_SIZE >> level;
         let previous = levels.last().unwrap();
         let previous_layer_bytes = (previous_size * previous_size * 4) as usize;
-        let mut pixels = Vec::with_capacity((size * size * TEXTURE_LAYERS * 4) as usize);
-        for layer in 0..TEXTURE_LAYERS as usize {
+        let mut pixels = Vec::with_capacity((size * size * texture_layers() * 4) as usize);
+        for layer in 0..texture_layers() as usize {
             for y in 0..size {
                 for x in 0..size {
                     let offsets = [(0, 0), (1, 0), (0, 1), (1, 1)];

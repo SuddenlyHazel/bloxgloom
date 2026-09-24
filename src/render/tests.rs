@@ -77,9 +77,9 @@ fn grass_uses_top_side_and_underlying_dirt_tiles() {
     assert_eq!(material::material_layer(RED_FLOWER, 1, 1), 12);
     assert_eq!(material::material_layer(FERN, 1, 1), 15);
     assert_eq!(material::material_layer(TALL_GRASS, 1, 1), 16);
-    assert_eq!(material::material_layer(SEEDS, 1, 1), 17);
-    assert_eq!(material::material_layer(SAPLING, 1, 1), 18);
-    assert_eq!(material::material_layer(STICK, 1, 1), 19);
+    assert_eq!(material::item_material_layer(SEEDS, 1, 1), 17);
+    assert_eq!(material::item_material_layer(SAPLING, 1, 1), 18);
+    assert_eq!(material::item_material_layer(STICK, 1, 1), 19);
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         let size = material::TEXTURE_SIZE >> level;
         assert_eq!(
             pixels.len(),
-            (size * size * material::TEXTURE_LAYERS * 4) as usize
+            (size * size * material::texture_layers() * 4) as usize
         );
         let layer_bytes = (size * size * 4) as usize;
         assert!(
@@ -146,7 +146,7 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         &mips[0][(material::TEXTURE_SIZE * material::TEXTURE_SIZE * 3 * 4) as usize..][..3]
     );
     let layer_bytes = (material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize;
-    for layer in 12..material::TEXTURE_LAYERS as usize {
+    for layer in 12..material::texture_layers() as usize {
         let mut alpha = mips[0][layer * layer_bytes..(layer + 1) * layer_bytes]
             .chunks_exact(4)
             .map(|pixel| pixel[3]);
@@ -159,6 +159,73 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
             "layer {layer} needs visible texels"
         );
     }
+}
+
+#[test]
+fn registered_texture_and_block_extend_material_array_without_shader_changes() {
+    use crate::content::{BlockDef, BlockTextures, Catalog, ItemDef, TextureDef};
+    use std::borrow::Cow;
+
+    let mut catalog = Catalog::builtins();
+    let layer = catalog
+        .register_texture(TextureDef {
+            key: "example:marble_tile".into(),
+            png: Cow::Borrowed(include_bytes!("../../assets/textures/blocks/stone.png")),
+            stitch_edges: true,
+            stitch_vertical: true,
+            alpha_cutout: false,
+        })
+        .unwrap();
+    catalog
+        .register_block(BlockDef {
+            id: 16,
+            key: "example:marble".into(),
+            name: "MARBLE".into(),
+            swatch: [0.9, 0.9, 0.9, 1.0],
+            textures: BlockTextures {
+                top: layer,
+                side: layer,
+                bottom: layer,
+            },
+            solid: true,
+            opaque: true,
+            cutout: false,
+            plant: false,
+            replaceable: false,
+            supports_plant: false,
+            emission: 0,
+            reflectance: [180, 180, 180],
+        })
+        .unwrap();
+    catalog
+        .register_item(ItemDef {
+            id: 131,
+            key: "example:marble".into(),
+            name: "MARBLE".into(),
+            swatch: [0.9, 0.9, 0.9, 1.0],
+            texture: layer,
+            placeable: Some(16),
+            sprite: false,
+        })
+        .unwrap();
+    catalog
+        .register_item(ItemDef {
+            id: 16,
+            key: "example:token".into(),
+            name: "TOKEN".into(),
+            swatch: [0.8, 0.6, 0.2, 1.0],
+            texture: 17,
+            placeable: None,
+            sprite: true,
+        })
+        .unwrap();
+    assert_eq!(material::material_layer_for(&catalog, 16, 0, 1), 20);
+    assert_eq!(material::item_material_layer_for(&catalog, 131, 1, 1), 20);
+    assert_eq!(material::item_material_layer_for(&catalog, 16, 1, 1), 17);
+    assert_eq!(
+        material::material_tiles_for(&catalog).len(),
+        (21 * material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize
+    );
 }
 
 #[test]

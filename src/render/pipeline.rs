@@ -51,7 +51,7 @@ pub(crate) fn create_voxel_pipeline(
         size: wgpu::Extent3d {
             width: material::TEXTURE_SIZE,
             height: material::TEXTURE_SIZE,
-            depth_or_array_layers: material::TEXTURE_LAYERS,
+            depth_or_array_layers: material::texture_layers(),
         },
         mip_level_count: material::TEXTURE_MIPS,
         sample_count: 1,
@@ -63,7 +63,7 @@ pub(crate) fn create_voxel_pipeline(
     for (level, pixels) in material::material_mips().iter().enumerate() {
         let size = material::TEXTURE_SIZE >> level;
         let layer_bytes = (size * size * 4) as usize;
-        for layer in 0..material::TEXTURE_LAYERS {
+        for layer in 0..material::texture_layers() {
             let start = layer as usize * layer_bytes;
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {

@@ -4,10 +4,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use crate::world::{
-    self, CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
-    WOOD,
-};
+use crate::world::{self, CHUNK_SIZE, Chunk, ChunkKey, STONE};
 
 const SIDE: usize = CHUNK_SIZE * 3;
 const PLANE: usize = SIDE * SIDE;
@@ -83,8 +80,9 @@ impl LightField {
                         <= top_world_y;
                 for y in (0..SIDE).rev() {
                     let at = index(x, y, z);
-                    if blocks[at] == GLOWSTONE {
-                        glow[at] = MAX_LIGHT;
+                    let emission = crate::content::emission(blocks[at]);
+                    if emission != 0 {
+                        glow[at] = emission;
                         glow_frontier.push_back(at);
                     }
                     if world::is_opaque(blocks[at]) {
@@ -237,16 +235,7 @@ fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
 }
 
 fn reflectance(block: u8) -> [u8; 3] {
-    match block {
-        GRASS | MOSS => [75, 170, 65],
-        DIRT => [140, 105, 72],
-        SAND => [185, 165, 115],
-        SNOW => [180, 200, 220],
-        GRAVEL => [105, 110, 115],
-        WOOD => [145, 105, 65],
-        GLOWSTONE => [190, 130, 75],
-        _ => [115, 120, 128],
-    }
+    crate::content::reflectance(block)
 }
 
 fn key_offset(key: ChunkKey, x: i32, y: i32, z: i32) -> Option<ChunkKey> {

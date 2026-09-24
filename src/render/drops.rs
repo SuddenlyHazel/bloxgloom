@@ -1,10 +1,9 @@
 //! Small textured block meshes for nearby dropped items.
 use super::{
     VERTEX_FLOATS,
-    material::{face_uv, material_layer},
+    material::{face_uv, item_material_layer},
 };
-use crate::items::{SAPLING, SEEDS, STICK};
-use crate::world::{is_cutout, is_plant};
+use crate::world::is_plant;
 use glam::Vec3;
 
 pub(super) const MAX_ITEMS: usize = 512;
@@ -29,7 +28,7 @@ pub(crate) struct VisualDrop {
 }
 
 fn is_sprite_item(item: u8) -> bool {
-    is_cutout(item) || matches!(item, SEEDS | SAPLING | STICK)
+    crate::content::item_def(item).is_some_and(|definition| definition.sprite)
 }
 
 pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
@@ -85,7 +84,7 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
                     vertices.extend([
                         texture_u,
                         texture_v,
-                        material_layer(item.item, axis, side) as f32,
+                        item_material_layer(item.item, axis, side) as f32,
                         0.72,
                         0.0,
                         0.0,
@@ -109,8 +108,15 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> DropMeshes {
 
 fn emit_cutout_drop(item: &VisualDrop, vertices: &mut Vec<f32>, indices: &mut Vec<u32>) {
     let (sin, cos) = item.angle.sin_cos();
-    let layer = material_layer(item.item, 1, 1) as f32;
-    let half_size = if is_plant(item.item) { 0.32 } else { 0.23 };
+    let layer = item_material_layer(item.item, 1, 1) as f32;
+    let half_size = if crate::content::item_def(item.item)
+        .and_then(|definition| definition.placeable)
+        .is_some_and(is_plant)
+    {
+        0.32
+    } else {
+        0.23
+    };
     for (start, end) in [
         ([-half_size, -half_size], [half_size, half_size]),
         ([-half_size, half_size], [half_size, -half_size]),
@@ -137,6 +143,7 @@ fn emit_cutout_drop(item: &VisualDrop, vertices: &mut Vec<f32>, indices: &mut Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::items::SEEDS;
     use crate::world::GRASS;
 
     #[test]

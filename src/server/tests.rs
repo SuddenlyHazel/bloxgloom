@@ -86,6 +86,48 @@ fn set_view_acknowledges_the_clamped_radius() {
 }
 
 #[test]
+fn client_with_different_content_catalog_is_rejected_before_joining() {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-content-handshake-{}-{stamp}",
+        std::process::id()
+    ));
+    let shared = Arc::new(Mutex::new(State {
+        world: World::new(7, path.clone()).unwrap(),
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::new(),
+        seed: 7,
+        clients: HashMap::new(),
+        next_id: 1,
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let state = Arc::clone(&shared);
+    let server = thread::spawn(move || serve_client(socket, state));
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Hello {
+            name: "Outdated".into(),
+            profile: 1,
+            content_fingerprint: crate::content::catalog().fingerprint() ^ 1,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        server.join().unwrap().unwrap_err().kind(),
+        ErrorKind::InvalidData
+    );
+    assert!(shared.lock().unwrap().clients.is_empty());
+    drop(peer);
+    drop(shared);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn spawn_is_above_terrain_with_player_headroom() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -478,6 +520,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &ClientMessage::Hello {
             name: "Tester".into(),
             profile: 1,
+            content_fingerprint: crate::content::catalog().fingerprint(),
         },
     )
     .unwrap();
@@ -486,6 +529,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &ClientMessage::Hello {
             name: "Peer".into(),
             profile: 2,
+            content_fingerprint: crate::content::catalog().fingerprint(),
         },
     )
     .unwrap();
@@ -628,6 +672,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &ClientMessage::Hello {
             name: "Returning".into(),
             profile: 1,
+            content_fingerprint: crate::content::catalog().fingerprint(),
         },
     )
     .unwrap();

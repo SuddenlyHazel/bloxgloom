@@ -602,51 +602,11 @@ fn inset(rect: UiRect, x: f32, y: f32) -> UiRect {
 }
 
 pub(super) fn item_name(item: u8) -> &'static str {
-    match item {
-        1 => "GRASS",
-        2 => "DIRT",
-        3 => "STONE",
-        4 => "SAND",
-        5 => "SNOW",
-        6 => "MOSS",
-        7 => "GRAVEL",
-        8 => "GLOWSTONE",
-        9 => "WOOD",
-        10 => "LEAVES",
-        11 => "RED FLOWER",
-        12 => "YELLOW FLOWER",
-        13 => "BLUE FLOWER",
-        14 => "FERN",
-        15 => "TALL GRASS",
-        SEEDS => "SEEDS",
-        SAPLING => "SAPLING",
-        STICK => "STICK",
-        _ => "UNKNOWN",
-    }
+    crate::content::item_def(item).map_or("UNKNOWN", |definition| &definition.name)
 }
 
 pub(super) fn item_color(item: u8) -> [f32; 4] {
-    match item {
-        1 => [0.32, 0.62, 0.26, 1.0],
-        2 => [0.52, 0.34, 0.21, 1.0],
-        3 => [0.48, 0.52, 0.53, 1.0],
-        4 => [0.87, 0.72, 0.43, 1.0],
-        5 => [0.86, 0.92, 0.96, 1.0],
-        6 => [0.27, 0.47, 0.19, 1.0],
-        7 => [0.47, 0.43, 0.39, 1.0],
-        8 => [1.0, 0.66, 0.22, 1.0],
-        9 => [0.55, 0.34, 0.19, 1.0],
-        10 => [0.30, 0.62, 0.34, 1.0],
-        11 => [0.86, 0.20, 0.29, 1.0],
-        12 => [0.96, 0.68, 0.14, 1.0],
-        13 => [0.33, 0.56, 0.88, 1.0],
-        14 => [0.34, 0.66, 0.37, 1.0],
-        15 => [0.38, 0.69, 0.34, 1.0],
-        SEEDS => [0.77, 0.52, 0.27, 1.0],
-        SAPLING => [0.33, 0.65, 0.38, 1.0],
-        STICK => [0.61, 0.39, 0.22, 1.0],
-        _ => [0.6, 0.3, 0.8, 1.0],
-    }
+    crate::content::item_def(item).map_or([0.6, 0.3, 0.8, 1.0], |definition| definition.swatch)
 }
 
 fn text_width(text: &str, scale: f32, font_scale: f32) -> f32 {
