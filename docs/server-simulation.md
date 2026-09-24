@@ -1,6 +1,14 @@
 # Authoritative server simulation design
 
-Status: proposed architecture, not an implementation record. This document defines the foundation for multiplayer gameplay systems; it does not claim that the current server already follows it.
+Status: architecture and migration record. The design below is the target contract; the implementation status here distinguishes shipped foundations from future game systems.
+
+## Implementation status (2026-09-24)
+
+The server now runs an authoritative 50 Hz coordinator, including with no clients connected. Socket threads use bounded channels; they do not own a gameplay lock. Input, durability, simulation, interaction, and publication execute in a registered, validated phase order. Player movement runs as independent jobs over revisioned, resident voxel views in a bounded worker pool; the coordinator applies their results in stable order. Drop motion, edits, pickups, inventories, checkpointing, and replication are coordinator-owned, with blocking chunk loads and journal sync on separate workers. Missing authoritative terrain defers work rather than treating procedural client fallback as state.
+
+Durable changes use full-key, checksummed WAL transactions and only become visible after a sync receipt. Recovery validates checkpoints before replay; journal rotation is gated on checkpoint completion and bounds retained WAL size. The current action-receipt representation has a finite one-million-entry safety limit: admissions reject at that limit, and compact receipt storage is future work. Bounded queues and per-tick telemetry make overload and backpressure observable.
+
+The scheduling, effect-routing, and transaction primitives are internal foundations, **not** a public mod API. Movement is parallel today; drop simulation and durable commits remain coordinator-owned. Fire, plant-growth propagation, cross-chunk block entities, and mod registration have not been implemented, so their boundary and performance gates below remain open. A server benchmark must measure the workloads that actually exist; it must not claim fire or growth coverage before those systems exist.
 
 ## Goals and constraints
 
@@ -10,7 +18,7 @@ Status: proposed architecture, not an implementation record. This document defin
 - Explicit cross-system and cross-owner effects. New systems and eventual mods can extend behavior without gaining unrestricted mutable access to the world.
 - Durable edits and item transfers preserve finite inventories, the 128-item stack cap, and stable profile IDs. Existing `world-v4/` data is not silently migrated or reinterpreted.
 
-The current server is the migration baseline: `src/server.rs` serializes state through one `Mutex<State>`; each client's stream thread wakes every 20 ms, and one of those threads advances drops. Movement and edits are handled on receipt, while chunk generation and several saves occur under the lock. That is not a fixed-step simulation and stops advancing drops when no client is connected.
+The former migration baseline used one `Mutex<State>` shared by client stream threads and stopped advancing drops with no clients. It has been replaced by the coordinator described above; the remaining work is to expand owner-local execution and prove the new gameplay systems against the acceptance gates below.
 
 ## Clock, phases, and state visibility
 
@@ -59,7 +67,7 @@ Replication consumes committed revisioned state after the tick. Interest managem
 
 The existing chunk-override, inventory, drop, and `content.map` formats remain valid until an explicit versioned migration is written and tested. In particular, numeric content IDs retain their mapped namespaced meanings. The proposed simulation must not treat multiple independent file writes as one atomic inventory/world transaction.
 
-Durable gameplay transactions need a versioned, checksummed write-ahead record (or equivalent atomic storage transaction) containing the tick, unique transaction ID, full affected keys, and effects required for replay. A dedicated I/O worker writes and syncs it; batching records avoids one fsync per fire cell or pickup. The simulation tracks pending reservations and does not apply or acknowledge a durable transaction as committed until the durability result is known; failure releases it and reports rejection. Effects that permanently change blocks, inventories, or item counts enter this same path. Replay is idempotent by transaction ID, then per-chunk/profile snapshots may compact the log. This is a target requirement for migrating edit, placement, harvest, pickup, and multi-chunk structure paths—not a claim that current saves already provide it.
+Durable gameplay transactions use versioned, checksummed write-ahead records containing the tick, unique transaction ID, full affected keys, and replayable after-values. A dedicated I/O worker batches writes and syncs them. The simulation tracks pending reservations and does not apply or acknowledge a durable transaction as committed until the durability result is known; failure rejects the action or stops the coordinator. Edits, placement, harvest, pickup, and inventory transfers use this path. Per-key checkpoints anchor journal rotation. Cross-chunk structures and persistent fire/growth effects must use the same path when implemented; the presence of a transaction primitive alone does not validate those future behaviors.
 
 High-frequency positions need not fsync every 20 ms. They use revisioned periodic checkpoints plus a documented restart policy (for example, a falling drop resumes from its last checkpoint, while its item identity/count never rolls back across a committed pickup). Backpressure or disk failure cannot be allowed to create items; persistent actions pause or reject rather than commit without their durability guarantee. Save, compaction, and chunk generation run off simulation workers. A loaded result is installed only if its requested version/epoch still matches.
 
