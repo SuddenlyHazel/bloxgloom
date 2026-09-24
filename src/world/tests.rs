@@ -101,11 +101,14 @@ fn wal_snapshot_remains_authoritative_after_cache_eviction() {
     let z = 32;
     let original = world.get_block(x, y, z).unwrap();
     assert_eq!(world.cached_version(key), Some(0));
+    assert_eq!(world.cached_block(x, y, z), Some(original));
+    assert_eq!(world.cached_block(x + CHUNK_SIZE as i32, y, z), None);
     let replacement = if original == STONE { AIR } else { STONE };
     let prepared = world.prepare_edit(x, y, z, replacement).unwrap();
     let after_snapshot = prepared.after_snapshot.clone();
     world.apply_prepared_edit(prepared).unwrap();
     assert_eq!(world.cached_version(key), Some(1));
+    assert_eq!(world.cached_block(x, y, z), Some(replacement));
 
     assert_eq!(world.storage.read_snapshot(key).unwrap(), None);
     assert_eq!(
@@ -114,6 +117,7 @@ fn wal_snapshot_remains_authoritative_after_cache_eviction() {
     );
     world.get_chunk(ChunkKey { x: 20, y: 0, z: 20 }).unwrap();
     assert_eq!(world.cached_version(key), None);
+    assert_eq!(world.cached_block(x, y, z), None);
     let (epoch, pending) = world.begin_chunk_load(key).unwrap();
     let pending = pending.expect("fresh loads should capture the uncheckpointed WAL value");
     assert_eq!(pending, after_snapshot);

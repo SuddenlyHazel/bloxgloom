@@ -746,6 +746,15 @@ impl World {
         self.cache.get(&key).map(|entry| entry.chunk.version)
     }
 
+    /// Reads one block only if its authoritative chunk is resident. `None`
+    /// means unavailable, never procedural air; simulation callers must wait
+    /// for an asynchronous load instead of inventing collision state.
+    #[inline]
+    pub fn cached_block(&self, x: i32, y: i32, z: i32) -> Option<BlockId> {
+        let (key, local) = world_to_chunk(x, y, z);
+        self.cache.get(&key)?.chunk.block(local)
+    }
+
     /// Loads and generates without consulting or mutating this world's cache.
     /// Intended for the loader workers, which keep independent `World` values.
     pub fn load_chunk_uncached(&self, key: ChunkKey) -> io::Result<LoadedChunk> {
