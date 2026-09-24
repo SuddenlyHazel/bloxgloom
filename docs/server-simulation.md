@@ -1,6 +1,6 @@
 # Authoritative server simulation design
 
-Status: architecture and migration record. The design below is the target contract; the implementation status here distinguishes shipped foundations from future game systems.
+Status: architecture and migration record. The design below is historical context and an as-built record; [the growth foundation plan](growth-foundation-plan.md) supersedes its remaining expansion steps. The implementation status here distinguishes shipped foundations from future game systems.
 
 ## Implementation status (2026-09-24)
 
