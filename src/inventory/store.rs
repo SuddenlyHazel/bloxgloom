@@ -5,11 +5,15 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(test)]
+mod tests;
+
 const MAGIC: &[u8; 4] = b"BGIN";
 const VERSION: u16 = 1;
 const LEN: usize = 4 + 2 + 8 + SLOTS * 3 + 4;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone)]
 pub struct InventoryStore {
     root: PathBuf,
 }
@@ -29,13 +33,47 @@ impl InventoryStore {
         if profile == 0 {
             return Err(invalid("missing player profile"));
         }
-        let bytes = match fs::read(self.path(profile)) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return Ok(Inventory::default());
-            }
-            Err(error) => return Err(error),
+        let Some(bytes) = self.read_snapshot(profile)? else {
+            return Ok(Inventory::default());
         };
+        Self::decode_snapshot(&bytes)
+    }
+
+    /// Reads exact BGIN bytes, preserving the existing versioned save format.
+    pub fn read_snapshot(&self, profile: u128) -> io::Result<Option<Vec<u8>>> {
+        if profile == 0 {
+            return Err(invalid("missing player profile"));
+        }
+        match fs::read(self.path(profile)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Encodes an inventory using the established BGIN v1 bytes.
+    pub fn encode_snapshot(inventory: &Inventory) -> io::Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(LEN);
+        bytes.extend(MAGIC);
+        bytes.extend(VERSION.to_le_bytes());
+        bytes.extend(inventory.revision.to_le_bytes());
+        for slot in inventory.slots {
+            if let Some(stack) = slot {
+                if !stack.valid() {
+                    return Err(invalid("invalid inventory stack"));
+                }
+                bytes.push(stack.item);
+                bytes.extend(stack.count.to_le_bytes());
+            } else {
+                bytes.extend([0, 0, 0]);
+            }
+        }
+        bytes.extend(checksum(&bytes).to_le_bytes());
+        Ok(bytes)
+    }
+
+    /// Decodes and validates exact BGIN v1 bytes.
+    pub fn decode_snapshot(bytes: &[u8]) -> io::Result<Inventory> {
         if bytes.len() != LEN
             || &bytes[..4] != MAGIC
             || u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != VERSION
@@ -65,26 +103,23 @@ impl InventoryStore {
         Ok(inventory)
     }
 
+    #[cfg(test)]
     pub fn save(&self, profile: u128, inventory: &Inventory) -> io::Result<()> {
         if profile == 0 {
             return Err(invalid("missing player profile"));
         }
-        let mut bytes = Vec::with_capacity(LEN);
-        bytes.extend(MAGIC);
-        bytes.extend(VERSION.to_le_bytes());
-        bytes.extend(inventory.revision.to_le_bytes());
-        for slot in inventory.slots {
-            if let Some(stack) = slot {
-                if !stack.valid() {
-                    return Err(invalid("invalid inventory stack"));
-                }
-                bytes.push(stack.item);
-                bytes.extend(stack.count.to_le_bytes());
-            } else {
-                bytes.extend([0, 0, 0]);
-            }
+        let bytes = Self::encode_snapshot(inventory)?;
+        self.checkpoint_snapshot(profile, &bytes)
+    }
+
+    /// Validates and atomically checkpoints exact BGIN bytes from a committed
+    /// journal value. Existing malformed snapshots are deliberately not read
+    /// or overwritten here; startup validates them before replay.
+    pub fn checkpoint_snapshot(&self, profile: u128, bytes: &[u8]) -> io::Result<()> {
+        if profile == 0 {
+            return Err(invalid("missing player profile"));
         }
-        bytes.extend(checksum(&bytes).to_le_bytes());
+        Self::decode_snapshot(bytes)?;
         let destination = self.path(profile);
         let temporary = self.root.join(format!(
             ".{profile:032x}.{}.{}.tmp",
@@ -96,7 +131,7 @@ impl InventoryStore {
                 .write(true)
                 .create_new(true)
                 .open(&temporary)?;
-            file.write_all(&bytes)?;
+            file.write_all(bytes)?;
             file.sync_all()?;
             drop(file);
             fs::rename(&temporary, destination)?;
@@ -116,29 +151,4 @@ fn checksum(bytes: &[u8]) -> u32 {
 }
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn inventory_survives_restart_and_corruption_is_rejected() {
-        let root = std::env::temp_dir().join(format!(
-            "bloxgloom-inventory-{}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        let store = InventoryStore::new(&root).unwrap();
-        let mut inventory = Inventory::default();
-        inventory.insert(3, 129);
-        inventory.insert(crate::items::SAPLING, 2);
-        store.save(42, &inventory).unwrap();
-        assert_eq!(store.load(42).unwrap(), inventory);
-        let path = store.path(42);
-        let mut bytes = fs::read(&path).unwrap();
-        bytes[20] ^= 1;
-        fs::write(&path, bytes).unwrap();
-        assert!(store.load(42).is_err());
-        fs::remove_dir_all(root).unwrap();
-    }
 }
