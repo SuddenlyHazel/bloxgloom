@@ -169,6 +169,10 @@ pub(super) fn serve_client(
     input: SyncSender<SimulationInput>,
     outbound: Arc<OutboundTelemetry>,
 ) -> io::Result<()> {
+    // On macOS, an accepted stream inherits the listener's nonblocking mode.
+    // The connection reader uses blocking framed reads, so normalize the
+    // stream before the Hello handshake or an idle read returns EAGAIN.
+    socket.set_nonblocking(false)?;
     socket.set_read_timeout(Some(HELLO_TIMEOUT))?;
     let ClientMessage::Hello {
         name,

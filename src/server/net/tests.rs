@@ -15,9 +15,18 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
     let store = InventoryStore::new(&save).unwrap();
     let profile = 0x1234;
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
     let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    let (socket, _) = listener.accept().unwrap();
+    let (socket, _) = loop {
+        match listener.accept() {
+            Ok(accepted) => break accepted,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("accept test socket: {error}"),
+        }
+    };
     let (input, receiver) = mpsc::sync_channel(8);
     let worker_store = store.clone();
     let worker = thread::spawn(move || {
@@ -145,4 +154,91 @@ fn connection_admission_never_exceeds_the_client_limit() {
 
     assert!(!reserve_connection(&active));
     assert_eq!(active.load(Ordering::Acquire), MAX_CLIENTS);
+}
+
+#[test]
+fn nonblocking_listener_keeps_a_joined_client_connected_and_streaming() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-live-socket-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&save).unwrap();
+    let state = super::super::server_state(7, save.clone()).unwrap();
+    let store = state.inventory_store.clone();
+    let outbound = Arc::clone(&state.outbound);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let (socket, _) = loop {
+        match listener.accept() {
+            Ok(accepted) => break accepted,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err(error) => panic!("accept test socket: {error}"),
+        }
+    };
+    let (input, receiver) = mpsc::sync_channel(INPUT_CAPACITY);
+    let coordinator = thread::spawn(move || run_simulation_ticks(state, receiver));
+    let socket_input = input.clone();
+    let connection = thread::spawn(move || serve_client(socket, store, socket_input, outbound));
+
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Hello {
+            name: "live-test".into(),
+            profile: 0x5678,
+            content_fingerprint: crate::content::catalog().fingerprint(),
+        },
+    )
+    .unwrap();
+    let mut startup = [false; 4];
+    let mut streamed_chunk = false;
+    for _ in 0..32 {
+        match protocol::read_server(&mut peer).unwrap() {
+            ServerMessage::Welcome { .. } => startup[0] = true,
+            ServerMessage::Position { .. } => startup[1] = true,
+            ServerMessage::ViewDistance { .. } => startup[2] = true,
+            ServerMessage::Inventory { .. } => startup[3] = true,
+            ServerMessage::Chunk(_) => streamed_chunk = true,
+            _ => {}
+        }
+        if startup.into_iter().all(|seen| seen) {
+            break;
+        }
+    }
+    assert!(
+        startup.into_iter().all(|seen| seen),
+        "startup handshake incomplete"
+    );
+
+    // An idle reader used to return EAGAIN here on macOS. Keep the socket
+    // alive across several server ticks, then prove it still accepts input.
+    thread::sleep(Duration::from_millis(100));
+    assert!(!connection.is_finished(), "server dropped an idle client");
+    protocol::write_client(&mut peer, &ClientMessage::SetView { radius: 2 }).unwrap();
+    let mut acknowledged = false;
+    for _ in 0..32 {
+        match protocol::read_server(&mut peer).unwrap() {
+            ServerMessage::ViewDistance { radius: 2 } => acknowledged = true,
+            ServerMessage::Chunk(_) => streamed_chunk = true,
+            _ => {}
+        }
+        if acknowledged && streamed_chunk {
+            break;
+        }
+    }
+    assert!(acknowledged, "live command was not acknowledged");
+    assert!(streamed_chunk, "authoritative terrain was not streamed");
+
+    peer.shutdown(Shutdown::Both).unwrap();
+    connection.join().unwrap().unwrap();
+    drop(input);
+    coordinator.join().unwrap().unwrap();
+    std::fs::remove_dir_all(save).unwrap();
 }

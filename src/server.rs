@@ -102,7 +102,7 @@ impl Client {
         if self.outbound.try_send(&self.sender, message) {
             true
         } else {
-            eprintln!("disconnecting slow client: outbound queue full or closed");
+            eprintln!("disconnecting client: outbound queue full or receiver closed");
             let _ = self.socket.shutdown(Shutdown::Both);
             false
         }
