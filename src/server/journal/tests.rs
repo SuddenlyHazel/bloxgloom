@@ -1,8 +1,10 @@
 use super::*;
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::time::Duration;
 
 static TEST_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -89,9 +91,11 @@ fn write_one_transaction(path: &PathBuf, tx: Transaction) -> CommitReceipt {
 
 fn append_direct(journal: &mut Journal, tx: Transaction) -> io::Result<CommitReceipt> {
     let (acknowledge, receiver) = mpsc::channel();
+    let transaction = tx.canonicalize()?;
     let result = journal
         .append_batch(vec![Request {
-            transaction: tx.canonicalize()?,
+            reserved_bytes: frame_len(&transaction),
+            transaction,
             acknowledge,
         }])
         .pop()
@@ -639,5 +643,33 @@ fn oversized_or_ambiguous_transactions_are_rejected_before_queueing() {
         writer.try_submit(oversized),
         Err(SubmitError::Invalid(_))
     ));
+    writer.shutdown().unwrap();
+}
+
+#[test]
+fn wal_reservation_accounts_for_queued_frames_before_the_worker_sees_them() {
+    let dir = TestDir::new();
+    let writer = Journal::open(dir.file())
+        .unwrap()
+        .into_writer(2, Duration::ZERO)
+        .unwrap();
+    let tx = Transaction::new(
+        1,
+        1,
+        vec![Change::new(
+            StateKey::new("bloxgloom:inventory", 1u128.to_le_bytes()),
+            vec![1, 2, 3],
+            vec![4, 5, 6, 7],
+        )],
+    )
+    .canonicalize()
+    .unwrap();
+    assert_eq!(frame_len(&tx) as usize, encode_frame(&tx).unwrap().len());
+    writer
+        .projected_usage
+        .store(MAX_JOURNAL_BYTES - frame_len(&tx) + 1, Ordering::Release);
+    assert!(writer.needs_rotation());
+    assert!(matches!(writer.try_submit(tx), Err(SubmitError::Full)));
+    assert_eq!(writer.bytes(), FILE_HEADER_LEN as u64);
     writer.shutdown().unwrap();
 }
