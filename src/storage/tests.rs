@@ -48,6 +48,7 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
             plant: false,
             replaceable: false,
             supports_plant: false,
+            flammable: false,
             emission: 0,
             reflectance: [180, 180, 180],
             properties: Vec::new(),
@@ -74,43 +75,52 @@ fn with_extra_block_ids(key: &str, state_id: u32, item_id: u32) -> Catalog {
 fn content_map_preserves_wide_assignments_and_rejects_reassignment() {
     let root = temporary_root("content-map");
     let base = Catalog::builtins();
+    let base_manifest = ContentManifest::from_catalog(&base);
+    let next_id = |kind| {
+        base_manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == kind)
+            .map(|entry| entry.id)
+            .max()
+            .unwrap()
+            + 1
+    };
+    let first_block_id = next_id(b'B');
+    let first_state_id = next_id(b'S');
+    let first_item_id = next_id(b'I');
     verify_content_map_with(&root, true, &base).unwrap();
     let extended = with_extra_block("example:marble");
     verify_content_map_with(&root, false, &extended).unwrap();
     let saved = ContentManifest::decode(&fs::read(root.join(CONTENT_MAP)).unwrap()).unwrap();
-    assert!(
-        saved
-            .entries
-            .iter()
-            .any(|entry| entry.kind == b'S' && entry.id == 258 && entry.key == "example:marble")
-    );
-    assert!(
-        saved
-            .entries
-            .iter()
-            .any(|entry| entry.kind == b'I' && entry.id == 131 && entry.key == "example:marble")
-    );
+    assert!(saved.entries.iter().any(|entry| entry.kind == b'S'
+        && entry.id == first_state_id
+        && entry.key == "example:marble"));
+    assert!(saved.entries.iter().any(|entry| entry.kind == b'I'
+        && entry.id == first_item_id
+        && entry.key == "example:marble"));
     verify_content_map_with(&root, false, &base).unwrap(); // Removed IDs remain reserved.
     let replacement =
         resolve_content_map_with(&root, false, &with_extra_block("other:marble")).unwrap();
-    assert!(replacement.block_type(BlockTypeId(16)).is_none());
+    assert!(
+        replacement
+            .block_type(BlockTypeId(first_block_id))
+            .is_none()
+    );
     assert_eq!(
-        replacement.block_type(BlockTypeId(17)).unwrap().key,
+        replacement
+            .block_type(BlockTypeId(first_block_id + 1))
+            .unwrap()
+            .key,
         "other:marble"
     );
     let saved = ContentManifest::decode(&fs::read(root.join(CONTENT_MAP)).unwrap()).unwrap();
-    assert!(
-        saved
-            .entries
-            .iter()
-            .any(|entry| entry.kind == b'B' && entry.id == 16 && entry.key == "example:marble")
-    );
-    assert!(
-        saved
-            .entries
-            .iter()
-            .any(|entry| entry.kind == b'B' && entry.id == 17 && entry.key == "other:marble")
-    );
+    assert!(saved.entries.iter().any(|entry| entry.kind == b'B'
+        && entry.id == first_block_id
+        && entry.key == "example:marble"));
+    assert!(saved.entries.iter().any(|entry| entry.kind == b'B'
+        && entry.id == first_block_id + 1
+        && entry.key == "other:marble"));
     let mut corrupt = fs::read(root.join(CONTENT_MAP)).unwrap();
     corrupt[10] ^= 1;
     fs::write(root.join(CONTENT_MAP), corrupt).unwrap();
@@ -170,6 +180,21 @@ fn active_world_lock_excludes_a_second_writer_and_releases_on_drop() {
     );
     drop(clone);
     Storage::new(&root, 7).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn old_world_is_rejected_without_creating_a_lock_or_rewriting_data() {
+    let root = temporary_root("old-world-reject");
+    let mut old_meta = b"BGWD".to_vec();
+    old_meta.extend(TERRAIN_GENERATOR_VERSION.to_le_bytes());
+    old_meta.extend(7u64.to_le_bytes());
+    fs::write(root.join(WORLD_META), &old_meta).unwrap();
+    let error = Storage::new(&root, 7).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("no automatic upgrade"));
+    assert_eq!(fs::read(root.join(WORLD_META)).unwrap(), old_meta);
+    assert!(!root.join(WORLD_LOCK).exists());
     fs::remove_dir_all(root).unwrap();
 }
 

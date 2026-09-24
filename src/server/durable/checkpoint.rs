@@ -127,6 +127,17 @@ pub(super) fn submit_dirty_checkpoints(state: &mut State) {
                     Err(CheckpointSubmitError::Closed) => state.durability.failed = true,
                 }
             }
+            "bloxgloom:fire_frontier" | "bloxgloom:fire_pending" | "bloxgloom:fire_cursor" => {
+                let store = state.durability.fire_store.clone();
+                let write_key = key.clone();
+                match state
+                    .durability
+                    .submit_checkpoint(key, move |bytes| store.write(&write_key, bytes))
+                {
+                    Ok(_) | Err(CheckpointSubmitError::Full) => {}
+                    Err(CheckpointSubmitError::Closed) => state.durability.failed = true,
+                }
+            }
             _ => {}
         }
     }

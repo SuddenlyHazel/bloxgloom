@@ -1,6 +1,7 @@
 //! Authoritative TCP server. The simulation coordinator owns mutable world,
 //! inventory, and drop state; chunk loading and journal fsync run on bounded
 //! workers. Durable actions become visible only after their WAL receipt.
+mod block_actions;
 mod builtins;
 mod checkpoint;
 mod chunk_loader;
@@ -8,11 +9,12 @@ mod drops;
 mod durable;
 mod effects;
 mod entities;
+mod entity_checkpoint;
+mod fire;
 mod interest;
 mod journal;
 mod loot;
 mod metrics;
-pub(crate) mod migration;
 mod movement;
 mod net;
 mod outbound;
@@ -25,7 +27,7 @@ mod spawn;
 mod streaming;
 mod voxel_view;
 
-pub use perf::run_perf_benchmark;
+pub use perf::{run_fire_cpu_perf, run_perf_benchmark, run_tcp_perf};
 
 use crate::inventory::{Inventory, InventoryStore};
 #[cfg(test)]
@@ -34,6 +36,7 @@ use crate::protocol::{
     ClientMessage, DroppedItem, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage,
 };
 use crate::world::{AIR, BEDROCK_Y, ChunkKey, World, world_to_chunk};
+use block_actions::{BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder};
 use builtins::builtin_phase_plan;
 use chunk_loader::ChunkLoader;
 use drops::Drops;
@@ -42,7 +45,9 @@ use durable::{
     queue_interaction_actions, remember_drops_checkpoint,
 };
 use effects::CellCoord;
-use metrics::MetricsRecorder;
+use entities::{EntityStore, EntityTypeRegistryBuilder};
+use fire::FireRuntime;
+use metrics::{MetricsRecorder, TickSample};
 use movement::{MovementBatch, MovementCommand, MovementState};
 use net::serve_listener;
 use outbound::{OutboundQueue, OutboundTelemetry};
@@ -133,6 +138,8 @@ struct State {
     world: World,
     inventory_store: InventoryStore,
     drops: Drops,
+    entities: EntityStore,
+    block_actions: BlockActionRegistry,
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
@@ -141,10 +148,15 @@ struct State {
     drops_landed_dirty: bool,
     pending_block_changes: Vec<CellCoord>,
     durability: Durability,
+    fire: FireRuntime,
+    fire_last_tick: u64,
     phase_plan: PhasePlan,
     loader: ChunkLoader,
     movement_executor: PhaseExecutor<MovementBatch, ()>,
     metrics: MetricsRecorder,
+    /// Optional bounded, nonblocking trace for the production-TCP soak.
+    /// The live server leaves this absent; the benchmark must drain it.
+    tick_observer: Option<SyncSender<TickSample>>,
     stream_cursor: u64,
     spawn_anchor: [f32; 3],
     pending_joins: VecDeque<PendingJoin>,
@@ -206,7 +218,7 @@ pub fn run_server_with_limit(
 ) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     let state = server_state_with_limit(seed, save_dir, admission_limit)?;
-    serve_listener(listener, state)
+    serve_listener(listener, Box::new(state))
 }
 
 pub fn start_local_server(
@@ -216,6 +228,7 @@ pub fn start_local_server(
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let addr = listener.local_addr()?;
     let state = server_state(seed, save_dir)?;
+    let state = Box::new(state);
     let handle = thread::spawn(move || serve_listener(listener, state));
     Ok((addr, handle))
 }
@@ -238,7 +251,36 @@ fn server_state_with_limit(
     let mut world = World::with_capacity(seed, save_dir.clone(), SERVER_CHUNK_CACHE)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
-    let durability = Durability::open(&save_dir, &mut world, &inventory_store, &mut drops)?;
+    let catalog = world.catalog_arc();
+    let mut entity_types = EntityTypeRegistryBuilder::new(&catalog);
+    drops::register_entity_type(&mut entity_types, catalog.clone())
+        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+    entities::register_player_entity_type(&mut entity_types)
+        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+    entities::register_kiln_entity_type(&mut entity_types, catalog.clone())
+        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+    let entity_types = Arc::new(
+        entity_types
+            .freeze()
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?,
+    );
+    let mut block_actions = BlockActionRegistryBuilder::new(&catalog);
+    block_actions.register(
+        crate::content::KILN_BLOCK_TYPE,
+        BlockActionHooks::new(
+            durable::actions::kiln::plan_place,
+            durable::actions::kiln::plan_break,
+        ),
+    )?;
+    let block_actions = block_actions.freeze();
+    let (durability, recovered_fire, entities) = Durability::open(
+        &save_dir,
+        &mut world,
+        &inventory_store,
+        &mut drops,
+        entity_types,
+    )?;
+    let fire_last_tick = recovered_fire.last_tick();
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
@@ -247,6 +289,7 @@ fn server_state_with_limit(
     let worker_count = thread::available_parallelism()
         .map_or(2, |count| count.get())
         .clamp(1, 8);
+    let fire = FireRuntime::new(recovered_fire, worker_count)?;
     // One active movement job and one result can be produced per client in a
     // tick. Leave headroom for barrier hand-off without imposing a 64-player
     // failure threshold below admission capacity.
@@ -258,6 +301,8 @@ fn server_state_with_limit(
         world,
         inventory_store,
         drops,
+        entities,
+        block_actions,
         seed,
         clients: HashMap::new(),
         next_id: 1,
@@ -266,10 +311,13 @@ fn server_state_with_limit(
         drops_landed_dirty: false,
         pending_block_changes: Vec::new(),
         durability,
+        fire,
+        fire_last_tick,
         phase_plan,
         loader,
         movement_executor,
         metrics: MetricsRecorder::new(),
+        tick_observer: None,
         stream_cursor: 0,
         spawn_anchor,
         pending_joins: VecDeque::new(),

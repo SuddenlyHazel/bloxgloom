@@ -1,17 +1,34 @@
 //! Fixed-step coordinator and phase barriers. Only this thread mutates live
 //! world, inventory, and drop state; workers return immutable results.
 
-use super::builtins::BuiltinHandler;
 use super::effects::{Effect, EffectBuffer, EffectLimits, route_effects};
 use super::metrics::{Metric, TickSample};
 use super::simulation::{CommandQueue, FixedStepClock, OrderKey, QueueError};
 use super::*;
 
+pub(in crate::server) mod adapters;
+
+#[cfg(test)]
+#[path = "runtime/tests.rs"]
+mod tests;
+
+/// Trusted fixed-step inputs shared by registered server-owned admission
+/// callbacks. Mod handlers never receive this context; their API is the
+/// immutable `OwnerJob`/scratch-patch path in `registry`.
+pub(in crate::server) struct CoordinatorContext<'a> {
+    state: &'a mut State,
+    tick: TickId,
+    now: Instant,
+    rejected: Option<Vec<SimulationInput>>,
+    ready: Option<Vec<SimulationInput>>,
+    movement_load: movement::WorkerLoad,
+}
+
 pub(super) fn run_simulation_ticks(
     mut state: State,
     input: Receiver<SimulationInput>,
 ) -> io::Result<()> {
-    let mut clock = FixedStepClock::new();
+    let mut clock = FixedStepClock::after(TickId::new(state.fire_last_tick));
     let mut commands = CommandQueue::new(INPUT_CAPACITY);
     let mut last_clock = Instant::now();
     let mut next_control_sequence = 0u64;
@@ -307,67 +324,44 @@ pub(super) fn tick_with_inputs(
     let tick_started = Instant::now();
     let input_queue_depth = rejected.len() + ready.len();
     let mut phase_times = [Duration::ZERO; metrics::PHASE_COUNT];
-    let mut movement_load = movement::WorkerLoad::default();
     streaming::poll_chunk_loads(state)?;
-    let mut rejected = Some(rejected);
-    let mut ready = Some(ready);
+    let mut context = CoordinatorContext {
+        state,
+        tick,
+        now,
+        rejected: Some(rejected),
+        ready: Some(ready),
+        movement_load: movement::WorkerLoad::default(),
+    };
     for (phase_index, phase) in Phase::ALL.into_iter().enumerate() {
         let phase_started = Instant::now();
-        let system_count = state.phase_plan.systems(phase).len();
+        let system_count = context.state.phase_plan.systems(phase).len();
         if system_count == 0 {
             return Err(io::Error::other(format!(
                 "no systems registered for {phase:?}"
             )));
         }
         for index in 0..system_count {
-            let system =
-                BuiltinHandler::from_id(state.phase_plan.systems(phase)[index].id().as_str())?;
-            match system {
-                BuiltinHandler::InputAuthorization => {
-                    for input in rejected.take().unwrap_or_default() {
-                        reject_simulation_input(state, input);
-                    }
-                    for input in ready.take().unwrap_or_default() {
-                        apply_simulation_input(state, input, tick);
-                    }
-                    process_pending_joins(state, tick);
-                }
-                BuiltinHandler::DurableActions => {
-                    process_durable_actions(state, tick, now)?;
-                }
-                BuiltinHandler::PlayerMovement => {
-                    movement_load = movement::advance_players(state, tick)?;
-                }
-                BuiltinHandler::DropSimulation => advance_drops(state)?,
-                BuiltinHandler::InteractionCommit => {
-                    commit_block_effects(state, tick)?;
-                    queue_interaction_actions(state);
-                    if state.moving_drops_dirty
-                        && (state.drops_landed_dirty
-                            || now.duration_since(state.last_drop_save) >= Duration::from_secs(1))
-                    {
-                        remember_drops_checkpoint(state)?;
-                        // This landing has a captured (or already pending)
-                        // snapshot. Keep moving_drops_dirty until the matching
-                        // checkpoint receipt, but do not replace it each tick.
-                        state.drops_landed_dirty = false;
-                        state.last_drop_save = now;
-                    }
-                }
-                BuiltinHandler::Publish => {
-                    publish_committed(state);
-                    streaming::publish_streams(state)?;
-                }
-            }
+            let registered = &context.state.phase_plan.systems(phase)[index];
+            let driver = registered.driver().ok_or_else(|| {
+                io::Error::other(format!(
+                    "registered system has no trusted runtime driver: {}",
+                    registered.id().as_str()
+                ))
+            })?;
+            driver(&mut context)?;
         }
         phase_times[phase_index] = phase_started.elapsed();
     }
+    let movement_load = context.movement_load;
+    let state = context.state;
     let outbound = state.outbound.snapshot();
     let bytes_sent = outbound.sent_bytes.saturating_sub(state.last_sent_bytes);
     let queue_rejections = outbound.rejections.saturating_sub(state.last_rejections);
     state.last_sent_bytes = outbound.sent_bytes;
     state.last_rejections = outbound.rejections;
-    state.metrics.record(TickSample {
+    let entity_mirror = state.durability.entity_mirror.metrics();
+    let sample = TickSample {
         tick_id: tick.get(),
         tick_total: tick_started.elapsed(),
         phases: phase_times,
@@ -377,10 +371,15 @@ pub(super) fn tick_with_inputs(
             as u64,
         pending_world_snapshots: state.world.pending_snapshot_count() as u64,
         wal_tail_bytes: state.durability.writer.bytes(),
+        wal_rotations: state.durability.completed_rotations,
         loader_outstanding: state.loader.outstanding() as u64,
         resident_chunks: state.world.resident_chunk_count() as u64,
         active_clients: state.clients.len() as u64,
         active_drops: state.drops.active_len() as u64,
+        entity_mirror_outstanding: entity_mirror.outstanding as u64,
+        entity_mirror_high_water: entity_mirror.high_water as u64,
+        entity_mirror_applied_sequence: entity_mirror.applied_sequence,
+        entity_mirror_checkpoint_sequence: entity_mirror.checkpoint_sequence,
         movement_worker_busy_nanos: movement_load.busy.as_nanos().min(u64::MAX as u128) as u64,
         movement_worker_capacity_nanos: movement_load.capacity.as_nanos().min(u64::MAX as u128)
             as u64,
@@ -389,7 +388,13 @@ pub(super) fn tick_with_inputs(
         replication_queue_depth: outbound.queued_messages,
         replication_queue_capacity: (state.clients.len() * OUTBOUND_CAPACITY) as u64,
         replication_queue_rejections: queue_rejections,
-    });
+    };
+    state.metrics.record(sample);
+    if let Some(observer) = &state.tick_observer {
+        observer
+            .try_send(sample)
+            .map_err(|error| io::Error::other(format!("tick observer did not drain: {error}")))?;
+    }
     Ok(())
 }
 

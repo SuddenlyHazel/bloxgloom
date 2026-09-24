@@ -61,6 +61,10 @@ pub(in crate::server) fn process_durable_actions(
     tick: TickId,
     now: Instant,
 ) -> io::Result<()> {
+    if let Err(error) = state.durability.entity_mirror.check_health() {
+        state.durability.failed = true;
+        return Err(error);
+    }
     process_checkpoint_receipts(state, now);
     poll_journal_receipts(state)?;
     if state.durability.failed {
@@ -159,7 +163,7 @@ pub(in crate::server) fn process_durable_actions(
                 payload,
                 "target state unavailable",
             );
-            match state.durability.try_stage(tick, &action, None) {
+            match state.durability.try_stage(tick, &action, None, None) {
                 Ok(true) => {
                     blocked_profiles.insert(profile);
                 }
@@ -172,7 +176,7 @@ pub(in crate::server) fn process_durable_actions(
             }
             continue;
         }
-        let plan = match plan_durable_request(state, &request) {
+        let plan = match plan_durable_request(state, &request, tick) {
             Ok(Some(plan)) => PlannedAction::Commit(Box::new(plan)),
             Ok(None) => PlannedAction::NoChange,
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -181,6 +185,10 @@ pub(in crate::server) fn process_durable_actions(
                 }
                 deferred.push_back(request);
                 continue;
+            }
+            Err(error) if error.kind() == ErrorKind::InvalidData => {
+                state.durability.failed = true;
+                return Err(error);
             }
             Err(error) => PlannedAction::Reject(error.to_string()),
         };
@@ -215,52 +223,115 @@ pub(in crate::server) fn process_durable_actions(
                 if let Some((profile, _, payload)) = command_receipt {
                     if action.receipt_transition.is_none() {
                         if action.receipt_value.as_deref() != Some(payload.as_slice()) {
+                            cancel_prepared_entities(state, &action);
                             return Err(io::Error::other(
                                 "planned action payload differs from admitted command",
                             ));
                         }
                         let accepted = action.inventory.is_some()
                             || !action.world_edits.is_empty()
-                            || !action.drops.changes.is_empty();
+                            || !action.drops.changes.is_empty()
+                            || action.entities.is_some();
                         let reason = if accepted {
                             String::new()
                         } else {
                             "action made no change".into()
                         };
-                        set_action_result(state, &mut action, profile, payload, accepted, reason)?;
+                        if let Err(error) = set_action_result(
+                            state,
+                            &mut action,
+                            profile,
+                            payload,
+                            accepted,
+                            reason,
+                        ) {
+                            cancel_prepared_entities(state, &action);
+                            return Err(error);
+                        }
                     }
                 }
                 let projected_drop_snapshot_size =
                     if action.drops.changes.is_empty() && action.drops.allocator.is_none() {
                         None
                     } else {
-                        Some(state.drops.projected_snapshot_size(&action.drops)?)
+                        match state.drops.projected_snapshot_size(&action.drops) {
+                            Ok(size) => Some(size),
+                            Err(error) => {
+                                cancel_prepared_entities(state, &action);
+                                return Err(error);
+                            }
+                        }
                     };
-                match state
-                    .durability
-                    .try_stage(tick, &action, projected_drop_snapshot_size)
-                {
+                if let Some(entities) = &action.entities {
+                    if let Err(error) = state.entities.validate_prepared(entities) {
+                        cancel_prepared_entities(state, &action);
+                        return Err(io::Error::new(ErrorKind::InvalidData, error));
+                    }
+                }
+                let entity_permit = if action.entities.is_some() {
+                    match state.durability.entity_mirror.try_reserve_durable() {
+                        Err(error) => {
+                            cancel_prepared_entities(state, &action);
+                            state.durability.failed = true;
+                            return Err(error);
+                        }
+                        Ok(Some(permit)) => Some(permit),
+                        Ok(None) => {
+                            cancel_prepared_entities(state, &action);
+                            if let Some(profile) = request_profile {
+                                blocked_profiles.insert(profile);
+                            }
+                            deferred.push_back(request);
+                            continue;
+                        }
+                    }
+                } else {
+                    None
+                };
+                match state.durability.try_stage(
+                    tick,
+                    &action,
+                    projected_drop_snapshot_size,
+                    entity_permit,
+                ) {
                     Ok(true) => {
+                        if let Some(seed) = &action.fire_seed
+                            && let Err(error) = state.fire.mark_seed_submitted(seed)
+                        {
+                            // The WAL accepted the transaction. Any failed
+                            // in-memory reservation is fatal until replay.
+                            state.durability.failed = true;
+                            return Err(io::Error::other(format!(
+                                "accepted fire seed could not be reserved: {error}"
+                            )));
+                        }
                         if let Some(profile) = action.profile {
                             blocked_profiles.insert(profile);
                         }
                     }
-                    Ok(false) => return Err(io::Error::other("empty durable result")),
+                    Ok(false) => {
+                        cancel_prepared_entities(state, &action);
+                        return Err(io::Error::other("empty durable result"));
+                    }
                     Err(StageError::Conflict | StageError::Full) => {
+                        cancel_prepared_entities(state, &action);
                         if let Some(profile) = request_profile {
                             blocked_profiles.insert(profile);
                         }
                         deferred.push_back(request);
                     }
                     Err(StageError::Closed) => {
+                        cancel_prepared_entities(state, &action);
                         state.durability.failed = true;
                         return Err(io::Error::other("durability writer unavailable"));
                     }
                     Err(StageError::IdExhausted) => {
+                        cancel_prepared_entities(state, &action);
                         state.durability.failed = true;
                         return Err(io::Error::other("durable transaction IDs exhausted"));
                     }
                     Err(StageError::Invalid(error)) => {
+                        cancel_prepared_entities(state, &action);
                         state.durability.failed = true;
                         return Err(io::Error::other(format!(
                             "durable transaction staging failed: {error}"
@@ -280,6 +351,12 @@ fn fail_if_durability_failed(state: &State) -> io::Result<()> {
         Err(io::Error::other("durable subsystem failed"))
     } else {
         Ok(())
+    }
+}
+
+fn cancel_prepared_entities(state: &mut State, action: &CommitAction) {
+    if let Some(entities) = &action.entities {
+        state.entities.cancel_prepared(entities);
     }
 }
 

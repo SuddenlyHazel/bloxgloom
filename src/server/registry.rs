@@ -11,6 +11,7 @@ use super::parallel::{
 use super::simulation::Phase;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io;
 use std::ops::Deref;
 use std::ops::Range;
 use std::sync::Arc;
@@ -24,6 +25,12 @@ pub const MAX_NEIGHBOR_RADIUS: u8 = 8;
 pub const MAX_STABLE_ID_BYTES: usize = 128;
 pub const MAX_RESOURCE_DOMAINS_PER_SYSTEM: usize = 128;
 pub const MAX_DEPENDENCIES_PER_SYSTEM: usize = 64;
+
+/// Server-trusted admission callback frozen beside a system descriptor. This
+/// is deliberately not part of `SystemHandler`: mods receive immutable owner
+/// jobs, while only server code can register a callback touching live state.
+pub(in crate::server) type TrustedDriver =
+    for<'a> fn(&mut super::runtime::CoordinatorContext<'a>) -> io::Result<()>;
 
 /// A bounded rejection returned by a handler before its result can enter a wave.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -363,6 +370,7 @@ pub enum AccessKind {
 struct PendingSystem {
     descriptor: SystemDescriptor,
     handler: Option<Arc<dyn SystemHandler>>,
+    driver: Option<TrustedDriver>,
 }
 
 #[derive(Clone)]
@@ -378,10 +386,15 @@ enum RegisteredHandler {
 pub struct ExecutableSystem {
     descriptor: SystemDescriptor,
     handler: RegisteredHandler,
+    driver: Option<TrustedDriver>,
     wave_index: u16,
 }
 
 impl ExecutableSystem {
+    pub(in crate::server) const fn driver(&self) -> Option<TrustedDriver> {
+        self.driver
+    }
+
     pub fn handler(&self) -> Option<&dyn SystemHandler> {
         match &self.handler {
             RegisteredHandler::Executable(handler) => Some(handler.as_ref()),
@@ -474,7 +487,7 @@ impl SystemRegistry {
     }
 
     pub fn register(&mut self, descriptor: SystemDescriptor) -> Result<(), RegistryError> {
-        self.insert(descriptor, None)
+        self.insert(descriptor, None, None)
     }
 
     /// Registers an executable handler with its descriptor.
@@ -483,7 +496,7 @@ impl SystemRegistry {
         descriptor: SystemDescriptor,
         handler: H,
     ) -> Result<(), RegistryError> {
-        self.insert(descriptor, Some(Arc::new(handler)))
+        self.insert(descriptor, Some(Arc::new(handler)), None)
     }
 
     /// Registers an already shared handler, useful when the same immutable
@@ -493,13 +506,37 @@ impl SystemRegistry {
         descriptor: SystemDescriptor,
         handler: Arc<dyn SystemHandler>,
     ) -> Result<(), RegistryError> {
-        self.insert(descriptor, Some(handler))
+        self.insert(descriptor, Some(handler), None)
+    }
+
+    /// Registers an immutable worker handler with its trusted admission
+    /// driver. The driver only selects owners and stages validated output;
+    /// gameplay candidate computation remains in `SystemHandler::prepare`.
+    pub(in crate::server) fn register_handler_with_driver<H: SystemHandler>(
+        &mut self,
+        descriptor: SystemDescriptor,
+        handler: H,
+        driver: TrustedDriver,
+    ) -> Result<(), RegistryError> {
+        self.insert(descriptor, Some(Arc::new(handler)), Some(driver))
+    }
+
+    /// Registers a trusted transitional coordinator implementation. Unlike
+    /// mod-facing handlers, this callback can touch live `State` and is only
+    /// callable from the fixed-step server runtime.
+    pub(in crate::server) fn register_coordinator_adapter(
+        &mut self,
+        descriptor: SystemDescriptor,
+        driver: TrustedDriver,
+    ) -> Result<(), RegistryError> {
+        self.insert(descriptor, None, Some(driver))
     }
 
     fn insert(
         &mut self,
         descriptor: SystemDescriptor,
         handler: Option<Arc<dyn SystemHandler>>,
+        driver: Option<TrustedDriver>,
     ) -> Result<(), RegistryError> {
         if self.systems.contains_key(&descriptor.id) {
             return Err(RegistryError::DuplicateSystem { id: descriptor.id });
@@ -514,6 +551,7 @@ impl SystemRegistry {
             PendingSystem {
                 descriptor,
                 handler,
+                driver,
             },
         );
         Ok(())
@@ -567,6 +605,7 @@ impl SystemRegistry {
                             Some(handler) => RegisteredHandler::Executable(Arc::clone(handler)),
                             None => RegisteredHandler::CoordinatorAdapter,
                         },
+                        driver: pending.driver,
                         wave_index: u16::try_from(wave_index)
                             .expect("system count bounds phase wave count"),
                     });
@@ -593,12 +632,15 @@ impl SystemRegistry {
             let Some(pending) = self.systems.get(id) else {
                 return Err(RegistryError::UnknownLegacyAdapter { system: id.clone() });
             };
-            if pending.handler.is_some() {
+            if pending.handler.is_some() || pending.driver.is_some() {
                 return Err(RegistryError::LegacyAdapterHasHandler { system: id.clone() });
             }
         }
         for (id, pending) in &self.systems {
-            if pending.handler.is_none() && !coordinator_adapters.contains(id) {
+            if pending.handler.is_none()
+                && pending.driver.is_none()
+                && !coordinator_adapters.contains(id)
+            {
                 return Err(RegistryError::MissingHandler { system: id.clone() });
             }
         }

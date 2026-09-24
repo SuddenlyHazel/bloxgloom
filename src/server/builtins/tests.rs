@@ -16,8 +16,25 @@ fn declarations_match_the_current_execution_shape() {
     assert_eq!(movement.partition(), OwnerPartition::Entity);
     assert_eq!(movement.max_jobs_per_tick(), MAX_CLIENTS);
 
+    let fire = simulation
+        .iter()
+        .find(|system| system.id().as_str() == "bloxgloom:fire_propagate")
+        .unwrap();
+    assert_eq!(fire.partition(), OwnerPartition::Chunk);
+    assert!(fire.has_executable_handler());
+    assert_eq!(fire.max_effects_per_job(), 192);
+
     let interactions = plan.systems(Phase::InteractionCommit);
-    assert_eq!(interactions.len(), 1);
-    assert_eq!(interactions[0].partition(), OwnerPartition::Global);
-    assert_eq!(interactions[0].max_jobs_per_tick(), 1);
+    let legacy = interactions
+        .iter()
+        .find(|system| system.id().as_str() == "builtin:interaction_commit")
+        .unwrap();
+    assert_eq!(legacy.partition(), OwnerPartition::Global);
+    assert_eq!(legacy.max_jobs_per_tick(), 1);
+    let delivery = interactions
+        .iter()
+        .find(|system| system.id().as_str() == "bloxgloom:fire_deliver")
+        .unwrap();
+    assert_eq!(delivery.partition(), OwnerPartition::Chunk);
+    assert!(delivery.has_executable_handler());
 }

@@ -1,6 +1,13 @@
 use super::*;
 
 #[test]
+fn recovered_clock_does_not_reuse_durable_producer_ticks() {
+    let mut clock = FixedStepClock::after(TickId::new(29));
+    let advance = clock.advance(FIXED_STEP, 1).unwrap();
+    assert_eq!(advance.ticks, [TickId::new(30)]);
+}
+
+#[test]
 fn fixed_clock_bounds_catch_up_without_skipping_tick_ids() {
     let mut clock = FixedStepClock::new();
 

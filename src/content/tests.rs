@@ -84,7 +84,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
         .unwrap();
     catalog
         .register_entity_type(EntityTypeDef {
-            id: EntityTypeId(3),
+            id: EntityTypeId(4),
             key: "test:low".into(),
             schema_version: 1,
             schema_fingerprint: 13,
@@ -109,6 +109,18 @@ fn builtin_catalog_preserves_default_state_and_item_ids() {
             assert_eq!(catalog.item(ItemId(id)).unwrap().placeable, Some(state));
         }
     }
+    for state in [
+        world::GRASS,
+        world::MOSS,
+        world::WOOD,
+        world::LEAVES,
+        world::FERN,
+    ] {
+        assert_ne!(catalog.block_flags(state) & FLAMMABLE, 0);
+    }
+    for state in [world::AIR, world::DIRT, world::STONE, world::GLOWSTONE] {
+        assert_eq!(catalog.block_flags(state) & FLAMMABLE, 0);
+    }
     assert!(catalog.block(BlockStateId(16)).is_none());
     for (state, axis) in [
         (world::WOOD_X, "x"),
@@ -122,6 +134,15 @@ fn builtin_catalog_preserves_default_state_and_item_ids() {
     }
     assert!(catalog.entity_type(EntityTypeId(1)).is_some());
     assert!(catalog.entity_type(EntityTypeId(2)).is_some());
+    assert!(catalog.entity_type(KILN_ENTITY_TYPE).is_some());
+    assert_eq!(
+        catalog.item(KILN_ITEM).unwrap().placeable,
+        Some(KILN_DEFAULT_STATE)
+    );
+    let lit_default = catalog
+        .state_with_property(KILN_DEFAULT_STATE, "lit", "true")
+        .unwrap();
+    assert_eq!(catalog.emission(lit_default), 12);
 }
 
 #[test]
@@ -154,6 +175,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
         plant: false,
         replaceable: false,
         supports_plant: false,
+        flammable: false,
         emission: 0,
         reflectance: [180, 180, 180],
         properties: Vec::new(),

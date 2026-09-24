@@ -39,6 +39,7 @@ fn edit_for_hit(
         selected_item,
         slot,
         action_id,
+        0.0,
         crate::content::catalog(),
     )
 }
@@ -49,10 +50,26 @@ fn edit_for_hit_with_catalog(
     selected_item: Option<crate::items::ItemId>,
     slot: u8,
     action_id: u128,
+    yaw: f32,
     catalog: &crate::content::Catalog,
 ) -> Option<ClientMessage> {
     let block = if place {
-        crate::items::placeable_block_in(selected_item?, catalog)?
+        let default_state = crate::items::placeable_block_in(selected_item?, catalog)?;
+        // A cardinal `facing` property is a placement hint, not authority:
+        // server-side block behavior validates the requested legal state and
+        // derives every occupied cell before WAL admission.
+        let facing = if !yaw.is_finite() {
+            "north"
+        } else if yaw.cos().abs() >= yaw.sin().abs() {
+            if yaw.cos() > 0.0 { "west" } else { "east" }
+        } else if yaw.sin() > 0.0 {
+            "north"
+        } else {
+            "south"
+        };
+        catalog
+            .state_with_property(default_state, "facing", facing)
+            .unwrap_or(default_state)
     } else {
         AIR
     };
@@ -883,6 +900,7 @@ impl ClientApp {
                 item,
                 self.config.selected_slot as u8,
                 0,
+                self.yaw,
                 &self.catalog,
             ) {
                 let Some(action_id) = self.allocate_action_id() else {

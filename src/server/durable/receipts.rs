@@ -386,12 +386,6 @@ pub(super) fn state_key(profile: u128) -> StateKey {
     StateKey::new("bloxgloom:action_ledger", profile.to_le_bytes().to_vec())
 }
 
-/// Offline conversion closes the legacy action-ID namespace. The next live
-/// join durably grants epoch 2 before admitting any new-format action.
-pub(in crate::server) fn closed_legacy_ledger_bytes() -> io::Result<Vec<u8>> {
-    ReceiptLedger::default().grant_next_epoch()?.encode()
-}
-
 fn checksum(bytes: &[u8]) -> u32 {
     bytes.iter().fold(0x811c9dc5u32, |hash, &byte| {
         (hash ^ u32::from(byte)).wrapping_mul(0x01000193)

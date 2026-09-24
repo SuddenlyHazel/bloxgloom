@@ -377,6 +377,131 @@ fn complete_content_handshake(peer: &mut TcpStream) {
     protocol::write_client(peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
 }
 
+#[test]
+fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-reactor-smoke-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&save).unwrap();
+    let state = Box::new(crate::server::server_state(7, save.clone()).unwrap());
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop_tx, stop_rx) = mpsc::sync_channel(1);
+    let server = thread::Builder::new()
+        .name("production-reactor-test".into())
+        .spawn(move || reactor::serve_listener_until(listener, state, stop_rx))
+        .unwrap();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut peer = TcpStream::connect(address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(8))).unwrap();
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Hello {
+                name: "reactor-smoke".into(),
+                profile: 0xA11CE,
+                content_fingerprint: crate::content::catalog().fingerprint(),
+            },
+        )
+        .unwrap();
+        complete_content_handshake(&mut peer);
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::Welcome { .. }
+        ));
+        let epoch = match protocol::read_server(&mut peer).unwrap() {
+            ServerMessage::ActionSession {
+                epoch,
+                next_seq: 1,
+                acked_seq: 0,
+            } => epoch,
+            other => panic!("expected action session, got {other:?}"),
+        };
+        let position = match protocol::read_server(&mut peer).unwrap() {
+            ServerMessage::Position { x, y, z, .. } => [x, y, z],
+            other => panic!("expected position, got {other:?}"),
+        };
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::ViewDistance { .. }
+        ));
+        assert!(matches!(
+            protocol::read_server(&mut peer).unwrap(),
+            ServerMessage::Inventory { .. }
+        ));
+
+        let block = [
+            position[0].floor() as i32,
+            position[1].floor() as i32 - 1,
+            position[2].floor() as i32,
+        ];
+        let action_id = u128::from(epoch) << 64 | 1;
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Edit {
+                action_id,
+                x: block[0],
+                y: block[1],
+                z: block[2],
+                block: crate::world::AIR,
+                slot: 0,
+            },
+        )
+        .unwrap();
+        let mut accepted = false;
+        for _ in 0..512 {
+            if let ServerMessage::ActionResult {
+                action_id: received,
+                accepted: result,
+                reason,
+            } = protocol::read_server(&mut peer).unwrap()
+                && received == action_id
+            {
+                assert!(result, "production reactor rejected edit: {reason}");
+                accepted = true;
+                break;
+            }
+        }
+        assert!(
+            accepted,
+            "production reactor did not return a durable result"
+        );
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::ActionAck {
+                epoch,
+                through_seq: 1,
+            },
+        )
+        .unwrap();
+        let _ = peer.shutdown(Shutdown::Both);
+        block
+    }));
+
+    let _ = stop_tx.send(());
+    let server_result = server.join().expect("production server thread panicked");
+    let block = match result {
+        Ok(block) => block,
+        Err(payload) => std::panic::resume_unwind(payload),
+    };
+    server_result.unwrap();
+    let mut restarted = crate::server::server_state(7, save.clone()).unwrap();
+    assert_eq!(
+        restarted
+            .world
+            .get_block(block[0], block[1], block[2])
+            .unwrap(),
+        crate::world::AIR
+    );
+    drop(restarted);
+    std::fs::remove_dir_all(save).unwrap();
+}
+
 fn receive_content_manifest(peer: &mut TcpStream) -> (u64, Vec<u8>) {
     let mut manifest = Vec::new();
     let mut total_len = None;

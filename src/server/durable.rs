@@ -8,6 +8,11 @@
 use super::checkpoint::{CheckpointReceipt, CheckpointSubmitError, CheckpointWriter};
 use super::drops::{DropPlan, Drops};
 use super::effects::CellCoord;
+use super::entities::{
+    EntityCheckpointStore, EntityStore, EntityTypeRegistry, PreparedEntityBatch,
+};
+use super::entity_checkpoint::{CheckpointTicket, EntityCheckpointMirror, MirrorPermit};
+use super::fire::{FireCheckpointStore, FireRecovered, FireSeed, FireTransaction};
 use super::journal::{
     CommitReceipt, JournalWriter, RotateError, RotationReceipt, StateKey, SubmitError, Transaction,
 };
@@ -22,12 +27,16 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-#[path = "durable/actions.rs"]
+#[path = "durable/actions/mod.rs"]
 pub(super) mod actions;
 #[path = "durable/checkpoint.rs"]
 mod checkpoint;
 #[path = "durable/coordinator.rs"]
 pub(super) mod coordinator;
+#[path = "durable/entity_recovery.rs"]
+mod entity_recovery;
+#[path = "durable/fire.rs"]
+pub(super) mod fire;
 #[path = "durable/publication.rs"]
 mod publication;
 #[path = "durable/receipt.rs"]
@@ -45,7 +54,6 @@ pub(super) use coordinator::{
     handle_live_message, process_durable_actions, queue_interaction_actions,
 };
 pub(super) use publication::publish_committed;
-pub(in crate::server) use receipts::closed_legacy_ledger_bytes;
 #[cfg(test)]
 pub(super) use state::encode_action_receipt;
 pub(super) use state::{
@@ -78,6 +86,10 @@ pub(super) struct Durability {
     pub(super) checkpoint_inflight: HashMap<StateKey, u64>,
     pub(super) next_checkpoint_revision: u64,
     pub(super) receipt_store: receipts::ReceiptStore,
+    pub(super) fire_store: FireCheckpointStore,
+    pub(super) entity_store: EntityCheckpointStore,
+    pub(super) entity_mirror: EntityCheckpointMirror,
+    pub(super) entity_checkpoint_ticket: Option<CheckpointTicket>,
     pub(super) receipt_ledgers: HashMap<u128, receipts::ReceiptLedger>,
     pub(super) pending_grants: HashSet<u128>,
     pub(super) ready_grants: HashMap<u128, u64>,
@@ -87,6 +99,9 @@ pub(super) struct Durability {
     pub(super) rotation_requested: bool,
     pub(super) rotation_snapshot_ready: bool,
     pub(super) rotation_receipt: Option<Receiver<io::Result<RotationReceipt>>>,
+    /// Isolated benchmark-only one-shot trigger; production leaves this None.
+    pub(super) force_rotation_at_sequence: Option<u64>,
+    pub(super) completed_rotations: u64,
     pub(super) failed: bool,
 }
 
@@ -101,7 +116,13 @@ pub(super) struct PendingCommit {
     pub(super) submitted_at: Instant,
     pub(super) keys: Vec<StateKey>,
     checkpoint_sizes: HashMap<StateKey, usize>,
-    pub(super) action: CommitAction,
+    pub(super) payload: PendingPayload,
+    pub(super) entity_permit: Option<MirrorPermit>,
+}
+
+pub(super) enum PendingPayload {
+    Action(CommitAction),
+    Fire(FireTransaction),
 }
 
 #[derive(Clone)]
@@ -118,6 +139,8 @@ pub(super) struct CommitAction {
     pub(super) deltas: Vec<BlockDelta>,
     pub(super) changed_cells: Vec<CellCoord>,
     pub(super) pickups: Vec<DroppedItem>,
+    pub(super) fire_seed: Option<FireSeed>,
+    pub(super) entities: Option<PreparedEntityBatch>,
 }
 
 impl CommitAction {
@@ -135,6 +158,8 @@ impl CommitAction {
             deltas: Vec::new(),
             changed_cells: Vec::new(),
             pickups: Vec::new(),
+            fire_seed: None,
+            entities: None,
         }
     }
 }
@@ -210,7 +235,7 @@ impl Durability {
             receipts::ReceiptEvent::EpochGrant,
         )
         .map_err(StageError::Invalid)?;
-        match self.try_stage(tick, &CommitAction::receipt_only(transition), None)? {
+        match self.try_stage(tick, &CommitAction::receipt_only(transition), None, None)? {
             true => {
                 self.pending_grants.insert(profile);
                 Ok(None)
@@ -243,7 +268,7 @@ impl Durability {
         let transition =
             receipts::ReceiptTransition::new(profile, &before, after, receipts::ReceiptEvent::Ack)
                 .map_err(StageError::Invalid)?;
-        self.try_stage(tick, &CommitAction::receipt_only(transition), None)
+        self.try_stage(tick, &CommitAction::receipt_only(transition), None, None)
     }
     /// Opens and recovers all journal-backed after-values before the server can
     /// accept clients. Existing saves are decoded before any replay replacement.
@@ -252,8 +277,9 @@ impl Durability {
         world: &mut World,
         inventory_store: &InventoryStore,
         drops: &mut Drops,
-    ) -> io::Result<Self> {
-        recovery::open(root, world, inventory_store, drops)
+        entity_types: Arc<EntityTypeRegistry>,
+    ) -> io::Result<(Self, FireRecovered, EntityStore)> {
+        recovery::open(root, world, inventory_store, drops, entity_types)
     }
 
     /// Nonblocking stage: conflicts and queue pressure are explicit failures.
@@ -263,8 +289,32 @@ impl Durability {
         tick: TickId,
         action: &CommitAction,
         projected_drop_snapshot_size: Option<usize>,
+        entity_permit: Option<MirrorPermit>,
     ) -> Result<bool, StageError> {
+        if action.entities.is_some() != entity_permit.is_some() {
+            return Err(StageError::Invalid(io::Error::new(
+                ErrorKind::InvalidInput,
+                "entity WAL admission requires one mirror reservation",
+            )));
+        }
         let changes = action_changes(action, &self.catalog).map_err(StageError::Invalid)?;
+        self.try_stage_changes(
+            tick,
+            changes,
+            PendingPayload::Action(action.clone()),
+            projected_drop_snapshot_size,
+            entity_permit,
+        )
+    }
+
+    fn try_stage_changes(
+        &mut self,
+        tick: TickId,
+        changes: Vec<super::journal::Change>,
+        payload: PendingPayload,
+        projected_drop_snapshot_size: Option<usize>,
+        mut entity_permit: Option<MirrorPermit>,
+    ) -> Result<bool, StageError> {
         if changes.is_empty() {
             return Ok(false);
         }
@@ -343,6 +393,12 @@ impl Durability {
                 SubmitError::Closed => StageError::Closed,
                 SubmitError::Invalid(error) => StageError::Invalid(error),
             })?;
+        if let Some(permit) = &mut entity_permit {
+            if let Err(error) = permit.mark_authoritative_change() {
+                self.failed = true;
+                return Err(StageError::Invalid(error));
+            }
+        }
         self.reserved.extend(keys.iter().cloned());
         self.next_id = next_id;
         self.pending.push(PendingCommit {
@@ -350,7 +406,8 @@ impl Durability {
             submitted_at: Instant::now(),
             keys,
             checkpoint_sizes,
-            action: action.clone(),
+            payload,
+            entity_permit,
         });
         Ok(true)
     }
@@ -362,7 +419,7 @@ impl Durability {
     pub(super) fn profile_pending(&self, profile: u128) -> bool {
         self.pending
             .iter()
-            .any(|commit| commit.action.profile == Some(profile))
+            .any(|commit| matches!(&commit.payload, PendingPayload::Action(action) if action.profile == Some(profile)))
     }
 
     pub(super) fn receipt_ledger(&self, profile: u128) -> receipts::ReceiptLedger {

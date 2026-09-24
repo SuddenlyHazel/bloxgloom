@@ -5,17 +5,28 @@ use super::state::{
     valid_action_receipt_with_catalog,
 };
 use super::*;
+use crate::server::entities::decode_checkpoint;
+use crate::server::entities::{EntityStore, EntityTypeRegistry};
+use crate::server::entity_checkpoint::EntityCheckpointMirror;
+use crate::server::fire::{FireCheckpointStore, FireRecovered};
 use crate::server::journal::Journal;
+use std::sync::Arc;
 
 pub(super) fn open(
     root: &Path,
     world: &mut World,
     inventory_store: &InventoryStore,
     drops: &mut Drops,
-) -> io::Result<Durability> {
+    entity_types: Arc<EntityTypeRegistry>,
+) -> io::Result<(Durability, FireRecovered, EntityStore)> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
+    let recovered_entities =
+        super::entity_recovery::prepare(root, &journal, &latest, Arc::clone(&entity_types))?;
     let receipt_store = receipts::ReceiptStore::new(root)?;
+    let fire_store = FireCheckpointStore::new(root)?;
+    let mut fire_recovered = FireRecovered::default();
+    let mut fire_replay = Vec::new();
     let mut receipt_ledgers = HashMap::new();
     let mut receipt_replay = Vec::new();
     let mut inventory_revisions = HashMap::new();
@@ -85,7 +96,7 @@ pub(super) fn open(
             }
             "bloxgloom:action_receipt" => {
                 return Err(invalid_data(
-                    "legacy action receipts require explicit save conversion",
+                    "legacy action receipts are unsupported in this save format",
                 ));
             }
             "bloxgloom:action_ledger" => {
@@ -116,6 +127,18 @@ pub(super) fn open(
                     "aggregate drop snapshots are not journal keys",
                 ));
             }
+            domain if domain.starts_with("bloxgloom:fire_") => {
+                fire_recovered.apply_value(key, value)?;
+                let current = fire_store.read(key)?.unwrap_or_default();
+                journal.validate_snapshot(key, &current)?;
+                if current != *value {
+                    fire_replay.push((key.clone(), value.clone()));
+                }
+            }
+            domain if domain.starts_with("bloxgloom:entity") => {
+                // Entity codecs, checkpoint reachability, and derived indexes
+                // were validated as one aggregate before this replay pass.
+            }
             domain => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -125,8 +148,22 @@ pub(super) fn open(
         }
     }
     receipt_store.validate_no_orphans(&latest)?;
+    fire_store.validate_no_orphans(&latest)?;
     let drop_owner_set_closed = journal.drop_owner_set_closed();
-    drops.validate_recovered_journal(&latest, drop_owner_set_closed)?;
+    // The drop store receives only its registered keys. The full journal map
+    // was already checked above, so adding another persistent domain does not
+    // require teaching drop recovery to ignore that domain by name.
+    let drop_values = latest
+        .iter()
+        .filter(|(key, _)| {
+            matches!(
+                key.domain.as_str(),
+                "bloxgloom:drop_owner" | "bloxgloom:drop_position" | "bloxgloom:drop_allocator"
+            )
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    drops.validate_recovered_journal(&drop_values, drop_owner_set_closed)?;
 
     for (chunk, value) in chunk_replay {
         world.restore_snapshot(chunk, &value)?;
@@ -137,36 +174,72 @@ pub(super) fn open(
     for (profile, value) in receipt_replay {
         receipt_store.write(profile, &value)?;
     }
-    if drops.apply_recovered_journal(&latest, drop_owner_set_closed)? {
+    for (key, value) in fire_replay {
+        fire_store.write(&key, &value)?;
+    }
+    fire_store.cleanup_interrupted_temps()?;
+    if drops.apply_recovered_journal(&drop_values, drop_owner_set_closed)? {
         drops.save()?;
     }
+    recovered_entities.publish_replay()?;
+    // Give the checkpoint worker an independently decoded authoritative
+    // baseline. It never borrows or serializes the live entity store on a
+    // simulation tick; every later change is delivered in commit order.
+    let mirror_baseline = match recovered_entities.checkpoint_store.read()? {
+        Some(bytes) => decode_checkpoint(&bytes, entity_types)
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?,
+        None => EntityStore::new(entity_types),
+    };
+    if mirror_baseline.durable_sequence() != recovered_entities.entities.durable_sequence()
+        || mirror_baseline.revision() != recovered_entities.entities.revision()
+        || mirror_baseline.len() != recovered_entities.entities.len()
+    {
+        return Err(invalid_data(
+            "entity checkpoint mirror baseline differs from recovered store",
+        ));
+    }
+    let entity_mirror = EntityCheckpointMirror::start(
+        mirror_baseline,
+        recovered_entities.checkpoint_store.clone(),
+        MAX_PENDING_DURABLE_ACTIONS,
+    )?;
     let next_id = journal.next_id()?;
     let writer = journal.into_writer(128, Duration::from_millis(3))?;
-    Ok(Durability {
-        catalog: world.catalog_arc(),
-        writer,
-        next_id,
-        inventory_overlay: HashMap::new(),
-        inventory_revisions,
-        pending: Vec::new(),
-        reserved: HashSet::new(),
-        queued: VecDeque::new(),
-        retry_pickups: HashSet::new(),
-        expire_queued: false,
-        expire_again: false,
-        publish_queue: Vec::new(),
-        checkpoint_writer: CheckpointWriter::new(CHECKPOINT_QUEUE_CAPACITY),
-        dirty_checkpoints: HashMap::new(),
-        checkpoint_inflight: HashMap::new(),
-        next_checkpoint_revision: 1,
-        receipt_store,
-        receipt_ledgers,
-        pending_grants: HashSet::new(),
-        ready_grants: HashMap::new(),
-        pending_acks: HashMap::new(),
-        rotation_requested: false,
-        rotation_snapshot_ready: false,
-        rotation_receipt: None,
-        failed: false,
-    })
+    Ok((
+        Durability {
+            catalog: world.catalog_arc(),
+            writer,
+            next_id,
+            inventory_overlay: HashMap::new(),
+            inventory_revisions,
+            pending: Vec::new(),
+            reserved: HashSet::new(),
+            queued: VecDeque::new(),
+            retry_pickups: HashSet::new(),
+            expire_queued: false,
+            expire_again: false,
+            publish_queue: Vec::new(),
+            checkpoint_writer: CheckpointWriter::new(CHECKPOINT_QUEUE_CAPACITY),
+            dirty_checkpoints: HashMap::new(),
+            checkpoint_inflight: HashMap::new(),
+            next_checkpoint_revision: 1,
+            receipt_store,
+            fire_store,
+            entity_store: recovered_entities.checkpoint_store,
+            entity_mirror,
+            entity_checkpoint_ticket: None,
+            receipt_ledgers,
+            pending_grants: HashSet::new(),
+            ready_grants: HashMap::new(),
+            pending_acks: HashMap::new(),
+            rotation_requested: false,
+            rotation_snapshot_ready: false,
+            rotation_receipt: None,
+            force_rotation_at_sequence: None,
+            completed_rotations: 0,
+            failed: false,
+        },
+        fire_recovered,
+        recovered_entities.entities,
+    ))
 }

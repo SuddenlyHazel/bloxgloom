@@ -2,6 +2,7 @@ use super::cache::ChunkCache;
 use super::*;
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -88,6 +89,39 @@ fn resident_arc_view_pins_a_version_without_copying_voxels() {
     world.get_chunk(ChunkKey { x: 30, y: 0, z: 30 }).unwrap();
     assert!(world.cached_arc_chunk(key).is_none());
     assert_eq!(old.block(local), Some(original));
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn worker_prepared_sparse_edit_matches_and_cannot_overwrite_a_newer_commit() {
+    let path = test_dir();
+    let mut world = World::new(42, path.clone()).unwrap();
+    let (x, y, z) = (-1, 100, 16);
+    let (key, local) = world_to_chunk(x, y, z);
+    let original = world.get_block(x, y, z).unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    let basis = world.cached_edit_basis(key).unwrap();
+    assert_eq!(basis.chunk().key, key);
+    assert!(basis.catalog().state(replacement).is_some());
+    let cell = Chunk::index(local).unwrap() as u16;
+    let worker = thread::spawn(move || basis.prepare_sparse(&[(cell, replacement)]).unwrap());
+    let main_prepared = world.prepare_edit(x, y, z, replacement).unwrap();
+    let worker_prepared = worker.join().unwrap();
+    assert_eq!(
+        worker_prepared.before_snapshot,
+        main_prepared.before_snapshot
+    );
+    assert_eq!(worker_prepared.after_snapshot, main_prepared.after_snapshot);
+    assert_eq!(worker_prepared.new_version, main_prepared.new_version);
+    world.apply_prepared_edit(main_prepared).unwrap();
+    assert_eq!(
+        world
+            .apply_prepared_edit(worker_prepared)
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::WouldBlock
+    );
+    drop(world);
     fs::remove_dir_all(path).unwrap();
 }
 

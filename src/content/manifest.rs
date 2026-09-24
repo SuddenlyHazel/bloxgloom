@@ -236,11 +236,12 @@ impl ContentManifest {
                 .get(&(b'B', block_key))
                 .ok_or_else(|| invalid("missing mapped block type"))?;
             resolved
-                .register_state(
+                .register_state_with_emission(
                     BlockStateId(entry.id),
                     BlockTypeId(block_id),
                     state.properties.clone(),
                     Some(state.textures),
+                    Some(state.emission),
                 )
                 .map_err(|_| invalid("invalid mapped block state"))?;
         }

@@ -6,6 +6,7 @@
 
 mod fixture;
 mod report;
+mod tcp;
 
 #[cfg(test)]
 #[path = "perf/tests.rs"]
@@ -25,6 +26,121 @@ use std::collections::HashSet;
 use std::io;
 use std::thread;
 use std::time::Instant;
+
+pub fn run_tcp_perf(clients: usize, ticks: usize, scene: &str) -> io::Result<()> {
+    let scene = match scene {
+        "clustered" => tcp::TcpScene::Clustered,
+        "spread" => tcp::TcpScene::Spread,
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "TCP scene must be clustered or spread",
+            ));
+        }
+    };
+    let report = tcp::run(tcp::TcpSoakConfig {
+        clients,
+        ticks,
+        scene,
+    })?;
+    if report.passed {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "TCP soak failed: {}",
+            report.reasons.join("; ")
+        )))
+    }
+}
+
+pub fn run_fire_cpu_perf(workers: usize, iterations: usize) -> io::Result<()> {
+    let report = super::fire::benchmark_cpu(iterations, workers)?;
+    let single = report.single_worker.source.total()
+        + report.single_worker.delivery.total()
+        + report.single_worker.post_wal_apply.total();
+    let parallel = report.comparison.source.total()
+        + report.comparison.delivery.total()
+        + report.comparison.post_wal_apply.total();
+    if parallel.is_zero() {
+        return Err(io::Error::other(
+            "fire CPU benchmark recorded zero comparison time",
+        ));
+    }
+    let ratio = single.as_secs_f64() / parallel.as_secs_f64();
+    println!(
+        "fire-cpu: {} active chunks, {} iterations; 1 worker {:.3}s, {} workers {:.3}s, ratio {:.2}x; output hashes {:016x}/{:016x}; post-WAL owner apply included: {}",
+        report.active_chunks,
+        report.iterations,
+        single.as_secs_f64(),
+        report.comparison.workers,
+        parallel.as_secs_f64(),
+        ratio,
+        report.single_worker.output_hash,
+        report.comparison.output_hash,
+        report.post_wal_apply_included,
+    );
+    for (name, single, parallel) in [
+        (
+            "source",
+            report.single_worker.source,
+            report.comparison.source,
+        ),
+        (
+            "delivery",
+            report.single_worker.delivery,
+            report.comparison.delivery,
+        ),
+        (
+            "hot-source",
+            report.single_worker.hot_source,
+            report.comparison.hot_source,
+        ),
+    ] {
+        println!(
+            "  {name}: jobs {} / {}, burns {} / {}, effects {} / {}; 1-worker {:.3}s [capture {:.3}, barrier {:.3}, validate {:.3}, route+encode {:.3}], {}-worker {:.3}s [capture {:.3}, barrier {:.3}, validate {:.3}, route+encode {:.3}]",
+            single.owner_jobs,
+            parallel.owner_jobs,
+            single.burned_cells,
+            parallel.burned_cells,
+            single.effects,
+            parallel.effects,
+            single.total().as_secs_f64(),
+            single.capture.as_secs_f64(),
+            single.worker_barrier.as_secs_f64(),
+            single.validate.as_secs_f64(),
+            single.route_and_encode.as_secs_f64(),
+            report.comparison.workers,
+            parallel.total().as_secs_f64(),
+            parallel.capture.as_secs_f64(),
+            parallel.worker_barrier.as_secs_f64(),
+            parallel.validate.as_secs_f64(),
+            parallel.route_and_encode.as_secs_f64(),
+        );
+    }
+    let applied_single = report.single_worker.post_wal_apply;
+    let applied_parallel = report.comparison.post_wal_apply;
+    println!(
+        "  owner-apply (source wave): 1-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}], {}-worker {:.3}s [capture+validate {:.3}, barrier {:.3}, metadata {:.3}, worker CPU {:.3}]; WAL wait and fixture reset excluded",
+        applied_single.total().as_secs_f64(),
+        applied_single.capture_and_validate.as_secs_f64(),
+        applied_single.worker_barrier.as_secs_f64(),
+        applied_single.metadata_finalize.as_secs_f64(),
+        applied_single.worker_run_time.as_secs_f64(),
+        report.comparison.workers,
+        applied_parallel.total().as_secs_f64(),
+        applied_parallel.capture_and_validate.as_secs_f64(),
+        applied_parallel.worker_barrier.as_secs_f64(),
+        applied_parallel.metadata_finalize.as_secs_f64(),
+        applied_parallel.worker_run_time.as_secs_f64(),
+    );
+    if report.outputs_match {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "fire output differed between worker counts",
+        ))
+    }
+}
 
 /// Runs two isolated 16-player scenarios: a dense cluster and a spatially
 /// spread group. At least 300 paced 50 Hz ticks are required so short startup

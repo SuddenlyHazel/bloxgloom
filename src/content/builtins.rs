@@ -275,6 +275,42 @@ impl Catalog {
                 .register_block(definition)
                 .expect("unique builtin block");
         }
+        catalog
+            .register_block(BlockDef {
+                id: KILN_BLOCK_TYPE,
+                key: "bloxgloom:kiln".into(),
+                name: "KILN".into(),
+                swatch: [0.52, 0.48, 0.43, 1.0],
+                textures: BlockTextures {
+                    top: TextureId(3),
+                    side: TextureId(3),
+                    bottom: TextureId(3),
+                },
+                solid: true,
+                opaque: true,
+                cutout: false,
+                plant: false,
+                replaceable: false,
+                supports_plant: false,
+                flammable: false,
+                emission: 0,
+                reflectance: [145, 135, 125],
+                properties: vec![
+                    PropertyDef {
+                        name: "facing".into(),
+                        values: vec!["north".into(), "east".into(), "south".into(), "west".into()],
+                    },
+                    PropertyDef {
+                        name: "half".into(),
+                        values: vec!["lower".into(), "upper".into()],
+                    },
+                    PropertyDef {
+                        name: "lit".into(),
+                        values: vec!["false".into(), "true".into()],
+                    },
+                ],
+            })
+            .expect("unique builtin kiln block");
         for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
             let block = BlockTypeId(id);
             let properties = if block == BlockTypeId(world::WOOD.0) {
@@ -296,6 +332,41 @@ impl Catalog {
                 )
                 .expect("unique builtin wood orientation");
         }
+        for (facing_index, facing) in ["north", "east", "south", "west"].into_iter().enumerate() {
+            for half in ["lower", "upper"] {
+                for lit in [false, true] {
+                    let offset =
+                        ((facing_index * 2 + usize::from(half == "upper")) * 2) + usize::from(lit);
+                    let id = BlockStateId(KILN_DEFAULT_STATE.0 + offset as u32);
+                    let textures = if lit {
+                        BlockTextures {
+                            top: TextureId(3),
+                            side: TextureId(8),
+                            bottom: TextureId(3),
+                        }
+                    } else {
+                        BlockTextures {
+                            top: TextureId(3),
+                            side: TextureId(3),
+                            bottom: TextureId(3),
+                        }
+                    };
+                    catalog
+                        .register_state_with_emission(
+                            id,
+                            KILN_BLOCK_TYPE,
+                            vec![
+                                ("facing".to_owned(), facing.to_owned()),
+                                ("half".to_owned(), half.to_owned()),
+                                ("lit".to_owned(), lit.to_string()),
+                            ],
+                            Some(textures),
+                            Some(if lit { 12 } else { 0 }),
+                        )
+                        .expect("unique builtin kiln state");
+                }
+            }
+        }
         for id in 1..=world::MAX_BUILTIN_BLOCK.0 {
             let state = BlockStateId(id);
             let definition = catalog.block(state).unwrap();
@@ -312,6 +383,17 @@ impl Catalog {
                 .register_item(item)
                 .expect("unique builtin block item");
         }
+        catalog
+            .register_item(ItemDef {
+                id: KILN_ITEM,
+                key: "bloxgloom:kiln".into(),
+                name: "KILN".into(),
+                swatch: [0.52, 0.48, 0.43, 1.0],
+                texture: TextureId(3),
+                placeable: Some(KILN_DEFAULT_STATE),
+                sprite: false,
+            })
+            .expect("unique builtin kiln item");
         for (id, name, label, color, layer) in [
             (
                 crate::items::SEEDS,
@@ -347,13 +429,22 @@ impl Catalog {
                 })
                 .expect("unique builtin item");
         }
-        for (id, key) in [(1, "bloxgloom:drop"), (2, "bloxgloom:player")] {
+        for (id, key, schema_version, schema_fingerprint) in [
+            (1, "bloxgloom:drop", 1, 0x4247_454e_0000_0001),
+            (2, "bloxgloom:player", 1, 0x4247_454e_0000_0001),
+            (
+                KILN_ENTITY_TYPE.0,
+                "bloxgloom:kiln",
+                KILN_SCHEMA_VERSION,
+                KILN_SCHEMA_FINGERPRINT,
+            ),
+        ] {
             catalog
                 .register_entity_type(EntityTypeDef {
                     id: EntityTypeId(id),
                     key: key.into(),
-                    schema_version: 1,
-                    schema_fingerprint: 0x4247_454e_0000_0001,
+                    schema_version,
+                    schema_fingerprint,
                 })
                 .expect("unique builtin entity type");
         }
@@ -385,6 +476,7 @@ fn block(
         plant: flags & PLANT != 0,
         replaceable: flags & REPLACEABLE != 0,
         supports_plant: flags & SUPPORTS_PLANT != 0,
+        flammable: flags & FLAMMABLE != 0,
         emission: BUILTIN_EMISSION[id.0 as usize],
         reflectance: BUILTIN_REFLECTANCE[id.0 as usize],
         properties: if id == world::WOOD {

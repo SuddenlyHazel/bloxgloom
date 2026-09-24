@@ -74,6 +74,44 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
 }
 
 #[test]
+fn cardinal_placement_hint_follows_camera_yaw() {
+    let catalog = crate::content::catalog();
+    let hit = Hit {
+        block: [2, 3, 4],
+        adjacent: [2, 4, 4],
+        block_id: crate::world::STONE,
+        distance: 2.5,
+        face: Face::PosY,
+    };
+    for (yaw, facing) in [
+        (0.0, "west"),
+        (std::f32::consts::FRAC_PI_2, "north"),
+        (std::f32::consts::PI, "east"),
+        (-std::f32::consts::FRAC_PI_2, "south"),
+    ] {
+        let message = edit_for_hit_with_catalog(
+            hit,
+            true,
+            Some(crate::content::KILN_ITEM),
+            0,
+            91,
+            yaw,
+            catalog,
+        )
+        .unwrap();
+        let ClientMessage::Edit { block, .. } = message else {
+            panic!("placement did not produce an edit");
+        };
+        assert_eq!(
+            block,
+            catalog
+                .state_with_property(crate::content::KILN_DEFAULT_STATE, "facing", facing)
+                .unwrap()
+        );
+    }
+}
+
+#[test]
 fn placing_on_a_replaceable_flower_targets_its_cell() {
     let hit = Hit {
         block: [2, 3, 4],
@@ -154,7 +192,7 @@ fn mapped_server_item_and_replaceable_state_drive_placement_preview() {
     .unwrap();
     assert_eq!(hit.block_id, flower);
     assert_eq!(
-        edit_for_hit_with_catalog(hit, true, Some(item), 0, 91, &catalog),
+        edit_for_hit_with_catalog(hit, true, Some(item), 0, 91, 0.0, &catalog),
         Some(ClientMessage::Edit {
             action_id: 91,
             x: 2,

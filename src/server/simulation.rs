@@ -100,8 +100,14 @@ pub(super) struct FixedStepClock {
 
 impl FixedStepClock {
     pub(super) const fn new() -> Self {
+        Self::after(TickId::new(0))
+    }
+
+    /// Resume logical time after a recovered durable system cursor. Scheduled
+    /// work keeps its original tick; restart must never reuse a producer ID.
+    pub(super) const fn after(last: TickId) -> Self {
         Self {
-            last_tick: 0,
+            last_tick: last.get(),
             backlog: Duration::ZERO,
         }
     }

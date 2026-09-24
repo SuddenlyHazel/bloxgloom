@@ -79,7 +79,7 @@ fn missing_plant_support_requests_its_exact_vertical_neighbor() {
         slot: 0,
     });
 
-    let result = plan_durable_request(&mut state, &request);
+    let result = plan_durable_request(&mut state, &request, TickId::new(1));
     let error = result.err().expect("missing support must defer the edit");
     assert_eq!(error.kind(), ErrorKind::WouldBlock, "{error}");
     assert!(state.loader.is_pending(support));
@@ -118,10 +118,63 @@ fn missing_plant_check_requests_the_exact_above_chunk() {
         slot: 0,
     });
 
-    let result = plan_durable_request(&mut state, &request);
+    let result = plan_durable_request(&mut state, &request, TickId::new(1));
     assert!(matches!(result, Err(error) if error.kind() == ErrorKind::WouldBlock));
     assert!(state.loader.is_pending(above));
     assert!(state.world.cached_block(0, target_y, 0).is_some());
+
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn kiln_plan_spans_vertical_chunk_seam_without_pre_wal_visibility() {
+    let path = temp_save_dir("kiln-seam-plan");
+    let mut state = server_state(31, path.clone()).unwrap();
+    let target_y = ((MAX_GENERATED_HEIGHT / 16) + 1) * 16 - 1;
+    let lower = world_to_chunk(0, target_y, 0).0;
+    let upper = world_to_chunk(0, target_y + 1, 0).0;
+    assert_ne!(lower, upper);
+    state.world.get_chunk(lower).unwrap();
+    state.world.get_chunk(upper).unwrap();
+
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(crate::content::KILN_ITEM, 1));
+    let peer = add_test_client(&mut state, [0.5, target_y as f32, -2.5], inventory);
+    let facing_east = state
+        .world
+        .catalog()
+        .state_with_property(crate::content::KILN_DEFAULT_STATE, "facing", "east")
+        .unwrap();
+    let request = edit_request(ClientMessage::Edit {
+        action_id: 3,
+        x: 0,
+        y: target_y,
+        z: 0,
+        block: facing_east,
+        slot: 0,
+    });
+    let action = plan_durable_request(&mut state, &request, TickId::new(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(action.world_edits.len(), 2);
+    assert_eq!(action.deltas.len(), 2);
+    assert_eq!(action.inventory.as_ref().unwrap().slots[0], None);
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+    assert_eq!(state.entities.len(), 0);
+    assert_eq!(state.world.cached_block(0, target_y, 0), Some(AIR));
+    assert_eq!(state.world.cached_block(0, target_y + 1, 0), Some(AIR));
+    assert_eq!(
+        state.clients.get(&1).unwrap().inventory.slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        1
+    );
 
     drop(peer);
     drop(state);

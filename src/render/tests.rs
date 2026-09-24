@@ -230,6 +230,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             plant: false,
             replaceable: false,
             supports_plant: false,
+            flammable: false,
             emission: 0,
             reflectance: [180, 180, 180],
             properties: Vec::new(),

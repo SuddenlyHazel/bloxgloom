@@ -1,7 +1,11 @@
 use super::types::EntityError;
 
 pub const ENTITY_RECORD_MAGIC: &[u8; 4] = b"BGER";
-pub const ENTITY_RECORD_VERSION: u16 = 1;
+pub const ENTITY_RECORD_VERSION: u16 = 2;
+pub const ENTITY_WAL_RECORD_MAGIC: &[u8; 4] = b"BGEW";
+pub const ENTITY_WAL_RECORD_VERSION: u16 = 1;
+pub const ENTITY_MOTION_MAGIC: &[u8; 4] = b"BGEM";
+pub const ENTITY_MOTION_VERSION: u16 = 1;
 pub const ENTITY_CHUNK_PAGE_MAGIC: &[u8; 4] = b"BGCI";
 pub const ENTITY_CHUNK_PAGE_VERSION: u16 = 1;
 pub const ENTITY_ALLOCATOR_MAGIC: &[u8; 4] = b"BGEA";

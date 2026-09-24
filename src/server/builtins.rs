@@ -1,9 +1,11 @@
-//! Built-in system declarations and their typed runtime dispatch identities.
+//! Built-in system declarations and trusted runtime callbacks.
 
 use super::MAX_CLIENTS;
+use super::fire::{FireDeliveryHandler, FireHandler};
 use super::registry::{
     OwnerPartition, PhasePlan, ResourceId, SystemDescriptor, SystemId, SystemRegistry,
 };
+use super::runtime::adapters;
 use super::simulation::Phase;
 use std::io;
 
@@ -11,45 +13,23 @@ use std::io;
 #[path = "builtins/tests.rs"]
 mod tests;
 
-#[derive(Clone, Copy)]
-pub(super) enum BuiltinHandler {
-    InputAuthorization,
-    DurableActions,
-    PlayerMovement,
-    DropSimulation,
-    InteractionCommit,
-    Publish,
-}
-
-impl BuiltinHandler {
-    pub(super) fn from_id(id: &str) -> io::Result<Self> {
-        match id {
-            "builtin:input_authorization" => Ok(Self::InputAuthorization),
-            "builtin:durable_actions" => Ok(Self::DurableActions),
-            "builtin:player_movement" => Ok(Self::PlayerMovement),
-            "builtin:drop_simulation" => Ok(Self::DropSimulation),
-            "builtin:interaction_commit" => Ok(Self::InteractionCommit),
-            "builtin:publish" => Ok(Self::Publish),
-            unknown => Err(io::Error::other(format!(
-                "registered system has no server dispatcher: {unknown}"
-            ))),
-        }
-    }
-}
-
 pub(super) fn builtin_phase_plan() -> io::Result<PhasePlan> {
     let mut registry = SystemRegistry::new();
     register_builtin_systems(&mut registry)?;
-    registry
-        .freeze_legacy([
-            SystemId::new("builtin:input_authorization").unwrap(),
-            SystemId::new("builtin:durable_actions").unwrap(),
-            SystemId::new("builtin:player_movement").unwrap(),
-            SystemId::new("builtin:drop_simulation").unwrap(),
-            SystemId::new("builtin:interaction_commit").unwrap(),
-            SystemId::new("builtin:publish").unwrap(),
-        ])
-        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))
+    let plan = registry
+        .freeze()
+        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
+    for phase in Phase::ALL {
+        for system in plan.systems(phase) {
+            if system.driver().is_none() {
+                return Err(io::Error::other(format!(
+                    "built-in system lacks a trusted runtime driver: {}",
+                    system.id().as_str()
+                )));
+            }
+        }
+    }
+    Ok(plan)
 }
 
 pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Result<()> {
@@ -67,8 +47,12 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
     let simulation = id("drop_simulation")?;
     let interactions = id("interaction_commit")?;
     let publish = id("publish")?;
+    let fire = SystemId::new("bloxgloom:fire_propagate")
+        .map_err(|error| io::Error::other(format!("system ID: {error:?}")))?;
+    let fire_delivery = SystemId::new("bloxgloom:fire_deliver")
+        .map_err(|error| io::Error::other(format!("system ID: {error:?}")))?;
     registry
-        .register(
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 auth.clone(),
                 Phase::InputAuthorization,
@@ -78,10 +62,11 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             )
             .read(resource("input_queue")?)
             .write(resource("authorized_actions")?),
+            adapters::input_authorization,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register(
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 durable.clone(),
                 Phase::DurableActions,
@@ -99,10 +84,11 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .write(resource("journal")?)
             .write(resource("committed_state")?)
             .after(auth.clone()),
+            adapters::durable_actions,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register(
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 movement.clone(),
                 Phase::Simulation,
@@ -114,10 +100,11 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .read(resource("movement_inputs")?)
             .write(resource("player_positions")?)
             .after(durable.clone()),
+            adapters::player_movement,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register(
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 simulation.clone(),
                 Phase::Simulation,
@@ -131,10 +118,29 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .read(resource("drops")?)
             .write(resource("drops")?)
             .after(movement.clone()),
+            adapters::drop_simulation,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register(
+        .register_handler_with_driver(
+            SystemDescriptor::new(
+                fire.clone(),
+                Phase::Simulation,
+                OwnerPartition::Chunk,
+                32,
+                6_144,
+            )
+            .effects_per_job(192)
+            .read(resource("world")?)
+            .read(resource("fire_frontier")?)
+            .write(resource("fire_intents")?)
+            .after(simulation.clone()),
+            FireHandler,
+            adapters::fire_source,
+        )
+        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
+    registry
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 interactions.clone(),
                 Phase::InteractionCommit,
@@ -149,10 +155,29 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .write(resource("drops")?)
             .write(resource("deferred_actions")?)
             .after(simulation.clone()),
+            adapters::interaction_commit,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register(
+        .register_handler_with_driver(
+            SystemDescriptor::new(
+                fire_delivery,
+                Phase::InteractionCommit,
+                OwnerPartition::Chunk,
+                32,
+                0,
+            )
+            .read(resource("world")?)
+            .read(resource("fire_pending")?)
+            .read(resource("fire_frontier")?)
+            .write(resource("fire_intents")?)
+            .after(interactions.clone()),
+            FireDeliveryHandler,
+            adapters::fire_delivery,
+        )
+        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
+    registry
+        .register_coordinator_adapter(
             SystemDescriptor::new(
                 publish.clone(),
                 Phase::Publish,
@@ -163,6 +188,7 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .read(resource("committed_state")?)
             .write(resource("outbound")?)
             .after(interactions),
+            adapters::publish,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     Ok(())

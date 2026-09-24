@@ -8,13 +8,15 @@ use crate::server::{
 };
 use crate::world::BlockId;
 
+pub(in crate::server) mod kiln;
 #[cfg(test)]
-#[path = "actions/tests.rs"]
+#[path = "tests.rs"]
 mod tests;
 
 pub(in crate::server) fn plan_durable_request(
     state: &mut State,
     request: &DurableRequest,
+    tick: TickId,
 ) -> io::Result<Option<CommitAction>> {
     match request {
         DurableRequest::Command { id, message, .. } => {
@@ -64,6 +66,8 @@ pub(in crate::server) fn plan_durable_request(
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
+                fire_seed: None,
+                entities: None,
             };
             match message {
                 ClientMessage::InventoryMove {
@@ -116,6 +120,7 @@ pub(in crate::server) fn plan_durable_request(
                 } => {
                     return plan_block_edit(
                         state,
+                        tick,
                         BlockEditCommand {
                             id: *id,
                             profile,
@@ -185,6 +190,8 @@ pub(in crate::server) fn plan_durable_request(
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: taken,
+                fire_seed: None,
+                entities: None,
             }))
         }
         DurableRequest::Expire => {
@@ -207,35 +214,31 @@ pub(in crate::server) fn plan_durable_request(
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
+                fire_seed: None,
+                entities: None,
             }))
         }
     }
 }
 
-struct BlockEditCommand {
-    id: u64,
-    profile: u128,
-    action_id: u128,
-    receipt_value: Vec<u8>,
-    x: i32,
-    y: i32,
-    z: i32,
-    block: BlockId,
-    slot: u8,
+pub(in crate::server) struct BlockEditCommand {
+    pub(in crate::server) id: u64,
+    pub(in crate::server) profile: u128,
+    pub(in crate::server) action_id: u128,
+    pub(in crate::server) receipt_value: Vec<u8>,
+    pub(in crate::server) x: i32,
+    pub(in crate::server) y: i32,
+    pub(in crate::server) z: i32,
+    pub(in crate::server) block: BlockId,
+    pub(in crate::server) slot: u8,
 }
 
-fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<CommitAction> {
-    let BlockEditCommand {
-        id,
-        profile,
-        action_id,
-        receipt_value,
-        x,
-        y,
-        z,
-        block,
-        slot,
-    } = command;
+fn plan_block_edit(
+    state: &mut State,
+    tick: TickId,
+    command: BlockEditCommand,
+) -> io::Result<CommitAction> {
+    let (id, x, y, z, block) = (command.id, command.x, command.y, command.z, command.block);
     let client = state.clients.get(&id).expect("command client exists");
     let position = client.position();
     let inventory_before = client.inventory.clone();
@@ -263,6 +266,23 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             "block is unchanged",
         ));
     }
+    let hooks = state
+        .block_actions
+        .for_state(&catalog, if block == AIR { previous } else { block });
+    if let Some(hooks) = hooks {
+        return if block == AIR {
+            (hooks.break_block)(state, tick, command, previous)
+        } else {
+            (hooks.place)(state, tick, command, previous)
+        };
+    }
+    let BlockEditCommand {
+        profile,
+        action_id,
+        receipt_value,
+        slot,
+        ..
+    } = command;
     let mut coords = vec![(x, y, z, block)];
     let mut removed_plants = Vec::new();
     if block != AIR {
@@ -322,6 +342,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
         if has(previous, crate::content::PLANT) {
             removed_plants.push((previous, [x, y, z]));
         }
+        ensure_no_unhandled_anchor(state, &coords)?;
         let prepared = state.world.prepare_edits(&coords)?;
         let deltas = prepared_deltas(&coords, &prepared);
         let mut drop_spawns = Vec::new();
@@ -334,6 +355,13 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
         }
         let drops = state.drops.plan_spawns(&drop_spawns)?;
+        let (source, local) = world_to_chunk(x, y, z);
+        let cell = crate::world::Chunk::index(local)
+            .and_then(|index| u16::try_from(index).ok())
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "fire seed cell invalid"))?;
+        let fire_seed = state
+            .fire
+            .prepare_seed_from_edit(tick, source, cell, block)?;
         return Ok(CommitAction {
             client_id: Some(id),
             profile: Some(profile),
@@ -350,6 +378,8 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             deltas,
             changed_cells: vec![CellCoord::new(x, y, z)],
             pickups: Vec::new(),
+            fire_seed,
+            entities: None,
         });
     }
 
@@ -369,6 +399,7 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             removed_plants.push((above, [x, above_y, z]));
         }
     }
+    ensure_no_unhandled_anchor(state, &coords)?;
     let prepared = state.world.prepare_edits(&coords)?;
     let deltas = prepared_deltas(&coords, &prepared);
     let mut drop_spawns = Vec::new();
@@ -410,6 +441,8 @@ fn plan_block_edit(state: &mut State, command: BlockEditCommand) -> io::Result<C
             .map(|(x, y, z, _)| CellCoord::new(x, y, z))
             .collect(),
         pickups: Vec::new(),
+        fire_seed: None,
+        entities: None,
     })
 }
 
@@ -430,6 +463,25 @@ fn cached_block_or_request(
     let key = world_to_chunk(x, y, z).0;
     let _ = request_chunk(state, key)?;
     Err(io::Error::new(ErrorKind::WouldBlock, reason))
+}
+
+fn ensure_no_unhandled_anchor(
+    state: &State,
+    coords: &[(i32, i32, i32, BlockId)],
+) -> io::Result<()> {
+    if coords.iter().any(|&(x, y, z, _)| {
+        state
+            .entities
+            .anchored_at(crate::server::entities::CellCoord::new(x, y, z))
+            .is_some()
+    }) {
+        Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "generic block edit would orphan an anchored entity",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn prepared_deltas(

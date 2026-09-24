@@ -56,9 +56,11 @@ fn several_cells_in_one_chunk_publish_one_authoritative_chunk_snapshot() {
         ],
         changed_cells: vec![CellCoord::new(10, 80, 10), CellCoord::new(11, 80, 10)],
         pickups: Vec::new(),
+        fire_seed: None,
+        entities: None,
     };
 
-    apply_committed_action(&mut state, action).unwrap();
+    apply_committed_action(&mut state, action, None).unwrap();
 
     let published = state.durability.publish_queue.pop().unwrap();
     assert!(published.deltas.is_empty());

@@ -68,6 +68,25 @@ fn aggregate_byte_limit_is_enforced_across_clients() {
 }
 
 #[test]
+fn aggregate_high_water_mark_survives_sub_tick_queue_drain() {
+    let telemetry = Arc::new(OutboundTelemetry::default());
+    let (first, first_receiver) = telemetry.client_queue();
+    let (second, second_receiver) = telemetry.client_queue();
+    first.try_send(pong(1)).unwrap();
+    second.try_send(pong(2)).unwrap();
+    let peak = telemetry.snapshot();
+    assert_eq!(peak.queued_bytes, 28);
+    assert_eq!(peak.max_queued_bytes, 28);
+    assert_eq!(peak.max_client_queued_bytes, 14);
+
+    drop(first_receiver);
+    drop(second_receiver);
+    let drained = telemetry.snapshot();
+    assert_eq!(drained.queued_bytes, 0);
+    assert_eq!(drained.max_queued_bytes, 28);
+}
+
+#[test]
 fn oversized_and_disconnected_admissions_are_explicit_and_release_reservations() {
     let telemetry = Arc::new(OutboundTelemetry::default());
     let (small, small_receiver) = telemetry.client_queue_with_limits(4, 13);

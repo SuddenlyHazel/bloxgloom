@@ -9,9 +9,11 @@ use std::sync::{Arc, Weak};
 use crate::storage::{SavedEdits, Storage};
 
 mod cache;
+mod owner_apply;
 mod palette;
 mod terrain;
 use cache::ChunkCache;
+pub(crate) use owner_apply::OwnerApplyReceipt;
 pub use palette::{PaletteView, PalettedBlocks};
 pub use terrain::generate_chunk;
 use terrain::generated_block;
@@ -164,12 +166,115 @@ pub struct PreparedEdit {
     pub changed: bool,
     expected_revision: u64,
     revision: Arc<AtomicU64>,
+    before_chunk: Arc<Chunk>,
     before_edits: BTreeMap<u16, BlockId>,
     after_chunk: Chunk,
     after_edits: BTreeMap<u16, BlockId>,
 }
 
-type LocatedEdit = (i32, i32, i32, [usize; 3], BlockId);
+/// Immutable authoritative edit input. A worker may build and encode one
+/// chunk's complete sparse after-value without borrowing the live World.
+pub(crate) struct EditBasis {
+    key: ChunkKey,
+    chunk: Arc<Chunk>,
+    edits: BTreeMap<u16, BlockId>,
+    seed: u64,
+    storage: Storage,
+    catalog: Arc<crate::content::Catalog>,
+    revision: Arc<AtomicU64>,
+    expected_revision: u64,
+}
+
+impl EditBasis {
+    pub(crate) fn chunk(&self) -> &Chunk {
+        &self.chunk
+    }
+
+    pub(crate) fn catalog(&self) -> &crate::content::Catalog {
+        &self.catalog
+    }
+
+    pub(crate) fn prepare_sparse(&self, edits: &[(u16, BlockId)]) -> io::Result<PreparedEdit> {
+        let mut coordinates = HashSet::with_capacity(edits.len());
+        let before_edits = self.edits.clone();
+        let mut after_edits = before_edits.clone();
+        let mut after_chunk = (*self.chunk).clone();
+        after_chunk.version = 0;
+        let mut changed = false;
+        for &(cell, block) in edits {
+            let index = usize::from(cell);
+            if index >= CHUNK_VOLUME
+                || !coordinates.insert(cell)
+                || self.catalog.state(block).is_none()
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid sparse edit",
+                ));
+            }
+            let local_x = (index % CHUNK_SIZE) as i64;
+            let local_z = ((index / CHUNK_SIZE) % CHUNK_SIZE) as i64;
+            let local_y = (index / (CHUNK_SIZE * CHUNK_SIZE)) as i64;
+            let x = i64::from(self.key.x) * CHUNK_SIZE as i64 + local_x;
+            let y = i64::from(self.key.y) * CHUNK_SIZE as i64 + local_y;
+            let z = i64::from(self.key.z) * CHUNK_SIZE as i64 + local_z;
+            if y <= i64::from(BEDROCK_Y) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "world bottom is immutable",
+                ));
+            }
+            if after_chunk.blocks[index] == block {
+                continue;
+            }
+            changed = true;
+            after_chunk.blocks.set(index, block);
+            let baseline = generated_block(x, y, z, self.seed);
+            if block == baseline {
+                after_edits.remove(&cell);
+            } else {
+                after_edits.insert(cell, block);
+            }
+        }
+        let new_version = if changed {
+            self.chunk
+                .version
+                .checked_add(1)
+                .ok_or_else(|| io::Error::other("chunk version exhausted"))?
+        } else {
+            self.chunk.version
+        };
+        after_chunk.version = new_version;
+        let before_snapshot = self
+            .storage
+            .encode_snapshot(&SavedEdits {
+                version: self.chunk.version,
+                blocks: before_edits.clone(),
+            })?
+            .unwrap_or_default();
+        let after_snapshot = self
+            .storage
+            .encode_snapshot(&SavedEdits {
+                version: new_version,
+                blocks: after_edits.clone(),
+            })?
+            .unwrap_or_default();
+        Ok(PreparedEdit {
+            key: self.key,
+            expected_version: self.chunk.version,
+            new_version,
+            before_snapshot,
+            after_snapshot,
+            changed,
+            expected_revision: self.expected_revision,
+            revision: Arc::clone(&self.revision),
+            before_chunk: Arc::clone(&self.chunk),
+            before_edits,
+            after_chunk,
+            after_edits,
+        })
+    }
+}
 
 pub fn world_to_chunk(x: i32, y: i32, z: i32) -> (ChunkKey, [usize; 3]) {
     let size = CHUNK_SIZE as i32;
@@ -280,14 +385,14 @@ impl World {
     #[cfg(test)]
     pub fn get_chunk(&mut self, key: ChunkKey) -> io::Result<Chunk> {
         self.ensure_loaded(key)?;
-        Ok((*self.cache[&key].chunk).clone())
+        Ok((*self.cache[&key].read().chunk).clone())
     }
 
     /// Returns an owned snapshot only when this world already has the chunk in
     /// its authoritative cache. This method never loads or generates terrain.
     pub fn cached_chunk(&mut self, key: ChunkKey) -> Option<Chunk> {
         let entry = self.cache.get_mut_and_touch(key)?;
-        Some((*entry.chunk).clone())
+        Some((*entry.read().chunk).clone())
     }
 
     /// Borrows the already-resident authoritative chunk for a parallel read
@@ -295,7 +400,7 @@ impl World {
     /// even if a later edit replaces the cached chunk.
     pub fn cached_arc_chunk(&mut self, key: ChunkKey) -> Option<Arc<Chunk>> {
         let entry = self.cache.get_mut_and_touch(key)?;
-        Some(Arc::clone(&entry.chunk))
+        Some(Arc::clone(&entry.read().chunk))
     }
 
     /// Reads the version of an already-resident authoritative chunk without
@@ -303,7 +408,7 @@ impl World {
     /// reject worker results computed from superseded voxel snapshots.
     #[inline]
     pub fn cached_version(&self, key: ChunkKey) -> Option<u64> {
-        self.cache.get(&key).map(|entry| entry.chunk.version)
+        self.cache.get(&key).map(|entry| entry.read().chunk.version)
     }
 
     /// Resident chunk count for admission control and server telemetry.
@@ -323,7 +428,7 @@ impl World {
     #[inline]
     pub fn cached_block(&self, x: i32, y: i32, z: i32) -> Option<BlockId> {
         let (key, local) = world_to_chunk(x, y, z);
-        self.cache.get(&key)?.chunk.block(local)
+        self.cache.get(&key)?.read().chunk.block(local)
     }
 
     /// Loads and generates without consulting or mutating this world's cache.
@@ -479,8 +584,9 @@ impl World {
         }
         self.pending_snapshots.remove(&key);
         if let Some(entry) = self.cache.get_mut(&key) {
-            entry.chunk = Arc::new(loaded.chunk);
-            entry.edits = loaded.edits;
+            let mut state = entry.write();
+            state.chunk = Arc::new(loaded.chunk);
+            state.edits = loaded.edits;
         }
         Ok(())
     }
@@ -488,7 +594,7 @@ impl World {
     pub fn get_block(&mut self, x: i32, y: i32, z: i32) -> io::Result<BlockId> {
         let (key, local) = world_to_chunk(x, y, z);
         self.ensure_loaded(key)?;
-        Ok(self.cache[&key].chunk.block(local).unwrap())
+        Ok(self.cache[&key].read().chunk.block(local).unwrap())
     }
 
     /// A successful return means the changed block and version have been saved.
@@ -543,7 +649,7 @@ impl World {
         &mut self,
         edits: &[(i32, i32, i32, BlockId)],
     ) -> io::Result<Vec<PreparedEdit>> {
-        let mut grouped: HashMap<ChunkKey, Vec<LocatedEdit>> = HashMap::new();
+        let mut grouped: HashMap<ChunkKey, Vec<(u16, BlockId)>> = HashMap::new();
         let mut coordinates = HashSet::with_capacity(edits.len());
         for &(x, y, z, block) in edits {
             if self.catalog.state(block).is_none() {
@@ -565,85 +671,45 @@ impl World {
                 ));
             }
             let (key, local) = world_to_chunk(x, y, z);
-            grouped
-                .entry(key)
-                .or_default()
-                .push((x, y, z, local, block));
+            let index =
+                Chunk::index(local).expect("world_to_chunk returns local coordinates") as u16;
+            grouped.entry(key).or_default().push((index, block));
         }
 
         let mut keys: Vec<_> = grouped.keys().copied().collect();
         keys.sort_by_key(|key| (key.x, key.y, key.z));
         let mut prepared = Vec::with_capacity(keys.len());
         for key in keys {
-            let entry = self.cache.get(&key).ok_or_else(|| {
+            let basis = self.cached_edit_basis(key).ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "chunk is not in the authoritative cache",
                 )
             })?;
-            let before_edits = entry.edits.clone();
-            let mut after_edits = before_edits.clone();
-            let mut after_chunk = (*entry.chunk).clone();
-            after_chunk.version = 0;
-            let mut changed = false;
-            for &(x, y, z, local, block) in &grouped[&key] {
-                let index = Chunk::index(local).expect("world_to_chunk returns local coordinates");
-                if after_chunk.blocks[index] == block {
-                    continue;
-                }
-                changed = true;
-                // Validation used this world's frozen catalog above. The generic
-                // Chunk helper has no catalog context and is only for local views.
-                after_chunk.blocks.set(index, block);
-                let baseline = generated_block(i64::from(x), i64::from(y), i64::from(z), self.seed);
-                if block == baseline {
-                    after_edits.remove(&(index as u16));
-                } else {
-                    after_edits.insert(index as u16, block);
-                }
-            }
-            let new_version = if changed {
-                entry
-                    .chunk
-                    .version
-                    .checked_add(1)
-                    .ok_or_else(|| io::Error::other("chunk version exhausted"))?
-            } else {
-                entry.chunk.version
-            };
-            after_chunk.version = new_version;
-            let before_snapshot = self
-                .storage
-                .encode_snapshot(&SavedEdits {
-                    version: entry.chunk.version,
-                    blocks: before_edits.clone(),
-                })?
-                .unwrap_or_default();
-            let after_snapshot = self
-                .storage
-                .encode_snapshot(&SavedEdits {
-                    version: new_version,
-                    blocks: after_edits.clone(),
-                })?
-                .unwrap_or_default();
-
-            let expected_version = entry.chunk.version;
-            let (revision, expected_revision) = self.prepared_revision(key);
-            prepared.push(PreparedEdit {
-                key,
-                expected_version,
-                new_version,
-                before_snapshot,
-                after_snapshot,
-                changed,
-                expected_revision,
-                revision,
-                before_edits,
-                after_chunk,
-                after_edits,
-            });
+            prepared.push(basis.prepare_sparse(&grouped[&key])?);
         }
         Ok(prepared)
+    }
+
+    /// Freeze one resident authoritative chunk for a worker-owned edit plan.
+    /// A cache miss is explicit; no worker generates a substitute baseline.
+    pub(crate) fn cached_edit_basis(&mut self, key: ChunkKey) -> Option<Arc<EditBasis>> {
+        let entry = self.cache.get(&key)?;
+        let state = entry.read();
+        let chunk = Arc::clone(&state.chunk);
+        let edits = state.edits.clone();
+        drop(state);
+        let (revision, expected_revision) = self.prepared_revision(key);
+        Some(Arc::new(EditBasis {
+            key,
+            chunk,
+            edits,
+            seed: self.seed,
+            storage: self.storage.clone(),
+            catalog: Arc::clone(&self.catalog),
+            revision,
+            expected_revision,
+        }))
     }
 
     /// Applies a WAL-synced edit to memory without writing the BGED snapshot.
@@ -728,14 +794,16 @@ impl World {
         // reset to zero when the last load completes, even while a WAL-backed
         // edit is pending. The Arc revision above tracks actual edits across
         // eviction and is the authoritative prepared-edit invalidator.
-        if let Some(entry) = self.cache.get(&prepared.key)
-            && (entry.chunk.version != prepared.expected_version
-                || entry.edits != prepared.before_edits)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "prepared edit no longer matches the authoritative chunk",
-            ));
+        if let Some(entry) = self.cache.get(&prepared.key) {
+            let state = entry.read();
+            if state.chunk.version != prepared.expected_version
+                || state.edits != prepared.before_edits
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "prepared edit no longer matches the authoritative chunk",
+                ));
+            }
         }
         Ok(())
     }

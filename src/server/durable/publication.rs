@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::protocol::ServerMessage;
+use crate::server::fire::FireTransaction;
 use crate::server::{State, durable};
 use crate::world::ChunkKey;
 
@@ -12,8 +13,20 @@ mod tests;
 pub(super) fn apply_committed_action(
     state: &mut State,
     mut action: CommitAction,
+    entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
+    if action.entities.is_some() != entity_permit.is_some() {
+        return Err(io::Error::other(
+            "WAL-committed entity action has no checkpoint mirror reservation",
+        ));
+    }
     state.drops.validate_plan(&action.drops)?;
+    if let Some(entities) = &action.entities {
+        state
+            .entities
+            .validate_prepared(entities)
+            .map_err(io::Error::other)?;
+    }
     let world_edits = std::mem::take(&mut action.world_edits);
     let chunk_checkpoints: Vec<_> = world_edits
         .iter()
@@ -22,6 +35,24 @@ pub(super) fn apply_committed_action(
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
     state.drops.apply_plan(&action.drops)?;
+    if let (Some(entities), Some(permit)) = (action.entities.take(), entity_permit) {
+        state
+            .entities
+            .apply_committed(entities.clone())
+            .map_err(io::Error::other)?;
+        state
+            .durability
+            .entity_mirror
+            .submit_durable(permit, entities)?;
+    }
+    if let Some(seed) = action.fire_seed.take() {
+        for change in seed.changes() {
+            state
+                .durability
+                .remember_checkpoint(change.key.clone(), change.after.clone());
+        }
+        state.fire.install_seed_synced(seed)?;
+    }
 
     let mut cells_per_chunk = HashMap::<ChunkKey, usize>::new();
     for delta in &action.deltas {
@@ -116,6 +147,46 @@ pub(super) fn apply_committed_action(
     if action.profile.is_none() {
         state.durability.expire_queued = false;
         state.durability.expire_again = action.drops.changes.len() == 256;
+    }
+    Ok(())
+}
+
+/// The caller has already installed every disjoint world owner in this
+/// contiguous, WAL-synced receipt group. Keep gameplay and client effects in
+/// the original receipt order, after the complete owner-worker barrier.
+pub(super) fn publish_committed_fire_after_world(
+    state: &mut State,
+    transaction: FireTransaction,
+) -> io::Result<()> {
+    let owner = transaction.owner();
+    let changed_cells = transaction.changed_cells.clone();
+    let checkpoints: Vec<_> = transaction
+        .changes()
+        .iter()
+        .filter(|change| durable::is_checkpoint_key(&change.key))
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect();
+    state.fire.install_synced(transaction)?;
+    for (key, value) in checkpoints {
+        state.durability.remember_checkpoint(key, value);
+    }
+    if !changed_cells.is_empty() {
+        let chunk = state
+            .world
+            .cached_chunk(owner)
+            .ok_or_else(|| io::Error::other("committed fire chunk vanished before publication"))?;
+        state.pending_block_changes.extend(changed_cells);
+        state.durability.publish_queue.push(PublishEffects {
+            client_id: None,
+            profile: None,
+            action_id: None,
+            accepted: true,
+            reason: String::new(),
+            inventory: None,
+            chunks: vec![chunk],
+            deltas: Vec::new(),
+            pickups: Vec::new(),
+        });
     }
     Ok(())
 }

@@ -1,13 +1,13 @@
 use super::*;
-use crate::content::{BlockStateId, Catalog, EntityTypeDef};
+use crate::content::{BlockStateId, Catalog, EntityTypeDef, KILN_ENTITY_TYPE};
 use crate::server::entities::registry::EntityTypeRegistration;
-use crate::world::{ChunkKey, WOOD};
+use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 const DROP_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(1);
 const PLAYER_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(2);
-const KILN_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(3);
+const KILN_TYPE: crate::content::EntityTypeId = KILN_ENTITY_TYPE;
 
 struct StackPayloadCodec;
 
@@ -82,64 +82,8 @@ impl EntityPayloadCodec for AppearanceCodec {
     }
 }
 
-struct KilnCodec;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct KilnPayload {
-    facing: u8,
-    lit: bool,
-    fuel: u16,
-    progress: u32,
-    slots: [u16; 16],
-}
-
-impl EntityPayloadCodec for KilnCodec {
-    fn decode(&self, payload: &[u8]) -> Result<EntityPayload, EntityCodecError> {
-        if payload.len() != 40 || payload[0] > 3 || payload[1] > 1 {
-            return Err(EntityCodecError::InvalidData);
-        }
-        let mut slots = [0; 16];
-        for (index, slot) in payload[8..].chunks_exact(2).enumerate() {
-            slots[index] = u16::from_le_bytes(slot.try_into().unwrap());
-            if slots[index] > 128 {
-                return Err(EntityCodecError::InvalidData);
-            }
-        }
-        Ok(EntityPayload::new(KilnPayload {
-            facing: payload[0],
-            lit: payload[1] == 1,
-            fuel: u16::from_le_bytes(payload[2..4].try_into().unwrap()),
-            progress: u32::from_le_bytes(payload[4..8].try_into().unwrap()),
-            slots,
-        }))
-    }
-
-    fn encode(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityCodecError> {
-        Ok(encode_kiln(
-            payload
-                .downcast_ref::<KilnPayload>()
-                .ok_or(EntityCodecError::InvalidData)?,
-        ))
-    }
-
-    fn public_view(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityCodecError> {
-        let value = payload
-            .downcast_ref::<KilnPayload>()
-            .ok_or(EntityCodecError::InvalidData)?;
-        Ok(vec![value.facing, u8::from(value.lit)])
-    }
-}
-
 fn fixture_registry() -> Arc<EntityTypeRegistry> {
-    let mut catalog = Catalog::builtins();
-    catalog
-        .register_entity_type(EntityTypeDef {
-            id: KILN_TYPE,
-            key: "bloxgloom:kiln".into(),
-            schema_version: 1,
-            schema_fingerprint: 0x4b49_4c4e_0000_0001,
-        })
-        .unwrap();
+    let catalog = Arc::new(Catalog::builtins());
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     for (id, ownership, tick_policy, max_payload_bytes, codec) in [
         (
@@ -156,13 +100,6 @@ fn fixture_registry() -> Arc<EntityTypeRegistry> {
             4,
             Arc::new(AppearanceCodec) as Arc<dyn EntityPayloadCodec>,
         ),
-        (
-            KILN_TYPE,
-            EntityOwnership::anchored([WOOD], 8),
-            TickPolicy::Interval(20),
-            40,
-            Arc::new(KilnCodec) as Arc<dyn EntityPayloadCodec>,
-        ),
     ] {
         builder
             .register(EntityTypeRegistration {
@@ -174,6 +111,7 @@ fn fixture_registry() -> Arc<EntityTypeRegistry> {
             })
             .unwrap();
     }
+    register_kiln_entity_type(&mut builder, catalog.clone()).unwrap();
     Arc::new(builder.freeze().unwrap())
 }
 
@@ -191,32 +129,6 @@ fn encode_stack(payload: &StackPayload) -> Vec<u8> {
     bytes.extend(payload.count.to_le_bytes());
     bytes.extend((payload.components.len() as u16).to_le_bytes());
     bytes.extend(&payload.components);
-    bytes
-}
-
-fn kiln_payload(
-    facing: u8,
-    lit: bool,
-    fuel: u16,
-    progress: u32,
-    slots: [u16; 16],
-) -> EntityPayload {
-    EntityPayload::new(KilnPayload {
-        facing,
-        lit,
-        fuel,
-        progress,
-        slots,
-    })
-}
-
-fn encode_kiln(payload: &KilnPayload) -> Vec<u8> {
-    let mut bytes = vec![payload.facing, u8::from(payload.lit)];
-    bytes.extend(payload.fuel.to_le_bytes());
-    bytes.extend(payload.progress.to_le_bytes());
-    for count in payload.slots {
-        bytes.extend(count.to_le_bytes());
-    }
     bytes
 }
 
@@ -324,23 +236,474 @@ fn mobile_lifecycle_is_prepared_revisioned_and_transfers_at_owner_boundary() {
 }
 
 #[test]
-fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
-    let mut store = EntityStore::new(fixture_registry());
-    let anchor = CellCoord::new(15, -1, -1);
-    let footprint = vec![anchor, CellCoord::new(16, -1, -1)];
-    let mut slots = [0; 16];
-    slots[0] = 13;
-    let payload = kiln_payload(1, true, 600, 37, slots);
-    let prepared = store
-        .prepare_spawn(EntitySpawn::Anchored {
-            entity_type: KILN_TYPE,
-            anchor,
-            anchor_state: WOOD,
-            footprint: footprint.clone(),
-            payload: payload.clone(),
-            spawn_tick: 2,
-        })
+fn delayed_payload_receipt_merges_with_newer_checkpointed_mobile_motion() {
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    let spawn = spawn_drop(&store, [2.0, 4.0, 6.0]);
+    let id = spawn.entity_id();
+    store.apply_committed(spawn).unwrap();
+    assert_eq!(store.revision(), 1);
+
+    let payload_update = store
+        .prepare_update(
+            id,
+            1,
+            EntityPatch {
+                payload: Some(stack_payload(4, 11, &[2, 4, 6])),
+                ..Default::default()
+            },
+        )
         .unwrap();
+    assert!(
+        payload_update
+            .changes()
+            .iter()
+            .all(|change| change.key.domain != ENTITY_MOTION_DOMAIN)
+    );
+
+    let movement = store
+        .update_mobile_motion(id, 1, [2.75, 4.5, 6.25])
+        .unwrap();
+    assert!(matches!(
+        movement.deltas.as_slice(),
+        [EntityDelta::Moved(_)]
+    ));
+    assert_eq!(store.revision(), 1, "motion has its own revision domain");
+    let motion_checkpoint = encode_checkpoint(&store).unwrap();
+    let overlay = payload_update
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect::<BTreeMap<_, _>>();
+    store.validate_prepared(&payload_update).unwrap();
+    store.apply_committed(payload_update).unwrap();
+    assert_eq!(store.revision(), 2);
+    let view = store.public_view(id).unwrap();
+    assert_eq!(view.revision, 2);
+    assert_eq!(view.motion_revision, 2);
+    assert_eq!(
+        view.location,
+        EntityLocation::Mobile {
+            position: [2.75, 4.5, 6.25]
+        }
+    );
+    assert_eq!(
+        store
+            .snapshot(id)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<StackPayload>()
+            .unwrap()
+            .count,
+        11
+    );
+
+    let restored = decode_checkpoint(&encode_checkpoint(&store).unwrap(), types.clone()).unwrap();
+    let restored = restored.public_view(id).unwrap();
+    assert_eq!(restored.motion_revision, 2);
+    assert_eq!(restored.location, view.location);
+
+    let mut recovered = decode_checkpoint(&motion_checkpoint, types).unwrap();
+    assert!(recovered.apply_journal_overlay(&overlay).unwrap());
+    let recovered = recovered.public_view(id).unwrap();
+    assert_eq!(recovered.revision, 2);
+    assert_eq!(recovered.motion_revision, 2);
+    assert_eq!(recovered.location, view.location);
+    assert_eq!(recovered.payload, view.payload);
+}
+
+#[test]
+fn wal_revision_watermark_survives_despawning_highest_revision_entity() {
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    let spawn = store
+        .prepare_spawn_batch(vec![
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [1.0, 2.0, 3.0],
+                payload: stack_payload(4, 1, &[]),
+                spawn_tick: 1,
+            },
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [4.0, 5.0, 6.0],
+                payload: stack_payload(4, 1, &[]),
+                spawn_tick: 1,
+            },
+        ])
+        .unwrap();
+    assert_eq!(
+        spawn
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == ENTITY_REVISION_DOMAIN)
+            .count(),
+        1
+    );
+    store.apply_committed(spawn).unwrap();
+    let checkpoint = encode_checkpoint(&store).unwrap();
+
+    let removed = EntityId::new(2).unwrap();
+    let despawn = store.prepare_despawn(removed, 1).unwrap();
+    let overlay = despawn
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect::<BTreeMap<_, _>>();
+    store.apply_committed(despawn).unwrap();
+    assert_eq!(store.revision(), 2);
+    assert_eq!(store.len(), 1);
+
+    let mut recovered = decode_checkpoint(&checkpoint, types).unwrap();
+    assert!(recovered.apply_journal_overlay(&overlay).unwrap());
+    assert_eq!(recovered.revision(), 2);
+    assert_eq!(recovered.durable_sequence(), 2);
+    assert_eq!(recovered.durable_global_revision(), 2);
+    assert_eq!(recovered.len(), 1);
+}
+
+#[test]
+fn spawn_batch_uses_one_allocator_and_coalesces_spatial_page_changes() {
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    let checkpoint = encode_checkpoint(&store).unwrap();
+    let transaction = store
+        .prepare_spawn_batch(vec![
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [1.0, 2.0, 3.0],
+                payload: stack_payload(4, 1, &[]),
+                spawn_tick: 1,
+            },
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [1.5, 2.0, 3.0],
+                payload: stack_payload(4, 2, &[]),
+                spawn_tick: 1,
+            },
+            EntitySpawn::Mobile {
+                entity_type: PLAYER_TYPE,
+                position: [2.0, 2.0, 3.0],
+                payload: EntityPayload::new([1u8, 2, 3, 4]),
+                spawn_tick: 1,
+            },
+        ])
+        .unwrap();
+    let ids = transaction.entity_ids();
+    assert_eq!(ids.iter().map(|id| id.get()).collect::<Vec<_>>(), [1, 2, 3]);
+    assert_eq!(
+        transaction
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == "bloxgloom:entity_allocator")
+            .count(),
+        1
+    );
+    assert_eq!(
+        transaction
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == "bloxgloom:entity_chunk")
+            .count(),
+        1
+    );
+    assert_eq!(
+        transaction
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == ENTITY_MOTION_DOMAIN)
+            .count(),
+        3
+    );
+    let overlay = transaction
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    let commit = store.apply_committed(transaction).unwrap();
+    assert_eq!(commit.deltas.len(), 3);
+    assert_eq!(store.next_id(), 4);
+    assert_eq!(store.ids_for_chunk(ChunkKey { x: 0, y: 0, z: 0 }), ids);
+    assert_eq!(
+        store
+            .public_views_for_chunk(ChunkKey { x: 0, y: 0, z: 0 })
+            .len(),
+        3
+    );
+
+    let mut replayed = decode_checkpoint(&checkpoint, types).unwrap();
+    assert!(replayed.apply_journal_overlay(&overlay).unwrap());
+    assert_eq!(replayed.next_id(), 4);
+    assert_eq!(replayed.ids_for_chunk(ChunkKey { x: 0, y: 0, z: 0 }), ids);
+}
+
+#[test]
+fn spawn_batch_rejects_oversized_wal_before_reserving_ids() {
+    let mut store = EntityStore::new(fixture_registry());
+    let payload = vec![7; 1_024];
+    let spawns = (0..1_024)
+        .map(|index| EntitySpawn::Mobile {
+            entity_type: DROP_TYPE,
+            position: [index as f32, 1.0, 1.0],
+            payload: stack_payload(4, 1, &payload),
+            spawn_tick: 1,
+        })
+        .collect();
+    assert_eq!(
+        store.prepare_spawn_batch(spawns).unwrap_err(),
+        EntityError::TransactionTooLarge
+    );
+    assert_eq!(store.len(), 0);
+    assert_eq!(store.next_id(), 1);
+}
+
+#[test]
+fn mixed_entity_batch_coalesces_updates_transfer_despawn_and_spawn_atomically() {
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    let initial = store
+        .prepare_spawn_batch(vec![
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [2.0, 4.0, 6.0],
+                payload: stack_payload(4, 7, &[1]),
+                spawn_tick: 10,
+            },
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [15.5, 4.0, 6.0],
+                payload: stack_payload(4, 8, &[2]),
+                spawn_tick: 10,
+            },
+            EntitySpawn::Mobile {
+                entity_type: DROP_TYPE,
+                position: [3.0, 4.0, 6.0],
+                payload: stack_payload(4, 9, &[3]),
+                spawn_tick: 10,
+            },
+        ])
+        .unwrap();
+    store.apply_committed(initial).unwrap();
+    let checkpoint = encode_checkpoint(&store).unwrap();
+
+    let update = store
+        .prepare_update(
+            EntityId::new(1).unwrap(),
+            1,
+            EntityPatch {
+                payload: Some(stack_payload(4, 12, &[1])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let transfer = store
+        .prepare_transfer(EntityId::new(2).unwrap(), 1, [16.25, 4.0, 6.0])
+        .unwrap();
+    let despawn = store.prepare_despawn(EntityId::new(3).unwrap(), 1).unwrap();
+    let spawn = store
+        .prepare_spawn_batch(vec![EntitySpawn::Mobile {
+            entity_type: DROP_TYPE,
+            position: [16.5, 4.0, 6.0],
+            payload: stack_payload(4, 10, &[4]),
+            spawn_tick: 11,
+        }])
+        .unwrap();
+    let batch = store
+        .combine_prepared(vec![update, transfer, despawn, spawn])
+        .unwrap();
+    assert_eq!(
+        batch.entity_ids(),
+        (1..=4)
+            .map(|id| EntityId::new(id).unwrap())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        batch
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == "bloxgloom:entity_allocator")
+            .count(),
+        1
+    );
+    assert_eq!(
+        batch
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == "bloxgloom:entity_chunk")
+            .count(),
+        2
+    );
+    let keys: BTreeSet<_> = batch
+        .changes()
+        .iter()
+        .map(|change| change.key.clone())
+        .collect();
+    assert_eq!(keys.len(), batch.changes().len());
+
+    // A checkpoint-owned motion update after prepare must survive the delayed
+    // payload receipt in the combined WAL batch.
+    store
+        .update_mobile_motion(EntityId::new(1).unwrap(), 1, [2.75, 4.5, 6.25])
+        .unwrap();
+    store.validate_prepared(&batch).unwrap();
+    let overlay = batch
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let commit = store.apply_committed(batch).unwrap();
+    assert_eq!(commit.deltas.len(), 4);
+    assert_eq!(store.len(), 3);
+    assert_eq!(store.next_id(), 5);
+    assert_eq!(
+        store.owner(EntityId::new(2).unwrap()),
+        Some(EntityOwner::Mobile(ChunkKey { x: 1, y: 0, z: 0 }))
+    );
+    assert_eq!(store.public_view(EntityId::new(3).unwrap()), None);
+    assert_eq!(
+        store
+            .public_view(EntityId::new(1).unwrap())
+            .unwrap()
+            .location,
+        EntityLocation::Mobile {
+            position: [2.75, 4.5, 6.25]
+        }
+    );
+    assert_eq!(
+        store
+            .snapshot(EntityId::new(1).unwrap())
+            .unwrap()
+            .private_payload
+            .downcast_ref::<StackPayload>()
+            .unwrap()
+            .count,
+        12
+    );
+
+    let mut replayed = decode_checkpoint(&checkpoint, types).unwrap();
+    assert!(replayed.apply_journal_overlay(&overlay).unwrap());
+    assert_eq!(replayed.len(), 3);
+    assert_eq!(replayed.next_id(), 5);
+    assert_eq!(replayed.public_view(EntityId::new(3).unwrap()), None);
+    assert_eq!(
+        replayed
+            .public_view(EntityId::new(1).unwrap())
+            .unwrap()
+            .location,
+        EntityLocation::Mobile {
+            position: [2.0, 4.0, 6.0]
+        }
+    );
+}
+
+#[test]
+fn owner_transfer_fences_motion_and_wal_replay_merges_by_motion_revision() {
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    let spawn = spawn_drop(&store, [15.5, -0.5, -0.5]);
+    let id = spawn.entity_id();
+    store.apply_committed(spawn).unwrap();
+    store
+        .update_mobile_motion(id, 1, [15.75, -0.5, -0.5])
+        .unwrap();
+
+    let before_transfer = encode_checkpoint(&store).unwrap();
+    let transfer = store.prepare_transfer(id, 1, [16.25, -0.5, -0.5]).unwrap();
+    assert!(
+        transfer
+            .changes()
+            .iter()
+            .any(|change| change.key.domain == ENTITY_MOTION_DOMAIN)
+    );
+    assert_eq!(
+        store.update_mobile_motion(id, 2, [15.9, -0.5, -0.5]),
+        Err(EntityError::MotionFenced)
+    );
+    let mut mirror = decode_checkpoint(&before_transfer, types.clone()).unwrap();
+    mirror.apply_committed_mirror(transfer.clone()).unwrap();
+    assert_eq!(
+        mirror.owner(id),
+        Some(EntityOwner::Mobile(ChunkKey { x: 1, y: -1, z: -1 }))
+    );
+
+    let mut stale_mirror = decode_checkpoint(&before_transfer, types.clone()).unwrap();
+    stale_mirror
+        .update_mobile_motion(id, 2, [15.9, -0.5, -0.5])
+        .unwrap();
+    assert!(matches!(
+        stale_mirror.apply_committed_mirror(transfer.clone()),
+        Err(EntityError::StaleMotionRevision { .. })
+    ));
+    assert_eq!(
+        stale_mirror.owner(id),
+        Some(EntityOwner::Mobile(ChunkKey { x: 0, y: -1, z: -1 }))
+    );
+    let overlay = transfer
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut replayed = decode_checkpoint(&before_transfer, types.clone()).unwrap();
+    assert!(replayed.apply_journal_overlay(&overlay).unwrap());
+    assert_eq!(
+        replayed.owner(id),
+        Some(EntityOwner::Mobile(ChunkKey { x: 1, y: -1, z: -1 }))
+    );
+    assert_eq!(
+        replayed.public_view(id).unwrap().location,
+        EntityLocation::Mobile {
+            position: [16.25, -0.5, -0.5]
+        }
+    );
+
+    store.apply_committed(transfer).unwrap();
+    store
+        .update_mobile_motion(id, 3, [16.5, -0.5, -0.5])
+        .unwrap();
+    let later_checkpoint = encode_checkpoint(&store).unwrap();
+    let mut recovered = decode_checkpoint(&later_checkpoint, types).unwrap();
+    assert!(!recovered.apply_journal_overlay(&overlay).unwrap());
+    assert_eq!(
+        recovered.public_view(id).unwrap().location,
+        EntityLocation::Mobile {
+            position: [16.5, -0.5, -0.5]
+        }
+    );
+    assert_eq!(recovered.public_view(id).unwrap().motion_revision, 4);
+}
+
+#[test]
+fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
+    let catalog = Catalog::builtins();
+    let mut store = EntityStore::new(fixture_registry());
+    assert!(matches!(
+        store.types().descriptor(KILN_TYPE).unwrap().ownership(),
+        EntityOwnership::Anchored { .. }
+    ));
+    let anchor = CellCoord::new(-1, 15, -1);
+    let mut payload = KilnPayload::new(KilnFacing::East);
+    payload = plan_insert(
+        &payload,
+        KilnSlot::Input,
+        &crate::inventory::Stack::new(crate::items::ItemId(4), 13),
+        &catalog,
+    )
+    .unwrap()
+    .payload;
+    payload = plan_insert(
+        &payload,
+        KilnSlot::Fuel,
+        &crate::inventory::Stack::new(crate::items::ItemId(9), 1),
+        &catalog,
+    )
+    .unwrap()
+    .payload;
+    let spawn = payload.clone().spawn(anchor, 2, &catalog).unwrap();
+    let footprint = kiln_footprint(anchor).unwrap();
+    assert_eq!(footprint, vec![anchor, CellCoord::new(-1, 16, -1)]);
+    let prepared = store.prepare_spawn(spawn).unwrap();
     let id = prepared.entity_id();
     assert!(
         prepared
@@ -349,14 +712,17 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
             .any(|change| change.key.domain == "bloxgloom:entity_cell")
     );
     store.apply_committed(prepared).unwrap();
-    let left = ChunkKey { x: 0, y: -1, z: -1 };
-    let right = ChunkKey { x: 1, y: -1, z: -1 };
-    for chunk in [left, right] {
+    let lower = ChunkKey { x: -1, y: 0, z: -1 };
+    let upper = ChunkKey { x: -1, y: 1, z: -1 };
+    for chunk in [lower, upper] {
         let views = store.public_views_for_chunk(chunk);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, id);
-        assert_eq!(views[0].payload, [1, 1]);
-        assert!(!views[0].payload.windows(2).any(|window| window == [88, 2]));
+        assert_eq!(views[0].payload.len(), 3);
+        assert_eq!(views[0].payload[0], 1);
+        assert_eq!(views[0].payload[1], 0);
+        assert_eq!(views[0].payload[2], 0);
+        assert!(!views[0].payload.windows(2).any(|window| window == [4, 0]));
     }
     assert_eq!(
         store
@@ -364,23 +730,15 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
             .unwrap()
             .private_payload
             .downcast_ref::<KilnPayload>(),
-        Some(&KilnPayload {
-            facing: 1,
-            lit: true,
-            fuel: 600,
-            progress: 37,
-            slots,
-        })
+        Some(&payload)
     );
 
-    let overlap = store.prepare_spawn(EntitySpawn::Anchored {
-        entity_type: KILN_TYPE,
-        anchor: CellCoord::new(16, -1, -1),
-        anchor_state: WOOD,
-        footprint: vec![CellCoord::new(16, -1, -1)],
-        payload: kiln_payload(0, false, 0, 0, [0; 16]),
-        spawn_tick: 3,
-    });
+    let overlap_anchor = CellCoord::new(-1, 16, -1);
+    let overlap = store.prepare_spawn(
+        KilnPayload::new(KilnFacing::North)
+            .spawn(overlap_anchor, 3, &catalog)
+            .unwrap(),
+    );
     assert!(matches!(overlap, Err(EntityError::FootprintOverlap(_))));
 
     let remove = store.prepare_despawn(id, 1).unwrap();
@@ -393,8 +751,8 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
         2
     );
     store.apply_committed(remove).unwrap();
-    assert!(store.public_views_for_chunk(left).is_empty());
-    assert!(store.public_views_for_chunk(right).is_empty());
+    assert!(store.public_views_for_chunk(lower).is_empty());
+    assert!(store.public_views_for_chunk(upper).is_empty());
 }
 
 #[test]
@@ -421,11 +779,11 @@ fn checkpoint_round_trip_rebuilds_indexes_and_rejects_corruption_or_unknown_type
         Err(EntityError::CorruptCheckpoint)
     ));
 
-    // BGEN header (34 bytes), value length (4 bytes), then BGER type ID at +14.
+    // BGEN v3 header (50 bytes), value length (4 bytes), then BGER type ID at +14.
     let mut unknown = encoded;
-    let record_start = 38;
+    let record_start = 54;
     unknown[record_start + 14..record_start + 18].copy_from_slice(&99u32.to_le_bytes());
-    let record_len = u32::from_le_bytes(unknown[34..38].try_into().unwrap()) as usize;
+    let record_len = u32::from_le_bytes(unknown[50..54].try_into().unwrap()) as usize;
     let record_end = record_start + record_len;
     let record_crc = super::codec::crc32(&unknown[record_start..record_end - 4]);
     unknown[record_end - 4..record_end].copy_from_slice(&record_crc.to_le_bytes());
@@ -484,28 +842,27 @@ fn a_frozen_type_registry_requires_every_catalogued_type_and_valid_anchor_schema
         Err(EntityError::MissingTypeRegistration(PLAYER_TYPE))
     ));
 
-    assert!(
-        catalog
-            .register_entity_type(EntityTypeDef {
-                id: KILN_TYPE,
-                key: "bloxgloom:kiln".into(),
-                schema_version: 1,
-                schema_fingerprint: 1,
-            })
-            .is_ok()
-    );
+    const TEST_ANCHORED_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(4);
+    catalog
+        .register_entity_type(EntityTypeDef {
+            id: TEST_ANCHORED_TYPE,
+            key: "test:anchored".into(),
+            schema_version: 1,
+            schema_fingerprint: 1,
+        })
+        .unwrap();
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     let bad_states = BTreeSet::from([BlockStateId(1_000_000)]);
     assert_eq!(
         builder.register(EntityTypeRegistration {
-            id: KILN_TYPE,
+            id: TEST_ANCHORED_TYPE,
             ownership: EntityOwnership::Anchored {
                 compatible_anchor_states: bad_states,
                 max_footprint_cells: 2,
             },
             tick_policy: TickPolicy::Never,
             max_payload_bytes: 40,
-            codec: Arc::new(KilnCodec),
+            codec: Arc::new(AppearanceCodec),
         }),
         Err(EntityError::InvalidType)
     );

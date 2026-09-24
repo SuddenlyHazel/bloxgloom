@@ -1,4 +1,5 @@
 //! Bounded world drop snapshots and deterministic pickup candidates.
+mod entity;
 mod expiry;
 pub(in crate::server) mod journal;
 mod persistence;
@@ -6,6 +7,7 @@ mod physics;
 mod planning;
 mod spatial;
 
+pub(super) use entity::{DropEntityPayload, register_entity_type};
 pub(super) use planning::DropPlan;
 
 #[cfg(test)]

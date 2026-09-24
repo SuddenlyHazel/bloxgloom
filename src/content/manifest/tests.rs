@@ -114,6 +114,20 @@ fn builtin_state_and_entity_identities_are_in_manifest() {
 }
 
 #[test]
+fn resolving_builtin_catalog_preserves_lit_kiln_compiled_state() {
+    let local = Catalog::builtins();
+    let manifest = ContentManifest::from_catalog(&local);
+    let resolved = manifest.resolve_catalog(&local).unwrap();
+    let lit_kiln = BlockStateId(super::super::KILN_DEFAULT_STATE.0 + 1);
+    let local_state = local.state(lit_kiln).unwrap();
+    let resolved_state = resolved.state(lit_kiln).unwrap();
+    assert_eq!(resolved_state.emission, 12);
+    assert_eq!(resolved_state.textures.side, local_state.textures.side);
+    assert_eq!(resolved_state.face_textures, local_state.face_textures);
+    assert_eq!(ContentManifest::from_catalog(&resolved), manifest);
+}
+
+#[test]
 fn connection_catalog_resolves_server_ids_from_matching_local_keys() {
     let local = Catalog::builtins();
     let mut server = ContentManifest::from_catalog(&local);

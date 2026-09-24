@@ -10,12 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::content::{Catalog, ContentManifest, MAX_MANIFEST_BYTES};
 use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, TERRAIN_GENERATOR_VERSION};
 
-pub mod legacy;
-
 const MAGIC: &[u8; 4] = b"BGED";
 // BGED v3: magic[4], format u16, terrain generator u16, seed u64,
 // revision u64, count u16, sorted `(cell_index u16, state_id u32)` records,
-// FNV-1a checksum u32. v4 BGED v2 is only accepted by the offline converter.
+// FNV-1a checksum u32. Older formats are rejected, never upgraded in place.
 const FORMAT_VERSION: u16 = 3;
 const HEADER_LEN: usize = 4 + 2 + 2 + 8 + 8 + 2;
 const MAX_SNAPSHOT_BYTES: usize = HEADER_LEN + CHUNK_VOLUME * 6 + 4;
@@ -38,8 +36,8 @@ pub struct Storage {
     root: PathBuf,
     seed: u64,
     catalog: Arc<Catalog>,
-    // Clones share one open lock descriptor; an active server must exclude
-    // offline conversion and a second writer for the entire world lifetime.
+    // Clones share one open lock descriptor; a second writer is excluded for
+    // the entire world lifetime.
     _world_lock: Arc<File>,
 }
 
@@ -66,6 +64,31 @@ impl Storage {
                 "incomplete conversion stage cannot be opened as a world",
             ));
         }
+        let metadata_path = root.join(WORLD_META);
+        // Reject an incompatible existing world before creating even the lock
+        // file. Re-read under the lock below to guard against concurrent edits.
+        match read_world_metadata(&metadata_path) {
+            Ok(saved_seed) if saved_seed != seed => {
+                return Err(invalid_data("world directory belongs to another seed"));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                if root.exists() {
+                    for entry in fs::read_dir(&root)? {
+                        if entry?
+                            .path()
+                            .extension()
+                            .is_some_and(|extension| extension == "bged")
+                        {
+                            return Err(invalid_data(
+                                "old world edits require a supported save format; no automatic upgrade",
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(error) => return Err(error),
+        }
         fs::create_dir_all(&root)?;
         if root.join(CONVERSION_INCOMPLETE).exists() {
             return Err(invalid_data("world conversion is incomplete"));
@@ -74,6 +97,7 @@ impl Storage {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(root.join(WORLD_LOCK))?;
         world_lock.try_lock().map_err(|error| {
             io::Error::new(
@@ -81,22 +105,8 @@ impl Storage {
                 format!("world is already open by another writer: {error}"),
             )
         })?;
-        let metadata_path = root.join(WORLD_META);
-        let catalog = match File::open(&metadata_path) {
-            Ok(file) => {
-                let mut bytes = Vec::new();
-                file.take(17).read_to_end(&mut bytes)?;
-                if bytes.len() != 16 || &bytes[..4] != WORLD_MAGIC {
-                    return Err(invalid_data("invalid world metadata"));
-                }
-                let save_version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
-                let generator_version = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
-                if save_version != SAVE_FORMAT_VERSION
-                    || generator_version != TERRAIN_GENERATOR_VERSION
-                {
-                    return Err(invalid_data("incompatible terrain generator version"));
-                }
-                let saved_seed = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        let catalog = match read_world_metadata(&metadata_path) {
+            Ok(saved_seed) => {
                 if saved_seed != seed {
                     return Err(invalid_data("world directory belongs to another seed"));
                 }
@@ -111,7 +121,7 @@ impl Storage {
                         .is_some_and(|extension| extension == "bged")
                     {
                         return Err(invalid_data(
-                            "legacy world edits require a compatible terrain generator",
+                            "old world edits require a supported save format; no automatic upgrade",
                         ));
                     }
                 }
@@ -324,6 +334,28 @@ impl Storage {
         }
         result
     }
+}
+
+fn read_world_metadata(path: &Path) -> io::Result<u64> {
+    let mut bytes = Vec::new();
+    File::open(path)?.take(17).read_to_end(&mut bytes)?;
+    if bytes.len() == 14 && &bytes[..4] == WORLD_MAGIC {
+        return Err(invalid_data(
+            "unsupported old save format; no automatic upgrade",
+        ));
+    }
+    if bytes.len() != 16 || &bytes[..4] != WORLD_MAGIC {
+        return Err(invalid_data("invalid world metadata"));
+    }
+    if u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != SAVE_FORMAT_VERSION {
+        return Err(invalid_data(
+            "unsupported save format; no automatic upgrade",
+        ));
+    }
+    if u16::from_le_bytes(bytes[6..8].try_into().unwrap()) != TERRAIN_GENERATOR_VERSION {
+        return Err(invalid_data("incompatible terrain generator version"));
+    }
+    Ok(u64::from_le_bytes(bytes[8..16].try_into().unwrap()))
 }
 
 #[cfg(test)]

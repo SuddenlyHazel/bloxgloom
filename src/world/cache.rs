@@ -2,18 +2,36 @@
 
 use std::collections::HashMap;
 use std::ops::Index;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{BlockId, Chunk, ChunkKey};
 
-pub(super) struct CacheEntry {
-    // Readers of an active simulation phase retain this allocation while a
-    // later edit replaces the resident version. No full chunk copy is needed
-    // just to hand immutable terrain to a worker.
+pub(super) struct OwnerState {
     pub(super) chunk: Arc<Chunk>,
     pub(super) edits: std::collections::BTreeMap<u16, BlockId>,
+}
+
+pub(super) struct CacheEntry {
+    // Each resident owner has its own short critical section. Fire apply
+    // workers mutate disjoint slots after WAL sync; the cache's LRU metadata
+    // remains coordinator-owned and is never locked by those workers.
+    pub(super) state: Arc<RwLock<OwnerState>>,
     previous: Option<usize>,
     next: Option<usize>,
+}
+
+impl CacheEntry {
+    pub(super) fn read(&self) -> RwLockReadGuard<'_, OwnerState> {
+        self.state
+            .read()
+            .expect("authoritative owner state poisoned; restart is required")
+    }
+
+    pub(super) fn write(&self) -> RwLockWriteGuard<'_, OwnerState> {
+        self.state
+            .write()
+            .expect("authoritative owner state poisoned; restart is required")
+    }
 }
 
 /// The key map provides direct resident lookup; the slot links maintain exact
@@ -43,6 +61,10 @@ impl ChunkCache {
 
     pub(super) fn len(&self) -> usize {
         self.indices.len()
+    }
+
+    pub(super) fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub(super) fn contains_key(&self, key: &ChunkKey) -> bool {
@@ -79,8 +101,7 @@ impl ChunkCache {
             let entry = self.slots[slot]
                 .as_mut()
                 .expect("cache index must point to an occupied slot");
-            entry.chunk = chunk;
-            entry.edits = edits;
+            *entry.write() = OwnerState { chunk, edits };
             self.touch_slot(slot);
             return;
         }
@@ -91,8 +112,7 @@ impl ChunkCache {
 
         let slot = if let Some(slot) = self.free_slots.pop() {
             self.slots[slot] = Some(CacheEntry {
-                chunk,
-                edits,
+                state: Arc::new(RwLock::new(OwnerState { chunk, edits })),
                 previous: None,
                 next: None,
             });
@@ -100,8 +120,7 @@ impl ChunkCache {
         } else {
             let slot = self.slots.len();
             self.slots.push(Some(CacheEntry {
-                chunk,
-                edits,
+                state: Arc::new(RwLock::new(OwnerState { chunk, edits })),
                 previous: None,
                 next: None,
             }));
@@ -128,6 +147,7 @@ impl ChunkCache {
         let key = self.slots[slot]
             .as_ref()
             .expect("oldest cache slot must be occupied")
+            .read()
             .chunk
             .key;
         self.remove(&key);

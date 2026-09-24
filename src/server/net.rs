@@ -26,6 +26,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 mod reactor;
+pub(in crate::server) use reactor::{TransportSnapshot, TransportStats};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const JOIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -98,8 +99,17 @@ impl ContentHandshake {
 }
 
 /// Runs the fixed-thread nonblocking socket reactor alongside the coordinator.
-pub(super) fn serve_listener(listener: TcpListener, state: State) -> io::Result<()> {
+pub(super) fn serve_listener(listener: TcpListener, state: Box<State>) -> io::Result<()> {
     reactor::serve_listener(listener, state)
+}
+
+pub(in crate::server) fn serve_listener_with_stats(
+    listener: TcpListener,
+    state: Box<State>,
+    stop: std::sync::mpsc::Receiver<()>,
+    stats: Arc<TransportStats>,
+) -> io::Result<()> {
+    reactor::serve_listener_with_stats(listener, state, stop, stats)
 }
 
 #[cfg(test)]

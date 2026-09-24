@@ -45,34 +45,60 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
             }
         }
-        Some("migrate-v4") => {
-            let usage =
-                "usage: migrate-v4 <source-world-v4> <destination-world-v5> --source-stopped";
-            let source = args.next().ok_or(usage)?;
-            let destination = args.next().ok_or(usage)?;
-            if args.next().as_deref() != Some("--source-stopped") || args.next().is_some() {
-                return Err(usage.into());
-            }
-            let report = server::migration::migrate_v4(source, destination, true)?;
-            println!(
-                "converted {} source files: {} edited chunks, {} inventories, {} drops, {} closed legacy action receipts",
-                report.source_files,
-                report.edited_chunks,
-                report.inventories,
-                report.drops,
-                report.legacy_action_receipts,
-            );
-        }
         Some("server-perf") => {
-            let steady_ticks = args
-                .next()
-                .map(|value| value.parse::<usize>())
-                .transpose()?
-                .unwrap_or(300);
-            if args.next().is_some() {
-                return Err("usage: server-perf [steady-ticks (min 300)]".into());
+            let first = args.next();
+            if first.as_deref() == Some("tcp") {
+                let mut clients = None;
+                let mut ticks = None;
+                let mut scene = None;
+                while let Some(flag) = args.next() {
+                    let value = args.next().ok_or("missing TCP benchmark option value")?;
+                    match flag.as_str() {
+                        "--clients" if clients.is_none() => clients = Some(value.parse::<usize>()?),
+                        "--ticks" if ticks.is_none() => ticks = Some(value.parse::<usize>()?),
+                        "--scene" if scene.is_none() => scene = Some(value),
+                        _ => return Err(
+                            "usage: server-perf tcp --clients N --ticks N --scene clustered|spread"
+                                .into(),
+                        ),
+                    }
+                }
+                server::run_tcp_perf(
+                    clients.ok_or("missing --clients")?,
+                    ticks.ok_or("missing --ticks")?,
+                    scene.as_deref().ok_or("missing --scene")?,
+                )?;
+            } else if first.as_deref() == Some("fire-cpu") {
+                let mut workers = None;
+                let mut iterations = None;
+                while let Some(flag) = args.next() {
+                    let value = args.next().ok_or("missing fire-cpu option value")?;
+                    match flag.as_str() {
+                        "--workers" if workers.is_none() => workers = Some(value.parse::<usize>()?),
+                        "--iterations" if iterations.is_none() => {
+                            iterations = Some(value.parse::<usize>()?)
+                        }
+                        _ => {
+                            return Err(
+                                "usage: server-perf fire-cpu --workers N --iterations N".into()
+                            );
+                        }
+                    }
+                }
+                server::run_fire_cpu_perf(
+                    workers.ok_or("missing --workers")?,
+                    iterations.ok_or("missing --iterations")?,
+                )?;
+            } else {
+                let steady_ticks = first
+                    .map(|value| value.parse::<usize>())
+                    .transpose()?
+                    .unwrap_or(300);
+                if args.next().is_some() {
+                    return Err("usage: server-perf [steady-ticks (min 300)]".into());
+                }
+                server::run_perf_benchmark(steady_ticks)?;
             }
-            server::run_perf_benchmark(steady_ticks)?;
         }
         Some("client") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
@@ -163,7 +189,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::run_perf_benchmark(steady_frames, radius, bounced)?;
         }
         Some(other) => {
-            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `migrate-v4 <source> <destination> --source-stopped`, `server-perf [steady-ticks]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
+            return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `server-perf [steady-ticks]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());
         }
     }
     Ok(())

@@ -8,6 +8,7 @@ use crate::protocol::{self, ServerMessage};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::time::{Duration, Instant};
 
 pub(super) const OUTBOUND_FRAME_CAPACITY: usize = 128;
 pub(super) const OUTBOUND_CLIENT_BYTE_CAPACITY: u64 = 2 * 1024 * 1024;
@@ -18,6 +19,8 @@ pub(super) struct OutboundTelemetry {
     queued_messages: AtomicU64,
     sent_bytes: AtomicU64,
     rejections: AtomicU64,
+    max_queued_bytes: AtomicU64,
+    max_client_queued_bytes: AtomicU64,
     aggregate_byte_limit: u64,
 }
 
@@ -27,6 +30,8 @@ pub(super) struct OutboundSnapshot {
     pub queued_messages: u64,
     pub sent_bytes: u64,
     pub rejections: u64,
+    pub max_queued_bytes: u64,
+    pub max_client_queued_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -48,6 +53,8 @@ impl OutboundTelemetry {
             queued_messages: AtomicU64::new(0),
             sent_bytes: AtomicU64::new(0),
             rejections: AtomicU64::new(0),
+            max_queued_bytes: AtomicU64::new(0),
+            max_client_queued_bytes: AtomicU64::new(0),
             aggregate_byte_limit,
         }
     }
@@ -89,6 +96,8 @@ impl OutboundTelemetry {
             queued_messages: self.queued_messages.load(Ordering::Relaxed),
             sent_bytes: self.sent_bytes.load(Ordering::Relaxed),
             rejections: self.rejections.load(Ordering::Relaxed),
+            max_queued_bytes: self.max_queued_bytes.load(Ordering::Relaxed),
+            max_client_queued_bytes: self.max_client_queued_bytes.load(Ordering::Relaxed),
         }
     }
 }
@@ -151,6 +160,14 @@ impl OutboundQueue {
         self.telemetry
             .queued_messages
             .fetch_add(1, Ordering::Relaxed);
+        self.telemetry.max_queued_bytes.fetch_max(
+            self.telemetry.queued_bytes.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.telemetry.max_client_queued_bytes.fetch_max(
+            self.client.queued_bytes.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
 
         let frame = OutboundFrame {
             message: Some(message),
@@ -158,6 +175,7 @@ impl OutboundQueue {
             client: Some(Arc::clone(&self.client)),
             bytes,
             reserved: true,
+            queued_at: Instant::now(),
         };
         match self.sender.try_send(frame) {
             Ok(()) => Ok(()),
@@ -187,6 +205,7 @@ pub(super) struct OutboundFrame {
     client: Option<Arc<ClientQueueTelemetry>>,
     bytes: u64,
     reserved: bool,
+    queued_at: Instant,
 }
 
 impl OutboundFrame {
@@ -200,6 +219,10 @@ impl OutboundFrame {
         self.telemetry
             .sent_bytes
             .fetch_add(self.bytes, Ordering::Relaxed);
+    }
+
+    pub(super) fn age(&self) -> Duration {
+        self.queued_at.elapsed()
     }
 
     #[cfg(test)]

@@ -22,6 +22,12 @@ pub(in crate::server) fn action_changes(
             ));
         }
     }
+    if let Some(seed) = &action.fire_seed {
+        changes.extend_from_slice(seed.changes());
+    }
+    if let Some(entities) = &action.entities {
+        changes.extend_from_slice(entities.changes());
+    }
     if let Some(inventory) = &action.inventory {
         let profile = action
             .profile
@@ -150,6 +156,9 @@ pub(in crate::server) fn is_checkpoint_key(key: &StateKey) -> bool {
             | "bloxgloom:inventory"
             | "bloxgloom:drops_snapshot"
             | "bloxgloom:action_ledger"
+            | "bloxgloom:fire_frontier"
+            | "bloxgloom:fire_pending"
+            | "bloxgloom:fire_cursor"
     )
 }
 

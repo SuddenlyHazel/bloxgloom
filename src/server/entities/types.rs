@@ -192,10 +192,20 @@ impl EntityOwner {
 pub struct EntityPublicView {
     pub id: EntityId,
     pub entity_type: EntityTypeId,
+    /// Revision of WAL-owned identity, payload, schedule, owner, and structure.
     pub revision: u64,
+    /// Revision of checkpointed mobile position; zero for anchored entities.
+    pub motion_revision: u64,
     pub owner: EntityOwner,
     pub location: EntityLocation,
     pub payload: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EntityMotionSnapshot {
+    pub id: EntityId,
+    pub revision: u64,
+    pub position: [f32; 3],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -223,6 +233,11 @@ pub enum EntityError {
         expected: u64,
         actual: Option<u64>,
     },
+    StaleMotionRevision {
+        id: EntityId,
+        expected: u64,
+        actual: Option<u64>,
+    },
     InvalidPayload,
     CodecRejected,
     PayloadTooLarge,
@@ -232,10 +247,12 @@ pub enum EntityError {
     ChunkReferenceBudgetExceeded(ChunkKey),
     TooManyEntities,
     TooManyTransactionChanges,
+    TransactionTooLarge,
     InvalidTransaction,
     ConflictingTransactionKey,
     NoChanges,
     TransferRequired,
+    MotionFenced,
     NotTransfer,
     RevisionExhausted,
     IdExhausted,

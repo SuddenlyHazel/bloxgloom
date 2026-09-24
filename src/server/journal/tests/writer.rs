@@ -144,3 +144,70 @@ fn wal_reservation_accounts_for_queued_frames_before_the_worker_sees_them() {
     assert_eq!(writer.bytes(), FILE_HEADER_LEN as u64);
     writer.shutdown().unwrap();
 }
+
+#[test]
+fn independent_record_batch_has_one_admission_and_individual_receipts() {
+    let dir = TestDir::new();
+    let writer = Journal::open(dir.file())
+        .unwrap()
+        .into_writer(1, Duration::ZERO)
+        .unwrap();
+    let transactions = (1u128..=4)
+        .map(|id| {
+            Transaction::new(
+                id,
+                10,
+                vec![Change::new(
+                    StateKey::new("bloxgloom:test_state", id.to_le_bytes()),
+                    Vec::new(),
+                    vec![id as u8],
+                )],
+            )
+        })
+        .collect();
+    let receipts = writer.try_submit_batch(transactions).unwrap();
+    assert_eq!(receipts.len(), 4);
+    for (index, receiver) in receipts.into_iter().enumerate() {
+        let receipt = receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        assert_eq!(receipt.id, index as u128 + 1);
+        assert!(!receipt.duplicate);
+    }
+    writer.shutdown().unwrap();
+    assert_eq!(Journal::open(dir.file()).unwrap().records().len(), 4);
+}
+
+#[test]
+fn invalid_batch_member_prevents_admission_of_every_member() {
+    let dir = TestDir::new();
+    let writer = Journal::open(dir.file())
+        .unwrap()
+        .into_writer(1, Duration::ZERO)
+        .unwrap();
+    let valid = Transaction::new(
+        1,
+        1,
+        vec![Change::new(
+            StateKey::new("bloxgloom:test_state", b"a"),
+            Vec::new(),
+            vec![1],
+        )],
+    );
+    let invalid = Transaction::new(
+        2,
+        1,
+        vec![Change::new(
+            StateKey::new("bloxgloom:test_state", b"b"),
+            vec![0; MAX_TRANSACTION_BYTES],
+            vec![1; MAX_TRANSACTION_BYTES],
+        )],
+    );
+    assert!(matches!(
+        writer.try_submit_batch(vec![valid, invalid]),
+        Err(SubmitError::Invalid(_))
+    ));
+    writer.shutdown().unwrap();
+    assert!(Journal::open(dir.file()).unwrap().records().is_empty());
+}

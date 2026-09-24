@@ -61,7 +61,10 @@ impl Drops {
         self.plan_stack_spawns(&stacks)
     }
 
-    fn plan_stack_spawns(&self, spawns: &[([f32; 3], Stack, Duration)]) -> io::Result<DropPlan> {
+    pub(in crate::server) fn plan_stack_spawns(
+        &self,
+        spawns: &[([f32; 3], Stack, Duration)],
+    ) -> io::Result<DropPlan> {
         let mut changed = BTreeMap::<u64, Entry>::new();
         let mut spawned = spatial::DropSpatialIndex::with_bucket_size(self.spatial.bucket_size());
         let original_next = self.next_id;

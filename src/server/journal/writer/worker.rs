@@ -17,14 +17,15 @@ pub(super) fn writer_loop(
     sequence: Arc<AtomicU64>,
     rotation_pending: Arc<AtomicBool>,
 ) -> io::Result<()> {
-    let mut pending_rotation = None;
+    let mut pending_command = None;
     loop {
-        let command = match pending_rotation.take().or_else(|| requests.recv().ok()) {
+        let command = match pending_command.take().or_else(|| requests.recv().ok()) {
             Some(command) => command,
             None => return Ok(()),
         };
-        let first = match command {
-            WriterCommand::Append(request) => request,
+        let mut batch = match command {
+            WriterCommand::Append(request) => vec![request],
+            WriterCommand::AppendBatch(requests) => requests,
             WriterCommand::Rotate {
                 expected_sequence,
                 compaction,
@@ -52,7 +53,6 @@ pub(super) fn writer_loop(
             }
         };
         let deadline = Instant::now() + batch_delay.min(Duration::from_millis(250));
-        let mut batch = vec![first];
         while batch.len() < super::super::MAX_BATCH_RECORDS {
             let now = Instant::now();
             if now >= deadline {
@@ -60,8 +60,14 @@ pub(super) fn writer_loop(
             }
             match requests.recv_timeout(deadline.saturating_duration_since(now)) {
                 Ok(WriterCommand::Append(request)) => batch.push(request),
-                Ok(rotation @ WriterCommand::Rotate { .. }) => {
-                    pending_rotation = Some(rotation);
+                Ok(WriterCommand::AppendBatch(mut next))
+                    if batch.len() + next.len() <= super::super::MAX_BATCH_RECORDS =>
+                {
+                    batch.append(&mut next);
+                }
+                Ok(next @ WriterCommand::AppendBatch(_))
+                | Ok(next @ WriterCommand::Rotate { .. }) => {
+                    pending_command = Some(next);
                     break;
                 }
                 Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
@@ -72,8 +78,14 @@ pub(super) fn writer_loop(
         while batch.len() < super::super::MAX_BATCH_RECORDS {
             match requests.try_recv() {
                 Ok(WriterCommand::Append(request)) => batch.push(request),
-                Ok(rotation @ WriterCommand::Rotate { .. }) => {
-                    pending_rotation = Some(rotation);
+                Ok(WriterCommand::AppendBatch(mut next))
+                    if batch.len() + next.len() <= super::super::MAX_BATCH_RECORDS =>
+                {
+                    batch.append(&mut next);
+                }
+                Ok(next @ WriterCommand::AppendBatch(_))
+                | Ok(next @ WriterCommand::Rotate { .. }) => {
+                    pending_command = Some(next);
                     break;
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,

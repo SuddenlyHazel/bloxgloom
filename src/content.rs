@@ -21,32 +21,43 @@ pub const MAX_ENTITY_TYPES: usize = 32_768;
 pub const MAX_TEXTURES: usize = 8_192;
 pub const MAX_ASSIGNED_ID: u32 = 1_048_576;
 
+/// Stable builtin kiln identifiers. Kiln content is allocated in the extension
+/// range so it does not collide with the original voxel and item IDs.
+pub const KILN_BLOCK_TYPE: BlockTypeId = BlockTypeId(256);
+pub const KILN_DEFAULT_STATE: BlockStateId = BlockStateId(512);
+pub const KILN_ITEM: ItemId = ItemId(256);
+pub const KILN_STATE_COUNT: u32 = 16;
+pub const KILN_ENTITY_TYPE: EntityTypeId = EntityTypeId(3);
+pub const KILN_SCHEMA_VERSION: u16 = 1;
+pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0001;
+
 pub(crate) const SOLID: u8 = 1;
 pub(crate) const OPAQUE: u8 = 2;
 pub(crate) const CUTOUT: u8 = 4;
 pub(crate) const PLANT: u8 = 8;
 pub(crate) const REPLACEABLE: u8 = 16;
 pub(crate) const SUPPORTS_PLANT: u8 = 32;
+pub(crate) const FLAMMABLE: u8 = 64;
 
 /// One compact source of truth for hot-path builtin physics. Custom definitions use the same
 /// bits in the frozen catalog; builtin probes avoid an atomic registry lookup per voxel.
 const BUILTIN_FLAGS: [u8; 16] = [
     REPLACEABLE,
-    SOLID | OPAQUE | SUPPORTS_PLANT,
-    SOLID | OPAQUE | SUPPORTS_PLANT,
-    SOLID | OPAQUE,
-    SOLID | OPAQUE,
-    SOLID | OPAQUE,
+    SOLID | OPAQUE | SUPPORTS_PLANT | FLAMMABLE,
     SOLID | OPAQUE | SUPPORTS_PLANT,
     SOLID | OPAQUE,
     SOLID | OPAQUE,
     SOLID | OPAQUE,
-    SOLID | CUTOUT,
-    CUTOUT | PLANT | REPLACEABLE,
-    CUTOUT | PLANT | REPLACEABLE,
-    CUTOUT | PLANT | REPLACEABLE,
-    CUTOUT | PLANT | REPLACEABLE,
-    CUTOUT | PLANT | REPLACEABLE,
+    SOLID | OPAQUE | SUPPORTS_PLANT | FLAMMABLE,
+    SOLID | OPAQUE,
+    SOLID | OPAQUE,
+    SOLID | OPAQUE | FLAMMABLE,
+    SOLID | CUTOUT | FLAMMABLE,
+    CUTOUT | PLANT | REPLACEABLE | FLAMMABLE,
+    CUTOUT | PLANT | REPLACEABLE | FLAMMABLE,
+    CUTOUT | PLANT | REPLACEABLE | FLAMMABLE,
+    CUTOUT | PLANT | REPLACEABLE | FLAMMABLE,
+    CUTOUT | PLANT | REPLACEABLE | FLAMMABLE,
 ];
 const BUILTIN_EMISSION: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0];
 const BUILTIN_REFLECTANCE: [[u8; 3]; 16] = [
@@ -97,6 +108,7 @@ pub struct BlockDef {
     pub plant: bool,
     pub replaceable: bool,
     pub supports_plant: bool,
+    pub flammable: bool,
     pub emission: u8,
     pub reflectance: [u8; 3],
     /// A bounded set of named choices from which legal state keys are compiled.
@@ -287,8 +299,22 @@ impl Catalog {
         &mut self,
         id: BlockStateId,
         block_type: BlockTypeId,
+        properties: Vec<(String, String)>,
+        textures: Option<BlockTextures>,
+    ) -> Result<(), RegistrationError> {
+        self.register_state_with_emission(id, block_type, properties, textures, None)
+    }
+
+    /// Registers a legal state with an optional emission override. This keeps
+    /// light-bearing variants such as an active kiln in the compiled state
+    /// catalog instead of adding property lookups to voxel hot paths.
+    pub fn register_state_with_emission(
+        &mut self,
+        id: BlockStateId,
+        block_type: BlockTypeId,
         mut properties: Vec<(String, String)>,
         textures: Option<BlockTextures>,
+        emission: Option<u8>,
     ) -> Result<(), RegistrationError> {
         let index = checked_id(id.0)?;
         if self.states.get(index).is_some_and(Option::is_some) {
@@ -301,7 +327,8 @@ impl Catalog {
             .block_type(block_type)
             .ok_or(RegistrationError::UnknownBlock)?;
         properties.sort();
-        if properties.len() != block.properties.len()
+        if emission.is_some_and(|value| value > 15)
+            || properties.len() != block.properties.len()
             || !properties
                 .iter()
                 .zip(&block.properties)
@@ -362,7 +389,7 @@ impl Catalog {
             textures,
             face_textures,
             flags: flags(block),
-            emission: block.emission,
+            emission: emission.unwrap_or(block.emission),
             reflectance: block.reflectance,
         };
         if self.states.len() <= index {
@@ -807,6 +834,9 @@ fn flags(definition: &BlockDef) -> u8 {
     }
     if definition.supports_plant {
         bits |= SUPPORTS_PLANT;
+    }
+    if definition.flammable {
+        bits |= FLAMMABLE;
     }
     bits
 }

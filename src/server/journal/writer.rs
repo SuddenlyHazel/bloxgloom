@@ -1,6 +1,7 @@
 //! Bounded nonblocking admission API for the journal worker.
 
 use super::{CommitReceipt, DropCompaction, Journal, MAX_QUEUE_CAPACITY, SubmitError, Transaction};
+use std::collections::HashSet;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
@@ -105,6 +106,95 @@ impl JournalWriter {
             Err(TrySendError::Disconnected(_)) => {
                 self.projected_usage
                     .fetch_sub(reserved_bytes, Ordering::AcqRel);
+                Err(SubmitError::Closed)
+            }
+        }
+    }
+
+    /// Atomically admits a bounded set of independently durable records to
+    /// the writer queue. No prefix is accepted if queue or byte capacity is
+    /// unavailable. Individual records retain their own IDs and receipts.
+    pub fn try_submit_batch(
+        &self,
+        transactions: Vec<Transaction>,
+    ) -> Result<Vec<Receiver<io::Result<CommitReceipt>>>, SubmitError> {
+        if transactions.is_empty() || transactions.len() > super::MAX_BATCH_RECORDS {
+            return Err(SubmitError::Invalid(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "journal submission batch size is invalid",
+            )));
+        }
+        let mut prepared = Vec::with_capacity(transactions.len());
+        let mut total_bytes = 0u64;
+        let mut ids = HashSet::with_capacity(transactions.len());
+        let mut keys = HashSet::new();
+        for transaction in transactions {
+            let transaction = transaction.canonicalize().map_err(SubmitError::Invalid)?;
+            if !ids.insert(transaction.id)
+                || transaction
+                    .changes
+                    .iter()
+                    .any(|change| !keys.insert(change.key.clone()))
+            {
+                return Err(SubmitError::Invalid(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "journal batch IDs and write keys must be disjoint",
+                )));
+            }
+            let bytes = super::codec::frame_len(&transaction);
+            total_bytes = total_bytes.checked_add(bytes).ok_or_else(|| {
+                SubmitError::Invalid(io::Error::other("journal batch byte count overflow"))
+            })?;
+            prepared.push((transaction, bytes));
+        }
+        let _gate = self.submit_gate.try_lock().map_err(|_| SubmitError::Full)?;
+        if self.rotation_pending.load(Ordering::Acquire) {
+            return Err(SubmitError::Full);
+        }
+        let mut projected = self.projected_usage.load(Ordering::Acquire);
+        loop {
+            let Some(next) = projected.checked_add(total_bytes) else {
+                return Err(SubmitError::Full);
+            };
+            if next > super::MAX_JOURNAL_BYTES {
+                return Err(SubmitError::Full);
+            }
+            match self.projected_usage.compare_exchange_weak(
+                projected,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(current) => projected = current,
+            }
+        }
+        let mut requests = Vec::with_capacity(prepared.len());
+        let mut receivers = Vec::with_capacity(prepared.len());
+        for (transaction, reserved_bytes) in prepared {
+            let (acknowledge, receiver) = mpsc::channel();
+            requests.push(Request {
+                transaction,
+                acknowledge,
+                reserved_bytes,
+            });
+            receivers.push(receiver);
+        }
+        let Some(sender) = self.sender.as_ref() else {
+            self.projected_usage
+                .fetch_sub(total_bytes, Ordering::AcqRel);
+            return Err(SubmitError::Closed);
+        };
+        match sender.try_send(WriterCommand::AppendBatch(requests)) {
+            Ok(()) => Ok(receivers),
+            Err(TrySendError::Full(_)) => {
+                self.projected_usage
+                    .fetch_sub(total_bytes, Ordering::AcqRel);
+                Err(SubmitError::Full)
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.projected_usage
+                    .fetch_sub(total_bytes, Ordering::AcqRel);
                 Err(SubmitError::Closed)
             }
         }
@@ -221,6 +311,7 @@ pub(super) struct Request {
 
 enum WriterCommand {
     Append(Request),
+    AppendBatch(Vec<Request>),
     Rotate {
         expected_sequence: u64,
         compaction: Option<DropCompaction>,
