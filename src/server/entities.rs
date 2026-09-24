@@ -25,7 +25,7 @@ pub(super) use kiln::{
     register_entity_type_with_recipes as register_kiln_entity_type_with_recipes,
 };
 pub(super) use persistence::{decode_checkpoint, decode_motion_value, encode_checkpoint};
-pub(super) use player::{PlayerEntityPayload, register_player_entity_type};
+pub(super) use player::{PlayerEntityPayload, PlayerEntityStore, register_player_entity_type};
 pub(super) use registry::{
     EntityBlockStateChange, EntityCodecError, EntityInteractionPlan, EntityInteractionPolicy,
     EntityPayloadCodec, EntityTickPlan, EntityTickPolicy, EntityTypeDescriptor,

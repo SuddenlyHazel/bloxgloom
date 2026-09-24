@@ -39,12 +39,12 @@ pub(super) fn apply_committed_action(
     state.drops.apply_plan(&action.drops)?;
     let mut entity_commit = None;
     if let (Some(entities), Some(permit)) = (action.entities.take(), entity_permit) {
-        entity_commit = Some(
-            state
-                .entities
-                .apply_committed(entities.clone())
-                .map_err(io::Error::other)?,
-        );
+        let mut commit = state
+            .entities
+            .apply_committed(entities.clone())
+            .map_err(io::Error::other)?;
+        commit.registry_revision = state.advance_entity_public_revision()?;
+        entity_commit = Some(commit);
         state
             .durability
             .entity_mirror

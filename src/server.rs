@@ -45,7 +45,9 @@ use durable::{
     queue_interaction_actions, remember_drops_checkpoint,
 };
 use effects::CellCoord;
-use entities::{EntityStore, EntityTypeRegistryBuilder};
+use entities::{
+    EntityCommit, EntityDelta, EntityStore, EntityTypeRegistryBuilder, PlayerEntityStore,
+};
 use fire::FireRuntime;
 use metrics::{MetricsRecorder, TickSample};
 use movement::{MovementBatch, MovementCommand, MovementState};
@@ -143,6 +145,10 @@ struct State {
     inventory_store: InventoryStore,
     drops: Drops,
     entities: EntityStore,
+    player_entities: PlayerEntityStore,
+    /// Shared per-chunk public entity revision for durable and session-only
+    /// changes. It is intentionally separate from the WAL/checkpoint frontier.
+    entity_public_revision: u64,
     block_actions: BlockActionRegistry,
     seed: u64,
     clients: HashMap<u64, Client>,
@@ -171,6 +177,39 @@ struct State {
 }
 
 impl State {
+    pub(super) fn advance_entity_public_revision(&mut self) -> io::Result<u64> {
+        self.entity_public_revision = self
+            .entity_public_revision
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("public entity revision exhausted"))?;
+        Ok(self.entity_public_revision)
+    }
+
+    pub(super) fn queue_player_entity_deltas(
+        &mut self,
+        deltas: Vec<EntityDelta>,
+    ) -> io::Result<()> {
+        if deltas.is_empty() {
+            return Ok(());
+        }
+        let registry_revision = self.advance_entity_public_revision()?;
+        self.durability.publish_queue.push(durable::PublishEffects {
+            client_id: None,
+            profile: None,
+            action_id: None,
+            accepted: true,
+            reason: String::new(),
+            inventory: None,
+            deltas: Vec::new(),
+            entity_commit: Some(EntityCommit {
+                registry_revision,
+                deltas,
+            }),
+            pickups: Vec::new(),
+        });
+        Ok(())
+    }
+
     /// Release every authoritative interest pin with the session. Other
     /// clients' subscriptions keep their own pins on shared chunks.
     fn remove_client(&mut self, id: u64) -> Option<Client> {
@@ -178,6 +217,19 @@ impl State {
         for &key in &client.sent {
             let released = self.world.unpin_resident_chunk(key);
             debug_assert!(released, "client subscription lost its resident chunk");
+        }
+        match self.player_entities.despawn_session(id) {
+            Ok(Some(delta)) => {
+                if let Err(error) = self.queue_player_entity_deltas(vec![delta]) {
+                    self.durability.failed = true;
+                    eprintln!("could not publish player despawn for session {id}: {error}");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.durability.failed = true;
+                eprintln!("could not remove player entity for session {id}: {error}");
+            }
         }
         Some(client)
     }
@@ -313,12 +365,15 @@ fn server_state_with_limit(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
+    let entity_public_revision = entities.revision();
     Ok(State {
         admission_limit,
         world,
         inventory_store,
         drops,
         entities,
+        player_entities: PlayerEntityStore::default(),
+        entity_public_revision,
         block_actions,
         seed,
         clients: HashMap::new(),
@@ -388,8 +443,12 @@ fn join_client(
         .next_id
         .checked_add(1)
         .ok_or_else(|| io::Error::other("player ID exhausted"))?;
-    let center = world_to_chunk(0, position[1] as i32, 0).0;
     let socket = socket.try_clone()?;
+    let (owned_entity_id, spawn_delta) = state
+        .player_entities
+        .spawn_session(id, position)
+        .map_err(io::Error::other)?;
+    let center = world_to_chunk(0, position[1] as i32, 0).0;
     // Queue the complete handshake before registering the client. The
     // publish phase can otherwise enqueue terrain before Welcome while the
     // connection thread is waiting for this reply.
@@ -397,6 +456,9 @@ fn join_client(
         ServerMessage::Welcome {
             id,
             seed: state.seed,
+        },
+        ServerMessage::OwnedEntity {
+            id: owned_entity_id.get(),
         },
         ServerMessage::ActionSession {
             epoch: action_epoch,
@@ -418,6 +480,7 @@ fn join_client(
         },
     ] {
         if sender.try_send(message).is_err() {
+            state.player_entities.discard_session(id);
             return Err(io::Error::new(
                 ErrorKind::BrokenPipe,
                 "client startup queue closed",
@@ -446,6 +509,12 @@ fn join_client(
             pending_moves: VecDeque::new(),
         },
     );
+    if let Err(error) = state.queue_player_entity_deltas(vec![spawn_delta]) {
+        state.player_entities.discard_session(id);
+        state.clients.remove(&id);
+        state.durability.failed = true;
+        return Err(error);
+    }
     Ok(JoinReply { id })
 }
 

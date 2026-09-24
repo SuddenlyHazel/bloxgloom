@@ -117,6 +117,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
 
     let mut missing = HashSet::new();
     let mut disconnected = Vec::new();
+    let mut player_positions = Vec::with_capacity(active.len());
     for owner in results.owners {
         for job in owner.jobs {
             let id = job.key.job_id;
@@ -136,6 +137,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             client.movement = batch.state;
             let [x, y, z] = client.position();
             client.center = world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32).0;
+            player_positions.push((id, client.position()));
             for acknowledgment in batch.acknowledgments {
                 let [x, y, z] = acknowledgment.position;
                 if !client.enqueue(ServerMessage::Position {
@@ -156,6 +158,22 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
     for id in disconnected {
         state.remove_client(id);
     }
+    player_positions.sort_unstable_by_key(|(id, _)| *id);
+    let mut player_deltas = Vec::with_capacity(player_positions.len());
+    for (id, position) in player_positions {
+        // In-process movement fixtures may construct a Client directly. Every
+        // network join installs a corresponding player entity before the
+        // session is exposed.
+        if state.player_entities.id_for_session(id).is_some()
+            && let Some(delta) = state
+                .player_entities
+                .update_position(id, position)
+                .map_err(io::Error::other)?
+        {
+            player_deltas.push(delta);
+        }
+    }
+    state.queue_player_entity_deltas(player_deltas)?;
     let mut missing: Vec<_> = missing.into_iter().collect();
     missing.sort_unstable_by_key(|key| (key.x, key.y, key.z));
     for key in missing {

@@ -9,7 +9,8 @@ use super::spatial::{
 };
 use super::types::{
     AnchorUpdate, CellCoord, EntityError, EntityId, EntityLocation, EntityMotionSnapshot,
-    EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, position_to_cell,
+    EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, TRANSIENT_ENTITY_ID_BIT,
+    position_to_cell,
 };
 use crate::content::{BlockStateId, EntityTypeId};
 use crate::server::journal::{Change, StateKey};
@@ -455,7 +456,7 @@ impl EntityStore {
         let next_id = self
             .next_id
             .checked_add(u64::try_from(spawns.len()).map_err(|_| EntityError::IdExhausted)?)
-            .filter(|next| *next != 0)
+            .filter(|next| *next != 0 && *next <= TRANSIENT_ENTITY_ID_BIT)
             .ok_or(EntityError::IdExhausted)?;
         let mut records = Vec::with_capacity(spawns.len());
         let mut projected_indexes = self.indexes.clone();
@@ -1322,6 +1323,7 @@ impl EntityStore {
         records: BTreeMap<EntityId, EntityRecord>,
     ) -> Result<Self, EntityError> {
         if next_id == 0
+            || next_id > TRANSIENT_ENTITY_ID_BIT
             || records.len() > MAX_ENTITY_RECORDS
             || durable_global_revision > revision
             || durable_global_revision < durable_sequence
@@ -1329,7 +1331,7 @@ impl EntityStore {
             return Err(EntityError::CorruptCheckpoint);
         }
         let max_id = records.keys().next_back().map_or(0, |id| id.get());
-        if next_id <= max_id {
+        if next_id <= max_id || max_id >= TRANSIENT_ENTITY_ID_BIT {
             return Err(EntityError::CorruptCheckpoint);
         }
         if records.values().any(|record| record.revision > revision) {
@@ -1995,12 +1997,16 @@ fn decode_entity_id(bytes: &[u8]) -> Result<EntityId, EntityError> {
     if bytes.len() != 8 {
         return Err(EntityError::InvalidTransaction);
     }
-    EntityId::new(u64::from_le_bytes(
+    let id = EntityId::new(u64::from_le_bytes(
         bytes
             .try_into()
             .map_err(|_| EntityError::InvalidTransaction)?,
     ))
-    .ok_or(EntityError::InvalidTransaction)
+    .ok_or(EntityError::InvalidTransaction)?;
+    if id.get() >= TRANSIENT_ENTITY_ID_BIT {
+        return Err(EntityError::InvalidTransaction);
+    }
+    Ok(id)
 }
 
 fn chunk_state_key(chunk: ChunkKey) -> StateKey {

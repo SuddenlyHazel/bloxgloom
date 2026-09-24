@@ -86,6 +86,16 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
     assert_eq!(refreshed, updated);
     for message in [
         ServerMessage::Welcome { id: 9, seed: 1 },
+        ServerMessage::OwnedEntity {
+            id: crate::server::entities::EntityId::for_player_session(9)
+                .unwrap()
+                .get(),
+        },
+        ServerMessage::ActionSession {
+            epoch: 1,
+            next_seq: 1,
+            acked_seq: 0,
+        },
         ServerMessage::Position {
             ack_seq: 0,
             x: 0.0,
@@ -108,9 +118,22 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
         .send(JoinResponse::Completed(Box::new(Ok(JoinReply { id: 9 }))))
         .unwrap();
 
+    let connection_id = match protocol::read_server(&mut peer).unwrap() {
+        ServerMessage::Welcome { id, .. } => id,
+        other => panic!("expected Welcome, got {other:?}"),
+    };
     assert!(matches!(
         protocol::read_server(&mut peer).unwrap(),
-        ServerMessage::Welcome { id: 9, seed: 1 }
+        ServerMessage::OwnedEntity { id }
+            if id == crate::server::entities::EntityId::for_player_session(connection_id).unwrap().get()
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::ActionSession {
+            epoch: 1,
+            next_seq: 1,
+            acked_seq: 0,
+        }
     ));
     assert!(matches!(
         protocol::read_server(&mut peer).unwrap(),
@@ -269,9 +292,16 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
     )
     .unwrap();
     complete_content_handshake(&mut peer);
+    let connection_id = match protocol::read_server(&mut peer).unwrap() {
+        ServerMessage::Welcome { id, .. } => id,
+        other => panic!("expected Welcome, got {other:?}"),
+    };
     assert!(matches!(
         protocol::read_server(&mut peer).unwrap(),
-        ServerMessage::Welcome { .. }
+        ServerMessage::OwnedEntity { id }
+            if id == crate::server::entities::EntityId::for_player_session(connection_id)
+                .unwrap()
+                .get()
     ));
     let action_epoch = match protocol::read_server(&mut peer).unwrap() {
         ServerMessage::ActionSession {
@@ -413,9 +443,16 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
         )
         .unwrap();
         complete_content_handshake(&mut peer);
+        let connection_id = match protocol::read_server(&mut peer).unwrap() {
+            ServerMessage::Welcome { id, .. } => id,
+            other => panic!("expected Welcome, got {other:?}"),
+        };
         assert!(matches!(
             protocol::read_server(&mut peer).unwrap(),
-            ServerMessage::Welcome { .. }
+            ServerMessage::OwnedEntity { id }
+                if id == crate::server::entities::EntityId::for_player_session(connection_id)
+                    .unwrap()
+                    .get()
         ));
         let epoch = match protocol::read_server(&mut peer).unwrap() {
             ServerMessage::ActionSession {

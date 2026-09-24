@@ -144,14 +144,21 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
                 let next_epoch = epoch
                     .checked_add(1)
                     .ok_or_else(|| io::Error::other("client snapshot epoch exhausted"))?;
-                let views = state
+                let mut views = state
                     .entities
                     .public_views_for_chunk_bounded(key, entities::MAX_PUBLIC_ENTITIES_PER_CHUNK)
                     .map_err(io::Error::other)?;
+                let remaining = entities::MAX_PUBLIC_ENTITIES_PER_CHUNK.saturating_sub(views.len());
+                views.extend(
+                    state
+                        .player_entities
+                        .public_views_for_chunk_bounded(key, remaining)
+                        .map_err(io::Error::other)?,
+                );
                 let messages = entities::snapshot_messages(
                     chunk,
                     epoch,
-                    state.entities.revision(),
+                    state.entity_public_revision,
                     views,
                     state.world.catalog(),
                 )?;
@@ -159,7 +166,7 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
                     ServerMessage::WorldSnapshotStart(start) => start.chunk.version,
                     _ => unreachable!("snapshot builder starts with chunk"),
                 };
-                let entity_revision = state.entities.revision();
+                let entity_revision = state.entity_public_revision;
                 for message in messages {
                     if !client.enqueue(message) {
                         return Ok(false);
