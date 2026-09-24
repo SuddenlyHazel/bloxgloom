@@ -98,7 +98,9 @@ impl ApplicationHandler for ClientApp {
                                 if let Some(slot) = slot
                                     && let Some(stack) = self.inventory.slots[slot as usize]
                                 {
+                                    let action_id = self.allocate_action_id();
                                     self.queue_command(ClientMessage::DropStack {
+                                        action_id,
                                         slot,
                                         count: if self.shift_down { stack.count } else { 1 },
                                     });

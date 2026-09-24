@@ -22,8 +22,9 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
         face: Face::NegX,
     };
     assert_eq!(
-        edit_for_hit(hit, true, Some(1), 2),
+        edit_for_hit(hit, true, Some(1), 2, 71),
         Some(ClientMessage::Edit {
+            action_id: 71,
             x: 1,
             y: 3,
             z: 4,
@@ -32,8 +33,9 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
         })
     );
     assert_eq!(
-        edit_for_hit(hit, false, Some(1), 2),
+        edit_for_hit(hit, false, Some(1), 2, 72),
         Some(ClientMessage::Edit {
+            action_id: 72,
             x: 2,
             y: 3,
             z: 4,
@@ -53,8 +55,9 @@ fn placing_on_a_replaceable_flower_targets_its_cell() {
         face: Face::PosY,
     };
     assert_eq!(
-        edit_for_hit(hit, true, Some(crate::world::WOOD), 0),
+        edit_for_hit(hit, true, Some(crate::world::WOOD), 0, 73),
         Some(ClientMessage::Edit {
+            action_id: 73,
             x: 2,
             y: 3,
             z: 4,
@@ -62,13 +65,19 @@ fn placing_on_a_replaceable_flower_targets_its_cell() {
             slot: 0,
         })
     );
-    assert_eq!(edit_for_hit(hit, true, Some(crate::items::SEEDS), 0), None);
     assert_eq!(
-        edit_for_hit(hit, true, Some(crate::items::SAPLING), 0),
+        edit_for_hit(hit, true, Some(crate::items::SEEDS), 0, 74),
         None
     );
-    assert_eq!(edit_for_hit(hit, true, Some(crate::items::STICK), 0), None);
-    assert!(edit_for_hit(hit, false, Some(crate::items::SEEDS), 0).is_some());
+    assert_eq!(
+        edit_for_hit(hit, true, Some(crate::items::SAPLING), 0, 75),
+        None
+    );
+    assert_eq!(
+        edit_for_hit(hit, true, Some(crate::items::STICK), 0, 76),
+        None
+    );
+    assert!(edit_for_hit(hit, false, Some(crate::items::SEEDS), 0, 77).is_some());
 }
 
 #[test]

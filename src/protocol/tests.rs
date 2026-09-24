@@ -15,6 +15,7 @@ fn client_messages_round_trip() {
             dz: 2.0,
         },
         ClientMessage::Edit {
+            action_id: 0x1234,
             x: -17,
             y: 12,
             z: 31,
@@ -27,11 +28,16 @@ fn client_messages_round_trip() {
         ClientMessage::SetView { radius: 6 },
         ClientMessage::Ping { nonce: u64::MAX },
         ClientMessage::InventoryMove {
+            action_id: 0x1235,
             from: 1,
             to: 35,
             count: 64,
         },
-        ClientMessage::DropStack { slot: 3, count: 2 },
+        ClientMessage::DropStack {
+            action_id: 0x1236,
+            slot: 3,
+            count: 2,
+        },
     ];
     for message in messages {
         let mut bytes = Vec::new();
@@ -241,6 +247,7 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
             write_client(
                 Vec::new(),
                 &ClientMessage::Edit {
+                    action_id: 1,
                     x: 0,
                     y: 0,
                     z: 0,
@@ -261,4 +268,63 @@ fn separate_item_ids_round_trip_but_cannot_be_sent_as_block_edits() {
         };
         assert!(write_server(Vec::new(), &ServerMessage::Pickups { items: vec![drop] }).is_err());
     }
+}
+
+#[test]
+fn action_receipts_round_trip_and_reject_invalid_ids() {
+    for message in [
+        ServerMessage::ActionResult {
+            action_id: 42,
+            accepted: true,
+            reason: String::new(),
+        },
+        ServerMessage::ActionResult {
+            action_id: 43,
+            accepted: false,
+            reason: "out of reach".into(),
+        },
+    ] {
+        let mut bytes = Vec::new();
+        write_server(&mut bytes, &message).unwrap();
+        match (read_server(bytes.as_slice()).unwrap(), message) {
+            (
+                ServerMessage::ActionResult {
+                    action_id: got_id,
+                    accepted: got_accepted,
+                    reason: got_reason,
+                },
+                ServerMessage::ActionResult {
+                    action_id,
+                    accepted,
+                    reason,
+                },
+            ) => assert_eq!(
+                (got_id, got_accepted, got_reason),
+                (action_id, accepted, reason)
+            ),
+            _ => panic!("wrong action result"),
+        }
+    }
+    assert!(
+        write_client(
+            Vec::new(),
+            &ClientMessage::DropStack {
+                action_id: 0,
+                slot: 0,
+                count: 1
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::ActionResult {
+                action_id: 0,
+                accepted: true,
+                reason: String::new()
+            }
+        )
+        .is_err()
+    );
 }

@@ -30,6 +30,7 @@ fn edit_for_hit(
     place: bool,
     selected_item: Option<crate::items::ItemId>,
     slot: u8,
+    action_id: u128,
 ) -> Option<ClientMessage> {
     let block = if place {
         crate::items::placeable_block(selected_item?)?
@@ -42,6 +43,7 @@ fn edit_for_hit(
         hit.block
     };
     Some(ClientMessage::Edit {
+        action_id,
         x,
         y,
         z,
@@ -137,6 +139,7 @@ struct ClientApp {
     next_frame: Instant,
     last_frame: Instant,
     next_seq: u64,
+    next_action_id: u128,
     unacked: VecDeque<(u64, Vec3)>,
     frame_count: u64,
     last_report: Instant,
@@ -145,7 +148,7 @@ struct ClientApp {
 }
 
 impl ClientApp {
-    fn new(network: Network, config: Config, config_path: PathBuf) -> Self {
+    fn new(network: Network, config: Config, config_path: PathBuf, action_seed: u128) -> Self {
         let now = Instant::now();
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
@@ -185,6 +188,7 @@ impl ClientApp {
             next_frame: now,
             last_frame: now,
             next_seq: 1,
+            next_action_id: action_seed.max(1),
             unacked: VecDeque::new(),
             frame_count: 0,
             last_report: now,
@@ -266,7 +270,9 @@ impl ClientApp {
                     } else {
                         stack.count
                     };
+                    let action_id = self.allocate_action_id();
                     self.queue_command(ClientMessage::InventoryMove {
+                        action_id,
                         from: source,
                         to: slot,
                         count,
@@ -414,6 +420,15 @@ impl ClientApp {
         }
     }
 
+    fn allocate_action_id(&mut self) -> u128 {
+        let id = self.next_action_id;
+        self.next_action_id = self
+            .next_action_id
+            .checked_add(1)
+            .expect("action IDs exhausted");
+        id
+    }
+
     fn queue_relight(&mut self, key: ChunkKey, include_neighbors: bool) {
         let reach = if include_neighbors { 1 } else { 0 };
         for dy in -reach..=reach {
@@ -515,6 +530,15 @@ impl ClientApp {
             }
             ServerMessage::EditRejected { reason } => {
                 self.show_status(format!("Edit rejected: {reason}"));
+            }
+            ServerMessage::ActionResult {
+                action_id: _,
+                accepted,
+                reason,
+            } => {
+                if !accepted {
+                    self.show_status(format!("Action rejected: {reason}"));
+                }
             }
             ServerMessage::ViewDistance { radius } => {
                 self.effective_view_distance = radius;
@@ -699,7 +723,10 @@ impl ClientApp {
         }
         if let Some(hit) = self.aimed_block() {
             let item = self.inventory.slots[self.config.selected_slot].map(|stack| stack.item);
-            if let Some(command) = edit_for_hit(hit, place, item, self.config.selected_slot as u8) {
+            let action_id = self.allocate_action_id();
+            if let Some(command) =
+                edit_for_hit(hit, place, item, self.config.selected_slot as u8, action_id)
+            {
                 self.queue_command(command);
             } else {
                 self.show_status(if item.is_some() {
@@ -800,8 +827,16 @@ pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&config_path);
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
+    let mut action_seed_bytes = [0u8; 16];
+    getrandom::fill(&mut action_seed_bytes)?;
+    let action_seed = u128::from_le_bytes(action_seed_bytes).max(1);
     let event_loop = EventLoop::new()?;
-    event_loop.run_app(&mut ClientApp::new(network, config, config_path))?;
+    event_loop.run_app(&mut ClientApp::new(
+        network,
+        config,
+        config_path,
+        action_seed,
+    ))?;
     Ok(())
 }
 

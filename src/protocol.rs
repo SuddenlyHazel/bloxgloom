@@ -5,7 +5,7 @@ use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, valid_block};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 6;
+const WIRE_VERSION: u8 = 7;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
@@ -25,6 +25,7 @@ pub enum ClientMessage {
         dz: f32,
     },
     Edit {
+        action_id: u128,
         x: i32,
         y: i32,
         z: i32,
@@ -32,11 +33,13 @@ pub enum ClientMessage {
         slot: u8,
     },
     InventoryMove {
+        action_id: u128,
         from: u8,
         to: u8,
         count: u16,
     },
     DropStack {
+        action_id: u128,
         slot: u8,
         count: u16,
     },
@@ -83,6 +86,11 @@ pub enum ServerMessage {
         block: u8,
     },
     EditRejected {
+        reason: String,
+    },
+    ActionResult {
+        action_id: u128,
+        accepted: bool,
         reason: String,
     },
     ViewDistance {
@@ -170,6 +178,7 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
             }
         }
         ClientMessage::Edit {
+            action_id,
             x,
             y,
             z,
@@ -179,7 +188,11 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
             if !valid_block(*block) {
                 return Err(invalid("invalid block type"));
             }
+            if *action_id == 0 {
+                return Err(invalid("invalid action ID"));
+            }
             out.push(3);
+            out.extend(action_id.to_le_bytes());
             for n in [x, y, z] {
                 out.extend(n.to_le_bytes());
             }
@@ -198,22 +211,34 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
             out.push(6);
             out.extend(nonce.to_le_bytes());
         }
-        ClientMessage::InventoryMove { from, to, count } => {
+        ClientMessage::InventoryMove {
+            action_id,
+            from,
+            to,
+            count,
+        } => {
             if *from as usize >= SLOTS
                 || *to as usize >= SLOTS
                 || !(1..=STACK_LIMIT).contains(count)
+                || *action_id == 0
             {
                 return Err(invalid("invalid inventory move"));
             }
             out.push(7);
+            out.extend(action_id.to_le_bytes());
             out.extend([*from, *to]);
             out.extend(count.to_le_bytes());
         }
-        ClientMessage::DropStack { slot, count } => {
-            if *slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(count) {
+        ClientMessage::DropStack {
+            action_id,
+            slot,
+            count,
+        } => {
+            if *slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(count) || *action_id == 0 {
                 return Err(invalid("invalid dropped stack"));
             }
             out.push(8);
+            out.extend(action_id.to_le_bytes());
             out.push(*slot);
             out.extend(count.to_le_bytes());
         }
@@ -268,6 +293,19 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
         }
         ServerMessage::EditRejected { reason } => {
             out.push(5);
+            short_string(&mut out, reason)?;
+        }
+        ServerMessage::ActionResult {
+            action_id,
+            accepted,
+            reason,
+        } => {
+            if *action_id == 0 || (accepted && !reason.is_empty()) {
+                return Err(invalid("invalid action result"));
+            }
+            out.push(11);
+            out.extend(action_id.to_le_bytes());
+            out.push(u8::from(*accepted));
             short_string(&mut out, reason)?;
         }
         ServerMessage::Pong { nonce } => {
@@ -416,11 +454,13 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
             dz: c.f32()?,
         },
         3 => {
-            let (x, y, z, block, slot) = (c.i32()?, c.i32()?, c.i32()?, c.u8()?, c.u8()?);
-            if !valid_block(block) {
+            let (action_id, x, y, z, block, slot) =
+                (c.u128()?, c.i32()?, c.i32()?, c.i32()?, c.u8()?, c.u8()?);
+            if !valid_block(block) || action_id == 0 {
                 return Err(invalid("invalid block type"));
             }
             ClientMessage::Edit {
+                action_id,
                 x,
                 y,
                 z,
@@ -432,19 +472,31 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
         5 => ClientMessage::SetView { radius: c.u8()? },
         6 => ClientMessage::Ping { nonce: c.u64()? },
         7 => {
-            let (from, to, count) = (c.u8()?, c.u8()?, c.u16()?);
-            if from as usize >= SLOTS || to as usize >= SLOTS || !(1..=STACK_LIMIT).contains(&count)
+            let (action_id, from, to, count) = (c.u128()?, c.u8()?, c.u8()?, c.u16()?);
+            if from as usize >= SLOTS
+                || to as usize >= SLOTS
+                || !(1..=STACK_LIMIT).contains(&count)
+                || action_id == 0
             {
                 return Err(invalid("invalid inventory move"));
             }
-            ClientMessage::InventoryMove { from, to, count }
+            ClientMessage::InventoryMove {
+                action_id,
+                from,
+                to,
+                count,
+            }
         }
         8 => {
-            let (slot, count) = (c.u8()?, c.u16()?);
-            if slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(&count) {
+            let (action_id, slot, count) = (c.u128()?, c.u8()?, c.u16()?);
+            if slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(&count) || action_id == 0 {
                 return Err(invalid("invalid dropped stack"));
             }
-            ClientMessage::DropStack { slot, count }
+            ClientMessage::DropStack {
+                action_id,
+                slot,
+                count,
+            }
         }
         _ => return Err(invalid("unknown client message")),
     };
@@ -564,6 +616,23 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
                 items.push(item);
             }
             ServerMessage::Pickups { items }
+        }
+        11 => {
+            let action_id = c.u128()?;
+            let accepted = match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid action result")),
+            };
+            let reason = c.string()?;
+            if action_id == 0 || (accepted && !reason.is_empty()) {
+                return Err(invalid("invalid action result"));
+            }
+            ServerMessage::ActionResult {
+                action_id,
+                accepted,
+                reason,
+            }
         }
         _ => return Err(invalid("unknown server message")),
     };
