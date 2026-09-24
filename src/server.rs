@@ -287,8 +287,27 @@ pub fn run_server_with_limit(
     save_dir: PathBuf,
     admission_limit: usize,
 ) -> io::Result<()> {
+    run_server_with_limit_and_catalog(
+        addr,
+        seed,
+        save_dir,
+        admission_limit,
+        Arc::new(crate::content::catalog().clone()),
+    )
+}
+
+/// Starts one world with its frozen content definitions. The listener,
+/// storage, inventory, entity registry, and handshake all derive from this
+/// world catalog rather than looking up process-global content independently.
+pub fn run_server_with_limit_and_catalog(
+    addr: &str,
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+    catalog: Arc<crate::content::Catalog>,
+) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    let state = server_state_with_limit(seed, save_dir, admission_limit)?;
+    let state = server_state_with_limit_and_catalog(seed, save_dir, admission_limit, catalog)?;
     serve_listener(listener, Box::new(state))
 }
 
@@ -313,13 +332,28 @@ fn server_state_with_limit(
     save_dir: PathBuf,
     admission_limit: usize,
 ) -> io::Result<State> {
+    server_state_with_limit_and_catalog(
+        seed,
+        save_dir,
+        admission_limit,
+        Arc::new(crate::content::catalog().clone()),
+    )
+}
+
+fn server_state_with_limit_and_catalog(
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+    catalog: Arc<crate::content::Catalog>,
+) -> io::Result<State> {
     if !(1..=MAX_CLIENTS).contains(&admission_limit) {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
             "admission limit must be 1..=256",
         ));
     }
-    let mut world = World::with_capacity(seed, save_dir.clone(), SERVER_CHUNK_CACHE)?;
+    let mut world =
+        World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();

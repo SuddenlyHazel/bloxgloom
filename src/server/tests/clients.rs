@@ -4,6 +4,72 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 #[test]
+fn independent_worlds_keep_their_own_startup_catalogs() {
+    let base_save = TestSave::new("base-world-catalog");
+    let extended_save = TestSave::new("extended-world-catalog");
+    let base = Arc::new(crate::content::Catalog::builtins());
+    let mut extended = crate::content::Catalog::builtins();
+    let custom_item = crate::content::ItemId(70_002);
+    let texture = extended
+        .block_type(crate::content::BlockTypeId(3))
+        .unwrap()
+        .textures
+        .top;
+    extended
+        .register_item(crate::content::ItemDef {
+            id: custom_item,
+            key: "test:catalog_only".into(),
+            name: "Catalog-only token".into(),
+            swatch: [0.2, 0.4, 0.7, 1.0],
+            texture,
+            placeable: None,
+            sprite: true,
+        })
+        .unwrap();
+    let extended = Arc::new(extended);
+
+    let base_state = server_state_with_limit_and_catalog(
+        7,
+        base_save.path().to_path_buf(),
+        1,
+        Arc::clone(&base),
+    )
+    .unwrap();
+    let extended_state = server_state_with_limit_and_catalog(
+        7,
+        extended_save.path().to_path_buf(),
+        1,
+        Arc::clone(&extended),
+    )
+    .unwrap();
+    assert_eq!(base_state.world.catalog().fingerprint(), base.fingerprint());
+    assert_eq!(
+        extended_state.world.catalog().fingerprint(),
+        extended.fingerprint()
+    );
+    assert_ne!(base.fingerprint(), extended.fingerprint());
+    assert!(base_state.world.catalog().item(custom_item).is_none());
+    assert!(extended_state.world.catalog().item(custom_item).is_some());
+
+    let mut inventory = Inventory::default();
+    assert_eq!(
+        inventory.insert_with_catalog(custom_item, 1, extended_state.world.catalog()),
+        0
+    );
+    let encoded =
+        InventoryStore::encode_snapshot_with_catalog(&inventory, extended_state.world.catalog())
+            .unwrap();
+    assert!(
+        InventoryStore::decode_snapshot_with_catalog(&encoded, base_state.world.catalog()).is_err()
+    );
+    assert_eq!(
+        InventoryStore::decode_snapshot_with_catalog(&encoded, extended_state.world.catalog())
+            .unwrap(),
+        inventory
+    );
+}
+
+#[test]
 fn remote_player_spawn_move_and_leave_publish_ordered_entity_changes() {
     let save = TestSave::new("player-entity-publication");
     let mut state = state_for(&save, 7);
