@@ -51,9 +51,8 @@ fn boundaries_skip_unrepresentable_chunk_keys() {
 #[test]
 fn optimized_shell_walk_preserves_nearest_first_tie_order() {
     let center = ChunkKey { x: -4, y: 2, z: 7 };
-    for radius in 1..=6 {
+    for radius in 1i32..=6 {
         let mut expected = Vec::new();
-        let radius = i32::from(radius);
         for distance in 0..=(2 * radius + 1) {
             for y in -1i32..=1 {
                 for z in -radius..=radius {
