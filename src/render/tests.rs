@@ -136,7 +136,7 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         );
         let layer_bytes = (size * size * 4) as usize;
         assert!(
-            pixels[..11 * layer_bytes]
+            pixels[..12 * layer_bytes]
                 .chunks_exact(4)
                 .all(|pixel| pixel[3] == 255)
         );
@@ -146,7 +146,7 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         &mips[0][(material::TEXTURE_SIZE * material::TEXTURE_SIZE * 3 * 4) as usize..][..3]
     );
     let layer_bytes = (material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize;
-    for layer in 11..material::TEXTURE_LAYERS as usize {
+    for layer in 12..material::TEXTURE_LAYERS as usize {
         let mut alpha = mips[0][layer * layer_bytes..(layer + 1) * layer_bytes]
             .chunks_exact(4)
             .map(|pixel| pixel[3]);

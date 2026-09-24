@@ -100,7 +100,7 @@ pub(super) fn material_tiles() -> Vec<u8> {
                 });
             }
         }
-        if layer < 11 {
+        if layer <= 11 {
             stitch_material_edges(&mut pixels[layer_start..], layer != 1);
         }
     }
