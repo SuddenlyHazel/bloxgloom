@@ -300,7 +300,7 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             accepted,
             reason,
         } => {
-            if *action_id == 0 || (accepted && !reason.is_empty()) {
+            if *action_id == 0 || (*accepted && !reason.is_empty()) {
                 return Err(invalid("invalid action result"));
             }
             out.push(11);

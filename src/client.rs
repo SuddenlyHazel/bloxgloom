@@ -828,7 +828,8 @@ pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
     let mut action_seed_bytes = [0u8; 16];
-    getrandom::fill(&mut action_seed_bytes)?;
+    getrandom::fill(&mut action_seed_bytes)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
     let action_seed = u128::from_le_bytes(action_seed_bytes).max(1);
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut ClientApp::new(
