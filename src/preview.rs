@@ -101,7 +101,9 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
-    let (pipeline, camera_buffer, camera_group) = render::create_voxel_pipeline(&device, FORMAT);
+    let sky_pipeline = render::create_sky_pipeline(&device, FORMAT);
+    let (pipeline, camera_buffer, camera_group, texture_group) =
+        render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -235,12 +237,7 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.04,
-                            g: 0.06,
-                            b: 0.09,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(render::SKY_COLOR),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -254,8 +251,11 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
                 }),
                 ..Default::default()
             });
+            pass.set_pipeline(&sky_pipeline);
+            pass.draw(0..3, 0..1);
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
             for (vertices, indices, count) in &gpu_meshes {
                 pass.set_vertex_buffer(0, vertices.slice(..));
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -466,7 +466,9 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         },
     );
 
-    let (pipeline, camera_buffer, camera_group) = render::create_voxel_pipeline(&device, FORMAT);
+    let sky_pipeline = render::create_sky_pipeline(&device, FORMAT);
+    let (pipeline, camera_buffer, camera_group, texture_group) =
+        render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -659,12 +661,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.04,
-                            g: 0.06,
-                            b: 0.09,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(render::SKY_COLOR),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -683,8 +680,11 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
                 }),
                 ..Default::default()
             });
+            pass.set_pipeline(&sky_pipeline);
+            pass.draw(0..3, 0..1);
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
             final_visible = 0;
             final_triangles = 0;
             for (key, mesh) in &gpu_meshes {
