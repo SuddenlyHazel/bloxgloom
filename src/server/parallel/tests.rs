@@ -28,6 +28,40 @@ fn batch_id_exposes_tick_phase_and_dependency_wave() {
     assert_eq!(batch.wave(), 2);
 }
 
+#[test]
+fn phase_results_report_worker_count_and_nonzero_closure_time() {
+    let batch = batch(1, 0);
+    let mut executor = PhaseExecutor::<(), ()>::new(2, 2, 2).unwrap();
+    assert_eq!(executor.worker_count(), 2);
+    executor
+        .try_submit(key(1, owner_at([0, 0, 0]), 1, 0), |_| {
+            thread::sleep(Duration::from_millis(2));
+            Ok(())
+        })
+        .unwrap();
+
+    let results = executor.barrier(batch).unwrap();
+    assert!(!results.worker_run_time().is_zero());
+}
+
+#[test]
+fn pre_cancelled_job_has_zero_run_time_and_never_invokes_its_closure() {
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let invocations = Arc::new(AtomicUsize::new(0));
+    let closure_invocations = Arc::clone(&invocations);
+    let run: PhaseJob<(), ()> = Box::new(move |_| {
+        closure_invocations.fetch_add(1, AtomicOrdering::Relaxed);
+        Ok(())
+    });
+
+    let (outcome, run_time) = execute_task(cancellation, run);
+
+    assert!(matches!(outcome, WorkerOutcome::Cancelled));
+    assert_eq!(run_time, Duration::ZERO);
+    assert_eq!(invocations.load(AtomicOrdering::Relaxed), 0);
+}
+
 fn completed_jobs<R, E>(results: &PhaseResults<R, E>) -> usize {
     results.owners().iter().map(|owner| owner.jobs.len()).sum()
 }

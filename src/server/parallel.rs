@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 pub const MAX_PHASE_WORKERS: usize = 64;
 pub const MAX_PHASE_QUEUE_CAPACITY: usize = 16_384;
@@ -138,6 +139,7 @@ struct WorkerCompletion<R, E> {
     key: JobKey,
     cancellation: CancellationToken,
     outcome: WorkerOutcome<R, E>,
+    worker_run_time: Duration,
 }
 
 enum WorkerMessage<R, E> {
@@ -180,6 +182,7 @@ pub struct PhaseResults<R, E> {
     pub batch: BatchId,
     /// Owners are ordered lexicographically by chunk coordinate.
     pub owners: Vec<OwnerResults<R, E>>,
+    worker_run_time: Duration,
 }
 
 impl<R, E> PhaseResults<R, E> {
@@ -188,6 +191,13 @@ impl<R, E> PhaseResults<R, E> {
     #[allow(dead_code)]
     pub fn owners(&self) -> &[OwnerResults<R, E>] {
         &self.owners
+    }
+
+    /// Sum of time spent inside accepted job closures for this barrier.
+    /// Queued jobs cancelled before invocation contribute zero; cancelled,
+    /// stale, failed, and panicking jobs contribute their actual run time.
+    pub fn worker_run_time(&self) -> Duration {
+        self.worker_run_time
     }
 }
 
@@ -349,6 +359,11 @@ impl<R: Send + 'static, E: Send + 'static> PhaseExecutor<R, E> {
             closed_through: None,
             latest_submitted: None,
         })
+    }
+
+    /// Number of worker threads configured for this executor.
+    pub fn worker_count(&self) -> usize {
+        self.workers.len()
     }
 
     /// Enqueues one pure/read-only job without blocking for queue space.
@@ -521,7 +536,9 @@ impl<R: Send + 'static, E: Send + 'static> PhaseExecutor<R, E> {
 
         completions.sort_by_key(|completion| completion.key);
         let mut owners: Vec<OwnerResults<R, E>> = Vec::new();
+        let mut worker_run_time = Duration::ZERO;
         for completion in completions {
+            worker_run_time = worker_run_time.saturating_add(completion.worker_run_time);
             let outcome = if completion.cancellation.is_cancelled() {
                 JobOutcome::Cancelled
             } else if !is_current(completion.key) {
@@ -551,7 +568,11 @@ impl<R: Send + 'static, E: Send + 'static> PhaseExecutor<R, E> {
 
         self.pending.remove(&batch);
         self.closed_through = Some(batch);
-        Ok(PhaseResults { batch, owners })
+        Ok(PhaseResults {
+            batch,
+            owners,
+            worker_run_time,
+        })
     }
 
     /// Barrier variant for batches that do not need revision checks.
@@ -610,34 +631,42 @@ fn worker_loop<R: Send + 'static, E: Send + 'static>(
             cancellation,
             run,
         } = task;
-        let computed = catch_unwind(AssertUnwindSafe(|| {
-            if cancellation.is_cancelled() {
-                return WorkerOutcome::Cancelled;
-            }
-            let result = run(cancellation.clone());
-            if cancellation.is_cancelled() {
-                WorkerOutcome::Cancelled
-            } else {
-                WorkerOutcome::Finished(result)
-            }
-        }));
-        let outcome = match computed {
-            Ok(outcome) => outcome,
-            Err(_payload) if cancellation.is_cancelled() => WorkerOutcome::Cancelled,
-            Err(payload) => WorkerOutcome::Panicked(panic_message(payload)),
-        };
+        let (outcome, worker_run_time) = execute_task(cancellation.clone(), run);
 
         if result_sender
             .send(WorkerMessage::Completed(WorkerCompletion {
                 key,
                 cancellation,
                 outcome,
+                worker_run_time,
             }))
             .is_err()
         {
             return;
         }
     }
+}
+
+fn execute_task<R, E>(
+    cancellation: CancellationToken,
+    run: PhaseJob<R, E>,
+) -> (WorkerOutcome<R, E>, Duration) {
+    if cancellation.is_cancelled() {
+        return (WorkerOutcome::Cancelled, Duration::ZERO);
+    }
+
+    let started = Instant::now();
+    let computed = catch_unwind(AssertUnwindSafe(|| run(cancellation.clone())));
+    let worker_run_time = started.elapsed();
+    let outcome = if cancellation.is_cancelled() {
+        WorkerOutcome::Cancelled
+    } else {
+        match computed {
+            Ok(result) => WorkerOutcome::Finished(result),
+            Err(payload) => WorkerOutcome::Panicked(panic_message(payload)),
+        }
+    };
+    (outcome, worker_run_time)
 }
 
 fn panic_message(payload: Box<dyn Any + Send>) -> String {
