@@ -105,6 +105,19 @@ fn snapshot_rejects_unknown_block_ids_instead_of_treating_them_as_air() {
 }
 
 #[test]
+fn resident_view_shares_the_authoritative_chunk_allocation() {
+    let chunk = Arc::new(air_chunk(key(3, 2, -1), 12));
+    let view = VoxelView::from_resident_chunks([Arc::clone(&chunk)]).unwrap();
+
+    assert!(Arc::ptr_eq(&chunk, &view.chunks[&chunk.key]));
+    assert_eq!(view.revisions(), &[(chunk.key, 12)]);
+    assert_eq!(
+        VoxelView::from_resident_chunks([Arc::clone(&chunk), chunk]).unwrap_err(),
+        SnapshotError::DuplicateChunk { key: key(3, 2, -1) }
+    );
+}
+
+#[test]
 fn movement_rejects_inputs_that_exceed_the_bounded_step_budget() {
     let view = VoxelView::from_chunks([air_chunk(key(0, 0, 0), 0)]).unwrap();
 

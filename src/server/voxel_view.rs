@@ -53,6 +53,24 @@ impl VoxelView {
         I: IntoIterator<Item = C>,
         C: Into<Arc<Chunk>>,
     {
+        Self::build(chunks, true)
+    }
+
+    /// Fast path for chunks obtained only from `World::cached_arc_chunk`.
+    /// `World` validated/generated their voxels at load or edit time, so a
+    /// per-tick scan of all 4,096 blocks in every view would duplicate work.
+    pub(super) fn from_resident_chunks<I>(chunks: I) -> Result<Self, SnapshotError>
+    where
+        I: IntoIterator<Item = Arc<Chunk>>,
+    {
+        Self::build(chunks, false)
+    }
+
+    fn build<I, C>(chunks: I, validate_voxels: bool) -> Result<Self, SnapshotError>
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<Arc<Chunk>>,
+    {
         let mut by_key = HashMap::new();
         for chunk in chunks {
             let chunk = chunk.into();
@@ -63,12 +81,13 @@ impl VoxelView {
                     actual: chunk.blocks.len(),
                 });
             }
-            if let Some((index, block)) = chunk
-                .blocks
-                .iter()
-                .copied()
-                .enumerate()
-                .find(|(_, block)| !world::valid_block(*block))
+            if validate_voxels
+                && let Some((index, block)) = chunk
+                    .blocks
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .find(|(_, block)| !world::valid_block(*block))
             {
                 return Err(SnapshotError::InvalidBlock {
                     key: chunk.key,
