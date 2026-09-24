@@ -5,6 +5,7 @@ use crate::world::{DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE};
 pub(super) const TEXTURE_SIZE: u32 = 128;
 pub(super) const TEXTURE_LAYERS: u32 = 9;
 pub(super) const TEXTURE_MIPS: u32 = 8;
+pub(super) const GLOWSTONE_LAYER: u8 = 8;
 
 pub(super) fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
     match block {
@@ -17,7 +18,7 @@ pub(super) fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
         SNOW => 5,
         MOSS => 6,
         GRAVEL => 7,
-        GLOWSTONE => 8,
+        GLOWSTONE => GLOWSTONE_LAYER,
         _ => 3,
     }
 }

@@ -141,7 +141,8 @@ fn sky_noise(p: vec2<f32>) -> f32 {
     let cloud_coordinates = ray.xz / max(ray.y, 0.10) * 8.0;
     let cloud_noise = sky_noise(cloud_coordinates * 0.45) * 0.68
         + sky_noise(cloud_coordinates * 0.90) * 0.32;
-    let cloud = smoothstep(0.55, 0.70, cloud_noise)
+    let cloud_edge = max(0.075, 0.5 * fwidth(cloud_noise));
+    let cloud = smoothstep(0.625 - cloud_edge, 0.625 + cloud_edge, cloud_noise)
         * smoothstep(0.10, 0.28, ray.y) * 0.54;
     color = mix(color, vec3<f32>(0.92, 0.94, 0.94), cloud);
     let glow = smoothstep(0.88, 0.997, alignment);

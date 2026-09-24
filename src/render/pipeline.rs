@@ -1,5 +1,5 @@
 use super::material;
-use super::shader::with_world_sun;
+use super::shader::with_voxel_constants;
 use super::{DEPTH_FORMAT, VERTEX_FLOATS};
 
 const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
@@ -16,7 +16,7 @@ pub(crate) fn create_voxel_pipeline(
 ) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(with_world_sun(SHADER).into()),
+        source: wgpu::ShaderSource::Wgsl(with_voxel_constants(SHADER).into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
@@ -228,7 +228,7 @@ struct VertexOutput {
     let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
     let fog = smoothstep(38.0, 135.0, input.distance);
     let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
-    let emission = select(vec3<f32>(0.0), albedo * 0.70, input.layer == 8);
+    let emission = select(vec3<f32>(0.0), albedo * 0.70, input.layer == GLOWSTONE_LAYER);
     return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
 }
 "#;

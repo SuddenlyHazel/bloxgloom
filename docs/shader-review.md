@@ -1,8 +1,42 @@
 # Shader review and beauty proposals
 
-Code-only review of the inline WGSL shading layer, written while the inventory/drops
-feature was still in flight (the tree did not compile, so no preview images were
-inspected — verify visuals before adopting any of this).
+The original proposals below were a code-only review written while the inventory/drops
+feature was in flight. A focused follow-up on 2026-09-24 checked the current code and
+rendered previews; the decisions are recorded here so the proposals are not mistaken
+for adopted work.
+
+## Follow-up decisions (2026-09-24)
+
+| Idea | Decision and reason |
+|---|---|
+| Shared glowstone layer | **Implemented.** The material mapping and voxel shader constant now use `GLOWSTONE_LAYER` from `material.rs`. |
+| Sun shader source injection | **Implemented.** `shader.rs` now prepends a WGSL constant declaration instead of replacing every occurrence of a token in the source. The sun direction remains fixed at pipeline creation. |
+| Cloud edge AA | **Implemented.** The existing threshold keeps its width at normal screen sizes and widens with `fwidth(cloud_noise)` where the projected cloud pattern would alias. |
+| Anisotropic filtering | **Skipped.** The current sampler magnifies with nearest filtering; wgpu 30 requires linear magnification for anisotropy, which would change the close-up pixel look. The original note about a required `max_sampler_anisotropy` device limit is inaccurate for this wgpu version: support is a downlevel capability and unsupported devices clamp to 1×. |
+| Sun disc AA | **Skipped.** Its existing `smoothstep(0.9990, 0.99955, ...)` spans several pixels at the preview resolution. A derivative width would rarely affect the image. |
+| Sky/fog dithering | **Skipped.** No convincing banding was visible in the preview, and a raw ±1/255 linear-space dither would make dark caves grainy. This needs an output-space-aware treatment if banding becomes visible. |
+| Aerial-perspective warmth; stronger warm/cool grading | **Skipped.** The former needs a camera/view direction in the voxel shader; the latter is an art-direction change needing side-by-side visual tuning. |
+| Per-vertex AO; merged-quad light bleed | **Skipped.** `LightField::corner` already darkens corners next to opaque cells, and the greedy mask already includes exact face sky/glow levels. Long quads can still interpolate different corner samples; further splitting needs a representative scene and mesh/CPU/GPU cost comparison. |
+| World-space texture variation; baked tile-border AO | **Skipped.** The variation adds per-fragment work and requires visual/performance tuning. Dark tile borders would draw a grid on flat, repeated textures even without geometry edges. |
+| Time uniform; richer drifting clouds | **Skipped.** A useful day/night cycle needs coordinated light updates, and extra cloud octaves and shadow samples need GPU profiling. The current cloud coordinates are bounded by the ray calculation, so the large-coordinate hash concern does not apply yet. |
+| Bloom, HDR/tonemap, vignette, contrast, MSAA/FXAA | **Skipped.** These require render-target/pass changes and a separate visual and bandwidth budget. |
+| Foliage/wind, water, normal/height maps | **Skipped.** These are new surface/engine features, beyond this shader pass. |
+| Shared sky/fog palette; sky draw order; radial fog; color-space reauthoring | **Skipped.** These cross the renderer and preview setup or require a broader palette calibration. The existing view-depth fog difference is minor. |
+
+The surface preview and all three lighting previews rendered successfully. Visual
+inspection found the sky change subtle, the sealed cave dark, and the glowstone
+and bounced-light scenes intact. `cargo test` passed 62 tests; the formatting check
+and strict Clippy also passed.
+
+The headless 1280×720 benchmark on an Apple M1 Pro compared the original cloud
+threshold with the derivative version, keeping the scene and all other code fixed.
+The one-run frame numbers have normal run-to-run noise; the matching mesh sizes and
+GPU medians indicate no measurable cost in this sample.
+
+| Lighting mode | Scene setup, old → new | Mesh bytes, old = new | Steady CPU p50, old → new | Steady GPU p50, old → new |
+|---|---:|---:|---:|---:|
+| Voxel | 872.2 → 868.1 ms | 14,113,008 | 0.176 → 0.163 ms | 0.126 → 0.126 ms |
+| Bounced | 1218.8 → 1217.1 ms | 14,260,752 | 0.165 → 0.174 ms | 0.126 → 0.126 ms |
 
 ## What the shader layer is today
 
@@ -18,27 +52,25 @@ surface with no post chain:
 
 ## Review notes (correctness / robustness)
 
-- **Magic number `input.layer == 8`** (`pipeline.rs`, glowstone emission) is coupled
-  to the ordering of the `SOURCES` array in `material.rs`. Reordering that array
-  silently stops glowstone glowing. Worth a shared `const GLOWSTONE_LAYER`.
+- **Glowstone layer coupling** was a literal `input.layer == 8` in `pipeline.rs`.
+  The shader and `material_layer` now share `GLOWSTONE_LAYER`; the texture source
+  array still must keep its layer order aligned with all material mappings.
 - **The palette has three sources of truth**: the sun tint `(0.77, 0.66, 0.47)` in
   the voxel shader, the sun/glow colors in the sky shader, and `SKY_COLOR` plus
   `fog_sky`'s horizon `(0.59, 0.72, 0.82)` in `render.rs`/`pipeline.rs`. The horizon
   values match by hand. Any atmosphere work (dawn/dusk, weather) will drift
   immediately — one shared uniform or generated constants would help.
-- **`with_world_sun` does textual find-and-replace** on the whole WGSL source
-  (`shader.rs`). It works because the sun is a compile-time `const`, but changing the
-  sun recompiles pipelines, and the token would corrupt anything else containing
-  that string. An `override` or a uniform value is cleaner — and required anyway for
-  time-of-day work.
+- **`with_world_sun` used textual find-and-replace** on the whole WGSL source.
+  It now prepends a constant declaration. Changing the sun still requires a new
+  pipeline; a uniform would be needed for time-of-day work.
 - **Light bleeding across greedy quads**: `emit_quad` interpolates per-corner light
-  (`field.corner(...)`) across quads the mesher merged based on a *single* face
-  sample. A 16×16 merged wall gets a linear light gradient spanning 16 blocks. The
-  `bounce_level` nibble limits merging for bounce light only, not sky/glow
-  gradients. Added shading detail (below) runs into the same ceiling.
+  (`field.corner(...)`) across quads merged on equal face samples. The merge key
+  already contains exact sky/glow face levels and a quantized bounce level, but a
+  long quad can still interpolate different corner samples over many blocks.
 - **Sky is drawn first with `depth_compare: Always`**, so the procedural noise is
   evaluated on every pixel and then mostly overdrawn by voxels. Drawing voxels first
-  and the sky last with `LessEqual` at `z ≈ 1` saves that shading for free.
+  and the sky last with a depth test at `z ≈ 1` could save shaded sky pixels, but
+  requires coordinated changes to the game and preview render passes.
   (`SKY_COLOR` clear is effectively unreachable — the full-screen triangle covers
   everything — harmless but dead.)
 - **`input.distance = output.position.w`** is view depth, not radial distance, so fog
@@ -60,13 +92,11 @@ RGB bounce) is already richer than the shader uses.
 ### 1. Shader-only polish (small, immediate)
 
 - **Anisotropic filtering** on the material sampler (`pipeline.rs`). Distant ground
-  at grazing angles is where voxel games look mushy; 4–8× aniso is the cheapest
-  sharpness win. Note: `request_device(&DeviceDescriptor::default())` won't allow
-  it — needs `max_sampler_anisotropy` in the limits.
-- **Derivative-based edge AA in the sky**: the sun disc
-  (`smoothstep(0.9990, 0.99955, ...)`) and cloud edges are sub-pixel hard and will
-  shimmer as the camera turns. Size the smoothstep width with `fwidth()` — two
-  instructions, glassy sky.
+  at grazing angles can look mushy. On wgpu 30 this also requires linear
+  magnification, changing the current nearest-filtered close-up look.
+- **Derivative-based edge AA in the sky**: widen the cloud threshold with
+  `fwidth()` where the projected noise is finer than a pixel. The sun disc already
+  has a broad smoothstep transition at ordinary resolutions.
 - **Hash/blue-noise dither on final output** (`±1/255`): kills 8-bit banding across
   the big flat sky gradient and fog falloff. Two lines, visible quality.
 - **Aerial perspective in fog**: nudge `fog_sky` warm toward the sun based on
@@ -102,8 +132,8 @@ RGB bounce) is already richer than the shader uses.
 - **Better clouds**: currently 2 octaves of value noise with a hard threshold and no
   shading. Domain-warped 3–4 octaves, slow drift, and fake self-shadowing (sample
   density toward the sun, darken the far side) turns flat blobs into believable
-  cloud banks. The `fract(sin(...))` hash also degrades at large coordinates on some
-  drivers — an integer-based hash is safer once clouds drift.
+  cloud banks. The `fract(sin(...))` hash may degrade at large coordinates on some
+  drivers if clouds later drift far enough to reach them.
 
 ### 4. A post chain (the big unlock)
 
@@ -137,11 +167,10 @@ pass:
   surfaces — axis-aligned faces have trivially derivable tangent bases, so no new
   vertex data is needed. Do this only after 1–4.
 
-## Suggested order
+## Possible later work
 
-1 (all cheap) → 2 (AO + bleed + variation) → 4 (bloom/tonemap — biggest identity
-win) → 3 (sky) → 5 (foliage/water as feature work alongside the gameplay features
-in flight).
-
-After the inventory/drops work lands, validate against real frames with `preview`,
-`ui-preview`, and `lighting-preview` before the team picks any of this up.
+If a representative frame shows light interpolation stretching across large quads,
+measure that scene before changing the merge key. If the look calls for glowstone
+halos, prototype bloom and tonemapping together and compare GPU frame time and
+bandwidth with the current forward path. Surface features can follow their own
+gameplay and art requirements.
