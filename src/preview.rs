@@ -103,7 +103,11 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
 
 pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
-    for (name, lamp) in [("cave-dark.png", false), ("cave-lamp.png", true)] {
+    for (name, lamp, bounced) in [
+        ("cave-dark.png", false, false),
+        ("cave-lamp.png", true, false),
+        ("cave-bounced.png", true, true),
+    ] {
         pollster::block_on(render_previews(
             vec![PreviewOutput {
                 path: directory.join(name),
@@ -114,7 +118,7 @@ pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> 
                 orientation: None,
             }],
             (0, 0),
-            PreviewScene::Cave { lamp },
+            PreviewScene::Cave { lamp, bounced },
         ))?;
     }
     Ok(())
@@ -122,8 +126,12 @@ pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> 
 
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
 /// exercising the same bounded chunk upload path used by the windowed renderer.
-pub fn run_perf_benchmark(steady_frames: usize, radius: u8) -> Result<(), Box<dyn Error>> {
-    pollster::block_on(run_perf_benchmark_async(steady_frames, radius))
+pub fn run_perf_benchmark(
+    steady_frames: usize,
+    radius: u8,
+    bounced: bool,
+) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(run_perf_benchmark_async(steady_frames, radius, bounced))
 }
 
 struct PreviewOutput {
@@ -138,7 +146,7 @@ struct PreviewOutput {
 #[derive(Clone, Copy)]
 enum PreviewScene {
     Surface,
-    Cave { lamp: bool },
+    Cave { lamp: bool, bounced: bool },
 }
 
 async fn render_previews(
@@ -206,7 +214,7 @@ async fn render_previews(
             }
         }
     }
-    if let PreviewScene::Cave { lamp } = scene {
+    if let PreviewScene::Cave { lamp, .. } = scene {
         for y in 8..=16 {
             for z in 7..=24 {
                 for x in 27..=46 {
@@ -224,6 +232,11 @@ async fn render_previews(
         if lamp {
             set_preview_block(&mut chunks, 29, 12, 16, world::GLOWSTONE);
         }
+        for y in 9..=13 {
+            for z in 12..=20 {
+                set_preview_block(&mut chunks, 27, y, z, world::MOSS);
+            }
+        }
     }
     let mut gpu_meshes = Vec::new();
     for z in -2..=2 {
@@ -235,7 +248,12 @@ async fn render_previews(
                     z: center_chunk.1 + z,
                 };
                 let chunk = &chunks[&key];
-                let light = LightField::build(key, &chunks, SEED);
+                let light = LightField::build_with_bounce(
+                    key,
+                    &chunks,
+                    SEED,
+                    matches!(scene, PreviewScene::Cave { bounced: true, .. }),
+                );
                 let mesh = render::mesh_chunk_lit(chunk, &light, 0);
                 if mesh.indices.is_empty() {
                     continue;
@@ -489,7 +507,11 @@ struct PerfSample {
     phase: PerfPhase,
 }
 
-async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<(), Box<dyn Error>> {
+async fn run_perf_benchmark_async(
+    steady_frames: usize,
+    radius: u8,
+    bounced: bool,
+) -> Result<(), Box<dyn Error>> {
     if steady_frames == 0 {
         return Err("steady frame count must be at least 1".into());
     }
@@ -569,7 +591,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         }
     }
     for key in chunk_order {
-        let light = LightField::build(key, &chunks, SEED);
+        let light = LightField::build_with_bounce(key, &chunks, SEED, bounced);
         precomputed_meshes.push_back(render::mesh_chunk_lit(&chunks[&key], &light, 0));
     }
     let generation_ms = generation_started.elapsed().as_secs_f64() * 1_000.0;
@@ -582,7 +604,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         |(bytes, vertices, indices), mesh| {
             (
                 bytes + mesh.byte_len(),
-                vertices + mesh.vertices.len() / 11,
+                vertices + mesh.vertices.len() / render::VERTEX_FLOATS,
                 indices + mesh.indices.len(),
             )
         },
@@ -1090,6 +1112,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             view_distance: 3,
             scale,
             fullscreen: false,
+            bounced_gi: false,
         },
         hovered: match screen {
             UiScreen::Playing => None,

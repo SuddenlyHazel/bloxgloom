@@ -77,10 +77,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|value| value.parse::<u8>())
                 .transpose()?
                 .unwrap_or(preview::PERF_RADIUS);
+            let bounced = match args.next().as_deref() {
+                None | Some("voxel") => false,
+                Some("bounced") => true,
+                _ => return Err("usage: perf [steady-frames] [view-radius] [voxel|bounced]".into()),
+            };
             if args.next().is_some() {
-                return Err("usage: perf [steady-frames] [view-radius]".into());
+                return Err("usage: perf [steady-frames] [view-radius] [voxel|bounced]".into());
             }
-            preview::run_perf_benchmark(steady_frames, radius)?;
+            preview::run_perf_benchmark(steady_frames, radius, bounced)?;
         }
         Some(other) => {
             return Err(format!("unknown command {other:?}; use `server [address] [save-dir]`, `client [address]`, `preview [output.png]`, `ui-preview [output-dir]`, or `perf [steady-frames] [view-radius]`").into());

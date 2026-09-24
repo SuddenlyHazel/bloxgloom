@@ -4,7 +4,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use crate::world::{self, AIR, CHUNK_SIZE, Chunk, ChunkKey, GLOWSTONE, STONE};
+use crate::world::{
+    self, AIR, CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
+};
 
 const SIDE: usize = CHUNK_SIZE * 3;
 const PLANE: usize = SIDE * SIDE;
@@ -15,11 +17,13 @@ const MAX_LIGHT: u8 = 15;
 pub struct LightSample {
     pub sky: u8,
     pub glow: u8,
+    pub bounce: [u8; 3],
 }
 
 pub struct LightField {
     sky: Vec<u8>,
     glow: Vec<u8>,
+    bounce: Option<Vec<[u8; 3]>>,
 }
 
 impl LightField {
@@ -27,6 +31,15 @@ impl LightField {
     /// not yet streamed use the deterministic baseline until their snapshot
     /// arrives, at which point the client re-lights affected neighbors.
     pub fn build(key: ChunkKey, known: &HashMap<ChunkKey, Arc<Chunk>>, seed: u64) -> Self {
+        Self::build_with_bounce(key, known, seed, false)
+    }
+
+    pub fn build_with_bounce(
+        key: ChunkKey,
+        known: &HashMap<ChunkKey, Arc<Chunk>>,
+        seed: u64,
+        bounced: bool,
+    ) -> Self {
         let mut blocks = vec![STONE; VOLUME];
         for cy in 0..3 {
             for cz in 0..3 {
@@ -84,7 +97,8 @@ impl LightField {
         }
         propagate(&blocks, &mut sky, sky_frontier);
         propagate(&blocks, &mut glow, glow_frontier);
-        Self { sky, glow }
+        let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow));
+        Self { sky, glow, bounce }
     }
 
     pub fn face(&self, local: [usize; 3], axis: usize, side: i32) -> LightSample {
@@ -98,6 +112,7 @@ impl LightField {
         LightSample {
             sky: self.sky[at],
             glow: self.glow[at],
+            bounce: self.bounce.as_ref().map_or([0; 3], |bounce| bounce[at]),
         }
     }
 
@@ -109,11 +124,12 @@ impl LightField {
         side: i32,
         slice: usize,
         corner: [usize; 2],
-    ) -> [f32; 2] {
+    ) -> [f32; 5] {
         let [axis, u, v] = axes;
         let [corner_u, corner_v] = corner;
         let mut sky = 0u32;
         let mut glow = 0u32;
+        let mut bounce = [0u32; 3];
         for du in [-1isize, 0] {
             for dv in [-1isize, 0] {
                 let mut point = [CHUNK_SIZE; 3];
@@ -125,9 +141,109 @@ impl LightField {
                 let at = index(point[0], point[1], point[2]);
                 sky += u32::from(self.sky[at]);
                 glow += u32::from(self.glow[at]);
+                if let Some(field) = &self.bounce {
+                    for channel in 0..3 {
+                        bounce[channel] += u32::from(field[at][channel]);
+                    }
+                }
             }
         }
-        [sky as f32 / 60.0, glow as f32 / 60.0]
+        [
+            sky as f32 / 60.0,
+            glow as f32 / 60.0,
+            bounce[0] as f32 / 1020.0,
+            bounce[1] as f32 / 1020.0,
+            bounce[2] as f32 / 1020.0,
+        ]
+    }
+}
+
+/// One diffuse reflection from opaque surfaces. Sources are derived only from
+/// direct/propagated sky and emission; bounced light cannot bounce again.
+fn build_bounce(blocks: &[u8], sky: &[u8], glow: &[u8]) -> Vec<[u8; 3]> {
+    let mut bounce = vec![[0u8; 3]; VOLUME];
+    let mut frontier = VecDeque::new();
+    for y in 1..SIDE - 1 {
+        for z in 1..SIDE - 1 {
+            for x in 1..SIDE - 1 {
+                let at = index(x, y, z);
+                if blocks[at] != AIR {
+                    continue;
+                }
+                // Keep reflected energy well below incident energy, even where
+                // multiple faces meet. Max avoids corner over-brightening.
+                if sky[at] == 0 && glow[at] == 0 {
+                    continue;
+                }
+                for neighbor in [at - 1, at + 1, at - SIDE, at + SIDE, at - PLANE, at + PLANE] {
+                    if blocks[neighbor] == AIR {
+                        continue;
+                    }
+                    let reflectance = reflectance(blocks[neighbor]);
+                    for channel in 0..3 {
+                        let sky_color = [82u16, 105, 145][channel];
+                        let glow_color = [205u16, 125, 65][channel];
+                        let incident = ((u16::from(sky[at]) * sky_color
+                            + u16::from(glow[at]) * glow_color)
+                            / 15)
+                            .min(255);
+                        bounce[at][channel] = bounce[at][channel]
+                            .max(((incident * u16::from(reflectance[channel])) / 255) as u8);
+                    }
+                }
+                if bounce[at] != [0; 3] {
+                    frontier.push_back(at);
+                }
+            }
+        }
+    }
+    // RGB max-propagation attenuates in air and never creates another source.
+    while let Some(at) = frontier.pop_front() {
+        let next = bounce[at].map(|channel| channel.saturating_sub(18));
+        if next == [0; 3] {
+            continue;
+        }
+        let x = at % SIDE;
+        let z = at / SIDE % SIDE;
+        let y = at / PLANE;
+        for neighbor in [
+            (x > 0).then_some(at.wrapping_sub(1)),
+            (x + 1 < SIDE).then_some(at + 1),
+            (z > 0).then_some(at.wrapping_sub(SIDE)),
+            (z + 1 < SIDE).then_some(at + SIDE),
+            (y > 0).then_some(at.wrapping_sub(PLANE)),
+            (y + 1 < SIDE).then_some(at + PLANE),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if blocks[neighbor] != AIR {
+                continue;
+            }
+            let mut changed = false;
+            for channel in 0..3 {
+                if next[channel] > bounce[neighbor][channel] {
+                    bounce[neighbor][channel] = next[channel];
+                    changed = true;
+                }
+            }
+            if changed {
+                frontier.push_back(neighbor);
+            }
+        }
+    }
+    bounce
+}
+
+fn reflectance(block: u8) -> [u8; 3] {
+    match block {
+        GRASS | MOSS => [75, 170, 65],
+        DIRT => [140, 105, 72],
+        SAND => [185, 165, 115],
+        SNOW => [180, 200, 220],
+        GRAVEL => [105, 110, 115],
+        GLOWSTONE => [190, 130, 75],
+        _ => [115, 120, 128],
     }
 }
 
@@ -219,6 +335,34 @@ mod tests {
     }
 
     #[test]
+    fn bounced_mode_reflects_surface_color_without_leaking_into_default() {
+        let key = ChunkKey { x: 0, y: 1, z: 0 };
+        let mut known = sealed_neighborhood(key);
+        let room = Arc::make_mut(known.get_mut(&key).unwrap());
+        for y in 5..=7 {
+            for z in 5..=9 {
+                for x in 5..=9 {
+                    room.blocks[Chunk::index([x, y, z]).unwrap()] = AIR;
+                }
+            }
+        }
+        room.blocks[Chunk::index([7, 6, 7]).unwrap()] = GLOWSTONE;
+        room.blocks[Chunk::index([7, 6, 10]).unwrap()] = MOSS;
+        let default = LightField::build(key, &known, 0xB10C_6100);
+        let bounced = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+        let face = [7, 6, 9];
+        assert_eq!(default.face(face, 2, 0).bounce, [0; 3]);
+        let reflected = bounced.face(face, 2, 0).bounce;
+        Arc::make_mut(known.get_mut(&key).unwrap()).blocks[Chunk::index([7, 6, 10]).unwrap()] =
+            STONE;
+        let stone = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+        assert!(reflected[1] > stone.face(face, 2, 0).bounce[1]);
+        Arc::make_mut(known.get_mut(&key).unwrap()).blocks[Chunk::index([7, 6, 7]).unwrap()] = AIR;
+        let dark = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+        assert_eq!(dark.face(face, 2, 0).bounce, [0; 3]);
+    }
+
+    #[test]
     fn opening_a_roof_shaft_relights_the_cave() {
         let key = ChunkKey { x: 0, y: 1, z: 0 };
         let mut known = sealed_neighborhood(key);
@@ -252,9 +396,19 @@ mod tests {
         }
         let lit = LightField::build(key, &known, 0xB10C_6100);
         assert_eq!(lit.face([2, 5, 8], 1, 1).glow, 12);
+        let bounced = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+        assert!(
+            bounced
+                .face([2, 5, 8], 1, 1)
+                .bounce
+                .iter()
+                .any(|&channel| channel > 0)
+        );
         Arc::make_mut(known.get_mut(&west).unwrap()).blocks[Chunk::index([15, 6, 8]).unwrap()] =
             STONE;
         let dark = LightField::build(key, &known, 0xB10C_6100);
         assert_eq!(dark.face([2, 5, 8], 1, 1).glow, 0);
+        let bounced_dark = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+        assert_eq!(bounced_dark.face([2, 5, 8], 1, 1).bounce, [0; 3]);
     }
 }

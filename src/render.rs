@@ -17,7 +17,8 @@ pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth3
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
-const VERTEX_STRIDE: u64 = 11 * 4;
+pub(crate) const VERTEX_FLOATS: usize = 12;
+const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
 const TEXTURE_SIZE: u32 = 128;
 const TEXTURE_LAYERS: u32 = 9;
 const TEXTURE_MIPS: u32 = 8;
@@ -691,7 +692,7 @@ pub(crate) fn create_voxel_pipeline(
         bind_group_layouts: &[Some(&camera_layout), Some(&texture_layout)],
         immediate_size: 0,
     });
-    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2];
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32];
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("opaque voxel pipeline"),
         layout: Some(&layout),
@@ -1052,7 +1053,7 @@ fn mesh_chunk_with_light(
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         for side in [-1i32, 1] {
-            let mut mask = vec![0u16; n * n];
+            let mut mask = vec![0u32; n * n];
             for slice in 0..n {
                 mask.fill(0);
                 for j in 0..n {
@@ -1074,12 +1075,22 @@ fn mesh_chunk_with_light(
                             block_at(chunk, adjacent, n) == 0
                         };
                         if exposed {
-                            let sample = light.map_or(LightSample { sky: 15, glow: 0 }, |field| {
-                                field.face(p, axis, side)
-                            });
-                            mask[i + n * j] = u16::from(block)
-                                | (u16::from(sample.sky) << 8)
-                                | (u16::from(sample.glow) << 12);
+                            let sample = light.map_or(
+                                LightSample {
+                                    sky: 15,
+                                    glow: 0,
+                                    bounce: [0; 3],
+                                },
+                                |field| field.face(p, axis, side),
+                            );
+                            // Bounce luminance limits greedy merging so localized
+                            // reflected light survives large flat surfaces.
+                            let bounce_level =
+                                sample.bounce.iter().copied().max().unwrap_or(0) / 16;
+                            mask[i + n * j] = u32::from(block)
+                                | (u32::from(sample.sky) << 8)
+                                | (u32::from(sample.glow) << 12)
+                                | (u32::from(bounce_level) << 16);
                         }
                     }
                 }
@@ -1139,10 +1150,10 @@ fn emit_quad(
     j: usize,
     width: usize,
     height: usize,
-    material: u16,
+    material: u32,
     light: Option<&LightField>,
 ) {
-    let base = (out.vertices.len() / 11) as u32;
+    let base = (out.vertices.len() / VERTEX_FLOATS) as u32;
     let mut normal = [0.0; 3];
     normal[axis] = side as f32;
     let layer = material_layer((material & 255) as u8, axis, side);
@@ -1163,15 +1174,21 @@ fn emit_quad(
         } else {
             (du as f32, (height - dv) as f32)
         };
-        let corner_light = light.map_or([sky, glow], |field| {
+        let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0], |field| {
             field.corner([axis, u, v], side, slice, [i + du, j + dv])
         });
+        // Every 24-bit integer is represented exactly by f32. Packing RGB
+        // keeps the default path only one float wider than its old vertex.
+        let packed_bounce = (corner_light[2] * 255.0).round() as u32
+            | (((corner_light[3] * 255.0).round() as u32) << 8)
+            | (((corner_light[4] * 255.0).round() as u32) << 16);
         out.vertices.extend_from_slice(&[
             texture_u,
             texture_v,
             layer as f32,
             corner_light[0],
             corner_light[1],
+            packed_bounce as f32,
         ]);
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
@@ -1314,6 +1331,7 @@ struct VertexInput {
     @location(2) uv: vec2<f32>,
     @location(3) layer: f32,
     @location(4) light_levels: vec2<f32>,
+    @location(5) bounce_packed: f32,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -1331,10 +1349,13 @@ struct VertexOutput {
     let sunlight = max(dot(input.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
     let sky = input.light_levels.x;
     let glow = input.light_levels.y;
+    let encoded = u32(input.bounce_packed);
+    let bounce = vec3<f32>(f32(encoded & 255u), f32((encoded >> 8u) & 255u), f32((encoded >> 16u) & 255u)) / 255.0;
     output.light = vec3<f32>(0.012, 0.015, 0.022)
         + sky * (vec3<f32>(0.31, 0.40, 0.53)
             + sunlight * vec3<f32>(0.77, 0.66, 0.47))
-        + glow * glow * vec3<f32>(1.0, 0.57, 0.23);
+        + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
+        + bounce * 1.35;
     output.uv = input.uv;
     output.layer = i32(input.layer);
     output.distance = output.position.w;
@@ -1385,7 +1406,10 @@ mod tests {
         };
         chunk.blocks[Chunk::index([2, 3, 4]).unwrap()] = 3;
         let mesh = mesh_chunk(&chunk);
-        let positions = mesh.vertices.chunks_exact(11).map(|vertex| &vertex[..3]);
+        let positions = mesh
+            .vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .map(|vertex| &vertex[..3]);
         let (min, max) = positions.fold(
             ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
             |(mut min, mut max), position| {
@@ -1428,7 +1452,7 @@ mod tests {
         for wall_axis in [0, 2] {
             let vertices = mesh
                 .vertices
-                .chunks_exact(11)
+                .chunks_exact(VERTEX_FLOATS)
                 .filter(|vertex| vertex[3 + wall_axis].abs() == 1.0 && vertex[8] == 1.0);
             let mut count = 0;
             for vertex in vertices {
@@ -1448,7 +1472,10 @@ mod tests {
             blocks: vec![STONE; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
         };
         let mesh = mesh_chunk(&chunk);
-        let vertices = mesh.vertices.chunks_exact(11).collect::<Vec<_>>();
+        let vertices = mesh
+            .vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .collect::<Vec<_>>();
         assert_eq!(vertices.len(), 24);
         assert!(vertices.iter().all(|vertex| vertex[8] == 3.0));
         assert!(vertices.iter().any(|vertex| vertex[6] == 16.0));

@@ -4,7 +4,7 @@ Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedur
 
 The world generates on demand as players travel, with no fixed horizontal boundary. Temperature, moisture, and uplift create plains, forests, deserts, tundra, and rocky highlands with distinct landforms and surface layers. A deterministic wave-function-collapse pass makes constrained ground-cover patches that match across independently generated regions. Caves remain below the surface, but the new-world spawn has a solid floor beneath it; the world has an immutable solid bottom at Y = −64. Eight block types use generated pixel-art assets in `assets/textures/`, loaded into a mipmapped material array. Greedy chunk meshes repeat textures per block. The sky has world-anchored clouds and shares a fixed sun direction with terrain lighting, so the sun moves across the view when you turn.
 
-Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. This is stylized propagated voxel lighting, not bounced path-traced illumination. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
+Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. This is the default lighting mode. In Settings, `LIGHTING: BOUNCED` enables a more expensive single diffuse RGB bounce from block surfaces, including color bleed. It is a voxel approximation, not path tracing or multi-bounce GI. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits or quality changes, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
 
 Terrain generator v3 changes the baseline world. The default save directory is now `world-v3/`, leaving older `world/` saves untouched. Passing an older save directory explicitly is rejected rather than silently changing existing terrain under saved edits.
 
@@ -42,6 +42,8 @@ For visual debugging without a desktop display, run `cargo run -- preview previe
 
 Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Pause, and Settings screens at 1280×720, 640×360, and 640×360 with 2× requested UI scale, plus sun-facing and sun-away views, without opening a game window.
 
-Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave with and without a glowstone lamp through the production voxel-light and GPU shader pipeline.
+Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave, a lamp under default lighting, and the same lamp under bounced lighting through the production mesh and GPU shader pipeline.
 
 Run `cargo run --release -- perf 300 6` to measure headless 1280×720 chunk-upload, world-render, target-outline, and HUD work at the maximum supported view radius. It reports CPU submit-side and GPU render-pass frame-time percentiles, adapter, and scene size. It does not measure window presentation or live gameplay FPS.
+
+Append `bounced` to benchmark the optional lighting mode, for example `cargo run --release -- perf 300 6 bounced`. Scene setup includes light-field construction and meshing; its time is reported separately from steady frame samples.

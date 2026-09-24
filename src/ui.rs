@@ -23,6 +23,7 @@ pub enum SettingId {
     FieldOfView,
     ViewDistance,
     UiScale,
+    Lighting,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -46,6 +47,7 @@ pub struct UiSettings {
     pub view_distance: u8,
     pub scale: f32,
     pub fullscreen: bool,
+    pub bounced_gi: bool,
 }
 
 impl Default for UiSettings {
@@ -56,6 +58,7 @@ impl Default for UiSettings {
             view_distance: 3,
             scale: 1.0,
             fullscreen: false,
+            bounced_gi: false,
         }
     }
 }
@@ -259,7 +262,7 @@ impl UiLayout {
         let panel = self.settings_panel();
         let compact = panel.height < 500.0 * self.scale;
         let row_height = if compact {
-            40.0 * self.scale
+            36.0 * self.scale
         } else {
             (52.0 * self.scale).clamp(42.0, 58.0)
         };
@@ -277,6 +280,7 @@ impl UiLayout {
             SettingId::FieldOfView,
             SettingId::ViewDistance,
             SettingId::UiScale,
+            SettingId::Lighting,
         ]
         .into_iter()
         .enumerate()
@@ -977,10 +981,20 @@ impl UiBuilder<'_> {
                 },
                 format!("{:.1}X", frame.settings.scale),
             ),
+            (
+                SettingId::Lighting,
+                "LIGHTING",
+                if frame.settings.bounced_gi {
+                    "BOUNCED"
+                } else {
+                    "VOXEL"
+                }
+                .to_string(),
+            ),
         ];
         let top = panel.y + (if compact { 74.0 } else { 116.0 }) * self.scale;
         let row_height = if compact {
-            40.0 * self.scale
+            36.0 * self.scale
         } else {
             (52.0 * self.scale).clamp(42.0, 58.0)
         };
@@ -1446,6 +1460,7 @@ mod tests {
             SettingId::FieldOfView,
             SettingId::ViewDistance,
             SettingId::UiScale,
+            SettingId::Lighting,
         ] {
             assert!(layout.rect(UiControl::Decrease(setting)).is_some());
             assert!(layout.rect(UiControl::Increase(setting)).is_some());
@@ -1467,6 +1482,7 @@ mod tests {
         for control in [
             UiControl::Decrease(SettingId::Sensitivity),
             UiControl::Increase(SettingId::ViewDistance),
+            UiControl::Increase(SettingId::Lighting),
             UiControl::ToggleFullscreen,
             UiControl::Back,
         ] {

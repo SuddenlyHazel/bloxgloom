@@ -26,6 +26,7 @@ pub struct Config {
     pub view_distance: u8,
     pub scale: f32,
     pub fullscreen: bool,
+    pub bounced_gi: bool,
     pub hotbar: [u8; 9],
     pub selected_slot: usize,
     pub debug_hud: bool,
@@ -39,6 +40,7 @@ impl Default for Config {
             view_distance: 3,
             scale: 1.0,
             fullscreen: false,
+            bounced_gi: false,
             hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
             selected_slot: 1,
             debug_hud: false,
@@ -129,6 +131,7 @@ impl Config {
                 .clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE),
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
+            bounced_gi: self.bounced_gi,
             hotbar: self.hotbar.map(|block| block.clamp(1, MAX_BLOCK)),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
@@ -143,12 +146,13 @@ impl Config {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nhotbar={hotbar}\nselected_slot={}\ndebug_hud={}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nhotbar={hotbar}\nselected_slot={}\ndebug_hud={}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
             self.scale,
             self.fullscreen,
+            self.bounced_gi,
             self.selected_slot,
             self.debug_hud,
         )
@@ -189,6 +193,11 @@ fn parse_config(contents: &str) -> Config {
             "fullscreen" => {
                 if let Ok(fullscreen) = value.parse::<bool>() {
                     config.fullscreen = fullscreen;
+                }
+            }
+            "bounced_gi" => {
+                if let Ok(enabled) = value.parse::<bool>() {
+                    config.bounced_gi = enabled;
                 }
             }
             "hotbar" => {
@@ -320,6 +329,7 @@ mod tests {
             view_distance: 5,
             scale: 1.25,
             fullscreen: true,
+            bounced_gi: true,
             hotbar: [3, 2, 1, 3, 2, 1, 3, 2, 1],
             selected_slot: 7,
             debug_hud: true,
@@ -350,6 +360,7 @@ mod tests {
         assert_eq!(config.hotbar, [1, 2, 8, 1, 2, 3, 1, 2, 3]);
         assert_eq!(config.selected_slot, 8);
         assert!(config.fullscreen && config.debug_hud);
+        assert!(!config.bounced_gi);
 
         fs::write(&path, "version=99\nfov_degrees=80\n").unwrap();
         assert_eq!(Config::load(&path), Config::default());

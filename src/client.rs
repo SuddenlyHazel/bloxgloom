@@ -189,6 +189,7 @@ struct MesherJob {
     known: HashMap<ChunkKey, Arc<Chunk>>,
     seed: u64,
     revision: u64,
+    bounced_gi: bool,
 }
 
 impl Mesher {
@@ -205,7 +206,11 @@ impl Mesher {
                         Ok(job) => job,
                         Err(_) => break,
                     };
-                    let light = LightField::build(job.chunk.key, &job.known, job.seed);
+                    let light = if job.bounced_gi {
+                        LightField::build_with_bounce(job.chunk.key, &job.known, job.seed, true)
+                    } else {
+                        LightField::build(job.chunk.key, &job.known, job.seed)
+                    };
                     if results_tx
                         .send(render::mesh_chunk_lit(&job.chunk, &light, job.revision))
                         .is_err()
@@ -388,6 +393,13 @@ impl ClientApp {
                 self.config.scale = (self.config.scale + sign * 0.1).clamp(0.75, 2.0);
                 self.refresh_layout();
             }
+            SettingId::Lighting => {
+                self.config.bounced_gi = !self.config.bounced_gi;
+                let keys: Vec<_> = self.chunks.keys().copied().collect();
+                for key in keys {
+                    self.queue_relight(key, false);
+                }
+            }
         }
         self.config.sanitize();
         self.config_writer.request_save(&self.config);
@@ -448,6 +460,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::ViewDistance),
                 UiControl::Decrease(SettingId::UiScale),
                 UiControl::Increase(SettingId::UiScale),
+                UiControl::Decrease(SettingId::Lighting),
+                UiControl::Increase(SettingId::Lighting),
                 UiControl::ToggleFullscreen,
                 UiControl::Back,
             ],
@@ -696,6 +710,7 @@ impl ClientApp {
                 known: self.lighting_snapshot(key),
                 seed,
                 revision,
+                bounced_gi: self.config.bounced_gi,
             };
             if let Err(TrySendError::Full(_job)) = self.mesher.jobs.try_send(job) {
                 self.pending_mesh.insert(key, revision);
@@ -818,6 +833,7 @@ impl ClientApp {
                 view_distance: self.effective_view_distance,
                 scale: self.config.scale,
                 fullscreen: self.config.fullscreen,
+                bounced_gi: self.config.bounced_gi,
             },
             hovered: self.focused_control,
         };
