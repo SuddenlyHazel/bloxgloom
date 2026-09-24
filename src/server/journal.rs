@@ -446,10 +446,15 @@ impl Journal {
     /// Starts a bounded writer thread. Submissions never wait for disk I/O;
     /// acknowledgments arrive only after `sync_all` succeeds.
     pub fn into_writer(
-        self,
+        mut self,
         queue_capacity: usize,
         batch_delay: Duration,
     ) -> io::Result<JournalWriter> {
+        // Snapshot validation is complete before this handoff. The base
+        // anchor can be as large as the materialized world; retaining its
+        // duplicate values in the live writer would waste that much memory.
+        self.base_anchor = HashMap::new();
+        self.history = HashMap::new();
         let (sender, receiver) = mpsc::sync_channel(queue_capacity.clamp(1, MAX_QUEUE_CAPACITY));
         let usage = Arc::new(AtomicU64::new(self.log_bytes));
         let sequence = Arc::new(AtomicU64::new(self.physical_records));
@@ -791,10 +796,13 @@ impl Journal {
         let old_file = std::mem::replace(&mut self.file, generation.file);
         self.generation = generation.manifest.generation;
         self.manifest = Some(generation.manifest);
-        self.base_anchor.clone_from(&self.latest);
-        self.records.clear();
-        self.known.clear();
-        self.history.clear();
+        // Only recovery/startup uses the base anchor. Live append validation
+        // uses `latest`, so do not duplicate a potentially large compacted
+        // world after the generation switch.
+        self.base_anchor = HashMap::new();
+        self.records = Vec::new();
+        self.known = HashMap::new();
+        self.history = HashMap::new();
         self.log_bytes = generation.tail_bytes;
         drop(old_file);
         rotation::cleanup_old_files(&self.path, &generation.old_files);
