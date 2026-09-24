@@ -89,7 +89,7 @@ impl Default for UiFrame<'_> {
         Self {
             screen: UiScreen::Playing,
             selected_slot: 0,
-            hotbar: [2, 1, 2, 3, 1, 2, 3, 1, 2],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
             target: None,
             status: None,
             debug: None,
@@ -195,18 +195,23 @@ impl UiLayout {
     fn add_inventory(&mut self) {
         let panel = self.inventory_panel();
         let gap = 14.0 * self.scale;
-        let inner_gap = 12.0 * self.scale;
-        let card_width = ((panel.width - gap * 2.0 - inner_gap * 2.0) / 3.0).max(44.0);
+        let inner_gap = if panel.height < 300.0 * self.scale {
+            6.0
+        } else {
+            12.0
+        } * self.scale;
+        let card_width = ((panel.width - gap * 2.0 - inner_gap * 3.0) / 4.0).max(44.0);
         let compact = panel.height < 300.0 * self.scale;
-        let card_height = (panel.height * 0.34).clamp(76.0 * self.scale, 138.0 * self.scale);
-        let card_y = panel.y + (if compact { 78.0 } else { 98.0 }) * self.scale;
+        let top = (if compact { 72.0 } else { 96.0 }) * self.scale;
+        let footer = (if compact { 50.0 } else { 75.0 }) * self.scale;
+        let card_height = (panel.height - top - footer - inner_gap) * 0.5;
         let start_x = panel.x + gap;
-        for (index, block) in [1u8, 2, 3].into_iter().enumerate() {
+        for (index, block) in (1u8..=7).enumerate() {
             self.push(
                 UiControl::CatalogBlock(block),
                 UiRect {
-                    x: start_x + index as f32 * (card_width + inner_gap),
-                    y: card_y,
+                    x: start_x + (index % 4) as f32 * (card_width + inner_gap),
+                    y: panel.y + top + (index / 4) as f32 * (card_height + inner_gap),
                     width: card_width,
                     height: card_height,
                 },
@@ -800,7 +805,7 @@ impl UiBuilder<'_> {
                 40,
             );
         }
-        for block in [1u8, 2, 3] {
+        for block in 1u8..=7 {
             let Some(card) = layout.rect(UiControl::CatalogBlock(block)) else {
                 continue;
             };
@@ -826,11 +831,12 @@ impl UiBuilder<'_> {
                     1.0 * self.scale
                 },
             );
-            let swatch_size = (42.0 * self.scale)
+            let compact_card = card.height < 70.0 * self.scale;
+            let swatch_size = ((if compact_card { 22.0 } else { 42.0 }) * self.scale)
                 .min(card.height * 0.44)
                 .min(card.width * 0.35);
             let swatch = UiRect {
-                x: card.x + 18.0 * self.scale,
+                x: card.x + (if compact_card { 8.0 } else { 18.0 }) * self.scale,
                 y: card.y + (card.height - swatch_size) * 0.5,
                 width: swatch_size,
                 height: swatch_size,
@@ -851,20 +857,22 @@ impl UiBuilder<'_> {
             );
             self.text(
                 block_name(block),
-                swatch.x + swatch.width + 14.0 * self.scale,
-                card.y + card.height * 0.44,
-                1.0,
+                swatch.x + swatch.width + (if compact_card { 7.0 } else { 14.0 }) * self.scale,
+                card.y + card.height * (if compact_card { 0.32 } else { 0.44 }),
+                if compact_card { 0.64 } else { 0.88 },
                 TEXT,
                 18,
             );
-            self.text(
-                "PLACEABLE",
-                swatch.x + swatch.width + 14.0 * self.scale,
-                card.y + card.height * 0.70,
-                0.67,
-                MUTED,
-                18,
-            );
+            if !compact_card {
+                self.text(
+                    "PLACEABLE",
+                    swatch.x + swatch.width + 14.0 * self.scale,
+                    card.y + card.height * 0.70,
+                    0.58,
+                    MUTED,
+                    18,
+                );
+            }
         }
         let footer = "1-9 CHOOSES SLOT  /  E OR ESC CLOSES";
         self.center_text(
@@ -1306,6 +1314,10 @@ fn block_name(block: u8) -> &'static str {
         1 => "GRASS",
         2 => "DIRT",
         3 => "STONE",
+        4 => "SAND",
+        5 => "SNOW",
+        6 => "MOSS",
+        7 => "GRAVEL",
         _ => "UNKNOWN",
     }
 }
@@ -1315,6 +1327,10 @@ fn block_color(block: u8) -> [f32; 4] {
         1 => [0.32, 0.62, 0.26, 1.0],
         2 => [0.52, 0.34, 0.21, 1.0],
         3 => [0.48, 0.52, 0.53, 1.0],
+        4 => [0.87, 0.72, 0.43, 1.0],
+        5 => [0.86, 0.92, 0.96, 1.0],
+        6 => [0.27, 0.47, 0.19, 1.0],
+        7 => [0.47, 0.43, 0.39, 1.0],
         _ => [0.6, 0.3, 0.8, 1.0],
     }
 }
@@ -1399,8 +1415,18 @@ mod tests {
         assert!(pause.rect(UiControl::ToggleFullscreen).is_none());
 
         let inventory = UiLayout::new(1280, 720, 1.0, UiScreen::Inventory);
-        for block in [1, 2, 3] {
+        for block in 1..=7 {
             assert!(inventory.rect(UiControl::CatalogBlock(block)).is_some());
+        }
+        let compact_inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
+        for block in 1..=7 {
+            let card = compact_inventory
+                .rect(UiControl::CatalogBlock(block))
+                .unwrap();
+            assert_eq!(
+                compact_inventory.hit_test(card.x + card.width * 0.5, card.y + card.height * 0.5),
+                Some(UiControl::CatalogBlock(block))
+            );
         }
     }
 

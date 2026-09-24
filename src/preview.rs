@@ -27,15 +27,23 @@ const MESHER_RESULT_CAPACITY: usize = 64;
 const CLIENT_MESH_RESULT_BATCH: usize = 64;
 const CLIENT_PENDING_UPLOADS: usize = 128;
 
-pub fn render_preview(path: &Path) -> Result<(), Box<dyn Error>> {
-    pollster::block_on(render_previews(vec![PreviewOutput {
-        path: path.to_owned(),
-        width: 1000,
-        height: 600,
-        scale: 1.0,
-        screen: UiScreen::Playing,
-        orientation: None,
-    }]))
+pub fn render_preview(path: &Path, center_x: i32, center_z: i32) -> Result<(), Box<dyn Error>> {
+    if !(i32::MIN + 128..=i32::MAX - 128).contains(&center_x)
+        || !(i32::MIN + 128..=i32::MAX - 128).contains(&center_z)
+    {
+        return Err("preview center is too close to the i32 world-coordinate limit".into());
+    }
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1000,
+            height: 600,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (center_x.div_euclid(16), center_z.div_euclid(16)),
+    ))
 }
 
 /// Write every screen at 1280x720 and 640x360 for headless visual inspection.
@@ -88,7 +96,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         });
     }
     fs::create_dir_all(directory)?;
-    pollster::block_on(render_previews(outputs))
+    pollster::block_on(render_previews(outputs, (0, 0)))
 }
 
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
@@ -106,7 +114,10 @@ struct PreviewOutput {
     orientation: Option<(f32, f32)>,
 }
 
-async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Error>> {
+async fn render_previews(
+    outputs: Vec<PreviewOutput>,
+    center_chunk: (i32, i32),
+) -> Result<(), Box<dyn Error>> {
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -126,8 +137,10 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
     measure_ui_prepare(&mut ui_renderer, &queue);
-    let camera_xz = (40, 16);
-    let target_xz = (8, -16);
+    let center_x = center_chunk.0 * 16;
+    let center_z = center_chunk.1 * 16;
+    let camera_xz = (center_x + 40, center_z + 16);
+    let target_xz = (center_x + 8, center_z - 16);
     let target_height = surface_height(target_xz.0, target_xz.1);
     let camera_position = Vec3::new(
         camera_xz.0 as f32 + 0.5,
@@ -151,7 +164,14 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
     for z in -2..=2 {
         for x in -2..=2 {
             for y in 0..=4 {
-                let chunk = world::generate_chunk(ChunkKey { x, y, z }, SEED);
+                let chunk = world::generate_chunk(
+                    ChunkKey {
+                        x: center_chunk.0 + x,
+                        y,
+                        z: center_chunk.1 + z,
+                    },
+                    SEED,
+                );
                 let mesh = render::mesh_chunk(&chunk);
                 if mesh.indices.is_empty() {
                     continue;
@@ -645,7 +665,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         let ui_frame = UiFrame {
             screen: UiScreen::Playing,
             selected_slot: 1,
-            hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
             target: Some(target_block),
             status: None,
             debug: Some(ui::UiDebug {
@@ -989,7 +1009,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
     UiFrame {
         screen,
         selected_slot: 1,
-        hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+        hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
         target,
         status: (screen == UiScreen::Playing).then_some("CREATIVE MODE  /  E OPENS INVENTORY"),
         debug: None,
@@ -1014,7 +1034,7 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
         screen: UiScreen::Settings,
         selected_slot: 4,
-        hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+        hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
         target: None,
         status: None,
         debug: Some(ui::UiDebug {

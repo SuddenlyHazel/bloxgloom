@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, STONE, TERRAIN_GENERATOR_VERSION};
+use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, MAX_BLOCK, TERRAIN_GENERATOR_VERSION};
 
 const MAGIC: &[u8; 4] = b"BGED";
 const FORMAT_VERSION: u16 = 2;
@@ -55,7 +55,7 @@ impl Storage {
                         .is_some_and(|extension| extension == "bged")
                     {
                         return Err(invalid_data(
-                            "legacy world edits require migration to terrain generator v2",
+                            "legacy world edits require a compatible terrain generator",
                         ));
                     }
                 }
@@ -135,7 +135,7 @@ impl Storage {
         for record in bytes[HEADER_LEN..checksum_offset].chunks_exact(3) {
             let index = u16::from_le_bytes([record[0], record[1]]);
             if index as usize >= CHUNK_VOLUME
-                || record[2] > STONE
+                || record[2] > MAX_BLOCK
                 || blocks.insert(index, record[2]).is_some()
             {
                 return Err(invalid_data("invalid or duplicate chunk edit index"));

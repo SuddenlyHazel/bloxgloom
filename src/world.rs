@@ -9,12 +9,18 @@ use crate::storage::{SavedEdits, Storage};
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 pub const MAX_TERRAIN_HEIGHT: i32 = 64;
-pub const TERRAIN_GENERATOR_VERSION: u16 = 2;
+pub const BEDROCK_Y: i32 = -64;
+pub const TERRAIN_GENERATOR_VERSION: u16 = 3;
 pub type BlockId = u8;
 pub const AIR: BlockId = 0;
 pub const GRASS: BlockId = 1;
 pub const DIRT: BlockId = 2;
 pub const STONE: BlockId = 3;
+pub const SAND: BlockId = 4;
+pub const SNOW: BlockId = 5;
+pub const MOSS: BlockId = 6;
+pub const GRAVEL: BlockId = 7;
+pub const MAX_BLOCK: BlockId = GRAVEL;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ChunkKey {
@@ -47,7 +53,7 @@ impl Chunk {
 
     /// Returns the new version; an unchanged value does not advance it.
     pub fn set_block(&mut self, local: [usize; 3], block: BlockId) -> Option<u64> {
-        if block > STONE {
+        if block > MAX_BLOCK {
             return None;
         }
         let index = Self::index(local)?;
@@ -79,6 +85,14 @@ pub fn world_to_chunk(x: i32, y: i32, z: i32) -> (ChunkKey, [usize; 3]) {
 pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
     let mut blocks = vec![AIR; CHUNK_VOLUME];
     let bottom = i64::from(key.y) * CHUNK_SIZE as i64;
+    if bottom + CHUNK_SIZE as i64 <= i64::from(BEDROCK_Y) {
+        blocks.fill(STONE);
+        return Chunk {
+            key,
+            version: 0,
+            blocks,
+        };
+    }
     if bottom > i64::from(MAX_TERRAIN_HEIGHT) {
         return Chunk {
             key,
@@ -86,14 +100,22 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
             blocks,
         };
     }
+    let mut patterns = HashMap::new();
     for z in 0..CHUNK_SIZE {
         for x in 0..CHUNK_SIZE {
             let world_x = i64::from(key.x) * CHUNK_SIZE as i64 + x as i64;
             let world_z = i64::from(key.z) * CHUNK_SIZE as i64 + z as i64;
             let column = terrain_column(world_x, world_z, seed);
+            let pattern =
+                if bottom <= column.height && bottom + CHUNK_SIZE as i64 > column.height - 4 {
+                    surface_pattern(world_x, world_z, seed, &mut patterns)
+                } else {
+                    0
+                };
             for y in 0..CHUNK_SIZE {
                 let world_y = bottom + y as i64;
-                let block = generated_block_in_column(world_x, world_y, world_z, column, seed);
+                let block =
+                    generated_block_with_pattern(world_x, world_y, world_z, column, pattern, seed);
                 blocks[Chunk::index([x, y, z]).unwrap()] = block;
             }
         }
@@ -109,55 +131,230 @@ fn generated_block(x: i64, y: i64, z: i64, seed: u64) -> BlockId {
     generated_block_in_column(x, y, z, terrain_column(x, z, seed), seed)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Biome {
+    Plains,
+    Forest,
+    Desert,
+    Tundra,
+    Highland,
+}
+
 #[derive(Clone, Copy)]
 struct Column {
     height: i64,
     rocky: bool,
+    biome: Biome,
 }
 
 fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
     let continent = noise2(x, z, 256, seed ^ 0x42ab_51a4);
-    let climate = noise2(x, z, 384, seed ^ 0x8179_e6f2);
+    let temperature = noise2(x, z, 384, seed ^ 0x8179_e6f2);
+    let moisture = noise2(x, z, 320, seed ^ 0x6a03_d2e1);
+    let uplift = noise2(x, z, 512, seed ^ 0x9b57_2a13);
     let hills = noise2(x, z, 64, seed ^ 0xd88a_4f9b);
-    let detail = noise2(x, z, 20, seed ^ 0x7c14_1583);
+    let detail = noise2(x, z, 24, seed ^ 0x7c14_1583);
     let ridge = 1.0 - noise2(x, z, 96, seed ^ 0xe7d2_391f).abs();
-    let mountain = ((climate + 0.4) * 1.25).clamp(0.0, 1.0);
-    let height = (20.0
-        + continent * 8.0
-        + hills * 6.0
-        + detail * 2.0
+    let mountain = smooth(((uplift - 0.05) / 0.72).clamp(0.0, 1.0));
+    let aridity =
+        ((temperature + 0.05) * 1.5).clamp(0.0, 1.0) * ((-moisture + 0.05) * 1.5).clamp(0.0, 1.0);
+    let forested = (moisture * 1.5).clamp(0.0, 1.0);
+    let polar = ((-temperature - 0.1) * 1.6).clamp(0.0, 1.0);
+    let dunes = noise2(x + z / 3, z, 42, seed ^ 0xb62d_7a35) * 3.4
+        + noise2(x, z, 14, seed ^ 0x7b43_719a) * 0.8;
+    let height = (21.0
+        + continent * 6.0
+        + hills * (3.5 + mountain * 3.0)
+        + detail * (1.5 - polar * 0.8)
+        + aridity * dunes
+        + forested * noise2(x, z, 48, seed ^ 0x2740_83be) * 2.0
         + mountain * mountain * ridge * ridge * 24.0)
         .round() as i64;
+    let biome = if mountain > 0.72 && height > 34 {
+        Biome::Highland
+    } else if temperature < -0.23 {
+        Biome::Tundra
+    } else if temperature > 0.12 && moisture < -0.12 {
+        Biome::Desert
+    } else if moisture > 0.08 {
+        Biome::Forest
+    } else {
+        Biome::Plains
+    };
     Column {
         height,
-        rocky: mountain > 0.55 && height > 29,
+        rocky: biome == Biome::Highland && height > 41,
+        biome,
     }
 }
 
 fn generated_block_in_column(x: i64, y: i64, z: i64, column: Column, seed: u64) -> BlockId {
+    let pattern = if y >= column.height - 4 && y <= column.height {
+        surface_pattern(x, z, seed, &mut HashMap::new())
+    } else {
+        0
+    };
+    generated_block_with_pattern(x, y, z, column, pattern, seed)
+}
+
+fn generated_block_with_pattern(
+    x: i64,
+    y: i64,
+    z: i64,
+    column: Column,
+    pattern: u8,
+    seed: u64,
+) -> BlockId {
+    if y <= i64::from(BEDROCK_Y) {
+        return STONE;
+    }
     if y > column.height {
         AIR
     } else {
         // Coarse caverns and finer breaks share absolute world coordinates, so
         // both horizontal and vertical chunk faces sample the same field.
-        if y >= -64 {
+        if y >= i64::from(BEDROCK_Y) + 5 {
             let caverns = noise3(x, y, z, 22, seed ^ 0x9907_ae41);
             let breaks = noise3(x, y, z, 9, seed ^ 0x287a_13dc);
-            let threshold = if y >= column.height - 2 { 0.52 } else { 0.35 };
-            if caverns + breaks * 0.4 > threshold {
+            let near_spawn = x.abs() <= 12 && z.abs() <= 12;
+            let threshold = if y >= column.height - 5 { 0.66 } else { 0.35 };
+            if !(near_spawn && y >= column.height - 7) && caverns + breaks * 0.4 > threshold {
                 return AIR;
             }
         }
-        if column.rocky {
-            STONE
-        } else if y == column.height {
-            GRASS
-        } else if y >= column.height - 3 {
-            DIRT
-        } else {
-            STONE
+        if y < column.height - 4 {
+            return STONE;
+        }
+        let top = match column.biome {
+            Biome::Plains => [GRASS, GRASS, GRAVEL, STONE][pattern as usize],
+            Biome::Forest => [GRASS, MOSS, MOSS, STONE][pattern as usize],
+            Biome::Desert => [SAND, SAND, GRAVEL, STONE][pattern as usize],
+            Biome::Tundra => [SNOW, SNOW, GRAVEL, STONE][pattern as usize],
+            Biome::Highland => [STONE, GRAVEL, GRAVEL, SNOW][pattern as usize],
+        };
+        if y == column.height {
+            return top;
+        }
+        match column.biome {
+            Biome::Desert if y >= column.height - 3 => SAND,
+            Biome::Tundra if y >= column.height - 2 => DIRT,
+            Biome::Highland if column.rocky || y < column.height - 2 => STONE,
+            _ if y >= column.height - 3 => DIRT,
+            _ => STONE,
         }
     }
+}
+
+/// Collapse a small Wang-like ground-cover field. Border cells are the common
+/// substrate, so independently generated regions always meet legally. The
+/// solver propagates neighbor constraints after each minimum-entropy choice;
+/// it is only evaluated once per region while building a chunk.
+fn surface_pattern(x: i64, z: i64, seed: u64, cache: &mut HashMap<(i64, i64), [u8; 64]>) -> u8 {
+    const CELL_SIZE: i64 = 4;
+    const REGION_SIZE: i64 = 8 * CELL_SIZE;
+    let region = (x.div_euclid(REGION_SIZE), z.div_euclid(REGION_SIZE));
+    let tiles = cache
+        .entry(region)
+        .or_insert_with(|| collapse_surface(region, seed));
+    let cx = x.rem_euclid(REGION_SIZE) / CELL_SIZE;
+    let cz = z.rem_euclid(REGION_SIZE) / CELL_SIZE;
+    let tile = tiles[(cx + cz * 8) as usize];
+    if tile == 0 {
+        return 0;
+    }
+    let edge = noise2(x, z, 7, seed ^ 0x56d8_2f4a) + noise2(x, z, 3, seed ^ 0x83a2_1c59) * 0.35;
+    match tile {
+        1 if edge > 0.37 => 2,
+        2 if edge < -0.28 => 1,
+        3 if edge < -0.32 => 2,
+        _ => tile,
+    }
+}
+
+const SURFACE_NEIGHBORS: [u8; 4] = [0b0011, 0b0111, 0b1110, 0b1100];
+
+fn collapse_surface(region: (i64, i64), seed: u64) -> [u8; 64] {
+    let mut possible = [0b1111u8; 64];
+    for z in 0..8 {
+        for x in 0..8 {
+            if x == 0 || x == 7 || z == 0 || z == 7 {
+                possible[x + z * 8] = 1;
+            }
+        }
+    }
+    let region_seed = mix(seed
+        ^ (region.0 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (region.1 as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9));
+    for step in 0..64u64 {
+        // Arc-consistency propagation: each candidate must have support in
+        // every neighboring cell. This prevents isolated patch/dense tiles.
+        loop {
+            let mut changed = false;
+            for z in 0..8 {
+                for x in 0..8 {
+                    let index = x + z * 8;
+                    let mut mask = possible[index];
+                    for neighbor in [
+                        (x > 0).then_some(index.wrapping_sub(1)),
+                        (x < 7).then_some(index + 1),
+                        (z > 0).then_some(index.wrapping_sub(8)),
+                        (z < 7).then_some(index + 8),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    {
+                        let mut supported = 0;
+                        for (tile, allowed) in SURFACE_NEIGHBORS.iter().enumerate() {
+                            if possible[neighbor] & allowed != 0 {
+                                supported |= 1 << tile;
+                            }
+                        }
+                        mask &= supported;
+                    }
+                    if mask == 0 {
+                        return [0; 64];
+                    }
+                    if mask != possible[index] {
+                        possible[index] = mask;
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let next = possible
+            .iter()
+            .enumerate()
+            .filter(|(_, mask)| mask.count_ones() > 1)
+            .min_by_key(|(index, mask)| {
+                (mask.count_ones(), mix(region_seed ^ step ^ *index as u64))
+            });
+        let Some((index, mask)) = next else {
+            break;
+        };
+        let weights = [1u32, 4, 8, 3];
+        let total: u32 = weights
+            .iter()
+            .enumerate()
+            .filter(|(tile, _)| mask & (1 << tile) != 0)
+            .map(|(_, weight)| weight)
+            .sum();
+        let mut choice =
+            (mix(region_seed ^ step.wrapping_mul(0x94d0_49bb_1331_11eb)) % u64::from(total)) as u32;
+        for (tile, weight) in weights.into_iter().enumerate() {
+            if mask & (1 << tile) == 0 {
+                continue;
+            }
+            if choice < weight {
+                possible[index] = 1 << tile;
+                break;
+            }
+            choice -= weight;
+        }
+    }
+    std::array::from_fn(|index| possible[index].trailing_zeros() as u8)
 }
 
 fn noise2(x: i64, z: i64, scale: i64, seed: u64) -> f64 {
@@ -268,10 +465,16 @@ impl World {
 
     /// A successful return means the changed block and version have been saved.
     pub fn edit(&mut self, x: i32, y: i32, z: i32, block: BlockId) -> io::Result<(ChunkKey, u64)> {
-        if block > STONE {
+        if block > MAX_BLOCK {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unknown block identifier",
+            ));
+        }
+        if y <= BEDROCK_Y {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "world bottom is immutable",
             ));
         }
         let (key, local) = world_to_chunk(x, y, z);
@@ -519,6 +722,117 @@ mod tests {
         }
         assert!(cave_air > 0, "underground caves should occur");
         assert!(cave_entrances > 0, "some caves should open at the surface");
+    }
+
+    #[test]
+    fn biomes_cover_distinct_surfaces_across_an_endless_world() {
+        let seed = 0xB10C_6100;
+        let mut seen = [false; 5];
+        let mut samples = [None; 5];
+        for z in (-1024..=1024).step_by(32) {
+            for x in (-1024..=1024).step_by(32) {
+                let column = terrain_column(x, z, seed);
+                let index = match column.biome {
+                    Biome::Plains => 0,
+                    Biome::Forest => 1,
+                    Biome::Desert => 2,
+                    Biome::Tundra => 3,
+                    Biome::Highland => 4,
+                };
+                seen[index] = true;
+                samples[index].get_or_insert((x, z));
+                assert!(column.height <= i64::from(MAX_TERRAIN_HEIGHT));
+            }
+        }
+        assert!(seen.into_iter().all(|present| present));
+        eprintln!("biome preview coordinates: {samples:?}");
+        let distant = ChunkKey {
+            x: 100_000,
+            y: 1,
+            z: -100_000,
+        };
+        assert_eq!(generate_chunk(distant, seed), generate_chunk(distant, seed));
+    }
+
+    #[test]
+    fn collapsed_surface_obeys_constraints_and_matches_region_edges() {
+        let seed = 0xB10C_6100;
+        let left = collapse_surface((0, 0), seed);
+        let right = collapse_surface((1, 0), seed);
+        assert_eq!(left, collapse_surface((0, 0), seed));
+        assert!(
+            left.iter().any(|tile| *tile >= 2),
+            "collapse should make patches"
+        );
+        for field in [left, right] {
+            for z in 0..8 {
+                for x in 0..8 {
+                    let tile = field[x + z * 8];
+                    assert!(tile < 4);
+                    if x < 7 {
+                        assert_ne!(
+                            SURFACE_NEIGHBORS[tile as usize] & (1 << field[x + 1 + z * 8]),
+                            0
+                        );
+                    }
+                    if z < 7 {
+                        assert_ne!(
+                            SURFACE_NEIGHBORS[tile as usize] & (1 << field[x + (z + 1) * 8]),
+                            0
+                        );
+                    }
+                }
+            }
+        }
+        for z in 0..8 {
+            assert_eq!(left[7 + z * 8], 0);
+            assert_eq!(right[z * 8], 0);
+        }
+        for region_z in -4..4 {
+            for region_x in -4..4 {
+                let field = collapse_surface((region_x, region_z), seed);
+                assert!(
+                    field.iter().any(|tile| *tile != 0),
+                    "collapse fell back to empty at region ({region_x}, {region_z})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn world_bottom_is_solid_and_cannot_be_edited() {
+        let seed = 17;
+        for (x, z) in [(0, 0), (123_456, -654_321)] {
+            assert_eq!(generated_block(x, i64::from(BEDROCK_Y), z, seed), STONE);
+            assert_eq!(
+                generated_block(x, i64::from(BEDROCK_Y) - 1000, z, seed),
+                STONE
+            );
+        }
+        let path = test_dir();
+        let mut world = World::new(seed, path.clone()).unwrap();
+        assert_eq!(world.get_block(0, BEDROCK_Y, 0).unwrap(), STONE);
+        assert_eq!(
+            world.edit(0, BEDROCK_Y, 0, AIR).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn old_generator_world_is_rejected_without_changing_its_metadata() {
+        let path = test_dir();
+        let mut metadata = Vec::from(*b"BGWD");
+        metadata.extend_from_slice(&2u16.to_le_bytes());
+        metadata.extend_from_slice(&17u64.to_le_bytes());
+        let metadata_path = path.join("world.meta");
+        std::fs::write(&metadata_path, &metadata).unwrap();
+        assert_eq!(
+            World::new(17, path.clone()).err().unwrap().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(std::fs::read(metadata_path).unwrap(), metadata);
+        std::fs::remove_dir_all(path).unwrap();
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
+use crate::world::MAX_BLOCK;
 
 const CONFIG_VERSION: u32 = 1;
 const MIN_SENSITIVITY: f32 = 0.0002;
@@ -38,7 +39,7 @@ impl Default for Config {
             view_distance: 3,
             scale: 1.0,
             fullscreen: false,
-            hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
             selected_slot: 1,
             debug_hud: false,
         }
@@ -128,7 +129,7 @@ impl Config {
                 .clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE),
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
-            hotbar: self.hotbar.map(|block| block.clamp(1, 3)),
+            hotbar: self.hotbar.map(|block| block.clamp(1, MAX_BLOCK)),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
         }
@@ -244,7 +245,7 @@ fn parse_hotbar(value: &str) -> Option<[u8; 9]> {
     let defaults = Config::default().hotbar;
     Some(std::array::from_fn(|index| {
         parsed[index]
-            .map(|block| block.clamp(1, 3) as u8)
+            .map(|block| block.clamp(1, i64::from(MAX_BLOCK)) as u8)
             .unwrap_or(defaults[index])
     }))
 }
@@ -346,7 +347,7 @@ mod tests {
         assert_eq!(config.fov_degrees, MAX_FOV);
         assert_eq!(config.view_distance, MAX_VIEW_DISTANCE);
         assert_eq!(config.scale, MIN_SCALE);
-        assert_eq!(config.hotbar, [1, 2, 3, 1, 2, 3, 1, 2, 3]);
+        assert_eq!(config.hotbar, [1, 2, 7, 1, 2, 3, 1, 2, 3]);
         assert_eq!(config.selected_slot, 8);
         assert!(config.fullscreen && config.debug_hud);
 
@@ -376,7 +377,7 @@ mod tests {
         assert_eq!(loaded.fov_degrees, MIN_FOV);
         assert_eq!(loaded.view_distance, MIN_VIEW_DISTANCE);
         assert_eq!(loaded.scale, MAX_SCALE);
-        assert_eq!(loaded.hotbar[0..2], [1, 3]);
+        assert_eq!(loaded.hotbar[0..2], [1, 4]);
         assert_eq!(loaded.selected_slot, 8);
         fs::remove_dir_all(directory).unwrap();
     }

@@ -8,7 +8,7 @@ use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::ui::{UiFrame, UiRenderer};
-use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, DIRT, GRASS, STONE};
+use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, DIRT, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
@@ -16,7 +16,7 @@ pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
 const VERTEX_STRIDE: u64 = 9 * 4;
 const TEXTURE_SIZE: u32 = 128;
-const TEXTURE_LAYERS: u32 = 4;
+const TEXTURE_LAYERS: u32 = 8;
 const TEXTURE_MIPS: u32 = 8;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
 pub(crate) const SKY_COLOR: wgpu::Color = wgpu::Color {
@@ -1130,8 +1130,15 @@ fn emit_quad(
         position[v] += (j + dv) as f32;
         out.vertices.extend_from_slice(&position);
         out.vertices.extend_from_slice(&normal);
+        let (texture_u, texture_v) = if axis == 1 {
+            (du as f32, dv as f32)
+        } else if u == 1 {
+            (dv as f32, (width - du) as f32)
+        } else {
+            (du as f32, (height - dv) as f32)
+        };
         out.vertices
-            .extend_from_slice(&[du as f32, dv as f32, layer as f32]);
+            .extend_from_slice(&[texture_u, texture_v, layer as f32]);
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
     if side > 0 {
@@ -1150,16 +1157,24 @@ fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
         GRASS => 1,
         DIRT => 2,
         STONE => 3,
+        SAND => 4,
+        SNOW => 5,
+        MOSS => 6,
+        GRAVEL => 7,
         _ => 3,
     }
 }
 
 fn material_tiles() -> Vec<u8> {
-    const SOURCES: [&[u8]; 4] = [
+    const SOURCES: [&[u8]; 8] = [
         include_bytes!("../assets/textures/grass_top.png"),
         include_bytes!("../assets/textures/grass_side.png"),
         include_bytes!("../assets/textures/dirt.png"),
         include_bytes!("../assets/textures/stone.png"),
+        include_bytes!("../assets/textures/sand.png"),
+        include_bytes!("../assets/textures/snow.png"),
+        include_bytes!("../assets/textures/moss.png"),
+        include_bytes!("../assets/textures/gravel.png"),
     ];
     let mut pixels =
         Vec::with_capacity((TEXTURE_SIZE * TEXTURE_SIZE * TEXTURE_LAYERS * 4) as usize);
@@ -1353,6 +1368,34 @@ mod tests {
         assert_eq!(material_layer(GRASS, 1, -1), 2);
         assert_eq!(material_layer(DIRT, 1, 1), 2);
         assert_eq!(material_layer(STONE, 1, 1), 3);
+        assert_eq!(material_layer(SAND, 1, 1), 4);
+        assert_eq!(material_layer(SNOW, 1, 1), 5);
+        assert_eq!(material_layer(MOSS, 1, 1), 6);
+        assert_eq!(material_layer(GRAVEL, 1, 1), 7);
+    }
+
+    #[test]
+    fn grass_side_is_upright_on_both_wall_axes() {
+        let mut chunk = Chunk {
+            key: ChunkKey { x: 0, y: 0, z: 0 },
+            version: 0,
+            blocks: vec![0; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+        };
+        chunk.blocks[Chunk::index([1, 1, 1]).unwrap()] = GRASS;
+        let mesh = mesh_chunk(&chunk);
+        for wall_axis in [0, 2] {
+            let vertices = mesh
+                .vertices
+                .chunks_exact(9)
+                .filter(|vertex| vertex[3 + wall_axis].abs() == 1.0 && vertex[8] == 1.0);
+            let mut count = 0;
+            for vertex in vertices {
+                let expected_v = if vertex[1] == 2.0 { 0.0 } else { 1.0 };
+                assert_eq!(vertex[7], expected_v, "grass cap must face world up");
+                count += 1;
+            }
+            assert_eq!(count, 8);
+        }
     }
 
     #[test]

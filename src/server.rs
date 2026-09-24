@@ -3,7 +3,11 @@
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
 use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
-use crate::world::{AIR, ChunkKey, MAX_TERRAIN_HEIGHT, STONE, World, world_to_chunk};
+#[cfg(test)]
+use crate::world::STONE;
+use crate::world::{
+    AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_TERRAIN_HEIGHT, World, world_to_chunk,
+};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -440,9 +444,15 @@ fn edit_block(state: &mut State, id: u64, x: i32, y: i32, z: i32, block: u8) -> 
     let Some(client) = state.clients.get(&id) else {
         return Ok(());
     };
-    if block > STONE {
+    if block > MAX_BLOCK {
         client.enqueue(ServerMessage::EditRejected {
             reason: "unknown block type".into(),
+        });
+        return Ok(());
+    }
+    if y <= BEDROCK_Y {
+        client.enqueue(ServerMessage::EditRejected {
+            reason: "world bottom is immutable".into(),
         });
         return Ok(());
     }
@@ -578,6 +588,13 @@ mod tests {
             assert_eq!(world.get_block(0, feet_y, 0).unwrap(), AIR);
             assert_eq!(world.get_block(0, feet_y + 1, 0).unwrap(), AIR);
             assert_ne!(world.get_block(0, feet_y - 1, 0).unwrap(), AIR);
+            for depth in 1..=7 {
+                assert_ne!(
+                    world.get_block(0, feet_y - depth, 0).unwrap(),
+                    AIR,
+                    "new-world spawn must not sit above a cave"
+                );
+            }
             assert!(!collides(&mut world, position).unwrap());
             drop(world);
             fs::remove_dir_all(path).unwrap();

@@ -392,7 +392,8 @@ impl ClientApp {
             }
             UiControl::HotbarSlot(_) => {}
             UiControl::CatalogBlock(block)
-                if self.screen == UiScreen::Inventory && (1..=3).contains(&block) =>
+                if self.screen == UiScreen::Inventory
+                    && (1..=crate::world::MAX_BLOCK).contains(&block) =>
             {
                 self.config.hotbar[self.config.selected_slot] = block;
                 self.config_writer.request_save(&self.config);
@@ -417,7 +418,7 @@ impl ClientApp {
             UiScreen::Playing => Vec::new(),
             UiScreen::Inventory => (0..9)
                 .map(UiControl::HotbarSlot)
-                .chain((1..=3).map(UiControl::CatalogBlock))
+                .chain((1..=crate::world::MAX_BLOCK).map(UiControl::CatalogBlock))
                 .collect(),
             UiScreen::Pause => vec![UiControl::Resume, UiControl::OpenSettings, UiControl::Exit],
             UiScreen::Settings => vec![
