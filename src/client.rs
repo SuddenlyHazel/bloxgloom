@@ -1,7 +1,7 @@
 //! Desktop client: network I/O and meshing stay off the window thread.
 use crate::config::Config;
 use crate::inventory::{HOTBAR_SLOTS, Inventory};
-use crate::protocol::{ClientMessage, DroppedItem, ServerMessage};
+use crate::protocol::{ClientMessage, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{Camera, ChunkMesh, Renderer};
 use crate::ui::{SettingId, UiControl, UiDebug, UiFrame, UiLayout, UiScreen, UiSettings};
@@ -21,6 +21,9 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SPEED: f32 = 8.0;
 const MAX_CHUNKS: usize = 512;
+
+pub(crate) mod drops;
+use drops::DropAnimator;
 
 fn edit_for_hit(hit: Hit, place: bool, selected_block: u8, slot: u8) -> ClientMessage {
     let [x, y, z] = if place { hit.adjacent } else { hit.block };
@@ -86,7 +89,7 @@ struct Keys {
 
 struct ClientApp {
     inventory: Inventory,
-    drops: Vec<DroppedItem>,
+    drop_animator: DropAnimator,
     drops_revision: u64,
     inventory_source: Option<u8>,
     network: Network,
@@ -134,7 +137,7 @@ impl ClientApp {
         let config_writer = ConfigWriter::new(&config, config_path);
         Self {
             inventory: Inventory::default(),
-            drops: Vec::new(),
+            drop_animator: DropAnimator::new(now),
             drops_revision: 0,
             inventory_source: None,
             network,
@@ -510,11 +513,11 @@ impl ClientApp {
             ServerMessage::Drops { revision, items } => {
                 if revision >= self.drops_revision {
                     self.drops_revision = revision;
-                    self.drops = items;
-                    if let Some(renderer) = &mut self.renderer {
-                        renderer.set_drops(&self.drops);
-                    }
+                    self.drop_animator.snapshot(items, Instant::now());
                 }
+            }
+            ServerMessage::Pickups { items } => {
+                self.drop_animator.picked_up(items, Instant::now());
             }
             ServerMessage::Pong { .. } => {}
         }
@@ -741,7 +744,9 @@ impl ClientApp {
             },
             hovered: self.focused_control,
         };
+        let visual_drops = self.drop_animator.visuals(now, self.position);
         if let Some(renderer) = &mut self.renderer {
+            renderer.set_drops(&visual_drops);
             match renderer.render(camera, &ui) {
                 Ok(stats) => {
                     self.last_visible_chunks = stats.visible_chunks;

@@ -77,6 +77,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_drop_preview(std::path::Path::new(&path))?;
             println!("wrote {path}");
         }
+        Some("drop-animation-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "drop-animation-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: drop-animation-preview [output-dir]".into());
+            }
+            preview::render_drop_animation_previews(std::path::Path::new(&directory))?;
+            println!("wrote drop animation previews to {directory}");
+        }
         Some("perf") => {
             let steady_frames = args
                 .next()

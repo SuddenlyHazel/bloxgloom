@@ -19,13 +19,13 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::protocol::DroppedItem;
 use crate::ui::{UiFrame, UiRenderer};
 use crate::world::ChunkKey;
 
 use mesh::GpuMesh;
 use visibility::create_depth;
 
+pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
@@ -230,7 +230,7 @@ impl Renderer {
         self.depth = create_depth(&self.device, size.width, size.height);
     }
 
-    pub fn set_drops(&mut self, items: &[DroppedItem]) {
+    pub fn set_drops(&mut self, items: &[VisualDrop]) {
         let (vertices, indices) = drops::mesh(items);
         if !vertices.is_empty() {
             self.queue

@@ -4,7 +4,7 @@ use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, MAX_BLOCK};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 3;
+const WIRE_VERSION: u8 = 4;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
@@ -55,6 +55,8 @@ pub struct DroppedItem {
     pub block: u8,
     pub count: u16,
     pub position: [f32; 3],
+    /// Age at snapshot time; enough range for a stable hover phase until expiry.
+    pub age_ms: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +92,9 @@ pub enum ServerMessage {
     },
     Drops {
         revision: u64,
+        items: Vec<DroppedItem>,
+    },
+    Pickups {
         items: Vec<DroppedItem>,
     },
     Pong {
@@ -277,29 +282,39 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             }
         }
         ServerMessage::Drops { revision, items } => {
-            if items.len() > 256 {
-                return Err(invalid("too many drops"));
-            }
             out.push(9);
             out.extend(revision.to_le_bytes());
-            out.extend((items.len() as u16).to_le_bytes());
-            for item in items {
-                if !(1..=MAX_BLOCK).contains(&item.block)
-                    || !(1..=STACK_LIMIT).contains(&item.count)
-                    || item.position.iter().any(|n| !n.is_finite())
-                {
-                    return Err(invalid("invalid dropped item"));
-                }
-                out.extend(item.id.to_le_bytes());
-                out.push(item.block);
-                out.extend(item.count.to_le_bytes());
-                for n in item.position {
-                    out.extend(n.to_le_bytes());
-                }
-            }
+            write_drop_items(&mut out, items)?;
+        }
+        ServerMessage::Pickups { items } => {
+            out.push(10);
+            write_drop_items(&mut out, items)?;
         }
     }
     frame(writer, &out)
+}
+
+fn write_drop_items(out: &mut Vec<u8>, items: &[DroppedItem]) -> io::Result<()> {
+    if items.len() > 256 {
+        return Err(invalid("too many drops"));
+    }
+    out.extend((items.len() as u16).to_le_bytes());
+    for item in items {
+        if !(1..=MAX_BLOCK).contains(&item.block)
+            || !(1..=STACK_LIMIT).contains(&item.count)
+            || item.position.iter().any(|n| !n.is_finite())
+        {
+            return Err(invalid("invalid dropped item"));
+        }
+        out.extend(item.id.to_le_bytes());
+        out.push(item.block);
+        out.extend(item.count.to_le_bytes());
+        for n in item.position {
+            out.extend(n.to_le_bytes());
+        }
+        out.extend(item.age_ms.to_le_bytes());
+    }
+    Ok(())
 }
 
 struct Cursor<'a> {
@@ -330,6 +345,9 @@ impl<'a> Cursor<'a> {
     }
     fn u16(&mut self) -> io::Result<u16> {
         Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+    }
+    fn u32(&mut self) -> io::Result<u32> {
+        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
     fn u128(&mut self) -> io::Result<u128> {
         Ok(u128::from_le_bytes(self.take(16)?.try_into().unwrap()))
@@ -492,6 +510,7 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
                     block: c.u8()?,
                     count: c.u16()?,
                     position: [c.f32()?, c.f32()?, c.f32()?],
+                    age_ms: c.u32()?,
                 };
                 if !(1..=MAX_BLOCK).contains(&item.block)
                     || !(1..=STACK_LIMIT).contains(&item.count)
@@ -501,6 +520,29 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
                 items.push(item);
             }
             ServerMessage::Drops { revision, items }
+        }
+        10 => {
+            let count = c.u16()? as usize;
+            if count > 256 {
+                return Err(invalid("too many pickups"));
+            }
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                let item = DroppedItem {
+                    id: c.u64()?,
+                    block: c.u8()?,
+                    count: c.u16()?,
+                    position: [c.f32()?, c.f32()?, c.f32()?],
+                    age_ms: c.u32()?,
+                };
+                if !(1..=MAX_BLOCK).contains(&item.block)
+                    || !(1..=STACK_LIMIT).contains(&item.count)
+                {
+                    return Err(invalid("invalid picked-up item"));
+                }
+                items.push(item);
+            }
+            ServerMessage::Pickups { items }
         }
         _ => return Err(invalid("unknown server message")),
     };

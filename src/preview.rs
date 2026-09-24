@@ -15,6 +15,7 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 
 use crate::{
+    client::drops::DropAnimator,
     inventory::{SLOTS, Stack},
     lighting::LightField,
     protocol::DroppedItem,
@@ -140,8 +141,31 @@ pub fn render_drop_preview(path: &Path) -> Result<(), Box<dyn Error>> {
             orientation: None,
         }],
         (0, 0),
-        PreviewScene::Drops,
+        PreviewScene::Drops(DropPhase::Hover),
     ))
+}
+
+pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    for (name, phase) in [
+        ("pop.png", DropPhase::Pop),
+        ("hover.png", DropPhase::Hover),
+        ("pickup.png", DropPhase::Pickup),
+    ] {
+        pollster::block_on(render_previews(
+            vec![PreviewOutput {
+                path: directory.join(name),
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: None,
+            }],
+            (0, 0),
+            PreviewScene::Drops(phase),
+        ))?;
+    }
+    Ok(())
 }
 
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
@@ -164,9 +188,16 @@ struct PreviewOutput {
 }
 
 #[derive(Clone, Copy)]
+enum DropPhase {
+    Pop,
+    Hover,
+    Pickup,
+}
+
+#[derive(Clone, Copy)]
 enum PreviewScene {
     Surface,
-    Drops,
+    Drops(DropPhase),
     Cave { lamp: bool, bounced: bool },
 }
 
@@ -212,7 +243,7 @@ async fn render_previews(
                 target_xz.1 as f32 + 0.5,
             ),
         ),
-        PreviewScene::Drops => {
+        PreviewScene::Drops(_) => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
                 target_height as f32 + 1.0,
@@ -302,7 +333,7 @@ async fn render_previews(
         }
     }
 
-    let drop_gpu_mesh = if matches!(scene, PreviewScene::Drops) {
+    let drop_gpu_mesh = if let PreviewScene::Drops(phase) = scene {
         let items: Vec<_> = [world::GRASS, world::STONE, world::GLOWSTONE]
             .into_iter()
             .enumerate()
@@ -312,12 +343,29 @@ async fn render_previews(
                 count: 1,
                 position: [
                     target_xz.0 as f32 + index as f32 - 0.5,
-                    target_height as f32 + 1.0,
+                    target_height as f32 + 1.2 + index as f32 * 0.2,
                     target_xz.1 as f32 + 0.5,
                 ],
+                age_ms: if matches!(phase, DropPhase::Pop) {
+                    0
+                } else {
+                    2000
+                },
             })
             .collect();
-        let (vertices, indices) = render::mesh_dropped_items(&items);
+        let now = Instant::now();
+        let mut animator = DropAnimator::new(now);
+        animator.snapshot(items.clone(), now);
+        let moment = match phase {
+            DropPhase::Pop => now + std::time::Duration::from_millis(250),
+            DropPhase::Hover => now,
+            DropPhase::Pickup => {
+                animator.picked_up(vec![items[1]], now);
+                now + std::time::Duration::from_millis(180)
+            }
+        };
+        let visuals = animator.visuals(moment, camera_position - Vec3::Y * 1.6);
+        let (vertices, indices) = render::mesh_dropped_items(&visuals);
         let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("preview drops vertices"),
             contents: bytemuck::cast_slice(&vertices),

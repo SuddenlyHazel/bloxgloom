@@ -418,15 +418,18 @@ fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
     for item in state.drops.pickup_candidates(position) {
         let remaining = updated.insert(item.block, item.count);
         if remaining != item.count {
-            taken.push((item.id, item.count - remaining));
+            taken.push(crate::protocol::DroppedItem {
+                count: item.count - remaining,
+                ..item
+            });
         }
     }
     if taken.is_empty() {
         return Ok(());
     }
     let before_drops = state.drops.clone();
-    for (drop_id, count) in taken {
-        state.drops.take(drop_id, count);
+    for item in &taken {
+        state.drops.take(item.id, item.count);
     }
     if let Err(error) = state.drops.save() {
         state.drops = before_drops;
@@ -439,6 +442,7 @@ fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
     }
     if let Some(client) = state.clients.get_mut(&id) {
         client.inventory = updated;
+        client.enqueue(ServerMessage::Pickups { items: taken });
         client.enqueue(ServerMessage::Inventory {
             revision: client.inventory.revision,
             slots: client.inventory.slots,

@@ -163,6 +163,7 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
         block: 2,
         count: 63,
         position: [-4.5, 7.0, 9.25],
+        age_ms: 90_327,
     }];
     write_server(
         &mut bytes,
@@ -180,6 +181,18 @@ fn inventory_and_drop_snapshots_round_trip_with_bounds() {
             assert_eq!(revision, 5);
             assert_eq!(got, items);
         }
+        other => panic!("unexpected {other:?}"),
+    }
+    bytes.clear();
+    write_server(
+        &mut bytes,
+        &ServerMessage::Pickups {
+            items: items.clone(),
+        },
+    )
+    .unwrap();
+    match read_server(bytes.as_slice()).unwrap() {
+        ServerMessage::Pickups { items: got } => assert_eq!(got, items),
         other => panic!("unexpected {other:?}"),
     }
     let mut bad = [None; SLOTS];

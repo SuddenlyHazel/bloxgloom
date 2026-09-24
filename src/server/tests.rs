@@ -130,7 +130,7 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (socket, _) = listener.accept().unwrap();
-    let (sender, _receiver) = mpsc::sync_channel(32);
+    let (sender, receiver) = mpsc::sync_channel(32);
     let store = InventoryStore::new(&path).unwrap();
     let mut state = State {
         world,
@@ -186,6 +186,10 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
     assert_eq!(Drops::open(&path).unwrap().nearby(position).len(), 1);
     thread::sleep(Duration::from_millis(300));
     collect_nearby(&mut state, 1).unwrap();
+    assert!(receiver.try_iter().any(|message| matches!(
+        message,
+        ServerMessage::Pickups { items } if items.len() == 1 && items[0].count == 1
+    )));
     assert_eq!(
         state.clients[&1].inventory.slots[0],
         Some(crate::inventory::Stack {
@@ -216,6 +220,30 @@ fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
         state.inventory_store.load(42).unwrap(),
         state.clients[&1].inventory
     );
+    // A nearly full inventory takes only the free space, leaving the rest in-world.
+    let other = if original == STONE { 1 } else { STONE };
+    let mut almost_full = Inventory::default();
+    for slot in &mut almost_full.slots {
+        *slot = Some(crate::inventory::Stack {
+            block: other,
+            count: crate::inventory::STACK_LIMIT,
+        });
+    }
+    almost_full.slots[0] = Some(crate::inventory::Stack {
+        block: original,
+        count: 127,
+    });
+    state.clients.get_mut(&1).unwrap().inventory = almost_full;
+    state.drops.spawn(position, original, 10, Duration::ZERO);
+    state.drops.save().unwrap();
+    let _ = receiver.try_iter().count();
+    collect_nearby(&mut state, 1).unwrap();
+    assert_eq!(state.clients[&1].inventory.slots[0].unwrap().count, 128);
+    assert_eq!(state.drops.nearby(position)[0].count, 9);
+    assert!(receiver.try_iter().any(|message| matches!(
+        message,
+        ServerMessage::Pickups { items } if items.len() == 1 && items[0].count == 1
+    )));
     drop(peer);
     drop(state);
     fs::remove_dir_all(path).unwrap();

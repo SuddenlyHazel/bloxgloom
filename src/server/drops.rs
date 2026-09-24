@@ -91,6 +91,7 @@ impl Drops {
                     f32::from_le_bytes(record[15..19].try_into().unwrap()),
                     f32::from_le_bytes(record[19..23].try_into().unwrap()),
                 ],
+                age_ms: 0,
             };
             let born = u64::from_le_bytes(record[23..31].try_into().unwrap());
             let delay = u16::from_le_bytes(record[31..33].try_into().unwrap());
@@ -213,6 +214,7 @@ impl Drops {
                         block,
                         count: taken,
                         position,
+                        age_ms: 0,
                     },
                     created: Instant::now(),
                     created_unix_ms: unix_ms(),
@@ -228,7 +230,7 @@ impl Drops {
             .entries
             .values()
             .filter(|entry| distance_sq(entry.item.position, position) <= VIEW_RANGE_SQ)
-            .map(|entry| entry.item)
+            .map(|entry| entry.snapshot())
             .collect();
         items.sort_by(|a, b| {
             distance_sq(a.position, position)
@@ -246,9 +248,10 @@ impl Drops {
                 entry.created.elapsed() >= entry.pickup_delay
                     && distance_sq(entry.item.position, position) <= PICKUP_RANGE_SQ
             })
-            .map(|entry| entry.item)
+            .map(|entry| entry.snapshot())
             .collect();
         items.sort_by_key(|item| item.id);
+        items.truncate(256);
         items
     }
     pub(super) fn take(&mut self, id: u64, count: u16) {
@@ -280,6 +283,15 @@ impl Drops {
         self.entries
             .values()
             .any(|entry| entry.created.elapsed() >= LIFETIME)
+    }
+}
+
+impl Entry {
+    fn snapshot(&self) -> DroppedItem {
+        DroppedItem {
+            age_ms: self.created.elapsed().as_millis().min(u32::MAX as u128) as u32,
+            ..self.item
+        }
     }
 }
 
