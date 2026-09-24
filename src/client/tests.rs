@@ -2,6 +2,17 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn action_ids_keep_session_and_order_without_reuse() {
+    let first = action_id(0x1234, 1);
+    let second = action_id(0x1234, 2);
+    let other_session = action_id(0x1235, 1);
+    assert_eq!(first >> 64, 0x1234);
+    assert_eq!(first as u64, 1);
+    assert!(first < second);
+    assert_ne!(first, other_session);
+}
+
+#[test]
 fn escape_and_inventory_transitions_preserve_menu_flow() {
     assert_eq!(escape_screen(UiScreen::Playing), UiScreen::Pause);
     assert_eq!(escape_screen(UiScreen::Pause), UiScreen::Playing);

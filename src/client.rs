@@ -90,6 +90,12 @@ fn chunk_in_view(key: ChunkKey, center: ChunkKey, radius: u8) -> bool {
         && (i64::from(key.z) - i64::from(center.z)).abs() <= radius
 }
 
+/// High bits identify one random client process session; low bits preserve
+/// action order within that session for durable replay and future compaction.
+fn action_id(session: u64, sequence: u64) -> u128 {
+    (u128::from(session) << 64) | u128::from(sequence)
+}
+
 mod workers;
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 
@@ -139,7 +145,8 @@ struct ClientApp {
     next_frame: Instant,
     last_frame: Instant,
     next_seq: u64,
-    next_action_id: u128,
+    action_session: u64,
+    next_action_sequence: u64,
     unacked: VecDeque<(u64, Vec3)>,
     frame_count: u64,
     last_report: Instant,
@@ -148,7 +155,7 @@ struct ClientApp {
 }
 
 impl ClientApp {
-    fn new(network: Network, config: Config, config_path: PathBuf, action_seed: u128) -> Self {
+    fn new(network: Network, config: Config, config_path: PathBuf, action_session: u64) -> Self {
         let now = Instant::now();
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
@@ -188,7 +195,8 @@ impl ClientApp {
             next_frame: now,
             last_frame: now,
             next_seq: 1,
-            next_action_id: action_seed.max(1),
+            action_session: action_session.max(1),
+            next_action_sequence: 1,
             unacked: VecDeque::new(),
             frame_count: 0,
             last_report: now,
@@ -421,9 +429,9 @@ impl ClientApp {
     }
 
     fn allocate_action_id(&mut self) -> u128 {
-        let id = self.next_action_id;
-        self.next_action_id = self
-            .next_action_id
+        let id = action_id(self.action_session, self.next_action_sequence);
+        self.next_action_sequence = self
+            .next_action_sequence
             .checked_add(1)
             .expect("action IDs exhausted");
         id
@@ -827,16 +835,16 @@ pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&config_path);
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
-    let mut action_seed_bytes = [0u8; 16];
-    getrandom::fill(&mut action_seed_bytes)
+    let mut action_session_bytes = [0u8; 8];
+    getrandom::fill(&mut action_session_bytes)
         .map_err(|error| std::io::Error::other(error.to_string()))?;
-    let action_seed = u128::from_le_bytes(action_seed_bytes).max(1);
+    let action_session = u64::from_le_bytes(action_session_bytes).max(1);
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut ClientApp::new(
         network,
         config,
         config_path,
-        action_seed,
+        action_session,
     ))?;
     Ok(())
 }
