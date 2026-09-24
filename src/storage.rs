@@ -17,13 +17,13 @@ const CONTENT_MAGIC: &[u8; 4] = b"BGCM";
 const CONTENT_MAP: &str = "content.map";
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SavedEdits {
     pub version: u64,
     pub blocks: BTreeMap<u16, BlockId>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Storage {
     root: PathBuf,
     seed: u64,
@@ -100,10 +100,59 @@ impl Storage {
     }
 
     pub fn load(&self, key: ChunkKey) -> io::Result<SavedEdits> {
-        let bytes = match fs::read(self.path(key)) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(SavedEdits::default()),
-            Err(err) => return Err(err),
+        let bytes = self.read_snapshot_bytes(key)?;
+        self.decode_snapshot(bytes.as_deref())
+    }
+
+    /// Reads the exact persisted BGED snapshot. `None` means no override file.
+    pub fn read_snapshot(&self, key: ChunkKey) -> io::Result<Option<Vec<u8>>> {
+        let bytes = self.read_snapshot_bytes(key)?;
+        self.decode_snapshot(bytes.as_deref())?;
+        Ok(bytes)
+    }
+
+    fn read_snapshot_bytes(&self, key: ChunkKey) -> io::Result<Option<Vec<u8>>> {
+        match fs::read(self.path(key)) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Encodes sparse edits using the current BGED v2 format. A pristine chunk
+    /// has no persisted override file and is represented as `None`.
+    pub fn encode_snapshot(&self, edits: &SavedEdits) -> io::Result<Option<Vec<u8>>> {
+        if edits.blocks.len() > CHUNK_VOLUME {
+            return Err(invalid_data("too many chunk edits"));
+        }
+        if edits.version == 0 && edits.blocks.is_empty() {
+            return Ok(None);
+        }
+
+        let mut bytes = Vec::with_capacity(HEADER_LEN + edits.blocks.len() * 3 + 4);
+        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&TERRAIN_GENERATOR_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&self.seed.to_le_bytes());
+        bytes.extend_from_slice(&edits.version.to_le_bytes());
+        bytes.extend_from_slice(&(edits.blocks.len() as u16).to_le_bytes());
+        for (&index, &block) in &edits.blocks {
+            if index as usize >= CHUNK_VOLUME || !valid_block(block) {
+                return Err(invalid_data("invalid chunk edit"));
+            }
+            bytes.extend_from_slice(&index.to_le_bytes());
+            bytes.push(block);
+        }
+        let checksum = checksum(&bytes);
+        bytes.extend_from_slice(&checksum.to_le_bytes());
+        Ok(Some(bytes))
+    }
+
+    /// Decodes a validated BGED snapshot. `None` is the canonical pristine
+    /// state; a present but empty byte string is corrupt data.
+    pub fn decode_snapshot(&self, bytes: Option<&[u8]>) -> io::Result<SavedEdits> {
+        let Some(bytes) = bytes else {
+            return Ok(SavedEdits::default());
         };
         if bytes.len() < 6 || &bytes[..4] != MAGIC {
             return Err(invalid_data("invalid chunk edits header"));
@@ -149,26 +198,27 @@ impl Storage {
     }
 
     pub fn save(&self, key: ChunkKey, edits: &SavedEdits) -> io::Result<()> {
-        if edits.blocks.len() > CHUNK_VOLUME {
-            return Err(invalid_data("too many chunk edits"));
-        }
-        let mut bytes = Vec::with_capacity(HEADER_LEN + edits.blocks.len() * 3 + 4);
-        bytes.extend_from_slice(MAGIC);
-        bytes.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
-        bytes.extend_from_slice(&TERRAIN_GENERATOR_VERSION.to_le_bytes());
-        bytes.extend_from_slice(&self.seed.to_le_bytes());
-        bytes.extend_from_slice(&edits.version.to_le_bytes());
-        bytes.extend_from_slice(&(edits.blocks.len() as u16).to_le_bytes());
-        for (&index, &block) in &edits.blocks {
-            if index as usize >= CHUNK_VOLUME || !valid_block(block) {
-                return Err(invalid_data("invalid chunk edit"));
-            }
-            bytes.extend_from_slice(&index.to_le_bytes());
-            bytes.push(block);
-        }
-        let checksum = checksum(&bytes);
-        bytes.extend_from_slice(&checksum.to_le_bytes());
+        let snapshot = self.encode_snapshot(edits)?;
+        self.replace_snapshot(key, snapshot.as_deref())
+    }
 
+    /// Atomically installs an exact BGED snapshot. `None` removes the override
+    /// file and restores the generated baseline. Present bytes are validated
+    /// before replacing the durable file.
+    pub fn replace_snapshot(&self, key: ChunkKey, snapshot: Option<&[u8]>) -> io::Result<()> {
+        if let Some(snapshot) = snapshot {
+            self.decode_snapshot(Some(snapshot))?;
+        } else {
+            let path = self.path(key);
+            match fs::remove_file(path) {
+                Ok(()) => File::open(&self.root)?.sync_all()?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            return Ok(());
+        }
+
+        let snapshot = snapshot.expect("validated snapshot");
         let final_path = self.path(key);
         let temp_id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
         let temp_path = self.root.join(format!(
@@ -184,7 +234,7 @@ impl Storage {
                 .write(true)
                 .create_new(true)
                 .open(&temp_path)?;
-            file.write_all(&bytes)?;
+            file.write_all(snapshot)?;
             file.sync_all()?;
             drop(file);
             fs::rename(&temp_path, &final_path)?;

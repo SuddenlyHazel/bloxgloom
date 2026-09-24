@@ -92,6 +92,115 @@ fn interrupted_temporary_save_does_not_replace_committed_edit() {
 }
 
 #[test]
+fn wal_snapshot_remains_authoritative_after_cache_eviction() {
+    let path = test_dir();
+    let key = ChunkKey { x: -1, y: 7, z: 2 };
+    let mut world = World::with_capacity(19, path.clone(), 1).unwrap();
+    let x = -16;
+    let y = 113;
+    let z = 32;
+    let original = world.get_block(x, y, z).unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    let prepared = world.prepare_edit(x, y, z, replacement).unwrap();
+    let after_snapshot = prepared.after_snapshot.clone();
+    world.apply_prepared_edit(prepared).unwrap();
+
+    assert_eq!(world.storage.read_snapshot(key).unwrap(), None);
+    assert_eq!(
+        world.read_chunk_snapshot(key).unwrap(),
+        Some(after_snapshot.clone())
+    );
+    world.get_chunk(ChunkKey { x: 20, y: 0, z: 20 }).unwrap();
+    let (epoch, pending) = world.begin_chunk_load(key).unwrap();
+    let pending = pending.expect("fresh loads should capture the uncheckpointed WAL value");
+    assert_eq!(pending, after_snapshot);
+    let loaded = world.load_chunk_snapshot_uncached(key, &pending).unwrap();
+    assert!(world.install_loaded_if_absent(loaded, epoch).unwrap());
+    assert_eq!(world.get_block(x, y, z).unwrap(), replacement);
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn prepared_edit_is_rejected_after_newer_edit_and_cache_eviction() {
+    let path = test_dir();
+    let mut world = World::with_capacity(23, path.clone(), 1).unwrap();
+    let x = 0;
+    let y = 113;
+    let z = 0;
+    let original = world.get_block(x, y, z).unwrap();
+    let stale_value = if original == STONE { DIRT } else { STONE };
+    let stale = world.prepare_edit(x, y, z, stale_value).unwrap();
+    let newer_value = [AIR, DIRT, STONE]
+        .into_iter()
+        .find(|&block| block != original && block != stale_value)
+        .unwrap();
+    world.edit(x, y, z, newer_value).unwrap();
+    world.get_chunk(ChunkKey { x: -30, y: 0, z: 8 }).unwrap();
+
+    let error = world.apply_prepared_edit(stale).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+    assert_eq!(world.get_block(x, y, z).unwrap(), newer_value);
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn pre_edit_loader_result_is_rejected_after_edit_and_cache_eviction() {
+    let path = test_dir();
+    let mut world = World::with_capacity(29, path.clone(), 1).unwrap();
+    let x = -32;
+    let y = 113;
+    let z = 48;
+    let original = world.get_block(x, y, z).unwrap();
+    let old_result = world
+        .load_chunk_uncached(ChunkKey { x: -2, y: 7, z: 3 })
+        .unwrap();
+    let (old_epoch, _) = world
+        .begin_chunk_load(ChunkKey { x: -2, y: 7, z: 3 })
+        .unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    world.edit(x, y, z, replacement).unwrap();
+    world
+        .get_chunk(ChunkKey {
+            x: 40,
+            y: 0,
+            z: -40,
+        })
+        .unwrap();
+
+    assert!(
+        !world
+            .install_loaded_if_absent(old_result, old_epoch)
+            .unwrap()
+    );
+    assert_eq!(world.get_block(x, y, z).unwrap(), replacement);
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn restore_snapshot_does_not_replace_a_corrupt_existing_snapshot() {
+    let path = test_dir();
+    let key = ChunkKey { x: 3, y: 7, z: -2 };
+    let mut world = World::new(31, path.clone()).unwrap();
+    let original = world.get_block(48, 113, -32).unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    let committed = world
+        .prepare_edit(48, 113, -32, replacement)
+        .unwrap()
+        .after_snapshot;
+    let save_path = path.join("3_7_-2.bged");
+    fs::write(&save_path, b"corrupt prior snapshot").unwrap();
+
+    let error = world.restore_snapshot(key, &committed).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(fs::read(save_path).unwrap(), b"corrupt prior snapshot");
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn terrain_is_deterministic_and_continuous_across_chunk_faces() {
     let seed = 0xB10C_6100;
     let origin = ChunkKey { x: -1, y: 0, z: 0 };
