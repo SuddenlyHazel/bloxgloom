@@ -36,9 +36,14 @@ impl Drop for TestSave {
 
 pub(super) struct Session {
     pub(super) id: u64,
-    pub(super) joined: JoinReply,
+    pub(super) joined: JoinedSnapshot,
     pub(super) receiver: Receiver<OutboundFrame>,
     _peer: TcpStream,
+}
+
+pub(super) struct JoinedSnapshot {
+    pub(super) position: [f32; 3],
+    pub(super) inventory: Inventory,
 }
 
 pub(super) fn state_for(save: &TestSave, seed: u64) -> State {
@@ -96,9 +101,13 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
         match reply_receiver.try_recv() {
             Ok(JoinResponse::Completed(result)) => match *result {
                 Ok(joined) => {
+                    let client = state.clients.get(&joined.id).unwrap();
                     return Session {
                         id: joined.id,
-                        joined,
+                        joined: JoinedSnapshot {
+                            position: client.position(),
+                            inventory: client.inventory.clone(),
+                        },
                         receiver,
                         _peer: peer,
                     };

@@ -21,5 +21,6 @@
 
 ## Verify graphics and performance
 
+- For server networking or lifecycle changes, exercise the real nonblocking-listener path with a loopback client and an isolated temporary save. A blocking test listener and `server-perf` do not validate game startup; inspect the release client window when available.
 - If you cannot observe the game window, use `cargo run -- preview ...`, `ui-preview ...`, or `lighting-preview ...` and inspect the generated images. Do not claim a visual change is good based only on compilation or tests.
 - Use `cargo test`, `cargo fmt --all -- --check`, and `cargo clippy --all-targets --all-features -- -D warnings` for relevant changes. For rendering or meshing changes, benchmark `cargo run --release -- perf 300 6` and, when relevant, append `bounced`; compare scene setup, mesh size, CPU frame time, and GPU frame time separately. This benchmark excludes presentation and live gameplay.

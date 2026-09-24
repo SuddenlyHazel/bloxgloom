@@ -151,9 +151,6 @@ struct PendingJoin {
 
 struct JoinReply {
     id: u64,
-    seed: u64,
-    position: [f32; 3],
-    inventory: Inventory,
 }
 
 /// A socket thread may have read its BGIN snapshot before a newer WAL action
@@ -279,17 +276,47 @@ fn join_client(
     };
     let position = spawn_position_cached(state)?;
     let id = state.next_id;
-    state.next_id = state
+    let next_id = state
         .next_id
         .checked_add(1)
         .ok_or_else(|| io::Error::other("player ID exhausted"))?;
     let center = world_to_chunk(0, position[1] as i32, 0).0;
     let socket = socket.try_clone()?;
+    // Queue the complete handshake before registering the client. The
+    // publish phase can otherwise enqueue terrain before Welcome while the
+    // connection thread is waiting for this reply.
+    for message in [
+        ServerMessage::Welcome {
+            id,
+            seed: state.seed,
+        },
+        ServerMessage::Position {
+            ack_seq: 0,
+            x: position[0],
+            y: position[1],
+            z: position[2],
+        },
+        ServerMessage::ViewDistance {
+            radius: DEFAULT_VIEW,
+        },
+        ServerMessage::Inventory {
+            revision: inventory.revision,
+            slots: inventory.slots,
+        },
+    ] {
+        if !state.outbound.try_send(&sender, message) {
+            return Err(io::Error::new(
+                ErrorKind::BrokenPipe,
+                "client startup queue closed",
+            ));
+        }
+    }
+    state.next_id = next_id;
     state.clients.insert(
         id,
         Client {
             profile,
-            inventory: inventory.clone(),
+            inventory,
             last_drops_revision: u64::MAX,
             last_drop_anchor: [i32::MAX; 3],
             last_sent_drops: Vec::new(),
@@ -303,12 +330,7 @@ fn join_client(
             pending_moves: VecDeque::new(),
         },
     );
-    Ok(JoinReply {
-        id,
-        seed: state.seed,
-        position,
-        inventory,
-    })
+    Ok(JoinReply { id })
 }
 
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {

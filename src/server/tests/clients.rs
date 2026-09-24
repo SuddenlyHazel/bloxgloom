@@ -1,6 +1,5 @@
 use super::*;
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
 use std::time::Duration;
 
 #[test]
@@ -47,6 +46,52 @@ fn view_radius_is_clamped_and_acknowledged_by_the_coordinator() {
 }
 
 #[test]
+fn full_outbound_queue_disconnects_only_the_slow_client() {
+    let save = TestSave::new("slow-client-isolation");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let slow = join(&mut state, &mut tick, 1);
+    let healthy = join(&mut state, &mut tick, 2);
+    let _ = messages(&healthy);
+
+    let (sender, held_receiver) = mpsc::sync_channel(1);
+    state.clients.get_mut(&slow.id).unwrap().sender = sender;
+    assert!(state.clients[&slow.id].enqueue(ServerMessage::Pong { nonce: 1 }));
+    state
+        .drops
+        .spawn(slow.joined.position, crate::world::STONE, 1, Duration::ZERO);
+    run_empty_tick(&mut state, &mut tick);
+
+    assert!(!state.clients.contains_key(&slow.id));
+    assert!(state.clients.contains_key(&healthy.id));
+    assert!(
+        messages(&healthy)
+            .iter()
+            .any(|message| matches!(message, ServerMessage::Drops { .. }))
+    );
+    drop(held_receiver);
+}
+
+#[test]
+fn failed_startup_queue_does_not_register_a_ghost_profile() {
+    let save = TestSave::new("closed-startup-queue");
+    let mut state = state_for(&save, 7);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let _peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
+    drop(receiver);
+
+    let next_id = state.next_id;
+    let error = join_client(&mut state, 99, Inventory::default(), sender, &socket)
+        .err()
+        .unwrap();
+    assert_eq!(error.kind(), ErrorKind::BrokenPipe);
+    assert_eq!(state.next_id, next_id);
+    assert!(state.clients.is_empty());
+}
+
+#[test]
 fn mismatched_catalog_is_rejected_before_a_join_enters_the_coordinator_queue() {
     let save = TestSave::new("content-handshake");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -64,8 +109,7 @@ fn mismatched_catalog_is_rejected_before_a_join_enters_the_coordinator_queue() {
     )
     .unwrap();
 
-    let error = net::serve_client(socket, store, input, Arc::new(OutboundTelemetry::default()))
-        .unwrap_err();
+    let error = net::serve_client(socket, store, input).unwrap_err();
 
     assert_eq!(error.kind(), ErrorKind::InvalidData);
     assert!(matches!(

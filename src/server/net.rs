@@ -3,13 +3,14 @@
 //! Network threads exchange bounded messages with the simulation coordinator.
 //! They never hold or inspect gameplay state.
 
-use super::outbound::OutboundTelemetry;
 use super::{
-    DEFAULT_VIEW, INPUT_CAPACITY, JoinReply, JoinResponse, MAX_CLIENTS, OUTBOUND_CAPACITY,
-    SimulationInput, State, run_simulation_ticks,
+    INPUT_CAPACITY, JoinReply, JoinResponse, MAX_CLIENTS, OUTBOUND_CAPACITY, SimulationInput,
+    State, run_simulation_ticks,
 };
 use crate::inventory::InventoryStore;
-use crate::protocol::{self, ClientMessage, ServerMessage};
+#[cfg(test)]
+use crate::protocol::ServerMessage;
+use crate::protocol::{self, ClientMessage};
 use std::collections::HashMap;
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -73,7 +74,6 @@ pub(super) fn serve_listener(listener: TcpListener, state: State) -> io::Result<
     listener.set_nonblocking(true)?;
     let address = listener.local_addr()?;
     let inventory_store = state.inventory_store.clone();
-    let outbound = Arc::clone(&state.outbound);
     let (input_sender, input_receiver) = mpsc::sync_channel(INPUT_CAPACITY);
     let sockets = SocketRegistry::default();
     let next_connection = AtomicU64::new(1);
@@ -115,11 +115,10 @@ pub(super) fn serve_listener(listener: TcpListener, state: State) -> io::Result<
 
                 let input = input_sender.clone();
                 let store = inventory_store.clone();
-                let outbound = Arc::clone(&outbound);
                 let sockets = sockets.clone();
                 let active_connections = Arc::clone(&active_connections);
                 thread::spawn(move || {
-                    if let Err(error) = serve_client(socket, store, input, outbound) {
+                    if let Err(error) = serve_client(socket, store, input) {
                         eprintln!("client: {error}");
                     }
                     sockets.unregister(connection_id);
@@ -167,7 +166,6 @@ pub(super) fn serve_client(
     mut socket: TcpStream,
     inventory_store: InventoryStore,
     input: SyncSender<SimulationInput>,
-    outbound: Arc<OutboundTelemetry>,
 ) -> io::Result<()> {
     // On macOS, an accepted stream inherits the listener's nonblocking mode.
     // The connection reader uses blocking framed reads, so normalize the
@@ -202,12 +200,7 @@ pub(super) fn serve_client(
     let mut loaded_inventory = inventory_store.load(profile)?;
     socket.set_read_timeout(None)?;
     let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
-    let JoinReply {
-        id,
-        seed,
-        position,
-        inventory,
-    } = loop {
+    let JoinReply { id } = loop {
         let remaining = join_deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(io::Error::new(ErrorKind::TimedOut, "server join timed out"));
@@ -236,38 +229,6 @@ pub(super) fn serve_client(
         input: input.clone(),
         armed: true,
     };
-
-    if !outbound.try_send(&sender, ServerMessage::Welcome { id, seed }) {
-        return Err(io::Error::other("outbound queue closed"));
-    }
-    if !outbound.try_send(
-        &sender,
-        ServerMessage::Position {
-            ack_seq: 0,
-            x: position[0],
-            y: position[1],
-            z: position[2],
-        },
-    ) {
-        return Err(io::Error::other("outbound queue closed"));
-    }
-    if !outbound.try_send(
-        &sender,
-        ServerMessage::ViewDistance {
-            radius: DEFAULT_VIEW,
-        },
-    ) {
-        return Err(io::Error::other("outbound queue closed"));
-    }
-    if !outbound.try_send(
-        &sender,
-        ServerMessage::Inventory {
-            revision: inventory.revision,
-            slots: inventory.slots,
-        },
-    ) {
-        return Err(io::Error::other("outbound queue closed"));
-    }
 
     let mut write_socket = socket.try_clone()?;
     write_socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
