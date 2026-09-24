@@ -418,6 +418,27 @@ impl ExecutableSystem {
     }
 
     pub fn prepare(&self, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
+        self.prepare_with_wave(job, self.wave_index)
+    }
+
+    /// Runs a handler from the live server executor. Its batch wave is a
+    /// unique dispatch ordinal within the phase (several systems may share one
+    /// logical dependency wave), so registration, phase, and ownership are
+    /// checked here while the registry's frozen order supplies dependency
+    /// ordering.
+    pub(in crate::server) fn prepare_in_dispatch(
+        &self,
+        job: &OwnerJob,
+        dispatch_wave: u16,
+    ) -> Result<OwnerPatch, SystemHandlerError> {
+        self.prepare_with_wave(job, dispatch_wave)
+    }
+
+    fn prepare_with_wave(
+        &self,
+        job: &OwnerJob,
+        expected_wave: u16,
+    ) -> Result<OwnerPatch, SystemHandlerError> {
         if job.system() != self.id() {
             return Err(SystemHandlerError::WrongSystem {
                 expected: self.id().clone(),
@@ -430,9 +451,9 @@ impl ExecutableSystem {
                 actual: job.key().batch.phase(),
             });
         }
-        if job.key().batch.wave() != self.wave_index {
+        if job.key().batch.wave() != expected_wave {
             return Err(SystemHandlerError::WrongWave {
-                expected: self.wave_index,
+                expected: expected_wave,
                 actual: job.key().batch.wave(),
             });
         }

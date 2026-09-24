@@ -8,6 +8,7 @@ use super::simulation::{CommandQueue, FixedStepClock, OrderKey, QueueError};
 use super::*;
 
 pub(in crate::server) mod adapters;
+pub(in crate::server) mod systems;
 
 #[cfg(test)]
 #[path = "runtime/tests.rs"]
@@ -344,14 +345,17 @@ pub(super) fn tick_with_inputs(
             )));
         }
         for index in 0..system_count {
-            let registered = &context.state.phase_plan.systems(phase)[index];
-            let driver = registered.driver().ok_or_else(|| {
-                io::Error::other(format!(
-                    "registered system has no trusted runtime driver: {}",
-                    registered.id().as_str()
-                ))
-            })?;
-            driver(&mut context)?;
+            let registered = context.state.phase_plan.systems(phase)[index].clone();
+            if let Some(driver) = registered.driver() {
+                driver(&mut context)?;
+            } else {
+                let batch_wave = u16::try_from(index)
+                    .map_err(|_| io::Error::other("too many registered phase systems"))?;
+                context
+                    .state
+                    .system_runtime
+                    .run_registered(&registered, tick, batch_wave)?;
+            }
         }
         phase_times[phase_index] = phase_started.elapsed();
     }

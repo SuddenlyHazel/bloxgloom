@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 mod owner_wave;
 pub(super) use owner_wave::*;
 mod owner_store;
-pub(super) use owner_store::{OwnerStore, OwnerStoreError};
+pub(super) use owner_store::{OwnerData, OwnerStore, OwnerStoreError};
 
 pub const MAX_PHASE_WORKERS: usize = 64;
 pub const MAX_PHASE_QUEUE_CAPACITY: usize = 16_384;

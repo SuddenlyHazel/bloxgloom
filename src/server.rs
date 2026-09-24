@@ -56,6 +56,7 @@ use outbound::{OutboundQueue, OutboundTelemetry};
 use parallel::PhaseExecutor;
 use registry::PhasePlan;
 use runtime::run_simulation_ticks;
+use runtime::systems::SystemRuntime;
 #[cfg(test)]
 use runtime::tick_once;
 #[cfg(test)]
@@ -161,6 +162,7 @@ struct State {
     fire: FireRuntime,
     fire_last_tick: u64,
     phase_plan: PhasePlan,
+    system_runtime: SystemRuntime,
     loader: ChunkLoader,
     movement_executor: PhaseExecutor<MovementBatch, ()>,
     metrics: MetricsRecorder,
@@ -365,6 +367,7 @@ fn server_state_with_limit(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
+    let system_runtime = SystemRuntime::new(worker_count)?;
     let entity_public_revision = entities.revision();
     Ok(State {
         admission_limit,
@@ -386,6 +389,7 @@ fn server_state_with_limit(
         fire,
         fire_last_tick,
         phase_plan,
+        system_runtime,
         loader,
         movement_executor,
         metrics: MetricsRecorder::new(),

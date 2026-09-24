@@ -6,8 +6,30 @@
 //! before the first owner is updated.
 
 use super::{OwnerKey, OwnerPatch, OwnerSnapshot, ValidatedOwnerWave};
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+/// Typed extension-owned state shared immutably with worker snapshots.
+///
+/// This is runtime-local state only; persistence and generic effects are
+/// separate contracts and are not implied by storing a value here.
+#[derive(Clone)]
+pub(in crate::server) struct OwnerData(Arc<dyn Any + Send + Sync>);
+
+impl OwnerData {
+    pub fn new<T: Any + Send + Sync>(value: T) -> Self {
+        Self(Arc::new(value))
+    }
+
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
+        self.0.downcast_ref()
+    }
+
+    pub fn same_type(&self, other: &Self) -> bool {
+        self.0.as_ref().type_id() == other.0.as_ref().type_id()
+    }
+}
 
 struct OwnerCell<T> {
     revision: u64,
@@ -48,6 +70,10 @@ impl<T: Send + Sync + 'static> OwnerStore<T> {
 
     pub fn revision(&self, owner: OwnerKey) -> Option<u64> {
         self.owners.get(&owner).map(|cell| cell.revision)
+    }
+
+    pub fn len(&self) -> usize {
+        self.owners.len()
     }
 
     pub fn snapshot(&self, owner: OwnerKey) -> Result<OwnerSnapshot, OwnerStoreError> {
