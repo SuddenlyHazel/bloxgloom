@@ -1,0 +1,175 @@
+//! Behavior tests for UI layout and bounded geometry generation.
+
+use super::{
+    draw::{MAX_UI_VERTICES, UiBuilder},
+    layout::{UiLayout, effective_ui_scale},
+    types::{SettingId, UiControl, UiDebug, UiFrame, UiScreen, UiSettings},
+};
+
+#[test]
+fn hotbar_layout_hit_tests_nine_slots_without_gaps() {
+    let layout = UiLayout::new(1280, 720, 1.0, UiScreen::Playing);
+    for index in 0..9 {
+        let rect = layout.rect(UiControl::HotbarSlot(index)).unwrap();
+        assert_eq!(
+            layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+            Some(UiControl::HotbarSlot(index))
+        );
+    }
+    assert!(layout.rect(UiControl::HotbarSlot(9)).is_none());
+}
+
+#[test]
+fn menu_layouts_expose_only_visible_actions() {
+    let pause = UiLayout::new(640, 360, 1.0, UiScreen::Pause);
+    assert!(pause.rect(UiControl::Resume).is_some());
+    assert!(pause.rect(UiControl::OpenSettings).is_some());
+    assert!(pause.rect(UiControl::Exit).is_some());
+    assert!(pause.rect(UiControl::ToggleFullscreen).is_none());
+
+    let inventory = UiLayout::new(1280, 720, 1.0, UiScreen::Inventory);
+    for block in 1..=8 {
+        assert!(inventory.rect(UiControl::CatalogBlock(block)).is_some());
+    }
+    let compact_inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
+    for block in 1..=8 {
+        let card = compact_inventory
+            .rect(UiControl::CatalogBlock(block))
+            .unwrap();
+        assert_eq!(
+            compact_inventory.hit_test(card.x + card.width * 0.5, card.y + card.height * 0.5),
+            Some(UiControl::CatalogBlock(block))
+        );
+    }
+}
+
+#[test]
+fn settings_layout_has_adjusters_and_fullscreen_toggle() {
+    let layout = UiLayout::new(1280, 720, 1.0, UiScreen::Settings);
+    for setting in [
+        SettingId::Sensitivity,
+        SettingId::FieldOfView,
+        SettingId::ViewDistance,
+        SettingId::UiScale,
+        SettingId::Lighting,
+    ] {
+        assert!(layout.rect(UiControl::Decrease(setting)).is_some());
+        assert!(layout.rect(UiControl::Increase(setting)).is_some());
+    }
+    assert!(layout.rect(UiControl::ToggleFullscreen).is_some());
+    assert!(layout.rect(UiControl::Back).is_some());
+}
+
+#[test]
+fn compact_controls_hit_test_at_their_visible_centers() {
+    let inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
+    let card = inventory.rect(UiControl::CatalogBlock(2)).unwrap();
+    assert_eq!(
+        inventory.hit_test(card.x + card.width * 0.5, card.y + card.height * 0.5),
+        Some(UiControl::CatalogBlock(2))
+    );
+
+    let settings = UiLayout::new(640, 360, 1.0, UiScreen::Settings);
+    for control in [
+        UiControl::Decrease(SettingId::Sensitivity),
+        UiControl::Increase(SettingId::ViewDistance),
+        UiControl::Increase(SettingId::Lighting),
+        UiControl::ToggleFullscreen,
+        UiControl::Back,
+    ] {
+        let rect = settings.rect(control).unwrap();
+        assert_eq!(
+            settings.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+            Some(control)
+        );
+    }
+
+    let pause = UiLayout::new(640, 360, 1.0, UiScreen::Pause);
+    for control in [UiControl::Resume, UiControl::OpenSettings, UiControl::Exit] {
+        let rect = pause.rect(control).unwrap();
+        assert_eq!(
+            pause.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+            Some(control)
+        );
+    }
+}
+
+#[test]
+fn large_ui_scale_fits_small_windows_without_losing_controls() {
+    assert_eq!(effective_ui_scale(640, 360, 2.0), 1.0);
+    assert_eq!(effective_ui_scale(1280, 720, 2.0), 2.0);
+    for (width, height) in [(640, 360), (1280, 720)] {
+        for screen in [
+            UiScreen::Playing,
+            UiScreen::Inventory,
+            UiScreen::Pause,
+            UiScreen::Settings,
+        ] {
+            let layout = UiLayout::new(width, height, 2.0, screen);
+            for hit in &layout.hits {
+                assert!(hit.rect.x >= 0.0, "{screen:?}: {:?}", hit.control);
+                assert!(hit.rect.y >= 0.0, "{screen:?}: {:?}", hit.control);
+                assert!(
+                    hit.rect.x + hit.rect.width <= width as f32,
+                    "{screen:?}: {:?}",
+                    hit.control
+                );
+                assert!(
+                    hit.rect.y + hit.rect.height <= height as f32,
+                    "{screen:?}: {:?}",
+                    hit.control
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
+    let long_status = "CONNECTION MESSAGE THAT SHOULD BE CLIPPED BEFORE IT CAN GROW THE UI BUFFER";
+    let debug = UiDebug {
+        position: [1234.5, -12.0, 9876.25],
+        fps: 60.0,
+        frame_ms: 16.6,
+        visible_chunks: 512,
+        cached_chunks: 512,
+        latency_ms: Some(250),
+    };
+    for (width, height, scale) in [(1280, 720, 2.0), (640, 360, 2.0)] {
+        for screen in [
+            UiScreen::Playing,
+            UiScreen::Inventory,
+            UiScreen::Pause,
+            UiScreen::Settings,
+        ] {
+            let frame = UiFrame {
+                screen,
+                selected_slot: 8,
+                hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+                target: Some([10, 20, -30]),
+                status: Some(long_status),
+                debug: Some(debug),
+                catalog_selection: 3,
+                settings: UiSettings {
+                    scale,
+                    ..UiSettings::default()
+                },
+                hovered: Some(UiControl::Increase(SettingId::FieldOfView)),
+            };
+            let layout = UiLayout::new(width, height, scale, screen);
+            let mut vertices = Vec::with_capacity(MAX_UI_VERTICES);
+            let mut builder = UiBuilder {
+                vertices: &mut vertices,
+                width: width as f32,
+                height: height as f32,
+                scale,
+            };
+            builder.draw_frame(&frame, &layout);
+            assert!(
+                vertices.len() < MAX_UI_VERTICES / 2,
+                "{screen:?} at {width}x{height}: {} vertices",
+                vertices.len()
+            );
+        }
+    }
+}
