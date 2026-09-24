@@ -311,30 +311,60 @@ fn handshake(
         ));
     }
     protocol::write_client(&mut *socket, &ClientMessage::ContentReady { fingerprint })?;
-    let mut epoch = None;
-    let mut position = None;
-    let mut welcome = false;
-    let mut view = false;
-    let mut inventory = false;
-    while !(welcome && epoch.is_some() && position.is_some() && view && inventory) {
-        match protocol::read_server(&mut *socket)? {
-            ServerMessage::Welcome { .. } => welcome = true,
-            ServerMessage::ActionSession { epoch: value, .. } => epoch = Some(value),
-            ServerMessage::Position { x, y, z, .. } => position = Some([x, y, z]),
-            ServerMessage::ViewDistance { .. } => view = true,
-            ServerMessage::Inventory { .. } => inventory = true,
-            _ => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "terrain arrived before ordered join handshake",
-                ));
-            }
-        }
+    let ServerMessage::Welcome {
+        id: connection_id, ..
+    } = protocol::read_server(&mut *socket)?
+    else {
+        return Err(io::Error::new(ErrorKind::InvalidData, "expected Welcome"));
+    };
+    let ServerMessage::OwnedEntity { id: entity_id } = protocol::read_server(&mut *socket)? else {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "expected OwnedEntity after Welcome",
+        ));
+    };
+    if crate::server::entities::EntityId::for_player_session(connection_id)
+        .is_none_or(|expected| expected.get() != entity_id)
+    {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "owned player entity does not match connection",
+        ));
+    }
+    let ServerMessage::ActionSession { epoch, .. } = protocol::read_server(&mut *socket)? else {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "expected ActionSession after OwnedEntity",
+        ));
+    };
+    let ServerMessage::Position { x, y, z, .. } = protocol::read_server(&mut *socket)? else {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "expected join Position",
+        ));
+    };
+    if !matches!(
+        protocol::read_server(&mut *socket)?,
+        ServerMessage::ViewDistance { .. }
+    ) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "expected join ViewDistance",
+        ));
+    }
+    if !matches!(
+        protocol::read_server(&mut *socket)?,
+        ServerMessage::Inventory { .. }
+    ) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "expected join Inventory",
+        ));
     }
     let _ = writer;
     Ok(Ready {
-        epoch: epoch.unwrap(),
-        position: position.unwrap(),
+        epoch,
+        position: [x, y, z],
     })
 }
 
