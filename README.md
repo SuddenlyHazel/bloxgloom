@@ -2,7 +2,7 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
-The fixed-step multiplayer server architecture, its implementation status, and remaining acceptance gates are documented in [docs/server-simulation.md](docs/server-simulation.md).
+The implemented client/server event flow and tick loop are documented in [docs/runtime-architecture.md](docs/runtime-architecture.md). The longer-term simulation design, implementation status, and remaining acceptance gates are in [docs/server-simulation.md](docs/server-simulation.md).
 
 The world generates on demand as players travel, with no fixed horizontal boundary. Temperature, moisture, and uplift create plains, forests, deserts, tundra, and rocky highlands with distinct landforms and surface layers. A deterministic wave-function-collapse pass makes constrained ground-cover patches that match across independently generated regions. Biome-aware flowers, ferns, grass, and broadleaf trees add vegetation that stays consistent across chunk borders; plants can be broken and collected. Caves remain below the surface, but the new-world spawn has a solid floor beneath it; the world has an immutable solid bottom at Y = −64. Fifteen block types use pixel-art assets in `assets/textures/`. Opaque blocks use greedy chunk meshes; foliage uses a separate cutout mesh. The sky has world-anchored clouds and shares a fixed sun direction with terrain lighting, so the sun moves across the view when you turn.
 
