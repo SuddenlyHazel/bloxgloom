@@ -171,7 +171,10 @@ pub fn world_to_chunk(x: i32, y: i32, z: i32) -> (ChunkKey, [usize; 3]) {
 }
 
 struct CacheEntry {
-    chunk: Chunk,
+    // Readers of an active simulation phase retain this allocation while a
+    // later edit replaces the resident version. No full chunk copy is needed
+    // just to hand immutable terrain to a worker.
+    chunk: Arc<Chunk>,
     edits: BTreeMap<u16, BlockId>,
     last_used: u64,
 }
@@ -219,7 +222,7 @@ impl World {
     /// Returns an owned, stable snapshot suitable for sending or meshing.
     pub fn get_chunk(&mut self, key: ChunkKey) -> io::Result<Chunk> {
         self.ensure_loaded(key)?;
-        Ok(self.cache[&key].chunk.clone())
+        Ok((*self.cache[&key].chunk).clone())
     }
 
     /// Returns an owned snapshot only when this world already has the chunk in
@@ -228,7 +231,17 @@ impl World {
         self.clock = self.clock.wrapping_add(1);
         let entry = self.cache.get_mut(&key)?;
         entry.last_used = self.clock;
-        Some(entry.chunk.clone())
+        Some((*entry.chunk).clone())
+    }
+
+    /// Borrows the already-resident authoritative chunk for a parallel read
+    /// view without copying its voxel array. The Arc pins this exact version
+    /// even if a later edit replaces the cached chunk.
+    pub fn cached_arc_chunk(&mut self, key: ChunkKey) -> Option<Arc<Chunk>> {
+        self.clock = self.clock.wrapping_add(1);
+        let entry = self.cache.get_mut(&key)?;
+        entry.last_used = self.clock;
+        Some(Arc::clone(&entry.chunk))
     }
 
     /// Reads the version of an already-resident authoritative chunk without
@@ -403,7 +416,7 @@ impl World {
         }
         self.pending_snapshots.remove(&key);
         if let Some(entry) = self.cache.get_mut(&key) {
-            entry.chunk = loaded.chunk;
+            entry.chunk = Arc::new(loaded.chunk);
             entry.edits = loaded.edits;
         }
         Ok(())
@@ -505,7 +518,7 @@ impl World {
             })?;
             let before_edits = entry.edits.clone();
             let mut after_edits = before_edits.clone();
-            let mut after_chunk = entry.chunk.clone();
+            let mut after_chunk = (*entry.chunk).clone();
             after_chunk.version = 0;
             let mut changed = false;
             for &(x, y, z, local, block) in &grouped[&key] {
@@ -738,7 +751,7 @@ impl World {
         self.cache.insert(
             loaded.chunk.key,
             CacheEntry {
-                chunk: loaded.chunk,
+                chunk: Arc::new(loaded.chunk),
                 edits: loaded.edits,
                 last_used: self.clock,
             },

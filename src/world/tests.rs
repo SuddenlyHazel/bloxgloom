@@ -66,6 +66,31 @@ fn edits_survive_restart_and_cache_eviction() {
 }
 
 #[test]
+fn resident_arc_view_pins_a_version_without_copying_voxels() {
+    let path = test_dir();
+    let mut world = World::with_capacity(42, path.clone(), 1).unwrap();
+    let (key, local) = world_to_chunk(0, 110, 0);
+    world.get_chunk(key).unwrap();
+    let old = world.cached_arc_chunk(key).unwrap();
+    let another_reader = world.cached_arc_chunk(key).unwrap();
+    assert!(Arc::ptr_eq(&old, &another_reader));
+    let original = old.block(local).unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    let prepared = world.prepare_edit(0, 110, 0, replacement).unwrap();
+    world.apply_prepared_edit(prepared).unwrap();
+    let current = world.cached_arc_chunk(key).unwrap();
+    assert!(!Arc::ptr_eq(&old, &current));
+    assert_eq!(old.version, 0);
+    assert_eq!(old.block(local), Some(original));
+    assert_eq!(current.version, 1);
+    assert_eq!(current.block(local), Some(replacement));
+    world.get_chunk(ChunkKey { x: 30, y: 0, z: 30 }).unwrap();
+    assert!(world.cached_arc_chunk(key).is_none());
+    assert_eq!(old.block(local), Some(original));
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn corrupt_save_is_not_silently_discarded() {
     let path = test_dir();
     let key = ChunkKey { x: 0, y: 0, z: 0 };
