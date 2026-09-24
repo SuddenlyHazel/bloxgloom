@@ -8,7 +8,9 @@ use std::sync::{Arc, Weak};
 
 use crate::storage::{SavedEdits, Storage};
 
+mod cache;
 mod terrain;
+use cache::ChunkCache;
 pub use terrain::generate_chunk;
 use terrain::generated_block;
 pub(crate) use terrain::terrain_height;
@@ -170,30 +172,20 @@ pub fn world_to_chunk(x: i32, y: i32, z: i32) -> (ChunkKey, [usize; 3]) {
     )
 }
 
-struct CacheEntry {
-    // Readers of an active simulation phase retain this allocation while a
-    // later edit replaces the resident version. No full chunk copy is needed
-    // just to hand immutable terrain to a worker.
-    chunk: Arc<Chunk>,
-    edits: BTreeMap<u16, BlockId>,
-    last_used: u64,
-}
-
 pub struct World {
     seed: u64,
     storage: Storage,
-    cache: HashMap<ChunkKey, CacheEntry>,
+    cache: ChunkCache,
     /// Per-key epochs exist only while asynchronous loads for that key are in flight.
     edit_epochs: HashMap<ChunkKey, u64>,
     in_flight_by_key: HashMap<ChunkKey, usize>,
     in_flight_loads: HashMap<(ChunkKey, u64), usize>,
     pending_snapshots: HashMap<ChunkKey, Option<Vec<u8>>>,
     prepared_revisions: HashMap<ChunkKey, Weak<AtomicU64>>,
-    max_cached_chunks: usize,
-    clock: u64,
 }
 
 impl World {
+    #[cfg(test)]
     pub fn new(seed: u64, path: PathBuf) -> io::Result<Self> {
         Self::with_capacity(seed, path, 512)
     }
@@ -208,18 +200,17 @@ impl World {
         Ok(Self {
             seed,
             storage: Storage::new(path, seed)?,
-            cache: HashMap::new(),
+            cache: ChunkCache::new(max_cached_chunks),
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
             in_flight_loads: HashMap::new(),
             pending_snapshots: HashMap::new(),
             prepared_revisions: HashMap::new(),
-            max_cached_chunks,
-            clock: 0,
         })
     }
 
     /// Returns an owned, stable snapshot suitable for sending or meshing.
+    #[cfg(test)]
     pub fn get_chunk(&mut self, key: ChunkKey) -> io::Result<Chunk> {
         self.ensure_loaded(key)?;
         Ok((*self.cache[&key].chunk).clone())
@@ -228,9 +219,7 @@ impl World {
     /// Returns an owned snapshot only when this world already has the chunk in
     /// its authoritative cache. This method never loads or generates terrain.
     pub fn cached_chunk(&mut self, key: ChunkKey) -> Option<Chunk> {
-        self.clock = self.clock.wrapping_add(1);
-        let entry = self.cache.get_mut(&key)?;
-        entry.last_used = self.clock;
+        let entry = self.cache.get_mut_and_touch(key)?;
         Some((*entry.chunk).clone())
     }
 
@@ -238,9 +227,7 @@ impl World {
     /// view without copying its voxel array. The Arc pins this exact version
     /// even if a later edit replaces the cached chunk.
     pub fn cached_arc_chunk(&mut self, key: ChunkKey) -> Option<Arc<Chunk>> {
-        self.clock = self.clock.wrapping_add(1);
-        let entry = self.cache.get_mut(&key)?;
-        entry.last_used = self.clock;
+        let entry = self.cache.get_mut_and_touch(key)?;
         Some(Arc::clone(&entry.chunk))
     }
 
@@ -253,8 +240,14 @@ impl World {
     }
 
     /// Resident chunk count for admission control and server telemetry.
-    pub fn cached_len(&self) -> usize {
+    pub fn resident_chunk_count(&self) -> usize {
         self.cache.len()
+    }
+
+    /// Resident chunk count for test assertions.
+    #[cfg(test)]
+    pub fn cached_len(&self) -> usize {
+        self.resident_chunk_count()
     }
 
     /// Reads one block only if its authoritative chunk is resident. `None`
@@ -429,6 +422,7 @@ impl World {
     }
 
     /// A successful return means the changed block and version have been saved.
+    #[cfg(test)]
     pub fn edit(&mut self, x: i32, y: i32, z: i32, block: BlockId) -> io::Result<(ChunkKey, u64)> {
         let (key, _) = world_to_chunk(x, y, z);
         self.ensure_loaded(key)?;
@@ -458,6 +452,7 @@ impl World {
 
     /// Prepares an edit from the authoritative cache only. Missing chunks are
     /// reported as WouldBlock so server tick code can wait for a loader result.
+    #[cfg(test)]
     pub fn prepare_edit(
         &mut self,
         x: i32,
@@ -586,6 +581,7 @@ impl World {
     /// Applies a WAL-synced edit to memory without writing the BGED snapshot.
     /// The pending snapshot remains authoritative across cache eviction until a
     /// successful checkpoint clears it.
+    #[cfg(test)]
     pub fn apply_prepared_edit(&mut self, prepared: PreparedEdit) -> io::Result<(ChunkKey, u64)> {
         let mut applied = self.apply_prepared_edits(vec![prepared])?;
         Ok(applied.pop().expect("single prepared edit"))
@@ -741,27 +737,12 @@ impl World {
     }
 
     fn cache_loaded_chunk(&mut self, loaded: LoadedChunk) {
-        self.clock = self.clock.wrapping_add(1);
-        if self.cache.len() >= self.max_cached_chunks
-            && !self.cache.contains_key(&loaded.chunk.key)
-            && let Some((&oldest, _)) = self.cache.iter().min_by_key(|(_, entry)| entry.last_used)
-        {
-            self.cache.remove(&oldest);
-        }
-        self.cache.insert(
-            loaded.chunk.key,
-            CacheEntry {
-                chunk: Arc::new(loaded.chunk),
-                edits: loaded.edits,
-                last_used: self.clock,
-            },
-        );
+        self.cache
+            .insert(loaded.chunk.key, Arc::new(loaded.chunk), loaded.edits);
     }
 
     fn ensure_loaded(&mut self, key: ChunkKey) -> io::Result<()> {
-        self.clock = self.clock.wrapping_add(1);
-        if let Some(entry) = self.cache.get_mut(&key) {
-            entry.last_used = self.clock;
+        if self.cache.get_mut_and_touch(key).is_some() {
             return Ok(());
         }
         let loaded = if let Some(snapshot) = self.pending_snapshots.get(&key) {

@@ -1,3 +1,4 @@
+use super::cache::ChunkCache;
 use super::*;
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -87,6 +88,107 @@ fn resident_arc_view_pins_a_version_without_copying_voxels() {
     world.get_chunk(ChunkKey { x: 30, y: 0, z: 30 }).unwrap();
     assert!(world.cached_arc_chunk(key).is_none());
     assert_eq!(old.block(local), Some(original));
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn chunk_cache_evicts_the_least_recently_used_resident() {
+    let path = test_dir();
+    let mut world = World::with_capacity(42, path.clone(), 2).unwrap();
+    let first = ChunkKey { x: 0, y: 0, z: 0 };
+    let second = ChunkKey { x: 1, y: 0, z: 0 };
+    let third = ChunkKey { x: 2, y: 0, z: 0 };
+
+    world.get_chunk(first).unwrap();
+    world.get_chunk(second).unwrap();
+    // A worker view is a real resident access and should refresh its recency.
+    world.cached_arc_chunk(first).unwrap();
+    world.get_chunk(third).unwrap();
+
+    assert_eq!(world.resident_chunk_count(), 2);
+    assert!(world.cached_version(first).is_some());
+    assert!(world.cached_version(second).is_none());
+    assert!(world.cached_version(third).is_some());
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn chunk_cache_unlinks_and_reinserts_entries_at_each_lru_position() {
+    let mut cache = ChunkCache::new(4);
+    let keys = [
+        ChunkKey { x: 0, y: 0, z: 0 },
+        ChunkKey { x: 1, y: 0, z: 0 },
+        ChunkKey { x: 2, y: 0, z: 0 },
+        ChunkKey { x: 3, y: 0, z: 0 },
+        ChunkKey { x: 4, y: 0, z: 0 },
+    ];
+    let insert = |cache: &mut ChunkCache, key| {
+        cache.insert(
+            key,
+            Arc::new(Chunk {
+                key,
+                version: 0,
+                blocks: vec![AIR; CHUNK_VOLUME],
+            }),
+            BTreeMap::new(),
+        );
+    };
+
+    for &key in &keys[..4] {
+        insert(&mut cache, key);
+    }
+
+    // Remove and recycle a middle, oldest, and newest node. Each reinsertion
+    // appends at the newest end, and the final admission must evict the true
+    // oldest key rather than a detached or stale link.
+    cache.remove(&keys[1]);
+    insert(&mut cache, keys[1]);
+    cache.remove(&keys[0]);
+    insert(&mut cache, keys[0]);
+    cache.remove(&keys[1]);
+    insert(&mut cache, keys[1]);
+    cache.remove(&keys[1]);
+    insert(&mut cache, keys[1]);
+    insert(&mut cache, keys[4]);
+
+    assert!(!cache.contains_key(&keys[2]));
+    assert!(cache.contains_key(&keys[0]));
+    assert!(cache.contains_key(&keys[1]));
+    assert!(cache.contains_key(&keys[3]));
+    assert!(cache.contains_key(&keys[4]));
+    assert_eq!(cache.len(), 4);
+}
+
+#[test]
+fn edited_chunk_can_be_evicted_and_reloaded_from_its_pending_snapshot() {
+    let path = test_dir();
+    let mut world = World::with_capacity(42, path.clone(), 2).unwrap();
+    let edited = ChunkKey { x: 0, y: 7, z: 0 };
+    let second = ChunkKey { x: 1, y: 7, z: 0 };
+    let third = ChunkKey { x: 2, y: 7, z: 0 };
+    let fourth = ChunkKey { x: 3, y: 7, z: 0 };
+    let original = world.get_block(0, 113, 0).unwrap();
+    world.get_block(16, 113, 0).unwrap();
+    let replacement = if original == STONE { AIR } else { STONE };
+    let prepared = world.prepare_edit(0, 113, 0, replacement).unwrap();
+    let snapshot = prepared.after_snapshot.clone();
+    world.apply_prepared_edit(prepared).unwrap();
+
+    // Applying an edit refreshes the edited chunk, so inserting a third chunk
+    // evicts the untouched second one first.
+    world.get_chunk(third).unwrap();
+    assert!(world.cached_version(second).is_none());
+    assert_eq!(world.cached_version(edited), Some(1));
+
+    // A further insertion evicts the now-oldest edited chunk. Its WAL snapshot
+    // remains authoritative and is used to reconstruct the chunk on demand.
+    world.get_chunk(fourth).unwrap();
+    assert!(world.cached_version(edited).is_none());
+    assert_eq!(world.read_chunk_snapshot(edited).unwrap(), Some(snapshot));
+    assert_eq!(world.get_block(0, 113, 0).unwrap(), replacement);
+    assert_eq!(world.cached_version(edited), Some(1));
+    drop(world);
     fs::remove_dir_all(path).unwrap();
 }
 
