@@ -2,7 +2,7 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
-Terrain uses coherent multi-scale height fields, rocky uplands, and caves. Grass, dirt, and stone use generated pixel-art assets in `assets/textures/`, loaded into a mipmapped material array. Greedy chunk meshes repeat textures per block. The sky and lighting share a fixed world-space sun direction, so the sun moves across the view when you turn; distance fog softens far terrain. Saved edits are versioned against the terrain generator so a changed baseline cannot silently alter an existing world.
+Terrain uses coherent multi-scale height fields, rocky uplands, and caves. Grass, dirt, and stone use generated pixel-art assets in `assets/textures/`, loaded into a mipmapped material array. Greedy chunk meshes repeat textures per block. The sky has world-anchored clouds and shares a fixed sun direction with terrain lighting, so the sun moves across the view when you turn; distance fog softens far terrain. Saved edits are versioned against the terrain generator so a changed baseline cannot silently alter an existing world.
 
 ## Run locally
 

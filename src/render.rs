@@ -763,6 +763,17 @@ struct SkyVertex {
     output.uv = p * 0.5 + vec2<f32>(0.5);
     return output;
 }
+fn sky_hash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+fn sky_noise(p: vec2<f32>) -> f32 {
+    let cell = floor(p);
+    let f = fract(p);
+    let curve = f * f * (vec2<f32>(3.0) - 2.0 * f);
+    let low = mix(sky_hash(cell), sky_hash(cell + vec2<f32>(1.0, 0.0)), curve.x);
+    let high = mix(sky_hash(cell + vec2<f32>(0.0, 1.0)), sky_hash(cell + vec2<f32>(1.0, 1.0)), curve.x);
+    return mix(low, high, curve.y);
+}
 @fragment fn fs_main(input: SkyVertex) -> @location(0) vec4<f32> {
     let ndc = input.uv * 2.0 - vec2<f32>(1.0);
     let ray = normalize(
@@ -775,6 +786,14 @@ struct SkyVertex {
     var color = mix(horizon, zenith, smoothstep(-0.08, 0.86, ray.y));
     let sun_direction = normalize(WORLD_SUN_DIRECTION);
     let alignment = dot(ray, sun_direction);
+    let haze = pow(max(alignment, 0.0), 10.0) * (1.0 - smoothstep(0.1, 0.75, ray.y));
+    color = mix(color, vec3<f32>(0.95, 0.72, 0.54), haze * 0.22);
+    let cloud_coordinates = ray.xz / max(ray.y, 0.10) * 8.0;
+    let cloud_noise = sky_noise(cloud_coordinates * 0.45) * 0.68
+        + sky_noise(cloud_coordinates * 0.90) * 0.32;
+    let cloud = smoothstep(0.55, 0.70, cloud_noise)
+        * smoothstep(0.10, 0.28, ray.y) * 0.54;
+    color = mix(color, vec3<f32>(0.92, 0.94, 0.94), cloud);
     let glow = smoothstep(0.88, 0.997, alignment);
     let disc = smoothstep(0.9990, 0.99955, alignment);
     color = mix(color, vec3<f32>(1.0, 0.82, 0.55), glow * 0.28);
