@@ -2,7 +2,7 @@ use crate::lighting::{LightField, LightSample};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
 
 use super::VERTEX_FLOATS;
-use super::material::material_layer;
+use super::material::{face_uv, material_layer};
 
 /// Interleaved position, normal, tiled UV, and texture layer. World-space
 /// coordinates avoid per-draw uniforms; one material bind group serves all chunks.
@@ -181,13 +181,8 @@ fn emit_quad(
         position[v] += (j + dv) as f32;
         out.vertices.extend_from_slice(&position);
         out.vertices.extend_from_slice(&normal);
-        let (texture_u, texture_v) = if axis == 1 {
-            (du as f32, dv as f32)
-        } else if u == 1 {
-            (dv as f32, (width - du) as f32)
-        } else {
-            (du as f32, (height - dv) as f32)
-        };
+        let (texture_u, texture_v) =
+            face_uv(axis, du as f32, dv as f32, width as f32, height as f32);
         let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0], |field| {
             field.corner([axis, u, v], side, slice, [i + du, j + dv])
         });

@@ -1,5 +1,8 @@
 //! Small textured block meshes for nearby dropped items.
-use super::{VERTEX_FLOATS, material::material_layer};
+use super::{
+    VERTEX_FLOATS,
+    material::{face_uv, material_layer},
+};
 use glam::Vec3;
 
 pub(super) const MAX_ITEMS: usize = 512;
@@ -46,9 +49,10 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> (Vec<f32>, Vec<u32>) {
                     );
                     vertices.extend(position.to_array());
                     vertices.extend(normal.to_array());
+                    let (texture_u, texture_v) = face_uv(axis, du, dv, 1.0, 1.0);
                     vertices.extend([
-                        du,
-                        dv,
+                        texture_u,
+                        texture_v,
                         material_layer(item.block, axis, side) as f32,
                         0.72,
                         0.0,
@@ -69,6 +73,7 @@ pub(crate) fn mesh(items: &[VisualDrop]) -> (Vec<f32>, Vec<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::world::GRASS;
 
     #[test]
     fn rotated_drop_stays_bounded_and_uses_all_six_faces() {
@@ -84,6 +89,24 @@ mod tests {
         for vertex in vertices.chunks_exact(VERTEX_FLOATS) {
             let position = Vec3::new(vertex[0], vertex[1], vertex[2]);
             assert!(position.distance(drop.center) < 0.41);
+        }
+    }
+
+    #[test]
+    fn grass_side_band_is_at_the_top_on_both_side_axes() {
+        let (vertices, _) = mesh(&[VisualDrop {
+            block: GRASS,
+            center: Vec3::ZERO,
+            angle: 0.0,
+            scale: 1.0,
+        }]);
+        for face in [0, 1, 4, 5] {
+            for vertex in vertices[face * 4 * VERTEX_FLOATS..(face + 1) * 4 * VERTEX_FLOATS]
+                .chunks_exact(VERTEX_FLOATS)
+            {
+                assert_eq!(vertex[8], 1.0, "side must use grass-side texture");
+                assert_eq!(vertex[7], if vertex[1] > 0.0 { 0.0 } else { 1.0 });
+            }
         }
     }
 }

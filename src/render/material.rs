@@ -7,6 +7,16 @@ pub(super) const TEXTURE_LAYERS: u32 = 9;
 pub(super) const TEXTURE_MIPS: u32 = 8;
 pub(super) const GLOWSTONE_LAYER: u8 = 8;
 
+/// Keep directional block textures upright on both terrain quads and item cubes.
+#[inline]
+pub(super) fn face_uv(axis: usize, du: f32, dv: f32, width: f32, height: f32) -> (f32, f32) {
+    match axis {
+        0 => (dv, width - du),
+        1 => (du, dv),
+        _ => (du, height - dv),
+    }
+}
+
 pub(super) fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
     match block {
         GRASS if axis == 1 && side > 0 => 0,
