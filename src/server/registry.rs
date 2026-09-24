@@ -79,6 +79,8 @@ pub enum IdentifierError {
 /// Ownership key used to partition a system's candidate jobs.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum OwnerPartition {
+    /// Per-chunk ownership is used by extension terrain and block systems.
+    #[allow(dead_code)]
     Chunk,
     Entity,
     Profile,
@@ -136,6 +138,9 @@ impl SystemDescriptor {
         self
     }
 
+    /// Declares chunk neighbors read by a chunk-partitioned extension system.
+    /// Built-ins currently use entity/global partitions.
+    #[allow(dead_code)]
     pub const fn neighbor_radius(mut self, radius: u8) -> Self {
         self.neighbor_radius = radius;
         self
@@ -145,34 +150,50 @@ impl SystemDescriptor {
         &self.id
     }
 
+    /// Phase metadata for extension tooling that inspects a frozen plan.
+    #[allow(dead_code)]
     pub const fn phase(&self) -> Phase {
         self.phase
     }
 
+    /// Owner partition metadata for extension tooling that inspects a plan.
+    #[allow(dead_code)]
     pub const fn partition(&self) -> OwnerPartition {
         self.partition
     }
 
+    /// Read domains declared by this system, for scheduler and tooling checks.
+    #[allow(dead_code)]
     pub fn reads(&self) -> &BTreeSet<ResourceId> {
         &self.reads
     }
 
+    /// Write domains declared by this system, for scheduler and tooling checks.
+    #[allow(dead_code)]
     pub fn writes(&self) -> &BTreeSet<ResourceId> {
         &self.writes
     }
 
+    /// Explicit prerequisites declared by this system.
+    #[allow(dead_code)]
     pub fn dependencies(&self) -> &BTreeSet<SystemId> {
         &self.after
     }
 
+    /// Neighbor radius declared for chunk-scoped extension work.
+    #[allow(dead_code)]
     pub const fn neighbor_radius_chunks(&self) -> u8 {
         self.neighbor_radius
     }
 
+    /// Per-system job bound used by frozen phase budget calculations.
+    #[allow(dead_code)]
     pub const fn max_jobs_per_tick(&self) -> usize {
         self.max_jobs_per_tick
     }
 
+    /// Per-system effect bound used by frozen phase budget calculations.
+    #[allow(dead_code)]
     pub const fn max_effects_per_tick(&self) -> usize {
         self.max_effects_per_tick
     }
@@ -505,6 +526,9 @@ impl PhasePlan {
         &self.phases[phase_index(phase)]
     }
 
+    /// Aggregate bound exposed for runtime admission control. Built-in
+    /// admission is currently fixed by its registered queue limits.
+    #[allow(dead_code)]
     pub fn phase_job_budget(&self, phase: Phase) -> usize {
         self.systems(phase)
             .iter()
@@ -512,6 +536,9 @@ impl PhasePlan {
             .sum()
     }
 
+    /// Aggregate effect bound exposed for runtime admission control. Built-in
+    /// effect admission is currently fixed by its dispatcher limits.
+    #[allow(dead_code)]
     pub fn phase_effect_budget(&self, phase: Phase) -> usize {
         self.systems(phase)
             .iter()

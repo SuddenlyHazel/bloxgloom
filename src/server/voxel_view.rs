@@ -48,6 +48,9 @@ pub struct VoxelView {
 impl VoxelView {
     /// Captures exactly the chunks supplied. Both `Chunk` and `Arc<Chunk>` are
     /// accepted; duplicate keys and malformed block arrays are rejected.
+    /// This validated constructor is available to extension systems that
+    /// produce snapshots outside the built-in world's resident-cache path.
+    #[allow(dead_code)]
     pub fn from_chunks<I, C>(chunks: I) -> Result<Self, SnapshotError>
     where
         I: IntoIterator<Item = C>,
@@ -123,6 +126,10 @@ impl VoxelView {
     }
 
     /// Captured revisions in stable lexicographic chunk order.
+    ///
+    /// Extension schedulers and diagnostics can inspect the exact revisions
+    /// whose snapshots are represented by this view.
+    #[allow(dead_code)]
     #[inline]
     pub fn revisions(&self) -> &[(ChunkKey, u64)] {
         &self.revisions
@@ -137,6 +144,9 @@ impl VoxelView {
             .all(|(key, version)| current(*key) == Some(*version))
     }
 
+    /// Returns whether this view contains an authoritative snapshot for `key`.
+    /// Extension systems can use this to preflight work before sampling voxels.
+    #[allow(dead_code)]
     #[inline]
     pub fn contains_chunk(&self, key: ChunkKey) -> bool {
         self.chunks.contains_key(&key)

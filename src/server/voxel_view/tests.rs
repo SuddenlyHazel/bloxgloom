@@ -60,6 +60,9 @@ fn revision_metadata_detects_stale_and_missing_chunks() {
     let view =
         VoxelView::from_chunks([air_chunk(key(-1, 0, 0), 4), air_chunk(key(0, 0, 0), 8)]).unwrap();
 
+    assert!(view.contains_chunk(key(-1, 0, 0)));
+    assert!(view.contains_chunk(key(0, 0, 0)));
+    assert!(!view.contains_chunk(key(1, 0, 0)));
     assert_eq!(view.revisions(), &[(key(-1, 0, 0), 4), (key(0, 0, 0), 8)]);
     assert!(view.revisions_match(|chunk| match chunk.x {
         -1 => Some(4),

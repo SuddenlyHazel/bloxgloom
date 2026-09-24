@@ -67,6 +67,15 @@ fn freeze_is_registration_order_independent_and_accepts_transitive_conflict_orde
     assert_eq!(forward.phase_effect_budget(Phase::Simulation), 0);
     assert_eq!(simulation[0].neighbor_radius_chunks(), 1);
     assert_eq!(simulation[0].partition(), OwnerPartition::Chunk);
+
+    let middle = simulation
+        .iter()
+        .find(|system| system.id().as_str() == "builtin:middle")
+        .unwrap();
+    assert_eq!(middle.phase(), Phase::Simulation);
+    assert!(middle.reads().contains(&resource("builtin:shared")));
+    assert!(middle.writes().contains(&resource("builtin:derived")));
+    assert!(middle.dependencies().contains(&system_id("builtin:alpha")));
 }
 
 #[test]

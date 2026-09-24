@@ -19,6 +19,15 @@ fn batch(tick: u64, wave: u16) -> BatchId {
     BatchId::new(TickId::new(tick), Phase::Simulation, wave)
 }
 
+#[test]
+fn batch_id_exposes_tick_phase_and_dependency_wave() {
+    let batch = BatchId::new(TickId::new(13), Phase::InteractionCommit, 2);
+
+    assert_eq!(batch.tick().get(), 13);
+    assert_eq!(batch.phase(), Phase::InteractionCommit);
+    assert_eq!(batch.wave(), 2);
+}
+
 fn completed_jobs<R, E>(results: &PhaseResults<R, E>) -> usize {
     results.owners().iter().map(|owner| owner.jobs.len()).sum()
 }

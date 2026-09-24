@@ -34,14 +34,27 @@ impl BatchId {
         Self { tick, phase, wave }
     }
 
+    /// Tick encoded by this barrier.
+    ///
+    /// Built-in dispatch currently needs only the ordered ID itself;
+    /// extension systems use the component for scheduling and diagnostics.
+    #[allow(dead_code)]
     pub const fn tick(self) -> TickId {
         self.tick
     }
 
+    /// Phase encoded by this barrier.
+    ///
+    /// Built-in dispatch currently needs only the ordered ID itself;
+    /// extension systems use the component for scheduling and diagnostics.
+    #[allow(dead_code)]
     pub const fn phase(self) -> Phase {
         self.phase
     }
 
+    /// Dependency wave encoded by this barrier. Built-ins currently use wave
+    /// zero; extension systems can use later waves after dependency barriers.
+    #[allow(dead_code)]
     pub const fn wave(self) -> u16 {
         self.wave
     }
@@ -170,6 +183,9 @@ pub struct PhaseResults<R, E> {
 }
 
 impl<R, E> PhaseResults<R, E> {
+    /// Borrow stable owner results without taking ownership of the phase
+    /// output. Built-in movement currently consumes the vector directly.
+    #[allow(dead_code)]
     pub fn owners(&self) -> &[OwnerResults<R, E>] {
         &self.owners
     }
@@ -212,6 +228,9 @@ pub enum SubmitError {
     },
 }
 
+/// Failure to cancel speculative work. Built-in jobs currently drain at their
+/// barriers; extension systems can cancel superseded speculative batches.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CancelError {
     UnknownBatch {
@@ -402,6 +421,9 @@ impl<R: Send + 'static, E: Send + 'static> PhaseExecutor<R, E> {
     }
 
     /// Requests cooperative cancellation for every accepted job in this batch.
+    /// Built-in jobs currently drain at their barriers; extension systems can
+    /// cancel batches whose snapshots have been superseded.
+    #[allow(dead_code)]
     pub fn cancel_batch(&mut self, batch: BatchId) -> Result<(), CancelError> {
         if let Some(closed_through) = self.closed_through
             && batch <= closed_through
