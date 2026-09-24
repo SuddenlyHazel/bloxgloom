@@ -134,11 +134,7 @@ impl UiLayout {
     pub fn new(width: u32, height: u32, scale: f32, screen: UiScreen) -> Self {
         let width = width.max(1);
         let height = height.max(1);
-        let scale = if scale.is_finite() {
-            scale.clamp(0.75, 2.0)
-        } else {
-            1.0
-        };
+        let scale = effective_ui_scale(width, height, scale);
         let mut layout = Self {
             width,
             height,
@@ -365,6 +361,16 @@ impl UiLayout {
     }
 }
 
+fn effective_ui_scale(width: u32, height: u32, requested: f32) -> f32 {
+    let requested = if requested.is_finite() {
+        requested.clamp(0.75, 2.0)
+    } else {
+        1.0
+    };
+    let fit = (width as f32 / 640.0).min(height as f32 / 360.0);
+    requested.min(fit.max(0.75))
+}
+
 fn centered_panel(
     width: u32,
     height: u32,
@@ -559,7 +565,7 @@ impl UiRenderer {
     ) {
         self.width = width.max(1);
         self.height = height.max(1);
-        let scale = frame.settings.scale.clamp(0.75, 2.0);
+        let scale = effective_ui_scale(self.width, self.height, frame.settings.scale);
         let key = UiCacheKey {
             width: self.width,
             height: self.height,
@@ -950,7 +956,11 @@ impl UiBuilder<'_> {
             ),
             (
                 SettingId::UiScale,
-                "UI SCALE",
+                if frame.settings.scale > self.scale + 0.01 {
+                    "UI SCALE (FITTED)"
+                } else {
+                    "UI SCALE"
+                },
                 format!("{:.1}X", frame.settings.scale),
             ),
         ];
@@ -1440,6 +1450,36 @@ mod tests {
                 pause.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
                 Some(control)
             );
+        }
+    }
+
+    #[test]
+    fn large_ui_scale_fits_small_windows_without_losing_controls() {
+        assert_eq!(effective_ui_scale(640, 360, 2.0), 1.0);
+        assert_eq!(effective_ui_scale(1280, 720, 2.0), 2.0);
+        for (width, height) in [(640, 360), (1280, 720)] {
+            for screen in [
+                UiScreen::Playing,
+                UiScreen::Inventory,
+                UiScreen::Pause,
+                UiScreen::Settings,
+            ] {
+                let layout = UiLayout::new(width, height, 2.0, screen);
+                for hit in &layout.hits {
+                    assert!(hit.rect.x >= 0.0, "{screen:?}: {:?}", hit.control);
+                    assert!(hit.rect.y >= 0.0, "{screen:?}: {:?}", hit.control);
+                    assert!(
+                        hit.rect.x + hit.rect.width <= width as f32,
+                        "{screen:?}: {:?}",
+                        hit.control
+                    );
+                    assert!(
+                        hit.rect.y + hit.rect.height <= height as f32,
+                        "{screen:?}: {:?}",
+                        hit.control
+                    );
+                }
+            }
         }
     }
 

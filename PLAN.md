@@ -1,6 +1,6 @@
 # Bloxgloom interface plan
 
-Status: implemented. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement were already in the repository when this phase began. The live 60 FPS target still needs validation on a visible desktop during chunk streaming; headless previews and UI CPU timing alone cannot establish it.
+Status: implemented and headlessly validated. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement were already in the repository when this phase began. The live 60 FPS target still needs validation on a visible desktop during chunk streaming; headless measurements cannot establish presented gameplay FPS.
 
 ## Goal
 
@@ -52,7 +52,8 @@ Done means the default `cargo run` supports the full interaction loop, the dedic
 
 ## Validation record
 
-- The interaction loop, settings persistence, view-distance acknowledgement, exact raycast, server edit propagation, and compact UI hit targets are covered by 35 passing tests.
-- Headless GPU previews of all four screens were inspected at 1280×720 and 640×360. The game window was not opened because this environment cannot inspect a visible desktop window.
+- The interaction loop, settings persistence, view-distance acknowledgement, exact raycast, server edit propagation, and compact UI hit targets are covered by 36 passing tests.
+- Headless GPU previews of all four screens were inspected at 1280×720, 640×360, and 640×360 with 2× requested UI scale. Small windows fit the UI and label the requested scale as fitted when capped. The game window was not opened because this environment cannot inspect a visible desktop window.
 - On this MacBook Pro, 300 warmed 1280×720 Settings-plus-debug frames measured UI CPU preparation at 0.209 µs median / 0.292 µs p95 with cached geometry, and 0.128 ms median / 0.153 ms p95 when rebuilt. This excludes GPU rendering and chunk streaming.
-- Full-frame timing during live chunk streaming remains unverified. The client logs FPS and frame-time p95/p99 every five seconds for that follow-up on a visible desktop.
+- `cargo run --release -- perf 300 6` measured a 1280×720 headless radius-6 scene on an Apple M1 Pro / Metal: 507 requested chunks, 440 nonempty meshes uploaded through the production queue limits, 236 visible chunks, and 77,822 visible triangles. Across 111 upload-ramp plus 300 steady frames, CPU submit-side p95 was 0.400 ms overall (0.499 ms during upload), and GPU render-pass p95 was 0.238 ms overall (0.255 ms during upload), well below the 16.67 ms frame budget for this scene. Meshing was precomputed, GPU timestamps exclude upload copies, and there was no present, vsync, or per-frame GPU wait; these numbers are not live gameplay FPS.
+- Full-frame timing during visible live chunk streaming remains unverified. The client logs FPS and frame-time p95/p99 every five seconds for that follow-up on a visible desktop.

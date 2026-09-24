@@ -36,4 +36,6 @@ The client logs FPS, frame-time percentiles, visible chunks, triangles, and uplo
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png`. This renders representative terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.
 
-Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Pause, and Settings screens at desktop and smaller window sizes without opening a game window.
+Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Pause, and Settings screens at 1280×720, 640×360, and 640×360 with 2× requested UI scale, without opening a game window.
+
+Run `cargo run --release -- perf 300 6` to measure headless 1280×720 chunk-upload, world-render, target-outline, and HUD work at the maximum supported view radius. It reports CPU submit-side and GPU render-pass frame-time percentiles, adapter, and scene size. It does not measure window presentation or live gameplay FPS.

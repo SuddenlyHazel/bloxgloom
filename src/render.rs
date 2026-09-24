@@ -10,9 +10,9 @@ use crate::ui::{UiFrame, UiRenderer};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
-const UPLOAD_MESHES_PER_FRAME: usize = 4;
-const MAX_PENDING_MESHES: usize = 128;
+pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
+pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
+pub(crate) const MAX_PENDING_MESHES: usize = 128;
 const VERTEX_STRIDE: u64 = 9 * 4;
 
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +71,7 @@ pub struct ChunkMesh {
 }
 
 impl ChunkMesh {
-    fn byte_len(&self) -> usize {
+    pub(crate) fn byte_len(&self) -> usize {
         self.vertices.len() * 4 + self.indices.len() * 4
     }
 
@@ -688,7 +688,7 @@ fn create_depth(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture
         .create_view(&Default::default())
 }
 
-fn chunk_visible(matrix: Mat4, key: ChunkKey) -> bool {
+pub(crate) fn chunk_visible(matrix: Mat4, key: ChunkKey) -> bool {
     let n = CHUNK_SIZE as f32;
     let min = Vec3::new(key.x as f32 * n, key.y as f32 * n, key.z as f32 * n);
     let max = min + Vec3::splat(n);
