@@ -7,11 +7,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT};
+use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT, Stack};
 use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
-use super::{DropPlan, Drops, Entry, LIFETIME, expiry, invalid, spatial, unix_ms};
+use super::{
+    DropEntityPayload, DropPlan, Drops, Entry, LIFETIME, expiry, invalid, spatial, unix_ms,
+};
 
 #[cfg(test)]
 #[path = "persistence/tests.rs"]
@@ -126,19 +128,20 @@ impl Drops {
             }
             let age = Duration::from_millis(now_ms.saturating_sub(born));
             let age_since = Instant::now();
+            let payload = DropEntityPayload::new(
+                Stack {
+                    item: item.item,
+                    count: item.count,
+                    components,
+                },
+                born,
+                Duration::from_millis(u64::from(delay)),
+            );
             if drops
                 .entries
                 .insert(
                     item.id,
-                    Entry {
-                        item,
-                        components,
-                        vertical_speed: 0.0,
-                        age_at_load: age,
-                        age_since,
-                        created_unix_ms: born,
-                        pickup_delay: Duration::from_millis(u64::from(delay)),
-                    },
+                    Entry::new(item.id, item.position, payload, 0.0, age, age_since),
                 )
                 .is_some()
             {
@@ -179,6 +182,8 @@ impl Drops {
                 .map(|entry| {
                     RECORD
                         + entry
+                            .drop_payload()
+                            .stack
                             .components
                             .as_ref()
                             .map_or(0, |component| component.bytes.len())
@@ -195,20 +200,20 @@ impl Drops {
         bytes.extend(self.next_id.to_le_bytes());
         bytes.extend((self.entries.len() as u32).to_le_bytes());
         let mut entries: Vec<_> = self.entries.values().collect();
-        entries.sort_by_key(|entry| entry.item.id);
+        entries.sort_by_key(|entry| entry.id);
         for entry in entries {
-            let item = entry.item;
-            bytes.extend(item.id.to_le_bytes());
-            bytes.extend(item.item.get().to_le_bytes());
-            bytes.extend(item.count.to_le_bytes());
-            for n in item.position {
+            let payload = entry.drop_payload();
+            bytes.extend(entry.id.to_le_bytes());
+            bytes.extend(payload.stack.item.get().to_le_bytes());
+            bytes.extend(payload.stack.count.to_le_bytes());
+            for n in entry.position {
                 bytes.extend(n.to_le_bytes());
             }
-            bytes.extend(entry.created_unix_ms.to_le_bytes());
+            bytes.extend(payload.created_unix_ms.to_le_bytes());
             bytes.extend(
-                (entry.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes(),
+                (payload.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes(),
             );
-            if let Some(component) = &entry.components {
+            if let Some(component) = &payload.stack.components {
                 bytes.extend(component.version.to_le_bytes());
                 bytes.extend((component.bytes.len() as u16).to_le_bytes());
                 bytes.extend(&component.bytes);
@@ -259,6 +264,8 @@ impl Drops {
         for entry in self.entries.values() {
             size += RECORD
                 + entry
+                    .drop_payload()
+                    .stack
                     .components
                     .as_ref()
                     .map_or(0, |component| component.bytes.len());
@@ -267,6 +274,8 @@ impl Drops {
             let old = self.entries.get(&mutation.id).map_or(0, |entry| {
                 RECORD
                     + entry
+                        .drop_payload()
+                        .stack
                         .components
                         .as_ref()
                         .map_or(0, |component| component.bytes.len())

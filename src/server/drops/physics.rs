@@ -36,28 +36,23 @@ impl Drops {
         let mut landed = false;
         for &id in &self.active {
             let entry = self.entries.get_mut(&id).expect("active drop exists");
-            let start = entry.item.position[1] - DROP_RADIUS;
+            let start = entry.position[1] - DROP_RADIUS;
             let speed = (entry.vertical_speed - GRAVITY * dt).max(-TERMINAL_SPEED);
             let end = start + speed * dt;
-            let (new_y, new_speed, settled) = match first_solid_top(
-                world,
-                entry.item.position,
-                start,
-                end,
-                &mut missing_chunks,
-            ) {
-                TerrainCheck::Missing => continue,
-                TerrainCheck::Hit(top) => (top + DROP_RADIUS, 0.0, true),
-                TerrainCheck::Clear => (end + DROP_RADIUS, speed, false),
-            };
+            let (new_y, new_speed, settled) =
+                match first_solid_top(world, entry.position, start, end, &mut missing_chunks) {
+                    TerrainCheck::Missing => continue,
+                    TerrainCheck::Hit(top) => (top + DROP_RADIUS, 0.0, true),
+                    TerrainCheck::Clear => (end + DROP_RADIUS, speed, false),
+                };
             // The BGDP snapshot stores exact f32 bits. Even a sub-pixel move
             // must advance its revision or a checkpoint receipt could mistake
             // an older snapshot for the current authoritative position.
-            moved |= entry.item.position[1].to_bits() != new_y.to_bits();
+            moved |= entry.position[1].to_bits() != new_y.to_bits();
             landed |= settled;
-            entry.item.position[1] = new_y;
+            entry.position[1] = new_y;
             entry.vertical_speed = new_speed;
-            self.spatial.move_to(id, entry.item.position);
+            self.spatial.move_to(id, entry.position);
             if settled {
                 settled_ids.push(id);
             }
@@ -95,7 +90,7 @@ impl Drops {
             let Some(entry) = self.entries.get(&id) else {
                 continue;
             };
-            let [x, y, z] = entry.item.position;
+            let [x, y, z] = entry.position;
             if x + DROP_RADIUS > block_x
                 && x - DROP_RADIUS < block_x + 1.0
                 && z + DROP_RADIUS > block_z

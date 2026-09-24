@@ -27,21 +27,18 @@ pub(super) fn insert_entry(
     let created_unix_ms = unix_ms().saturating_sub(age.as_millis().min(u64::MAX as u128) as u64);
     drops.entries.insert(
         id,
-        Entry {
-            item: DroppedItem {
-                id,
-                item: ItemId::new(u32::from(item)),
-                count,
-                position,
-                age_ms: 0,
-            },
-            components: None,
-            vertical_speed: 0.0,
-            age_at_load: age,
+        Entry::new(
+            id,
+            position,
+            DropEntityPayload::new(
+                Stack::new(ItemId::new(u32::from(item)), count),
+                created_unix_ms,
+                pickup_delay,
+            ),
+            0.0,
+            age,
             age_since,
-            created_unix_ms,
-            pickup_delay,
-        },
+        ),
     );
     drops.spatial.insert(id, position);
     drops.expiry.insert(id, age, age_since);
@@ -57,9 +54,7 @@ pub(super) fn assert_spatial_members_match_entries(drops: &Drops) {
     for (&id, entry) in &drops.entries {
         assert!(drops.spatial.contains(id));
         assert!(drops.expiry.contains(id));
-        let candidates = drops
-            .spatial
-            .query_aabb(entry.item.position, entry.item.position);
+        let candidates = drops.spatial.query_aabb(entry.position, entry.position);
         assert!(candidates.contains(&id));
     }
 }

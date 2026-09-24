@@ -15,7 +15,7 @@ fn drops_survive_restart_and_are_still_collectible() {
         loaded
             .entries
             .values()
-            .map(|entry| entry.item.count)
+            .map(|entry| entry.drop_payload().stack.count)
             .sum::<u16>(),
         150
     );
@@ -37,7 +37,12 @@ fn ancient_persisted_drop_stays_expired_and_is_not_a_merge_target() {
     fs::create_dir_all(&root).unwrap();
     let mut drops = Drops::open(&root).unwrap();
     drops.spawn([1.0, 2.0, 3.0], item(2), 10, Duration::ZERO);
-    drops.entries.get_mut(&1).unwrap().created_unix_ms = 1;
+    {
+        let entry = drops.entries.get_mut(&1).unwrap();
+        let mut payload = entry.drop_payload().clone();
+        payload.created_unix_ms = 1;
+        entry.payload = payload.into_entity_payload();
+    }
     drops.save().unwrap();
 
     let loaded = Drops::open(&root).unwrap();
@@ -61,9 +66,10 @@ fn component_bearing_drops_keep_payload_across_merge_pickup_and_restart() {
     let mut drops = Drops::open(&root).unwrap();
     let first = Stack::with_components(item(2), 3, 7, vec![1, 2, 3]).unwrap();
     let distinct = Stack::with_components(item(2), 2, 7, vec![1, 2, 4]).unwrap();
+    let pickup_delay = Duration::from_millis(731);
     for stack in [first.clone(), distinct.clone(), first.clone()] {
         let plan = drops
-            .plan_spawn_stack([1.0, 2.0, 3.0], stack, Duration::ZERO)
+            .plan_spawn_stack([1.0, 2.0, 3.0], stack, pickup_delay)
             .unwrap();
         drops.apply_plan(&plan).unwrap();
     }
@@ -74,16 +80,29 @@ fn component_bearing_drops_keep_payload_across_merge_pickup_and_restart() {
     );
     assert_eq!(drops.stack(1).unwrap().count, 6);
     assert_eq!(drops.stack(1).unwrap().components, first.components);
+    let live_payload = drops.entries[&1]
+        .payload
+        .downcast_ref::<DropEntityPayload>()
+        .expect("production drop is stored as its registered entity payload");
+    assert_eq!(live_payload.stack, drops.stack(1).unwrap());
+    assert_eq!(live_payload.pickup_delay, pickup_delay);
     let owner = drops.owner_snapshot(1);
-    assert_eq!(
-        journal::decode_owner(1, &owner).unwrap().4,
-        first.components
-    );
+    let journal_payload = journal::decode_owner(1, &owner).unwrap();
+    assert_eq!(journal_payload.stack.components, first.components);
+    assert_eq!(journal_payload.pickup_delay, pickup_delay);
     drops.save().unwrap();
 
     let mut loaded = Drops::open(&root).unwrap();
     assert_eq!(loaded.stack(1).unwrap().components, first.components);
     assert_eq!(loaded.stack(2).unwrap().components, distinct.components);
+    assert_eq!(
+        loaded.entries[&1]
+            .payload
+            .downcast_ref::<DropEntityPayload>()
+            .unwrap()
+            .pickup_delay,
+        pickup_delay
+    );
     let take = loaded.plan_take(&[(1, 2)]).unwrap();
     loaded.apply_plan(&take).unwrap();
     assert_eq!(loaded.stack(1).unwrap().count, 4);

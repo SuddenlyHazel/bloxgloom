@@ -141,11 +141,17 @@ fn durable_spawn_merges_local_targets_in_id_order_and_tracks_new_stacks() {
         vec![2, 10]
     );
     assert_eq!(
-        journal::decode_owner(2, &plan.changes[0].after).unwrap().1,
+        journal::decode_owner(2, &plan.changes[0].after)
+            .unwrap()
+            .stack
+            .count,
         STACK_LIMIT
     );
     assert_eq!(
-        journal::decode_owner(10, &plan.changes[1].after).unwrap().1,
+        journal::decode_owner(10, &plan.changes[1].after)
+            .unwrap()
+            .stack
+            .count,
         STACK_LIMIT
     );
 
@@ -160,16 +166,42 @@ fn durable_spawn_merges_local_targets_in_id_order_and_tracks_new_stacks() {
     assert_eq!(plan.changes[0].id, 1);
     assert_eq!(plan.changes[1].id, 2);
     assert_eq!(
-        journal::decode_owner(1, &plan.changes[0].after).unwrap().1,
+        journal::decode_owner(1, &plan.changes[0].after)
+            .unwrap()
+            .stack
+            .count,
         STACK_LIMIT
     );
     assert_eq!(
-        journal::decode_owner(2, &plan.changes[1].after).unwrap().1,
+        journal::decode_owner(2, &plan.changes[1].after)
+            .unwrap()
+            .stack
+            .count,
         12
     );
     empty.apply_plan(&plan).unwrap();
     assert_spatial_members_match_entries(&empty);
     assert_eq!(empty.nearby([-0.1, 0.0, 0.0]).len(), 2);
+}
+
+#[test]
+fn durable_drop_rejects_pickup_delays_that_cannot_round_trip() {
+    let drops = Drops::new();
+    assert!(
+        drops
+            .plan_spawn(
+                [0.0, 0.0, 0.0],
+                item(2),
+                1,
+                Duration::from_millis(u64::from(u16::MAX) + 1),
+            )
+            .is_err()
+    );
+    assert!(
+        drops
+            .plan_spawn([0.0, 0.0, 0.0], item(2), 1, Duration::from_nanos(1))
+            .is_err()
+    );
 }
 
 #[test]

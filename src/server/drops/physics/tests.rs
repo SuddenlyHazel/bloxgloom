@@ -23,9 +23,9 @@ fn tiny_motion_advances_the_checkpoint_generation() {
         Duration::ZERO,
     );
     let old = drops.snapshot_bytes().unwrap();
-    let old_y = drops.entries[&1].item.position[1];
+    let old_y = drops.entries[&1].position[1];
     let step = drops.step(&world, Duration::from_micros(1_700));
-    let new_y = drops.entries[&1].item.position[1];
+    let new_y = drops.entries[&1].position[1];
     assert_ne!(old_y.to_bits(), new_y.to_bits());
     assert!((old_y - new_y).abs() < 0.000_1);
     assert!(step.moved);

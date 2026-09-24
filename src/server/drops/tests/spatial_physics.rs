@@ -38,7 +38,7 @@ fn spatial_queries_match_brute_force_across_negative_bucket_edges() {
             let mut items: Vec<_> = drops
                 .entries
                 .values()
-                .filter(|entry| distance_sq(entry.item.position, center) <= VIEW_RANGE_SQ)
+                .filter(|entry| distance_sq(entry.position, center) <= VIEW_RANGE_SQ)
                 .map(Entry::snapshot)
                 .collect();
             items.sort_by(|a, b| {
@@ -55,9 +55,9 @@ fn spatial_queries_match_brute_force_across_negative_bucket_edges() {
                 .values()
                 .filter(|entry| {
                     let age = entry.age();
-                    age >= entry.pickup_delay
+                    age >= entry.drop_payload().pickup_delay
                         && age < LIFETIME
-                        && distance_sq(entry.item.position, center) <= PICKUP_RANGE_SQ
+                        && distance_sq(entry.position, center) <= PICKUP_RANGE_SQ
                 })
                 .map(Entry::snapshot)
                 .collect();
@@ -119,7 +119,7 @@ fn falling_drop_moves_between_vertical_spatial_buckets() {
     );
     let result = drops.step(&world, Duration::from_millis(100));
     assert!(result.missing_chunks.is_empty());
-    let new_position = drops.entries[&1].item.position;
+    let new_position = drops.entries[&1].position;
     assert!(new_position[1] < 512.0);
     assert!(
         drops
@@ -151,7 +151,7 @@ fn physics_defers_on_missing_chunks_and_caps_requests_at_64() {
     let before: Vec<_> = drops
         .entries
         .iter()
-        .map(|(&id, entry)| (id, entry.item.position))
+        .map(|(&id, entry)| (id, entry.position))
         .collect();
     let result = drops.step(&world, Duration::from_millis(100));
     assert!(!result.moved);
@@ -164,7 +164,7 @@ fn physics_defers_on_missing_chunks_and_caps_requests_at_64() {
             .all(|pair| (pair[0].x, pair[0].y, pair[0].z) < (pair[1].x, pair[1].y, pair[1].z))
     );
     for (id, position) in before {
-        assert_eq!(drops.entries[&id].item.position, position);
+        assert_eq!(drops.entries[&id].position, position);
     }
     fs::remove_dir_all(root).unwrap();
 }
@@ -195,14 +195,14 @@ fn missing_terrain_defers_only_the_affected_drop() {
         Duration::ZERO,
     );
 
-    let loaded_before = drops.entries[&1].item.position[1];
-    let missing_before = drops.entries[&2].item.position[1];
+    let loaded_before = drops.entries[&1].position[1];
+    let missing_before = drops.entries[&2].position[1];
     let result = drops.step(&world, Duration::from_millis(100));
 
     assert!(result.moved);
     assert!(!result.missing_chunks.is_empty());
-    assert!(drops.entries[&1].item.position[1] < loaded_before);
-    assert_eq!(drops.entries[&2].item.position[1], missing_before);
+    assert!(drops.entries[&1].position[1] < loaded_before);
+    assert_eq!(drops.entries[&2].position[1], missing_before);
     assert!(
         drops.active.contains(&2),
         "deferred drop must remain active"
@@ -225,20 +225,20 @@ fn airborne_drop_lands_and_falls_again_when_support_is_removed() {
         assert!(result.missing_chunks.is_empty());
     }
     let landed_y = ground as f32 + 1.0 + DROP_RADIUS;
-    assert!((drops.entries[&1].item.position[1] - landed_y).abs() < 0.001);
+    assert!((drops.entries[&1].position[1] - landed_y).abs() < 0.001);
     assert!(drops.active.is_empty());
     assert_eq!(drops.active_len(), 0);
     assert_eq!(drops.entries.len(), 1, "settled drops remain live entries");
     drops.save().unwrap();
     let loaded = Drops::open(&root).unwrap();
-    assert!((loaded.entries[&1].item.position[1] - landed_y).abs() < 0.001);
+    assert!((loaded.entries[&1].position[1] - landed_y).abs() < 0.001);
 
     world.edit(0, ground, 0, AIR).unwrap();
     drops.wake_near([0, ground, 0]);
     assert!(drops.active.contains(&1));
     let result = drops.step(&world, Duration::from_millis(20));
     assert!(result.missing_chunks.is_empty());
-    assert!(drops.entries[&1].item.position[1] < landed_y);
+    assert!(drops.entries[&1].position[1] < landed_y);
     assert_spatial_members_match_entries(&drops);
     fs::remove_dir_all(root).unwrap();
 }

@@ -12,10 +12,11 @@ pub(super) use planning::DropPlan;
 
 #[cfg(test)]
 use crate::inventory::STACK_LIMIT;
-use crate::inventory::{ComponentPayload, Stack};
+use crate::inventory::Stack;
 #[cfg(test)]
 use crate::items::ItemId;
 use crate::protocol::DroppedItem;
+use crate::server::entities::EntityPayload;
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::path::PathBuf;
@@ -32,13 +33,12 @@ pub(super) const TERMINAL_SPEED: f32 = 30.0;
 
 #[derive(Clone)]
 struct Entry {
-    item: DroppedItem,
-    components: Option<Arc<ComponentPayload>>,
+    id: u64,
+    position: [f32; 3],
+    payload: EntityPayload,
     vertical_speed: f32,
     age_at_load: Duration,
     age_since: Instant,
-    created_unix_ms: u64,
-    pickup_delay: Duration,
 }
 
 #[derive(Clone)]
@@ -104,18 +104,21 @@ impl Drops {
             let max = position.map(|coordinate| coordinate + 1.0);
             let target = self.spatial.query_aabb(min, max).into_iter().find(|id| {
                 self.entries.get(id).is_some_and(|entry| {
-                    entry.item.item == item
-                        && entry.item.count < STACK_LIMIT
-                        && distance_sq(entry.item.position, position) < 1.0
+                    let stack = &entry.drop_payload().stack;
+                    stack.item == item
+                        && stack.count < STACK_LIMIT
+                        && distance_sq(entry.position, position) < 1.0
                 })
             });
             if let Some(id) = target {
                 let entry = self.entries.get_mut(&id).expect("spatial drop exists");
-                let taken = count.min(STACK_LIMIT - entry.item.count);
-                entry.item.count += taken;
+                let mut payload = entry.drop_payload().clone();
+                let taken = count.min(STACK_LIMIT - payload.stack.count);
+                payload.stack.count += taken;
+                payload.created_unix_ms = unix_ms();
+                entry.payload = payload.into_entity_payload();
                 entry.age_at_load = Duration::ZERO;
                 entry.age_since = Instant::now();
-                entry.created_unix_ms = unix_ms();
                 self.expiry.insert(id, Duration::ZERO, entry.age_since);
                 count -= taken;
                 self.revision = self.revision.wrapping_add(1);
@@ -127,21 +130,14 @@ impl Drops {
             let age_since = Instant::now();
             self.entries.insert(
                 id,
-                Entry {
-                    item: DroppedItem {
-                        id,
-                        item,
-                        count: taken,
-                        position,
-                        age_ms: 0,
-                    },
-                    components: None,
-                    vertical_speed: 0.0,
-                    age_at_load: Duration::ZERO,
+                Entry::new(
+                    id,
+                    position,
+                    DropEntityPayload::new(Stack::new(item, taken), unix_ms(), pickup_delay),
+                    0.0,
+                    Duration::ZERO,
                     age_since,
-                    created_unix_ms: unix_ms(),
-                    pickup_delay,
-                },
+                ),
             );
             self.spatial.insert(id, position);
             self.expiry.insert(id, Duration::ZERO, age_since);
@@ -158,7 +154,7 @@ impl Drops {
             .query_aabb(min, max)
             .into_iter()
             .filter_map(|id| self.entries.get(&id))
-            .filter(|entry| distance_sq(entry.item.position, position) <= VIEW_RANGE_SQ)
+            .filter(|entry| distance_sq(entry.position, position) <= VIEW_RANGE_SQ)
             .map(Entry::snapshot)
             .collect();
         items.sort_by(|a, b| {
@@ -180,9 +176,9 @@ impl Drops {
             .filter_map(|id| self.entries.get(&id))
             .filter(|entry| {
                 let age = entry.age();
-                age >= entry.pickup_delay
+                age >= entry.drop_payload().pickup_delay
                     && age < LIFETIME
-                    && distance_sq(entry.item.position, position) <= PICKUP_RANGE_SQ
+                    && distance_sq(entry.position, position) <= PICKUP_RANGE_SQ
             })
             .map(Entry::snapshot)
             .collect();
@@ -192,21 +188,21 @@ impl Drops {
     }
 
     pub(super) fn stack(&self, id: u64) -> Option<Stack> {
-        self.entries.get(&id).map(|entry| Stack {
-            item: entry.item.item,
-            count: entry.item.count,
-            components: entry.components.clone(),
-        })
+        self.entries
+            .get(&id)
+            .map(|entry| entry.drop_payload().stack.clone())
     }
     #[cfg(test)]
     pub(super) fn take(&mut self, id: u64, count: u16) {
         if let Some(entry) = self.entries.get_mut(&id) {
-            if count >= entry.item.count {
+            let mut payload = entry.drop_payload().clone();
+            if count >= payload.stack.count {
                 self.entries.remove(&id);
                 self.remove_entry_indexes(id);
                 self.active.remove(&id);
             } else {
-                entry.item.count -= count;
+                payload.stack.count -= count;
+                entry.payload = payload.into_entity_payload();
             }
             self.revision = self.revision.wrapping_add(1);
         }
@@ -226,14 +222,42 @@ impl Drops {
 }
 
 impl Entry {
+    fn new(
+        id: u64,
+        position: [f32; 3],
+        payload: DropEntityPayload,
+        vertical_speed: f32,
+        age_at_load: Duration,
+        age_since: Instant,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            payload: payload.into_entity_payload(),
+            vertical_speed,
+            age_at_load,
+            age_since,
+        }
+    }
+
+    fn drop_payload(&self) -> &DropEntityPayload {
+        self.payload
+            .downcast_ref()
+            .expect("drop entry stores registered drop payload")
+    }
+
     fn age(&self) -> Duration {
         self.age_at_load.saturating_add(self.age_since.elapsed())
     }
 
     fn snapshot(&self) -> DroppedItem {
+        let stack = &self.drop_payload().stack;
         DroppedItem {
+            id: self.id,
+            item: stack.item,
+            count: stack.count,
+            position: self.position,
             age_ms: self.age().as_millis().min(u32::MAX as u128) as u32,
-            ..self.item
         }
     }
 }

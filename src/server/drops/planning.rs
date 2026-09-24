@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::time::{Duration, Instant};
 
+use super::{
+    DropEntityPayload, Drops, Entry, LIFETIME, distance_sq, invalid, journal, spatial, unix_ms,
+};
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
-use crate::protocol::DroppedItem;
-
-use super::{Drops, Entry, LIFETIME, distance_sq, invalid, journal, spatial, unix_ms};
 
 /// Exact logical ownership change for one drop. Position is only included for
 /// newly allocated drops; motion remains a checkpointed simulation detail.
@@ -73,8 +73,11 @@ impl Drops {
         for (position, stack, pickup_delay) in spawns {
             let (position, item, mut count, pickup_delay) =
                 (*position, stack.item, stack.count, *pickup_delay);
+            let pickup_delay_ms = u16::try_from(pickup_delay.as_millis())
+                .map_err(|_| invalid("drop pickup delay exceeds durable range"))?;
             if !stack.valid_in(&self.catalog)
                 || position.iter().any(|coordinate| !coordinate.is_finite())
+                || Duration::from_millis(u64::from(pickup_delay_ms)) != pickup_delay
             {
                 return Err(invalid("invalid durable drop spawn"));
             }
@@ -88,23 +91,26 @@ impl Drops {
                 let target = ids.iter().copied().find(|id| {
                     let entry = changed.get(id).or_else(|| self.entries.get(id));
                     entry.is_some_and(|entry| {
-                        entry.item.item == item
-                            && entry.components == stack.components
+                        let entry_stack = &entry.drop_payload().stack;
+                        entry_stack.item == item
+                            && entry_stack.components == stack.components
                             && entry.age() < LIFETIME
-                            && entry.item.count < STACK_LIMIT
-                            && distance_sq(entry.item.position, position) < 1.0
+                            && entry_stack.count < STACK_LIMIT
+                            && distance_sq(entry.position, position) < 1.0
                     })
                 });
                 if let Some(id) = target {
                     let entry = changed
                         .entry(id)
                         .or_insert_with(|| self.entries[&id].clone());
-                    let added = count.min(STACK_LIMIT - entry.item.count);
-                    entry.item.count += added;
+                    let mut payload = entry.drop_payload().clone();
+                    let added = count.min(STACK_LIMIT - payload.stack.count);
+                    payload.stack.count += added;
+                    payload.created_unix_ms = unix_ms();
+                    payload.pickup_delay = pickup_delay;
+                    entry.payload = payload.into_entity_payload();
                     entry.age_at_load = Duration::ZERO;
                     entry.age_since = Instant::now();
-                    entry.created_unix_ms = unix_ms();
-                    entry.pickup_delay = pickup_delay;
                     count -= added;
                     continue;
                 }
@@ -118,21 +124,22 @@ impl Drops {
                 let born = unix_ms();
                 changed.insert(
                     id,
-                    Entry {
-                        item: DroppedItem {
-                            id,
-                            item,
-                            count: added,
-                            position,
-                            age_ms: 0,
-                        },
-                        components: stack.components.clone(),
-                        vertical_speed: 0.0,
-                        age_at_load: Duration::ZERO,
-                        age_since: Instant::now(),
-                        created_unix_ms: born,
-                        pickup_delay,
-                    },
+                    Entry::new(
+                        id,
+                        position,
+                        DropEntityPayload::new(
+                            Stack {
+                                item,
+                                count: added,
+                                components: stack.components.clone(),
+                            },
+                            born,
+                            pickup_delay,
+                        ),
+                        0.0,
+                        Duration::ZERO,
+                        Instant::now(),
+                    ),
                 );
                 spawned.insert(id, position);
                 ids.push(id);
@@ -153,7 +160,7 @@ impl Drops {
                 initial_position: if self.entries.contains_key(&id) {
                     None
                 } else {
-                    Some(after_entry.item.position)
+                    Some(after_entry.position)
                 },
             });
         }
@@ -176,17 +183,21 @@ impl Drops {
                 .get(&id)
                 .ok_or_else(|| invalid("drop changed before durable take"))?;
             let amount = amounts.entry(id).or_default();
-            *amount = amount.saturating_add(count).min(entry.item.count);
+            *amount = amount
+                .saturating_add(count)
+                .min(entry.drop_payload().stack.count);
         }
         let mut changes = Vec::new();
         for (id, amount) in amounts {
             let entry = &self.entries[&id];
             let mut after = entry.clone();
-            after.item.count -= amount;
+            let mut payload = after.drop_payload().clone();
+            payload.stack.count -= amount;
+            after.payload = payload.into_entity_payload();
             changes.push(DropMutation {
                 id,
                 before: journal::encode_owner(entry),
-                after: if after.item.count == 0 {
+                after: if after.drop_payload().stack.count == 0 {
                     Vec::new()
                 } else {
                     journal::encode_owner(&after)
@@ -263,18 +274,15 @@ impl Drops {
                 self.active.remove(&mutation.id);
                 continue;
             }
-            let (item, count, born, delay, components) =
+            let payload =
                 journal::decode_owner_with_catalog(mutation.id, &mutation.after, &self.catalog)
                     .expect("prevalidated owner bytes");
+            let born = payload.created_unix_ms;
             if let Some(entry) = self.entries.get_mut(&mutation.id) {
-                entry.item.item = item;
-                entry.item.count = count;
-                entry.components = components;
-                entry.created_unix_ms = born;
+                entry.payload = payload.into_entity_payload();
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 entry.age_at_load = age;
                 entry.age_since = Instant::now();
-                entry.pickup_delay = Duration::from_millis(u64::from(delay));
                 self.expiry.insert(mutation.id, age, entry.age_since);
                 // A count/ownership update must not wake a settled drop. It
                 // can, however, make an entry ineligible for further physics
@@ -291,24 +299,10 @@ impl Drops {
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 self.entries.insert(
                     mutation.id,
-                    Entry {
-                        item: DroppedItem {
-                            id: mutation.id,
-                            item,
-                            count,
-                            position,
-                            age_ms: 0,
-                        },
-                        components,
-                        vertical_speed: 0.0,
-                        age_at_load: age,
-                        age_since: Instant::now(),
-                        created_unix_ms: born,
-                        pickup_delay: Duration::from_millis(u64::from(delay)),
-                    },
+                    Entry::new(mutation.id, position, payload, 0.0, age, Instant::now()),
                 );
                 let entry = &self.entries[&mutation.id];
-                self.spatial.insert(mutation.id, entry.item.position);
+                self.spatial.insert(mutation.id, entry.position);
                 self.expiry.insert(mutation.id, age, entry.age_since);
                 if age < LIFETIME {
                     self.active.insert(mutation.id);

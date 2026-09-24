@@ -3,13 +3,12 @@ use std::collections::BTreeMap;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT};
+use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT, Stack};
 use crate::items::ItemId;
-use crate::protocol::DroppedItem;
 use crate::server::journal::{CompactedDrop, DropCompaction, StateKey};
 use std::sync::Arc;
 
-use super::{Drops, Entry, LIFETIME, invalid, unix_ms};
+use super::{DropEntityPayload, Drops, Entry, LIFETIME, invalid, unix_ms};
 
 impl Drops {
     /// Startup applies the latest journal values over the validated BGDP
@@ -69,17 +68,13 @@ impl Drops {
             if current == owner {
                 continue;
             }
-            let (item, count, born, delay, components) =
-                decode_owner_with_catalog(id, &owner, &self.catalog)?;
+            let payload = decode_owner_with_catalog(id, &owner, &self.catalog)?;
+            let born = payload.created_unix_ms;
             if let Some(entry) = self.entries.get_mut(&id) {
-                entry.item.item = item;
-                entry.item.count = count;
-                entry.components = components;
-                entry.created_unix_ms = born;
+                entry.payload = payload.into_entity_payload();
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 entry.age_at_load = age;
                 entry.age_since = Instant::now();
-                entry.pickup_delay = Duration::from_millis(u64::from(delay));
                 self.expiry.insert(id, age, entry.age_since);
                 // Recovery overlays ownership, not motion state. Preserve a
                 // checkpointed sleeping drop instead of waking it due to a
@@ -95,24 +90,8 @@ impl Drops {
                     .ok_or_else(|| invalid("journaled drop is missing its spawn position"))?;
                 let age = Duration::from_millis(unix_ms().saturating_sub(born));
                 let age_since = Instant::now();
-                self.entries.insert(
-                    id,
-                    Entry {
-                        item: DroppedItem {
-                            id,
-                            item,
-                            count,
-                            position,
-                            age_ms: 0,
-                        },
-                        components,
-                        vertical_speed: 0.0,
-                        age_at_load: age,
-                        age_since,
-                        created_unix_ms: born,
-                        pickup_delay: Duration::from_millis(u64::from(delay)),
-                    },
-                );
+                self.entries
+                    .insert(id, Entry::new(id, position, payload, 0.0, age, age_since));
                 self.spatial.insert(id, position);
                 self.expiry.insert(id, age, age_since);
                 if age < LIFETIME {
@@ -215,14 +194,14 @@ impl Drops {
     /// and stale spawn positions without ever reusing drop IDs.
     pub(in crate::server) fn rotation_compaction(&self) -> DropCompaction {
         let mut entries: Vec<_> = self.entries.values().collect();
-        entries.sort_by_key(|entry| entry.item.id);
+        entries.sort_by_key(|entry| entry.id);
         DropCompaction {
             drops: entries
                 .into_iter()
                 .map(|entry| CompactedDrop {
-                    id: entry.item.id,
+                    id: entry.id,
                     owner: encode_owner(entry),
-                    position: entry.item.position,
+                    position: entry.position,
                 })
                 .collect(),
             next_id: self.next_id,
@@ -231,20 +210,22 @@ impl Drops {
 }
 
 pub(super) fn encode_owner(entry: &Entry) -> Vec<u8> {
-    let component_bytes = entry
+    let payload = entry.drop_payload();
+    let component_bytes = payload
+        .stack
         .components
         .as_ref()
         .map_or(0, |payload| payload.bytes.len());
     let mut bytes = Vec::with_capacity(21 + component_bytes);
     bytes.push(3);
-    bytes.extend(entry.item.item.get().to_le_bytes());
-    bytes.extend(entry.item.count.to_le_bytes());
-    bytes.extend(entry.created_unix_ms.to_le_bytes());
-    bytes.extend((entry.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes());
-    if let Some(payload) = &entry.components {
-        bytes.extend(payload.version.to_le_bytes());
-        bytes.extend((payload.bytes.len() as u16).to_le_bytes());
-        bytes.extend(&payload.bytes);
+    bytes.extend(payload.stack.item.get().to_le_bytes());
+    bytes.extend(payload.stack.count.to_le_bytes());
+    bytes.extend(payload.created_unix_ms.to_le_bytes());
+    bytes.extend((payload.pickup_delay.as_millis().min(u16::MAX as u128) as u16).to_le_bytes());
+    if let Some(component) = &payload.stack.components {
+        bytes.extend(component.version.to_le_bytes());
+        bytes.extend((component.bytes.len() as u16).to_le_bytes());
+        bytes.extend(&component.bytes);
     } else {
         bytes.extend(0u16.to_le_bytes());
         bytes.extend(0u16.to_le_bytes());
@@ -252,10 +233,7 @@ pub(super) fn encode_owner(entry: &Entry) -> Vec<u8> {
     bytes
 }
 
-pub(in crate::server) fn decode_owner(
-    id: u64,
-    bytes: &[u8],
-) -> io::Result<(ItemId, u16, u64, u16, Option<Arc<ComponentPayload>>)> {
+pub(in crate::server) fn decode_owner(id: u64, bytes: &[u8]) -> io::Result<DropEntityPayload> {
     decode_owner_with_catalog(id, bytes, crate::content::catalog())
 }
 
@@ -263,7 +241,7 @@ pub(in crate::server) fn decode_owner_with_catalog(
     id: u64,
     bytes: &[u8],
     catalog: &crate::content::Catalog,
-) -> io::Result<(ItemId, u16, u64, u16, Option<Arc<ComponentPayload>>)> {
+) -> io::Result<DropEntityPayload> {
     if bytes.len() < 21 || bytes[0] != 3 {
         return Err(invalid("invalid journaled drop ownership"));
     }
@@ -290,7 +268,15 @@ pub(in crate::server) fn decode_owner_with_catalog(
                 .ok_or_else(|| invalid("invalid drop components"))?,
         ))
     };
-    Ok((item, count, born, delay, components))
+    Ok(DropEntityPayload::new(
+        Stack {
+            item,
+            count,
+            components,
+        },
+        born,
+        Duration::from_millis(u64::from(delay)),
+    ))
 }
 
 fn decode_drop_id(bytes: &[u8]) -> io::Result<u64> {
