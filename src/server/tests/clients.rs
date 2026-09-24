@@ -1,6 +1,92 @@
 use super::*;
+use crate::protocol::PublicEntityChange;
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
+
+#[test]
+fn remote_player_spawn_move_and_leave_publish_ordered_entity_changes() {
+    let save = TestSave::new("player-entity-publication");
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let observer = join(&mut state, &mut tick, 1);
+    let key = state.clients[&observer.id].center;
+    for _ in 0..100 {
+        if state.clients[&observer.id].sent.contains(&key) {
+            break;
+        }
+        let _ = messages(&observer);
+        run_empty_tick(&mut state, &mut tick);
+    }
+    assert!(state.clients[&observer.id].sent.contains(&key));
+    let _ = messages(&observer);
+
+    let actor = join(&mut state, &mut tick, 2);
+    let entity_id = state
+        .player_entities
+        .id_for_session(actor.id)
+        .unwrap()
+        .get();
+    assert!(messages(&observer).iter().any(|message| matches!(
+        message,
+        ServerMessage::WorldCommitPart(part)
+            if part.key == key && part.entities.iter().any(|change| matches!(
+                change,
+                PublicEntityChange::Upsert(entity) if entity.id == entity_id
+            ))
+    )));
+
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Command {
+            id: actor.id,
+            sequence: 1,
+            message: ClientMessage::Move {
+                seq: 1,
+                dx: 0.1,
+                dy: 0.0,
+                dz: 0.0,
+            },
+        }],
+    );
+    assert!(messages(&observer).iter().any(|message| matches!(
+        message,
+        ServerMessage::WorldCommitPart(part)
+            if part.key == key && part.entities.iter().any(|change| matches!(
+                change,
+                PublicEntityChange::Upsert(entity)
+                    if entity.id == entity_id && entity.motion_revision > 1
+            ))
+    )));
+
+    run_tick(
+        &mut state,
+        &mut tick,
+        vec![SimulationInput::Leave {
+            id: actor.id,
+            sequence: 2,
+        }],
+    );
+    assert!(state.player_entities.id_for_session(actor.id).is_none());
+    assert!(messages(&observer).iter().any(|message| matches!(
+        message,
+        ServerMessage::WorldCommitPart(part)
+            if part.key == key && part.entities.iter().any(|change| matches!(
+                change,
+                PublicEntityChange::Remove { id, .. } if *id == entity_id
+            ))
+    )));
+
+    let rejoined = join(&mut state, &mut tick, 2);
+    assert_ne!(
+        state
+            .player_entities
+            .id_for_session(rejoined.id)
+            .unwrap()
+            .get(),
+        entity_id
+    );
+}
 
 #[test]
 fn view_radius_is_clamped_and_acknowledged_by_the_coordinator() {
