@@ -327,4 +327,13 @@ fn action_receipts_round_trip_and_reject_invalid_ids() {
         )
         .is_err()
     );
+    let mut malformed = Vec::new();
+    let mut payload = vec![WIRE_VERSION, 11];
+    payload.extend(9u128.to_le_bytes());
+    payload.extend([2, 0]);
+    frame(&mut malformed, &payload).unwrap();
+    assert_eq!(
+        read_server(malformed.as_slice()).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
 }
