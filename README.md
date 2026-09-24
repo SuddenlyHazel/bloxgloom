@@ -2,7 +2,7 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
-Terrain uses coherent multi-scale height fields, rocky uplands, and caves. Grass, dirt, and stone use distinct tiled pixel textures; a shader adds directional lighting, distance fog, and an atmospheric sky. Greedy chunk meshes keep the texture repeat per block, and mipmaps keep distant terrain stable. Saved edits are versioned against the terrain generator so a changed baseline cannot silently alter an existing world.
+Terrain uses coherent multi-scale height fields, rocky uplands, and caves. Grass, dirt, and stone use generated pixel-art assets in `assets/textures/`, loaded into a mipmapped material array. Greedy chunk meshes repeat textures per block. The sky and lighting share a fixed world-space sun direction, so the sun moves across the view when you turn; distance fog softens far terrain. Saved edits are versioned against the terrain generator so a changed baseline cannot silently alter an existing world.
 
 ## Run locally
 
@@ -36,6 +36,6 @@ The client logs FPS, frame-time percentiles, visible chunks, triangles, and uplo
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png`. This renders representative terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.
 
-Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Pause, and Settings screens at 1280×720, 640×360, and 640×360 with 2× requested UI scale, without opening a game window.
+Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Pause, and Settings screens at 1280×720, 640×360, and 640×360 with 2× requested UI scale, plus sun-facing and sun-away views, without opening a game window.
 
 Run `cargo run --release -- perf 300 6` to measure headless 1280×720 chunk-upload, world-render, target-outline, and HUD work at the maximum supported view radius. It reports CPU submit-side and GPU render-pass frame-time percentiles, adapter, and scene size. It does not measure window presentation or live gameplay FPS.

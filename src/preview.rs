@@ -34,6 +34,7 @@ pub fn render_preview(path: &Path) -> Result<(), Box<dyn Error>> {
         height: 600,
         scale: 1.0,
         screen: UiScreen::Playing,
+        orientation: None,
     }]))
 }
 
@@ -53,6 +54,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
                 height,
                 scale: 1.0,
                 screen,
+                orientation: None,
             });
         }
     }
@@ -68,6 +70,21 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             height: 360,
             scale: 2.0,
             screen,
+            orientation: None,
+        });
+    }
+    let sun = render::SUN_DIRECTION.normalize();
+    for (name, orientation) in [
+        ("sun-facing", (sun.z.atan2(sun.x), sun.y.asin())),
+        ("sun-away", ((-sun.z).atan2(-sun.x), 0.15)),
+    ] {
+        outputs.push(PreviewOutput {
+            path: directory.join(format!("{name}-1280x720.png")),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: Some(orientation),
         });
     }
     fs::create_dir_all(directory)?;
@@ -86,6 +103,7 @@ struct PreviewOutput {
     height: u32,
     scale: f32,
     screen: UiScreen,
+    orientation: Option<(f32, f32)>,
 }
 
 async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Error>> {
@@ -101,7 +119,7 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
-    let sky_pipeline = render::create_sky_pipeline(&device, FORMAT);
+    let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
     let (pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
@@ -184,17 +202,30 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
         });
         let color_view = color.create_view(&Default::default());
         let depth_view = depth.create_view(&Default::default());
-        let camera = Camera {
+        let mut camera = Camera {
             fov_y_radians: 70.0f32.to_radians(),
             ..camera_template
         };
+        if let Some((yaw, pitch)) = output.orientation {
+            camera.yaw = yaw;
+            camera.pitch = pitch;
+        }
+        queue.write_buffer(
+            &sky_buffer,
+            0,
+            bytemuck::cast_slice(&render::sky_camera_data(
+                camera,
+                output.width,
+                output.height,
+            )),
+        );
         let matrix = render::view_projection(camera, output.width, output.height);
         queue.write_buffer(
             &camera_buffer,
             0,
             bytemuck::cast_slice(&matrix.to_cols_array()),
         );
-        let has_target = output.screen == UiScreen::Playing;
+        let has_target = output.screen == UiScreen::Playing && output.orientation.is_none();
         if has_target {
             queue.write_buffer(
                 &target_camera_buffer,
@@ -252,6 +283,7 @@ async fn render_previews(outputs: Vec<PreviewOutput>) -> Result<(), Box<dyn Erro
                 ..Default::default()
             });
             pass.set_pipeline(&sky_pipeline);
+            pass.set_bind_group(0, &sky_group, &[]);
             pass.draw(0..3, 0..1);
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
@@ -466,7 +498,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         },
     );
 
-    let sky_pipeline = render::create_sky_pipeline(&device, FORMAT);
+    let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
     let (pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
@@ -633,6 +665,11 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         };
         ui_renderer.prepare(&queue, PERF_WIDTH, PERF_HEIGHT, &ui_frame);
         queue.write_buffer(
+            &sky_buffer,
+            0,
+            bytemuck::cast_slice(&render::sky_camera_data(camera, PERF_WIDTH, PERF_HEIGHT)),
+        );
+        queue.write_buffer(
             &camera_buffer,
             0,
             bytemuck::cast_slice(&matrix.to_cols_array()),
@@ -681,6 +718,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
                 ..Default::default()
             });
             pass.set_pipeline(&sky_pipeline);
+            pass.set_bind_group(0, &sky_group, &[]);
             pass.draw(0..3, 0..1);
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);

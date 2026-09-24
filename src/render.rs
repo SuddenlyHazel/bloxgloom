@@ -1,5 +1,6 @@
 //! Opaque voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 use std::collections::{HashMap, VecDeque};
+use std::io::Cursor;
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4, camera::rh};
@@ -14,9 +15,10 @@ pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
 const VERTEX_STRIDE: u64 = 9 * 4;
-const TEXTURE_SIZE: u32 = 16;
+const TEXTURE_SIZE: u32 = 128;
 const TEXTURE_LAYERS: u32 = 4;
-const TEXTURE_MIPS: u32 = 5;
+const TEXTURE_MIPS: u32 = 8;
+pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
 pub(crate) const SKY_COLOR: wgpu::Color = wgpu::Color {
     r: 0.43,
     g: 0.63,
@@ -107,6 +109,8 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     depth: wgpu::TextureView,
     sky_pipeline: wgpu::RenderPipeline,
+    sky_buffer: wgpu::Buffer,
+    sky_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
@@ -170,7 +174,7 @@ impl Renderer {
         };
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
-        let sky_pipeline = create_sky_pipeline(&device, format);
+        let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, format);
         let (pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline(&device, &queue, format);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
@@ -185,6 +189,8 @@ impl Renderer {
             config,
             depth,
             sky_pipeline,
+            sky_buffer,
+            sky_group,
             pipeline,
             camera_buffer,
             camera_group,
@@ -306,6 +312,15 @@ impl Renderer {
             return Ok(stats);
         }
         let view_projection = view_projection(camera, self.config.width, self.config.height);
+        self.queue.write_buffer(
+            &self.sky_buffer,
+            0,
+            bytemuck::cast_slice(&sky_camera_data(
+                camera,
+                self.config.width,
+                self.config.height,
+            )),
+        );
         self.ui
             .prepare(&self.queue, self.config.width, self.config.height, ui_frame);
         self.queue.write_buffer(
@@ -377,6 +392,7 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_pipeline(&self.sky_pipeline);
+            pass.set_bind_group(0, &self.sky_group, &[]);
             pass.draw(0..3, 0..1);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
@@ -448,17 +464,44 @@ impl Renderer {
 pub(crate) fn create_sky_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-) -> wgpu::RenderPipeline {
+) -> (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("atmospheric sky shader"),
-        source: wgpu::ShaderSource::Wgsl(SKY_SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(with_world_sun(SKY_SHADER).into()),
+    });
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("sky camera basis"),
+        size: 48,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("sky camera layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let camera_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("sky camera bind group"),
+        layout: &camera_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding(),
+        }],
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("sky pipeline layout"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[Some(&camera_layout)],
         immediate_size: 0,
     });
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("atmospheric sky pipeline"),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
@@ -488,7 +531,22 @@ pub(crate) fn create_sky_pipeline(
         }),
         multiview_mask: None,
         cache: None,
-    })
+    });
+    (pipeline, camera_buffer, camera_group)
+}
+
+/// Camera basis packed as three aligned vec4 uniforms. The sun itself stays in
+/// world space; looking away from it cannot leave a screen-fixed bright disc.
+pub(crate) fn sky_camera_data(camera: Camera, width: u32, height: u32) -> [f32; 12] {
+    let forward = camera.direction();
+    let right = Vec3::new(-camera.yaw.sin(), 0.0, camera.yaw.cos());
+    let up = right.cross(forward).normalize();
+    let vertical = (camera.fov_y_radians * 0.5).tan();
+    let horizontal = vertical * width as f32 / height.max(1) as f32;
+    [
+        forward.x, forward.y, forward.z, 0.0, right.x, right.y, right.z, horizontal, up.x, up.y,
+        up.z, vertical,
+    ]
 }
 
 pub(crate) fn create_voxel_pipeline(
@@ -503,7 +561,7 @@ pub(crate) fn create_voxel_pipeline(
 ) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+        source: wgpu::ShaderSource::Wgsl(with_world_sun(SHADER).into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
@@ -672,7 +730,23 @@ pub(crate) fn create_voxel_pipeline(
     (pipeline, camera_buffer, camera_group, texture_group)
 }
 
+fn with_world_sun(source: &str) -> String {
+    source.replace(
+        "WORLD_SUN_DIRECTION",
+        &format!(
+            "vec3<f32>({}, {}, {})",
+            SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z
+        ),
+    )
+}
+
 const SKY_SHADER: &str = r#"
+struct SkyCamera {
+    forward: vec4<f32>,
+    right: vec4<f32>,
+    up: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> sky_camera: SkyCamera;
 struct SkyVertex {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -690,17 +764,21 @@ struct SkyVertex {
     return output;
 }
 @fragment fn fs_main(input: SkyVertex) -> @location(0) vec4<f32> {
-    let height = smoothstep(0.0, 1.0, input.uv.y);
-    let horizon = vec3<f32>(0.60, 0.72, 0.81);
-    let zenith = vec3<f32>(0.22, 0.46, 0.75);
-    var color = mix(horizon, zenith, height);
-    let aspect = fwidth(input.uv.y) / max(fwidth(input.uv.x), 0.00001);
-    let sun_offset = input.uv - vec2<f32>(0.78, 0.78);
-    let sun_distance = length(vec2<f32>(sun_offset.x * aspect, sun_offset.y));
-    let glow = 1.0 - smoothstep(0.02, 0.24, sun_distance);
-    let disc = 1.0 - smoothstep(0.027, 0.035, sun_distance);
-    color = mix(color, vec3<f32>(1.0, 0.83, 0.57), glow * 0.23);
-    color = mix(color, vec3<f32>(1.0, 0.91, 0.69), disc);
+    let ndc = input.uv * 2.0 - vec2<f32>(1.0);
+    let ray = normalize(
+        sky_camera.forward.xyz
+        + sky_camera.right.xyz * ndc.x * sky_camera.right.w
+        + sky_camera.up.xyz * ndc.y * sky_camera.up.w
+    );
+    let horizon = vec3<f32>(0.59, 0.72, 0.82);
+    let zenith = vec3<f32>(0.20, 0.45, 0.75);
+    var color = mix(horizon, zenith, smoothstep(-0.08, 0.86, ray.y));
+    let sun_direction = normalize(WORLD_SUN_DIRECTION);
+    let alignment = dot(ray, sun_direction);
+    let glow = smoothstep(0.88, 0.997, alignment);
+    let disc = smoothstep(0.9990, 0.99955, alignment);
+    color = mix(color, vec3<f32>(1.0, 0.82, 0.55), glow * 0.28);
+    color = mix(color, vec3<f32>(1.0, 0.92, 0.72), disc);
     return vec4<f32>(color, 1.0);
 }
 "#;
@@ -1058,49 +1136,71 @@ fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
 }
 
 fn material_tiles() -> Vec<u8> {
+    const SOURCES: [&[u8]; 4] = [
+        include_bytes!("../assets/textures/grass_top.png"),
+        include_bytes!("../assets/textures/grass_side.png"),
+        include_bytes!("../assets/textures/dirt.png"),
+        include_bytes!("../assets/textures/stone.png"),
+    ];
     let mut pixels =
         Vec::with_capacity((TEXTURE_SIZE * TEXTURE_SIZE * TEXTURE_LAYERS * 4) as usize);
-    for layer in 0..TEXTURE_LAYERS {
+    for (layer, source) in SOURCES.into_iter().enumerate() {
+        let layer_start = pixels.len();
+        let mut decoder = png::Decoder::new(Cursor::new(source));
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+        let mut reader = decoder.read_info().expect("embedded material PNG is valid");
+        let mut decoded = vec![0; reader.output_buffer_size().expect("material PNG size fits")];
+        let info = reader
+            .next_frame(&mut decoded)
+            .expect("embedded material PNG decodes");
+        let channels = match info.color_type {
+            png::ColorType::Rgb => 3,
+            png::ColorType::Rgba => 4,
+            other => panic!("embedded material PNG must be RGB or RGBA, got {other:?}"),
+        };
         for y in 0..TEXTURE_SIZE {
+            let source_y = ((y * 2 + 1) * info.height / (2 * TEXTURE_SIZE)) as usize;
             for x in 0..TEXTURE_SIZE {
-                let noise = tile_noise(x, y, layer);
-                let variation = (noise % 13) as i16 - 6;
-                let color: [i16; 3] = match layer {
-                    0 => {
-                        // Speckled grass with occasional warm dry blades.
-                        if noise.is_multiple_of(17) {
-                            [166, 176, 79]
-                        } else if noise.is_multiple_of(7) {
-                            [51, 119, 47]
-                        } else {
-                            [98 + variation, 160 + variation, 69 + variation / 2]
-                        }
-                    }
-                    1 if y < 3 || (y == 3 && !noise.is_multiple_of(4)) => {
-                        [90 + variation, 150 + variation, 63 + variation / 2]
-                    }
-                    1 | 2 => {
-                        if noise.is_multiple_of(19) {
-                            [158, 119, 78]
-                        } else {
-                            [132 + variation, 94 + variation, 62 + variation / 2]
-                        }
-                    }
-                    _ => {
-                        let crack = (x + y * 3 + layer) % 31 == 0 && noise.is_multiple_of(3);
-                        if crack {
-                            [102, 111, 117]
-                        } else {
-                            [144 + variation, 153 + variation, 158 + variation]
-                        }
-                    }
-                };
-                pixels.extend(color.map(|channel| channel.clamp(0, 255) as u8));
+                let source_x = ((x * 2 + 1) * info.width / (2 * TEXTURE_SIZE)) as usize;
+                let index = (source_y * info.width as usize + source_x) * channels;
+                pixels.extend_from_slice(&decoded[index..index + 3]);
                 pixels.push(255);
             }
         }
+        stitch_material_edges(&mut pixels[layer_start..], layer != 1);
     }
     pixels
+}
+
+fn stitch_material_edges(pixels: &mut [u8], stitch_vertical: bool) {
+    let size = TEXTURE_SIZE as usize;
+    const BAND: usize = 4;
+    for y in 0..size {
+        for offset in 0..BAND {
+            let left = (y * size + offset) * 4;
+            let right = (y * size + size - 1 - offset) * 4;
+            blend_opposite_pixels(pixels, left, right, BAND - offset, BAND);
+        }
+    }
+    if stitch_vertical {
+        for x in 0..size {
+            for offset in 0..BAND {
+                let top = (offset * size + x) * 4;
+                let bottom = ((size - 1 - offset) * size + x) * 4;
+                blend_opposite_pixels(pixels, top, bottom, BAND - offset, BAND);
+            }
+        }
+    }
+}
+
+fn blend_opposite_pixels(pixels: &mut [u8], a: usize, b: usize, weight: usize, total: usize) {
+    for channel in 0..3 {
+        let first = usize::from(pixels[a + channel]);
+        let second = usize::from(pixels[b + channel]);
+        let shared = (first + second) / 2;
+        pixels[a + channel] = ((first * (total - weight) + shared * weight) / total) as u8;
+        pixels[b + channel] = ((second * (total - weight) + shared * weight) / total) as u8;
+    }
 }
 
 fn material_mips() -> Vec<Vec<u8>> {
@@ -1135,16 +1235,6 @@ fn material_mips() -> Vec<Vec<u8>> {
     levels
 }
 
-fn tile_noise(x: u32, y: u32, layer: u32) -> u32 {
-    let mut value =
-        x.wrapping_mul(0x9e37_79b9) ^ y.wrapping_mul(0x85eb_ca6b) ^ layer.wrapping_mul(0xc2b2_ae35);
-    value ^= value >> 16;
-    value = value.wrapping_mul(0x7feb_352d);
-    value ^= value >> 15;
-    value = value.wrapping_mul(0x846c_a68b);
-    value ^ (value >> 16)
-}
-
 const SHADER: &str = r#"
 struct Camera { view_projection: mat4x4<f32> };
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -1166,7 +1256,7 @@ struct VertexOutput {
 @vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.position = camera.view_projection * vec4<f32>(input.position, 1.0);
-    let sunlight = max(dot(input.normal, normalize(vec3<f32>(0.48, 1.0, 0.28))), 0.0);
+    let sunlight = max(dot(input.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
     output.light = mix(
         vec3<f32>(0.55, 0.62, 0.72),
         vec3<f32>(1.05, 1.0, 0.91),
@@ -1180,7 +1270,7 @@ struct VertexOutput {
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
     let fog = smoothstep(38.0, 135.0, input.distance);
-    let sky = vec3<f32>(0.47, 0.64, 0.80);
+    let sky = vec3<f32>(0.59, 0.72, 0.82);
     return vec4<f32>(mix(albedo * input.light, sky, fog), 1.0);
 }
 "#;
@@ -1274,5 +1364,51 @@ mod tests {
             &mips[0][..3],
             &mips[0][(TEXTURE_SIZE * TEXTURE_SIZE * 3 * 4) as usize..][..3]
         );
+    }
+
+    #[test]
+    fn material_edges_tile_without_seams() {
+        let tiles = material_tiles();
+        let size = TEXTURE_SIZE as usize;
+        let layer_bytes = size * size * 4;
+        for layer in 0..TEXTURE_LAYERS as usize {
+            let pixels = &tiles[layer * layer_bytes..(layer + 1) * layer_bytes];
+            for y in 0..size {
+                let left = &pixels[y * size * 4..y * size * 4 + 3];
+                let right = &pixels[(y * size + size - 1) * 4..][..3];
+                assert_eq!(left, right, "horizontal seam in layer {layer}, row {y}");
+            }
+            if layer != 1 {
+                for x in 0..size {
+                    let top = &pixels[x * 4..x * 4 + 3];
+                    let bottom = &pixels[((size - 1) * size + x) * 4..][..3];
+                    assert_eq!(top, bottom, "vertical seam in layer {layer}, column {x}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sky_basis_tracks_camera_turns_in_world_space() {
+        let sun = SUN_DIRECTION.normalize();
+        let facing = Camera {
+            position: Vec3::ZERO,
+            yaw: sun.z.atan2(sun.x),
+            pitch: sun.y.asin(),
+            fov_y_radians: 70.0f32.to_radians(),
+        };
+        let facing_data = sky_camera_data(facing, 1280, 720);
+        let facing_center = Vec3::new(facing_data[0], facing_data[1], facing_data[2]);
+        assert!(facing_center.dot(sun) > 0.999);
+
+        let away = Camera {
+            yaw: (-sun.z).atan2(-sun.x),
+            pitch: -sun.y.asin(),
+            ..facing
+        };
+        let away_data = sky_camera_data(away, 1280, 720);
+        let away_center = Vec3::new(away_data[0], away_data[1], away_data[2]);
+        assert!(away_center.dot(sun) < -0.999);
+        assert!((facing_data[7] - facing_data[11] * (1280.0 / 720.0)).abs() < 1e-6);
     }
 }
