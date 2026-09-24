@@ -488,8 +488,6 @@ async fn render_previews(
     Ok(())
 }
 
-
-
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
         screen,
