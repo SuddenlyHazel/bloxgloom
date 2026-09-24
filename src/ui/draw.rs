@@ -91,7 +91,7 @@ impl UiBuilder<'_> {
                 self.rect(x, y, w, h, white);
             }
         }
-        if matches!(frame.screen, UiScreen::Playing | UiScreen::Inventory) {
+        if frame.screen == UiScreen::Playing {
             for index in 0usize..9 {
                 let Some(rect) = layout.rect(UiControl::HotbarSlot(index as u8)) else {
                     continue;
@@ -113,13 +113,23 @@ impl UiBuilder<'_> {
                     1.5 * self.scale,
                 );
                 let swatch = inset(rect, 10.0 * self.scale, 10.0 * self.scale);
-                self.rect(
-                    swatch.x,
-                    swatch.y,
-                    swatch.width,
-                    swatch.height,
-                    block_color(frame.hotbar[index]),
-                );
+                if let Some(stack) = frame.inventory[index] {
+                    self.rect(
+                        swatch.x,
+                        swatch.y,
+                        swatch.width,
+                        swatch.height,
+                        block_color(stack.block),
+                    );
+                    self.text(
+                        &stack.count.to_string(),
+                        rect.x + 3.0 * self.scale,
+                        rect.y + rect.height - 16.0 * self.scale,
+                        0.62,
+                        TEXT,
+                        3,
+                    );
+                }
                 let number = [b'1' + index as u8];
                 self.text(
                     std::str::from_utf8(&number).unwrap_or("?"),
@@ -130,12 +140,13 @@ impl UiBuilder<'_> {
                     1,
                 );
             }
-            let selected_block = frame.hotbar[frame.selected_slot.min(8)];
+            let selected_block =
+                frame.inventory[frame.selected_slot.min(8)].map(|stack| stack.block);
             let label_y = layout
                 .rect(UiControl::HotbarSlot(0))
                 .map_or(self.height - 86.0 * self.scale, |r| r.y - 29.0 * self.scale);
             self.center_text(
-                block_name(selected_block),
+                selected_block.map_or("EMPTY HAND", block_name),
                 self.width * 0.5,
                 label_y,
                 0.96,

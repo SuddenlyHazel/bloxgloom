@@ -15,7 +15,9 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 
 use crate::{
+    inventory::{SLOTS, Stack},
     lighting::LightField,
+    protocol::DroppedItem,
     render::{self, Camera, ChunkMesh},
     ui::{self, SettingId, UiControl, UiFrame, UiScreen, UiSettings},
     world::{self, ChunkKey},
@@ -127,6 +129,21 @@ pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
+pub fn render_drop_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Drops,
+    ))
+}
+
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
 /// exercising the same bounded chunk upload path used by the windowed renderer.
 pub fn run_perf_benchmark(
@@ -149,6 +166,7 @@ struct PreviewOutput {
 #[derive(Clone, Copy)]
 enum PreviewScene {
     Surface,
+    Drops,
     Cave { lamp: bool, bounced: bool },
 }
 
@@ -194,6 +212,14 @@ async fn render_previews(
                 target_xz.1 as f32 + 0.5,
             ),
         ),
+        PreviewScene::Drops => {
+            let target = Vec3::new(
+                target_xz.0 as f32 + 0.5,
+                target_height as f32 + 1.0,
+                target_xz.1 as f32 + 0.5,
+            );
+            (target + Vec3::new(4.0, 2.6, 5.0), target)
+        }
         PreviewScene::Cave { .. } => (Vec3::new(40.5, 12.0, 16.5), Vec3::new(29.5, 12.0, 16.5)),
     };
     let direction = (target - camera_position).normalize();
@@ -275,6 +301,37 @@ async fn render_previews(
             }
         }
     }
+
+    let drop_gpu_mesh = if matches!(scene, PreviewScene::Drops) {
+        let items: Vec<_> = [world::GRASS, world::STONE, world::GLOWSTONE]
+            .into_iter()
+            .enumerate()
+            .map(|(index, block)| DroppedItem {
+                id: index as u64 + 1,
+                block,
+                count: 1,
+                position: [
+                    target_xz.0 as f32 + index as f32 - 0.5,
+                    target_height as f32 + 1.0,
+                    target_xz.1 as f32 + 0.5,
+                ],
+            })
+            .collect();
+        let (vertices, indices) = render::mesh_dropped_items(&items);
+        let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("preview drops vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("preview drops indices"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        Some((vertex, index, indices.len() as u32))
+    } else {
+        None
+    };
 
     for output in outputs {
         let color = device.create_texture(&wgpu::TextureDescriptor {
@@ -400,6 +457,11 @@ async fn render_previews(
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
+            if let Some((vertices, indices, count)) = &drop_gpu_mesh {
+                pass.set_vertex_buffer(0, vertices.slice(..));
+                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..*count, 0, 0..1);
+            }
         }
         if has_target {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -488,15 +550,36 @@ async fn render_previews(
     Ok(())
 }
 
+fn sample_inventory() -> [Option<Stack>; SLOTS] {
+    let mut slots = [None; SLOTS];
+    for (index, block, count) in [
+        (0, 1, 128),
+        (1, 2, 73),
+        (2, 3, 64),
+        (3, 4, 18),
+        (4, 5, 27),
+        (5, 6, 42),
+        (6, 7, 9),
+        (7, 8, 12),
+        (10, 1, 96),
+        (13, 3, 32),
+        (20, 4, 7),
+        (29, 6, 128),
+    ] {
+        slots[index] = Some(Stack { block, count });
+    }
+    slots
+}
+
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
         screen,
         selected_slot: 1,
-        hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
+        inventory: sample_inventory(),
+        inventory_source: (screen == UiScreen::Inventory).then_some(10),
         target,
-        status: (screen == UiScreen::Playing).then_some("CREATIVE MODE  /  E OPENS INVENTORY"),
+        status: (screen == UiScreen::Playing).then_some("E OPENS INVENTORY  /  Q DROPS ITEM"),
         debug: None,
-        catalog_selection: 2,
         settings: UiSettings {
             sensitivity: 0.002,
             fov_degrees: 70.0,
@@ -507,7 +590,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         },
         hovered: match screen {
             UiScreen::Playing => None,
-            UiScreen::Inventory => Some(UiControl::CatalogBlock(2)),
+            UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
         },
@@ -518,7 +601,8 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
         screen: UiScreen::Settings,
         selected_slot: 4,
-        hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
+        inventory: sample_inventory(),
+        inventory_source: None,
         target: None,
         status: None,
         debug: Some(ui::UiDebug {
@@ -529,7 +613,6 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
             cached_chunks: 120,
             latency_ms: Some(24),
         }),
-        catalog_selection: 2,
         settings: UiSettings::default(),
         hovered: Some(UiControl::Increase(SettingId::FieldOfView)),
     };

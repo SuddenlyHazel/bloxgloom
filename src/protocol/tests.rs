@@ -5,6 +5,7 @@ fn client_messages_round_trip() {
     let messages = [
         ClientMessage::Hello {
             name: "Miner".into(),
+            profile: 123,
         },
         ClientMessage::Move {
             seq: 42,
@@ -17,12 +18,19 @@ fn client_messages_round_trip() {
             y: 12,
             z: 31,
             block: 2,
+            slot: 4,
         },
         ClientMessage::Resync {
             key: ChunkKey { x: -2, y: 0, z: 5 },
         },
         ClientMessage::SetView { radius: 6 },
         ClientMessage::Ping { nonce: u64::MAX },
+        ClientMessage::InventoryMove {
+            from: 1,
+            to: 35,
+            count: 64,
+        },
+        ClientMessage::DropStack { slot: 3, count: 2 },
     ];
     for message in messages {
         let mut bytes = Vec::new();
@@ -119,5 +127,74 @@ fn rejects_oversized_and_malformed_frames_before_allocating_payload() {
     assert_eq!(
         read_client(oversized.as_slice()).unwrap_err().kind(),
         io::ErrorKind::InvalidData
+    );
+}
+
+#[test]
+fn inventory_and_drop_snapshots_round_trip_with_bounds() {
+    let mut slots = [None; SLOTS];
+    slots[0] = Some(Stack {
+        block: 3,
+        count: 128,
+    });
+    slots[35] = Some(Stack { block: 8, count: 1 });
+    let mut bytes = Vec::new();
+    write_server(
+        &mut bytes,
+        &ServerMessage::Inventory {
+            revision: 12,
+            slots,
+        },
+    )
+    .unwrap();
+    match read_server(bytes.as_slice()).unwrap() {
+        ServerMessage::Inventory {
+            revision,
+            slots: got,
+        } => {
+            assert_eq!(revision, 12);
+            assert_eq!(got, slots);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    bytes.clear();
+    let items = vec![DroppedItem {
+        id: 99,
+        block: 2,
+        count: 63,
+        position: [-4.5, 7.0, 9.25],
+    }];
+    write_server(
+        &mut bytes,
+        &ServerMessage::Drops {
+            revision: 5,
+            items: items.clone(),
+        },
+    )
+    .unwrap();
+    match read_server(bytes.as_slice()).unwrap() {
+        ServerMessage::Drops {
+            revision,
+            items: got,
+        } => {
+            assert_eq!(revision, 5);
+            assert_eq!(got, items);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    let mut bad = [None; SLOTS];
+    bad[0] = Some(Stack {
+        block: 1,
+        count: 129,
+    });
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::Inventory {
+                revision: 1,
+                slots: bad
+            }
+        )
+        .is_err()
     );
 }

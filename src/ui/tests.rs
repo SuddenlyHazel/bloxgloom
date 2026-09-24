@@ -28,17 +28,17 @@ fn menu_layouts_expose_only_visible_actions() {
     assert!(pause.rect(UiControl::ToggleFullscreen).is_none());
 
     let inventory = UiLayout::new(1280, 720, 1.0, UiScreen::Inventory);
-    for block in 1..=8 {
-        assert!(inventory.rect(UiControl::CatalogBlock(block)).is_some());
+    for slot in 0..36 {
+        assert!(inventory.rect(UiControl::InventorySlot(slot)).is_some());
     }
     let compact_inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
-    for block in 1..=8 {
+    for slot in 0..36 {
         let card = compact_inventory
-            .rect(UiControl::CatalogBlock(block))
+            .rect(UiControl::InventorySlot(slot))
             .unwrap();
         assert_eq!(
             compact_inventory.hit_test(card.x + card.width * 0.5, card.y + card.height * 0.5),
-            Some(UiControl::CatalogBlock(block))
+            Some(UiControl::InventorySlot(slot))
         );
     }
 }
@@ -63,10 +63,10 @@ fn settings_layout_has_adjusters_and_fullscreen_toggle() {
 #[test]
 fn compact_controls_hit_test_at_their_visible_centers() {
     let inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
-    let card = inventory.rect(UiControl::CatalogBlock(2)).unwrap();
+    let card = inventory.rect(UiControl::InventorySlot(10)).unwrap();
     assert_eq!(
         inventory.hit_test(card.x + card.width * 0.5, card.y + card.height * 0.5),
-        Some(UiControl::CatalogBlock(2))
+        Some(UiControl::InventorySlot(10))
     );
 
     let settings = UiLayout::new(640, 360, 1.0, UiScreen::Settings);
@@ -145,11 +145,11 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             let frame = UiFrame {
                 screen,
                 selected_slot: 8,
-                hotbar: [1, 2, 3, 1, 2, 3, 1, 2, 3],
+                inventory: [None; crate::inventory::SLOTS],
+                inventory_source: None,
                 target: Some([10, 20, -30]),
                 status: Some(long_status),
                 debug: Some(debug),
-                catalog_selection: 3,
                 settings: UiSettings {
                     scale,
                     ..UiSettings::default()

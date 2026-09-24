@@ -16,9 +16,9 @@ struct UiCacheKey {
     scale_bits: u32,
     screen: UiScreen,
     selected_slot: usize,
-    hotbar: [u8; 9],
+    inventory: [Option<crate::inventory::Stack>; crate::inventory::SLOTS],
+    inventory_source: Option<u8>,
     debug: Option<UiDebug>,
-    catalog_selection: u8,
     settings: UiSettings,
     hovered: Option<UiControl>,
 }
@@ -184,9 +184,9 @@ impl UiRenderer {
             scale_bits: scale.to_bits(),
             screen: frame.screen,
             selected_slot: frame.selected_slot,
-            hotbar: frame.hotbar,
+            inventory: frame.inventory,
+            inventory_source: frame.inventory_source,
             debug: frame.debug,
-            catalog_selection: frame.catalog_selection,
             settings: frame.settings,
             hovered: frame.hovered,
         };

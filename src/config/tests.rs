@@ -20,9 +20,9 @@ fn config_round_trips_through_explicit_path() {
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
-        hotbar: [3, 2, 1, 3, 2, 1, 3, 2, 1],
         selected_slot: 7,
         debug_hud: true,
+        profile: 0x1234,
     };
 
     config.save(&path).unwrap();
@@ -47,7 +47,6 @@ fn invalid_values_are_clamped_and_corrupt_files_fall_back() {
     assert_eq!(config.fov_degrees, MAX_FOV);
     assert_eq!(config.view_distance, MAX_VIEW_DISTANCE);
     assert_eq!(config.scale, MIN_SCALE);
-    assert_eq!(config.hotbar, [1, 2, 8, 1, 2, 3, 1, 2, 3]);
     assert_eq!(config.selected_slot, 8);
     assert!(config.fullscreen && config.debug_hud);
     assert!(!config.bounced_gi);
@@ -67,7 +66,6 @@ fn saving_sanitizes_public_values() {
         fov_degrees: -1.0,
         view_distance: 0,
         scale: 9.0,
-        hotbar: [0, 4, 2, 1, 1, 1, 1, 1, 1],
         selected_slot: usize::MAX,
         ..Config::default()
     };
@@ -78,7 +76,20 @@ fn saving_sanitizes_public_values() {
     assert_eq!(loaded.fov_degrees, MIN_FOV);
     assert_eq!(loaded.view_distance, MIN_VIEW_DISTANCE);
     assert_eq!(loaded.scale, MAX_SCALE);
-    assert_eq!(loaded.hotbar[0..2], [1, 4]);
     assert_eq!(loaded.selected_slot, 8);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn profile_is_generated_once_and_survives_reload() {
+    let directory = test_directory("profile");
+    let path = directory.join("config");
+    let mut config = Config::default();
+    config.ensure_profile(&path).unwrap();
+    assert_ne!(config.profile, 0);
+    let profile = config.profile;
+    let mut loaded = Config::load(&path);
+    loaded.ensure_profile(&path).unwrap();
+    assert_eq!(loaded.profile, profile);
     fs::remove_dir_all(directory).unwrap();
 }

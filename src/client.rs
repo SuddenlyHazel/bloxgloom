@@ -1,6 +1,7 @@
 //! Desktop client: network I/O and meshing stay off the window thread.
 use crate::config::Config;
-use crate::protocol::{ClientMessage, ServerMessage};
+use crate::inventory::{HOTBAR_SLOTS, Inventory};
+use crate::protocol::{ClientMessage, DroppedItem, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{Camera, ChunkMesh, Renderer};
 use crate::ui::{SettingId, UiControl, UiDebug, UiFrame, UiLayout, UiScreen, UiSettings};
@@ -21,13 +22,14 @@ const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SPEED: f32 = 8.0;
 const MAX_CHUNKS: usize = 512;
 
-fn edit_for_hit(hit: Hit, place: bool, selected_block: u8) -> ClientMessage {
+fn edit_for_hit(hit: Hit, place: bool, selected_block: u8, slot: u8) -> ClientMessage {
     let [x, y, z] = if place { hit.adjacent } else { hit.block };
     ClientMessage::Edit {
         x,
         y,
         z,
         block: if place { selected_block } else { 0 },
+        slot,
     }
 }
 
@@ -83,6 +85,10 @@ struct Keys {
 }
 
 struct ClientApp {
+    inventory: Inventory,
+    drops: Vec<DroppedItem>,
+    drops_revision: u64,
+    inventory_source: Option<u8>,
     network: Network,
     mesher: Mesher,
     config: Config,
@@ -127,6 +133,10 @@ impl ClientApp {
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
         Self {
+            inventory: Inventory::default(),
+            drops: Vec::new(),
+            drops_revision: 0,
+            inventory_source: None,
             network,
             mesher: Mesher::new(),
             config,
@@ -183,6 +193,7 @@ impl ClientApp {
         self.screen = screen;
         self.keys = Keys::default();
         self.focused_control = None;
+        self.inventory_source = None;
         self.set_grab(screen == UiScreen::Playing);
         self.refresh_layout();
         if screen == UiScreen::Playing && !self.grabbed {
@@ -214,9 +225,38 @@ impl ClientApp {
     }
 
     fn select_slot(&mut self, slot: usize) {
-        if slot < self.config.hotbar.len() && self.config.selected_slot != slot {
+        if slot < HOTBAR_SLOTS && self.config.selected_slot != slot {
             self.config.selected_slot = slot;
             self.config_writer.request_save(&self.config);
+        }
+    }
+
+    fn inventory_click(&mut self, slot: u8, split: bool) {
+        if slot as usize >= crate::inventory::SLOTS {
+            return;
+        }
+        match self.inventory_source {
+            None => {
+                if self.inventory.slots[slot as usize].is_some() {
+                    self.inventory_source = Some(slot);
+                }
+            }
+            Some(source) if source == slot => self.inventory_source = None,
+            Some(source) => {
+                if let Some(stack) = self.inventory.slots[source as usize] {
+                    let count = if split {
+                        stack.count.div_ceil(2)
+                    } else {
+                        stack.count
+                    };
+                    self.queue_command(ClientMessage::InventoryMove {
+                        from: source,
+                        to: slot,
+                        count,
+                    });
+                }
+                self.inventory_source = None;
+            }
         }
     }
 
@@ -265,18 +305,11 @@ impl ClientApp {
 
     fn activate_control(&mut self, event_loop: &ActiveEventLoop, control: UiControl) {
         match control {
-            UiControl::HotbarSlot(slot) if self.screen == UiScreen::Inventory => {
-                self.select_slot(slot as usize)
-            }
             UiControl::HotbarSlot(_) => {}
-            UiControl::CatalogBlock(block)
-                if self.screen == UiScreen::Inventory
-                    && (1..=crate::world::MAX_BLOCK).contains(&block) =>
-            {
-                self.config.hotbar[self.config.selected_slot] = block;
-                self.config_writer.request_save(&self.config);
+            UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
+                self.inventory_click(slot, false)
             }
-            UiControl::CatalogBlock(_) => {}
+            UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
             UiControl::Exit => event_loop.exit(),
@@ -294,9 +327,8 @@ impl ClientApp {
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
             UiScreen::Playing => Vec::new(),
-            UiScreen::Inventory => (0..9)
-                .map(UiControl::HotbarSlot)
-                .chain((1..=crate::world::MAX_BLOCK).map(UiControl::CatalogBlock))
+            UiScreen::Inventory => (0..crate::inventory::SLOTS as u8)
+                .map(UiControl::InventorySlot)
                 .collect(),
             UiScreen::Pause => vec![UiControl::Resume, UiControl::OpenSettings, UiControl::Exit],
             UiScreen::Settings => vec![
@@ -470,6 +502,20 @@ impl ClientApp {
             ServerMessage::ViewDistance { radius } => {
                 self.effective_view_distance = radius;
             }
+            ServerMessage::Inventory { revision, slots } => {
+                if revision >= self.inventory.revision {
+                    self.inventory = Inventory { revision, slots };
+                }
+            }
+            ServerMessage::Drops { revision, items } => {
+                if revision >= self.drops_revision {
+                    self.drops_revision = revision;
+                    self.drops = items;
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer.set_drops(&self.drops);
+                    }
+                }
+            }
             ServerMessage::Pong { .. } => {}
         }
     }
@@ -635,8 +681,18 @@ impl ClientApp {
             return;
         }
         if let Some(hit) = self.aimed_block() {
-            let block = self.config.hotbar[self.config.selected_slot];
-            self.queue_command(edit_for_hit(hit, place, block));
+            let block =
+                self.inventory.slots[self.config.selected_slot].map_or(0, |stack| stack.block);
+            if place && block == 0 {
+                self.show_status("Selected slot is empty");
+                return;
+            }
+            self.queue_command(edit_for_hit(
+                hit,
+                place,
+                block,
+                self.config.selected_slot as u8,
+            ));
         }
     }
 
@@ -663,7 +719,8 @@ impl ClientApp {
         let ui = UiFrame {
             screen: self.screen,
             selected_slot: self.config.selected_slot,
-            hotbar: self.config.hotbar,
+            inventory: self.inventory.slots,
+            inventory_source: self.inventory_source,
             target,
             status,
             debug: self.config.debug_hud.then_some(UiDebug {
@@ -674,7 +731,6 @@ impl ClientApp {
                 cached_chunks: self.chunks.len(),
                 latency_ms: None,
             }),
-            catalog_selection: self.config.hotbar[self.config.selected_slot],
             settings: UiSettings {
                 sensitivity: self.config.sensitivity,
                 fov_degrees: self.config.fov_degrees,
@@ -724,8 +780,9 @@ mod events;
 
 pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = Config::default_path();
-    let config = Config::load(&config_path);
-    let network = Network::connect(addr, config.view_distance)?;
+    let mut config = Config::load(&config_path);
+    config.ensure_profile(&config_path)?;
+    let network = Network::connect(addr, config.view_distance, config.profile)?;
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut ClientApp::new(network, config, config_path))?;
     Ok(())

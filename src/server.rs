@@ -2,12 +2,16 @@
 //! every client. Cold chunk generation and durable edits currently serialize on
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
+mod drops;
+
+use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
+#[cfg(test)]
+use crate::world::STONE;
 use crate::world::{
     AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_TERRAIN_HEIGHT, World, world_to_chunk,
 };
-#[cfg(test)]
-use crate::world::{GLOWSTONE, STONE};
+use drops::Drops;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -26,6 +30,10 @@ const PLAYER_SPEED: f32 = 10.0;
 const EDIT_REACH: f32 = 8.0;
 
 struct Client {
+    profile: u128,
+    inventory: Inventory,
+    last_drops_revision: u64,
+    last_drop_anchor: [i32; 3],
     sender: SyncSender<ServerMessage>,
     socket: TcpStream,
     sent: HashSet<ChunkKey>,
@@ -57,6 +65,8 @@ impl Client {
 
 struct State {
     world: World,
+    inventory_store: InventoryStore,
+    drops: Drops,
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
@@ -80,8 +90,12 @@ pub fn start_local_server(
 }
 
 fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<Arc<Mutex<State>>> {
+    let world = World::new(seed, save_dir.clone())?;
+    let inventory_store = InventoryStore::new(&save_dir)?;
     Ok(Arc::new(Mutex::new(State {
-        world: World::new(seed, save_dir)?,
+        world,
+        inventory_store,
+        drops: Drops::open(&save_dir)?,
         seed,
         clients: HashMap::new(),
         next_id: 1,
@@ -123,10 +137,10 @@ fn serve_listener(listener: TcpListener, state: Arc<Mutex<State>>) -> io::Result
 
 fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<()> {
     socket.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let ClientMessage::Hello { name } = protocol::read_client(&mut socket)? else {
+    let ClientMessage::Hello { name, profile } = protocol::read_client(&mut socket)? else {
         return Err(io::Error::new(ErrorKind::InvalidData, "expected Hello"));
     };
-    if name.is_empty() || name.chars().any(char::is_control) {
+    if name.is_empty() || name.chars().any(char::is_control) || profile == 0 {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
             "invalid player name",
@@ -134,11 +148,22 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
     }
     socket.set_read_timeout(None)?;
     let (sender, receiver) = mpsc::sync_channel(OUTBOUND_CAPACITY);
-    let (id, seed, position) = {
+    let (id, seed, position, inventory) = {
         let mut state = shared.lock().unwrap();
         if state.clients.len() >= MAX_CLIENTS {
             return Err(io::Error::new(ErrorKind::ConnectionRefused, "server full"));
         }
+        if state
+            .clients
+            .values()
+            .any(|client| client.profile == profile)
+        {
+            return Err(io::Error::new(
+                ErrorKind::AlreadyExists,
+                "profile already connected",
+            ));
+        }
+        let inventory = state.inventory_store.load(profile)?;
         let id = state.next_id;
         state.next_id = state
             .next_id
@@ -149,6 +174,10 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
         state.clients.insert(
             id,
             Client {
+                profile,
+                inventory: inventory.clone(),
+                last_drops_revision: u64::MAX,
+                last_drop_anchor: [i32::MAX; 3],
                 sender: sender.clone(),
                 socket: socket.try_clone()?,
                 sent: HashSet::new(),
@@ -159,7 +188,7 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
                 last_seq: 0,
             },
         );
-        (id, state.seed, position)
+        (id, state.seed, position, inventory)
     };
     sender
         .try_send(ServerMessage::Welcome { id, seed })
@@ -175,6 +204,12 @@ fn serve_client(mut socket: TcpStream, shared: Arc<Mutex<State>>) -> io::Result<
     sender
         .try_send(ServerMessage::ViewDistance {
             radius: DEFAULT_VIEW,
+        })
+        .map_err(|_| io::Error::other("outbound queue closed"))?;
+    sender
+        .try_send(ServerMessage::Inventory {
+            revision: inventory.revision,
+            slots: inventory.slots,
         })
         .map_err(|_| io::Error::other("outbound queue closed"))?;
     let mut write_socket = socket.try_clone()?;
@@ -277,9 +312,44 @@ fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
 }
 
 fn stream_one(state: &mut State, id: u64) -> bool {
+    if state.drops.has_expired() {
+        let before_expiry = state.drops.clone();
+        if state.drops.expire()
+            && let Err(error) = state.drops.save()
+        {
+            state.drops = before_expiry;
+            eprintln!("expire drops: {error}");
+            if let Some(client) = state.clients.get(&id) {
+                let _ = client.socket.shutdown(Shutdown::Both);
+            }
+            return false;
+        }
+    }
+    if let Err(error) = collect_nearby(state, id) {
+        eprintln!("collect drops: {error}");
+        if let Some(client) = state.clients.get(&id) {
+            let _ = client.socket.shutdown(Shutdown::Both);
+        }
+        return false;
+    }
     let Some(client) = state.clients.get_mut(&id) else {
         return false;
     };
+    let anchor = client
+        .position
+        .map(|coordinate| (coordinate / 4.0).floor() as i32);
+    let drop_revision = state.drops.revision();
+    if client.last_drops_revision != drop_revision || client.last_drop_anchor != anchor {
+        let items = state.drops.nearby(client.position);
+        if !client.enqueue(ServerMessage::Drops {
+            revision: drop_revision,
+            items,
+        }) {
+            return false;
+        }
+        client.last_drops_revision = drop_revision;
+        client.last_drop_anchor = anchor;
+    }
     let center = client.center;
     let radius = client.radius as i32;
     client.sent.retain(|key| {
@@ -338,6 +408,45 @@ fn stream_one(state: &mut State, id: u64) -> bool {
     }
 }
 
+fn collect_nearby(state: &mut State, id: u64) -> io::Result<()> {
+    let Some(client) = state.clients.get(&id) else {
+        return Ok(());
+    };
+    let (profile, position, mut updated) =
+        (client.profile, client.position, client.inventory.clone());
+    let mut taken = Vec::new();
+    for item in state.drops.pickup_candidates(position) {
+        let remaining = updated.insert(item.block, item.count);
+        if remaining != item.count {
+            taken.push((item.id, item.count - remaining));
+        }
+    }
+    if taken.is_empty() {
+        return Ok(());
+    }
+    let before_drops = state.drops.clone();
+    for (drop_id, count) in taken {
+        state.drops.take(drop_id, count);
+    }
+    if let Err(error) = state.drops.save() {
+        state.drops = before_drops;
+        return Err(error);
+    }
+    if let Err(error) = state.inventory_store.save(profile, &updated) {
+        state.drops = before_drops;
+        state.drops.save()?;
+        return Err(error);
+    }
+    if let Some(client) = state.clients.get_mut(&id) {
+        client.inventory = updated;
+        client.enqueue(ServerMessage::Inventory {
+            revision: client.inventory.revision,
+            slots: client.inventory.slots,
+        });
+    }
+    Ok(())
+}
+
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {
     match message {
         ClientMessage::Hello { .. } => {
@@ -367,8 +476,78 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::Move { seq, dx, dy, dz } => move_player(state, id, seq, [dx, dy, dz]),
-        ClientMessage::Edit { x, y, z, block } => edit_block(state, id, x, y, z, block),
+        ClientMessage::Edit {
+            x,
+            y,
+            z,
+            block,
+            slot,
+        } => edit_block(state, id, x, y, z, block, slot),
+        ClientMessage::InventoryMove { from, to, count } => move_stack(state, id, from, to, count),
+        ClientMessage::DropStack { slot, count } => drop_stack(state, id, slot, count),
     }
+}
+
+fn move_stack(state: &mut State, id: u64, from: u8, to: u8, count: u16) -> io::Result<()> {
+    let Some(client) = state.clients.get(&id) else {
+        return Ok(());
+    };
+    let mut next = client.inventory.clone();
+    if !next.transfer(from, to, count) {
+        return Ok(());
+    }
+    state.inventory_store.save(client.profile, &next)?;
+    if let Some(client) = state.clients.get_mut(&id) {
+        client.inventory = next;
+        client.enqueue(ServerMessage::Inventory {
+            revision: client.inventory.revision,
+            slots: client.inventory.slots,
+        });
+    }
+    Ok(())
+}
+
+fn drop_stack(state: &mut State, id: u64, slot: u8, count: u16) -> io::Result<()> {
+    let Some(client) = state.clients.get(&id) else {
+        return Ok(());
+    };
+    let Some(stack) = client.inventory.slots.get(slot as usize).copied().flatten() else {
+        return Ok(());
+    };
+    if count == 0 || count > stack.count {
+        return Ok(());
+    }
+    let mut next = client.inventory.clone();
+    next.slots[slot as usize] = (count < stack.count).then_some(crate::inventory::Stack {
+        count: stack.count - count,
+        ..stack
+    });
+    next.revision = next.revision.wrapping_add(1);
+    state.inventory_store.save(client.profile, &next)?;
+    let position = [
+        client.position[0],
+        client.position[1] + 0.8,
+        client.position[2],
+    ];
+    let before_drops = state.drops.clone();
+    state
+        .drops
+        .spawn(position, stack.block, count, Duration::from_millis(1500));
+    if let Err(error) = state.drops.save() {
+        state.drops = before_drops;
+        state
+            .inventory_store
+            .save(client.profile, &client.inventory)?;
+        return Err(error);
+    }
+    if let Some(client) = state.clients.get_mut(&id) {
+        client.inventory = next;
+        client.enqueue(ServerMessage::Inventory {
+            revision: client.inventory.revision,
+            slots: client.inventory.slots,
+        });
+    }
+    Ok(())
 }
 
 fn move_player(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Result<()> {
@@ -440,7 +619,15 @@ fn collides(world: &mut World, feet: [f32; 3]) -> io::Result<bool> {
     Ok(false)
 }
 
-fn edit_block(state: &mut State, id: u64, x: i32, y: i32, z: i32, block: u8) -> io::Result<()> {
+fn edit_block(
+    state: &mut State,
+    id: u64,
+    x: i32,
+    y: i32,
+    z: i32,
+    block: u8,
+    slot: u8,
+) -> io::Result<()> {
     let Some(client) = state.clients.get(&id) else {
         return Ok(());
     };
@@ -466,10 +653,74 @@ fn edit_block(state: &mut State, id: u64, x: i32, y: i32, z: i32, block: u8) -> 
         });
         return Ok(());
     }
-    if state.world.get_block(x, y, z)? == block {
+    let previous = state.world.get_block(x, y, z)?;
+    if previous == block {
         return Ok(());
     }
-    let (key, version) = state.world.edit(x, y, z, block)?;
+    let (key, version) = if block != AIR {
+        if previous != AIR {
+            client.enqueue(ServerMessage::EditRejected {
+                reason: "replace only air blocks".into(),
+            });
+            return Ok(());
+        }
+        if state
+            .clients
+            .values()
+            .any(|other| block_intersects_player([x, y, z], other.position))
+        {
+            client.enqueue(ServerMessage::EditRejected {
+                reason: "block overlaps a player".into(),
+            });
+            return Ok(());
+        }
+        if slot as usize >= crate::inventory::HOTBAR_SLOTS
+            || client.inventory.slots[slot as usize].is_none_or(|stack| stack.block != block)
+        {
+            client.enqueue(ServerMessage::EditRejected {
+                reason: "selected stack is empty".into(),
+            });
+            return Ok(());
+        }
+        let mut next = client.inventory.clone();
+        next.consume(slot, block);
+        state.inventory_store.save(client.profile, &next)?;
+        let result = match state.world.edit(x, y, z, block) {
+            Ok(result) => result,
+            Err(error) => {
+                // Refund if the world write fails; a saved inventory is never spent silently.
+                state
+                    .inventory_store
+                    .save(client.profile, &client.inventory)?;
+                return Err(error);
+            }
+        };
+        if let Some(client) = state.clients.get_mut(&id) {
+            client.inventory = next;
+            client.enqueue(ServerMessage::Inventory {
+                revision: client.inventory.revision,
+                slots: client.inventory.slots,
+            });
+        }
+        result
+    } else {
+        let result = state.world.edit(x, y, z, block)?;
+        if previous != AIR {
+            let before_drops = state.drops.clone();
+            state.drops.spawn(
+                [x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5],
+                previous,
+                1,
+                Duration::from_millis(250),
+            );
+            if let Err(error) = state.drops.save() {
+                state.drops = before_drops;
+                state.world.edit(x, y, z, previous)?;
+                return Err(error);
+            }
+        }
+        result
+    };
     let (_, local) = world_to_chunk(x, y, z);
     let delta = ServerMessage::Delta {
         key,
@@ -486,6 +737,16 @@ fn edit_block(state: &mut State, id: u64, x: i32, y: i32, z: i32, block: u8) -> 
         }
     }
     Ok(())
+}
+
+fn block_intersects_player(block: [i32; 3], player: [f32; 3]) -> bool {
+    let [x, y, z] = block.map(|n| n as f32);
+    x < player[0] + 0.3
+        && x + 1.0 > player[0] - 0.3
+        && y < player[1] + 1.75
+        && y + 1.0 > player[1] + 0.05
+        && z < player[2] + 0.3
+        && z + 1.0 > player[2] - 0.3
 }
 
 #[cfg(test)]

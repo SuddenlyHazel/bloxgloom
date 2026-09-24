@@ -81,6 +81,31 @@ impl ApplicationHandler for ClientApp {
                                 self.toggle_inventory();
                                 return;
                             }
+                            KeyCode::KeyQ
+                                if matches!(
+                                    self.screen,
+                                    UiScreen::Inventory | UiScreen::Playing
+                                ) =>
+                            {
+                                let slot = if self.screen == UiScreen::Playing {
+                                    Some(self.config.selected_slot as u8)
+                                } else {
+                                    self.inventory_source.or(match self.focused_control {
+                                        Some(UiControl::InventorySlot(slot)) => Some(slot),
+                                        _ => None,
+                                    })
+                                };
+                                if let Some(slot) = slot
+                                    && let Some(stack) = self.inventory.slots[slot as usize]
+                                {
+                                    self.queue_command(ClientMessage::DropStack {
+                                        slot,
+                                        count: if self.shift_down { stack.count } else { 1 },
+                                    });
+                                    self.inventory_source = None;
+                                }
+                                return;
+                            }
                             KeyCode::F3 => {
                                 self.config.debug_hud = !self.config.debug_hud;
                                 self.config_writer.request_save(&self.config);
@@ -132,13 +157,19 @@ impl ApplicationHandler for ClientApp {
                 ..
             } => {
                 if self.screen != UiScreen::Playing {
-                    if button == MouseButton::Left {
+                    if button == MouseButton::Left
+                        || (button == MouseButton::Right && self.screen == UiScreen::Inventory)
+                    {
                         let control = self
                             .ui_layout
                             .as_ref()
                             .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
                         if let Some(control) = control {
-                            self.activate_control(event_loop, control);
+                            if let UiControl::InventorySlot(slot) = control {
+                                self.inventory_click(slot, button == MouseButton::Right);
+                            } else if button == MouseButton::Left {
+                                self.activate_control(event_loop, control);
+                            }
                         }
                     }
                 } else if !self.grabbed {

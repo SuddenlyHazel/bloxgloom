@@ -22,7 +22,7 @@ pub(super) struct Network {
 }
 
 impl Network {
-    pub(super) fn connect(addr: &str, view_distance: u8) -> io::Result<Self> {
+    pub(super) fn connect(addr: &str, view_distance: u8, profile: u128) -> io::Result<Self> {
         let socket = TcpStream::connect(addr)?;
         socket.set_nodelay(true)?;
         let mut reader = socket.try_clone()?;
@@ -54,6 +54,7 @@ impl Network {
         outgoing
             .send(ClientMessage::Hello {
                 name: "Player".into(),
+                profile,
             })
             .map_err(|_| io::Error::other("network writer stopped"))?;
         outgoing

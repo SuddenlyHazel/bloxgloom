@@ -1,5 +1,6 @@
 //! Opaque voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
+mod drops;
 mod material;
 mod mesh;
 mod pipeline;
@@ -18,12 +19,14 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::protocol::DroppedItem;
 use crate::ui::{UiFrame, UiRenderer};
 use crate::world::ChunkKey;
 
 use mesh::GpuMesh;
 use visibility::create_depth;
 
+pub(crate) use drops::mesh as mesh_dropped_items;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
 pub use mesh::{ChunkMesh, mesh_chunk_lit};
@@ -110,6 +113,9 @@ pub struct Renderer {
     target_camera_buffer: wgpu::Buffer,
     target_camera_group: wgpu::BindGroup,
     target_vertices: wgpu::Buffer,
+    drop_vertices: wgpu::Buffer,
+    drop_indices: wgpu::Buffer,
+    drop_index_count: u32,
     ui: UiRenderer,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
@@ -171,6 +177,18 @@ impl Renderer {
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let ui = UiRenderer::new(&device, &queue, format);
+        let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dropped item vertices"),
+            size: drops::MAX_VERTEX_BYTES,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let drop_indices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dropped item indices"),
+            size: drops::MAX_INDEX_BYTES,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         Ok(Self {
             instance,
             window,
@@ -190,6 +208,9 @@ impl Renderer {
             target_camera_buffer,
             target_camera_group,
             target_vertices,
+            drop_vertices,
+            drop_indices,
+            drop_index_count: 0,
             ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
@@ -207,6 +228,19 @@ impl Renderer {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth = create_depth(&self.device, size.width, size.height);
+    }
+
+    pub fn set_drops(&mut self, items: &[DroppedItem]) {
+        let (vertices, indices) = drops::mesh(items);
+        if !vertices.is_empty() {
+            self.queue
+                .write_buffer(&self.drop_vertices, 0, bytemuck::cast_slice(&vertices));
+        }
+        if !indices.is_empty() {
+            self.queue
+                .write_buffer(&self.drop_indices, 0, bytemuck::cast_slice(&indices));
+        }
+        self.drop_index_count = indices.len() as u32;
     }
 
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
@@ -397,6 +431,12 @@ impl Renderer {
                 pass.draw_indexed(0..mesh.indices, 0, 0..1);
                 stats.visible_chunks += 1;
                 stats.drawn_triangles += mesh.indices as usize / 3;
+            }
+            if self.drop_index_count > 0 {
+                pass.set_vertex_buffer(0, self.drop_vertices.slice(..));
+                pass.set_index_buffer(self.drop_indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..self.drop_index_count, 0, 0..1);
+                stats.drawn_triangles += self.drop_index_count as usize / 3;
             }
         }
         if ui_frame.target.is_some() {

@@ -1,9 +1,10 @@
 //! Small, versioned, length-prefixed wire format shared by the client and server.
-use crate::world::{CHUNK_SIZE, Chunk, ChunkKey};
+use crate::inventory::{SLOTS, STACK_LIMIT, Stack};
+use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, MAX_BLOCK};
 use std::io::{self, Read, Write};
 
 pub const MAX_FRAME: usize = 16 * 1024;
-const WIRE_VERSION: u8 = 2;
+const WIRE_VERSION: u8 = 3;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 const MAX_NAME: usize = 32;
@@ -11,12 +12,49 @@ const BLOCK_COUNT: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
-    Hello { name: String },
-    Move { seq: u64, dx: f32, dy: f32, dz: f32 },
-    Edit { x: i32, y: i32, z: i32, block: u8 },
-    Resync { key: ChunkKey },
-    SetView { radius: u8 },
-    Ping { nonce: u64 },
+    Hello {
+        name: String,
+        profile: u128,
+    },
+    Move {
+        seq: u64,
+        dx: f32,
+        dy: f32,
+        dz: f32,
+    },
+    Edit {
+        x: i32,
+        y: i32,
+        z: i32,
+        block: u8,
+        slot: u8,
+    },
+    InventoryMove {
+        from: u8,
+        to: u8,
+        count: u16,
+    },
+    DropStack {
+        slot: u8,
+        count: u16,
+    },
+    Resync {
+        key: ChunkKey,
+    },
+    SetView {
+        radius: u8,
+    },
+    Ping {
+        nonce: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DroppedItem {
+    pub id: u64,
+    pub block: u8,
+    pub count: u16,
+    pub position: [f32; 3],
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +83,14 @@ pub enum ServerMessage {
     },
     ViewDistance {
         radius: u8,
+    },
+    Inventory {
+        revision: u64,
+        slots: [Option<Stack>; SLOTS],
+    },
+    Drops {
+        revision: u64,
+        items: Vec<DroppedItem>,
     },
     Pong {
         nonce: u64,
@@ -96,9 +142,10 @@ fn short_string(out: &mut Vec<u8>, value: &str) -> io::Result<()> {
 pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
-        ClientMessage::Hello { name } => {
+        ClientMessage::Hello { name, profile } => {
             out.push(1);
             short_string(&mut out, name)?;
+            out.extend(profile.to_le_bytes());
         }
         ClientMessage::Move { seq, dx, dy, dz } => {
             if !dx.is_finite() || !dy.is_finite() || !dz.is_finite() {
@@ -110,12 +157,19 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
                 out.extend(n.to_le_bytes());
             }
         }
-        ClientMessage::Edit { x, y, z, block } => {
+        ClientMessage::Edit {
+            x,
+            y,
+            z,
+            block,
+            slot,
+        } => {
             out.push(3);
             for n in [x, y, z] {
                 out.extend(n.to_le_bytes());
             }
             out.push(*block);
+            out.push(*slot);
         }
         ClientMessage::Resync { key: k } => {
             out.push(4);
@@ -128,6 +182,25 @@ pub fn write_client(writer: impl Write, message: &ClientMessage) -> io::Result<(
         ClientMessage::Ping { nonce } => {
             out.push(6);
             out.extend(nonce.to_le_bytes());
+        }
+        ClientMessage::InventoryMove { from, to, count } => {
+            if *from as usize >= SLOTS
+                || *to as usize >= SLOTS
+                || !(1..=STACK_LIMIT).contains(count)
+            {
+                return Err(invalid("invalid inventory move"));
+            }
+            out.push(7);
+            out.extend([*from, *to]);
+            out.extend(count.to_le_bytes());
+        }
+        ClientMessage::DropStack { slot, count } => {
+            if *slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(count) {
+                return Err(invalid("invalid dropped stack"));
+            }
+            out.push(8);
+            out.push(*slot);
+            out.extend(count.to_le_bytes());
         }
     }
     frame(writer, &out)
@@ -188,6 +261,43 @@ pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<(
             out.push(7);
             out.push(*radius);
         }
+        ServerMessage::Inventory { revision, slots } => {
+            out.push(8);
+            out.extend(revision.to_le_bytes());
+            for slot in slots {
+                if let Some(stack) = slot {
+                    if !stack.valid() {
+                        return Err(invalid("invalid inventory stack"));
+                    }
+                    out.push(stack.block);
+                    out.extend(stack.count.to_le_bytes());
+                } else {
+                    out.extend([0, 0, 0]);
+                }
+            }
+        }
+        ServerMessage::Drops { revision, items } => {
+            if items.len() > 256 {
+                return Err(invalid("too many drops"));
+            }
+            out.push(9);
+            out.extend(revision.to_le_bytes());
+            out.extend((items.len() as u16).to_le_bytes());
+            for item in items {
+                if !(1..=MAX_BLOCK).contains(&item.block)
+                    || !(1..=STACK_LIMIT).contains(&item.count)
+                    || item.position.iter().any(|n| !n.is_finite())
+                {
+                    return Err(invalid("invalid dropped item"));
+                }
+                out.extend(item.id.to_le_bytes());
+                out.push(item.block);
+                out.extend(item.count.to_le_bytes());
+                for n in item.position {
+                    out.extend(n.to_le_bytes());
+                }
+            }
+        }
     }
     frame(writer, &out)
 }
@@ -217,6 +327,12 @@ impl<'a> Cursor<'a> {
     }
     fn u64(&mut self) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+    }
+    fn u16(&mut self) -> io::Result<u16> {
+        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+    }
+    fn u128(&mut self) -> io::Result<u128> {
+        Ok(u128::from_le_bytes(self.take(16)?.try_into().unwrap()))
     }
     fn i32(&mut self) -> io::Result<i32> {
         Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap()))
@@ -255,7 +371,10 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
-        1 => ClientMessage::Hello { name: c.string()? },
+        1 => ClientMessage::Hello {
+            name: c.string()?,
+            profile: c.u128()?,
+        },
         2 => ClientMessage::Move {
             seq: c.u64()?,
             dx: c.f32()?,
@@ -267,10 +386,26 @@ pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
             y: c.i32()?,
             z: c.i32()?,
             block: c.u8()?,
+            slot: c.u8()?,
         },
         4 => ClientMessage::Resync { key: c.key()? },
         5 => ClientMessage::SetView { radius: c.u8()? },
         6 => ClientMessage::Ping { nonce: c.u64()? },
+        7 => {
+            let (from, to, count) = (c.u8()?, c.u8()?, c.u16()?);
+            if from as usize >= SLOTS || to as usize >= SLOTS || !(1..=STACK_LIMIT).contains(&count)
+            {
+                return Err(invalid("invalid inventory move"));
+            }
+            ClientMessage::InventoryMove { from, to, count }
+        }
+        8 => {
+            let (slot, count) = (c.u8()?, c.u16()?);
+            if slot as usize >= SLOTS || !(1..=STACK_LIMIT).contains(&count) {
+                return Err(invalid("invalid dropped stack"));
+            }
+            ClientMessage::DropStack { slot, count }
+        }
         _ => return Err(invalid("unknown client message")),
     };
     c.done()?;
@@ -327,6 +462,45 @@ pub fn read_server(reader: impl Read) -> io::Result<ServerMessage> {
                 return Err(invalid("invalid view distance"));
             }
             ServerMessage::ViewDistance { radius }
+        }
+        8 => {
+            let revision = c.u64()?;
+            let mut slots = [None; SLOTS];
+            for slot in &mut slots {
+                let block = c.u8()?;
+                let count = c.u16()?;
+                if block != 0 || count != 0 {
+                    let stack = Stack { block, count };
+                    if !stack.valid() {
+                        return Err(invalid("invalid inventory stack"));
+                    }
+                    *slot = Some(stack);
+                }
+            }
+            ServerMessage::Inventory { revision, slots }
+        }
+        9 => {
+            let revision = c.u64()?;
+            let count = c.u16()? as usize;
+            if count > 256 {
+                return Err(invalid("too many drops"));
+            }
+            let mut items = Vec::with_capacity(count);
+            for _ in 0..count {
+                let item = DroppedItem {
+                    id: c.u64()?,
+                    block: c.u8()?,
+                    count: c.u16()?,
+                    position: [c.f32()?, c.f32()?, c.f32()?],
+                };
+                if !(1..=MAX_BLOCK).contains(&item.block)
+                    || !(1..=STACK_LIMIT).contains(&item.count)
+                {
+                    return Err(invalid("invalid dropped item"));
+                }
+                items.push(item);
+            }
+            ServerMessage::Drops { revision, items }
         }
         _ => return Err(invalid("unknown server message")),
     };

@@ -7,125 +7,101 @@ impl UiBuilder<'_> {
         self.screen_dim();
         let panel = layout.inventory_panel();
         self.panel(panel);
-        let compact = panel.width < 700.0 * self.scale;
+        let compact = panel.height < 380.0 * self.scale;
         self.text(
-            "BLOCK CATALOG",
-            panel.x + (if compact { 20.0 } else { 30.0 }) * self.scale,
-            panel.y + (if compact { 14.0 } else { 28.0 }) * self.scale,
-            if compact { 0.96 } else { 1.2 },
+            "INVENTORY",
+            panel.x + 22.0 * self.scale,
+            panel.y + (if compact { 12.0 } else { 25.0 }) * self.scale,
+            if compact { 1.0 } else { 1.25 },
             TEXT,
-            32,
+            24,
         );
-        let current_slot = frame.selected_slot.min(8) + 1;
-        let hint = format!("CHOOSE A BLOCK FOR SLOT {current_slot}");
-        if compact {
+        if !compact {
             self.text(
-                &hint,
-                panel.x + 20.0 * self.scale,
-                panel.y + 46.0 * self.scale,
+                "36 SLOTS  /  128 PER STACK",
+                panel.x + 24.0 * self.scale,
+                panel.y + 55.0 * self.scale,
                 0.66,
-                GOLD,
-                40,
-            );
-        } else {
-            self.text(
-                "CREATIVE BUILDING",
-                panel.x + 30.0 * self.scale,
-                panel.y + 60.0 * self.scale,
-                0.76,
                 MUTED,
-                32,
-            );
-            self.text(
-                &hint,
-                panel.x + panel.width - 30.0 * self.scale - text_width(&hint, self.scale, 0.78),
-                panel.y + 36.0 * self.scale,
-                0.78,
-                GOLD,
                 40,
             );
         }
-        for block in 1u8..=8 {
-            let Some(card) = layout.rect(UiControl::CatalogBlock(block)) else {
+        for index in 0..36u8 {
+            let Some(rect) = layout.rect(UiControl::InventorySlot(index)) else {
                 continue;
             };
-            let selected = frame.catalog_selection == block;
-            let hovered = frame.hovered == Some(UiControl::CatalogBlock(block));
+            let selected = frame.inventory_source == Some(index);
+            let hotbar = index < 9;
+            let hovered = frame.hovered == Some(UiControl::InventorySlot(index));
             self.rounded_panel(
-                card,
+                rect,
                 if selected {
-                    [0.12, 0.17, 0.12, 0.95]
+                    [0.17, 0.21, 0.13, 0.97]
                 } else {
-                    [0.075, 0.09, 0.09, 0.92]
+                    [0.055, 0.075, 0.073, 0.95]
                 },
                 if selected {
                     GOLD
                 } else if hovered {
-                    [0.65, 0.77, 0.52, 0.9]
+                    [0.65, 0.77, 0.52, 0.95]
+                } else if hotbar {
+                    [0.43, 0.51, 0.39, 0.95]
                 } else {
                     EDGE
                 },
                 if selected {
-                    2.2 * self.scale
+                    2.3 * self.scale
                 } else {
                     1.0 * self.scale
                 },
             );
-            let compact_card = card.height < 70.0 * self.scale;
-            let swatch_size = ((if compact_card { 22.0 } else { 42.0 }) * self.scale)
-                .min(card.height * 0.44)
-                .min(card.width * 0.35);
-            let swatch = UiRect {
-                x: card.x + (if compact_card { 8.0 } else { 18.0 }) * self.scale,
-                y: card.y + (card.height - swatch_size) * 0.5,
-                width: swatch_size,
-                height: swatch_size,
-            };
-            self.rect(
-                swatch.x + 3.0 * self.scale,
-                swatch.y,
-                swatch.width,
-                swatch.height,
-                block_color(block),
-            );
-            self.rect(
-                swatch.x,
-                swatch.y + swatch.height * 0.65,
-                swatch.width,
-                swatch.height * 0.35,
-                darken(block_color(block), 0.72),
-            );
-            self.text(
-                block_name(block),
-                swatch.x + swatch.width + (if compact_card { 7.0 } else { 14.0 }) * self.scale,
-                card.y + card.height * (if compact_card { 0.32 } else { 0.44 }),
-                if compact_card {
-                    0.64
-                } else if block == 8 {
-                    0.58
-                } else {
-                    0.88
-                },
-                TEXT,
-                18,
-            );
-            if !compact_card {
+            if let Some(stack) = frame.inventory[index as usize] {
+                let swatch = inset(rect, rect.width * 0.23, rect.height * 0.23);
+                self.rect(
+                    swatch.x,
+                    swatch.y,
+                    swatch.width,
+                    swatch.height,
+                    block_color(stack.block),
+                );
+                self.rect(
+                    swatch.x,
+                    swatch.y + swatch.height * 0.72,
+                    swatch.width,
+                    swatch.height * 0.28,
+                    darken(block_color(stack.block), 0.7),
+                );
+                let count = stack.count.to_string();
                 self.text(
-                    "PLACEABLE",
-                    swatch.x + swatch.width + 14.0 * self.scale,
-                    card.y + card.height * 0.70,
-                    0.58,
-                    MUTED,
-                    18,
+                    &count,
+                    rect.x + 4.0 * self.scale,
+                    rect.y + rect.height - 14.0 * self.scale,
+                    if compact { 0.52 } else { 0.64 },
+                    TEXT,
+                    3,
+                );
+            }
+            if hotbar {
+                self.text(
+                    &(index + 1).to_string(),
+                    rect.x + rect.width - 15.0 * self.scale,
+                    rect.y + 4.0 * self.scale,
+                    0.5,
+                    GOLD,
+                    1,
                 );
             }
         }
-        let footer = "1-9 CHOOSES SLOT  /  E OR ESC CLOSES";
+        let footer = if compact {
+            "L: MOVE  R: HALF  Q: DROP  E: CLOSE"
+        } else {
+            "SOURCE THEN DEST  /  RIGHT: HALF  /  Q: DROP  /  E: CLOSE"
+        };
         self.center_text(
             footer,
             panel.x + panel.width * 0.5,
-            panel.y + panel.height - (if compact { 32.0 } else { 46.0 }) * self.scale,
-            if compact { 0.65 } else { 0.76 },
+            panel.y + panel.height - (if compact { 21.0 } else { 31.0 }) * self.scale,
+            if compact { 0.52 } else { 0.63 },
             MUTED,
         );
     }

@@ -22,21 +22,23 @@ fn block_edit_uses_selected_hotbar_block_and_hit_face() {
         face: Face::NegX,
     };
     assert_eq!(
-        edit_for_hit(hit, true, 1),
+        edit_for_hit(hit, true, 1, 2),
         ClientMessage::Edit {
             x: 1,
             y: 3,
             z: 4,
-            block: 1
+            block: 1,
+            slot: 2,
         }
     );
     assert_eq!(
-        edit_for_hit(hit, false, 1),
+        edit_for_hit(hit, false, 1, 2),
         ClientMessage::Edit {
             x: 2,
             y: 3,
             z: 4,
-            block: 0
+            block: 0,
+            slot: 2,
         }
     );
 }

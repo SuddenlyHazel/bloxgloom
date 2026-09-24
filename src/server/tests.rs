@@ -39,10 +39,16 @@ fn set_view_acknowledges_the_clamped_radius() {
     let id = 1;
     let mut state = State {
         world: World::new(7, path.clone()).unwrap(),
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::new(),
         seed: 7,
         clients: HashMap::from([(
             id,
             Client {
+                profile: 1,
+                inventory: Inventory::default(),
+                last_drops_revision: u64::MAX,
+                last_drop_anchor: [i32::MAX; 3],
                 sender,
                 socket,
                 sent: HashSet::new(),
@@ -110,6 +116,112 @@ fn spawn_is_above_terrain_with_player_headroom() {
 }
 
 #[test]
+fn breaking_pickup_and_placement_are_server_owned_and_persisted() {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("bloxgloom-items-{}-{stamp}", std::process::id()));
+    let mut world = World::new(7, path.clone()).unwrap();
+    let position = spawn_position(&mut world).unwrap();
+    let y = position[1] as i32 - 1;
+    let original = world.get_block(0, y, 0).unwrap();
+    assert_ne!(original, AIR);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (socket, _) = listener.accept().unwrap();
+    let (sender, _receiver) = mpsc::sync_channel(32);
+    let store = InventoryStore::new(&path).unwrap();
+    let mut state = State {
+        world,
+        inventory_store: store,
+        drops: Drops::open(&path).unwrap(),
+        seed: 7,
+        clients: HashMap::from([(
+            1,
+            Client {
+                profile: 42,
+                inventory: Inventory::default(),
+                last_drops_revision: u64::MAX,
+                last_drop_anchor: [i32::MAX; 3],
+                sender,
+                socket,
+                sent: HashSet::new(),
+                center: world_to_chunk(0, y, 0).0,
+                radius: DEFAULT_VIEW,
+                position,
+                last_move: Instant::now(),
+                last_seq: 0,
+            },
+        )]),
+        next_id: 2,
+    };
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y: y + 2,
+            z: 0,
+            block: original,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.clients[&1].inventory.slots[0], None);
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y,
+            z: 0,
+            block: AIR,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, y, 0).unwrap(), AIR);
+    assert_eq!(state.drops.nearby(position).len(), 1);
+    assert_eq!(Drops::open(&path).unwrap().nearby(position).len(), 1);
+    thread::sleep(Duration::from_millis(300));
+    collect_nearby(&mut state, 1).unwrap();
+    assert_eq!(
+        state.clients[&1].inventory.slots[0],
+        Some(crate::inventory::Stack {
+            block: original,
+            count: 1
+        })
+    );
+    assert!(state.drops.nearby(position).is_empty());
+    assert_eq!(
+        state.inventory_store.load(42).unwrap(),
+        state.clients[&1].inventory
+    );
+    handle_message(
+        &mut state,
+        1,
+        ClientMessage::Edit {
+            x: 0,
+            y,
+            z: 0,
+            block: original,
+            slot: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(state.world.get_block(0, y, 0).unwrap(), original);
+    assert_eq!(state.clients[&1].inventory.slots[0], None);
+    assert_eq!(
+        state.inventory_store.load(42).unwrap(),
+        state.clients[&1].inventory
+    );
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn two_clients_share_edit_and_resync_stays_ordered() {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -118,6 +230,8 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
     let path = std::env::temp_dir().join(format!("bloxgloom-wire-{}-{stamp}", std::process::id()));
     let shared = Arc::new(Mutex::new(State {
         world: World::new(7, path.clone()).unwrap(),
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::new(),
         seed: 7,
         clients: HashMap::new(),
         next_id: 1,
@@ -146,6 +260,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &mut socket,
         &ClientMessage::Hello {
             name: "Tester".into(),
+            profile: 1,
         },
     )
     .unwrap();
@@ -153,6 +268,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &mut peer,
         &ClientMessage::Hello {
             name: "Peer".into(),
+            profile: 2,
         },
     )
     .unwrap();
@@ -171,6 +287,10 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         }
     ));
     assert!(matches!(
+        protocol::read_server(&mut socket).unwrap(),
+        ServerMessage::Inventory { .. }
+    ));
+    assert!(matches!(
         protocol::read_server(&mut peer).unwrap(),
         ServerMessage::Welcome { seed: 7, .. }
     ));
@@ -183,6 +303,10 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         ServerMessage::ViewDistance {
             radius: DEFAULT_VIEW
         }
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::Inventory { .. }
     ));
     let block_y = feet_y - 1;
     let (key, local) = world_to_chunk(0, block_y, 0);
@@ -208,7 +332,8 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
             x: 0,
             y: block_y,
             z: 0,
-            block: GLOWSTONE,
+            block: AIR,
+            slot: 0,
         },
     )
     .unwrap();
@@ -223,7 +348,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
                 block,
             } if got == key => {
                 assert_eq!([x as usize, y as usize, z as usize], local);
-                assert_eq!(block, GLOWSTONE);
+                assert_eq!(block, AIR);
                 Some(version)
             }
             _ => None,
@@ -238,7 +363,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
                 block,
                 ..
             } if got == key => {
-                assert_eq!(block, GLOWSTONE);
+                assert_eq!(block, AIR);
                 Some(version)
             }
             _ => None,
@@ -256,7 +381,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         .expect("resync snapshot");
     assert_eq!(
         refreshed.blocks[crate::world::Chunk::index(local).unwrap()],
-        GLOWSTONE
+        AIR
     );
     drop(socket);
     drop(peer);
@@ -264,6 +389,8 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
     drop(shared);
     let restarted = Arc::new(Mutex::new(State {
         world: World::new(7, path.clone()).unwrap(),
+        inventory_store: InventoryStore::new(&path).unwrap(),
+        drops: Drops::new(),
         seed: 7,
         clients: HashMap::new(),
         next_id: 1,
@@ -283,6 +410,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
         &mut reconnect,
         &ClientMessage::Hello {
             name: "Returning".into(),
+            profile: 1,
         },
     )
     .unwrap();
@@ -303,7 +431,7 @@ fn two_clients_share_edit_and_resync_stays_ordered() {
     assert_eq!(persisted.version, new_version);
     assert_eq!(
         persisted.blocks[crate::world::Chunk::index(local).unwrap()],
-        GLOWSTONE
+        AIR
     );
     drop(reconnect);
     server.join().unwrap();

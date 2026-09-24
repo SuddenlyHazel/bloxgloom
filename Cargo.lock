@@ -167,6 +167,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "font8x8",
+ "getrandom 0.3.4",
  "glam",
  "png",
  "pollster",

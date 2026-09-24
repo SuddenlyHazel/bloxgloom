@@ -82,26 +82,28 @@ impl UiLayout {
 
     fn add_inventory(&mut self) {
         let panel = self.inventory_panel();
-        let gap = 14.0 * self.scale;
-        let inner_gap = if panel.height < 300.0 * self.scale {
-            6.0
-        } else {
-            12.0
-        } * self.scale;
-        let card_width = ((panel.width - gap * 2.0 - inner_gap * 3.0) / 4.0).max(44.0);
-        let compact = panel.height < 300.0 * self.scale;
-        let top = (if compact { 72.0 } else { 96.0 }) * self.scale;
-        let footer = (if compact { 50.0 } else { 75.0 }) * self.scale;
-        let card_height = (panel.height - top - footer - inner_gap) * 0.5;
-        let start_x = panel.x + gap;
-        for (index, block) in (1u8..=8).enumerate() {
+        let compact = panel.height < 380.0 * self.scale;
+        let gap = (if compact { 6.0 } else { 8.0 }) * self.scale;
+        let size = (if compact { 48.0 } else { 60.0 } * self.scale)
+            .min((panel.width - 32.0 * self.scale - gap * 8.0) / 9.0)
+            .min((panel.height - 90.0 * self.scale - gap * 3.0) / 4.0);
+        let x0 = panel.x + (panel.width - (9.0 * size + 8.0 * gap)) * 0.5;
+        let y0 = panel.y + (if compact { 52.0 } else { 82.0 }) * self.scale;
+        for index in 0..36u8 {
+            let (row, col) = if index < 9 {
+                (3, index as usize)
+            } else {
+                ((index as usize - 9) / 9, (index as usize - 9) % 9)
+            };
             self.push(
-                UiControl::CatalogBlock(block),
+                UiControl::InventorySlot(index),
                 UiRect {
-                    x: start_x + (index % 4) as f32 * (card_width + inner_gap),
-                    y: panel.y + top + (index / 4) as f32 * (card_height + inner_gap),
-                    width: card_width,
-                    height: card_height,
+                    x: x0 + col as f32 * (size + gap),
+                    y: y0
+                        + row as f32 * (size + gap)
+                        + if row == 3 { 9.0 * self.scale } else { 0.0 },
+                    width: size,
+                    height: size,
                 },
             );
         }
@@ -223,7 +225,7 @@ impl UiLayout {
     }
 
     pub(super) fn inventory_panel(&self) -> UiRect {
-        let desired_height = if self.height < 500 { 208.0 } else { 420.0 };
+        let desired_height = if self.height < 500 { 332.0 } else { 420.0 };
         centered_panel(
             self.width,
             self.height,

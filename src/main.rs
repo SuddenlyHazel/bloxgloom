@@ -1,5 +1,6 @@
 mod client;
 mod config;
+mod inventory;
 mod lighting;
 mod preview;
 mod protocol;
@@ -65,6 +66,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_lighting_previews(std::path::Path::new(&directory))?;
             println!("wrote lighting previews to {directory}");
+        }
+        Some("drop-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "drop-preview.png".to_string());
+            if args.next().is_some() {
+                return Err("usage: drop-preview [output.png]".into());
+            }
+            preview::render_drop_preview(std::path::Path::new(&path))?;
+            println!("wrote {path}");
         }
         Some("perf") => {
             let steady_frames = args

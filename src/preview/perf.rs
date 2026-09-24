@@ -272,7 +272,8 @@ pub(super) async fn run_perf_benchmark_async(
         let ui_frame = UiFrame {
             screen: UiScreen::Playing,
             selected_slot: 1,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
+            inventory: sample_inventory(),
+            inventory_source: None,
             target: Some(target_block),
             status: None,
             debug: Some(ui::UiDebug {
@@ -283,7 +284,6 @@ pub(super) async fn run_perf_benchmark_async(
                 cached_chunks: gpu_meshes.len(),
                 latency_ms: Some(24),
             }),
-            catalog_selection: 2,
             settings: UiSettings {
                 view_distance: radius,
                 ..UiSettings::default()

@@ -1,4 +1,5 @@
 //! Public data passed between input, UI layout, and rendering.
+use crate::inventory::{SLOTS, Stack};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum UiScreen {
@@ -21,7 +22,7 @@ pub enum SettingId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UiControl {
     HotbarSlot(u8),
-    CatalogBlock(u8),
+    InventorySlot(u8),
     Resume,
     OpenSettings,
     Exit,
@@ -70,11 +71,11 @@ pub struct UiDebug {
 pub struct UiFrame<'a> {
     pub screen: UiScreen,
     pub selected_slot: usize,
-    pub hotbar: [u8; 9],
+    pub inventory: [Option<Stack>; SLOTS],
+    pub inventory_source: Option<u8>,
     pub target: Option<[i32; 3]>,
     pub status: Option<&'a str>,
     pub debug: Option<UiDebug>,
-    pub catalog_selection: u8,
     pub settings: UiSettings,
     pub hovered: Option<UiControl>,
 }
@@ -84,11 +85,11 @@ impl Default for UiFrame<'_> {
         Self {
             screen: UiScreen::Playing,
             selected_slot: 0,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
+            inventory: [None; SLOTS],
+            inventory_source: None,
             target: None,
             status: None,
             debug: None,
-            catalog_selection: 2,
             settings: UiSettings::default(),
             hovered: None,
         }

@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
-use crate::world::MAX_BLOCK;
 
 const CONFIG_VERSION: u32 = 1;
 const MIN_SENSITIVITY: f32 = 0.0002;
@@ -27,9 +26,9 @@ pub struct Config {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
-    pub hotbar: [u8; 9],
     pub selected_slot: usize,
     pub debug_hud: bool,
+    pub profile: u128,
 }
 
 impl Default for Config {
@@ -41,9 +40,9 @@ impl Default for Config {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
             selected_slot: 1,
             debug_hud: false,
+            profile: 0,
         }
     }
 }
@@ -122,6 +121,20 @@ impl Config {
         *self = self.sanitized();
     }
 
+    /// Create a persistent, unguessable local identity before connecting.
+    pub fn ensure_profile(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
+        if self.profile == 0 {
+            let mut bytes = [0u8; 16];
+            getrandom::fill(&mut bytes).map_err(|error| io::Error::other(error.to_string()))?;
+            self.profile = u128::from_le_bytes(bytes);
+            if self.profile == 0 {
+                self.profile = 1;
+            }
+            self.save(path)?;
+        }
+        Ok(())
+    }
+
     fn sanitized(&self) -> Self {
         Self {
             sensitivity: clamp_finite(self.sensitivity, MIN_SENSITIVITY, MAX_SENSITIVITY, 0.002),
@@ -132,21 +145,15 @@ impl Config {
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
-            hotbar: self.hotbar.map(|block| block.clamp(1, MAX_BLOCK)),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
+            profile: self.profile,
         }
     }
 
     fn serialize(&self) -> String {
-        let hotbar = self
-            .hotbar
-            .iter()
-            .map(u8::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
         format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nhotbar={hotbar}\nselected_slot={}\ndebug_hud={}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
@@ -155,6 +162,7 @@ impl Config {
             self.bounced_gi,
             self.selected_slot,
             self.debug_hud,
+            self.profile,
         )
     }
 }
@@ -200,11 +208,6 @@ fn parse_config(contents: &str) -> Config {
                     config.bounced_gi = enabled;
                 }
             }
-            "hotbar" => {
-                if let Some(hotbar) = parse_hotbar(value) {
-                    config.hotbar = hotbar;
-                }
-            }
             "selected_slot" => {
                 if let Ok(slot) = value.parse::<i64>() {
                     config.selected_slot = slot.clamp(0, 8) as usize;
@@ -213,6 +216,11 @@ fn parse_config(contents: &str) -> Config {
             "debug_hud" => {
                 if let Ok(debug_hud) = value.parse::<bool>() {
                     config.debug_hud = debug_hud;
+                }
+            }
+            "profile" => {
+                if let Ok(profile) = u128::from_str_radix(value, 16) {
+                    config.profile = profile;
                 }
             }
             _ => {}
@@ -241,22 +249,6 @@ fn clamp_finite(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
     } else {
         fallback
     }
-}
-
-fn parse_hotbar(value: &str) -> Option<[u8; 9]> {
-    let parsed = value
-        .split(',')
-        .map(|slot| slot.trim().parse::<i64>().ok())
-        .collect::<Vec<_>>();
-    if parsed.len() != 9 {
-        return None;
-    }
-    let defaults = Config::default().hotbar;
-    Some(std::array::from_fn(|index| {
-        parsed[index]
-            .map(|block| block.clamp(1, i64::from(MAX_BLOCK)) as u8)
-            .unwrap_or(defaults[index])
-    }))
 }
 
 fn create_temporary_file(
