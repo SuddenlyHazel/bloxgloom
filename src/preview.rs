@@ -4,7 +4,7 @@ use std::{
     error::Error,
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{Arc, mpsc},
     time::Instant,
 };
 
@@ -12,6 +12,7 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 
 use crate::{
+    lighting::LightField,
     render::{self, Camera, ChunkMesh},
     ui::{self, SettingId, UiControl, UiFrame, UiScreen, UiSettings},
     world::{self, ChunkKey},
@@ -43,6 +44,7 @@ pub fn render_preview(path: &Path, center_x: i32, center_z: i32) -> Result<(), B
             orientation: None,
         }],
         (center_x.div_euclid(16), center_z.div_euclid(16)),
+        PreviewScene::Surface,
     ))
 }
 
@@ -96,7 +98,26 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         });
     }
     fs::create_dir_all(directory)?;
-    pollster::block_on(render_previews(outputs, (0, 0)))
+    pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Surface))
+}
+
+pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    for (name, lamp) in [("cave-dark.png", false), ("cave-lamp.png", true)] {
+        pollster::block_on(render_previews(
+            vec![PreviewOutput {
+                path: directory.join(name),
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: None,
+            }],
+            (0, 0),
+            PreviewScene::Cave { lamp },
+        ))?;
+    }
+    Ok(())
 }
 
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
@@ -114,9 +135,16 @@ struct PreviewOutput {
     orientation: Option<(f32, f32)>,
 }
 
+#[derive(Clone, Copy)]
+enum PreviewScene {
+    Surface,
+    Cave { lamp: bool },
+}
+
 async fn render_previews(
     outputs: Vec<PreviewOutput>,
     center_chunk: (i32, i32),
+    scene: PreviewScene,
 ) -> Result<(), Box<dyn Error>> {
     let instance = wgpu::Instance::default();
     let adapter = instance
@@ -142,16 +170,21 @@ async fn render_previews(
     let camera_xz = (center_x + 40, center_z + 16);
     let target_xz = (center_x + 8, center_z - 16);
     let target_height = surface_height(target_xz.0, target_xz.1);
-    let camera_position = Vec3::new(
-        camera_xz.0 as f32 + 0.5,
-        surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
-        camera_xz.1 as f32 + 0.5,
-    );
-    let target = Vec3::new(
-        target_xz.0 as f32 + 0.5,
-        target_height as f32 + 0.5,
-        target_xz.1 as f32 + 0.5,
-    );
+    let (camera_position, target) = match scene {
+        PreviewScene::Surface => (
+            Vec3::new(
+                camera_xz.0 as f32 + 0.5,
+                surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
+                camera_xz.1 as f32 + 0.5,
+            ),
+            Vec3::new(
+                target_xz.0 as f32 + 0.5,
+                target_height as f32 + 0.5,
+                target_xz.1 as f32 + 0.5,
+            ),
+        ),
+        PreviewScene::Cave { .. } => (Vec3::new(40.5, 12.0, 16.5), Vec3::new(29.5, 12.0, 16.5)),
+    };
     let direction = (target - camera_position).normalize();
     let camera_template = Camera {
         position: camera_position,
@@ -160,19 +193,50 @@ async fn render_previews(
         fov_y_radians: 70f32.to_radians(),
     };
 
+    let mut chunks = HashMap::new();
+    for z in -2..=2 {
+        for x in -2..=2 {
+            for y in 0..=4 {
+                let key = ChunkKey {
+                    x: center_chunk.0 + x,
+                    y,
+                    z: center_chunk.1 + z,
+                };
+                chunks.insert(key, Arc::new(world::generate_chunk(key, SEED)));
+            }
+        }
+    }
+    if let PreviewScene::Cave { lamp } = scene {
+        for y in 8..=16 {
+            for z in 7..=24 {
+                for x in 27..=46 {
+                    set_preview_block(&mut chunks, x, y, z, world::STONE);
+                }
+            }
+        }
+        for y in 9..=15 {
+            for z in 8..=23 {
+                for x in 28..=45 {
+                    set_preview_block(&mut chunks, x, y, z, world::AIR);
+                }
+            }
+        }
+        if lamp {
+            set_preview_block(&mut chunks, 29, 12, 16, world::GLOWSTONE);
+        }
+    }
     let mut gpu_meshes = Vec::new();
     for z in -2..=2 {
         for x in -2..=2 {
             for y in 0..=4 {
-                let chunk = world::generate_chunk(
-                    ChunkKey {
-                        x: center_chunk.0 + x,
-                        y,
-                        z: center_chunk.1 + z,
-                    },
-                    SEED,
-                );
-                let mesh = render::mesh_chunk(&chunk);
+                let key = ChunkKey {
+                    x: center_chunk.0 + x,
+                    y,
+                    z: center_chunk.1 + z,
+                };
+                let chunk = &chunks[&key];
+                let light = LightField::build(key, &chunks, SEED);
+                let mesh = render::mesh_chunk_lit(chunk, &light, 0);
                 if mesh.indices.is_empty() {
                     continue;
                 }
@@ -245,7 +309,9 @@ async fn render_previews(
             0,
             bytemuck::cast_slice(&matrix.to_cols_array()),
         );
-        let has_target = output.screen == UiScreen::Playing && output.orientation.is_none();
+        let has_target = matches!(scene, PreviewScene::Surface)
+            && output.screen == UiScreen::Playing
+            && output.orientation.is_none();
         if has_target {
             queue.write_buffer(
                 &target_camera_buffer,
@@ -479,6 +545,8 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
     let center_y = world::world_to_chunk(0, center_surface + 1, 0).0.y;
     let generation_started = Instant::now();
     let mut precomputed_meshes = VecDeque::with_capacity(requested_chunks as usize);
+    let mut chunk_order = Vec::with_capacity(requested_chunks as usize);
+    let mut chunks = HashMap::with_capacity(requested_chunks as usize);
     let radius_i32 = i32::from(radius);
     // Match the server's near-first Manhattan ordering so the upload ramp starts
     // with the same chunk neighborhood clients receive first.
@@ -489,18 +557,20 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
                     if dx.abs() + dy.abs() + dz.abs() != distance {
                         continue;
                     }
-                    let chunk = world::generate_chunk(
-                        ChunkKey {
-                            x: dx,
-                            y: center_y + dy,
-                            z: dz,
-                        },
-                        SEED,
-                    );
-                    precomputed_meshes.push_back(render::mesh_chunk(&chunk));
+                    let key = ChunkKey {
+                        x: dx,
+                        y: center_y + dy,
+                        z: dz,
+                    };
+                    chunk_order.push(key);
+                    chunks.insert(key, Arc::new(world::generate_chunk(key, SEED)));
                 }
             }
         }
+    }
+    for key in chunk_order {
+        let light = LightField::build(key, &chunks, SEED);
+        precomputed_meshes.push_back(render::mesh_chunk_lit(&chunks[&key], &light, 0));
     }
     let generation_ms = generation_started.elapsed().as_secs_f64() * 1_000.0;
     let nonempty_meshes = precomputed_meshes
@@ -512,7 +582,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         |(bytes, vertices, indices), mesh| {
             (
                 bytes + mesh.byte_len(),
-                vertices + mesh.vertices.len() / 9,
+                vertices + mesh.vertices.len() / 11,
                 indices + mesh.indices.len(),
             )
         },
@@ -665,7 +735,7 @@ async fn run_perf_benchmark_async(steady_frames: usize, radius: u8) -> Result<()
         let ui_frame = UiFrame {
             screen: UiScreen::Playing,
             selected_slot: 1,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
             target: Some(target_block),
             status: None,
             debug: Some(ui::UiDebug {
@@ -1009,7 +1079,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
     UiFrame {
         screen,
         selected_slot: 1,
-        hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
+        hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
         target,
         status: (screen == UiScreen::Playing).then_some("CREATIVE MODE  /  E OPENS INVENTORY"),
         debug: None,
@@ -1034,7 +1104,7 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
         screen: UiScreen::Settings,
         selected_slot: 4,
-        hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
+        hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
         target: None,
         status: None,
         debug: Some(ui::UiDebug {
@@ -1094,6 +1164,18 @@ fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> Result<(), 
     encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
     encoder.write_header()?.write_image_data(pixels)?;
     Ok(())
+}
+
+fn set_preview_block(
+    chunks: &mut HashMap<ChunkKey, Arc<world::Chunk>>,
+    x: i32,
+    y: i32,
+    z: i32,
+    block: u8,
+) {
+    let (key, local) = world::world_to_chunk(x, y, z);
+    let chunk = Arc::make_mut(chunks.get_mut(&key).expect("preview scene chunk exists"));
+    chunk.blocks[world::Chunk::index(local).unwrap()] = block;
 }
 
 fn surface_height(x: i32, z: i32) -> i32 {

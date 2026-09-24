@@ -39,7 +39,7 @@ impl Default for Config {
             view_distance: 3,
             scale: 1.0,
             fullscreen: false,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
             selected_slot: 1,
             debug_hud: false,
         }
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(config.fov_degrees, MAX_FOV);
         assert_eq!(config.view_distance, MAX_VIEW_DISTANCE);
         assert_eq!(config.scale, MIN_SCALE);
-        assert_eq!(config.hotbar, [1, 2, 7, 1, 2, 3, 1, 2, 3]);
+        assert_eq!(config.hotbar, [1, 2, 8, 1, 2, 3, 1, 2, 3]);
         assert_eq!(config.selected_slot, 8);
         assert!(config.fullscreen && config.debug_hud);
 

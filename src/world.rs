@@ -20,7 +20,8 @@ pub const SAND: BlockId = 4;
 pub const SNOW: BlockId = 5;
 pub const MOSS: BlockId = 6;
 pub const GRAVEL: BlockId = 7;
-pub const MAX_BLOCK: BlockId = GRAVEL;
+pub const GLOWSTONE: BlockId = 8;
+pub const MAX_BLOCK: BlockId = GLOWSTONE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ChunkKey {
@@ -186,6 +187,10 @@ fn terrain_column(x: i64, z: i64, seed: u64) -> Column {
         rocky: biome == Biome::Highland && height > 41,
         biome,
     }
+}
+
+pub(crate) fn terrain_height(x: i64, z: i64, seed: u64) -> i64 {
+    terrain_column(x, z, seed).height
 }
 
 fn generated_block_in_column(x: i64, y: i64, z: i64, column: Column, seed: u64) -> BlockId {
@@ -816,6 +821,17 @@ mod tests {
             world.edit(0, BEDROCK_Y, 0, AIR).unwrap_err().kind(),
             io::ErrorKind::PermissionDenied
         );
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn glowstone_edit_survives_restart() {
+        let path = test_dir();
+        let mut world = World::new(19, path.clone()).unwrap();
+        world.edit(2, 35, 3, GLOWSTONE).unwrap();
+        drop(world);
+        let mut reopened = World::new(19, path.clone()).unwrap();
+        assert_eq!(reopened.get_block(2, 35, 3).unwrap(), GLOWSTONE);
         std::fs::remove_dir_all(path).unwrap();
     }
 

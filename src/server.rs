@@ -3,11 +3,11 @@
 //! that lock; the per-client stream rate is bounded, and stream tick timings are
 //! reported so this limit is visible under the 16-player target load.
 use crate::protocol::{self, ClientMessage, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage};
-#[cfg(test)]
-use crate::world::STONE;
 use crate::world::{
     AIR, BEDROCK_Y, ChunkKey, MAX_BLOCK, MAX_TERRAIN_HEIGHT, World, world_to_chunk,
 };
+#[cfg(test)]
+use crate::world::{GLOWSTONE, STONE};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -701,7 +701,7 @@ mod tests {
                 x: 0,
                 y: block_y,
                 z: 0,
-                block: 0,
+                block: GLOWSTONE,
             },
         )
         .unwrap();
@@ -716,7 +716,7 @@ mod tests {
                     block,
                 } if got == key => {
                     assert_eq!([x as usize, y as usize, z as usize], local);
-                    assert_eq!(block, 0);
+                    assert_eq!(block, GLOWSTONE);
                     Some(version)
                 }
                 _ => None,
@@ -731,7 +731,7 @@ mod tests {
                     block,
                     ..
                 } if got == key => {
-                    assert_eq!(block, 0);
+                    assert_eq!(block, GLOWSTONE);
                     Some(version)
                 }
                 _ => None,
@@ -749,7 +749,7 @@ mod tests {
             .expect("resync snapshot");
         assert_eq!(
             refreshed.blocks[crate::world::Chunk::index(local).unwrap()],
-            0
+            GLOWSTONE
         );
         drop(socket);
         drop(peer);
@@ -796,7 +796,7 @@ mod tests {
         assert_eq!(persisted.version, new_version);
         assert_eq!(
             persisted.blocks[crate::world::Chunk::index(local).unwrap()],
-            0
+            GLOWSTONE
         );
         drop(reconnect);
         server.join().unwrap();

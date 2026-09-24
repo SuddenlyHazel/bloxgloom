@@ -89,7 +89,7 @@ impl Default for UiFrame<'_> {
         Self {
             screen: UiScreen::Playing,
             selected_slot: 0,
-            hotbar: [1, 2, 3, 4, 5, 6, 7, 1, 2],
+            hotbar: [1, 2, 3, 4, 5, 6, 7, 8, 1],
             target: None,
             status: None,
             debug: None,
@@ -206,7 +206,7 @@ impl UiLayout {
         let footer = (if compact { 50.0 } else { 75.0 }) * self.scale;
         let card_height = (panel.height - top - footer - inner_gap) * 0.5;
         let start_x = panel.x + gap;
-        for (index, block) in (1u8..=7).enumerate() {
+        for (index, block) in (1u8..=8).enumerate() {
             self.push(
                 UiControl::CatalogBlock(block),
                 UiRect {
@@ -805,7 +805,7 @@ impl UiBuilder<'_> {
                 40,
             );
         }
-        for block in 1u8..=7 {
+        for block in 1u8..=8 {
             let Some(card) = layout.rect(UiControl::CatalogBlock(block)) else {
                 continue;
             };
@@ -859,7 +859,13 @@ impl UiBuilder<'_> {
                 block_name(block),
                 swatch.x + swatch.width + (if compact_card { 7.0 } else { 14.0 }) * self.scale,
                 card.y + card.height * (if compact_card { 0.32 } else { 0.44 }),
-                if compact_card { 0.64 } else { 0.88 },
+                if compact_card {
+                    0.64
+                } else if block == 8 {
+                    0.58
+                } else {
+                    0.88
+                },
                 TEXT,
                 18,
             );
@@ -1318,6 +1324,7 @@ fn block_name(block: u8) -> &'static str {
         5 => "SNOW",
         6 => "MOSS",
         7 => "GRAVEL",
+        8 => "GLOWSTONE",
         _ => "UNKNOWN",
     }
 }
@@ -1331,6 +1338,7 @@ fn block_color(block: u8) -> [f32; 4] {
         5 => [0.86, 0.92, 0.96, 1.0],
         6 => [0.27, 0.47, 0.19, 1.0],
         7 => [0.47, 0.43, 0.39, 1.0],
+        8 => [1.0, 0.66, 0.22, 1.0],
         _ => [0.6, 0.3, 0.8, 1.0],
     }
 }
@@ -1415,11 +1423,11 @@ mod tests {
         assert!(pause.rect(UiControl::ToggleFullscreen).is_none());
 
         let inventory = UiLayout::new(1280, 720, 1.0, UiScreen::Inventory);
-        for block in 1..=7 {
+        for block in 1..=8 {
             assert!(inventory.rect(UiControl::CatalogBlock(block)).is_some());
         }
         let compact_inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
-        for block in 1..=7 {
+        for block in 1..=8 {
             let card = compact_inventory
                 .rect(UiControl::CatalogBlock(block))
                 .unwrap();

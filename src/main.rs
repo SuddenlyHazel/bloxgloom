@@ -1,5 +1,6 @@
 mod client;
 mod config;
+mod lighting;
 mod preview;
 mod protocol;
 mod raycast;
@@ -54,6 +55,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let directory = args.next().unwrap_or_else(|| "ui-previews".to_string());
             preview::render_ui_previews(std::path::Path::new(&directory))?;
             println!("wrote UI previews to {directory}");
+        }
+        Some("lighting-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "lighting-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: lighting-preview [output-dir]".into());
+            }
+            preview::render_lighting_previews(std::path::Path::new(&directory))?;
+            println!("wrote lighting previews to {directory}");
         }
         Some("perf") => {
             let steady_frames = args

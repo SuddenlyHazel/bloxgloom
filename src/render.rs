@@ -7,16 +7,19 @@ use glam::{Mat4, Vec3, Vec4, camera::rh};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::lighting::{LightField, LightSample};
 use crate::ui::{UiFrame, UiRenderer};
-use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, DIRT, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE};
+use crate::world::{
+    CHUNK_SIZE, Chunk, ChunkKey, DIRT, GLOWSTONE, GRASS, GRAVEL, MOSS, SAND, SNOW, STONE,
+};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
 pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
-const VERTEX_STRIDE: u64 = 9 * 4;
+const VERTEX_STRIDE: u64 = 11 * 4;
 const TEXTURE_SIZE: u32 = 128;
-const TEXTURE_LAYERS: u32 = 8;
+const TEXTURE_LAYERS: u32 = 9;
 const TEXTURE_MIPS: u32 = 8;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
 pub(crate) const SKY_COLOR: wgpu::Color = wgpu::Color {
@@ -78,6 +81,7 @@ pub struct RenderStats {
 pub struct ChunkMesh {
     pub key: ChunkKey,
     pub version: u64,
+    pub(crate) lighting_revision: u64,
     pub(crate) vertices: Vec<f32>,
     pub(crate) indices: Vec<u32>,
 }
@@ -94,7 +98,7 @@ impl ChunkMesh {
 }
 
 struct GpuMesh {
-    version: u64,
+    lighting_revision: u64,
     vertex: wgpu::Buffer,
     index: wgpu::Buffer,
     indices: u32,
@@ -223,11 +227,11 @@ impl Renderer {
         if self
             .meshes
             .get(&mesh.key)
-            .is_some_and(|old| old.version > mesh.version)
+            .is_some_and(|old| old.lighting_revision > mesh.lighting_revision)
             || self
                 .pending
                 .get(&mesh.key)
-                .is_some_and(|old| old.version > mesh.version)
+                .is_some_and(|old| old.lighting_revision > mesh.lighting_revision)
         {
             return Ok(());
         }
@@ -285,7 +289,7 @@ impl Renderer {
             self.meshes.insert(
                 key,
                 GpuMesh {
-                    version: mesh.version,
+                    lighting_revision: mesh.lighting_revision,
                     vertex,
                     index,
                     indices: mesh.indices.len() as u32,
@@ -687,8 +691,7 @@ pub(crate) fn create_voxel_pipeline(
         bind_group_layouts: &[Some(&camera_layout), Some(&texture_layout)],
         immediate_size: 0,
     });
-    let attributes =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32];
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2];
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("opaque voxel pipeline"),
         layout: Some(&layout),
@@ -1015,11 +1018,25 @@ fn outside_clip(v: Vec4, plane: usize) -> bool {
 
 /// Greedy mesh opaque blocks, merging coplanar faces with the same block ID.
 /// Uses the shared world model's x, z, y indexing; 0 is air.
+#[cfg(test)]
 pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
+    mesh_chunk_with_light(chunk, None, 0)
+}
+
+pub fn mesh_chunk_lit(chunk: &Chunk, light: &LightField, lighting_revision: u64) -> ChunkMesh {
+    mesh_chunk_with_light(chunk, Some(light), lighting_revision)
+}
+
+fn mesh_chunk_with_light(
+    chunk: &Chunk,
+    light: Option<&LightField>,
+    lighting_revision: u64,
+) -> ChunkMesh {
     let n = CHUNK_SIZE;
     let mut out = ChunkMesh {
         key: chunk.key,
         version: chunk.version,
+        lighting_revision,
         vertices: Vec::new(),
         indices: Vec::new(),
     };
@@ -1035,7 +1052,7 @@ pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         for side in [-1i32, 1] {
-            let mut mask = vec![0u8; n * n];
+            let mut mask = vec![0u16; n * n];
             for slice in 0..n {
                 mask.fill(0);
                 for j in 0..n {
@@ -1057,26 +1074,31 @@ pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
                             block_at(chunk, adjacent, n) == 0
                         };
                         if exposed {
-                            mask[i + n * j] = block;
+                            let sample = light.map_or(LightSample { sky: 15, glow: 0 }, |field| {
+                                field.face(p, axis, side)
+                            });
+                            mask[i + n * j] = u16::from(block)
+                                | (u16::from(sample.sky) << 8)
+                                | (u16::from(sample.glow) << 12);
                         }
                     }
                 }
                 for j in 0..n {
                     let mut i = 0;
                     while i < n {
-                        let block = mask[i + n * j];
-                        if block == 0 {
+                        let material = mask[i + n * j];
+                        if material == 0 {
                             i += 1;
                             continue;
                         }
                         let mut width = 1;
-                        while i + width < n && mask[i + width + n * j] == block {
+                        while i + width < n && mask[i + width + n * j] == material {
                             width += 1;
                         }
                         let mut height = 1;
                         'grow: while j + height < n {
                             for dx in 0..width {
-                                if mask[i + dx + n * (j + height)] != block {
+                                if mask[i + dx + n * (j + height)] != material {
                                     break 'grow;
                                 }
                             }
@@ -1088,7 +1110,8 @@ pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
                             }
                         }
                         emit_quad(
-                            &mut out, origin, axis, u, v, side, slice, i, j, width, height, block,
+                            &mut out, origin, axis, u, v, side, slice, i, j, width, height,
+                            material, light,
                         );
                         i += width;
                     }
@@ -1116,12 +1139,15 @@ fn emit_quad(
     j: usize,
     width: usize,
     height: usize,
-    block: u8,
+    material: u16,
+    light: Option<&LightField>,
 ) {
-    let base = (out.vertices.len() / 9) as u32;
+    let base = (out.vertices.len() / 11) as u32;
     let mut normal = [0.0; 3];
     normal[axis] = side as f32;
-    let layer = material_layer(block, axis, side);
+    let layer = material_layer((material & 255) as u8, axis, side);
+    let sky = f32::from(((material >> 8) & 15) as u8) / 15.0;
+    let glow = f32::from(((material >> 12) & 15) as u8) / 15.0;
     let corners = [(0, 0), (width, 0), (width, height), (0, height)];
     for (du, dv) in corners {
         let mut position = origin;
@@ -1137,8 +1163,16 @@ fn emit_quad(
         } else {
             (du as f32, (height - dv) as f32)
         };
-        out.vertices
-            .extend_from_slice(&[texture_u, texture_v, layer as f32]);
+        let corner_light = light.map_or([sky, glow], |field| {
+            field.corner([axis, u, v], side, slice, [i + du, j + dv])
+        });
+        out.vertices.extend_from_slice(&[
+            texture_u,
+            texture_v,
+            layer as f32,
+            corner_light[0],
+            corner_light[1],
+        ]);
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
     if side > 0 {
@@ -1161,12 +1195,13 @@ fn material_layer(block: u8, axis: usize, side: i32) -> u8 {
         SNOW => 5,
         MOSS => 6,
         GRAVEL => 7,
+        GLOWSTONE => 8,
         _ => 3,
     }
 }
 
 fn material_tiles() -> Vec<u8> {
-    const SOURCES: [&[u8]; 8] = [
+    const SOURCES: [&[u8]; 9] = [
         include_bytes!("../assets/textures/grass_top.png"),
         include_bytes!("../assets/textures/grass_side.png"),
         include_bytes!("../assets/textures/dirt.png"),
@@ -1175,6 +1210,7 @@ fn material_tiles() -> Vec<u8> {
         include_bytes!("../assets/textures/snow.png"),
         include_bytes!("../assets/textures/moss.png"),
         include_bytes!("../assets/textures/gravel.png"),
+        include_bytes!("../assets/textures/glowstone.png"),
     ];
     let mut pixels =
         Vec::with_capacity((TEXTURE_SIZE * TEXTURE_SIZE * TEXTURE_LAYERS * 4) as usize);
@@ -1277,6 +1313,7 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) layer: f32,
+    @location(4) light_levels: vec2<f32>,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -1284,6 +1321,7 @@ struct VertexOutput {
     @location(1) light: vec3<f32>,
     @location(2) @interpolate(flat) layer: i32,
     @location(3) distance: f32,
+    @location(4) sky_level: f32,
 };
 @group(1) @binding(0) var material: texture_2d_array<f32>;
 @group(1) @binding(1) var material_sampler: sampler;
@@ -1291,21 +1329,24 @@ struct VertexOutput {
     var output: VertexOutput;
     output.position = camera.view_projection * vec4<f32>(input.position, 1.0);
     let sunlight = max(dot(input.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
-    output.light = mix(
-        vec3<f32>(0.55, 0.62, 0.72),
-        vec3<f32>(1.05, 1.0, 0.91),
-        sunlight
-    );
+    let sky = input.light_levels.x;
+    let glow = input.light_levels.y;
+    output.light = vec3<f32>(0.012, 0.015, 0.022)
+        + sky * (vec3<f32>(0.31, 0.40, 0.53)
+            + sunlight * vec3<f32>(0.77, 0.66, 0.47))
+        + glow * glow * vec3<f32>(1.0, 0.57, 0.23);
     output.uv = input.uv;
     output.layer = i32(input.layer);
     output.distance = output.position.w;
+    output.sky_level = sky;
     return output;
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
     let fog = smoothstep(38.0, 135.0, input.distance);
-    let sky = vec3<f32>(0.59, 0.72, 0.82);
-    return vec4<f32>(mix(albedo * input.light, sky, fog), 1.0);
+    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
+    let emission = select(vec3<f32>(0.0), albedo * 0.70, input.layer == 8);
+    return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
 }
 "#;
 
@@ -1344,7 +1385,7 @@ mod tests {
         };
         chunk.blocks[Chunk::index([2, 3, 4]).unwrap()] = 3;
         let mesh = mesh_chunk(&chunk);
-        let positions = mesh.vertices.chunks_exact(9).map(|vertex| &vertex[..3]);
+        let positions = mesh.vertices.chunks_exact(11).map(|vertex| &vertex[..3]);
         let (min, max) = positions.fold(
             ([f32::INFINITY; 3], [f32::NEG_INFINITY; 3]),
             |(mut min, mut max), position| {
@@ -1372,6 +1413,7 @@ mod tests {
         assert_eq!(material_layer(SNOW, 1, 1), 5);
         assert_eq!(material_layer(MOSS, 1, 1), 6);
         assert_eq!(material_layer(GRAVEL, 1, 1), 7);
+        assert_eq!(material_layer(GLOWSTONE, 1, 1), 8);
     }
 
     #[test]
@@ -1386,7 +1428,7 @@ mod tests {
         for wall_axis in [0, 2] {
             let vertices = mesh
                 .vertices
-                .chunks_exact(9)
+                .chunks_exact(11)
                 .filter(|vertex| vertex[3 + wall_axis].abs() == 1.0 && vertex[8] == 1.0);
             let mut count = 0;
             for vertex in vertices {
@@ -1406,7 +1448,7 @@ mod tests {
             blocks: vec![STONE; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
         };
         let mesh = mesh_chunk(&chunk);
-        let vertices = mesh.vertices.chunks_exact(9).collect::<Vec<_>>();
+        let vertices = mesh.vertices.chunks_exact(11).collect::<Vec<_>>();
         assert_eq!(vertices.len(), 24);
         assert!(vertices.iter().all(|vertex| vertex[8] == 3.0));
         assert!(vertices.iter().any(|vertex| vertex[6] == 16.0));

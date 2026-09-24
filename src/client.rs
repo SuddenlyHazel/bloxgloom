@@ -1,5 +1,6 @@
 //! Desktop client: network I/O and meshing stay off the window thread.
 use crate::config::Config;
+use crate::lighting::LightField;
 use crate::protocol::{self, ClientMessage, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{self, Camera, ChunkMesh, Renderer};
@@ -179,13 +180,20 @@ impl ConfigWriter {
 }
 
 struct Mesher {
-    jobs: SyncSender<Chunk>,
+    jobs: SyncSender<MesherJob>,
     results: Receiver<ChunkMesh>,
+}
+
+struct MesherJob {
+    chunk: Arc<Chunk>,
+    known: HashMap<ChunkKey, Arc<Chunk>>,
+    seed: u64,
+    revision: u64,
 }
 
 impl Mesher {
     fn new() -> Self {
-        let (jobs, jobs_rx) = mpsc::sync_channel::<Chunk>(64);
+        let (jobs, jobs_rx) = mpsc::sync_channel::<MesherJob>(64);
         let (results_tx, results) = mpsc::sync_channel(64);
         let shared = Arc::new(Mutex::new(jobs_rx));
         for _ in 0..2 {
@@ -193,11 +201,15 @@ impl Mesher {
             let results_tx = results_tx.clone();
             thread::spawn(move || {
                 loop {
-                    let chunk = match jobs_rx.lock().unwrap().recv() {
-                        Ok(chunk) => chunk,
+                    let job = match jobs_rx.lock().unwrap().recv() {
+                        Ok(job) => job,
                         Err(_) => break,
                     };
-                    if results_tx.send(render::mesh_chunk(&chunk)).is_err() {
+                    let light = LightField::build(job.chunk.key, &job.known, job.seed);
+                    if results_tx
+                        .send(render::mesh_chunk_lit(&job.chunk, &light, job.revision))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -226,8 +238,11 @@ struct ClientApp {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     ui_layout: Option<UiLayout>,
-    chunks: HashMap<ChunkKey, Chunk>,
-    pending_mesh: HashMap<ChunkKey, Chunk>,
+    chunks: HashMap<ChunkKey, Arc<Chunk>>,
+    pending_mesh: HashMap<ChunkKey, u64>,
+    lighting_revisions: HashMap<ChunkKey, u64>,
+    next_lighting_revision: u64,
+    world_seed: Option<u64>,
     pending_upload: VecDeque<ChunkMesh>,
     pending_commands: VecDeque<ClientMessage>,
     position: Vec3,
@@ -269,6 +284,9 @@ impl ClientApp {
             ui_layout: None,
             chunks: HashMap::new(),
             pending_mesh: HashMap::new(),
+            lighting_revisions: HashMap::new(),
+            next_lighting_revision: 1,
+            world_seed: None,
             pending_upload: VecDeque::new(),
             pending_commands: VecDeque::new(),
             position: Vec3::new(0.5, 40.0, 0.5),
@@ -485,9 +503,58 @@ impl ClientApp {
         }
     }
 
+    fn queue_relight(&mut self, key: ChunkKey, include_neighbors: bool) {
+        let reach = if include_neighbors { 1 } else { 0 };
+        for dy in -reach..=reach {
+            for dz in -reach..=reach {
+                for dx in -reach..=reach {
+                    let (Some(x), Some(y), Some(z)) = (
+                        key.x.checked_add(dx),
+                        key.y.checked_add(dy),
+                        key.z.checked_add(dz),
+                    ) else {
+                        continue;
+                    };
+                    let affected = ChunkKey { x, y, z };
+                    if !self.chunks.contains_key(&affected) {
+                        continue;
+                    }
+                    let revision = self.next_lighting_revision;
+                    self.next_lighting_revision =
+                        self.next_lighting_revision.wrapping_add(1).max(1);
+                    self.lighting_revisions.insert(affected, revision);
+                    self.pending_mesh.insert(affected, revision);
+                }
+            }
+        }
+    }
+
+    fn lighting_snapshot(&self, key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
+        let mut known = HashMap::with_capacity(27);
+        for dy in -1i32..=1 {
+            for dz in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    let (Some(x), Some(y), Some(z)) = (
+                        key.x.checked_add(dx),
+                        key.y.checked_add(dy),
+                        key.z.checked_add(dz),
+                    ) else {
+                        continue;
+                    };
+                    let neighbor = ChunkKey { x, y, z };
+                    if let Some(chunk) = self.chunks.get(&neighbor) {
+                        known.insert(neighbor, Arc::clone(chunk));
+                    }
+                }
+            }
+        }
+        known
+    }
+
     fn accept(&mut self, message: ServerMessage) {
         match message {
             ServerMessage::Welcome { id, seed } => {
+                self.world_seed = Some(seed);
                 eprintln!("connected as player {id}, world seed {seed}")
             }
             ServerMessage::Position { ack_seq, x, y, z } => {
@@ -508,8 +575,9 @@ impl ClientApp {
                 {
                     return;
                 }
-                self.pending_mesh.insert(key, chunk.clone());
-                self.chunks.insert(key, chunk);
+                let modified = chunk.version != 0;
+                self.chunks.insert(key, Arc::new(chunk));
+                self.queue_relight(key, modified);
             }
             ServerMessage::Delta {
                 key,
@@ -522,9 +590,10 @@ impl ClientApp {
                 if let Some(chunk) = self.chunks.get_mut(&key) {
                     if version == chunk.version + 1 {
                         if let Some(index) = Chunk::index([x as usize, y as usize, z as usize]) {
-                            chunk.blocks[index] = block;
-                            chunk.version = version;
-                            self.pending_mesh.insert(key, chunk.clone());
+                            let updated = Arc::make_mut(chunk);
+                            updated.blocks[index] = block;
+                            updated.version = version;
+                            self.queue_relight(key, true);
                         }
                     } else if version > chunk.version {
                         self.queue_command(ClientMessage::Resync { key });
@@ -569,17 +638,24 @@ impl ClientApp {
         .0;
         let radius = self.effective_view_distance;
         let mut evicted = Vec::new();
-        self.chunks.retain(|key, _| {
+        self.chunks.retain(|key, chunk| {
             let keep = chunk_in_view(*key, center, radius);
             if !keep {
-                evicted.push(*key);
+                evicted.push((*key, chunk.version != 0));
             }
             keep
         });
+        self.lighting_revisions
+            .retain(|key, _| self.chunks.contains_key(key));
         self.pending_mesh
             .retain(|key, _| self.chunks.contains_key(key));
+        for &(key, modified) in &evicted {
+            if modified {
+                self.queue_relight(key, true);
+            }
+        }
         if let Some(renderer) = &mut self.renderer {
-            for key in evicted {
+            for (key, _) in evicted {
                 renderer.remove_chunk(key);
             }
             self.pending_upload
@@ -592,6 +668,7 @@ impl ClientApp {
                     .chunks
                     .get(&mesh.key)
                     .is_some_and(|chunk| chunk.version == mesh.version)
+                    && self.lighting_revisions.get(&mesh.key) == Some(&mesh.lighting_revision)
                 {
                     self.pending_upload.push_back(mesh);
                 }
@@ -603,13 +680,25 @@ impl ClientApp {
                 }
             }
         }
+        let Some(seed) = self.world_seed else {
+            return;
+        };
         for _ in 0..16 {
             let Some(key) = self.pending_mesh.keys().next().copied() else {
                 break;
             };
-            let chunk = self.pending_mesh.remove(&key).unwrap();
-            if let Err(TrySendError::Full(chunk)) = self.mesher.jobs.try_send(chunk) {
-                self.pending_mesh.insert(key, chunk);
+            let revision = self.pending_mesh.remove(&key).unwrap();
+            let Some(chunk) = self.chunks.get(&key).cloned() else {
+                continue;
+            };
+            let job = MesherJob {
+                chunk,
+                known: self.lighting_snapshot(key),
+                seed,
+                revision,
+            };
+            if let Err(TrySendError::Full(_job)) = self.mesher.jobs.try_send(job) {
+                self.pending_mesh.insert(key, revision);
                 break;
             }
         }
