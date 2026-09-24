@@ -746,6 +746,11 @@ impl World {
         self.cache.get(&key).map(|entry| entry.chunk.version)
     }
 
+    /// Resident chunk count for admission control and server telemetry.
+    pub fn cached_len(&self) -> usize {
+        self.cache.len()
+    }
+
     /// Reads one block only if its authoritative chunk is resident. `None`
     /// means unavailable, never procedural air; simulation callers must wait
     /// for an asynchronous load instead of inventing collision state.

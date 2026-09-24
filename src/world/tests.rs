@@ -100,6 +100,7 @@ fn wal_snapshot_remains_authoritative_after_cache_eviction() {
     let y = 113;
     let z = 32;
     let original = world.get_block(x, y, z).unwrap();
+    assert_eq!(world.cached_len(), 1);
     assert_eq!(world.cached_version(key), Some(0));
     assert_eq!(world.cached_block(x, y, z), Some(original));
     assert_eq!(world.cached_block(x + CHUNK_SIZE as i32, y, z), None);
@@ -116,6 +117,7 @@ fn wal_snapshot_remains_authoritative_after_cache_eviction() {
         Some(after_snapshot.clone())
     );
     world.get_chunk(ChunkKey { x: 20, y: 0, z: 20 }).unwrap();
+    assert_eq!(world.cached_len(), 1);
     assert_eq!(world.cached_version(key), None);
     assert_eq!(world.cached_block(x, y, z), None);
     let (epoch, pending) = world.begin_chunk_load(key).unwrap();
