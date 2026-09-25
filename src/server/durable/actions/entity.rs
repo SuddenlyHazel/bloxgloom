@@ -106,10 +106,14 @@ pub(super) fn capture_view_for_plan(
 }
 
 /// Assembles the planner's neighbour view from bounded per-chunk public
-/// projections over the same captured keys. The planner's own record is
+/// projections over the same captured keys, merging WAL-owned entities and
+/// session players into one view. The planner's own record is
 /// excluded; entries are sorted by entity ID for deterministic planning.
 /// Only public projections cross: another entity's private payload is never
-/// consulted here, and no path below reaches it.
+/// consulted here, and no path below reaches it. Player entries are exactly
+/// the public views other clients already receive for those sessions — the
+/// player store keeps no private payload, and session identity, inventory,
+/// and movement authority never enter this view.
 ///
 /// Missing chunks defer (see `capture_view_for_plan`); over-cap pages and
 /// views do not. Unlike a chunk that simply has not loaded, exceeding the
@@ -140,6 +144,19 @@ pub(super) fn capture_entity_view_for_plan(
                 )
             })?;
         collected.extend(views);
+        // Players observe the same bound through the same outcome: a crowded
+        // player page is capacity (`QuotaExceeded`), never corruption, so it
+        // defers this one entity's work without stopping the coordinator.
+        let players = state
+            .player_entities
+            .public_views_for_chunk_bounded(key, MAX_PLAN_NEIGHBOURS)
+            .map_err(|_| {
+                io::Error::new(
+                    ErrorKind::QuotaExceeded,
+                    "player neighbour page exceeds its capture bound",
+                )
+            })?;
+        collected.extend(players);
     }
     let view = EntityView::assemble(collected, exclude);
     if view.len() > MAX_PLAN_NEIGHBOURS {
