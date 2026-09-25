@@ -518,14 +518,16 @@ fn cached_block_or_request(
         return Ok(block);
     }
     let key = world_to_chunk(x, y, z).0;
-    // Capacity pressure (a full loader queue or an unrequestable chunk) only
-    // defers the command with `WouldBlock` so it can retry later. A genuine
-    // loader failure keeps its own kind — including `InvalidData`, which
-    // stops the coordinator through the caller's fatal path — instead of
-    // being conflated with "not available yet".
+    // Capacity pressure (a full loader queue, an unrequestable chunk, or a
+    // failed request) only defers the command with `WouldBlock` so it can
+    // retry later — never commit with an unverified preimage. Only genuine
+    // corruption (`InvalidData`) keeps its kind so it still stops the
+    // coordinator through the caller's fatal path instead of being
+    // conflated with "not available yet".
     match request_chunk(state, key) {
         Ok(_) => Err(io::Error::new(ErrorKind::WouldBlock, reason)),
-        Err(error) => Err(error),
+        Err(error) if error.kind() == ErrorKind::InvalidData => Err(error),
+        Err(_) => Err(io::Error::new(ErrorKind::WouldBlock, reason)),
     }
 }
 
