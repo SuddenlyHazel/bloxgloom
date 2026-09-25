@@ -1,9 +1,9 @@
 use super::*;
-use crate::server::durable::actions::BlockEditCommand;
 use crate::server::durable::CommitAction;
+use crate::server::durable::actions::BlockEditCommand;
 use crate::server::effects::CellCoord;
-use crate::server::simulation::TickId;
 use crate::server::server_state;
+use crate::server::simulation::TickId;
 use crate::world::{BlockId, world_to_chunk};
 use std::fs;
 use std::io::{self, ErrorKind};
@@ -91,8 +91,14 @@ fn hook_stages_edits_through_builder_without_touching_live_world() {
     };
 
     let hook: BlockEditHook = probe_place;
-    let action = invoke_hook(hook, &mut state, TickId::new(1), edit_command(block, 0, 80, 0), before)
-        .unwrap();
+    let action = invoke_hook(
+        hook,
+        &mut state,
+        TickId::new(1),
+        edit_command(block, 0, 80, 0),
+        before,
+    )
+    .unwrap();
     assert_eq!(action.world_edits.len(), 1);
     assert_eq!(action.changed_cells.len(), 1);
     // Staging prepares versioned edits but stays invisible until the WAL

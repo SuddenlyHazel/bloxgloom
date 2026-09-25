@@ -5,6 +5,7 @@ use super::entity::corrupt;
 use super::{BlockEditCommand, prepared_deltas, push_harvest_spawns};
 use crate::content::{KILN_ITEM, PLANT, REPLACEABLE, SOLID};
 use crate::inventory::{HOTBAR_SLOTS, InventoryStore, Stack};
+use crate::server::block_actions::{BlockActionContext, BlockCommitBuilder};
 use crate::server::durable::{BlockDelta, CommitAction};
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
@@ -12,22 +13,23 @@ use crate::server::entities::{
     plan_break as plan_kiln_break,
 };
 use crate::server::simulation::TickId;
-use crate::server::{AIR, State, block_intersects_player};
+use crate::server::{AIR, block_intersects_player};
 use crate::world::BlockId;
 use std::io::{self, ErrorKind};
 use std::time::Duration;
 
 pub(in crate::server) fn plan_place(
-    state: &mut State,
+    context: &BlockActionContext,
+    builder: &mut BlockCommitBuilder,
     tick: TickId,
     command: BlockEditCommand,
     previous: BlockId,
 ) -> io::Result<CommitAction> {
-    let catalog = state.world.catalog_arc();
+    let catalog = context.catalog();
     let facing = KilnFacing::from_place_state(&catalog, command.block)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     let inventory_before = {
-        let client = state.clients.get(&command.id).ok_or_else(|| {
+        let client = context.client(command.id).ok_or_else(|| {
             io::Error::new(
                 ErrorKind::NotConnected,
                 "kiln placement client disconnected",
@@ -64,8 +66,7 @@ pub(in crate::server) fn plan_place(
         let before = if *cell == anchor {
             previous
         } else {
-            super::cached_block_or_request(
-                state,
+            builder.cached_block_or_request(
                 cell.x,
                 cell.y,
                 cell.z,
@@ -73,7 +74,7 @@ pub(in crate::server) fn plan_place(
             )?
         };
         if catalog.block_flags(before) & REPLACEABLE == 0
-            || state.entities.anchored_at(*cell).is_some()
+            || context.entities().anchored_at(*cell).is_some()
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
@@ -81,8 +82,8 @@ pub(in crate::server) fn plan_place(
             ));
         }
         if catalog.block_flags(states[0]) & SOLID != 0
-            && state
-                .clients
+            && context
+                .clients()
                 .values()
                 .any(|client| block_intersects_player([cell.x, cell.y, cell.z], client.position()))
         {
@@ -101,8 +102,8 @@ pub(in crate::server) fn plan_place(
             displaced_plants.push((before, [cell.x, cell.y, cell.z]));
         }
     }
-    let entities = state
-        .entities
+    let entities = context
+        .entities()
         .prepare_spawn(
             payload
                 .spawn(anchor, tick.get(), &catalog)
@@ -116,14 +117,21 @@ pub(in crate::server) fn plan_place(
             "selected kiln stack empty",
         ));
     }
-    let world_edits = state.world.prepare_edits(&coords)?;
+    let world_edits = builder.prepare_edits(&coords)?;
     let deltas = prepared_deltas(&coords, &world_edits);
     let mut drop_spawns = Vec::new();
     for (plant, at) in displaced_plants {
         let version = version_at(&deltas, at).unwrap_or(0);
-        push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
+        push_harvest_spawns(
+            &mut drop_spawns,
+            &catalog,
+            plant,
+            at,
+            version,
+            context.seed(),
+        );
     }
-    let drops = state.drops.plan_spawns(&drop_spawns)?;
+    let drops = context.drops().plan_spawns(&drop_spawns)?;
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),
@@ -149,19 +157,20 @@ pub(in crate::server) fn plan_place(
 }
 
 pub(in crate::server) fn plan_break(
-    state: &mut State,
+    context: &BlockActionContext,
+    builder: &mut BlockCommitBuilder,
     _tick: TickId,
     command: BlockEditCommand,
     _previous: BlockId,
 ) -> io::Result<CommitAction> {
-    let catalog = state.world.catalog_arc();
+    let catalog = context.catalog();
     let broken = CellCoord::new(command.x, command.y, command.z);
-    let id = state
-        .entities
+    let id = context
+        .entities()
         .anchored_at(broken)
         .ok_or_else(|| corrupt("kiln block has no anchored entity"))?;
-    let snapshot = state
-        .entities
+    let snapshot = context
+        .entities()
         .snapshot(id)
         .ok_or_else(|| corrupt("kiln footprint references a missing entity"))?;
     if snapshot.entity_type != crate::content::KILN_ENTITY_TYPE {
@@ -177,11 +186,10 @@ pub(in crate::server) fn plan_break(
     let states = kiln_block_states(&catalog, payload).map_err(io::Error::other)?;
     let mut coords = Vec::with_capacity(planned.removed_cells.len());
     for cell in &planned.removed_cells {
-        if state.entities.anchored_at(*cell) != Some(id) {
+        if context.entities().anchored_at(*cell) != Some(id) {
             return Err(corrupt("kiln footprint index is incomplete"));
         }
-        let actual = super::cached_block_or_request(
-            state,
+        let actual = builder.cached_block_or_request(
             cell.x,
             cell.y,
             cell.z,
@@ -197,11 +205,11 @@ pub(in crate::server) fn plan_break(
         }
         coords.push((cell.x, cell.y, cell.z, AIR));
     }
-    let entities = state
-        .entities
+    let entities = context
+        .entities()
         .prepare_despawn(id, snapshot.revision)
         .map_err(io::Error::other)?;
-    let world_edits = state.world.prepare_edits(&coords)?;
+    let world_edits = builder.prepare_edits(&coords)?;
     let deltas = prepared_deltas(&coords, &world_edits);
     let drop_position = [
         anchor.x as f32 + 0.5,
@@ -213,7 +221,7 @@ pub(in crate::server) fn plan_break(
         .into_iter()
         .map(|stack: Stack| (drop_position, stack, Duration::from_millis(250)))
         .collect();
-    let drops = state.drops.plan_stack_spawns(&spawns)?;
+    let drops = context.drops().plan_stack_spawns(&spawns)?;
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),

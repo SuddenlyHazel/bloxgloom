@@ -8,15 +8,24 @@
 
 use super::prepared_deltas;
 use crate::inventory::InventoryStore;
+use crate::server::State;
 use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
     CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch,
 };
-use crate::server::State;
 use crate::world::{BlockId, ChunkKey, PreparedEdit};
 use std::collections::BTreeSet;
 use std::io::{self, ErrorKind};
+
+/// Staged footprint outcome: prepared chunk edits, changed cells, read
+/// chunks for WAL fences, and the exact written coordinates for deltas.
+type FootprintPlan = (
+    Vec<PreparedEdit>,
+    Vec<CellCoord>,
+    Vec<ChunkKey>,
+    Vec<(i32, i32, i32, BlockId)>,
+);
 
 /// Plan an opaque entity interaction after the coordinator has validated its
 /// action receipt. The registered type policy owns request decoding and exact
@@ -222,12 +231,7 @@ fn validate_footprint_plan(
     location: &EntityLocation,
     block_states: &[EntityBlockStateChange],
     catalog: &crate::content::Catalog,
-) -> io::Result<(
-    Vec<PreparedEdit>,
-    Vec<CellCoord>,
-    Vec<ChunkKey>,
-    Vec<(i32, i32, i32, BlockId)>,
-)> {
+) -> io::Result<FootprintPlan> {
     let footprint: Vec<CellCoord> = match location {
         EntityLocation::Mobile { .. } => Vec::new(),
         EntityLocation::Anchored { footprint, .. } => footprint.clone(),

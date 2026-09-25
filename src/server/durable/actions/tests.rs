@@ -621,8 +621,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
         snapshot: &crate::server::entities::EntitySnapshot,
         current_tick: u64,
         _catalog: &crate::content::Catalog,
-    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError>
-    {
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         use crate::server::entities::EntityTickPlan;
         let Some(due) = snapshot.next_tick else {
             return Err(crate::server::entities::EntityError::InvalidType);
@@ -690,8 +689,7 @@ fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
         tick_planner: None,
     });
 
-    let mut state =
-        crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
 
     // Anchored interaction through the generic dispatcher. The anchor is the
     // highest non-air cell in its column so the footprint preimage is stable.

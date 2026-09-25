@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::items::ItemId;
+use crate::server::block_actions;
 use crate::server::streaming::request_chunk;
 use crate::server::{
     AIR, BEDROCK_Y, EDIT_REACH, State, block_intersects_player, loot, world_to_chunk,
@@ -309,11 +310,12 @@ fn plan_block_edit(
         .block_actions
         .for_state(&catalog, if block == AIR { previous } else { block });
     if let Some(hooks) = hooks {
-        return if block == AIR {
-            (hooks.break_block)(state, tick, command, previous)
+        let hook = if block == AIR {
+            hooks.break_block
         } else {
-            (hooks.place)(state, tick, command, previous)
+            hooks.place
         };
+        return block_actions::invoke_hook(hook, state, tick, command, previous);
     }
     let BlockEditCommand {
         profile,
