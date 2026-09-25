@@ -41,7 +41,7 @@ pub(crate) use visibility::{chunk_visible, view_projection};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 1024 * 1024;
-pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 1;
+pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 2;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
 pub(crate) const VERTEX_FLOATS: usize = 12;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
@@ -306,7 +306,7 @@ impl Renderer {
 
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
     #[allow(clippy::result_large_err)] // Returning ownership avoids copying mesh buffers on queue pressure.
-    pub fn enqueue_mesh(&mut self, mesh: ChunkMesh) -> Result<(), ChunkMesh> {
+    pub fn enqueue_mesh(&mut self, mesh: ChunkMesh, urgent: bool) -> Result<(), ChunkMesh> {
         if self
             .meshes
             .get(&mesh.key)
@@ -322,10 +322,22 @@ impl Renderer {
             if self.pending.len() >= MAX_PENDING_MESHES {
                 return Err(mesh);
             }
-            self.pending_order.push_back(mesh.key);
         }
+        order_pending_mesh(
+            &mut self.pending_order,
+            mesh.key,
+            self.pending.contains_key(&mesh.key),
+            urgent,
+        );
         self.pending.insert(mesh.key, mesh);
         Ok(())
+    }
+
+    /// An authoritative edit supersedes a queued mesh but not the last
+    /// rendered one. Keep drawing until its replacement is ready.
+    pub fn discard_pending_chunk(&mut self, key: ChunkKey) {
+        self.pending.remove(&key);
+        self.pending_order.retain(|pending_key| *pending_key != key);
     }
 
     pub fn remove_chunk(&mut self, key: ChunkKey) {
@@ -582,5 +594,19 @@ impl Renderer {
             self.surface.configure(&self.device, &self.config);
         }
         Ok(stats)
+    }
+}
+
+fn order_pending_mesh(
+    order: &mut VecDeque<ChunkKey>,
+    key: ChunkKey,
+    already_pending: bool,
+    urgent: bool,
+) {
+    if urgent {
+        order.retain(|pending_key| *pending_key != key);
+        order.push_front(key);
+    } else if !already_pending {
+        order.push_back(key);
     }
 }

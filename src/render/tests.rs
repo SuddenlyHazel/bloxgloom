@@ -8,6 +8,18 @@ use crate::world::{
 
 use super::*;
 
+#[test]
+fn urgent_mesh_reorders_existing_pending_chunk_without_duplication() {
+    let a = ChunkKey { x: 0, y: 0, z: 0 };
+    let b = ChunkKey { x: 1, y: 0, z: 0 };
+    let c = ChunkKey { x: 2, y: 0, z: 0 };
+    let mut order = VecDeque::from([a, b, c]);
+    order_pending_mesh(&mut order, b, true, true);
+    assert_eq!(order, VecDeque::from([b, a, c]));
+    order_pending_mesh(&mut order, b, true, true);
+    assert_eq!(order, VecDeque::from([b, a, c]));
+}
+
 fn mapped_builtin(
     name: &str,
 ) -> (

@@ -231,6 +231,7 @@ struct ClientApp {
     chunks: HashMap<ChunkKey, Arc<Chunk>>,
     replicas: Replicas,
     pending_mesh: HashMap<ChunkKey, u64>,
+    urgent_mesh: std::collections::HashSet<ChunkKey>,
     lighting_revisions: HashMap<ChunkKey, u64>,
     light_samples: HashMap<ChunkKey, (u64, Box<[LightSample]>)>,
     next_lighting_revision: u64,
@@ -287,6 +288,7 @@ impl ClientApp {
             chunks: HashMap::new(),
             replicas: Replicas::default(),
             pending_mesh: HashMap::new(),
+            urgent_mesh: std::collections::HashSet::new(),
             lighting_revisions: HashMap::new(),
             light_samples: HashMap::new(),
             next_lighting_revision: 1,
@@ -586,6 +588,15 @@ impl ClientApp {
         }
     }
 
+    fn queue_edited_chunk_relight(&mut self, key: ChunkKey) {
+        self.queue_relight(key, true);
+        self.pending_upload.retain(|mesh| mesh.key != key);
+        if let Some(renderer) = &mut self.renderer {
+            renderer.discard_pending_chunk(key);
+        }
+        self.urgent_mesh.insert(key);
+    }
+
     fn lighting_snapshot(&self, key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
         let mut known = HashMap::with_capacity(27);
         for dy in -1i32..=1 {
@@ -666,6 +677,7 @@ impl ClientApp {
             ServerMessage::WorldSnapshotStart(_)
             | ServerMessage::EntitySnapshotPage(_)
             | ServerMessage::WorldCommitPart(_) => {
+                let block_commit = matches!(&message, ServerMessage::WorldCommitPart(_));
                 match self
                     .replicas
                     .accept(message, &self.catalog, &mut self.chunks)
@@ -673,7 +685,11 @@ impl ClientApp {
                     Assembly::Waiting => {}
                     Assembly::Installed(keys) => {
                         for key in keys {
-                            self.queue_relight(key, true);
+                            if block_commit {
+                                self.queue_edited_chunk_relight(key);
+                            } else {
+                                self.queue_relight(key, true);
+                            }
                         }
                     }
                     Assembly::Resync(keys) => {
@@ -697,7 +713,7 @@ impl ClientApp {
                             let updated = Arc::make_mut(chunk);
                             updated.blocks.set(index, block);
                             updated.version = version;
-                            self.queue_relight(key, true);
+                            self.queue_edited_chunk_relight(key);
                         }
                     } else if version > chunk.version {
                         self.queue_command(ClientMessage::Resync { key });
@@ -814,6 +830,7 @@ impl ClientApp {
             .retain(|key, _| self.chunks.contains_key(key));
         self.pending_mesh
             .retain(|key, _| self.chunks.contains_key(key));
+        self.urgent_mesh.retain(|key| self.chunks.contains_key(key));
         for &(key, modified) in &evicted {
             if modified {
                 self.queue_relight(key, true);
@@ -838,21 +855,41 @@ impl ClientApp {
                 {
                     self.light_samples
                         .insert(mesh.key, (mesh.lighting_revision, result.lighting));
-                    self.pending_upload.push_back(mesh);
+                    if self.urgent_mesh.contains(&mesh.key) {
+                        self.pending_upload.push_front(mesh);
+                    } else {
+                        self.pending_upload.push_back(mesh);
+                    }
                 }
             }
             while let Some(mesh) = self.pending_upload.pop_front() {
-                if let Err(mesh) = renderer.enqueue_mesh(mesh) {
+                let key = mesh.key;
+                if self
+                    .chunks
+                    .get(&key)
+                    .is_none_or(|chunk| chunk.version != mesh.version)
+                    || self.lighting_revisions.get(&key) != Some(&mesh.lighting_revision)
+                {
+                    continue;
+                }
+                if let Err(mesh) = renderer.enqueue_mesh(mesh, self.urgent_mesh.contains(&key)) {
                     self.pending_upload.push_front(mesh);
                     break;
                 }
+                self.urgent_mesh.remove(&key);
             }
         }
         let Some(seed) = self.world_seed else {
             return;
         };
         for _ in 0..16 {
-            let Some(key) = self.pending_mesh.keys().next().copied() else {
+            let Some(key) = self
+                .urgent_mesh
+                .iter()
+                .find(|key| self.pending_mesh.contains_key(key))
+                .copied()
+                .or_else(|| self.pending_mesh.keys().next().copied())
+            else {
                 break;
             };
             let revision = self.pending_mesh.remove(&key).unwrap();
@@ -867,7 +904,12 @@ impl ClientApp {
                 revision,
                 bounced_gi: self.config.bounced_gi,
             };
-            if let Err(TrySendError::Full(_job)) = self.mesher.jobs.try_send(job) {
+            let sender = if self.urgent_mesh.contains(&key) {
+                &self.mesher.urgent_jobs
+            } else {
+                &self.mesher.jobs
+            };
+            if let Err(TrySendError::Full(_job)) = sender.try_send(job) {
                 self.pending_mesh.insert(key, revision);
                 break;
             }

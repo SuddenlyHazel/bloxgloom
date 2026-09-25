@@ -205,6 +205,7 @@ impl ConfigWriter {
 
 pub(super) struct Mesher {
     pub(super) jobs: SyncSender<MesherJob>,
+    pub(super) urgent_jobs: SyncSender<MesherJob>,
     pub(super) results: Receiver<MesherResult>,
 }
 
@@ -227,16 +228,30 @@ pub(super) struct MesherJob {
 impl Mesher {
     pub(super) fn new() -> Self {
         let (jobs, jobs_rx) = mpsc::sync_channel::<MesherJob>(64);
+        let (urgent_jobs, urgent_rx) = mpsc::sync_channel::<MesherJob>(16);
         let (results_tx, results) = mpsc::sync_channel(64);
         let shared = Arc::new(Mutex::new(jobs_rx));
+        let urgent = Arc::new(Mutex::new(urgent_rx));
         for _ in 0..2 {
             let jobs_rx = Arc::clone(&shared);
+            let urgent_rx = Arc::clone(&urgent);
             let results_tx = results_tx.clone();
             thread::spawn(move || {
                 loop {
-                    let job = match jobs_rx.lock().unwrap().recv() {
+                    let job = match urgent_rx.lock().unwrap().try_recv() {
                         Ok(job) => job,
-                        Err(_) => break,
+                        Err(mpsc::TryRecvError::Empty) => {
+                            match jobs_rx
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_millis(2))
+                            {
+                                Ok(job) => job,
+                                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            }
+                        }
+                        Err(mpsc::TryRecvError::Disconnected) => break,
                     };
                     let light = if job.bounced_gi {
                         LightField::build_with_bounce_and_catalog(
@@ -281,6 +296,10 @@ impl Mesher {
                 }
             });
         }
-        Self { jobs, results }
+        Self {
+            jobs,
+            urgent_jobs,
+            results,
+        }
     }
 }
