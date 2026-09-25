@@ -1,0 +1,15 @@
+# Growth foundation: remaining implementation
+
+This is the code work still needed from [the growth foundation plan](growth-foundation-plan.md). It excludes acceptance gates, soak runs, performance targets, and public mod packaging/scripting.
+
+1. **World-backed owner runtime.** Put chunk, independent-entity, and profile state in durable owner cells with revisioned read snapshots, sparse active/scheduled work, and barrier-owned mutation. The current registered handler runtime holds transient internal owner values.
+2. **Generic effects and persistent domains.** Connect registered local/cross-owner effect routing and destination handlers to live ticks. Register domain codecs for WAL validation/replay, checkpoints, and rotation. Persist fair cursors, deferred work, and effects targeting unloaded owners. The live registered runtime currently rejects emitted effects.
+3. **Parallel durable commits.** Prepare and encode disjoint transactions on owner workers, arbitrate only overlapping key sets, then apply WAL-confirmed owner slices and build revision logs on workers behind one publication barrier. Built-in durable actions remain a global coordinator operation.
+4. **Fire migration.** Move fire's existing durable frontiers, source-scoped mailboxes, worker computation, effect delivery, and commits onto the generic owner/effect/domain path. Add bounded hot-chunk candidate splitting where necessary. This is integration, not a new fire implementation.
+5. **Generic mobile-entity lifecycle.** Move drops from their separate allocator, movement, ownership, and checkpoint path into registered owner-batched mobile entities, including barrier transfers across chunks and atomic item/inventory/WAL changes. Use the shared active-owner index for scheduled entity work.
+6. **Bounded drop checkpoints.** Replace coordinator-side capture and sorting of the entire drop set with revisioned owner snapshots submitted to checkpoint workers; one moving drop must not cause work proportional to every drop.
+7. **Extensible built-in dispatch and publication.** Make fire, drops, players, kiln behavior, and future systems use registration without new central gameplay switches or recovery-domain matches. Move interest projection to immutable committed revision logs off the coordinator and share encoded chunk pages across clients. The nonblocking reactor itself is already present.
+8. **Texture paging.** Resolve wide logical texture IDs to physical GPU page/layer handles at catalog freeze and group mesh work by page. Rendering currently relies on one texture-array layer per catalog texture, which does not fulfill the planned 8,192-texture capacity.
+9. **Independent startup-extension crate.** Add a stateful block, component item, mobile entity, cross-chunk anchored entity, substantial system, and durable effect without core-dispatch edits, using the same persistence and replication paths. Public mod loading and sandboxing remain deferred.
+
+The main dependency order is **owner runtime → generic effects/durability → fire and drops migration → extension crate**. Texture paging and off-thread publication can proceed alongside it.
