@@ -50,6 +50,7 @@ fn commands_received_after_content_ready_wait_for_join_completion() {
         Arc::clone(&content.catalog),
         2,
         Arc::clone(&connection.stats),
+        Arc::new(Poller::new().unwrap()),
     )
     .unwrap();
     let mut command = Vec::new();

@@ -4,6 +4,7 @@ use super::metrics::TransportStats;
 use crate::content::Catalog;
 use crate::protocol::{self, ClientMessage};
 use crate::server::outbound::OutboundFrame;
+use polling::Poller;
 use std::io;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -47,6 +48,7 @@ impl CodecWorkers {
         catalog: Arc<Catalog>,
         capacity: usize,
         stats: Arc<TransportStats>,
+        poller: Arc<Poller>,
     ) -> io::Result<Self> {
         if capacity == 0 {
             return Err(io::Error::new(
@@ -69,20 +71,22 @@ impl CodecWorkers {
             let receiver = Arc::clone(&decode_receiver);
             let catalog = Arc::clone(&catalog);
             let stats = Arc::clone(&stats);
+            let poller = Arc::clone(&poller);
             pool.decode_workers.push(
                 thread::Builder::new()
                     .name(format!("server-decode-{index}"))
-                    .spawn(move || decode_worker(receiver, catalog, stats))?,
+                    .spawn(move || decode_worker(receiver, catalog, stats, poller))?,
             );
         }
         for index in 0..ENCODE_WORKERS {
             let receiver = Arc::clone(&encode_receiver);
             let catalog = Arc::clone(&catalog);
             let stats = Arc::clone(&stats);
+            let poller = Arc::clone(&poller);
             pool.encode_workers.push(
                 thread::Builder::new()
                     .name(format!("server-encode-{index}"))
-                    .spawn(move || encode_worker(receiver, catalog, stats))?,
+                    .spawn(move || encode_worker(receiver, catalog, stats, poller))?,
             );
         }
         Ok(pool)
@@ -157,6 +161,7 @@ fn decode_worker(
     receiver: Arc<Mutex<Receiver<DecodeRequest>>>,
     catalog: Arc<Catalog>,
     stats: Arc<TransportStats>,
+    poller: Arc<Poller>,
 ) {
     loop {
         let request = receiver
@@ -171,6 +176,7 @@ fn decode_worker(
         stats.decode_busy(started.elapsed());
         let _ = request.reply.try_send(result);
         stats.decode_finished();
+        let _ = poller.notify();
     }
 }
 
@@ -178,6 +184,7 @@ fn encode_worker(
     receiver: Arc<Mutex<Receiver<EncodeRequest>>>,
     catalog: Arc<Catalog>,
     stats: Arc<TransportStats>,
+    poller: Arc<Poller>,
 ) {
     loop {
         let request = receiver
@@ -199,5 +206,6 @@ fn encode_worker(
         stats.encode_busy(started.elapsed());
         let _ = request.reply.try_send(result);
         stats.encode_finished();
+        let _ = poller.notify();
     }
 }

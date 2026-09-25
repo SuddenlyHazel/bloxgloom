@@ -138,7 +138,11 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             let [x, y, z] = client.position();
             client.center = world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32).0;
             player_positions.push((id, client.position()));
-            for acknowledgment in batch.acknowledgments {
+            // Position acknowledgements are cumulative: one authoritative
+            // final position acknowledges every earlier command in this tick.
+            // Sending each intermediate correction needlessly fills a
+            // reliable outbound queue when a client is rendering chunks.
+            if let Some(acknowledgment) = batch.acknowledgments.last() {
                 let [x, y, z] = acknowledgment.position;
                 if !client.enqueue(ServerMessage::Position {
                     ack_seq: acknowledgment.seq,
@@ -147,7 +151,6 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
                     z,
                 }) {
                     disconnected.push(id);
-                    break;
                 }
             }
             if let Some(chunk) = batch.first_missing_chunk {

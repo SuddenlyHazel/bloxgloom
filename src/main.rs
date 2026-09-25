@@ -4,6 +4,7 @@ mod content;
 mod inventory;
 mod items;
 mod lighting;
+mod physics;
 mod preview;
 mod protocol;
 mod raycast;

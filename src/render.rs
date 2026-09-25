@@ -40,8 +40,8 @@ pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
 
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 4 * 1024 * 1024;
-pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 4;
+pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 1024 * 1024;
+pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 1;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
 pub(crate) const VERTEX_FLOATS: usize = 12;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);

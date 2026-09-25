@@ -185,69 +185,30 @@ pub enum MovementError {
     OutOfBounds,
 }
 
-// Server-authenticated movement normally needs at most 11 steps per axis;
-// 64 leaves generous headroom while bounding worst-case collision probes.
-const MAX_MOVEMENT_STEPS_PER_AXIS: f32 = 64.0;
-
 /// Resolves movement in short axis-aligned steps, preserving the server's
 /// player hitbox and X/Z/Y axis order. Any unavailable collision sample rejects
 /// the whole movement result, so a caller cannot commit a partial position.
 pub fn resolve_player_movement(
     view: &VoxelView,
-    mut position: [f32; 3],
+    position: [f32; 3],
     delta: [f32; 3],
 ) -> Result<[f32; 3], MovementError> {
-    if position
-        .iter()
-        .chain(delta.iter())
-        .any(|coordinate| !coordinate.is_finite())
-    {
-        return Err(MovementError::InvalidCoordinates);
-    }
-
-    // Resolve in short axis-aligned steps so even delayed input cannot tunnel
-    // through a one-block wall.
-    for axis in [0, 2, 1] {
-        let step_count = (delta[axis].abs() / 0.25).ceil().max(1.0);
-        if step_count > MAX_MOVEMENT_STEPS_PER_AXIS {
-            return Err(MovementError::OutOfBounds);
-        }
-        let steps = step_count as usize;
-        let step = delta[axis] / steps as f32;
-        for _ in 0..steps {
-            let mut candidate = position;
-            candidate[axis] += step;
-            if candidate.iter().any(|value| value.abs() >= 1_000_000.0) {
-                break;
-            }
-            if player_collides(view, candidate).map_err(MovementError::MissingChunk)? {
-                break;
-            }
-            position = candidate;
-        }
-    }
-    Ok(position)
+    crate::physics::resolve_player_movement(position, delta, |x, y, z| {
+        Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)
+    })
+    .map_err(|error| match error {
+        crate::physics::ResolveError::Missing(chunk) => MovementError::MissingChunk(chunk),
+        crate::physics::ResolveError::InvalidCoordinates => MovementError::InvalidCoordinates,
+        crate::physics::ResolveError::OutOfBounds => MovementError::OutOfBounds,
+    })
 }
 
 /// Tests the existing player hitbox: 0.6 block wide and 1.7 blocks tall, with
 /// samples at the feet, torso, and head. Missing samples are explicit errors.
 pub fn player_collides(view: &VoxelView, feet: [f32; 3]) -> Result<bool, MissingChunk> {
-    for x in [feet[0] - 0.3, feet[0] + 0.3] {
-        for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
-            for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if view.catalog.block_flags(view.block(
-                    x.floor() as i32,
-                    y.floor() as i32,
-                    z.floor() as i32,
-                )?) & crate::content::SOLID
-                    != 0
-                {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-    Ok(false)
+    crate::physics::player_collides(feet, |x, y, z| {
+        Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)
+    })
 }
 
 #[cfg(test)]

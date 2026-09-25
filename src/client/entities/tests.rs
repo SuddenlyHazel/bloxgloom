@@ -372,6 +372,8 @@ fn cross_chunk_player_transfer_changes_avatar_only_after_full_group() {
         &catalog,
         &mut chunks,
     );
+    let original_west = Arc::clone(&chunks[&key(0)]);
+    let original_east = Arc::clone(&chunks[&key(1)]);
     let mut moved = player(41, 2);
     moved.location = PublicEntityLocation::Mobile {
         position: [16.5, 2.0, 0.5],
@@ -414,9 +416,16 @@ fn cross_chunk_player_transfer_changes_avatar_only_after_full_group() {
         0.5
     );
     assert!(matches!(
-        accept(&mut replicas, ServerMessage::WorldCommitPart(upsert), &catalog, &mut chunks),
-        Assembly::Installed(keys) if keys == vec![key(0), key(1)]
+        accept(
+            &mut replicas,
+            ServerMessage::WorldCommitPart(upsert),
+            &catalog,
+            &mut chunks
+        ),
+        Assembly::Waiting
     ));
+    assert!(Arc::ptr_eq(&original_west, &chunks[&key(0)]));
+    assert!(Arc::ptr_eq(&original_east, &chunks[&key(1)]));
     assert_eq!(
         replicas.visual_avatars(glam::Vec3::ZERO, None)[0]
             .position

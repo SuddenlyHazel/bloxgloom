@@ -23,9 +23,13 @@ const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SPEED: f32 = 8.0;
 const MAX_CHUNKS: usize = 512;
 const MAX_OUTSTANDING_ACTIONS: usize = 128;
+const MAX_INCOMING_PER_FRAME: usize = 32;
+const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
 pub(crate) mod drops;
 use drops::DropAnimator;
+mod movement;
+use movement::predict_player_movement;
 
 fn edit_for_hit(
     hit: Hit,
@@ -639,10 +643,12 @@ impl ClientApp {
                 while self.unacked.front().is_some_and(|(seq, _)| *seq <= ack_seq) {
                     self.unacked.pop_front();
                 }
-                self.position = Vec3::new(x, y, z);
+                let mut predicted = Vec3::new(x, y, z);
                 for (_, delta) in &self.unacked {
-                    self.position += *delta;
+                    predicted =
+                        predict_player_movement(&self.chunks, &self.catalog, predicted, *delta);
                 }
+                self.position = predicted;
             }
             ServerMessage::Chunk(chunk) => {
                 let key = chunk.key;
@@ -771,7 +777,11 @@ impl ClientApp {
             }
             self.pending_commands.pop_front();
         }
-        for _ in 0..128 {
+        let incoming_started = Instant::now();
+        for count in 0..MAX_INCOMING_PER_FRAME {
+            if count > 0 && incoming_started.elapsed() >= INCOMING_FRAME_BUDGET {
+                break;
+            }
             match self.network.incoming.try_recv() {
                 Ok(Incoming::Message(message)) => self.accept(*message),
                 Ok(Incoming::Closed(reason)) => {
@@ -910,7 +920,8 @@ impl ClientApp {
             dy: delta.y,
             dz: delta.z,
         }) {
-            self.position += delta;
+            self.position =
+                predict_player_movement(&self.chunks, &self.catalog, self.position, delta);
             self.unacked.push_back((seq, delta));
         }
     }

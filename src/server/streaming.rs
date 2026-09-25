@@ -5,6 +5,9 @@
 
 use super::chunk_loader::{RequestError, RequestStatus};
 use super::metrics::LatencyEvent;
+use super::outbound::{
+    OUTBOUND_CLIENT_BYTE_CAPACITY, OUTBOUND_FRAME_CAPACITY, OutboundClientSnapshot,
+};
 use super::*;
 
 pub(in crate::server) mod entities;
@@ -12,6 +15,8 @@ pub(in crate::server) mod entities;
 const MAX_LOAD_RESULTS_PER_TICK: usize = 32;
 const MAX_PREFETCH_CANDIDATES: usize = 16;
 const MAX_NEW_LOADS_PER_CLIENT: usize = 2;
+const SNAPSHOT_FRAME_HEADROOM: usize = 32;
+const SNAPSHOT_BYTE_HEADROOM: u64 = 512 * 1024;
 
 pub(super) fn poll_chunk_loads(state: &mut State) -> io::Result<()> {
     for _ in 0..MAX_LOAD_RESULTS_PER_TICK {
@@ -162,6 +167,12 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
                     views,
                     state.world.catalog(),
                 )?;
+                if !can_stream_snapshot(client.sender.snapshot(), &messages)? {
+                    // Chunk snapshots are deferrable. Reserve queue room for
+                    // movement acknowledgements and durable results instead
+                    // of disconnecting a healthy client during view fill.
+                    break;
+                }
                 let block_version = match &messages[0] {
                     ServerMessage::WorldSnapshotStart(start) => start.chunk.version,
                     _ => unreachable!("snapshot builder starts with chunk"),
@@ -202,6 +213,27 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
         }
     }
     Ok(true)
+}
+
+fn can_stream_snapshot(
+    queued: OutboundClientSnapshot,
+    messages: &[ServerMessage],
+) -> io::Result<bool> {
+    let bytes = messages.iter().try_fold(0_u64, |total, message| {
+        total.checked_add(crate::protocol::server_wire_len(message) as u64)
+    });
+    let bytes = bytes.ok_or_else(|| io::Error::other("chunk snapshot byte count overflow"))?;
+    if messages.len() > OUTBOUND_FRAME_CAPACITY || bytes > OUTBOUND_CLIENT_BYTE_CAPACITY {
+        return Err(io::Error::other(
+            "one chunk snapshot exceeds the outbound queue bound",
+        ));
+    }
+    let frame_limit = (OUTBOUND_FRAME_CAPACITY - SNAPSHOT_FRAME_HEADROOM).max(messages.len());
+    let byte_limit = (OUTBOUND_CLIENT_BYTE_CAPACITY - SNAPSHOT_BYTE_HEADROOM).max(bytes);
+    Ok(
+        queued.queued_frames.saturating_add(messages.len()) <= frame_limit
+            && queued.queued_bytes.saturating_add(bytes) <= byte_limit,
+    )
 }
 
 fn inside_view(key: ChunkKey, center: ChunkKey, radius: i64) -> bool {

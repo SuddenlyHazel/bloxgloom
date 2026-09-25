@@ -355,6 +355,11 @@ impl Replicas {
     ) -> Result<Vec<ChunkKey>, Vec<ChunkKey>> {
         let parts: Vec<_> = pending.parts.into_values().collect();
         let keys: Vec<_> = parts.iter().map(|part| part.key).collect();
+        let changed_block_keys: Vec<_> = parts
+            .iter()
+            .filter(|part| !part.blocks.is_empty())
+            .map(|part| part.key)
+            .collect();
         let mut revised_chunks = HashMap::<ChunkKey, Chunk>::new();
         let mut revised_entities = HashMap::<ChunkKey, BTreeMap<u64, PublicEntity>>::new();
         let mut revised_entity_versions = HashMap::<ChunkKey, u64>::new();
@@ -365,32 +370,32 @@ impl Replicas {
             if *epoch != part.epoch {
                 return Err(keys);
             }
-            let chunk = match revised_chunks.get_mut(&part.key) {
-                Some(chunk) => chunk,
-                None => {
-                    let Some(existing) = chunks.get(&part.key) else {
-                        return Err(keys);
-                    };
-                    revised_chunks
-                        .entry(part.key)
-                        .or_insert_with(|| (**existing).clone())
-                }
+            let Some(existing) = chunks.get(&part.key) else {
+                return Err(keys);
             };
+            let block_version = revised_chunks
+                .get(&part.key)
+                .map_or(existing.version, |chunk| chunk.version);
             let current_entity_version = revised_entity_versions
                 .get(&part.key)
                 .copied()
                 .or_else(|| self.entity_revisions.get(&part.key).copied());
-            if chunk.version != part.block_from || current_entity_version != Some(part.entity_from)
+            if block_version != part.block_from || current_entity_version != Some(part.entity_from)
             {
                 return Err(keys);
             }
-            for change in &part.blocks {
-                let Some(index) = Chunk::index(change.local.map(usize::from)) else {
-                    return Err(keys);
-                };
-                chunk.blocks.set(index, change.block);
+            if !part.blocks.is_empty() {
+                let chunk = revised_chunks
+                    .entry(part.key)
+                    .or_insert_with(|| (**existing).clone());
+                for change in &part.blocks {
+                    let Some(index) = Chunk::index(change.local.map(usize::from)) else {
+                        return Err(keys);
+                    };
+                    chunk.blocks.set(index, change.block);
+                }
+                chunk.version = part.block_to;
             }
-            chunk.version = part.block_to;
             let entities = revised_entities
                 .entry(part.key)
                 .or_insert_with(|| self.entities.get(&part.key).cloned().unwrap_or_default());
@@ -454,7 +459,9 @@ impl Replicas {
             self.insert_avatars(key, avatars);
         }
         self.entity_revisions.extend(revised_entity_versions);
-        Ok(keys)
+        // Entity motion changes avatar state, not chunk geometry or lighting.
+        // Only block-bearing owners need a mesh/relight request.
+        Ok(changed_block_keys)
     }
 
     fn pending_bytes(&self) -> usize {

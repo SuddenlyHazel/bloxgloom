@@ -180,6 +180,15 @@ impl Connection {
         }
         self.poll_async(now, workers, input, pending_leaves)?;
         self.prepare_write(content, codecs)?;
+        // A newly encoded frame should not wait for another socket edge or
+        // the reactor timeout. One frame is written per pass; the next encode
+        // is submitted immediately and its worker wakes the poller.
+        if self.pending_write.is_some() && (readiness.writable || !self.write_interest) {
+            self.poll_write()?;
+            if self.pending_write.is_none() && self.encode_receiver.is_none() {
+                self.prepare_write(content, codecs)?;
+            }
+        }
         Ok(())
     }
 

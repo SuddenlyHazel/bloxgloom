@@ -173,12 +173,14 @@ fn serve_listener_inner(
     let outbound = Arc::clone(&state.outbound);
     let content = ContentHandshake::from_catalog(state.world.catalog_arc())?;
     let workers = InventoryWorkers::new(inventory_store)?;
+    let poller = Arc::new(Poller::new()?);
+    outbound.install_poller(Arc::clone(&poller))?;
     let codecs = CodecWorkers::new(
         Arc::clone(&content.catalog),
         admission_limit,
         Arc::clone(&stats),
+        Arc::clone(&poller),
     )?;
-    let poller = Poller::new()?;
     // SAFETY: the listener remains alive until explicitly removed below.
     unsafe {
         poller.add(&listener, PollEvent::readable(LISTENER_KEY))?;

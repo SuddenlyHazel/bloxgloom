@@ -5,9 +5,11 @@
 //! currently being written as well as frames still in the channel.
 
 use crate::protocol::{self, ServerMessage};
-use std::sync::Arc;
+use polling::Poller;
+use std::io;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 pub(super) const OUTBOUND_FRAME_CAPACITY: usize = 128;
@@ -22,6 +24,7 @@ pub(super) struct OutboundTelemetry {
     max_queued_bytes: AtomicU64,
     max_client_queued_bytes: AtomicU64,
     aggregate_byte_limit: u64,
+    poller: OnceLock<Arc<Poller>>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -56,7 +59,15 @@ impl OutboundTelemetry {
             max_queued_bytes: AtomicU64::new(0),
             max_client_queued_bytes: AtomicU64::new(0),
             aggregate_byte_limit,
+            poller: OnceLock::new(),
         }
+    }
+
+    /// Wake the socket reactor as soon as the simulation publishes a frame.
+    pub(super) fn install_poller(&self, poller: Arc<Poller>) -> io::Result<()> {
+        self.poller
+            .set(poller)
+            .map_err(|_| io::Error::other("outbound reactor poller already installed"))
     }
 
     /// Creates an outbound queue whose byte reservations contribute to this
@@ -178,7 +189,12 @@ impl OutboundQueue {
             queued_at: Instant::now(),
         };
         match self.sender.try_send(frame) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                if let Some(poller) = self.telemetry.poller.get() {
+                    let _ = poller.notify();
+                }
+                Ok(())
+            }
             Err(TrySendError::Full(_frame)) => self.reject(OutboundError::FrameLimit),
             Err(TrySendError::Disconnected(_frame)) => self.reject(OutboundError::Disconnected),
         }
