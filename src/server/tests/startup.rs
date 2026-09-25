@@ -1468,3 +1468,214 @@ fn tamper_payload(state: &State, id: crate::server::entities::EntityId) -> Optio
         .downcast_ref::<u8>()
         .copied()
 }
+
+// --- Durable pending owner wakes across restart --------------------------------
+//
+// An effect may only cause work to happen SOONER: the durable truth is the
+// schedule, not the effect. A wake to an owner with no live cell is therefore
+// held as a tiny bounded due-flag keyed by destination — no effect payload
+// persists — staged in the producer wave's own WAL record and served when the
+// destination loads. These tests prove the headline: emit, restart without
+// delivering, load the destination, and it runs exactly once.
+
+/// One producer owner, one bystander, plus one never-seeded destination. The
+/// producer emits a `bloxgloom:wake_entity` notification at its first run;
+/// the destination is absent until a later startup seeds it. All counters
+/// saturate so schedules can differ while final states match. Rebuilt
+/// identically for every reopen so recovery — never the seed — supplies the
+/// flag.
+fn wake_flag_startup(
+    seed_destination: bool,
+) -> (
+    ServerStartup,
+    crate::server::registry::SystemId,
+    crate::server::parallel::OwnerKey,
+    crate::server::parallel::OwnerKey,
+) {
+    use crate::server::effects::EffectKindId;
+    use crate::server::entities::wake::{EntityWake, WAKE_KIND_ID};
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use crate::server::runtime::owner_effects::EmittedOwnerEffect;
+
+    let system = SystemId::new("test:wake_flag").unwrap();
+    let producer = OwnerKey::Entity(1);
+    let bystander = OwnerKey::Entity(2);
+    let destination = OwnerKey::Entity(999);
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            8,
+        )
+        .effects_per_job(4)
+        .write(ResourceId::new("test:wake_flag_state").unwrap()),
+        move |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            let value = job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .copied()
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+            let mut emissions = Vec::new();
+            if job.owner() == producer && value == 0 {
+                emissions.push(EmittedOwnerEffect::new(
+                    EffectKindId::new(WAKE_KIND_ID).expect("static wake kind"),
+                    EntityWake {
+                        id: crate::server::entities::EntityId::new(999).expect("nonzero"),
+                    },
+                ));
+            }
+            let usage = PatchUsage {
+                writes: 1,
+                effects: emissions.len(),
+                estimated_bytes: std::mem::size_of::<u64>(),
+            };
+            // Saturating counters: schedules may differ, final states match.
+            let updated = value.saturating_add(1).min(3);
+            Ok(OwnerPatch::new(
+                job,
+                crate::server::runtime::owner_effects::OwnerEffectPatch::new(
+                    OwnerData::new(updated),
+                    emissions,
+                ),
+                usage,
+            ))
+        },
+    );
+    register_u64_owner_codec(&mut startup, &system);
+    startup.seed_owner(system.clone(), producer, 0u64);
+    startup.seed_owner(system.clone(), bystander, 0u64);
+    if seed_destination {
+        startup.seed_owner(system.clone(), destination, 0u64);
+    }
+    (startup, system, producer, destination)
+}
+
+#[test]
+fn wake_to_an_unloaded_owner_survives_restart_and_runs_once() {
+    let save = TestSave::new("owner-wake-restart");
+    let (startup, system, producer, _destination) = wake_flag_startup(false);
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    // The producer committed; the destination was never resident, so its wake
+    // is held durably instead of being skipped or staged live.
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, producer),
+        Some((1, 1))
+    );
+    assert_eq!(state.system_runtime.durable_wake_count(), 1);
+    assert_eq!(state.system_runtime.pending_wake_count(), 0);
+    assert!(!state.durability.failed);
+    // No clean shutdown and no delivery: the runtime is dropped with the
+    // destination still absent, the way a crash leaves the flag staged.
+    drop(state);
+
+    // Reload with the destination seeded: the flag recovers, the seed loads
+    // the cell through the WAL, and the very next tick serves the flagged
+    // destination ahead of rotation — rotation alone would run Entity(1).
+    let (startup, system, producer, destination) = wake_flag_startup(true);
+    let mut reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(reopened.system_runtime.durable_wake_count(), 1);
+    tick_once(&mut reopened, TickId::new(2), Instant::now()).unwrap();
+    // The destination ran its own durable work ...
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, destination),
+        Some((1, 1))
+    );
+    // ... while the producer waited: the flag, not rotation, scheduled it.
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, producer),
+        Some((1, 1))
+    );
+    // Serving cleared the flag in the destination wave's own record.
+    assert_eq!(reopened.system_runtime.durable_wake_count(), 0);
+    assert!(!reopened.durability.failed);
+    drop(reopened);
+
+    // A further restart replays no wake: the destination runs only on its own
+    // rotation now, exactly once across replays, never once per replay.
+    let (startup, system, producer, destination) = wake_flag_startup(true);
+    let mut replayed = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(replayed.system_runtime.durable_wake_count(), 0);
+    tick_once(&mut replayed, TickId::new(3), Instant::now()).unwrap();
+    assert_eq!(
+        replayed
+            .system_runtime
+            .owner_value::<u64>(&system, producer),
+        Some((2, 2))
+    );
+    assert_eq!(
+        replayed
+            .system_runtime
+            .owner_value::<u64>(&system, destination),
+        Some((1, 1))
+    );
+    assert_eq!(replayed.system_runtime.durable_wake_count(), 0);
+    assert!(!replayed.durability.failed);
+}
+
+#[test]
+fn dropped_wake_flags_delay_but_do_not_change_the_outcome() {
+    // Same startup with every owner seeded throughout: with delivery live
+    // the flagged destination runs ahead of rotation; with every effect
+    // dropped before delivery nothing is staged and rotation still converges
+    // all three saturating counters to the same final state.
+    fn converge(drop: bool) -> (Vec<[u64; 3]>, u64) {
+        let save = TestSave::new("owner-wake-drop");
+        let (startup, system, producer, destination) = wake_flag_startup(true);
+        let mut state =
+            server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+        state.system_runtime.set_drop_registered_effects(drop);
+        let bystander = crate::server::parallel::OwnerKey::Entity(2);
+        let mut history = Vec::new();
+        let mut destination_saturated_at = 0;
+        for tick in 1..=12u64 {
+            tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
+            let values = [
+                state
+                    .system_runtime
+                    .owner_value::<u64>(&system, producer)
+                    .unwrap()
+                    .1,
+                state
+                    .system_runtime
+                    .owner_value::<u64>(&system, bystander)
+                    .unwrap()
+                    .1,
+                state
+                    .system_runtime
+                    .owner_value::<u64>(&system, destination)
+                    .unwrap()
+                    .1,
+            ];
+            if destination_saturated_at == 0 && values[2] == 3 {
+                destination_saturated_at = tick;
+            }
+            history.push(values);
+        }
+        (history, destination_saturated_at)
+    }
+
+    let (live_history, live_saturated) = converge(false);
+    let (drop_history, drop_saturated) = converge(true);
+    assert_eq!(live_history.last(), Some(&[3, 3, 3]));
+    assert_eq!(live_history.last(), drop_history.last());
+    // The woken destination saturates sooner with delivery live ...
+    assert!(
+        live_saturated < drop_saturated,
+        "live saturated at {live_saturated}, dropped at {drop_saturated}"
+    );
+    // ... because tick two serves it while rotation alone serves the
+    // bystander.
+    assert_eq!(live_history[1], [1, 0, 1]);
+    assert_eq!(drop_history[1], [1, 1, 0]);
+}

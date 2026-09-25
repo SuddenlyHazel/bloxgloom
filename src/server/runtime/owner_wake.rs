@@ -27,7 +27,7 @@ use super::super::journal::{Change, StateKey};
 use super::super::parallel::OwnerKey;
 use super::super::registry::SystemId;
 use crate::world::ChunkKey;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 
 /// Journal domain for durable pending owner wakes. New persisted state; no
@@ -248,6 +248,50 @@ impl PendingWakeStore {
     /// flags are not visible here: nothing is served before its WAL receipt.
     pub fn contains(&self, system: &SystemId, owner: OwnerKey) -> bool {
         self.pending.contains_key(&(system.clone(), owner))
+    }
+
+    /// Flagged destinations for one system in canonical order, with their
+    /// producing ticks. The caller serves only those with live cells; flags
+    /// for still-absent owners stay held.
+    pub fn flagged_for(&self, system: &SystemId) -> Vec<(OwnerKey, u64)> {
+        self.pending
+            .iter()
+            .filter(|((candidate, _), _)| candidate == system)
+            .map(|((_, owner), tick)| (*owner, *tick))
+            .collect()
+    }
+
+    /// Stages clear records for served destinations. Absent flags stage
+    /// nothing and intra-wave duplicates collapse, so clearing is idempotent
+    /// and no key repeats within one record. Staging mutates nothing: flags
+    /// leave the set only at [`PendingWakeStore::commit_clears`], after the
+    /// carrying record's receipt, so a deferred serve simply serves again.
+    pub fn stage_clears(&self, served: &[(SystemId, OwnerKey)]) -> Vec<Change> {
+        let mut seen = BTreeSet::new();
+        let mut changes = Vec::new();
+        for (system, owner) in served {
+            let key = (system.clone(), *owner);
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            if let Some(tick) = self.pending.get(&key) {
+                changes.push(Change::new(
+                    owner_wake_key(system, *owner),
+                    encode_wake_value(*tick),
+                    Vec::new(),
+                ));
+            }
+        }
+        changes
+    }
+
+    /// Removes cleared flags after their carrying record's receipt. The
+    /// record already holds the exact clear; this only drops the live set
+    /// entries so a served flag is never served twice.
+    pub fn commit_clears(&mut self, served: &[(SystemId, OwnerKey)]) {
+        for (system, owner) in served {
+            self.pending.remove(&(system.clone(), *owner));
+        }
     }
 
     /// Prepares set-flags for destinations with no live flag, chaining onto

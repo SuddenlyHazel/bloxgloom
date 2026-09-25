@@ -294,6 +294,25 @@ impl SystemRuntime {
                 .extend(leftover);
         }
         let mut seen: BTreeSet<OwnerKey> = selected.iter().copied().collect();
+        // Durable flags for destinations that have loaded since the wake was
+        // staged join the normal job budget next; flags for still-absent
+        // owners stay held. Served flags clear in this wave's record (built
+        // at commit time below), so a served flag is never served twice.
+        let mut durable_served: Vec<(SystemId, OwnerKey)> = Vec::new();
+        if selected.len() < system.max_jobs_per_tick() {
+            for (owner, _) in self.durable_wakes.flagged_for(&id) {
+                if selected.len() >= system.max_jobs_per_tick() {
+                    break;
+                }
+                if self.durable.revision(&id, owner).is_none() {
+                    continue;
+                }
+                if seen.insert(owner) {
+                    selected.push(owner);
+                    durable_served.push((id.clone(), owner));
+                }
+            }
+        }
         if self.unvalidated_owners.contains(&id) {
             if let Some(owner) = self
                 .durable
@@ -532,7 +551,8 @@ impl SystemRuntime {
                 .or_default()
                 .insert(*owner);
         }
-        let applied = self.commit_owner_wave(prepared, tick, durability, wake_sets)?;
+        let applied =
+            self.commit_owner_wave(prepared, tick, durability, wake_sets, durable_served)?;
         self.next_owner.insert(id, next_cursor);
         Ok(applied)
     }
@@ -548,14 +568,21 @@ impl SystemRuntime {
     /// one logical transaction, one WAL record, no half-applied wave. Flags
     /// become visible only after the receipt; any deferral before it withdraws
     /// them so a retry re-stages from WAL-backed state.
+    ///
+    /// Served durable flags clear in the same record: the destination wave
+    /// that serves them carries their tombstones, so a served flag is never
+    /// served twice, across restarts or replays. Staging a clear mutates
+    /// nothing; flags leave the live set only after the receipt.
     fn commit_owner_wave(
         &mut self,
         prepared: PreparedOwnerWave,
         tick: TickId,
         durability: &mut Durability,
         wake_sets: PreparedWakeSets,
+        durable_served: Vec<(SystemId, OwnerKey)>,
     ) -> io::Result<usize> {
         let wake_changes = wake_sets.changes().to_vec();
+        let clear_changes = self.durable_wakes.stage_clears(&durable_served);
         // Each deferral before the receipt withdraws the staged flags so a
         // retry re-stages; exactly one site consumes the set.
         let mut wake_sets = Some(wake_sets);
@@ -567,6 +594,7 @@ impl SystemRuntime {
             .changes()
             .iter()
             .chain(wake_changes.iter())
+            .chain(clear_changes.iter())
             .map(|change| change.after.len())
             .sum();
         if bytes > MAX_OWNER_WAVE_BYTES {
@@ -593,6 +621,7 @@ impl SystemRuntime {
             .changes()
             .iter()
             .chain(wake_changes.iter())
+            .chain(clear_changes.iter())
             .map(|change| change.key.clone())
             .collect();
         for key in &keys {
@@ -611,6 +640,7 @@ impl SystemRuntime {
         })?;
         let mut changes = prepared.changes().to_vec();
         changes.extend(wake_changes);
+        changes.extend(clear_changes);
         let transaction = Transaction::new(id, tick.get(), changes);
         let receiver = durability
             .writer
@@ -672,10 +702,12 @@ impl SystemRuntime {
                 durability.failed = true;
                 error.io()
             })?;
-        // The record is receipted: flags become visible together with the
-        // producer wave they rode in on. No half-applied wave.
+        // The record is receipted: staged flags become visible together with
+        // the producer wave they rode in on, and served flags clear in the
+        // same record. No half-applied wave, no second serving.
         self.durable_wakes
             .commit_sets(wake_sets.take().expect("wake set consumed once"));
+        self.durable_wakes.commit_clears(&durable_served);
         for key in &keys {
             durability.reserved.remove(key);
         }

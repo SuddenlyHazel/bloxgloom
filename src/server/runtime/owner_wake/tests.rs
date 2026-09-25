@@ -243,3 +243,42 @@ fn wake_recovery_rejects_corruption() {
         ErrorKind::InvalidData
     );
 }
+
+#[test]
+fn served_flags_clear_exactly_once() {
+    let mut store = PendingWakeStore::new();
+    let a = wake_dest("test:wake_a", OwnerKey::Entity(1));
+    let b = wake_dest("test:wake_a", OwnerKey::Entity(2));
+    let prepared = store.prepare_sets(&[a.clone(), b.clone()], 7, 8).unwrap();
+    store.commit_sets(prepared);
+    assert_eq!(store.len(), 2);
+
+    // Canonical per-system serve order.
+    assert_eq!(
+        store
+            .flagged_for(&a.0)
+            .iter()
+            .map(|(owner, _)| *owner)
+            .collect::<Vec<_>>(),
+        vec![a.1, b.1]
+    );
+    assert!(
+        store
+            .flagged_for(&SystemId::new("test:other").unwrap())
+            .is_empty()
+    );
+
+    // Clearing stages exact tombstones and is idempotent within a wave.
+    let served = [a.clone(), b.clone(), a.clone()];
+    let clears = store.stage_clears(&served);
+    assert_eq!(clears.len(), 2);
+    assert_eq!(clears[0].before, encode_wake_value(7));
+    assert!(clears[0].after.is_empty());
+    // Nothing leaves the set before the carrying record's receipt.
+    assert_eq!(store.len(), 2);
+    store.commit_clears(&served);
+    assert_eq!(store.len(), 0);
+    // A second serve finds nothing: no duplicate clear, no lost flag.
+    assert!(store.flagged_for(&a.0).is_empty());
+    assert!(store.stage_clears(&served).is_empty());
+}
