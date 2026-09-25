@@ -5,6 +5,7 @@ pub(in crate::server) mod journal;
 mod persistence;
 mod physics;
 mod planning;
+mod shards;
 mod spatial;
 
 pub(super) use entity::{DropEntityPayload, register_entity_type};

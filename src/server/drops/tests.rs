@@ -85,4 +85,5 @@ mod journal_recovery;
 mod persistence;
 mod pins;
 mod planning_pickup;
+mod shards;
 mod spatial_physics;
