@@ -184,6 +184,13 @@ impl ChunkLoader {
         self.pending.contains_key(&key)
     }
 
+    /// Test-only shutdown signal: further requests fail closed with
+    /// `RequestError::Stopped` while workers exit on their own.
+    #[cfg(test)]
+    pub(super) fn stop_for_test(&self) {
+        self.stopping.store(true, Ordering::Release);
+    }
+
     /// Polls without waiting. Consuming a result releases both its outstanding
     /// capacity slot and its per-key deduplication entry.
     pub(super) fn try_recv(&mut self) -> Result<ChunkLoadResult, TryRecvError> {

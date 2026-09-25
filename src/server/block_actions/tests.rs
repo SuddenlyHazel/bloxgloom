@@ -63,6 +63,20 @@ fn probe_deferred(
     unreachable!("missing chunk must defer the edit");
 }
 
+/// Hook that plans successfully while also recording a prefetch request for
+/// a far cell. The prefetch miss is swallowed here; its recorded request
+/// drains through `invoke_hook` without affecting this commit.
+fn probe_ok_with_prefetch(
+    context: &BlockActionContext,
+    builder: &mut BlockCommitBuilder,
+    tick: TickId,
+    command: BlockEditCommand,
+    previous: BlockId,
+) -> io::Result<CommitAction> {
+    let _ = builder.cached_block_or_request(command.x + 16, command.y, command.z, "probe prefetch");
+    probe_place(context, builder, tick, command, previous)
+}
+
 fn edit_command(block: BlockId, x: i32, y: i32, z: i32) -> BlockEditCommand {
     BlockEditCommand {
         id: 1,
@@ -132,6 +146,40 @@ fn hook_chunk_requests_drain_even_when_planning_defers() {
     .expect("missing chunk must defer the edit");
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
     assert!(state.loader.is_pending(far));
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn ok_hook_survives_failing_chunk_request() {
+    let path = temp_save_dir("hook-prefetch-failure");
+    let mut state = server_state(17, path.clone()).unwrap();
+    let (near, _) = world_to_chunk(0, 80, 0);
+    let (far, _) = world_to_chunk(16, 80, 0);
+    assert_ne!(near, far);
+    state.world.get_chunk(near).unwrap();
+    let before = state.world.cached_block(0, 80, 0).unwrap();
+    let block = if before == crate::world::AIR {
+        crate::world::STONE
+    } else {
+        crate::world::AIR
+    };
+    // Fail every recorded request closed: the prefetch for the far chunk can
+    // never be queued, but the planned commit must still come back.
+    state.loader.stop_for_test();
+
+    let hook: BlockEditHook = probe_ok_with_prefetch;
+    let action = invoke_hook(
+        hook,
+        &mut state,
+        TickId::new(1),
+        edit_command(block, 0, 80, 0),
+        before,
+    )
+    .expect("failing prefetch must not discard the planned commit");
+    assert_eq!(action.world_edits.len(), 1);
+    assert!(!state.loader.is_pending(far));
 
     drop(state);
     fs::remove_dir_all(path).unwrap();

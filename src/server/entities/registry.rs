@@ -273,6 +273,9 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
                     || *max_footprint_cells > MAX_ENTITY_FOOTPRINT_CELLS
                     || compatible_anchor_states
                         .iter()
+                        // Deliberate: the anchor state is the block that
+                        // represents the entity in the world, so air (0) and
+                        // unknown states can never anchor an entity.
                         .any(|state| state.0 == 0 || self.catalog.state(*state).is_none())
                 {
                     return Err(EntityError::InvalidType);

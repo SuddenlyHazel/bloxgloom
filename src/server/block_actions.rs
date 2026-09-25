@@ -116,8 +116,10 @@ pub(super) type BlockEditHook = fn(
 ) -> io::Result<CommitAction>;
 
 /// Invokes one lifecycle hook with split coordinator borrows, then queues
-/// any chunk loads the hook recorded. Requests drain on both success and
-/// failure so a deferred edit always resumes on a later tick.
+/// any chunk loads the hook recorded. The hook's outcome decides: recorded
+/// requests are best-effort prefetch, so a failing request never discards a
+/// planned commit (the edit simply defers on a later tick while its chunk
+/// is still not resident) and never masks the hook's own error.
 pub(super) fn invoke_hook(
     hook: BlockEditHook,
     state: &mut State,
@@ -139,7 +141,7 @@ pub(super) fn invoke_hook(
     let result = hook(&context, &mut builder, tick, command, previous);
     let requested = builder.take_requested_chunks();
     for key in requested {
-        let _ = super::streaming::request_chunk(state, key)?;
+        let _ = super::streaming::request_chunk(state, key);
     }
     result
 }
