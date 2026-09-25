@@ -363,19 +363,23 @@ pub(in crate::server) fn plan_entity_tick(
     // no-op commit (`NoChanges`) or churn the schedule on every stray wake;
     // reaffirming is a no-op that leaves the entity on its durable grid, so
     // dropping the wake converges to the same state. The due path below is
-    // unchanged: only woken attempts may reaffirm. A declared transfer is
-    // something to do, so it never reaffirms away.
+    // unchanged: only woken attempts may reaffirm. A declared transfer or a
+    // declared position change is something to do, so neither reaffirms away.
+    // A suspended (`None`) schedule reaffirms against `None`: a stray wake
+    // on a settled entity stages nothing.
     if woken
         && plan.payload.is_none()
         && plan.transfer.is_none()
-        && snapshot.next_tick == Some(plan.next_tick)
+        && plan.position.is_none()
+        && snapshot.next_tick == plan.next_tick
     {
         return Ok(None);
     }
-    if snapshot
-        .next_tick
-        .is_none_or(|previous| plan.next_tick <= previous)
-        || !descriptor.tick_policy().validates(Some(plan.next_tick))
+    if !descriptor.tick_policy().validates(plan.next_tick) {
+        return Err(corrupt("entity tick planner returned an invalid due time"));
+    }
+    if let (Some(previous), Some(next)) = (snapshot.next_tick, plan.next_tick)
+        && next <= previous
     {
         return Err(corrupt("entity tick planner returned an invalid due time"));
     }
@@ -407,13 +411,47 @@ pub(in crate::server) fn plan_entity_tick(
     )?;
     let patch = EntityPatch {
         payload: plan.payload.clone(),
-        next_tick: Some(Some(plan.next_tick)),
+        next_tick: Some(plan.next_tick),
         position: None,
     };
-    let mut entities = if let Some(transfer) = &plan.transfer {
+    let mut entities = if let Some(position) = plan.position {
+        if plan.anchor_update.is_some() {
+            return Err(corrupt("mobile entity planner returned an anchor update"));
+        }
+        if !matches!(&snapshot.location, EntityLocation::Mobile { .. }) {
+            return Err(corrupt("anchored entity planner returned a position"));
+        }
+        if !position.iter().all(|coordinate| coordinate.is_finite()) {
+            return Err(corrupt("entity tick planner returned a non-finite position"));
+        }
+        // Same-owner motion stages as one update; a chunk crossing stages
+        // as one fenced barrier transfer carrying the same payload and
+        // schedule patch. Either way the tick is exactly one WAL record.
+        match state.entities.prepare_update(
+            id,
+            snapshot.revision,
+            EntityPatch {
+                payload: plan.payload.clone(),
+                next_tick: Some(plan.next_tick),
+                position: Some(position),
+            },
+        ) {
+            Ok(prepared) => prepared,
+            Err(crate::server::entities::EntityError::TransferRequired) => state
+                .entities
+                .prepare_transfer(id, snapshot.revision, position, patch)
+                .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?,
+            Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, error)),
+        }
+    } else if let Some(transfer) = &plan.transfer {
         // The recipient pulls on its own schedule: its tick plan carries its
         // own payload update (or none) plus the declared pull, and this layer
-        // stages both ends atomically. The sender's schedule is untouched.
+        // stages both ends atomically. The sender's schedule is untouched. A
+        // pull without a receiver schedule is not expressible: suspension
+        // with a transfer would leave the batch half-specified.
+        let Some(next_tick) = plan.next_tick else {
+            return Err(corrupt("entity tick planner returned a transfer without a due time"));
+        };
         let receiver_base = plan
             .payload
             .clone()
@@ -425,7 +463,7 @@ pub(in crate::server) fn plan_entity_tick(
             &neighbours,
             &receiver_base,
             plan.anchor_update.as_ref(),
-            plan.next_tick,
+            next_tick,
             transfer,
             &catalog,
         )?

@@ -670,7 +670,7 @@ impl crate::server::entities::EntityTickPolicy for PairTick {
             .ok_or(EntityError::InvalidType)?;
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(echo)),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: vec![EntityBlockStateChange {
                 cell: anchor,
@@ -679,6 +679,7 @@ impl crate::server::entities::EntityTickPolicy for PairTick {
             }],
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -744,11 +745,12 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
         }
         Ok(EntityTickPlan {
             payload: Some(crate::server::entities::EntityPayload::new(8u8)),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -795,7 +797,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
         let solid = catalog.block_flags(above) & crate::content::SOLID != 0;
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(u8::from(solid))),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: vec![EntityBlockStateChange {
                 cell: anchor,
@@ -804,6 +806,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
             }],
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -846,11 +849,12 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
                 Err(_) => Err(EntityError::ViewOutOfRange),
                 Ok(_) => Ok(EntityTickPlan {
                     payload: Some(EntityPayload::new(42u8)),
-                    next_tick: current_tick + 5,
+                    next_tick: Some(current_tick + 5),
                     anchor_update: None,
                     block_states: Vec::new(),
                     wakes: Vec::new(),
                     transfer: None,
+                    position: None,
                 }),
             };
         }
@@ -858,11 +862,12 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
             .map_err(|_| EntityError::ViewOutOfRange)?;
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(43u8)),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -2105,11 +2110,12 @@ impl crate::server::entities::EntityTickPolicy for PokeConsumer {
         };
         Ok(EntityTickPlan {
             payload,
-            next_tick,
+            next_tick: Some(next_tick),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -2146,11 +2152,12 @@ impl crate::server::entities::EntityTickPolicy for PokeProducer {
         };
         Ok(EntityTickPlan {
             payload: None,
-            next_tick: due.checked_add(5).ok_or(EntityError::RevisionExhausted)?,
+            next_tick: Some(due.checked_add(5).ok_or(EntityError::RevisionExhausted)?),
             anchor_update: None,
             block_states: Vec::new(),
             wakes,
             transfer: None,
+            position: None,
         })
     }
 }
@@ -2174,11 +2181,12 @@ impl crate::server::entities::EntityTickPolicy for PokeBlind {
         };
         Ok(EntityTickPlan {
             payload: None,
-            next_tick: due.checked_add(5).ok_or(EntityError::RevisionExhausted)?,
+            next_tick: Some(due.checked_add(5).ok_or(EntityError::RevisionExhausted)?),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: vec![crate::server::entities::EntityId::new(999_999).unwrap()],
             transfer: None,
+            position: None,
         })
     }
 }
@@ -3015,7 +3023,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
         if let Some(source) = self.blind_source {
             return Ok(EntityTickPlan {
                 payload: None,
-                next_tick,
+                next_tick: Some(next_tick),
                 anchor_update: None,
                 block_states: Vec::new(),
                 wakes: Vec::new(),
@@ -3024,6 +3032,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
                     item: self.item,
                     count: self.count,
                 }),
+                position: None,
             });
         }
         let peer = neighbours
@@ -3051,11 +3060,12 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
         // layer, so the planner never touches another entity's state.
         Ok(EntityTickPlan {
             payload: None,
-            next_tick,
+            next_tick: Some(next_tick),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
             transfer,
+            position: None,
         })
     }
 }
@@ -3540,11 +3550,12 @@ impl crate::server::entities::EntityTickPolicy for BadTick {
         }
         Ok(EntityTickPlan {
             payload: None,
-            next_tick: due,
+            next_tick: Some(due),
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -3652,7 +3663,7 @@ impl crate::server::entities::EntityTickPolicy for PlayerEchoTick {
             .ok_or(EntityError::InvalidType)?;
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(echo)),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: vec![EntityBlockStateChange {
                 cell: anchor,
@@ -3661,6 +3672,7 @@ impl crate::server::entities::EntityTickPolicy for PlayerEchoTick {
             }],
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }
@@ -3699,7 +3711,7 @@ impl crate::server::entities::EntityTickPolicy for AnchorEchoTick {
         };
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(8u8)),
-            next_tick: current_tick + 5,
+            next_tick: Some(current_tick + 5),
             anchor_update: None,
             block_states: vec![EntityBlockStateChange {
                 cell: anchor,
@@ -3708,6 +3720,7 @@ impl crate::server::entities::EntityTickPolicy for AnchorEchoTick {
             }],
             wakes: Vec::new(),
             transfer: None,
+            position: None,
         })
     }
 }

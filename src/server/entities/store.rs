@@ -826,17 +826,24 @@ impl EntityStore {
     }
 
     /// Prepare a barrier transfer of a mobile entity across owner chunks.
+    /// The optional patch carries the tick's payload and schedule update in
+    /// the same atomic record; its own `position` must stay empty because the
+    /// transfer destination arrives in `position`.
     pub fn prepare_transfer(
         &mut self,
         id: EntityId,
         expected_revision: u64,
         position: [f32; 3],
+        patch: EntityPatch,
     ) -> Result<PreparedEntityTransaction, EntityError> {
         self.ensure_revision_room()?;
         let before = self.expected(id, expected_revision)?;
         let descriptor = self.types.descriptor(before.entity_type)?;
         if !matches!(descriptor.ownership(), EntityOwnership::Mobile) {
             return Err(EntityError::WrongOwnership);
+        }
+        if patch.position.is_some() {
+            return Err(EntityError::InvalidTransaction);
         }
         if self.motion_fences.contains_key(&id) {
             return Err(EntityError::MotionFenced);
@@ -849,6 +856,21 @@ impl EntityStore {
         let mut after = before.clone();
         after.location = location;
         after.owner = owner;
+        if let Some(payload) = patch.payload {
+            let encoded = descriptor.encode_payload(&payload)?;
+            let previous = descriptor.encode_payload(&after.payload)?;
+            if encoded != previous {
+                after.payload_size = encoded.len();
+                after.public_view = descriptor.public_view(&payload)?;
+                after.payload = payload;
+            }
+        }
+        if let Some(next_tick) = patch.next_tick {
+            if !descriptor.tick_policy().validates(next_tick) {
+                return Err(EntityError::InvalidType);
+            }
+            after.next_tick = next_tick;
+        }
         after.motion_revision = before
             .motion_revision
             .checked_add(1)

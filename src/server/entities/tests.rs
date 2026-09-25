@@ -213,7 +213,14 @@ fn mobile_lifecycle_is_prepared_revisioned_and_transfers_at_owner_boundary() {
         })
     );
 
-    let transfer = store.prepare_transfer(id, 2, [16.0, -0.5, -0.5]).unwrap();
+    let transfer = store
+        .prepare_transfer(
+            id,
+            2,
+            [16.0, -0.5, -0.5],
+            crate::server::entities::EntityPatch::default(),
+        )
+        .unwrap();
     let transfer_chunks = transfer
         .changes()
         .iter()
@@ -502,7 +509,12 @@ fn mixed_entity_batch_coalesces_updates_transfer_despawn_and_spawn_atomically() 
     update.add_read_key(footprint_read.clone());
     update.add_read_key(footprint_read.clone());
     let transfer = store
-        .prepare_transfer(EntityId::new(2).unwrap(), 1, [16.25, 4.0, 6.0])
+        .prepare_transfer(
+            EntityId::new(2).unwrap(),
+            1,
+            [16.25, 4.0, 6.0],
+            crate::server::entities::EntityPatch::default(),
+        )
         .unwrap();
     let despawn = store.prepare_despawn(EntityId::new(3).unwrap(), 1).unwrap();
     let spawn = store
@@ -621,7 +633,14 @@ fn owner_transfer_fences_motion_and_wal_replay_merges_by_motion_revision() {
         .unwrap();
 
     let before_transfer = encode_checkpoint(&store).unwrap();
-    let transfer = store.prepare_transfer(id, 1, [16.25, -0.5, -0.5]).unwrap();
+    let transfer = store
+        .prepare_transfer(
+            id,
+            1,
+            [16.25, -0.5, -0.5],
+            crate::server::entities::EntityPatch::default(),
+        )
+        .unwrap();
     assert!(
         transfer
             .changes()

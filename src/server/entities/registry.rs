@@ -39,8 +39,15 @@ pub struct EntityInteractionPlan {
 #[derive(Clone, Debug)]
 pub struct EntityTickPlan {
     pub payload: Option<EntityPayload>,
-    pub next_tick: u64,
+    /// `Some(tick)` schedules the next due tick; `None` suspends the entity
+    /// until a wake re-schedules it. Suspension keeps the sparse due schedule
+    /// sparse: settled mobile entities cost no queue slots and no WAL.
+    pub next_tick: Option<u64>,
     pub anchor_update: Option<super::types::AnchorUpdate>,
+    /// Same-owner mobile position change. A cross-chunk move is staged by
+    /// the trusted layer as a fenced barrier transfer instead. Anchored
+    /// planners must leave this empty and use `anchor_update`.
+    pub position: Option<[f32; 3]>,
     pub block_states: Vec<EntityBlockStateChange>,
     /// Notification-only wake requests, with the same delivery contract as
     /// [`EntityInteractionPlan::wakes`].

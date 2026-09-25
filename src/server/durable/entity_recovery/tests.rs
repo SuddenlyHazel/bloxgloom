@@ -152,7 +152,14 @@ fn lagging_checkpoint_replays_later_wal_transfer() {
         .unwrap()
         .write(&encode_checkpoint(&live).unwrap())
         .unwrap();
-    let transfer = live.prepare_transfer(id, 1, [17.0, 1.0, 1.0]).unwrap();
+    let transfer = live
+        .prepare_transfer(
+            id,
+            1,
+            [17.0, 1.0, 1.0],
+            crate::server::entities::EntityPatch::default(),
+        )
+        .unwrap();
     dir.append(2, &transfer);
 
     let recovered = dir.recover(types.clone()).unwrap();
@@ -179,7 +186,14 @@ fn same_revision_conflicting_checkpoint_motion_fails_closed() {
         .unwrap()
         .write(&encode_checkpoint(&divergent).unwrap())
         .unwrap();
-    let transfer = live.prepare_transfer(id, 1, [17.0, 1.0, 1.0]).unwrap();
+    let transfer = live
+        .prepare_transfer(
+            id,
+            1,
+            [17.0, 1.0, 1.0],
+            crate::server::entities::EntityPatch::default(),
+        )
+        .unwrap();
     dir.append(2, &transfer);
 
     let error = match dir.recover(types) {

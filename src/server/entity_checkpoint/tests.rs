@@ -106,7 +106,14 @@ fn ordered_durable_motion_transfer_and_checkpoint_recover_exact_latest_state() {
         .unwrap();
 
     let mut transfer_permit = mirror.try_reserve_durable().unwrap().unwrap();
-    let transfer = live.prepare_transfer(id, 1, [16.25, 96.5, 0.5]).unwrap();
+    let transfer = live
+        .prepare_transfer(
+            id,
+            1,
+            [16.25, 96.5, 0.5],
+            crate::server::entities::EntityPatch::default(),
+        )
+        .unwrap();
     live.apply_committed(transfer.clone()).unwrap();
     transfer_permit.mark_authoritative_change().unwrap();
     mirror.submit_durable(transfer_permit, transfer).unwrap();
