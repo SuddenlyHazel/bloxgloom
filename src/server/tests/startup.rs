@@ -249,3 +249,360 @@ fn missing_entity_registration_rejects_catalog_before_touching_world_files() {
         before
     );
 }
+
+// --- Registered owner-system effects through the real startup path ---------------
+//
+// The gate in `ServerStartup::phase_plan` used to reject any owner system that
+// declared effects. The routing machinery (`runtime::owner_effects`,
+// `effects::registered`) is implemented, so an extension-style system that
+// declares `max_effects_per_tick > 0` must now register, emit through the
+// frozen wake kind, and have its destination run next tick — never the same
+// tick. Effects only schedule work sooner: every destination still does its
+// own durable work through its normal handler.
+
+/// Saturating owner counter that wakes `target` once, when `source` runs at
+/// zero. Every run returns an emission patch so declared usage always matches
+/// the emitted count.
+fn saturating_wake_emitter(
+    source: crate::server::parallel::OwnerKey,
+    target: crate::server::entities::EntityId,
+    runs: std::sync::Arc<std::sync::Mutex<Vec<crate::server::parallel::OwnerKey>>>,
+    cap: u64,
+) -> impl Fn(
+    &crate::server::parallel::OwnerJob,
+) -> Result<crate::server::parallel::OwnerPatch, crate::server::registry::SystemHandlerError>
++ Send
++ Sync {
+    move |job: &crate::server::parallel::OwnerJob| {
+        use crate::server::effects::EffectKindId;
+        use crate::server::entities::wake::{EntityWake, WAKE_KIND_ID};
+        use crate::server::parallel::{OwnerData, OwnerPatch, PatchUsage};
+        use crate::server::registry::SystemHandlerError;
+        use crate::server::runtime::owner_effects::{EmittedOwnerEffect, OwnerEffectPatch};
+        runs.lock().unwrap().push(job.owner());
+        let value = job
+            .snapshot(job.owner())
+            .and_then(|snapshot| snapshot.value::<OwnerData>())
+            .and_then(|data| data.get::<u64>())
+            .copied()
+            .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+        let kind = EffectKindId::new(WAKE_KIND_ID).unwrap();
+        let mut emissions = Vec::new();
+        if job.owner() == source && value == 0 {
+            emissions.push(EmittedOwnerEffect::new(kind, EntityWake { id: target }));
+        }
+        let effect_count = emissions.len();
+        Ok(OwnerPatch::new(
+            job,
+            OwnerEffectPatch::new(OwnerData::new(value.saturating_add(1).min(cap)), emissions),
+            PatchUsage {
+                writes: 1,
+                effects: effect_count,
+                estimated_bytes: 8,
+            },
+        ))
+    }
+}
+
+#[test]
+fn startup_effect_emitting_owner_system_delivers_next_tick() {
+    use crate::server::entities::EntityId;
+    use crate::server::parallel::OwnerKey;
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use std::sync::{Arc, Mutex};
+
+    let system = SystemId::new("test:effect_owner").unwrap();
+    let source = OwnerKey::Entity(1);
+    let target = OwnerKey::Entity(2);
+    let runs = Arc::new(Mutex::new(Vec::new()));
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            8,
+        )
+        .write(ResourceId::new("test:effect_state").unwrap()),
+        saturating_wake_emitter(
+            source,
+            EntityId::new(2).unwrap(),
+            Arc::clone(&runs),
+            u64::MAX,
+        ),
+    );
+    startup.seed_owner(system.clone(), source, 0u64);
+    startup.seed_owner(system.clone(), target, 0u64);
+
+    let save = TestSave::new("startup-effect-owner-live");
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    // The producer committed, but the destination must not run in the same
+    // tick: routed effects only schedule work for next tick.
+    assert_eq!(*runs.lock().unwrap(), vec![source]);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, source)
+            .unwrap()
+            .1,
+        1
+    );
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, target)
+            .unwrap()
+            .1,
+        0
+    );
+    assert_eq!(state.system_runtime.pending_wake_count(), 1);
+
+    tick_once(&mut state, TickId::new(2), Instant::now()).unwrap();
+    assert_eq!(*runs.lock().unwrap(), vec![source, target]);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, target)
+            .unwrap()
+            .1,
+        1
+    );
+    assert_eq!(state.system_runtime.pending_wake_count(), 0);
+}
+
+#[test]
+fn startup_still_rejects_unsupported_owner_capabilities() {
+    use crate::server::parallel::{OwnerJob, OwnerPatch};
+    use crate::server::registry::{
+        OwnerPartition, ResourceId, SystemDescriptor, SystemHandlerError, SystemId,
+    };
+
+    fn rejected(descriptor: SystemDescriptor) -> std::io::Error {
+        let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+        startup.register_system(
+            descriptor,
+            |_: &OwnerJob| -> Result<OwnerPatch, SystemHandlerError> {
+                Err(SystemHandlerError::Rejected("unused".into()))
+            },
+        );
+        startup.phase_plan().err().unwrap()
+    }
+
+    // Global-partition work is a coordinator adapter, not an owner batch.
+    let error = rejected(
+        SystemDescriptor::new(
+            SystemId::new("test:global_owner").unwrap(),
+            Phase::Simulation,
+            OwnerPartition::Global,
+            1,
+            0,
+        )
+        .write(ResourceId::new("test:effect_state").unwrap()),
+    );
+    assert_eq!(error.kind(), ErrorKind::Unsupported);
+    assert!(
+        error.to_string().contains("global partition"),
+        "unexpected message: {error}"
+    );
+
+    // An owner system with no declared owner-state write is not a valid owner
+    // system — even when it declares effects.
+    let error = rejected(SystemDescriptor::new(
+        SystemId::new("test:writeless_effects").unwrap(),
+        Phase::Simulation,
+        OwnerPartition::Entity,
+        1,
+        8,
+    ));
+    assert_eq!(error.kind(), ErrorKind::Unsupported);
+    assert!(
+        error.to_string().contains("no owner-state write"),
+        "unexpected message: {error}"
+    );
+
+    // Owner-system neighbour snapshots are not implemented.
+    let error = rejected(
+        SystemDescriptor::new(
+            SystemId::new("test:neighbor_owner").unwrap(),
+            Phase::Simulation,
+            OwnerPartition::Chunk,
+            1,
+            0,
+        )
+        .neighbor_radius(1)
+        .write(ResourceId::new("test:effect_state").unwrap()),
+    );
+    assert_eq!(error.kind(), ErrorKind::Unsupported);
+    assert!(
+        error.to_string().contains("neighbor"),
+        "unexpected message: {error}"
+    );
+
+    // The lifted case: an effect declaration with no other unsupported
+    // capability now passes the startup gate.
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            SystemId::new("test:effect_owner").unwrap(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            8,
+        )
+        .write(ResourceId::new("test:effect_state").unwrap()),
+        |_: &OwnerJob| -> Result<OwnerPatch, SystemHandlerError> {
+            Err(SystemHandlerError::Rejected("unused".into()))
+        },
+    );
+    startup.phase_plan().unwrap();
+}
+
+#[test]
+fn startup_effect_overflow_defers_without_failing_durability() {
+    use crate::server::effects::EffectKindId;
+    use crate::server::entities::EntityId;
+    use crate::server::entities::wake::{EntityWake, WAKE_KIND_ID};
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use crate::server::runtime::owner_effects::{EmittedOwnerEffect, OwnerEffectPatch};
+
+    let system = SystemId::new("test:effect_overflow").unwrap();
+    let owners = [OwnerKey::Entity(1), OwnerKey::Entity(2)];
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            8,
+        )
+        .effects_per_job(1)
+        .write(ResourceId::new("test:effect_state").unwrap()),
+        move |job: &OwnerJob| {
+            let kind = EffectKindId::new(WAKE_KIND_ID).unwrap();
+            let emissions = vec![
+                EmittedOwnerEffect::new(
+                    kind.clone(),
+                    EntityWake {
+                        id: EntityId::new(1).unwrap(),
+                    },
+                ),
+                EmittedOwnerEffect::new(
+                    kind,
+                    EntityWake {
+                        id: EntityId::new(2).unwrap(),
+                    },
+                ),
+            ];
+            Ok(OwnerPatch::new(
+                job,
+                OwnerEffectPatch::new(OwnerData::new(1u64), emissions),
+                PatchUsage {
+                    writes: 1,
+                    effects: 2,
+                    estimated_bytes: 8,
+                },
+            ))
+        },
+    );
+    for owner in owners {
+        startup.seed_owner(system.clone(), owner, 0u64);
+    }
+
+    let save = TestSave::new("startup-effect-overflow");
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let before = owners.map(|owner| {
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, owner)
+            .unwrap()
+    });
+    let error = tick_once(&mut state, TickId::new(1), Instant::now()).unwrap_err();
+    // Over-bound work defers; it never takes the coordinator's InvalidData
+    // path, which would stop the coordinator.
+    assert_eq!(error.kind(), ErrorKind::WouldBlock);
+    assert!(!state.durability.failed);
+    // Nothing committed: the over-bound producer output was rejected whole.
+    assert_eq!(
+        owners.map(|owner| {
+            state
+                .system_runtime
+                .owner_value::<u64>(&system, owner)
+                .unwrap()
+        }),
+        before
+    );
+    assert_eq!(state.system_runtime.pending_wake_count(), 0);
+}
+
+#[test]
+fn startup_registered_effects_are_optional_for_convergence() {
+    use crate::server::entities::EntityId;
+    use crate::server::parallel::OwnerKey;
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use std::sync::{Arc, Mutex};
+
+    fn converge(drop_effects: bool) -> (Vec<[u64; 3]>, u64) {
+        let system = SystemId::new("test:effect_converge").unwrap();
+        let owners = [
+            OwnerKey::Entity(1),
+            OwnerKey::Entity(2),
+            OwnerKey::Entity(3),
+        ];
+        let runs = Arc::new(Mutex::new(Vec::new()));
+        let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+        startup.register_system(
+            SystemDescriptor::new(
+                system.clone(),
+                Phase::Simulation,
+                OwnerPartition::Entity,
+                1,
+                8,
+            )
+            .write(ResourceId::new("test:effect_state").unwrap()),
+            saturating_wake_emitter(owners[0], EntityId::new(3).unwrap(), Arc::clone(&runs), 3),
+        );
+        for (owner, seed) in owners.iter().zip([0u64, 3, 0]) {
+            startup.seed_owner(system.clone(), *owner, seed);
+        }
+        let save = TestSave::new("startup-effect-converge");
+        let mut state =
+            server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+        state
+            .system_runtime
+            .set_drop_registered_effects(drop_effects);
+        let mut history = Vec::new();
+        let mut target_saturated_at = 0;
+        for tick in 1..=12u64 {
+            tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
+            let values = owners.map(|owner| {
+                state
+                    .system_runtime
+                    .owner_value::<u64>(&system, owner)
+                    .unwrap()
+                    .1
+            });
+            if target_saturated_at == 0 && values[2] == 3 {
+                target_saturated_at = tick;
+            }
+            history.push(values);
+        }
+        (history, target_saturated_at)
+    }
+
+    let (live_history, live_saturated) = converge(false);
+    let (drop_history, drop_saturated) = converge(true);
+    // Same final state with every effect dropped: a lost effect costs
+    // latency, never state.
+    assert_eq!(live_history.last(), Some(&[3, 3, 3]));
+    assert_eq!(live_history.last(), drop_history.last());
+    // ... but the woken owner gets there sooner with delivery live.
+    assert!(
+        live_saturated < drop_saturated,
+        "live saturated at {live_saturated}, dropped at {drop_saturated}"
+    );
+}
