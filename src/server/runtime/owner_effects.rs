@@ -17,9 +17,9 @@
 //! tick at the earliest.
 
 use super::super::effects::{
-    EffectKindId, EffectKindRegistryFrozen, RegisteredEffectBuffer, RegisteredEffectLimits,
-    route_registered_effects, MAX_EFFECTS_PER_BATCH, MAX_EFFECTS_PER_OWNER,
-    MAX_EFFECTS_PER_PRODUCER_TICK,
+    EffectKindId, EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH, MAX_EFFECTS_PER_OWNER,
+    MAX_EFFECTS_PER_PRODUCER_TICK, RegisteredEffectBuffer, RegisteredEffectLimits,
+    route_registered_effects,
 };
 use super::super::parallel::{
     BatchId, JobKey, OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerStore, OwnerWaveLimits,
@@ -163,12 +163,8 @@ pub(in crate::server) fn route_and_consume(
     let batch = route_registered_effects(
         intents,
         RegisteredEffectLimits {
-            total_deliveries: system
-                .max_effects_per_tick()
-                .min(MAX_EFFECTS_PER_BATCH),
-            per_destination: system
-                .max_effects_per_tick()
-                .min(MAX_EFFECTS_PER_OWNER),
+            total_deliveries: system.max_effects_per_tick().min(MAX_EFFECTS_PER_BATCH),
+            per_destination: system.max_effects_per_tick().min(MAX_EFFECTS_PER_OWNER),
             payload_bytes: RegisteredEffectLimits::default().payload_bytes,
         },
     )
@@ -205,9 +201,7 @@ pub(in crate::server) fn route_and_consume(
             if usage.writes != 0 || usage.effects != 0 {
                 return Err(blocked(format!(
                     "effect consumer for {:?} declares writes={} effects={}: consumers schedule work and must not write authoritative state",
-                    group.owner,
-                    usage.writes,
-                    usage.effects
+                    group.owner, usage.writes, usage.effects
                 )));
             }
             if usage.estimated_bytes > limits.max_patch_bytes_per_job {

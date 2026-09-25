@@ -11,8 +11,8 @@
 use super::super::effects::{EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH};
 use super::super::parallel::{
     BatchId, JobKey, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY, MAX_PHASE_WORKERS,
-    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerStore, OwnerStoreError, OwnerWaveLimits,
-    PhaseExecutor, ValidatedOwnerWave,
+    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerStore, OwnerStoreError, OwnerWaveError,
+    OwnerWaveLimits, PhaseExecutor, ValidatedOwnerWave,
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
@@ -114,10 +114,7 @@ impl SystemRuntime {
     }
 
     pub(in crate::server) fn pending_wake_count(&self) -> usize {
-        self.pending_wakes
-            .values()
-            .map(BTreeSet::len)
-            .sum()
+        self.pending_wakes.values().map(BTreeSet::len).sum()
     }
 
     /// Executes one registered handler as an independently ordered owner
@@ -327,11 +324,19 @@ impl SystemRuntime {
                 Ok(())
             },
         )
-        .map_err(|error| {
-            io::Error::other(format!(
+        .map_err(|error| match error {
+            OwnerWaveError::JobEffectOverflow { actual, limit, .. }
+            | OwnerWaveError::PhaseEffectOverflow { actual, limit } => io::Error::new(
+                io::ErrorKind::WouldBlock,
+                format!(
+                    "registered system {} defers: effect bound exceeded ({actual} > {limit})",
+                    id.as_str()
+                ),
+            ),
+            _ => io::Error::other(format!(
                 "registered system {} wave rejected: {error:?}",
                 id.as_str()
-            ))
+            )),
         })?;
         // Effects route and consume at the commit barrier, before anything
         // commits: a routing, bound, or consumer violation rejects the whole
@@ -348,10 +353,13 @@ impl SystemRuntime {
             self.drop_registered_effects,
         )
         .map_err(|error| {
-            io::Error::other(format!(
-                "registered system {} effects rejected: {error}",
-                id.as_str()
-            ))
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "registered system {} effects rejected: {error}",
+                    id.as_str()
+                ),
+            )
         })?;
         let staged_wakes: usize = self.pending_wakes.values().map(BTreeSet::len).sum();
         if staged_wakes.saturating_add(wakes.len()) > MAX_PENDING_OWNER_WAKES {
