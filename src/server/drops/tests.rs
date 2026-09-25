@@ -1,5 +1,6 @@
 use super::persistence::{HEADER, TEMP_SEQUENCE};
 use super::*;
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 pub(super) fn temp_root(prefix: &str) -> std::path::PathBuf {
@@ -45,17 +46,31 @@ pub(super) fn insert_entry(
     if age < LIFETIME {
         drops.active.insert(id);
     }
+    let previous_next = drops.next_id;
     drops.next_id = drops.next_id.max(id.saturating_add(1));
+    if drops.next_id != previous_next {
+        drops.allocator_dirty = true;
+    }
+    drops.index_insert(id, position);
 }
 
 pub(super) fn assert_spatial_members_match_entries(drops: &Drops) {
     assert_eq!(drops.entries.len(), drops.spatial.len());
     assert_eq!(drops.entries.len(), drops.expiry.len());
+    let member_total: usize = drops.chunk_members.values().map(BTreeSet::len).sum();
+    assert_eq!(drops.entries.len(), member_total);
     for (&id, entry) in &drops.entries {
         assert!(drops.spatial.contains(id));
         assert!(drops.expiry.contains(id));
         let candidates = drops.spatial.query_aabb(entry.position, entry.position);
         assert!(candidates.contains(&id));
+        let chunk = super::chunk_of(entry.position);
+        assert!(
+            drops
+                .chunk_members
+                .get(&chunk)
+                .is_some_and(|members| members.contains(&id))
+        );
     }
 }
 

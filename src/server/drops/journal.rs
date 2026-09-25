@@ -8,7 +8,7 @@ use crate::items::ItemId;
 use crate::server::journal::{CompactedDrop, DropCompaction, StateKey};
 use std::sync::Arc;
 
-use super::{DropEntityPayload, Drops, Entry, LIFETIME, invalid, unix_ms};
+use super::{DropEntityPayload, Drops, Entry, LIFETIME, chunk_of, invalid, unix_ms};
 
 impl Drops {
     /// Startup applies the latest journal values over the validated BGDP
@@ -57,8 +57,10 @@ impl Drops {
         let mut touched = false;
         for (id, owner) in owners {
             if owner.is_empty() {
+                let position = self.entries.get(&id).map(|entry| entry.position);
                 if self.entries.remove(&id).is_some() {
                     self.remove_entry_indexes(id);
+                    self.index_remove(id, position.expect("removed drop has a position"));
                     touched = true;
                 }
                 self.active.remove(&id);
@@ -76,12 +78,14 @@ impl Drops {
                 entry.age_at_load = age;
                 entry.age_since = Instant::now();
                 self.expiry.insert(id, age, entry.age_since);
+                let position = entry.position;
                 // Recovery overlays ownership, not motion state. Preserve a
                 // checkpointed sleeping drop instead of waking it due to a
                 // count-only change.
                 if age >= LIFETIME {
                     self.active.remove(&id);
                 }
+                self.chunk_dirty.insert(chunk_of(position));
                 touched = true;
             } else {
                 let position = positions
@@ -97,12 +101,16 @@ impl Drops {
                 if age < LIFETIME {
                     self.active.insert(id);
                 }
+                self.index_insert(id, position);
                 touched = true;
             }
         }
         if let Some(value) = allocator {
             let previous = self.next_id;
             self.next_id = self.next_id.max(value);
+            if self.next_id != previous {
+                self.allocator_dirty = true;
+            }
             touched |= self.next_id != previous;
         }
         if touched {

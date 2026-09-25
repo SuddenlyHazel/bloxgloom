@@ -4,7 +4,8 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use super::{
-    DropEntityPayload, Drops, Entry, LIFETIME, distance_sq, invalid, journal, spatial, unix_ms,
+    DropEntityPayload, Drops, Entry, LIFETIME, chunk_of, distance_sq, invalid, journal, spatial,
+    unix_ms,
 };
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
@@ -268,8 +269,16 @@ impl Drops {
         self.validate_plan(plan)?;
         for mutation in &plan.changes {
             if mutation.after.is_empty() {
+                let position = self
+                    .entries
+                    .get(&mutation.id)
+                    .map(|entry| entry.position);
                 if self.entries.remove(&mutation.id).is_some() {
                     self.remove_entry_indexes(mutation.id);
+                    self.index_remove(
+                        mutation.id,
+                        position.expect("removed drop has a position"),
+                    );
                 }
                 self.active.remove(&mutation.id);
                 continue;
@@ -284,12 +293,14 @@ impl Drops {
                 entry.age_at_load = age;
                 entry.age_since = Instant::now();
                 self.expiry.insert(mutation.id, age, entry.age_since);
+                let position = entry.position;
                 // A count/ownership update must not wake a settled drop. It
                 // can, however, make an entry ineligible for further physics
                 // if its persisted age is already past the lifetime.
                 if age >= LIFETIME {
                     self.active.remove(&mutation.id);
                 }
+                self.chunk_dirty.insert(chunk_of(position));
             } else {
                 // `validate_plan` proved this before the first mutation, so the
                 // application half is deliberately infallible.
@@ -307,10 +318,14 @@ impl Drops {
                 if age < LIFETIME {
                     self.active.insert(mutation.id);
                 }
+                self.index_insert(mutation.id, position);
             }
         }
         if let Some((before, after)) = plan.allocator {
             debug_assert!(self.next_id == before || self.next_id == after);
+            if self.next_id != after {
+                self.allocator_dirty = true;
+            }
             self.next_id = self.next_id.max(after);
         }
         if !plan.changes.is_empty() || plan.allocator.is_some() {

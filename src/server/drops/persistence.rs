@@ -1,5 +1,5 @@
 //! Versioned BGDP snapshot framing, validation, and atomic checkpoint writes.
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -69,6 +69,9 @@ impl Drops {
             active: BTreeSet::new(),
             spatial: spatial::DropSpatialIndex::new(),
             expiry: expiry::ExpiryIndex::default(),
+            chunk_members: BTreeMap::new(),
+            chunk_dirty: BTreeSet::new(),
+            allocator_dirty: false,
             next_id: u64::from_le_bytes(bytes[14..22].try_into().unwrap()),
             revision: u64::from_le_bytes(bytes[6..14].try_into().unwrap()),
             path: Some(path),
@@ -159,6 +162,7 @@ impl Drops {
             return Err(invalid("invalid drops record count"));
         }
         drops.next_id = drops.next_id.max(1);
+        drops.rebuild_chunk_members();
         Ok(drops)
     }
 

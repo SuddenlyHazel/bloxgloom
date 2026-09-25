@@ -17,7 +17,8 @@ use crate::inventory::Stack;
 use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 use crate::server::entities::EntityPayload;
-use std::collections::{BTreeSet, HashMap};
+use crate::world::{ChunkKey, world_to_chunk};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,6 +48,15 @@ pub(super) struct Drops {
     active: BTreeSet<u64>,
     spatial: spatial::DropSpatialIndex,
     expiry: expiry::ExpiryIndex,
+    /// Chunk-owner membership for bounded per-chunk checkpoints. Every live
+    /// entry belongs to exactly one chunk set; empty chunk sets are removed.
+    chunk_members: BTreeMap<ChunkKey, BTreeSet<u64>>,
+    /// Chunks whose checkpoint shard no longer matches live state. Marked at
+    /// every mutation site (spawn, removal, count change, motion) so the
+    /// checkpoint path serializes only dirty chunks instead of all drops.
+    chunk_dirty: BTreeSet<ChunkKey>,
+    /// The allocator checkpoint no longer matches `next_id`.
+    allocator_dirty: bool,
     next_id: u64,
     revision: u64,
     path: Option<PathBuf>,
@@ -65,6 +75,9 @@ impl Drops {
             active: BTreeSet::new(),
             spatial: spatial::DropSpatialIndex::new(),
             expiry: expiry::ExpiryIndex::default(),
+            chunk_members: BTreeMap::new(),
+            chunk_dirty: BTreeSet::new(),
+            allocator_dirty: false,
             next_id: 1,
             revision: 0,
             path: None,
@@ -120,13 +133,16 @@ impl Drops {
                 entry.age_at_load = Duration::ZERO;
                 entry.age_since = Instant::now();
                 self.expiry.insert(id, Duration::ZERO, entry.age_since);
+                let position = entry.position;
                 count -= taken;
+                self.chunk_dirty.insert(chunk_of(position));
                 self.revision = self.revision.wrapping_add(1);
                 continue;
             }
             let taken = count.min(STACK_LIMIT);
             let id = self.next_id;
             self.next_id = self.next_id.wrapping_add(1).max(1);
+            self.allocator_dirty = true;
             let age_since = Instant::now();
             self.entries.insert(
                 id,
@@ -142,6 +158,7 @@ impl Drops {
             self.spatial.insert(id, position);
             self.expiry.insert(id, Duration::ZERO, age_since);
             self.active.insert(id);
+            self.index_insert(id, position);
             count -= taken;
             self.revision = self.revision.wrapping_add(1);
         }
@@ -195,14 +212,17 @@ impl Drops {
     #[cfg(test)]
     pub(super) fn take(&mut self, id: u64, count: u16) {
         if let Some(entry) = self.entries.get_mut(&id) {
+            let position = entry.position;
             let mut payload = entry.drop_payload().clone();
             if count >= payload.stack.count {
                 self.entries.remove(&id);
                 self.remove_entry_indexes(id);
+                self.index_remove(id, position);
                 self.active.remove(&id);
             } else {
                 payload.stack.count -= count;
                 entry.payload = payload.into_entity_payload();
+                self.chunk_dirty.insert(chunk_of(position));
             }
             self.revision = self.revision.wrapping_add(1);
         }
@@ -218,6 +238,49 @@ impl Drops {
     fn remove_entry_indexes(&mut self, id: u64) {
         self.spatial.remove(id);
         self.expiry.remove(id);
+    }
+
+    /// Rebuilds chunk membership from scratch. Load paths use this once the
+    /// full entry set is known; the result starts checkpoint-clean.
+    fn rebuild_chunk_members(&mut self) {
+        self.chunk_members.clear();
+        self.chunk_dirty.clear();
+        self.allocator_dirty = false;
+        for (&id, entry) in &self.entries {
+            self.chunk_members
+                .entry(chunk_of(entry.position))
+                .or_default()
+                .insert(id);
+        }
+    }
+
+    fn index_insert(&mut self, id: u64, position: [f32; 3]) {
+        self.chunk_members
+            .entry(chunk_of(position))
+            .or_default()
+            .insert(id);
+        self.chunk_dirty.insert(chunk_of(position));
+    }
+
+    fn index_remove(&mut self, id: u64, position: [f32; 3]) {
+        let chunk = chunk_of(position);
+        if let Some(members) = self.chunk_members.get_mut(&chunk) {
+            members.remove(&id);
+            if members.is_empty() {
+                self.chunk_members.remove(&chunk);
+            }
+        }
+        self.chunk_dirty.insert(chunk);
+    }
+
+    fn index_moved(&mut self, id: u64, old_position: [f32; 3], new_position: [f32; 3]) {
+        transfer_chunk_member(
+            &mut self.chunk_members,
+            &mut self.chunk_dirty,
+            id,
+            old_position,
+            new_position,
+        );
     }
 }
 
@@ -271,6 +334,46 @@ fn unix_ms() -> u64 {
 }
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+/// Chunk-owner shard for one drop position. Drops move vertically only, so a
+/// move dirties at most its old and new chunk when it crosses a y boundary.
+pub(super) fn chunk_of(position: [f32; 3]) -> ChunkKey {
+    world_to_chunk(
+        position[0].floor() as i32,
+        position[1].floor() as i32,
+        position[2].floor() as i32,
+    )
+    .0
+}
+
+/// Field-disjoint chunk transfer used on the physics hot loop, where the
+/// active-set iteration already borrows the drop map.
+fn transfer_chunk_member(
+    members: &mut BTreeMap<ChunkKey, BTreeSet<u64>>,
+    dirty: &mut BTreeSet<ChunkKey>,
+    id: u64,
+    old_position: [f32; 3],
+    new_position: [f32; 3],
+) {
+    let old_chunk = chunk_of(old_position);
+    let new_chunk = chunk_of(new_position);
+    if old_chunk == new_chunk {
+        dirty.insert(new_chunk);
+        return;
+    }
+    // A cross-chunk move is one atomic membership transfer: the drop leaves
+    // the old owner set and joins the new one together, and both shards
+    // checkpoint before the move is considered durable.
+    if let Some(set) = members.get_mut(&old_chunk) {
+        set.remove(&id);
+        if set.is_empty() {
+            members.remove(&old_chunk);
+        }
+    }
+    members.entry(new_chunk).or_default().insert(id);
+    dirty.insert(old_chunk);
+    dirty.insert(new_chunk);
 }
 
 fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
