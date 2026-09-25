@@ -28,6 +28,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
+/// Fail-closed bound for one owner-wave WAL record. Waves that would exceed
+/// it defer with `WouldBlock` instead of pressing the journal's record
+/// limit; genuine journal validation failures still report `InvalidData`.
+pub(in crate::server) const MAX_OWNER_WAVE_BYTES: usize = 512 * 1024;
+
 /// Startup registration for one system's durable owner state.
 pub(in crate::server) struct OwnerSystemConfig {
     pub system: SystemId,
@@ -229,6 +234,101 @@ impl DurableOwnerStore {
         self.cells
             .get(&(system.clone(), owner))
             .map(|cell| cell.revision)
+    }
+
+    /// Registers one more system's codec after construction. Test harnesses
+    /// use this to install codecs without going through `ServerStartup`;
+    /// production builds the whole descriptor set up front so recovery sees
+    /// every system before the first replayed key.
+    pub fn register(&mut self, config: OwnerSystemConfig) -> io::Result<()> {
+        if self.descriptors.contains_key(&config.system) {
+            return Err(io::Error::other(format!(
+                "duplicate durable owner system {}",
+                config.system.as_str()
+            )));
+        }
+        self.descriptors.insert(
+            config.system,
+            CellDescriptor {
+                codec: config.codec,
+                codec_version: config.codec_version,
+                max_bytes: config.max_bytes,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn is_registered(&self, system: &SystemId) -> bool {
+        self.descriptors.contains_key(system)
+    }
+
+    /// Registered systems in canonical order, for deterministic cross-system
+    /// scans such as effect-destination lookup.
+    pub fn systems(&self) -> impl Iterator<Item = &SystemId> + '_ {
+        self.descriptors.keys()
+    }
+
+    pub fn owner_count(&self, system: &SystemId) -> usize {
+        self.cells
+            .keys()
+            .filter(|(candidate, _)| candidate == system)
+            .count()
+    }
+
+    /// Every live owner of one system in stable order. The live scheduler
+    /// drives its round-robin rotation from this set; commits maintain the
+    /// sparse active/due indexes separately.
+    pub fn owners_of(&self, system: &SystemId) -> Vec<OwnerKey> {
+        self.cells
+            .keys()
+            .filter(|(candidate, _)| candidate == system)
+            .map(|(_, owner)| *owner)
+            .collect()
+    }
+
+    /// Bounded round-robin prefix over one system's owners, mirroring the
+    /// retired transient store: a removed cursor key resumes at its
+    /// successor, wrapping visits low keys only after high keys.
+    pub fn owners_from(
+        &self,
+        system: &SystemId,
+        cursor: Option<OwnerKey>,
+        limit: usize,
+    ) -> Vec<OwnerKey> {
+        let owners = self.owners_of(system);
+        let count = limit.min(owners.len());
+        let mut selected = Vec::with_capacity(count);
+        if count == 0 {
+            return selected;
+        }
+        if let Some(cursor) = cursor {
+            selected.extend(
+                owners
+                    .iter()
+                    .copied()
+                    .filter(|owner| *owner >= cursor)
+                    .take(count),
+            );
+            selected.extend(
+                owners
+                    .iter()
+                    .copied()
+                    .filter(|owner| *owner < cursor)
+                    .take(count - selected.len()),
+            );
+        } else {
+            selected.extend(owners.iter().copied().take(count));
+        }
+        selected
+    }
+
+    pub fn successor(&self, system: &SystemId, owner: OwnerKey) -> Option<OwnerKey> {
+        let mut owners = self.owners_of(system);
+        owners.retain(|candidate| *candidate > owner);
+        owners
+            .into_iter()
+            .next()
+            .or_else(|| self.owners_of(system).into_iter().next())
     }
 
     pub fn snapshot(&self, system: &SystemId, owner: OwnerKey) -> Option<(u64, OwnerData)> {
@@ -491,6 +591,87 @@ impl DurableOwnerStore {
             }
         }
         Ok(count)
+    }
+
+    /// Applies already-committed owner-domain changes after their WAL receipt,
+    /// whether they arrived in a standalone owner wave or piggybacked on an
+    /// entity transaction through `add_related_change`. Every before-value is
+    /// rechecked against the live cell (absent reads as empty, matching a
+    /// fresh insert), so a mismatch is genuine corruption: the WAL committed
+    /// but memory disagrees, and the coordinator must stop. Capacity pressure
+    /// can never surface here — a committed record already passed its bound —
+    /// so every failure reports `InvalidData`.
+    ///
+    /// Non-owner keys are ignored; the caller filters the transaction's
+    /// change set to this domain.
+    pub fn apply_replayed(&mut self, changes: &[Change]) -> io::Result<()> {
+        for change in changes {
+            if change.key.domain != OWNER_STATE_DOMAIN {
+                continue;
+            }
+            let Some((system_name, owner)) = decode_owner_state_key(&change.key) else {
+                return Err(invalid_data("owner state key is malformed"));
+            };
+            let system = SystemId::new(system_name)
+                .map_err(|_| invalid_data("owner state key has a bad system id"))?;
+            let descriptor = self
+                .descriptors
+                .get(&system)
+                .ok_or_else(|| invalid_data("owner state key names an unregistered system"))?;
+            let current = match self.cells.get(&(system.clone(), owner)) {
+                Some(cell) => encode_cell_value(
+                    cell.revision,
+                    descriptor.codec_version,
+                    cell.due_tick,
+                    &cell.encoded,
+                ),
+                None => Vec::new(),
+            };
+            if current != change.before {
+                return Err(invalid_data("owner replay precondition mismatch"));
+            }
+            let (revision, stored_version, due_tick, payload) = decode_cell_value(&change.after)?;
+            if payload.len() > descriptor.max_bytes {
+                return Err(invalid_data(
+                    "replayed owner value exceeds its declared bound",
+                ));
+            }
+            let payload = if stored_version == descriptor.codec_version {
+                payload
+            } else {
+                descriptor
+                    .codec
+                    .migrate(stored_version, descriptor.codec_version, &payload)
+                    .map_err(|_| invalid_data("owner value migration failed"))?
+            };
+            if payload.len() > descriptor.max_bytes {
+                return Err(invalid_data(
+                    "migrated owner value exceeds its declared bound",
+                ));
+            }
+            let decoded = descriptor
+                .codec
+                .decode(&payload)
+                .map_err(|_| invalid_data("replayed owner value does not decode"))?;
+            let key = (system, owner);
+            if let Some(previous_due) = self.cells.get(&key).and_then(|cell| cell.due_tick) {
+                self.schedule.remove(&(previous_due, key.0.clone(), key.1));
+            }
+            self.cells.insert(
+                key.clone(),
+                DurableCell {
+                    revision,
+                    value: decoded,
+                    encoded: payload,
+                    due_tick,
+                },
+            );
+            self.active.insert(key.clone());
+            if let Some(due) = due_tick {
+                self.schedule.insert((due, key.0, key.1), ());
+            }
+        }
+        Ok(())
     }
 
     /// Takes up to `limit` active owners in stable order. Driving work from
