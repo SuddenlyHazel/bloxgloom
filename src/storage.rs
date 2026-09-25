@@ -22,7 +22,7 @@ const WORLD_META: &str = "world.meta";
 const CONTENT_MAP: &str = "content.map";
 pub(crate) const WORLD_LOCK: &str = ".world.lock";
 pub(crate) const CONVERSION_INCOMPLETE: &str = ".conversion-incomplete";
-const SAVE_FORMAT_VERSION: u16 = 5;
+const SAVE_FORMAT_VERSION: u16 = 6;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -391,7 +391,7 @@ fn resolve_content_map_with(
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             if !new_world {
-                return Err(invalid_data("v5 world is missing content manifest"));
+                return Err(invalid_data("v6 world is missing content manifest"));
             }
             write_content_map(root, &current)?;
             Ok(Arc::new(catalog.clone()))
