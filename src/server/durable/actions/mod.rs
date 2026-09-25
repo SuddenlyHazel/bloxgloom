@@ -9,6 +9,7 @@ use crate::server::{
 use crate::world::BlockId;
 
 mod admin;
+pub(in crate::server) mod entity;
 pub(in crate::server) mod kiln;
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -161,7 +162,7 @@ pub(in crate::server) fn plan_durable_request(
                     target,
                     payload,
                 } => {
-                    return kiln::plan_interact(
+                    return entity::plan_interact(
                         state,
                         *id,
                         profile,
@@ -255,7 +256,7 @@ pub(in crate::server) fn plan_durable_request(
                 entities: None,
             }))
         }
-        DurableRequest::EntityTick { id } => kiln::plan_entity_tick(state, *id, tick.get()),
+        DurableRequest::EntityTick { id } => entity::plan_entity_tick(state, *id, tick.get()),
     }
 }
 
