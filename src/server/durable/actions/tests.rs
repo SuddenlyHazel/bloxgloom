@@ -1728,6 +1728,164 @@ fn entity_neighbour_view_bound_is_an_error() {
     fs::remove_dir_all(path).unwrap();
 }
 
+#[test]
+fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("neighbour-drain-commit");
+    let roamer_type = crate::content::EntityTypeId(70_009);
+    let watcher_type = crate::content::EntityTypeId(70_006);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [(roamer_type, "test:roamer"), (watcher_type, "test:watcher")] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x4452_4149_4e00_0001,
+            })
+            .unwrap();
+    }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:roamer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:watcher".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(WatcherTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    let y = anchor.y;
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: watcher_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let watcher_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    // The neighbour's chunk is never preloaded, so the declared read set
+    // misses on the first planning pass and the work must defer.
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: roamer_type,
+            position: [20.5, y as f32, 0.5],
+            payload: EntityPayload::new(3u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let roamer_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+
+    // The due tick enters through the coordinator's own queueing.
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+    assert!(
+        state.durability.queued.iter().any(
+            |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
+        )
+    );
+    super::super::coordinator::process_durable_actions(&mut state, TickId::new(6), Instant::now())
+        .unwrap();
+    // The deferring pass must preserve the work: still queued, nothing
+    // staged, schedule untouched, and the entity still due.
+    assert!(
+        state.durability.queued.iter().any(
+            |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
+        )
+    );
+    assert!(state.durability.pending.is_empty());
+    assert_eq!(
+        state.entities.snapshot(watcher_id).unwrap().next_tick,
+        Some(6)
+    );
+    assert!(state.entities.due_entities(6, 8).contains(&watcher_id));
+
+    // Keep draining the coordinator only. No queueing helper runs again: the
+    // re-queued request must be retried and committed by the drain itself.
+    for _ in 0..5_000 {
+        crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(6),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.queued.is_empty() && state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(state.durability.queued.is_empty());
+    assert!(state.durability.pending.is_empty());
+    assert!(!state.durability.failed);
+
+    // Committed schedule: the planned due tick advanced and the due scan
+    // reflects it. The payload proves a real commit, not just rescheduling.
+    let snapshot = state.entities.snapshot(watcher_id).unwrap();
+    assert_eq!(snapshot.next_tick, Some(11));
+    let above = state
+        .world
+        .cached_block(anchor.x, anchor.y + 1, anchor.z)
+        .unwrap();
+    let expected = u8::from(state.world.catalog().block_flags(above) & crate::content::SOLID != 0);
+    assert_eq!(
+        snapshot.private_payload.downcast_ref::<u8>(),
+        Some(&expected)
+    );
+    assert!(!state.entities.due_entities(6, 8).contains(&watcher_id));
+    assert!(
+        state
+            .entities
+            .due_tick_entries(11, None, 8)
+            .contains(&(11, watcher_id))
+    );
+    let _ = roamer_id;
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
 struct WideCodec;
 
 impl crate::server::entities::EntityPayloadCodec for WideCodec {
