@@ -116,11 +116,11 @@ pub(super) fn capture_view_for_plan(
 /// capture bound is stable: no amount of waiting makes more than
 /// `MAX_PLAN_NEIGHBOURS` neighbours fit. Deferring would re-queue forever
 /// and pin a deferred queue slot, starving other entities' work; truncating
-/// would plan from a partial neighbour set; silently rejecting the request
-/// would let the due scan re-enqueue the same unplannable entity every
-/// pass. So the stable case escalates as the coordinator's reported
-/// unrecoverable outcome (`InvalidData` closes durable admission), matching
-/// how other entity-state violations fail closed.
+/// would plan from a partial neighbour set. So the stable case rejects just
+/// this ONE entity's work as a capacity outcome (`QuotaExceeded`): the
+/// coordinator turns that into a per-request rejection, drops the tick, and
+/// keeps every other entity progressing. Genuine state corruption keeps the
+/// coordinator-fatal `InvalidData` outcome; capacity must never take it.
 pub(super) fn capture_entity_view_for_plan(
     state: &mut State,
     location: &EntityLocation,
@@ -135,7 +135,7 @@ pub(super) fn capture_entity_view_for_plan(
             .public_views_for_chunk_bounded(key, MAX_PLAN_NEIGHBOURS)
             .map_err(|_| {
                 io::Error::new(
-                    ErrorKind::InvalidData,
+                    ErrorKind::QuotaExceeded,
                     "entity neighbour page exceeds its capture bound",
                 )
             })?;
@@ -144,13 +144,13 @@ pub(super) fn capture_entity_view_for_plan(
     let view = EntityView::assemble(collected, exclude);
     if view.len() > MAX_PLAN_NEIGHBOURS {
         return Err(io::Error::new(
-            ErrorKind::InvalidData,
+            ErrorKind::QuotaExceeded,
             "entity neighbour view exceeds its capture count bound",
         ));
     }
     if view.bytes() > MAX_PLAN_NEIGHBOUR_BYTES {
         return Err(io::Error::new(
-            ErrorKind::InvalidData,
+            ErrorKind::QuotaExceeded,
             "entity neighbour view exceeds its capture byte bound",
         ));
     }

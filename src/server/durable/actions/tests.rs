@@ -1587,7 +1587,7 @@ fn entity_planner_unavailable_neighbour_defers() {
 }
 
 #[test]
-fn entity_neighbour_view_bound_is_an_error() {
+fn entity_neighbour_view_bound_rejects_one_entity_and_keeps_serving() {
     use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
     use crate::server::startup::StartupEntityType;
     use std::collections::BTreeSet;
@@ -1596,8 +1596,13 @@ fn entity_neighbour_view_bound_is_an_error() {
     let path = temp_save_dir("neighbour-bound-plan");
     let roamer_type = crate::content::EntityTypeId(70_009);
     let watcher_type = crate::content::EntityTypeId(70_006);
+    let healthy_type = crate::content::EntityTypeId(70_014);
     let mut catalog = crate::content::Catalog::builtins();
-    for (id, key) in [(roamer_type, "test:roamer"), (watcher_type, "test:watcher")] {
+    for (id, key) in [
+        (roamer_type, "test:roamer"),
+        (watcher_type, "test:watcher"),
+        (healthy_type, "test:healthy"),
+    ] {
         catalog
             .register_entity_type(crate::content::EntityTypeDef {
                 id,
@@ -1632,8 +1637,21 @@ fn entity_neighbour_view_bound_is_an_error() {
         interaction_policy: None,
         tick_planner: Some(Arc::new(WatcherTick)),
     });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:healthy".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(CounterTick)),
+    });
 
     let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    // The healthy entity stages through the WAL so the checkpoint mirror
+    // replays its tick commit; the watcher and its crowd are only ever read.
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let healthy_id = stage_mobile_spawn(&mut state, healthy_type, [0.5, 80.0, 0.5], 7);
     let mut anchor = None;
     for y in (1..100).rev() {
         let key = world_to_chunk(0, y, 0).0;
@@ -1649,92 +1667,117 @@ fn entity_neighbour_view_bound_is_an_error() {
         .world
         .cached_block(anchor.x, anchor.y, anchor.z)
         .expect("chosen anchor cell is resident");
-    let spawn = state
-        .entities
-        .prepare_spawn(EntitySpawn::Anchored {
+    // The watcher and its whole crowd stage through the WAL: direct spawns
+    // would move the WAL-owned watermark behind the journal's back and break
+    // the healthy commit this test drives next.
+    let watcher_id = stage_entity_spawn(
+        &mut state,
+        EntitySpawn::Anchored {
             entity_type: watcher_type,
             anchor,
             anchor_state: resident,
             footprint: vec![anchor],
             payload: EntityPayload::new(7u8),
             spawn_tick: 1,
-        })
-        .unwrap();
-    let watcher_id = spawn.entity_id();
-    state.entities.apply_committed(spawn).unwrap();
+        },
+    );
     // 40 roamers in each of two chunks inside the declared read set: every
     // page fits its per-chunk limit, but the assembled neighbour set is 80.
     // A capture that truncated to the 64-entry bound would plan happily.
+    let mut crowd = Vec::with_capacity(80);
     for (base_x, count) in [(20.5f32, 40u16), (-4.5f32, 40u16)] {
         for index in 0..count {
-            let spawn = state
-                .entities
-                .prepare_spawn(EntitySpawn::Mobile {
-                    entity_type: roamer_type,
-                    position: [base_x + f32::from(index) * 0.1, y as f32, 0.5],
-                    payload: EntityPayload::new(0u8),
-                    spawn_tick: 1,
-                })
-                .unwrap();
-            state.entities.apply_committed(spawn).unwrap();
+            crowd.push(EntitySpawn::Mobile {
+                entity_type: roamer_type,
+                position: [base_x + f32::from(index) * 0.1, y as f32, 0.5],
+                payload: EntityPayload::new(0u8),
+                spawn_tick: 1,
+            });
         }
     }
+    stage_entity_spawn_batch(&mut state, crowd);
 
-    // Drive the coordinator's own drain: while chunks load the request
-    // defers, and once the set is resident the stable over-cap condition
-    // must escalate as a reported failure instead of retrying forever.
-    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
-    let mut escalated = None;
-    let mut deferred_passes = 0;
-    for _ in 0..5_000 {
+    // Drive the coordinator's own drain: while chunks load the over-cap
+    // request defers, and once the set is resident only that ONE entity's
+    // work is rejected — everything else keeps committing and the
+    // coordinator never stops.
+    let mut settled_healthy_at = None;
+    for pass in 0..5_000 {
         crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
-        match super::super::coordinator::process_durable_actions(
+        super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+        super::super::coordinator::process_durable_actions(
             &mut state,
             TickId::new(6),
             Instant::now(),
-        ) {
-            Ok(()) => {
-                // Still waiting on the declared read set: the request is
-                // preserved across passes, not dropped or escalated early.
-                assert!(
-                    state.durability.queued.iter().any(
-                        |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
-                    )
-                );
-                deferred_passes += 1;
-            }
-            Err(error) => {
-                escalated = Some(error);
-                break;
+        )
+        .expect("a capacity condition must never stop the coordinator");
+        if state.durability.pending.is_empty()
+            && state.entities.snapshot(healthy_id).unwrap().revision == 2
+        {
+            if let Some(first) = settled_healthy_at {
+                if pass - first > 20 {
+                    break;
+                }
+            } else {
+                settled_healthy_at = Some(pass);
             }
         }
         std::thread::sleep(Duration::from_millis(1));
     }
     assert!(
-        deferred_passes > 0,
-        "missing chunks must defer before the bound trips"
+        settled_healthy_at.is_some(),
+        "unrelated work must progress past the over-cap entity"
     );
-    let error = escalated.expect("over-cap capture must escalate, not defer forever");
-    assert_eq!(error.kind(), ErrorKind::InvalidData, "{error}");
-    assert!(
-        error.to_string().contains("count bound"),
-        "expected the assembled-set bound to trip, got {error:?}"
-    );
-    // Fail closed: admission is reported shut, nothing was planned from a
-    // truncated set, and no deferred slot is pinned by the unplannable tick.
-    assert!(state.durability.failed);
+    // Fail per-entity, never global: admission stays open, other work
+    // committed, and the unplannable tick left its schedule alone.
+    assert!(!state.durability.failed);
     assert!(state.durability.pending.is_empty());
+    assert_eq!(
+        state
+            .entities
+            .snapshot(healthy_id)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&8u8)
+    );
+    assert_eq!(state.entities.snapshot(watcher_id).unwrap().revision, 1);
+    assert_eq!(
+        state.entities.snapshot(watcher_id).unwrap().next_tick,
+        Some(6)
+    );
+    assert!(state.entities.due_entities(7, 8).contains(&watcher_id));
+    // The stable over-cap condition rejects as capacity, not corruption: no
+    // truncation happened, and the coordinator is still serving. Missing
+    // chunks still defer first; only the resident set must reject.
+    let mut outcome = None;
+    for _ in 0..500 {
+        crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+        match plan_durable_request(
+            &mut state,
+            &DurableRequest::EntityTick { id: watcher_id },
+            TickId::new(6),
+        ) {
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            result => {
+                outcome = Some(
+                    result
+                        .as_ref()
+                        .map(|_| "planned".to_owned())
+                        .map_err(|error| (error.kind(), error.to_string())),
+                );
+                break;
+            }
+        }
+    }
+    let outcome = outcome.expect("the read set becomes resident");
     assert!(
-        !state.durability.queued.iter().any(
-            |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
-        )
+        matches!(&outcome, Err((ErrorKind::QuotaExceeded, reason)) if reason.contains("count bound")),
+        "expected the assembled-set bound to reject per-entity, got {outcome:?}"
     );
-    let closed = super::super::coordinator::process_durable_actions(
-        &mut state,
-        TickId::new(6),
-        Instant::now(),
-    );
-    assert!(closed.is_err(), "durable admission must stay closed");
+    assert!(!state.durability.failed);
 
     drop(state);
     fs::remove_dir_all(path).unwrap();
@@ -2007,10 +2050,12 @@ fn entity_neighbour_view_byte_bound_is_an_error() {
         TickId::new(6),
     );
     assert!(
-        matches!(result, Err(error) if error.kind() == ErrorKind::InvalidData
+        matches!(result, Err(error) if error.kind() == ErrorKind::QuotaExceeded
             && error.to_string().contains("byte bound")),
-        "the capture byte bound must be enforced as an error, never truncated"
+        "the capture byte bound must reject per-entity as capacity, never truncate"
     );
+    // A capacity rejection is per-entity: the coordinator stays up.
+    assert!(!state.durability.failed);
 
     drop(state);
     fs::remove_dir_all(path).unwrap();
@@ -2263,6 +2308,60 @@ fn stage_mobile_spawn(
             spawn_tick: 1,
         },
     )
+}
+
+/// Stages a whole group of spawns as one WAL batch so the live store and
+/// the checkpoint mirror advance together. Direct `apply_committed` spawns
+/// would move the WAL-owned watermark behind the journal's back and break
+/// every later staged commit.
+fn stage_entity_spawn_batch(
+    state: &mut State,
+    spawns: Vec<crate::server::entities::EntitySpawn>,
+) -> Vec<crate::server::entities::EntityId> {
+    let prepared = state.entities.prepare_spawn_batch(spawns).unwrap();
+    let ids = prepared.entity_ids();
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the spawn batch");
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(prepared),
+        entity_wakes: Vec::new(),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(1), &action, None, Some(permit))
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(state, TickId::new(1), Instant::now())
+            .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        state.durability.pending.is_empty(),
+        "spawn batch must commit"
+    );
+    ids
 }
 
 fn spawn_poke_pair(
@@ -3372,6 +3471,7 @@ fn entity_tick_transfer_source_outside_view_rejects_the_plan() {
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
+
 #[test]
 fn chunk_request_failure_defers_without_verifying_any_preimage() {
     use crate::world::STONE;
@@ -3413,6 +3513,96 @@ fn chunk_request_failure_defers_without_verifying_any_preimage() {
     );
 
     drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+/// A mobile probe whose planner returns a due time that does not advance.
+/// That is genuine planner corruption, not capacity, and must still stop
+/// the coordinator.
+struct BadTick;
+
+impl crate::server::entities::EntityTickPolicy for BadTick {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(EntityError::InvalidType);
+        }
+        Ok(EntityTickPlan {
+            payload: None,
+            next_tick: due,
+            anchor_update: None,
+            block_states: Vec::new(),
+            wakes: Vec::new(),
+            transfer: None,
+        })
+    }
+}
+
+#[test]
+fn genuine_entity_corruption_still_stops_the_coordinator() {
+    use crate::server::entities::{EntityOwnership, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("neighbour-corrupt-fatal");
+    let bad_type = crate::content::EntityTypeId(70_015);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: bad_type,
+            key: "test:bad_tick".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x4241_4454_4900_0001,
+        })
+        .unwrap();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:bad_tick".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(BadTick)),
+    });
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let id = stage_mobile_spawn(&mut state, bad_type, [0.5, 80.0, 0.5], 7);
+
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+    let result = super::super::coordinator::process_durable_actions(
+        &mut state,
+        TickId::new(6),
+        Instant::now(),
+    );
+    let outcome = result
+        .as_ref()
+        .map(|_| "ok".to_owned())
+        .map_err(|error| (error.kind(), error.to_string()));
+    assert!(
+        matches!(&outcome, Err((ErrorKind::InvalidData, _))),
+        "genuine corruption must still stop the coordinator, got {outcome:?}"
+    );
+    assert!(state.durability.failed);
+    assert_eq!(state.entities.snapshot(id).unwrap().revision, 1);
+    let closed = super::super::coordinator::process_durable_actions(
+        &mut state,
+        TickId::new(6),
+        Instant::now(),
+    );
+    assert!(closed.is_err(), "durable admission must stay closed");
+
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
