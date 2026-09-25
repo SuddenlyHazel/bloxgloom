@@ -42,11 +42,9 @@ pub(super) fn capture_view_for_plan(
 ) -> io::Result<VoxelView> {
     let center_chunk = match location {
         EntityLocation::Anchored { anchor, .. } => anchor.chunk(),
-        EntityLocation::Mobile { position } => {
-            position_to_cell(*position)
-                .map_err(|_| corrupt("entity position is outside the world"))?
-                .chunk()
-        }
+        EntityLocation::Mobile { position } => position_to_cell(*position)
+            .map_err(|_| corrupt("entity position is outside the world"))?
+            .chunk(),
     };
     let mut keys = BTreeSet::new();
     if let EntityLocation::Anchored { footprint, .. } = location {
@@ -66,17 +64,21 @@ pub(super) fn capture_view_for_plan(
     }
     let catalog = state.world.catalog_arc();
     let mut chunks = Vec::with_capacity(keys.len());
+    let mut missing = Vec::new();
     for key in keys {
         match state.world.cached_arc_chunk(key) {
             Some(chunk) => chunks.push(chunk),
-            None => {
-                let _ = request_chunk(state, key)?;
-                return Err(io::Error::new(
-                    ErrorKind::WouldBlock,
-                    "entity view chunk is not resident",
-                ));
-            }
+            None => missing.push(key),
         }
+    }
+    if !missing.is_empty() {
+        for key in missing {
+            let _ = request_chunk(state, key)?;
+        }
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "entity view chunk is not resident",
+        ));
     }
     VoxelView::from_resident_chunks_in(chunks, catalog).map_err(|error| {
         io::Error::new(

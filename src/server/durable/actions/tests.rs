@@ -640,6 +640,100 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
     }
 }
 
+/// A non-kiln anchored probe that reads the cell above its anchor and
+/// branches its payload on solidity. Declares a one-chunk read radius.
+struct WatcherTick;
+
+impl crate::server::entities::EntityTickPolicy for WatcherTick {
+    fn read_radius_chunks(&self) -> u8 {
+        1
+    }
+
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        catalog: &crate::content::Catalog,
+        view: &crate::server::voxel_view::VoxelView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{
+            EntityBlockStateChange, EntityError, EntityPayload, EntityTickPlan,
+        };
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(EntityError::InvalidType);
+        }
+        let (anchor, anchor_state) = match &snapshot.location {
+            crate::server::entities::EntityLocation::Anchored {
+                anchor,
+                anchor_state,
+                ..
+            } => (*anchor, *anchor_state),
+            crate::server::entities::EntityLocation::Mobile { .. } => {
+                return Err(EntityError::WrongOwnership);
+            }
+        };
+        let above = view
+            .block(anchor.x, anchor.y + 1, anchor.z)
+            .map_err(|_| EntityError::InvalidType)?;
+        let solid = catalog.block_flags(above) & crate::content::SOLID != 0;
+        Ok(EntityTickPlan {
+            payload: Some(EntityPayload::new(u8::from(solid))),
+            next_tick: current_tick + 5,
+            anchor_update: None,
+            block_states: vec![EntityBlockStateChange {
+                cell: anchor,
+                before: anchor_state,
+                after: anchor_state,
+            }],
+        })
+    }
+}
+
+/// A radius-zero mobile probe that reads far outside its captured home
+/// chunk. A leaked read would plan successfully; the MissingChunk mapping
+/// must reject it instead.
+struct FarReadTick;
+
+impl crate::server::entities::EntityTickPolicy for FarReadTick {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        view: &crate::server::voxel_view::VoxelView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityPayload, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(EntityError::InvalidType);
+        }
+        let position = match &snapshot.location {
+            crate::server::entities::EntityLocation::Mobile { position } => *position,
+            crate::server::entities::EntityLocation::Anchored { .. } => {
+                return Err(EntityError::WrongOwnership);
+            }
+        };
+        match view.block(
+            position[0] as i32 + 64,
+            position[1] as i32,
+            position[2] as i32,
+        ) {
+            Err(_) => Err(EntityError::InvalidType),
+            Ok(_) => Ok(EntityTickPlan {
+                payload: Some(EntityPayload::new(42u8)),
+                next_tick: current_tick + 5,
+                anchor_update: None,
+                block_states: Vec::new(),
+            }),
+        }
+    }
+}
+
 #[test]
 fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
     use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
@@ -791,6 +885,195 @@ fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
     );
 
     drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_planner_branches_on_neighbor_and_replans_identically() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("watcher-neighbor-plan");
+    let watcher_type = crate::content::EntityTypeId(70_006);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: watcher_type,
+            key: "test:watcher".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x5741_5443_4800_0001,
+        })
+        .unwrap();
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:watcher".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(WatcherTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    // Scan a far column so most of the declared read set starts unloaded;
+    // the first plan attempts must defer through the loader path.
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(512, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(512, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(512, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    // The neighbor read may cross a chunk boundary; keep it resident so the
+    // first plan attempt exercises branching rather than deferral.
+    state
+        .world
+        .get_chunk(world_to_chunk(anchor.x, anchor.y + 1, anchor.z).0)
+        .unwrap();
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: watcher_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+
+    // Neighbor chunks stream in through the real deferral path; each
+    // WouldBlock requests the still-missing remainder of the read set.
+    let mut action = None;
+    let mut deferred = false;
+    for _ in 0..50 {
+        match plan_durable_request(
+            &mut state,
+            &DurableRequest::EntityTick { id },
+            TickId::new(6),
+        ) {
+            Ok(planned) => {
+                action = planned;
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                deferred = true;
+                for _ in 0..2_000 {
+                    crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            Err(error) => panic!("watcher tick must plan or defer, got {error:?}"),
+        }
+    }
+    assert!(deferred, "read set must miss at least one chunk");
+    let action = action.expect("watcher read set becomes resident");
+    assert!(action.world_edits.is_empty());
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+
+    // Identical inputs produce identical plans across repeated calls.
+    let snapshot = state.entities.snapshot(id).unwrap();
+    let view = entity::capture_view_for_plan(&mut state, &snapshot.location, 1).unwrap();
+    let catalog = state.world.catalog_arc();
+    let descriptor = state.entities.types().descriptor(watcher_type).unwrap();
+    let first = descriptor.plan_tick(&snapshot, 6, &catalog, &view).unwrap();
+    let second = descriptor.plan_tick(&snapshot, 6, &catalog, &view).unwrap();
+    assert_eq!(first.next_tick, second.next_tick);
+    assert_eq!(first.block_states, second.block_states);
+    let planned_byte = |plan: &crate::server::entities::EntityTickPlan| {
+        plan.payload.as_ref().unwrap().downcast_ref::<u8>().copied()
+    };
+    assert_eq!(planned_byte(&first), planned_byte(&second));
+    let above = state
+        .world
+        .cached_block(anchor.x, anchor.y + 1, anchor.z)
+        .unwrap();
+    assert_eq!(
+        planned_byte(&first),
+        Some(u8::from(
+            catalog.block_flags(above) & crate::content::SOLID != 0
+        )),
+        "planned payload branches on the neighboring block"
+    );
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_planner_read_outside_capture_is_an_error() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("planner-read-outside-capture");
+    let far_type = crate::content::EntityTypeId(70_007);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: far_type,
+            key: "test:far_read".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x4641_5232_4400_0001,
+        })
+        .unwrap();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:far_read".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(FarReadTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: far_type,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::InvalidInput),
+        "a read outside the captured set must error, not read air"
+    );
+    assert!(!state.durability.failed);
+
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
