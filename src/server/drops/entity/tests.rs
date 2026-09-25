@@ -8,8 +8,9 @@ fn drop_payload_round_trips_versioned_stack_data_but_projects_only_public_stack(
     };
     let item = ItemId::new(1);
     let stack = Stack::with_components(item, 127, 3, vec![4, 5, 6]).unwrap();
-    let payload = DropEntityPayload::new(stack, 1_234_567, Duration::from_millis(750));
-    let payload = EntityPayload::new(payload);
+    let payload = DropEntityPayload::new(stack, 1_234_567, Duration::from_millis(750))
+        .with_vertical_speed(-3.5)
+        .into_entity_payload();
     let bytes = codec.encode(&payload).unwrap();
     let decoded = codec.decode(&bytes).unwrap();
     assert_eq!(codec.encode(&decoded).unwrap(), bytes);

@@ -7,6 +7,7 @@ mod physics;
 mod planning;
 mod shards;
 mod spatial;
+mod tick;
 
 pub(super) use entity::{DropEntityPayload, register_entity_type};
 pub(super) use planning::DropPlan;

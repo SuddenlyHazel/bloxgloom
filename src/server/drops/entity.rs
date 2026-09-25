@@ -11,17 +11,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub(in crate::server) const DROP_ENTITY_TYPE: EntityTypeId = EntityTypeId(1);
-const DROP_PAYLOAD_FIXED_BYTES: usize = 4 + 2 + 8 + 8 + 2 + 2;
+const DROP_PAYLOAD_FIXED_BYTES: usize = 4 + 2 + 8 + 8 + 2 + 2 + 4;
 pub(in crate::server) const MAX_DROP_ENTITY_PAYLOAD_BYTES: usize =
     DROP_PAYLOAD_FIXED_BYTES + MAX_COMPONENT_BYTES;
 
-/// WAL-owned drop state. Position and velocity remain in the generic entity's
-/// checkpointed mobile motion field and are intentionally not duplicated here.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// WAL-owned drop state. Position stays in the generic entity's
+/// checkpointed mobile motion field and is intentionally not duplicated here;
+/// the fall speed rides with the payload so each motion tick stages
+/// position, speed, and schedule in one atomic record.
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::server) struct DropEntityPayload {
     pub(in crate::server) stack: Stack,
     pub(in crate::server) created_unix_ms: u64,
     pub(in crate::server) pickup_delay: Duration,
+    /// Last integrated fall speed in blocks per second, negative while
+    /// falling and zero at rest. Stored in the WAL payload so a restart
+    /// resumes the exact trajectory instead of re-deriving it.
+    pub(in crate::server) vertical_speed: f32,
 }
 
 impl DropEntityPayload {
@@ -34,11 +40,17 @@ impl DropEntityPayload {
             stack,
             created_unix_ms,
             pickup_delay,
+            vertical_speed: 0.0,
         }
     }
 
     pub(in crate::server) fn into_entity_payload(self) -> EntityPayload {
         EntityPayload::new(self)
+    }
+
+    pub(in crate::server) fn with_vertical_speed(mut self, vertical_speed: f32) -> Self {
+        self.vertical_speed = vertical_speed;
+        self
     }
 }
 
@@ -52,7 +64,8 @@ pub(in crate::server) fn register_entity_type(
         tick_policy: TickPolicy::EveryTick,
         max_payload_bytes: MAX_DROP_ENTITY_PAYLOAD_BYTES,
         codec: Arc::new(DropPayloadCodec { catalog }),
-    })
+    })?;
+    builder.register_tick_planner(DROP_ENTITY_TYPE, Arc::new(super::tick::DropTickPlanner))
 }
 
 struct DropPayloadCodec {
@@ -99,15 +112,27 @@ impl EntityPayloadCodec for DropPayloadCodec {
         {
             return Err(EntityCodecError::InvalidData);
         }
+        // The fall speed trails the variable-length components so the fixed
+        // header keeps its offsets.
+        let vertical_speed = f32::from_le_bytes(
+            bytes[bytes.len() - 4..]
+                .try_into()
+                .map_err(|_| EntityCodecError::InvalidData)?,
+        );
+        if !vertical_speed.is_finite() {
+            return Err(EntityCodecError::InvalidData);
+        }
         let components = if component_len == 0 {
             if component_version != 0 {
                 return Err(EntityCodecError::InvalidData);
             }
             None
         } else {
+            // Components sit between the 26-byte fixed header and the
+            // trailing fall speed.
             let payload = ComponentPayload::new(
                 component_version,
-                bytes[DROP_PAYLOAD_FIXED_BYTES..].to_vec(),
+                bytes[DROP_PAYLOAD_FIXED_BYTES - 4..bytes.len() - 4].to_vec(),
             )
             .ok_or(EntityCodecError::InvalidData)?;
             Some(Arc::new(payload))
@@ -125,6 +150,7 @@ impl EntityPayloadCodec for DropPayloadCodec {
             created_unix_ms,
             Duration::from_millis(pickup_delay_ms),
         )
+        .with_vertical_speed(vertical_speed)
         .into_entity_payload())
     }
 
@@ -161,6 +187,7 @@ impl EntityPayloadCodec for DropPayloadCodec {
             bytes.extend(0u16.to_le_bytes());
             bytes.extend(0u16.to_le_bytes());
         }
+        bytes.extend(payload.vertical_speed.to_le_bytes());
         if bytes.len() > MAX_DROP_ENTITY_PAYLOAD_BYTES {
             return Err(EntityCodecError::InvalidData);
         }
