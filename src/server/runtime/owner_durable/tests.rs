@@ -50,7 +50,14 @@ fn chunk(x: i32) -> OwnerKey {
 
 fn counter_store() -> DurableOwnerStore {
     DurableOwnerStore::new(vec![
-        OwnerSystemConfig::new(system("test:counters"), Arc::new(U64Codec), 1, 8).unwrap(),
+        OwnerSystemConfig::new(
+            system("test:counters"),
+            Arc::new(U64Codec),
+            1,
+            8,
+            OwnerPartition::Chunk,
+        )
+        .unwrap(),
     ])
     .unwrap()
 }
@@ -208,7 +215,14 @@ fn scheduling_is_proportional_to_due_owners_not_total_owners() {
 #[test]
 fn byte_bound_is_enforced_at_insert_and_at_prepare_without_truncation() {
     let mut store = DurableOwnerStore::new(vec![
-        OwnerSystemConfig::new(system("test:blobs"), Arc::new(BytesCodec), 1, 8).unwrap(),
+        OwnerSystemConfig::new(
+            system("test:blobs"),
+            Arc::new(BytesCodec),
+            1,
+            8,
+            OwnerPartition::Chunk,
+        )
+        .unwrap(),
     ])
     .unwrap();
     let id = system("test:blobs");
@@ -247,7 +261,14 @@ fn byte_bound_is_enforced_at_insert_and_at_prepare_without_truncation() {
 #[test]
 fn capacity_defers_while_corruption_stops() {
     let mut store = DurableOwnerStore::new(vec![
-        OwnerSystemConfig::new(system("test:blobs"), Arc::new(BytesCodec), 1, 8).unwrap(),
+        OwnerSystemConfig::new(
+            system("test:blobs"),
+            Arc::new(BytesCodec),
+            1,
+            8,
+            OwnerPartition::Chunk,
+        )
+        .unwrap(),
     ])
     .unwrap();
     let id = system("test:blobs");
@@ -263,7 +284,16 @@ fn capacity_defers_while_corruption_stops() {
     let key = owner_state_key(&id, chunk(1));
     latest.insert(key, vec![0u8; 4]);
     let error = DurableOwnerStore::recover(
-        vec![OwnerSystemConfig::new(system("test:blobs"), Arc::new(BytesCodec), 1, 8).unwrap()],
+        vec![
+            OwnerSystemConfig::new(
+                system("test:blobs"),
+                Arc::new(BytesCodec),
+                1,
+                8,
+                OwnerPartition::Chunk,
+            )
+            .unwrap(),
+        ],
         &latest,
     )
     .unwrap_err();
@@ -292,4 +322,36 @@ fn committed_waves_mark_active_and_update_the_due_index() {
         store.due_entries(5, None, 8),
         vec![(5, id.clone(), chunk(0))]
     );
+}
+
+#[test]
+fn wake_fan_out_follows_declared_partitions() {
+    let store = DurableOwnerStore::new(vec![
+        OwnerSystemConfig::new(
+            system("test:chunks"),
+            Arc::new(U64Codec),
+            1,
+            8,
+            OwnerPartition::Chunk,
+        )
+        .unwrap(),
+        OwnerSystemConfig::new(
+            system("test:entities"),
+            Arc::new(U64Codec),
+            1,
+            8,
+            OwnerPartition::Entity,
+        )
+        .unwrap(),
+    ])
+    .unwrap();
+    let chunks = system("test:chunks");
+    let entities = system("test:entities");
+    assert!(store.accepts_owner(&chunks, chunk(0)));
+    assert!(!store.accepts_owner(&chunks, OwnerKey::Entity(1)));
+    assert!(store.accepts_owner(&entities, OwnerKey::Entity(1)));
+    assert!(!store.accepts_owner(&entities, chunk(0)));
+    // Unknown systems accept nothing: fan-out never flags where no
+    // descriptor exists.
+    assert!(!store.accepts_owner(&system("test:missing"), chunk(0)));
 }

@@ -136,6 +136,7 @@ impl ServerStartup {
                 Arc::clone(&codec.codec),
                 codec.codec_version,
                 codec.max_bytes,
+                descriptor.partition(),
             )?);
         }
         Ok(configs)

@@ -19,7 +19,7 @@
 
 use super::super::journal::{Change, StateKey};
 use super::super::parallel::{OwnerData, OwnerKey};
-use super::super::registry::SystemId;
+use super::super::registry::{OwnerPartition, SystemId};
 use super::owner_codec::{
     MAX_OWNER_VALUE_BYTES, OWNER_STATE_DOMAIN, OwnerCodecError, OwnerValueCodec, decode_cell_value,
     decode_owner_state_key, encode_cell_value, owner_state_key,
@@ -39,6 +39,10 @@ pub(in crate::server) struct OwnerSystemConfig {
     pub codec: Arc<dyn OwnerValueCodec>,
     pub codec_version: u16,
     pub max_bytes: usize,
+    /// The partition this system serves. Wake fan-out stages durable flags
+    /// only for systems whose partition accepts the destination owner, so a
+    /// wake to an unloaded owner is held exactly where that owner can load.
+    pub partition: OwnerPartition,
 }
 
 impl OwnerSystemConfig {
@@ -47,6 +51,7 @@ impl OwnerSystemConfig {
         codec: Arc<dyn OwnerValueCodec>,
         codec_version: u16,
         max_bytes: usize,
+        partition: OwnerPartition,
     ) -> io::Result<Self> {
         if max_bytes == 0 || max_bytes > MAX_OWNER_VALUE_BYTES {
             return Err(io::Error::new(
@@ -59,6 +64,7 @@ impl OwnerSystemConfig {
             codec,
             codec_version,
             max_bytes,
+            partition,
         })
     }
 }
@@ -109,6 +115,7 @@ struct CellDescriptor {
     codec: Arc<dyn OwnerValueCodec>,
     codec_version: u16,
     max_bytes: usize,
+    partition: OwnerPartition,
 }
 
 /// Barrier-owned durable owner state for every registered system.
@@ -143,6 +150,7 @@ impl DurableOwnerStore {
                         codec: config.codec,
                         codec_version: config.codec_version,
                         max_bytes: config.max_bytes,
+                        partition: config.partition,
                     },
                 )
                 .is_some()
@@ -254,6 +262,7 @@ impl DurableOwnerStore {
                 codec: config.codec,
                 codec_version: config.codec_version,
                 max_bytes: config.max_bytes,
+                partition: config.partition,
             },
         );
         Ok(())
@@ -261,6 +270,20 @@ impl DurableOwnerStore {
 
     pub fn is_registered(&self, system: &SystemId) -> bool {
         self.descriptors.contains_key(system)
+    }
+
+    /// Whether the destination owner can ever load in this system. Wake
+    /// fan-out holds durable flags only where the owner can load; unknown
+    /// systems accept nothing.
+    pub fn accepts_owner(&self, system: &SystemId, owner: OwnerKey) -> bool {
+        self.descriptors
+            .get(system)
+            .is_some_and(|descriptor| match descriptor.partition {
+                OwnerPartition::Chunk => matches!(owner, OwnerKey::Chunk(_)),
+                OwnerPartition::Entity => matches!(owner, OwnerKey::Entity(_)),
+                OwnerPartition::Profile => matches!(owner, OwnerKey::Profile(_)),
+                OwnerPartition::Global => true,
+            })
     }
 
     /// Registered systems in canonical order, for deterministic cross-system

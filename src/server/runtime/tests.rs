@@ -47,7 +47,14 @@ impl OwnerValueCodec for U64OwnerCodec {
 fn register_u64_state(runtime: &mut SystemRuntime, system: &SystemId) {
     runtime
         .register_owner_system(
-            OwnerSystemConfig::new(system.clone(), Arc::new(U64OwnerCodec), 1, 8).unwrap(),
+            OwnerSystemConfig::new(
+                system.clone(),
+                Arc::new(U64OwnerCodec),
+                1,
+                8,
+                OwnerPartition::Chunk,
+            )
+            .unwrap(),
         )
         .unwrap();
 }
