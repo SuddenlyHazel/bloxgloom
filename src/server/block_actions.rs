@@ -2,21 +2,147 @@
 //!
 //! A block type may register one placement/break pair at startup. The generic
 //! durable command path selects a hook by catalogued type, never by a central
-//! hard-coded block ID switch. Hooks only prepare one `CommitAction`; the
-//! coordinator still owns full-key WAL admission and post-receipt visibility.
+//! hard-coded block ID switch.
+//!
+//! Hooks never receive `&mut State`. They inspect a read-only
+//! [`BlockActionContext`] and plan through a [`BlockCommitBuilder`], which
+//! exposes only world-edit preparation and chunk-load requests; entity and
+//! drop planning (`EntityStore::prepare_*`, `Drops::plan_*`) already take
+//! shared borrows. Hooks only prepare one `CommitAction`; the coordinator
+//! still owns full-key WAL admission and post-receipt visibility.
 
 use super::State;
+use super::drops::Drops;
 use super::durable::CommitAction;
 use super::durable::actions::BlockEditCommand;
+use super::entities::EntityStore;
 use super::simulation::TickId;
 use crate::content::{BlockStateId, BlockTypeId, Catalog};
-use std::collections::BTreeMap;
+use crate::world::{BlockId, ChunkKey, PreparedEdit, World, world_to_chunk};
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, ErrorKind};
+use std::sync::Arc;
 
 const MAX_BLOCK_ACTION_HANDLERS: usize = 65_536;
 
-pub(super) type BlockEditHook =
-    fn(&mut State, TickId, BlockEditCommand, BlockStateId) -> io::Result<CommitAction>;
+/// Read-only planning view handed to block lifecycle hooks. Every member is
+/// a shared borrow or a cheap owned handle, so a hook can inspect client,
+/// entity, drop, and catalog state but cannot mutate the coordinator.
+pub(super) struct BlockActionContext<'a> {
+    catalog: Arc<Catalog>,
+    clients: &'a HashMap<u64, super::Client>,
+    entities: &'a EntityStore,
+    drops: &'a Drops,
+    seed: u64,
+}
+
+impl BlockActionContext<'_> {
+    pub(super) fn catalog(&self) -> Arc<Catalog> {
+        Arc::clone(&self.catalog)
+    }
+
+    pub(super) fn client(&self, id: u64) -> Option<&super::Client> {
+        self.clients.get(&id)
+    }
+
+    pub(super) fn clients(&self) -> &HashMap<u64, super::Client> {
+        self.clients
+    }
+
+    pub(super) fn entities(&self) -> &EntityStore {
+        self.entities
+    }
+
+    pub(super) fn drops(&self) -> &Drops {
+        self.drops
+    }
+
+    pub(super) fn seed(&self) -> u64 {
+        self.seed
+    }
+}
+
+/// Narrow planning surface for block lifecycle hooks. A hook stages world
+/// edits and records chunk-load requests here; it holds no other `&mut`
+/// borrow, so live client, entity, drop, and durability state stay
+/// unreachable except through these planning calls.
+pub(super) struct BlockCommitBuilder<'a> {
+    world: &'a mut World,
+    requested_chunks: Vec<ChunkKey>,
+}
+
+impl BlockCommitBuilder<'_> {
+    /// Reads one cell, recording its chunk for the coordinator to request
+    /// when it is not resident. Mirrors `actions::cached_block_or_request`:
+    /// a miss defers the edit with `WouldBlock` after the load is queued.
+    /// Recorded requests drain even when the hook fails.
+    pub(super) fn cached_block_or_request(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        reason: &'static str,
+    ) -> io::Result<BlockId> {
+        if let Some(block) = self.world.cached_block(x, y, z) {
+            return Ok(block);
+        }
+        let key = world_to_chunk(x, y, z).0;
+        if !self.requested_chunks.contains(&key) {
+            self.requested_chunks.push(key);
+        }
+        Err(io::Error::new(ErrorKind::WouldBlock, reason))
+    }
+
+    /// Prepares validated versioned edits. This only interns planning
+    /// revisions; nothing becomes visible before the WAL receipt.
+    pub(super) fn prepare_edits(
+        &mut self,
+        edits: &[(i32, i32, i32, BlockId)],
+    ) -> io::Result<Vec<PreparedEdit>> {
+        self.world.prepare_edits(edits)
+    }
+
+    fn take_requested_chunks(&mut self) -> Vec<ChunkKey> {
+        std::mem::take(&mut self.requested_chunks)
+    }
+}
+
+pub(super) type BlockEditHook = fn(
+    &BlockActionContext,
+    &mut BlockCommitBuilder,
+    TickId,
+    BlockEditCommand,
+    BlockStateId,
+) -> io::Result<CommitAction>;
+
+/// Invokes one lifecycle hook with split coordinator borrows, then queues
+/// any chunk loads the hook recorded. Requests drain on both success and
+/// failure so a deferred edit always resumes on a later tick.
+pub(super) fn invoke_hook(
+    hook: BlockEditHook,
+    state: &mut State,
+    tick: TickId,
+    command: BlockEditCommand,
+    previous: BlockStateId,
+) -> io::Result<CommitAction> {
+    let context = BlockActionContext {
+        catalog: state.world.catalog_arc(),
+        clients: &state.clients,
+        entities: &state.entities,
+        drops: &state.drops,
+        seed: state.seed,
+    };
+    let mut builder = BlockCommitBuilder {
+        world: &mut state.world,
+        requested_chunks: Vec::new(),
+    };
+    let result = hook(&context, &mut builder, tick, command, previous);
+    let requested = builder.take_requested_chunks();
+    for key in requested {
+        let _ = super::streaming::request_chunk(state, key)?;
+    }
+    result
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct BlockActionHooks {
@@ -89,3 +215,7 @@ impl BlockActionRegistry {
         self.hooks.get(&block_type).copied()
     }
 }
+
+#[cfg(test)]
+#[path = "block_actions/tests.rs"]
+mod tests;

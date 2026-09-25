@@ -540,3 +540,257 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     drop(recovered);
     fs::remove_dir_all(path).unwrap();
 }
+
+struct CounterCodec;
+
+impl crate::server::entities::EntityPayloadCodec for CounterCodec {
+    fn decode(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::server::entities::EntityPayload, crate::server::entities::EntityCodecError>
+    {
+        let [value] = bytes else {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        };
+        Ok(crate::server::entities::EntityPayload::new(*value))
+    }
+
+    fn encode(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        payload
+            .downcast_ref::<u8>()
+            .copied()
+            .map(|value| vec![value])
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)
+    }
+
+    fn public_view(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        self.encode(payload)
+    }
+}
+
+/// A non-kiln anchored/mobile probe type. Its planners echo the live anchor
+/// state with no writes, so the test exercises generic dispatch and
+/// validation without coupling to kiln rules.
+struct CounterInteract;
+
+impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        _request: &[u8],
+        inventory: &crate::inventory::Inventory,
+        _catalog: &crate::content::Catalog,
+    ) -> Result<crate::server::entities::EntityInteractionPlan, crate::server::entities::EntityError>
+    {
+        use crate::server::entities::{EntityBlockStateChange, EntityInteractionPlan};
+        let (anchor, anchor_state) = match &snapshot.location {
+            crate::server::entities::EntityLocation::Anchored {
+                anchor,
+                anchor_state,
+                ..
+            } => (*anchor, *anchor_state),
+            crate::server::entities::EntityLocation::Mobile { .. } => {
+                return Err(crate::server::entities::EntityError::WrongOwnership);
+            }
+        };
+        let mut next = inventory.clone();
+        next.revision = next.revision.wrapping_add(1);
+        Ok(EntityInteractionPlan {
+            payload: crate::server::entities::EntityPayload::new(9u8),
+            inventory: next,
+            block_states: vec![EntityBlockStateChange {
+                cell: anchor,
+                before: anchor_state,
+                after: anchor_state,
+            }],
+        })
+    }
+}
+
+struct CounterTick;
+
+impl crate::server::entities::EntityTickPolicy for CounterTick {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError>
+    {
+        use crate::server::entities::EntityTickPlan;
+        let Some(due) = snapshot.next_tick else {
+            return Err(crate::server::entities::EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(crate::server::entities::EntityError::InvalidType);
+        }
+        Ok(EntityTickPlan {
+            payload: Some(crate::server::entities::EntityPayload::new(8u8)),
+            next_tick: current_tick + 5,
+            anchor_update: None,
+            block_states: Vec::new(),
+        })
+    }
+}
+
+#[test]
+fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("generic-entity-path");
+    let mobile_id_type = crate::content::EntityTypeId(70_004);
+    let anchored_id_type = crate::content::EntityTypeId(70_005);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [
+        (mobile_id_type, "test:counter_mobile"),
+        (anchored_id_type, "test:counter_anchored"),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x434f_554e_5400_0001,
+            })
+            .unwrap();
+    }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    assert!(!compatible.is_empty());
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:counter_mobile".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(CounterTick)),
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:counter_anchored".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: Some(Arc::new(CounterInteract)),
+        tick_planner: None,
+    });
+
+    let mut state =
+        crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+
+    // Anchored interaction through the generic dispatcher. The anchor is the
+    // highest non-air cell in its column so the footprint preimage is stable.
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    let peer = add_test_client(
+        &mut state,
+        [0.5, anchor.y as f32, 3.5],
+        Inventory::default(),
+    );
+
+    // Mobile tick through the generic dispatcher (previously kiln-routed).
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: mobile_id_type,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let mobile_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    assert_eq!(
+        state.entities.snapshot(mobile_id).unwrap().next_tick,
+        Some(6)
+    );
+    let action = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: mobile_id },
+        TickId::new(6),
+    )
+    .unwrap()
+    .expect("due non-kiln tick plans through the generic path");
+    assert!(action.world_edits.is_empty());
+    assert!(action.entities.is_some());
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+    // Planning stages a WAL record; the live store is untouched before receipt.
+    assert_eq!(
+        state.entities.snapshot(mobile_id).unwrap().next_tick,
+        Some(6)
+    );
+
+    // Anchored interaction planning for the probe type.
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: anchored_id_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let anchored_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    let request = edit_request(ClientMessage::EntityInteract {
+        action_id: 9,
+        target: [anchor.x, anchor.y, anchor.z],
+        payload: vec![0],
+    });
+    let action = plan_durable_request(&mut state, &request, TickId::new(7))
+        .unwrap()
+        .expect("non-kiln interaction plans through the generic path");
+    assert_eq!(action.inventory.as_ref().unwrap().revision, 1);
+    assert!(action.world_edits.is_empty());
+    assert!(action.entities.is_some());
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+    // The stored payload is unchanged until the WAL receipt applies.
+    assert_eq!(
+        state
+            .entities
+            .snapshot(anchored_id)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&7u8)
+    );
+
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
