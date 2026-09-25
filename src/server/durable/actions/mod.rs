@@ -500,6 +500,13 @@ fn plan_block_edit(
 /// loader for that exact key before deferring the original command for retry.
 /// This matters at vertical interest boundaries, where an edit can depend on
 /// a support/plant-check chunk that normal view streaming never requests.
+///
+/// The load request is best-effort, matching the entity view capture and the
+/// block-action builder: a failed request still defers with `WouldBlock` so
+/// transient loader pressure never fails work that could simply wait. The
+/// cell stays unread, so no preimage is verified and nothing commits on this
+/// pass; the coordinator's command timeout is the escape hatch for
+/// over-long deferrals.
 fn cached_block_or_request(
     state: &mut State,
     x: i32,
@@ -511,7 +518,7 @@ fn cached_block_or_request(
         return Ok(block);
     }
     let key = world_to_chunk(x, y, z).0;
-    let _ = request_chunk(state, key)?;
+    let _ = request_chunk(state, key);
     Err(io::Error::new(ErrorKind::WouldBlock, reason))
 }
 

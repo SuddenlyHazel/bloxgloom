@@ -3372,3 +3372,47 @@ fn entity_tick_transfer_source_outside_view_rejects_the_plan() {
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
+#[test]
+fn chunk_request_failure_defers_without_verifying_any_preimage() {
+    use crate::world::STONE;
+
+    let path = temp_save_dir("edit-request-failure-defer");
+    let mut state = server_state(23, path.clone()).unwrap();
+    // One cached chunk: the client's own. The edit target sits just across
+    // the chunk boundary, within reach but never loaded.
+    state.world.reset_cache_for_test(1);
+    state.world.get_chunk(world_to_chunk(15, 80, 0).0).unwrap();
+    let peer = add_test_client(&mut state, [15.5, 80.0, 0.5], Inventory::default());
+    // The edit target was never loaded, and the loader is stopped, so the
+    // chunk request itself fails. The edit must defer for retry — not fail
+    // the work, and never commit with an unverified preimage.
+    assert!(state.world.cached_block(16, 80, 0).is_none());
+    state.loader.stop_for_test();
+    let request = edit_request(ClientMessage::Edit {
+        action_id: 1,
+        x: 16,
+        y: 80,
+        z: 0,
+        block: STONE,
+        slot: 0,
+    });
+    let result = plan_durable_request(&mut state, &request, TickId::new(1));
+    let outcome = result
+        .as_ref()
+        .map(|_| "planned".to_owned())
+        .map_err(|error| (error.kind(), error.to_string()));
+    assert!(
+        matches!(&outcome, Err((ErrorKind::WouldBlock, _))),
+        "a failed chunk request defers the edit, got {outcome:?}"
+    );
+    assert!(!state.durability.failed);
+    assert!(state.durability.pending.is_empty());
+    assert_eq!(
+        state.clients.get(&1).unwrap().inventory,
+        Inventory::default()
+    );
+
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
