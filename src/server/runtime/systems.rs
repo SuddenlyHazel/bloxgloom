@@ -20,9 +20,11 @@ use super::super::parallel::{
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
+#[cfg(test)]
+use super::owner_durable::OwnerSystemConfig;
 use super::owner_durable::{
-    DurableOwnerStore, MAX_OWNER_WAVE_BYTES, OwnerDurableError, OwnerSystemConfig, OwnerWalReceipt,
-    OwnerWrite, PreparedOwnerWave,
+    DurableOwnerStore, MAX_OWNER_WAVE_BYTES, OwnerDurableError, OwnerWalReceipt, OwnerWrite,
+    PreparedOwnerWave,
 };
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
 use std::any::Any;
