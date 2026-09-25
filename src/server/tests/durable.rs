@@ -654,12 +654,7 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
     // The 64-block fall crossed chunk y-boundaries: the settled owner
     // differs from the spawn owner, so atomic transfers ran mid-fall.
     let spawn_owner = crate::world::world_to_chunk(0, surface_y + 64, 0).0;
-    let settled_owner = crate::world::world_to_chunk(
-        0,
-        settled[0].position[1].floor() as i32,
-        0,
-    )
-    .0;
+    let settled_owner = crate::world::world_to_chunk(0, settled[0].position[1].floor() as i32, 0).0;
     assert_ne!(
         spawn_owner.y, settled_owner.y,
         "the fall must span chunk owners"
@@ -669,9 +664,7 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
         fs::read_dir(save.path().join("drops.d"))
             .unwrap()
             .flatten()
-            .any(|entry| {
-                entry.file_name().to_string_lossy().starts_with("chunk_")
-            }),
+            .any(|entry| { entry.file_name().to_string_lossy().starts_with("chunk_") }),
         "settle must checkpoint a drop shard"
     );
     drop(state);
@@ -687,10 +680,7 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
         "chunk transfer and restart preserve every drop identically"
     );
     assert_eq!(
-        after
-            .iter()
-            .map(|drop| u32::from(drop.count))
-            .sum::<u32>(),
+        after.iter().map(|drop| u32::from(drop.count)).sum::<u32>(),
         200
     );
 }

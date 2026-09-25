@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::time::{Duration, Instant};
 
+use super::shards::{MAX_SHARD_BYTES, SHARD_HEADER};
 use super::{
     DropEntityPayload, Drops, Entry, LIFETIME, chunk_of, distance_sq, invalid, journal, spatial,
     unix_ms,
 };
-use super::shards::{MAX_SHARD_BYTES, SHARD_HEADER};
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
 use crate::world::ChunkKey;
@@ -331,16 +331,10 @@ impl Drops {
         self.validate_plan(plan)?;
         for mutation in &plan.changes {
             if mutation.after.is_empty() {
-                let position = self
-                    .entries
-                    .get(&mutation.id)
-                    .map(|entry| entry.position);
+                let position = self.entries.get(&mutation.id).map(|entry| entry.position);
                 if self.entries.remove(&mutation.id).is_some() {
                     self.remove_entry_indexes(mutation.id);
-                    self.index_remove(
-                        mutation.id,
-                        position.expect("removed drop has a position"),
-                    );
+                    self.index_remove(mutation.id, position.expect("removed drop has a position"));
                 }
                 self.active.remove(&mutation.id);
                 continue;

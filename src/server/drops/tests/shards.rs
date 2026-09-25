@@ -1,9 +1,9 @@
 //! Per-chunk drop checkpoint shards: framing, validation, and load rules.
 
 use super::super::shards::{
-    allocator_path, decode_allocator, decode_shard, encode_allocator, encode_shard,
+    SHARD_HEADER, allocator_path, decode_allocator, decode_shard, encode_allocator, encode_shard,
     load_sharded, shard_dir_for_drops_file, shard_path, write_allocator_snapshot,
-    write_shard_snapshot, SHARD_HEADER,
+    write_shard_snapshot,
 };
 use super::*;
 use std::time::Duration;

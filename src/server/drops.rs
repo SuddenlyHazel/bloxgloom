@@ -9,10 +9,10 @@ mod shards;
 mod spatial;
 
 pub(super) use entity::{DropEntityPayload, register_entity_type};
+pub(super) use planning::DropPlan;
 pub(in crate::server) use shards::{
     SHARD_ALLOCATOR_LEN, write_allocator_snapshot, write_shard_snapshot,
 };
-pub(super) use planning::DropPlan;
 
 #[cfg(test)]
 use crate::inventory::STACK_LIMIT;

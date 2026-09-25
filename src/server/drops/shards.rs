@@ -41,10 +41,7 @@ pub(in crate::server) fn shard_dir_for_drops_file(path: &Path) -> PathBuf {
 }
 
 pub(in crate::server) fn shard_path(dir: &Path, chunk: ChunkKey) -> PathBuf {
-    dir.join(format!(
-        "chunk_{}_{}_{}.bin",
-        chunk.x, chunk.y, chunk.z
-    ))
+    dir.join(format!("chunk_{}_{}_{}.bin", chunk.x, chunk.y, chunk.z))
 }
 
 pub(in crate::server) fn allocator_path(dir: &Path) -> PathBuf {
@@ -158,8 +155,8 @@ pub(super) fn decode_shard(
         let component_bytes = bytes
             .get(record_end..component_end)
             .ok_or_else(|| invalid("truncated drop shard components"))?;
-        let (id, position, payload) =
-            decode_record(record, component_bytes, catalog).map_err(|_| invalid("invalid drop shard item"))?;
+        let (id, position, payload) = decode_record(record, component_bytes, catalog)
+            .map_err(|_| invalid("invalid drop shard item"))?;
         if chunk_of(position) != chunk {
             return Err(invalid("drop shard member belongs to another chunk"));
         }
@@ -189,7 +186,9 @@ fn decode_record(
         ))
     };
     let id = u64::from_le_bytes(record[0..8].try_into().map_err(|_| ())?);
-    let item = ItemId::new(u32::from_le_bytes(record[8..12].try_into().map_err(|_| ())?));
+    let item = ItemId::new(u32::from_le_bytes(
+        record[8..12].try_into().map_err(|_| ())?,
+    ));
     let count = u16::from_le_bytes(record[12..14].try_into().map_err(|_| ())?);
     let position = [
         f32::from_le_bytes(record[14..18].try_into().map_err(|_| ())?),
@@ -277,9 +276,7 @@ pub(in crate::server) fn write_shard_snapshot(path: &Path, bytes: &[u8]) -> io::
             .ok_or_else(|| invalid("truncated drop shard checkpoint"))?;
         let len = u16::from_le_bytes(record[38..40].try_into().unwrap()) as usize;
         if len > MAX_COMPONENT_BYTES {
-            return Err(invalid(
-                "invalid drop shard checkpoint component length",
-            ));
+            return Err(invalid("invalid drop shard checkpoint component length"));
         }
         offset = record_end
             .checked_add(len)
@@ -316,7 +313,9 @@ pub(in crate::server) fn write_allocator_snapshot(path: &Path, bytes: &[u8]) -> 
 }
 
 fn atomic_replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let parent = path.parent().ok_or_else(|| invalid("invalid drop shard path"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| invalid("invalid drop shard path"))?;
     fs::create_dir_all(parent)?;
     let temporary = parent.join(format!(
         ".drops-shard.{}.{}.tmp",
@@ -402,7 +401,8 @@ fn load_sharded_inner(
     let mut drops = Vec::new();
     let mut seen = BTreeSet::new();
     for path in &chunk_files {
-        let expected = parse_chunk_file_name(path).ok_or_else(|| invalid("invalid drop shard name"))?;
+        let expected =
+            parse_chunk_file_name(path).ok_or_else(|| invalid("invalid drop shard name"))?;
         let decoded = decode_shard(&fs::read(path)?, catalog)?;
         if decoded.chunk != expected {
             return Err(invalid("drop shard file name disagrees with its chunk"));
@@ -481,9 +481,7 @@ impl Drops {
     /// order. One moving drop serializes only its chunk owners, never the
     /// whole drop set.
     pub(in crate::server) fn take_dirty_shard_snapshots(&mut self) -> Vec<(ChunkKey, Vec<u8>)> {
-        let chunks: Vec<ChunkKey> = std::mem::take(&mut self.chunk_dirty)
-            .into_iter()
-            .collect();
+        let chunks: Vec<ChunkKey> = std::mem::take(&mut self.chunk_dirty).into_iter().collect();
         chunks
             .into_iter()
             .map(|chunk| (chunk, self.encode_chunk_snapshot(chunk)))

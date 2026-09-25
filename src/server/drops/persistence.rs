@@ -11,9 +11,7 @@ use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, STACK_LIMIT, Stack
 use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
-use super::{
-    DropEntityPayload, Drops, Entry, LIFETIME, expiry, invalid, shards, spatial, unix_ms,
-};
+use super::{DropEntityPayload, Drops, Entry, LIFETIME, expiry, invalid, shards, spatial, unix_ms};
 
 #[cfg(test)]
 #[path = "persistence/tests.rs"]
@@ -72,10 +70,7 @@ impl Drops {
             let age_since = Instant::now();
             if drops
                 .entries
-                .insert(
-                    id,
-                    Entry::new(id, position, payload, 0.0, age, age_since),
-                )
+                .insert(id, Entry::new(id, position, payload, 0.0, age, age_since))
                 .is_some()
             {
                 return Err(invalid("duplicate drop ID across shards"));
