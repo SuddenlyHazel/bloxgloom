@@ -11,6 +11,7 @@ use crate::server::entities::{
     EntityInteractionPolicy, EntityLocation, EntityPatch, EntityPayload, EntitySnapshot,
     EntityTickPlan, EntityTickPolicy,
 };
+use crate::server::voxel_view::VoxelView;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,6 +52,7 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
         request: &[u8],
         inventory: &Inventory,
         catalog: &Catalog,
+        _view: &VoxelView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         let payload = snapshot
             .private_payload
@@ -74,6 +76,7 @@ impl EntityTickPolicy for KilnTickPlanner {
         snapshot: &EntitySnapshot,
         current_tick: u64,
         catalog: &Catalog,
+        _view: &VoxelView,
     ) -> Result<EntityTickPlan, EntityError> {
         let payload = snapshot
             .private_payload

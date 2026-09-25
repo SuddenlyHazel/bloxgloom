@@ -12,8 +12,10 @@ use crate::server::State;
 use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
-    CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch,
+    CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch, position_to_cell,
 };
+use crate::server::streaming::request_chunk;
+use crate::server::voxel_view::VoxelView;
 use crate::world::{BlockId, ChunkKey, PreparedEdit};
 use std::collections::BTreeSet;
 use std::io::{self, ErrorKind};
@@ -26,6 +28,63 @@ type FootprintPlan = (
     Vec<ChunkKey>,
     Vec<(i32, i32, i32, BlockId)>,
 );
+
+/// Captures the planner's declared read set as an immutable view: footprint
+/// chunks plus the Chebyshev neighborhood of the entity's chunk. Every key
+/// must already be resident; the first missing chunk is requested and
+/// planning defers with `WouldBlock`, matching the footprint-preimage retry
+/// shape. Nothing is generated or read through to storage here, and the
+/// returned view cannot mutate the world.
+pub(super) fn capture_view_for_plan(
+    state: &mut State,
+    location: &EntityLocation,
+    radius_chunks: u8,
+) -> io::Result<VoxelView> {
+    let center_chunk = match location {
+        EntityLocation::Anchored { anchor, .. } => anchor.chunk(),
+        EntityLocation::Mobile { position } => {
+            position_to_cell(*position)
+                .map_err(|_| corrupt("entity position is outside the world"))?
+                .chunk()
+        }
+    };
+    let mut keys = BTreeSet::new();
+    if let EntityLocation::Anchored { footprint, .. } = location {
+        keys.extend(footprint.iter().map(|cell| cell.chunk()));
+    }
+    let radius = i64::from(radius_chunks);
+    for dx in -radius..=radius {
+        for dy in -radius..=radius {
+            for dz in -radius..=radius {
+                keys.insert(ChunkKey {
+                    x: center_chunk.x + dx as i32,
+                    y: center_chunk.y + dy as i32,
+                    z: center_chunk.z + dz as i32,
+                });
+            }
+        }
+    }
+    let catalog = state.world.catalog_arc();
+    let mut chunks = Vec::with_capacity(keys.len());
+    for key in keys {
+        match state.world.cached_arc_chunk(key) {
+            Some(chunk) => chunks.push(chunk),
+            None => {
+                let _ = request_chunk(state, key)?;
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "entity view chunk is not resident",
+                ));
+            }
+        }
+    }
+    VoxelView::from_resident_chunks_in(chunks, catalog).map_err(|error| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!("entity view snapshot invalid: {error:?}"),
+        )
+    })
+}
 
 /// Plan an opaque entity interaction after the coordinator has validated its
 /// action receipt. The registered type policy owns request decoding and exact
@@ -75,9 +134,19 @@ pub(in crate::server) fn plan_interact(
     if !descriptor.has_interaction_policy() {
         return Err(permission("entity type does not support interactions"));
     }
+    // Copy the declared radius out so view capture can borrow the world
+    // while no entity borrow is live; the descriptor is re-resolved below
+    // over unchanged entity state.
+    let read_radius = descriptor.interaction_read_radius();
     let catalog = state.world.catalog_arc();
+    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let descriptor = state
+        .entities
+        .types()
+        .descriptor(snapshot.entity_type)
+        .map_err(io::Error::other)?;
     let plan = descriptor
-        .plan_interaction(&snapshot, request, &inventory_before, &catalog)
+        .plan_interaction(&snapshot, request, &inventory_before, &catalog, &view)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     let expected_inventory_revision = inventory_before
         .revision
@@ -158,9 +227,19 @@ pub(in crate::server) fn plan_entity_tick(
     if !descriptor.has_tick_planner() {
         return Err(corrupt("due entity type has no tick planner"));
     }
+    // Copy the declared radius out so view capture can borrow the world
+    // while no entity borrow is live; the descriptor is re-resolved below
+    // over unchanged entity state.
+    let read_radius = descriptor.tick_read_radius();
     let catalog = state.world.catalog_arc();
+    let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let descriptor = state
+        .entities
+        .types()
+        .descriptor(snapshot.entity_type)
+        .map_err(io::Error::other)?;
     let plan = descriptor
-        .plan_tick(&snapshot, current_tick, &catalog)
+        .plan_tick(&snapshot, current_tick, &catalog, &view)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     if snapshot
         .next_tick

@@ -586,6 +586,7 @@ impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
         _request: &[u8],
         inventory: &crate::inventory::Inventory,
         _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
     ) -> Result<crate::server::entities::EntityInteractionPlan, crate::server::entities::EntityError>
     {
         use crate::server::entities::{EntityBlockStateChange, EntityInteractionPlan};
@@ -621,6 +622,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
         snapshot: &crate::server::entities::EntitySnapshot,
         current_tick: u64,
         _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
     ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         use crate::server::entities::EntityTickPlan;
         let Some(due) = snapshot.next_tick else {

@@ -5,6 +5,8 @@ use super::types::{
 };
 use crate::content::{BlockStateId, Catalog, EntityTypeId};
 use crate::inventory::Inventory;
+use crate::server::registry::MAX_NEIGHBOR_RADIUS;
+use crate::server::voxel_view::VoxelView;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -37,6 +39,11 @@ pub struct EntityTickPlan {
 
 /// Trusted server-only policy for bounded client requests directed at an
 /// entity. The callback receives immutable snapshots and cannot perform I/O.
+///
+/// Implementations must be pure functions of their inputs: no wall clock,
+/// RNG, I/O, or global/thread-local state. The view holds only the declared
+/// read set; reads outside it fail closed and must surface as
+/// `EntityError::InvalidType`.
 pub trait EntityInteractionPolicy: Send + Sync + 'static {
     fn plan(
         &self,
@@ -44,18 +51,39 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
         request: &[u8],
         inventory: &Inventory,
         catalog: &Catalog,
+        view: &VoxelView,
     ) -> Result<EntityInteractionPlan, EntityError>;
+
+    /// Chunk read radius around the entity's chunk, captured by the
+    /// coordinator before planning. Bounded by `MAX_NEIGHBOR_RADIUS` and
+    /// validated at registration time.
+    fn read_radius_chunks(&self) -> u8 {
+        0
+    }
 }
 
 /// Trusted deterministic planner for one due tick. The coordinator validates
 /// the returned footprint, block preimages, due-time, and payload before WAL.
+///
+/// Implementations must be pure functions of their inputs: no wall clock,
+/// RNG, I/O, or global/thread-local state. The view holds only the declared
+/// read set; reads outside it fail closed and must surface as
+/// `EntityError::InvalidType`.
 pub trait EntityTickPolicy: Send + Sync + 'static {
     fn plan(
         &self,
         snapshot: &EntitySnapshot,
         current_tick: u64,
         catalog: &Catalog,
+        view: &VoxelView,
     ) -> Result<EntityTickPlan, EntityError>;
+
+    /// Chunk read radius around the entity's chunk, captured by the
+    /// coordinator before planning. Bounded by `MAX_NEIGHBOR_RADIUS` and
+    /// validated at registration time.
+    fn read_radius_chunks(&self) -> u8 {
+        0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,7 +128,9 @@ pub struct EntityTypeDescriptor {
     max_payload_bytes: usize,
     codec: Arc<dyn EntityPayloadCodec>,
     interaction_policy: Option<Arc<dyn EntityInteractionPolicy>>,
+    interaction_read_radius: u8,
     tick_planner: Option<Arc<dyn EntityTickPolicy>>,
+    tick_read_radius: u8,
 }
 
 impl EntityTypeDescriptor {
@@ -140,12 +170,23 @@ impl EntityTypeDescriptor {
         self.tick_planner.is_some()
     }
 
+    /// Declared chunk read radius captured for interaction planning.
+    pub const fn interaction_read_radius(&self) -> u8 {
+        self.interaction_read_radius
+    }
+
+    /// Declared chunk read radius captured for tick planning.
+    pub const fn tick_read_radius(&self) -> u8 {
+        self.tick_read_radius
+    }
+
     pub fn plan_interaction(
         &self,
         snapshot: &EntitySnapshot,
         request: &[u8],
         inventory: &Inventory,
         catalog: &Catalog,
+        view: &VoxelView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         if request.is_empty() || request.len() > MAX_ENTITY_INTERACTION_REQUEST_BYTES {
             return Err(EntityError::InvalidPayload);
@@ -153,7 +194,7 @@ impl EntityTypeDescriptor {
         self.interaction_policy
             .as_ref()
             .ok_or(EntityError::InvalidType)?
-            .plan(snapshot, request, inventory, catalog)
+            .plan(snapshot, request, inventory, catalog, view)
     }
 
     pub fn plan_tick(
@@ -161,11 +202,12 @@ impl EntityTypeDescriptor {
         snapshot: &EntitySnapshot,
         current_tick: u64,
         catalog: &Catalog,
+        view: &VoxelView,
     ) -> Result<EntityTickPlan, EntityError> {
         self.tick_planner
             .as_ref()
             .ok_or(EntityError::InvalidType)?
-            .plan(snapshot, current_tick, catalog)
+            .plan(snapshot, current_tick, catalog, view)
     }
 
     pub fn encode_payload(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityError> {
@@ -292,7 +334,9 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             max_payload_bytes: registration.max_payload_bytes,
             codec: registration.codec,
             interaction_policy: None,
+            interaction_read_radius: 0,
             tick_planner: None,
+            tick_read_radius: 0,
         };
         self.descriptors.insert(registration.id, descriptor);
         Ok(())
@@ -310,6 +354,10 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
         if descriptor.interaction_policy.is_some() {
             return Err(EntityError::DuplicateType(id));
         }
+        if policy.read_radius_chunks() > MAX_NEIGHBOR_RADIUS {
+            return Err(EntityError::InvalidType);
+        }
+        descriptor.interaction_read_radius = policy.read_radius_chunks();
         descriptor.interaction_policy = Some(policy);
         Ok(())
     }
@@ -329,6 +377,10 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
         if matches!(descriptor.tick_policy, TickPolicy::Never) {
             return Err(EntityError::InvalidType);
         }
+        if planner.read_radius_chunks() > MAX_NEIGHBOR_RADIUS {
+            return Err(EntityError::InvalidType);
+        }
+        descriptor.tick_read_radius = planner.read_radius_chunks();
         descriptor.tick_planner = Some(planner);
         Ok(())
     }
