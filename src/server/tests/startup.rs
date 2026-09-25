@@ -1765,3 +1765,58 @@ fn rotation_cursor_survives_restart_without_starving() {
     assert_eq!(values(&reopened), [2, 1, 1]);
     assert!(!reopened.durability.failed);
 }
+
+#[test]
+fn pending_wakes_and_cursors_survive_rotation_without_wedging_the_gate() {
+    let save = TestSave::new("owner-wake-rotation");
+    let (startup, _, _, _) = wake_flag_startup(false);
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    assert_eq!(state.system_runtime.durable_wake_count(), 1);
+    // The tripwire: owner-wave commits register no per-key checkpoint work,
+    // so the rotation gate can drain. A dirty entry without a backing file
+    // would wedge rotation forever.
+    assert!(state.durability.dirty_checkpoints.is_empty());
+    assert!(state.durability.pending.is_empty());
+    let tail_before = state.durability.writer.bytes();
+    assert!(tail_before > 0);
+
+    // Rotation materializes the full latest-value map — owner cells, wake
+    // flags, and cursors alike — into the new base generation.
+    state.durability.force_rotation_at_sequence = Some(state.durability.writer.sequence());
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+            .unwrap();
+        if state.durability.completed_rotations == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(state.durability.completed_rotations, 1);
+    assert!(
+        state.durability.writer.bytes() < tail_before,
+        "rotation must truncate the tail that carried the owner wave"
+    );
+    assert_eq!(state.system_runtime.durable_wake_count(), 1);
+    drop(state);
+
+    // The flag and the producer's work are intact past the rotation.
+    let (startup, system, producer, destination) = wake_flag_startup(true);
+    let mut reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(reopened.system_runtime.durable_wake_count(), 1);
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, producer),
+        Some((1, 1))
+    );
+    tick_once(&mut reopened, TickId::new(3), Instant::now()).unwrap();
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, destination),
+        Some((1, 1))
+    );
+    assert_eq!(reopened.system_runtime.durable_wake_count(), 0);
+    assert!(!reopened.durability.failed);
+}
