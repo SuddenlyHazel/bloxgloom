@@ -27,7 +27,7 @@ use super::owner_durable::{
     PreparedOwnerWave,
 };
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
-use super::owner_wake::PendingWakeStore;
+use super::owner_wake::{PendingWakeStore, PreparedWakeSets};
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
@@ -477,7 +477,7 @@ impl SystemRuntime {
             )
         })?;
         let staged_wakes: usize = self.pending_wakes.values().map(BTreeSet::len).sum();
-        if staged_wakes.saturating_add(wakes.len()) > MAX_PENDING_OWNER_WAKES {
+        if staged_wakes.saturating_add(wakes.live().len()) > MAX_PENDING_OWNER_WAKES {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 format!(
@@ -485,12 +485,6 @@ impl SystemRuntime {
                     id.as_str()
                 ),
             ));
-        }
-        for (system_id, owner) in wakes {
-            self.pending_wakes
-                .entry(system_id)
-                .or_default()
-                .insert(owner);
         }
         let mut writes = Vec::with_capacity(validated.patches().len());
         for patch in validated.patches() {
@@ -515,7 +509,30 @@ impl SystemRuntime {
             .durable
             .prepare(&id, writes)
             .map_err(OwnerDurableError::io)?;
-        let applied = self.commit_owner_wave(prepared, tick, durability)?;
+        // Durable flags for unloaded destinations share the wave's wake
+        // budget and ride its WAL record: one logical transaction, one
+        // record. A full flag set defers the whole wave before anything
+        // commits, like the live set above.
+        let wake_limit = MAX_PENDING_OWNER_WAKES.saturating_sub(staged_wakes + wakes.live().len());
+        let wake_sets = self
+            .durable_wakes
+            .prepare_sets(wakes.unloaded(), tick.get(), wake_limit)
+            .map_err(|error| {
+                io::Error::new(
+                    error.kind(),
+                    format!(
+                        "registered system {} defers: durable owner wake queue full",
+                        id.as_str()
+                    ),
+                )
+            })?;
+        for (system_id, owner) in wakes.live() {
+            self.pending_wakes
+                .entry(system_id.clone())
+                .or_default()
+                .insert(*owner);
+        }
+        let applied = self.commit_owner_wave(prepared, tick, durability, wake_sets)?;
         self.next_owner.insert(id, next_cursor);
         Ok(applied)
     }
@@ -526,29 +543,47 @@ impl SystemRuntime {
     /// requested rotation defer it with `WouldBlock`. A receipted wave whose
     /// in-memory commit fails is genuine corruption and stops the
     /// coordinator, matching the gameplay apply path.
+    ///
+    /// Durable wake flags for unloaded destinations ride the same record:
+    /// one logical transaction, one WAL record, no half-applied wave. Flags
+    /// become visible only after the receipt; any deferral before it withdraws
+    /// them so a retry re-stages from WAL-backed state.
     fn commit_owner_wave(
         &mut self,
         prepared: PreparedOwnerWave,
         tick: TickId,
         durability: &mut Durability,
+        wake_sets: PreparedWakeSets,
     ) -> io::Result<usize> {
+        let wake_changes = wake_sets.changes().to_vec();
+        // Each deferral before the receipt withdraws the staged flags so a
+        // retry re-stages; exactly one site consumes the set.
+        let mut wake_sets = Some(wake_sets);
+        let mut cancel_wakes = || {
+            self.durable_wakes
+                .cancel_sets(wake_sets.take().expect("wake set consumed once"));
+        };
         let bytes: usize = prepared
             .changes()
             .iter()
+            .chain(wake_changes.iter())
             .map(|change| change.after.len())
             .sum();
         if bytes > MAX_OWNER_WAVE_BYTES {
+            cancel_wakes();
             return Err(io::Error::new(
                 ErrorKind::WouldBlock,
                 format!("owner wave of {bytes} bytes exceeds {MAX_OWNER_WAVE_BYTES}"),
             ));
         }
         if durability.failed {
+            cancel_wakes();
             return Err(io::Error::other(
                 "durable subsystem failed; owner wave not staged",
             ));
         }
         if durability.rotation_requested {
+            cancel_wakes();
             return Err(io::Error::new(
                 ErrorKind::WouldBlock,
                 "journal rotation in progress; owner wave defers",
@@ -557,10 +592,12 @@ impl SystemRuntime {
         let keys: Vec<StateKey> = prepared
             .changes()
             .iter()
+            .chain(wake_changes.iter())
             .map(|change| change.key.clone())
             .collect();
         for key in &keys {
             if durability.reserved.contains(key) {
+                cancel_wakes();
                 return Err(io::Error::new(
                     ErrorKind::WouldBlock,
                     "owner key has a pending durable action; wave defers",
@@ -568,19 +605,28 @@ impl SystemRuntime {
             }
         }
         let id = durability.next_id;
-        durability.next_id = id
-            .checked_add(1)
-            .ok_or_else(|| io::Error::other("durable transaction IDs exhausted"))?;
-        let transaction = Transaction::new(id, tick.get(), prepared.changes().to_vec());
+        durability.next_id = id.checked_add(1).ok_or_else(|| {
+            cancel_wakes();
+            io::Error::other("durable transaction IDs exhausted")
+        })?;
+        let mut changes = prepared.changes().to_vec();
+        changes.extend(wake_changes);
+        let transaction = Transaction::new(id, tick.get(), changes);
         let receiver = durability
             .writer
             .try_submit(transaction)
             .map_err(|error| match error {
-                SubmitError::Full => io::Error::new(
-                    ErrorKind::WouldBlock,
-                    "durable journal is full; owner wave defers",
-                ),
-                SubmitError::Closed => io::Error::other("durable journal writer is closed"),
+                SubmitError::Full => {
+                    cancel_wakes();
+                    io::Error::new(
+                        ErrorKind::WouldBlock,
+                        "durable journal is full; owner wave defers",
+                    )
+                }
+                SubmitError::Closed => {
+                    cancel_wakes();
+                    io::Error::other("durable journal writer is closed")
+                }
                 SubmitError::Invalid(error) => {
                     durability.failed = true;
                     error
@@ -595,6 +641,7 @@ impl SystemRuntime {
                 for key in &keys {
                     durability.reserved.remove(key);
                 }
+                cancel_wakes();
                 durability.failed = true;
                 return Err(io::Error::other(format!(
                     "durable WAL write failed: {error}"
@@ -604,6 +651,7 @@ impl SystemRuntime {
                 for key in &keys {
                     durability.reserved.remove(key);
                 }
+                cancel_wakes();
                 durability.failed = true;
                 return Err(io::Error::other("durable journal worker stopped"));
             }
@@ -620,9 +668,14 @@ impl SystemRuntime {
                 for key in &keys {
                     durability.reserved.remove(key);
                 }
+                cancel_wakes();
                 durability.failed = true;
                 error.io()
             })?;
+        // The record is receipted: flags become visible together with the
+        // producer wave they rode in on. No half-applied wave.
+        self.durable_wakes
+            .commit_sets(wake_sets.take().expect("wake set consumed once"));
         for key in &keys {
             durability.reserved.remove(key);
         }

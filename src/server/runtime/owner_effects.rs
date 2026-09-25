@@ -88,21 +88,51 @@ impl OwnerEffectPatch {
     }
 }
 
+/// Routed wake sets from one producer wave: live destinations whose consumer
+/// ran at the barrier, plus unloaded destinations with no live cell anywhere.
+/// Unloaded destinations fan out to every registered system whose partition
+/// accepts the owner, in canonical system order, so the flag is held exactly
+/// where the owner can load. An owner no system accepts stages nothing: a
+/// missing destination only costs latency.
+pub(in crate::server) struct RoutedOwnerWakes {
+    live: Vec<(SystemId, OwnerKey)>,
+    unloaded: Vec<(SystemId, OwnerKey)>,
+}
+
+impl RoutedOwnerWakes {
+    fn empty() -> Self {
+        Self {
+            live: Vec::new(),
+            unloaded: Vec::new(),
+        }
+    }
+
+    pub(in crate::server) fn live(&self) -> &[(SystemId, OwnerKey)] {
+        &self.live
+    }
+
+    pub(in crate::server) fn unloaded(&self) -> &[(SystemId, OwnerKey)] {
+        &self.unloaded
+    }
+}
+
 /// Routes a validated producer wave's emissions and runs each live
 /// destination's registered consumer at the commit barrier.
 ///
 /// Producer patches arrive in stable wave order and each producer's emissions
 /// keep their handler order, so the routed set is deterministic across worker
-/// scheduling. Returns the `(system, owner)` wake list the runtime schedules
-/// for normal work next tick. Consumer outputs are transient scratch: they
-/// are validated and dropped here, never committed.
+/// scheduling. Returns the live `(system, owner)` wake list the runtime
+/// schedules for normal work next tick alongside the unloaded destinations
+/// the runtime must hold durably. Consumer outputs are transient scratch:
+/// they are validated and dropped here, never committed.
 ///
 /// When `drop_before_delivery` is set, intents are still built and routed
 /// (identical bound enforcement) but the batch is discarded before any
 /// consumer runs: the producer commits still apply while no destination is
-/// woken. Deliveries to owners absent from the live store are skipped in
-/// place; a missing destination only costs latency.
+/// woken, live or durable.
 ///
+/// Every failure is `WouldBlock`: the producing work defers and retries, and
+/// nothing commits.
 /// Every failure is `WouldBlock`: the producing work defers and retries, and
 /// nothing commits.
 #[allow(clippy::too_many_arguments)]
@@ -115,7 +145,7 @@ pub(in crate::server) fn route_and_consume(
     effect_kinds: &EffectKindRegistryFrozen,
     limits: &OwnerWaveLimits,
     drop_before_delivery: bool,
-) -> Result<Vec<(SystemId, OwnerKey)>, io::Error> {
+) -> Result<RoutedOwnerWakes, io::Error> {
     let mut intents = Vec::new();
     for patch in patches {
         if let Some(emission) = patch.payload::<OwnerEffectPatch>() {
@@ -170,11 +200,12 @@ pub(in crate::server) fn route_and_consume(
     )
     .map_err(|error| blocked(format!("effect routing rejected: {error:?}")))?;
     if drop_before_delivery {
-        return Ok(Vec::new());
+        return Ok(RoutedOwnerWakes::empty());
     }
 
-    let mut wakes = Vec::new();
+    let mut routed = RoutedOwnerWakes::empty();
     for group in batch.owners() {
+        let mut live_cells = 0usize;
         for id in owners.systems() {
             let Some((revision, data)) = owners.snapshot(id, group.owner) else {
                 continue;
@@ -208,10 +239,21 @@ pub(in crate::server) fn route_and_consume(
                     group.owner
                 )));
             }
-            wakes.push((id.clone(), group.owner));
+            routed.live.push((id.clone(), group.owner));
+            live_cells += 1;
+        }
+        if live_cells == 0 {
+            // No live cell anywhere: hold the wake durably exactly where the
+            // owner can load, in canonical system order. Owners no system
+            // accepts stage nothing.
+            for id in owners.systems() {
+                if owners.accepts_owner(id, group.owner) {
+                    routed.unloaded.push((id.clone(), group.owner));
+                }
+            }
         }
     }
-    Ok(wakes)
+    Ok(routed)
 }
 
 fn blocked(reason: impl Into<String>) -> io::Error {

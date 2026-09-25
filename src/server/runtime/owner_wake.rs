@@ -18,10 +18,9 @@
 //! the coordinator can stop. Capacity (too many pending wakes) reports
 //! `WouldBlock`: the producing wave defers and retries, and nothing commits.
 
-//! NOTE: the live path does not hold this store yet — the next step wires it
-//! into `SystemRuntime` (stage sets with the producer wave, recover at open,
-//! serve and clear on destination waves). Until then the store is exercised
-//! by its unit tests only.
+//! NOTE: staging into the producer wave is wired; serving a flagged
+//! destination and clearing its flag follows next. Until then staged flags
+//! are exercised by unit tests and the apply path only.
 #![allow(dead_code)]
 
 use super::super::journal::{Change, StateKey};
@@ -301,7 +300,10 @@ impl PendingWakeStore {
             ));
             self.staged.insert(key.clone(), wake_tick);
         }
-        Ok(PreparedWakeSets { staged: fresh })
+        Ok(PreparedWakeSets {
+            staged: fresh,
+            changes,
+        })
     }
 
     /// Makes prepared flags visible after their WAL receipt. The record
@@ -366,9 +368,14 @@ impl PendingWakeStore {
 #[derive(Debug)]
 pub(in crate::server) struct PreparedWakeSets {
     staged: Vec<(SystemId, OwnerKey)>,
+    changes: Vec<Change>,
 }
 
 impl PreparedWakeSets {
+    pub fn changes(&self) -> &[Change] {
+        &self.changes
+    }
+
     pub fn changes_len(&self) -> usize {
         self.staged.len()
     }

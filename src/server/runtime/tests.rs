@@ -777,3 +777,59 @@ fn replayed_wake_flags_land_in_the_durable_set() {
     runtime.apply_replayed_owner_changes(&[clear]).unwrap();
     assert_eq!(runtime.durable_wake_count(), 0);
 }
+
+#[test]
+fn wakes_to_unloaded_owners_stage_durably_with_the_producer_wave() {
+    let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
+    let missing = chunk_owner(99);
+    let runs = Arc::new(Mutex::new(Vec::new()));
+    // `missing` is never inserted: no live cell exists anywhere.
+    let mut harness = nudge_harness(
+        2,
+        1,
+        8,
+        4,
+        false,
+        [0, 3, 0],
+        PatchUsage::default(),
+        saturating_emitter(owners[0], missing, Arc::clone(&runs), 3),
+    );
+    tick_nudge(&mut harness, 1).unwrap();
+    // The producer committed its own work ...
+    assert_eq!(nudge_values(&harness), [1, 3, 0]);
+    // ... and the wake to the unloaded owner is held durably, not skipped
+    // and not staged as a live wake.
+    assert_eq!(harness.state.system_runtime.durable_wake_count(), 1);
+    assert_eq!(harness.state.system_runtime.pending_wake_count(), 0);
+    // No consumer ran: there is no live destination to consume.
+    assert!(harness.deliveries.lock().unwrap().is_empty());
+}
+
+#[test]
+fn deferred_producer_waves_restage_their_durable_wakes() {
+    let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
+    let missing = chunk_owner(99);
+    let runs = Arc::new(Mutex::new(Vec::new()));
+    let mut harness = nudge_harness(
+        2,
+        1,
+        8,
+        4,
+        false,
+        [0, 3, 0],
+        PatchUsage::default(),
+        saturating_emitter(owners[0], missing, Arc::clone(&runs), 3),
+    );
+    // A requested rotation defers the wave before its receipt: nothing
+    // commits and no durable flag is left half-staged.
+    harness.state.durability.rotation_requested = true;
+    let error = tick_nudge(&mut harness, 1).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::WouldBlock);
+    assert_eq!(nudge_values(&harness), [0, 3, 0]);
+    assert_eq!(harness.state.system_runtime.durable_wake_count(), 0);
+    // The retry re-stages the flag with the retried record.
+    harness.state.durability.rotation_requested = false;
+    tick_nudge(&mut harness, 2).unwrap();
+    assert_eq!(nudge_values(&harness), [1, 3, 0]);
+    assert_eq!(harness.state.system_runtime.durable_wake_count(), 1);
+}
