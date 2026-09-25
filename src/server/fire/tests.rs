@@ -1290,3 +1290,100 @@ fn pin_crash_mid_commit_recovers_whole_without_partial_burn() {
     assert_eq!(world.cached_block(1, 65, 1), Some(AIR));
     assert_eq!(world.cached_block(2, 65, 1), Some(STONE));
 }
+
+/// A hot chunk with a full 4,096-cell frontier does bounded per-tick work:
+/// each source wave burns at most 32 cells, the remainder stays intact in
+/// the frontier (deferred, never truncated), and mailboxes to unloaded
+/// destinations survive delivery untouched.
+#[test]
+fn pin_hot_chunk_splits_bounded_work_and_defers_remainder() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let below = chunk(0, 3, 0);
+    let mut world = World::with_capacity(67, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    // Cells 0..64 are wood; the rest is whatever terrain generated. Cell c
+    // covers world (c % 16, 64 + c / 256, (c / 16) % 16).
+    let cell_xyz = |cell: u16| {
+        (
+            i32::from(cell % 16),
+            64 + i32::from(cell / 256),
+            i32::from((cell / 16) % 16),
+        )
+    };
+    pin_apply(
+        &mut world,
+        &(0..64)
+            .map(|cell| {
+                let (x, y, z) = cell_xyz(cell);
+                (x, y, z, WOOD)
+            })
+            .collect::<Vec<_>>(),
+    );
+    let mut frontier = FireFrontier::default();
+    for cell in 0..4_096 {
+        frontier.insert(cell, 1).unwrap();
+    }
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(owner), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 2).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+
+    // Tick 1: exactly the 32 earliest due cells burn; the other 4,064 stay.
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    assert_eq!(wave.transactions[0].burns().len(), 32);
+    assert!(wave.transactions[0].burns().iter().all(|&cell| cell < 64));
+    for transaction in wave.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    let frontier_len = fire
+        .snapshot()
+        .checkpoint_values()
+        .into_iter()
+        .find(|(key, _)| *key == frontier_key(owner))
+        .map(|(_, value)| FireFrontier::decode(&value).unwrap())
+        .expect("hot frontier must survive its first wave")
+        .due(u64::MAX, 4_096)
+        .len();
+    assert_eq!(frontier_len, 4_064, "remainder defers, never truncates");
+    for cell in 0..32 {
+        let (x, y, z) = cell_xyz(cell);
+        assert_eq!(world.cached_block(x, y, z), Some(AIR));
+    }
+    let (x, y, z) = cell_xyz(32);
+    assert_eq!(world.cached_block(x, y, z), Some(WOOD));
+
+    // Tick 2: the owner's own mailbox gates its source admission, so the
+    // source wave is empty while delivery drains; unloaded destinations
+    // keep their durable mailboxes.
+    let source = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(2))
+        .unwrap();
+    assert!(source.transactions.is_empty());
+    let delivery = fire
+        .prepare_delivery_wave(&mut world, &plan, TickId::new(2))
+        .unwrap();
+    assert!(!delivery.transactions.is_empty());
+    assert!(delivery.missing_chunks.contains(&below));
+    for transaction in delivery.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    assert!(
+        fire.snapshot()
+            .checkpoint_values()
+            .iter()
+            .any(|(key, _)| *key == mailbox_key(below, owner)),
+        "unloaded-destination mailbox must survive delivery"
+    );
+
+    // Tick 3: the next bounded 32-cell slice burns.
+    let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, 3);
+    assert_eq!(sources, 1);
+    assert_eq!(burned, 32);
+    let _ = delivered;
+}
