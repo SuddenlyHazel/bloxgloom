@@ -159,6 +159,7 @@ pub(super) fn capture_entity_view_for_plan(
 /// Plan an opaque entity interaction after the coordinator has validated its
 /// action receipt. The registered type policy owns request decoding and exact
 /// item transfer rules; this layer resolves reach, footprint, and WAL keys.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::server) fn plan_interact(
     state: &mut State,
     client_id: u64,
@@ -339,6 +340,15 @@ pub(in crate::server) fn plan_entity_tick(
     let plan = descriptor
         .plan_tick(&snapshot, current_tick, &catalog, &view, &neighbours)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    // A woken planner with nothing to do reaffirms its persisted schedule
+    // instead of advancing it. Without this the attempt would either stage a
+    // no-op commit (`NoChanges`) or churn the schedule on every stray wake;
+    // reaffirming is a no-op that leaves the entity on its durable grid, so
+    // dropping the wake converges to the same state. The due path below is
+    // unchanged: only woken attempts may reaffirm.
+    if woken && plan.payload.is_none() && snapshot.next_tick == Some(plan.next_tick) {
+        return Ok(None);
+    }
     if snapshot
         .next_tick
         .is_none_or(|previous| plan.next_tick <= previous)

@@ -907,3 +907,159 @@ fn mobile_queries_are_sparse_bounded_and_sorted_by_stable_id() {
         Err(EntityError::SpatialQueryTooBroad)
     );
 }
+
+fn frozen_wake_registry() -> crate::server::effects::EffectKindRegistryFrozen {
+    let mut registry = crate::server::effects::EffectKindRegistry::new();
+    register_wake_kind(&mut registry).unwrap();
+    registry.freeze()
+}
+
+fn fake_neighbour(id: u64) -> EntityPublicView {
+    EntityPublicView {
+        id: EntityId::new(id).unwrap(),
+        entity_type: crate::content::EntityTypeId(70_011),
+        revision: 1,
+        motion_revision: 0,
+        owner: EntityOwner::Mobile(ChunkKey { x: 0, y: 5, z: 0 }),
+        location: EntityLocation::Mobile {
+            position: [0.5, 80.0, 0.5],
+        },
+        payload: vec![0],
+    }
+}
+
+#[test]
+fn wake_routing_is_deterministic_across_repeated_runs() {
+    let registry = frozen_wake_registry();
+    let tick = crate::server::simulation::TickId::new(6);
+    let source = EntityId::new(3).unwrap();
+    let (first_id, second_id) = (EntityId::new(1).unwrap(), EntityId::new(2).unwrap());
+    // Delivery is owner-sorted, so emission order cannot change the routed set.
+    let first = route_wakes(
+        &registry,
+        tick,
+        tick_producer(),
+        source,
+        &[second_id, first_id],
+    )
+    .unwrap();
+    assert_eq!(first, vec![first_id, second_id]);
+    let second = route_wakes(
+        &registry,
+        tick,
+        tick_producer(),
+        source,
+        &[second_id, first_id],
+    )
+    .unwrap();
+    assert_eq!(first, second);
+    let swapped = route_wakes(
+        &registry,
+        tick,
+        tick_producer(),
+        source,
+        &[first_id, second_id],
+    )
+    .unwrap();
+    assert_eq!(first, swapped);
+    assert!(
+        route_wakes(&registry, tick, tick_producer(), source, &[])
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn wake_emit_with_unknown_kind_is_rejected() {
+    let registry = frozen_wake_registry();
+    let unknown = crate::server::effects::EffectKindId::new("test:unregistered").unwrap();
+    let mut buffer = crate::server::effects::RegisteredEffectBuffer::new(
+        crate::server::simulation::TickId::new(1),
+        crate::server::simulation::Phase::DurableActions,
+        tick_producer(),
+        crate::server::parallel::OwnerKey::Entity(7),
+        4,
+        &registry,
+    )
+    .unwrap();
+    assert_eq!(
+        buffer.emit(&unknown, 42u8).unwrap_err(),
+        crate::server::effects::RegisteredEffectError::UnknownKind {
+            id: unknown.clone()
+        }
+    );
+    // The rejected emit leaves no partial intent behind.
+    assert!(buffer.finish().unwrap().is_empty());
+}
+
+#[test]
+fn wake_buffer_overflow_rejects_the_whole_producer_output() {
+    let registry = frozen_wake_registry();
+    let kind = crate::server::effects::EffectKindId::new(super::wake::WAKE_KIND_ID).unwrap();
+    let mut buffer = crate::server::effects::RegisteredEffectBuffer::new(
+        crate::server::simulation::TickId::new(1),
+        crate::server::simulation::Phase::DurableActions,
+        tick_producer(),
+        crate::server::parallel::OwnerKey::Entity(7),
+        2,
+        &registry,
+    )
+    .unwrap();
+    buffer
+        .emit(
+            &kind,
+            super::wake::EntityWake {
+                id: EntityId::new(1).unwrap(),
+            },
+        )
+        .unwrap();
+    buffer
+        .emit(
+            &kind,
+            super::wake::EntityWake {
+                id: EntityId::new(2).unwrap(),
+            },
+        )
+        .unwrap();
+    assert!(
+        buffer
+            .emit(
+                &kind,
+                super::wake::EntityWake {
+                    id: EntityId::new(3).unwrap()
+                }
+            )
+            .is_err()
+    );
+    // Overflow poisons the buffer: finishing rejects everything, so a
+    // truncated producer output can never be routed.
+    assert!(buffer.finish().is_err());
+}
+
+#[test]
+fn canonical_wakes_are_sorted_deduped_bounded_and_confined_to_neighbours() {
+    let view = EntityView::assemble(
+        vec![fake_neighbour(1), fake_neighbour(2)],
+        EntityId::new(9).unwrap(),
+    );
+    let (first_id, second_id) = (EntityId::new(1).unwrap(), EntityId::new(2).unwrap());
+    assert_eq!(
+        canonical_wakes(&view, &[second_id, first_id, second_id]).unwrap(),
+        vec![first_id, second_id]
+    );
+    assert!(canonical_wakes(&view, &[]).unwrap().is_empty());
+    let outside = EntityId::new(999).unwrap();
+    assert_eq!(
+        canonical_wakes(&view, &[outside]).unwrap_err().kind(),
+        std::io::ErrorKind::InvalidInput
+    );
+    // The bound fires before membership: an over-bound set defers the plan
+    // even when none of its destinations are visible.
+    let over_bound: Vec<EntityId> = (100..100 + super::wake::MAX_WAKES_PER_PLAN as u64 + 1)
+        .map(|id| EntityId::new(id).unwrap())
+        .collect();
+    assert_eq!(
+        canonical_wakes(&view, &over_bound).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}

@@ -2010,3 +2010,738 @@ fn entity_neighbour_view_byte_bound_is_an_error() {
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
+
+/// Units of durable work for the poke-consumer probe below.
+const POKE_DONE: u8 = 3;
+
+/// A mobile consumer that performs a bounded amount of durable work (payload
+/// 0 up to `POKE_DONE`), then idles on its schedule grid. Its next due time
+/// always anchors to the previous persisted due time, so an early (woken)
+/// tick does the same work sooner without rescheduling the grid. A woken
+/// attempt with nothing to do reaffirms the schedule, which the coordinator
+/// turns into a no-op instead of a commit.
+struct PokeConsumer;
+
+impl crate::server::entities::EntityTickPolicy for PokeConsumer {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityPayload, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        let phase: u8 = snapshot
+            .private_payload
+            .downcast_ref()
+            .copied()
+            .ok_or(EntityError::InvalidPayload)?;
+        let (payload, next_tick) = if phase < POKE_DONE {
+            (
+                Some(EntityPayload::new(phase + 1)),
+                due.checked_add(10).ok_or(EntityError::RevisionExhausted)?,
+            )
+        } else if current_tick < due {
+            (None, due)
+        } else {
+            (
+                None,
+                due.checked_add(10).ok_or(EntityError::RevisionExhausted)?,
+            )
+        };
+        Ok(EntityTickPlan {
+            payload,
+            next_tick,
+            anchor_update: None,
+            block_states: Vec::new(),
+            wakes: Vec::new(),
+        })
+    }
+}
+
+/// A mobile producer that wakes its consumer peer every tick until the peer's
+/// public view shows the work is done. The destination comes from the
+/// captured neighbour view, so emission is deterministic.
+struct PokeProducer {
+    consumer: crate::content::EntityTypeId,
+}
+
+impl crate::server::entities::EntityTickPolicy for PokeProducer {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        _current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        let peer = neighbours
+            .iter()
+            .filter(|view| view.entity_type == self.consumer)
+            .min_by_key(|view| view.id)
+            .ok_or(EntityError::InvalidType)?;
+        let wakes = if peer.payload == vec![POKE_DONE] {
+            Vec::new()
+        } else {
+            vec![peer.id]
+        };
+        Ok(EntityTickPlan {
+            payload: None,
+            next_tick: due.checked_add(5).ok_or(EntityError::RevisionExhausted)?,
+            anchor_update: None,
+            block_states: Vec::new(),
+            wakes,
+        })
+    }
+}
+
+/// A mobile probe whose planner wakes an entity ID that is not in its
+/// neighbour view. Planning must reject the whole plan without failing.
+struct PokeBlind;
+
+impl crate::server::entities::EntityTickPolicy for PokeBlind {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        _current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        Ok(EntityTickPlan {
+            payload: None,
+            next_tick: due.checked_add(5).ok_or(EntityError::RevisionExhausted)?,
+            anchor_update: None,
+            block_states: Vec::new(),
+            wakes: vec![crate::server::entities::EntityId::new(999_999).unwrap()],
+        })
+    }
+}
+
+fn poke_catalog(
+    producer: crate::content::EntityTypeId,
+    consumer: crate::content::EntityTypeId,
+) -> crate::content::Catalog {
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key, fingerprint) in [
+        (producer, "test:poke_producer", 0x504f_4b45_5000_0001),
+        (consumer, "test:poke_consumer", 0x504f_4b45_4300_0001),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: fingerprint,
+            })
+            .unwrap();
+    }
+    catalog
+}
+
+fn poke_startup(
+    catalog: crate::content::Catalog,
+    consumer: crate::content::EntityTypeId,
+    consumer_interval: u32,
+) -> crate::server::startup::ServerStartup {
+    use crate::server::entities::{EntityOwnership, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:poke_producer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(PokeProducer { consumer })
+            as Arc<dyn crate::server::entities::EntityTickPolicy>),
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:poke_consumer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(consumer_interval),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(
+            Arc::new(PokeConsumer) as Arc<dyn crate::server::entities::EntityTickPolicy>
+        ),
+    });
+    startup
+}
+
+fn stage_entity_spawn(
+    state: &mut State,
+    spawn: crate::server::entities::EntitySpawn,
+) -> crate::server::entities::EntityId {
+    // Spawns stage through the WAL so the entity checkpoint mirror replays
+    // the same batches as the live store. Direct `apply_committed` spawns
+    // would desync the mirror on the first submitted tick commit.
+    let prepared = state.entities.prepare_spawn(spawn).unwrap();
+    let id = prepared.entity_id();
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the spawn");
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(prepared),
+        entity_wakes: Vec::new(),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(1), &action, None, Some(permit))
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(state, TickId::new(1), Instant::now())
+            .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        state.durability.pending.is_empty(),
+        "poke spawn must commit"
+    );
+    id
+}
+
+fn stage_mobile_spawn(
+    state: &mut State,
+    entity_type: crate::content::EntityTypeId,
+    position: [f32; 3],
+    payload: u8,
+) -> crate::server::entities::EntityId {
+    use crate::server::entities::{EntityPayload, EntitySpawn};
+
+    stage_entity_spawn(
+        state,
+        EntitySpawn::Mobile {
+            entity_type,
+            position,
+            payload: EntityPayload::new(payload),
+            spawn_tick: 1,
+        },
+    )
+}
+
+fn spawn_poke_pair(
+    state: &mut State,
+    producer: crate::content::EntityTypeId,
+    consumer: crate::content::EntityTypeId,
+) -> (
+    crate::server::entities::EntityId,
+    crate::server::entities::EntityId,
+) {
+    let producer_id = stage_mobile_spawn(state, producer, [0.5, 80.0, 0.5], 0);
+    let consumer_id = stage_mobile_spawn(state, consumer, [2.5, 80.0, 0.5], 0);
+    (producer_id, consumer_id)
+}
+
+fn poke_consumer_phase(state: &State, consumer: crate::server::entities::EntityId) -> u8 {
+    state
+        .entities
+        .snapshot(consumer)
+        .unwrap()
+        .private_payload
+        .downcast_ref::<u8>()
+        .copied()
+        .unwrap()
+}
+
+fn drive_poke_tick(state: &mut State, tick: u64, drop_wakes: bool) {
+    super::super::coordinator::queue_interaction_actions(state, TickId::new(tick));
+    super::super::coordinator::process_durable_actions(state, TickId::new(tick), Instant::now())
+        .unwrap();
+    if drop_wakes {
+        // Drop every effect before delivery: the destination stays on its
+        // persisted schedule and must converge to the same work, only later.
+        state.durability.pending_wakes.clear();
+        state
+            .durability
+            .queued
+            .retain(|request| !matches!(request, DurableRequest::EntityWake { .. }));
+    }
+    // Settle at the same tick until every staged receipt applies. Repeating
+    // the tick absorbs WAL latency without opening new dues, so each tick's
+    // durable outcome is exact before the clock advances.
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            state,
+            TickId::new(tick),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(
+        state.durability.pending.is_empty(),
+        "poke tick {tick} must settle"
+    );
+    if drop_wakes {
+        state.durability.pending_wakes.clear();
+        state
+            .durability
+            .queued
+            .retain(|request| !matches!(request, DurableRequest::EntityWake { .. }));
+    }
+}
+
+#[test]
+fn entity_wake_effects_are_optional_for_convergence() {
+    let producer_type = crate::content::EntityTypeId(70_010);
+    let consumer_type = crate::content::EntityTypeId(70_011);
+    // The consumer's persisted dues below this tick are all committed by both
+    // runs; the next grid point stays unopened so the tail cannot diverge.
+    const LAST_TICK: u64 = 148;
+
+    let mut outcomes = Vec::new();
+    for drop_wakes in [false, true] {
+        let label = if drop_wakes {
+            "poke-converge-dropped"
+        } else {
+            "poke-converge-delivered"
+        };
+        let path = temp_save_dir(label);
+        let catalog = poke_catalog(producer_type, consumer_type);
+        let startup = poke_startup(catalog, consumer_type, 10);
+        let mut state =
+            crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+        let (producer_id, consumer_id) = spawn_poke_pair(&mut state, producer_type, consumer_type);
+        let mut done_tick = None;
+        for tick in 1..=LAST_TICK {
+            drive_poke_tick(&mut state, tick, drop_wakes);
+            if done_tick.is_none() && poke_consumer_phase(&state, consumer_id) == POKE_DONE {
+                done_tick = Some(tick);
+            }
+        }
+        // Settle at the final tick without opening new dues: receipts apply
+        // and leftover wakes deliver (or are dropped) on the same schedule
+        // grid, so both runs must land on identical durable state.
+        for _ in 0..2_000 {
+            drive_poke_tick(&mut state, LAST_TICK, drop_wakes);
+            let wakes_pending = !state.durability.pending_wakes.is_empty()
+                || state.durability.queued.iter().any(|request| {
+                    matches!(
+                        request,
+                        DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. }
+                    )
+                });
+            if state.durability.pending.is_empty() && !wakes_pending {
+                break;
+            }
+        }
+        assert!(
+            state.durability.pending.is_empty(),
+            "poke scenario must settle"
+        );
+        let consumer = state.entities.snapshot(consumer_id).unwrap();
+        let producer = state.entities.snapshot(producer_id).unwrap();
+        outcomes.push((
+            consumer.private_payload.downcast_ref::<u8>().copied(),
+            consumer.next_tick,
+            consumer.revision,
+            consumer.owner,
+            consumer.location,
+            producer.next_tick,
+            producer.revision,
+            done_tick,
+        ));
+        drop(state);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    let [delivered, dropped] = outcomes.as_slice() else {
+        panic!("both poke scenarios must run");
+    };
+    // The proof of the notification rule: identical final durable state
+    // whether every wake was delivered or every wake was dropped.
+    assert_eq!(delivered.0, Some(POKE_DONE));
+    assert_eq!(delivered.0, dropped.0, "consumer work must converge");
+    assert_eq!(delivered.1, dropped.1, "consumer schedule must converge");
+    assert_eq!(delivered.2, dropped.2, "consumer revisions must converge");
+    assert_eq!(delivered.3, dropped.3, "consumer owner must converge");
+    assert_eq!(delivered.4, dropped.4, "consumer location must converge");
+    assert_eq!(delivered.5, dropped.5, "producer schedule must converge");
+    assert_eq!(delivered.6, dropped.6, "producer revisions must converge");
+    // ... only later without the wakes.
+    assert!(
+        delivered.7.unwrap() < dropped.7.unwrap(),
+        "delivered wakes must finish the same work sooner: {outcomes:?}"
+    );
+}
+
+#[test]
+fn entity_wake_delivery_runs_the_destination_next_tick_never_same_tick() {
+    let producer_type = crate::content::EntityTypeId(70_010);
+    let consumer_type = crate::content::EntityTypeId(70_011);
+    let path = temp_save_dir("poke-no-cascade");
+    let catalog = poke_catalog(producer_type, consumer_type);
+    // The consumer's own grid is far away: any work it does comes from wakes.
+    let startup = poke_startup(catalog, consumer_type, 100);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let (_producer_id, consumer_id) = spawn_poke_pair(&mut state, producer_type, consumer_type);
+
+    for tick in 1..=6u64 {
+        drive_poke_tick(&mut state, tick, false);
+    }
+    // The producer's tick-6 commit applied during its own tick, and delivery
+    // recorded the wake without queueing any destination work in the same pass.
+    assert!(state.durability.pending.is_empty());
+    assert_eq!(state.durability.pending_wakes, vec![consumer_id]);
+    assert!(
+        !state
+            .durability
+            .queued
+            .iter()
+            .any(|request| matches!(request, DurableRequest::EntityWake { .. })),
+        "a tick-N delivery must not plan its destination in tick N"
+    );
+    assert_eq!(state.entities.snapshot(consumer_id).unwrap().revision, 1);
+
+    // The interaction/commit barrier queues the wake; the next tick plans it,
+    // far ahead of the consumer's own persisted due time.
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+    assert!(
+        state.durability.queued.iter().any(
+            |request| matches!(request, DurableRequest::EntityWake { id } if *id == consumer_id)
+        )
+    );
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(7),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(poke_consumer_phase(&state, consumer_id), 1);
+    assert_eq!(state.entities.snapshot(consumer_id).unwrap().revision, 2);
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_wake_to_an_unseen_entity_rejects_the_plan_without_failing() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("poke-blind-wake");
+    let blind_type = crate::content::EntityTypeId(70_012);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: blind_type,
+            key: "test:poke_blind".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x504f_4b45_4200_0001,
+        })
+        .unwrap();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:poke_blind".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(PokeBlind)),
+    });
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: blind_type,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(0u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::InvalidInput),
+        "a wake outside the neighbour view must reject the plan"
+    );
+    // A rejected effect set never takes the coordinator-fatal path.
+    assert!(!state.durability.failed);
+    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(6));
+    assert!(state.entities.due_entities(7, 8).contains(&id));
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_wake_with_nothing_to_do_reaffirms_instead_of_committing() {
+    let consumer_type = crate::content::EntityTypeId(70_011);
+    let path = temp_save_dir("poke-reaffirm");
+    let catalog = poke_catalog(crate::content::EntityTypeId(70_010), consumer_type);
+    let startup = poke_startup(catalog, consumer_type, 100);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    // Already done and far from due: a woken attempt must no-op, while the
+    // due attempt still advances the schedule.
+    let consumer_id = stage_mobile_spawn(&mut state, consumer_type, [2.5, 80.0, 0.5], POKE_DONE);
+    assert_eq!(
+        state.entities.snapshot(consumer_id).unwrap().next_tick,
+        Some(101)
+    );
+
+    state
+        .durability
+        .queued
+        .push_back(DurableRequest::EntityWake { id: consumer_id });
+    super::super::coordinator::process_durable_actions(&mut state, TickId::new(50), Instant::now())
+        .unwrap();
+    let snapshot = state.entities.snapshot(consumer_id).unwrap();
+    assert_eq!(snapshot.revision, 1, "a reaffirmed wake must not commit");
+    assert_eq!(snapshot.next_tick, Some(101));
+    assert!(state.durability.pending.is_empty());
+
+    state
+        .durability
+        .queued
+        .push_back(DurableRequest::EntityTick { id: consumer_id });
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(101),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let snapshot = state.entities.snapshot(consumer_id).unwrap();
+    assert_eq!(
+        snapshot.revision, 2,
+        "the due tick still advances the schedule"
+    );
+    assert_eq!(snapshot.next_tick, Some(111));
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+/// An anchored interaction probe that wakes its mobile consumer peer, like
+/// `CounterInteract` but with the notification channel attached.
+struct PokeWaker {
+    consumer: crate::content::EntityTypeId,
+}
+
+impl crate::server::entities::EntityInteractionPolicy for PokeWaker {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        _request: &[u8],
+        inventory: &crate::inventory::Inventory,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityInteractionPlan, crate::server::entities::EntityError>
+    {
+        use crate::server::entities::{EntityBlockStateChange, EntityError, EntityInteractionPlan};
+        let (anchor, anchor_state) = match &snapshot.location {
+            crate::server::entities::EntityLocation::Anchored {
+                anchor,
+                anchor_state,
+                ..
+            } => (*anchor, *anchor_state),
+            crate::server::entities::EntityLocation::Mobile { .. } => {
+                return Err(EntityError::WrongOwnership);
+            }
+        };
+        let peer = neighbours
+            .iter()
+            .filter(|view| view.entity_type == self.consumer)
+            .min_by_key(|view| view.id)
+            .ok_or(EntityError::InvalidType)?;
+        let mut next = inventory.clone();
+        next.revision = next.revision.wrapping_add(1);
+        Ok(EntityInteractionPlan {
+            payload: crate::server::entities::EntityPayload::new(9u8),
+            inventory: next,
+            block_states: vec![EntityBlockStateChange {
+                cell: anchor,
+                before: anchor_state,
+                after: anchor_state,
+            }],
+            wakes: if peer.payload == vec![POKE_DONE] {
+                Vec::new()
+            } else {
+                vec![peer.id]
+            },
+        })
+    }
+}
+
+#[test]
+fn entity_interaction_wakes_route_to_next_tick_delivery() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("poke-interact-wake");
+    let waker_type = crate::content::EntityTypeId(70_013);
+    let consumer_type = crate::content::EntityTypeId(70_011);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key, fingerprint) in [
+        (waker_type, "test:poke_waker", 0x504f_4b45_5700_0001),
+        (consumer_type, "test:poke_consumer", 0x504f_4b45_4300_0001),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: fingerprint,
+            })
+            .unwrap();
+    }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:poke_waker".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: Some(Arc::new(PokeWaker {
+            consumer: consumer_type,
+        })),
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:poke_consumer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(100),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(PokeConsumer)),
+    });
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    // The consumer shares the anchor chunk, so the radius-zero neighbour
+    // view already covers it with no loader round-trips.
+    let consumer_id = stage_mobile_spawn(&mut state, consumer_type, [3.5, anchor.y as f32, 3.5], 0);
+    let waker_id = stage_entity_spawn(
+        &mut state,
+        EntitySpawn::Anchored {
+            entity_type: waker_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(0u8),
+            spawn_tick: 1,
+        },
+    );
+    assert!(state.entities.due_entities(200, 8).contains(&consumer_id));
+
+    let peer = add_test_client(
+        &mut state,
+        [0.5, anchor.y as f32, 3.5],
+        Inventory::default(),
+    );
+    let epoch = grant_action_epoch(&mut state, 17);
+    settle_live_action(
+        &mut state,
+        10,
+        ClientMessage::EntityInteract {
+            action_id: (u128::from(epoch) << 64) | 1,
+            target: [anchor.x, anchor.y, anchor.z],
+            payload: vec![0],
+        },
+    );
+    assert_eq!(
+        state
+            .entities
+            .snapshot(waker_id)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&9u8)
+    );
+    // The interaction committed its durable work and recorded the wake
+    // without running the destination in the same pass.
+    assert_eq!(state.durability.pending_wakes, vec![consumer_id]);
+    assert_eq!(state.entities.snapshot(consumer_id).unwrap().revision, 1);
+
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(10));
+    drive_poke_tick(&mut state, 11, false);
+    assert_eq!(poke_consumer_phase(&state, consumer_id), 1);
+    assert_eq!(state.entities.snapshot(consumer_id).unwrap().revision, 2);
+
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}

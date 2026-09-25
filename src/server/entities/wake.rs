@@ -45,7 +45,7 @@ pub(crate) const MAX_WAKES_PER_PLAN: usize = MAX_PLAN_NEIGHBOURS;
 /// its own planner inputs.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct EntityWake {
-    id: EntityId,
+    pub(crate) id: EntityId,
 }
 
 impl EntityWake {
