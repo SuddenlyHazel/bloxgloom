@@ -70,6 +70,41 @@ fn independent_worlds_keep_their_own_startup_catalogs() {
 }
 
 #[test]
+fn missing_entity_registration_rejects_catalog_before_touching_world_files() {
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: crate::content::EntityTypeId(70_003),
+            key: "test:missing_codec".into(),
+            schema_version: 1,
+            schema_fingerprint: 1,
+        })
+        .unwrap();
+    let catalog = Arc::new(catalog);
+
+    let fresh = TestSave::new("unregistered-entity-fresh");
+    assert_eq!(std::fs::read_dir(fresh.path()).unwrap().count(), 0);
+    let error =
+        server_state_with_limit_and_catalog(7, fresh.path().to_path_buf(), 1, Arc::clone(&catalog))
+            .err()
+            .unwrap();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_eq!(std::fs::read_dir(fresh.path()).unwrap().count(), 0);
+
+    let existing = TestSave::new("unregistered-entity-existing");
+    drop(state_for(&existing, 7));
+    let before = std::fs::read(existing.path().join("content.map")).unwrap();
+    let error = server_state_with_limit_and_catalog(7, existing.path().to_path_buf(), 1, catalog)
+        .err()
+        .unwrap();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+    assert_eq!(
+        std::fs::read(existing.path().join("content.map")).unwrap(),
+        before
+    );
+}
+
+#[test]
 fn remote_player_spawn_move_and_leave_publish_ordered_entity_changes() {
     let save = TestSave::new("player-entity-publication");
     let mut state = state_for(&save, 7);

@@ -352,23 +352,29 @@ fn server_state_with_limit_and_catalog(
             "admission limit must be 1..=256",
         ));
     }
+    let register_entity_types = |catalog: Arc<crate::content::Catalog>| {
+        let mut types = EntityTypeRegistryBuilder::new(&catalog);
+        drops::register_entity_type(&mut types, Arc::clone(&catalog))
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+        entities::register_player_entity_type(&mut types)
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+        entities::register_kiln_entity_type(&mut types, Arc::clone(&catalog))
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+        types
+            .freeze()
+            .map(Arc::new)
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))
+    };
+    // A missing entity codec is a startup error, not a reason to create or
+    // rewrite content.map before rejecting the world. Repeat after loading
+    // because an existing world's manifest may resolve numeric IDs.
+    let _ = register_entity_types(Arc::clone(&catalog))?;
     let mut world =
         World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();
-    let mut entity_types = EntityTypeRegistryBuilder::new(&catalog);
-    drops::register_entity_type(&mut entity_types, catalog.clone())
-        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-    entities::register_player_entity_type(&mut entity_types)
-        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-    entities::register_kiln_entity_type(&mut entity_types, catalog.clone())
-        .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-    let entity_types = Arc::new(
-        entity_types
-            .freeze()
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?,
-    );
+    let entity_types = register_entity_types(catalog.clone())?;
     let mut block_actions = BlockActionRegistryBuilder::new(&catalog);
     block_actions.register(
         crate::content::KILN_BLOCK_TYPE,
