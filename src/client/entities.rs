@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 mod avatar;
 pub(super) mod kiln;
+mod registry;
+pub(in crate::client) use registry::{EntityClientRegistry, EntityVerb};
 
 const MAX_PENDING_SNAPSHOTS: usize = 8;
 const MAX_PENDING_COMMITS: usize = 8;
@@ -59,11 +61,16 @@ impl Replicas {
         message: ServerMessage,
         catalog: &Catalog,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Assembly {
         match message {
-            ServerMessage::WorldSnapshotStart(start) => self.snapshot_start(start, catalog, chunks),
-            ServerMessage::EntitySnapshotPage(page) => self.snapshot_page(page, catalog, chunks),
-            ServerMessage::WorldCommitPart(part) => self.commit_part(part, chunks),
+            ServerMessage::WorldSnapshotStart(start) => {
+                self.snapshot_start(start, catalog, chunks, registry)
+            }
+            ServerMessage::EntitySnapshotPage(page) => {
+                self.snapshot_page(page, catalog, chunks, registry)
+            }
+            ServerMessage::WorldCommitPart(part) => self.commit_part(part, chunks, registry),
             _ => unreachable!("only entity replication messages enter the assembler"),
         }
     }
@@ -121,6 +128,7 @@ impl Replicas {
         start: WorldSnapshotStart,
         catalog: &Catalog,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Assembly {
         let key = start.chunk.key;
         if self
@@ -158,7 +166,7 @@ impl Replicas {
         }
         pending.bytes = pending.bytes.saturating_add(incoming_len);
         pending.start = Some(start);
-        self.finish_snapshot(key, catalog, chunks)
+        self.finish_snapshot(key, catalog, chunks, registry)
     }
 
     fn snapshot_page(
@@ -166,6 +174,7 @@ impl Replicas {
         page: EntitySnapshotPage,
         catalog: &Catalog,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Assembly {
         let key = page.key;
         if self
@@ -198,7 +207,7 @@ impl Replicas {
         }
         pending.bytes = pending.bytes.saturating_add(incoming_len);
         pending.pages.insert(page.page_index, page);
-        self.finish_snapshot(key, catalog, chunks)
+        self.finish_snapshot(key, catalog, chunks, registry)
     }
 
     fn finish_snapshot(
@@ -206,6 +215,7 @@ impl Replicas {
         key: ChunkKey,
         catalog: &Catalog,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Assembly {
         let Some(pending) = self.snapshots.get(&key) else {
             return Assembly::Waiting;
@@ -265,7 +275,7 @@ impl Replicas {
             self.snapshots.remove(&key);
             return Assembly::Resync(vec![key]);
         }
-        let Ok(avatars) = avatar::project(&entities) else {
+        let Ok(avatars) = registry.project(&entities) else {
             self.snapshots.remove(&key);
             return Assembly::Resync(vec![key]);
         };
@@ -283,6 +293,7 @@ impl Replicas {
         &mut self,
         part: WorldCommitPart,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Assembly {
         if part.commit_id <= self.last_commit {
             return Assembly::Waiting;
@@ -313,17 +324,21 @@ impl Replicas {
             self.commits.remove(&part.commit_id);
             return Assembly::Resync(vec![part.key]);
         }
-        self.finish_commits(chunks)
+        self.finish_commits(chunks, registry)
     }
 
-    fn finish_commits(&mut self, chunks: &mut HashMap<ChunkKey, Arc<Chunk>>) -> Assembly {
+    fn finish_commits(
+        &mut self,
+        chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
+    ) -> Assembly {
         let mut installed = Vec::new();
         while let Some((&id, pending)) = self.commits.first_key_value() {
             if pending.parts.len() != usize::from(pending.count) {
                 break;
             }
             let pending = self.commits.remove(&id).expect("first key exists");
-            match self.apply_commit(pending, chunks) {
+            match self.apply_commit(pending, chunks, registry) {
                 Ok(keys) => {
                     self.last_commit = id;
                     installed.extend(keys);
@@ -352,6 +367,7 @@ impl Replicas {
         &mut self,
         pending: PendingCommit,
         chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+        registry: &EntityClientRegistry,
     ) -> Result<Vec<ChunkKey>, Vec<ChunkKey>> {
         let parts: Vec<_> = pending.parts.into_values().collect();
         let keys: Vec<_> = parts.iter().map(|part| part.key).collect();
@@ -440,7 +456,7 @@ impl Replicas {
         }
         let mut revised_avatars = HashMap::new();
         for (&key, entities) in &revised_entities {
-            let avatars = avatar::project(entities).map_err(|()| keys.clone())?;
+            let avatars = registry.project(entities).map_err(|()| keys.clone())?;
             revised_avatars.insert(key, avatars);
         }
         for (key, chunk) in revised_chunks {

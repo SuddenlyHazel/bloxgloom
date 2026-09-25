@@ -202,8 +202,7 @@ impl ActionTracker {
 mod admin;
 mod entities;
 mod workers;
-use entities::kiln::KilnCommand;
-use entities::{Assembly, Replicas};
+use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 
 #[derive(Default)]
@@ -232,6 +231,7 @@ struct ClientApp {
     ui_layout: Option<UiLayout>,
     chunks: HashMap<ChunkKey, Arc<Chunk>>,
     replicas: Replicas,
+    entity_registry: EntityClientRegistry,
     pending_mesh: HashMap<ChunkKey, u64>,
     urgent_mesh: std::collections::HashSet<ChunkKey>,
     lighting_revisions: HashMap<ChunkKey, u64>,
@@ -292,6 +292,7 @@ impl ClientApp {
             ui_layout: None,
             chunks: HashMap::new(),
             replicas: Replicas::default(),
+            entity_registry: EntityClientRegistry::builtins(),
             pending_mesh: HashMap::new(),
             urgent_mesh: std::collections::HashSet::new(),
             lighting_revisions: HashMap::new(),
@@ -716,10 +717,12 @@ impl ClientApp {
             | ServerMessage::EntitySnapshotPage(_)
             | ServerMessage::WorldCommitPart(_) => {
                 let block_commit = matches!(&message, ServerMessage::WorldCommitPart(_));
-                match self
-                    .replicas
-                    .accept(message, &self.catalog, &mut self.chunks)
-                {
+                match self.replicas.accept(
+                    message,
+                    &self.catalog,
+                    &mut self.chunks,
+                    &self.entity_registry,
+                ) {
                     Assembly::Waiting => {}
                     Assembly::Installed(keys) => {
                         for key in keys {
@@ -1076,26 +1079,32 @@ impl ClientApp {
         }
     }
 
-    fn interact_aimed_kiln(&mut self, command: KilnCommand) {
+    /// Aim-block interaction through the generic entity registry: the first
+    /// adapter handling the hit builds the opaque request bytes and the
+    /// server owns every inventory decision.
+    fn interact_aimed_entity(&mut self, verb: EntityVerb) {
         if self.screen != UiScreen::Playing || !self.grabbed {
             return;
         }
         let Some(hit) = self.aimed_block() else {
             return;
         };
-        if !entities::kiln::is_kiln_hit(hit, &self.catalog) {
+        if !self.entity_registry.handles(hit, &self.catalog) {
             return;
         }
         let Some(action_id) = self.allocate_action_id() else {
             self.show_status("Action session pending or busy");
             return;
         };
-        self.queue_command(entities::kiln::interaction(
+        if let Some(message) = self.entity_registry.interact(
             hit,
+            &self.catalog,
             action_id,
             self.config.selected_slot as u8,
-            command,
-        ));
+            verb,
+        ) {
+            self.queue_command(message);
+        }
     }
 
     fn frame(&mut self) {

@@ -110,18 +110,18 @@ impl ApplicationHandler for ClientApp {
                                 return;
                             }
                             KeyCode::KeyR if self.screen == UiScreen::Playing => {
-                                self.interact_aimed_kiln(if self.shift_down {
-                                    KilnCommand::TakeOutput
+                                self.interact_aimed_entity(if self.shift_down {
+                                    entities::kiln::TAKE_OUTPUT
                                 } else {
-                                    KilnCommand::InsertInput
+                                    entities::kiln::INSERT_INPUT
                                 });
                                 return;
                             }
                             KeyCode::KeyF if self.screen == UiScreen::Playing => {
-                                self.interact_aimed_kiln(if self.shift_down {
-                                    KilnCommand::TakeFuel
+                                self.interact_aimed_entity(if self.shift_down {
+                                    entities::kiln::TAKE_FUEL
                                 } else {
-                                    KilnCommand::InsertFuel
+                                    entities::kiln::INSERT_FUEL
                                 });
                                 return;
                             }

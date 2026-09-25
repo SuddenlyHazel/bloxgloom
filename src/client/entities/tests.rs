@@ -1,3 +1,4 @@
+use super::registry::EntityAdapter;
 use super::*;
 use crate::content::{Catalog, EntityTypeId};
 use crate::protocol::{
@@ -93,7 +94,258 @@ fn accept(
     catalog: &Catalog,
     chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
 ) -> Assembly {
-    replicas.accept(message, catalog, chunks)
+    replicas.accept(message, catalog, chunks, &EntityClientRegistry::builtins())
+}
+
+fn kiln_hit() -> crate::raycast::Hit {
+    use crate::raycast::{Face, Hit};
+    Hit {
+        block: [5, 12, -3],
+        adjacent: [5, 12, -2],
+        block_id: crate::content::KILN_DEFAULT_STATE,
+        distance: 2.0,
+        face: Face::PosZ,
+    }
+}
+
+#[test]
+fn kiln_registry_path_emits_byte_identical_requests() {
+    let catalog = Catalog::builtins();
+    let hit = kiln_hit();
+    let registry = EntityClientRegistry::builtins();
+    assert!(registry.handles(hit, &catalog));
+    // Every kiln command pinned: legacy spelling and registry path must agree
+    // byte-for-byte, preserving the replication contract.
+    let cases = [
+        (
+            kiln::KilnCommand::InsertInput,
+            kiln::INSERT_INPUT,
+            [1, 0, 1, 4, 1, 0],
+        ),
+        (
+            kiln::KilnCommand::TakeOutput,
+            kiln::TAKE_OUTPUT,
+            [1, 1, 2, 4, 1, 0],
+        ),
+        (
+            kiln::KilnCommand::InsertFuel,
+            kiln::INSERT_FUEL,
+            [1, 0, 0, 4, 1, 0],
+        ),
+        (
+            kiln::KilnCommand::TakeFuel,
+            kiln::TAKE_FUEL,
+            [1, 1, 0, 4, 1, 0],
+        ),
+    ];
+    for (command, verb, payload) in cases {
+        let action_id = (1u128 << 64) | u128::from(payload[1]) << 32 | u128::from(payload[2]);
+        let legacy = kiln::interaction(hit, action_id, 4, command);
+        let via_registry = registry
+            .interact(hit, &catalog, action_id, 4, verb)
+            .expect("registered kiln verb must build a request");
+        assert_eq!(legacy, via_registry);
+        let ClientMessage::EntityInteract {
+            action_id: sent_id,
+            target,
+            payload: sent,
+        } = via_registry
+        else {
+            panic!("kiln verbs must use the generic interaction wire");
+        };
+        assert_eq!(sent_id, action_id);
+        assert_eq!(target, hit.block);
+        assert_eq!(sent, payload);
+    }
+    assert!(
+        registry
+            .interact(hit, &catalog, 1u128 << 64 | 1, 0, "kiln:unknown-verb")
+            .is_none()
+    );
+    let mut ordinary = hit;
+    ordinary.block_id = STONE;
+    assert!(!registry.handles(ordinary, &catalog));
+    assert!(
+        registry
+            .interact(ordinary, &catalog, 1u128 << 64 | 1, 0, kiln::TAKE_OUTPUT)
+            .is_none()
+    );
+}
+
+// A test-only entity type presented purely by registration: no edit to the
+// assembler, the window dispatch, or any other core client module.
+const PROBE_TYPE: EntityTypeId = EntityTypeId(9501);
+const PROBE_VERB: &str = "probe:ping";
+const PROBE_ANCHOR: [i32; 3] = [9, 9, 9];
+
+fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAvatar>, ()> {
+    let PublicEntityLocation::Mobile { position } = &entity.location else {
+        return Err(());
+    };
+    if entity.payload != [0xA5, 0x5A] {
+        return Err(());
+    }
+    Ok(Some(crate::render::VisualAvatar {
+        id: entity.id,
+        position: glam::Vec3::from_array(*position),
+        cosmetics: [0xA5, 0x5A, 0, 0],
+        light_levels: [0; 4],
+        bounce: [0; 4],
+    }))
+}
+
+fn probe_hit(hit: crate::raycast::Hit, _: &Catalog) -> bool {
+    hit.block == PROBE_ANCHOR
+}
+
+fn probe_interact(
+    hit: crate::raycast::Hit,
+    action_id: u128,
+    hotbar_slot: u8,
+    verb: &str,
+) -> Option<ClientMessage> {
+    if verb != PROBE_VERB {
+        return None;
+    }
+    Some(ClientMessage::EntityInteract {
+        action_id,
+        target: hit.block,
+        payload: vec![0xFE, hotbar_slot],
+    })
+}
+
+fn probe_registry() -> EntityClientRegistry {
+    let mut registry = EntityClientRegistry::builtins();
+    registry.register(EntityAdapter {
+        entity_type: PROBE_TYPE,
+        project_avatar: probe_avatar,
+        hit_test: probe_hit,
+        interact: probe_interact,
+    });
+    registry
+}
+
+fn probe_entity(id: u64, revision: u64) -> PublicEntity {
+    PublicEntity {
+        id,
+        entity_type: PROBE_TYPE,
+        revision,
+        motion_revision: revision,
+        location: PublicEntityLocation::Mobile {
+            position: [7.5, 3.0, 1.5],
+        },
+        payload: vec![0xA5, 0x5A],
+    }
+}
+
+#[test]
+fn test_only_type_presents_and_interacts_by_registration_only() {
+    use crate::raycast::{Face, Hit};
+    let catalog = Catalog::builtins();
+    let registry = probe_registry();
+    let mut entities = BTreeMap::new();
+    entities.insert(1, player(1, 1));
+    entities.insert(2, probe_entity(2, 1));
+
+    let avatars = registry
+        .project(&entities)
+        .expect("both views are well-formed");
+    assert_eq!(avatars.len(), 2);
+    let probe = avatars.iter().find(|avatar| avatar.id == 2).unwrap();
+    assert_eq!(probe.position, glam::Vec3::new(7.5, 3.0, 1.5));
+    assert_eq!(probe.cosmetics, [0xA5, 0x5A, 0, 0]);
+
+    let hit = Hit {
+        block: PROBE_ANCHOR,
+        adjacent: PROBE_ANCHOR,
+        block_id: STONE,
+        distance: 2.0,
+        face: Face::PosY,
+    };
+    assert!(registry.handles(hit, &catalog));
+    let action_id = (1u128 << 64) | 7;
+    assert_eq!(
+        registry.interact(hit, &catalog, action_id, 3, PROBE_VERB),
+        Some(ClientMessage::EntityInteract {
+            action_id,
+            target: PROBE_ANCHOR,
+            payload: vec![0xFE, 3],
+        })
+    );
+    assert!(
+        registry
+            .interact(hit, &catalog, action_id, 3, "probe:unknown")
+            .is_none()
+    );
+
+    let mut corrupt = probe_entity(3, 1);
+    corrupt.payload = vec![0x00];
+    entities.insert(3, corrupt);
+    assert!(registry.project(&entities).is_err());
+}
+
+#[test]
+fn unknown_entity_type_degrades_safely() {
+    let catalog = Catalog::builtins();
+    let registry = EntityClientRegistry::builtins();
+    // Unknown types are stored by the assembler but draw nothing and panic
+    // nowhere. (The wire decoder rejects unregistered types before assembly,
+    // so the projection layer only ever has to skip them.)
+    let mut entities = BTreeMap::new();
+    entities.insert(1, player(1, 1));
+    entities.insert(
+        2,
+        PublicEntity {
+            entity_type: EntityTypeId(7777),
+            ..player(2, 1)
+        },
+    );
+    let avatars = registry.project(&entities).unwrap();
+    assert_eq!(avatars.len(), 1);
+    assert_eq!(avatars[0].id, 1);
+
+    let mut ordinary = kiln_hit();
+    ordinary.block_id = STONE;
+    assert!(!registry.handles(ordinary, &catalog));
+    assert!(
+        registry
+            .interact(ordinary, &catalog, 1u128 << 64 | 1, 0, kiln::TAKE_OUTPUT)
+            .is_none()
+    );
+}
+
+#[test]
+fn presentation_never_influences_inventory_ownership() {
+    use crate::inventory::Inventory;
+    let catalog = Catalog::builtins();
+    let registry = EntityClientRegistry::builtins();
+    let mut entities = BTreeMap::new();
+    entities.insert(1, player(1, 1));
+    entities.insert(
+        2,
+        PublicEntity {
+            entity_type: EntityTypeId(7777),
+            ..player(2, 1)
+        },
+    );
+
+    // Presentation takes only shared snapshots and returns owned values, so a
+    // full project + interact cycle must leave player inventory untouched.
+    let inventory = Inventory::default();
+    let before = inventory.clone();
+    let _ = registry.project(&entities).unwrap();
+    let hit = kiln_hit();
+    let _ = registry.handles(hit, &catalog);
+    let message = registry
+        .interact(hit, &catalog, 1u128 << 64 | 1, 4, kiln::TAKE_OUTPUT)
+        .unwrap();
+    assert_eq!(inventory, before);
+    // The only thing presentation may emit is a bounded opaque request; the
+    // server resolves reach and owns every slot decision.
+    let ClientMessage::EntityInteract { payload, .. } = message else {
+        panic!("entity presentation must only emit the generic interaction wire");
+    };
+    assert_eq!(payload, [1, 1, 2, 4, 1, 0]);
 }
 
 #[test]
