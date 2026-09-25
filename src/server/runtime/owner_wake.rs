@@ -15,13 +15,20 @@
 //! by itself.
 //!
 //! Corruption (bad magic, version, length, checksum) reports `InvalidData` so
-//! the coordinator can stop. Capacity (too many pending wakes) is enforced by
-//! the holder of the wake set, never here.
+//! the coordinator can stop. Capacity (too many pending wakes) reports
+//! `WouldBlock`: the producing wave defers and retries, and nothing commits.
 
-use super::super::journal::StateKey;
+//! NOTE: the live path does not hold this store yet — the next step wires it
+//! into `SystemRuntime` (stage sets with the producer wave, recover at open,
+//! serve and clear on destination waves). Until then the store is exercised
+//! by its unit tests only.
+#![allow(dead_code)]
+
+use super::super::journal::{Change, StateKey};
 use super::super::parallel::OwnerKey;
 use super::super::registry::SystemId;
 use crate::world::ChunkKey;
+use std::collections::BTreeMap;
 use std::io::{self, ErrorKind};
 
 /// Journal domain for durable pending owner wakes. New persisted state; no
@@ -163,6 +170,208 @@ fn crc32(bytes: &[u8]) -> u32 {
         }
     }
     !crc
+}
+
+/// Barrier-owned pending-wake set for owner-system effect destinations.
+///
+/// `pending` is the WAL-backed truth: every entry has a receipted record and
+/// survives restart through [`PendingWakeStore::recover`]. `staged` holds
+/// flags prepared for a wave whose record has not been receipted yet, so a
+/// second prepare for the same destination chains onto the staged flag
+/// instead of staging a duplicate key (the journal rejects duplicate keys
+/// within one record). Staged flags become visible only at
+/// [`PendingWakeStore::commit_sets`], after the WAL receipt; a wave that
+/// defers before its receipt calls [`PendingWakeStore::cancel_sets`] so a
+/// retry re-stages from the WAL-backed state.
+///
+/// Serving (and clearing) a wake is a later wiring step; this store already
+/// applies clears in [`PendingWakeStore::apply_replayed`] so receipted clear
+/// records converge.
+pub(in crate::server) struct PendingWakeStore {
+    pending: BTreeMap<(SystemId, OwnerKey), u64>,
+    staged: BTreeMap<(SystemId, OwnerKey), u64>,
+}
+
+impl std::fmt::Debug for PendingWakeStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingWakeStore")
+            .field("pending", &self.pending.len())
+            .field("staged", &self.staged.len())
+            .finish()
+    }
+}
+
+impl PendingWakeStore {
+    pub fn new() -> Self {
+        Self {
+            pending: BTreeMap::new(),
+            staged: BTreeMap::new(),
+        }
+    }
+
+    /// Rebuilds the wake set from journal latest-values. Unknown domains are
+    /// skipped by the caller contract (only this domain's entries are passed
+    /// here in practice; others are ignored). Malformed keys, undecodable
+    /// values, and duplicate keys are `InvalidData`: the save cannot run.
+    /// Empty values are cleared-flag tombstones and are skipped.
+    pub fn recover(latest: &BTreeMap<StateKey, Vec<u8>>) -> io::Result<Self> {
+        let mut store = Self::new();
+        for (key, value) in latest {
+            if key.domain != OWNER_WAKE_DOMAIN {
+                continue;
+            }
+            let Some((system_name, owner)) = decode_owner_wake_key(key) else {
+                return Err(invalid_data("owner wake key is malformed"));
+            };
+            let system = SystemId::new(system_name)
+                .map_err(|_| invalid_data("owner wake key has a bad system id"))?;
+            if value.is_empty() {
+                continue;
+            }
+            let tick = decode_wake_value(value)?;
+            if store.pending.insert((system, owner), tick).is_some() {
+                return Err(invalid_data("duplicate owner wake key"));
+            }
+        }
+        Ok(store)
+    }
+
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// Whether the destination has a receipted flag. Staged-but-unreceipted
+    /// flags are not visible here: nothing is served before its WAL receipt.
+    pub fn contains(&self, system: &SystemId, owner: OwnerKey) -> bool {
+        self.pending.contains_key(&(system.clone(), owner))
+    }
+
+    /// Prepares set-flags for destinations with no live flag, chaining onto
+    /// staged state so no key is staged twice. Destinations that already have
+    /// a live or staged flag are skipped in place: a duplicate wake only
+    /// re-asserts "due", never queues extra work. Exceeding `limit` live plus
+    /// staged flags rejects the whole set with `WouldBlock` before anything
+    /// is staged; the producing wave defers and retries.
+    pub fn prepare_sets(
+        &mut self,
+        wakes: &[(SystemId, OwnerKey)],
+        wake_tick: u64,
+        limit: usize,
+    ) -> io::Result<PreparedWakeSets> {
+        let mut fresh = Vec::new();
+        for (system, owner) in wakes {
+            let key = (system.clone(), *owner);
+            if self.pending.contains_key(&key) || self.staged.contains_key(&key) {
+                continue;
+            }
+            // `staged` is keyed, so re-scanning `fresh` is the only way to
+            // collapse intra-wave duplicates before the journal sees them.
+            if fresh.contains(&key) {
+                continue;
+            }
+            fresh.push(key);
+        }
+        if self.pending.len() + self.staged.len() + fresh.len() > limit {
+            return Err(io::Error::new(
+                ErrorKind::WouldBlock,
+                format!(
+                    "owner wake queue full: {} pending, {} staged, {} fresh, limit {limit}",
+                    self.pending.len(),
+                    self.staged.len(),
+                    fresh.len()
+                ),
+            ));
+        }
+        let mut changes = Vec::with_capacity(fresh.len());
+        for key in &fresh {
+            let before = self
+                .pending
+                .get(key)
+                .map(|tick| encode_wake_value(*tick))
+                .unwrap_or_default();
+            changes.push(Change::new(
+                owner_wake_key(&key.0, key.1),
+                before,
+                encode_wake_value(wake_tick),
+            ));
+            self.staged.insert(key.clone(), wake_tick);
+        }
+        Ok(PreparedWakeSets { staged: fresh })
+    }
+
+    /// Makes prepared flags visible after their WAL receipt. The record
+    /// already carried the exact values; this only moves staged entries into
+    /// the WAL-backed set.
+    pub fn commit_sets(&mut self, prepared: PreparedWakeSets) {
+        for key in prepared.staged {
+            if let Some(tick) = self.staged.remove(&key) {
+                self.pending.insert(key, tick);
+            }
+        }
+    }
+
+    /// Withdraws prepared flags from a wave that deferred before its receipt,
+    /// so a retry re-stages from the WAL-backed state.
+    pub fn cancel_sets(&mut self, prepared: PreparedWakeSets) {
+        for key in prepared.staged {
+            self.staged.remove(&key);
+        }
+    }
+
+    /// Applies already-committed wake-domain changes after their WAL receipt.
+    /// Every before-value is rechecked against the live set (absent reads as
+    /// empty, matching a fresh set), so a mismatch is genuine corruption and
+    /// the coordinator must stop. An empty `after` clears the flag.
+    ///
+    /// Non-wake keys are ignored; the caller filters the transaction's change
+    /// set to this domain.
+    pub fn apply_replayed(&mut self, changes: &[Change]) -> io::Result<()> {
+        for change in changes {
+            if change.key.domain != OWNER_WAKE_DOMAIN {
+                continue;
+            }
+            let Some((system_name, owner)) = decode_owner_wake_key(&change.key) else {
+                return Err(invalid_data("owner wake key is malformed"));
+            };
+            let system = SystemId::new(system_name)
+                .map_err(|_| invalid_data("owner wake key has a bad system id"))?;
+            let key = (system, owner);
+            let current = self
+                .pending
+                .get(&key)
+                .map(|tick| encode_wake_value(*tick))
+                .unwrap_or_default();
+            if current != change.before {
+                return Err(invalid_data("owner wake replay precondition mismatch"));
+            }
+            if change.after.is_empty() {
+                self.pending.remove(&key);
+                continue;
+            }
+            let tick = decode_wake_value(&change.after)?;
+            self.pending.insert(key, tick);
+        }
+        Ok(())
+    }
+}
+
+/// A validated set-flag batch. The changes borrow nothing: the caller submits
+/// them with the producer wave's record, then calls `commit_sets` after the
+/// receipt or `cancel_sets` if the wave defers.
+#[derive(Debug)]
+pub(in crate::server) struct PreparedWakeSets {
+    staged: Vec<(SystemId, OwnerKey)>,
+}
+
+impl PreparedWakeSets {
+    pub fn changes_len(&self) -> usize {
+        self.staged.len()
+    }
 }
 
 #[cfg(test)]
