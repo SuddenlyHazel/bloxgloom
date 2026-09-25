@@ -9,7 +9,7 @@ use crate::inventory::{HOTBAR_SLOTS, Inventory, STACK_LIMIT, Stack};
 use crate::server::entities::{
     AnchorUpdate, CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan,
     EntityInteractionPolicy, EntityLocation, EntityPatch, EntityPayload, EntitySnapshot,
-    EntityTickPlan, EntityTickPolicy,
+    EntityTickPlan, EntityTickPolicy, EntityView,
 };
 use crate::server::voxel_view::VoxelView;
 use std::sync::Arc;
@@ -53,6 +53,7 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
         inventory: &Inventory,
         catalog: &Catalog,
         _view: &VoxelView,
+        _neighbours: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         let payload = snapshot
             .private_payload
@@ -77,6 +78,7 @@ impl EntityTickPolicy for KilnTickPlanner {
         current_tick: u64,
         catalog: &Catalog,
         _view: &VoxelView,
+        _neighbours: &EntityView,
     ) -> Result<EntityTickPlan, EntityError> {
         let payload = snapshot
             .private_payload

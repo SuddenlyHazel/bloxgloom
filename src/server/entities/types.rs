@@ -12,6 +12,10 @@ pub const MAX_ENTITY_FOOTPRINT_CELLS: usize = 4_096;
 pub const MAX_ENTITY_PRIVATE_BYTES_PER_CHUNK: usize = 2 * 1024 * 1024;
 pub const MAX_ENTITY_PUBLIC_BYTES_PER_CHUNK: usize = 1024 * 1024;
 pub const MAX_ENTITY_REFERENCES_PER_CHUNK: usize = 65_536;
+/// Bounds for one planner's neighbour view, validated at capture. Exceeding
+/// either is an error, never silent truncation.
+pub const MAX_PLAN_NEIGHBOURS: usize = 64;
+pub const MAX_PLAN_NEIGHBOUR_BYTES: usize = 64 * 1024;
 
 /// Immutable type-erased payload kept decoded in the live store. Feature
 /// modules recover their concrete type with `downcast_ref`.
@@ -211,6 +215,44 @@ pub struct EntityPublicView {
     pub owner: EntityOwner,
     pub location: EntityLocation,
     pub payload: Vec<u8>,
+}
+
+/// Immutable, bounded neighbour projection handed to entity planners.
+///
+/// Assembled by the coordinator from per-chunk public views over the
+/// planner's declared read set. Entries are sorted by `EntityId` for
+/// deterministic planning order, deduplicated (anchored entities appear in
+/// every touched chunk's page), and exclude the planning entity itself,
+/// which it already holds as a snapshot. This carries only public
+/// projections: another entity's private payload can never appear here, and
+/// any path from a planner to one is a bug.
+#[derive(Clone, Debug)]
+pub struct EntityView {
+    entries: Vec<EntityPublicView>,
+}
+
+impl EntityView {
+    pub(in crate::server) fn assemble(
+        mut entries: Vec<EntityPublicView>,
+        exclude: EntityId,
+    ) -> Self {
+        entries.sort_by_key(|view| view.id);
+        entries.dedup_by_key(|view| view.id);
+        entries.retain(|view| view.id != exclude);
+        Self { entries }
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn bytes(&self) -> usize {
+        self.entries.iter().map(|view| view.payload.len()).sum()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &EntityPublicView> {
+        self.entries.iter()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

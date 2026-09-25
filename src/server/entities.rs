@@ -40,6 +40,7 @@ pub(super) use store::{
 };
 pub(super) use types::{
     AnchorUpdate, CellCoord, EntityError, EntityId, EntityLocation, EntityMotionSnapshot,
-    EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, MAX_ENTITY_FOOTPRINT_CELLS,
-    MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy, position_to_cell,
+    EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, EntityView,
+    MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES,
+    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, TickPolicy, position_to_cell,
 };

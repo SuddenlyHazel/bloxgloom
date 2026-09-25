@@ -1,7 +1,7 @@
 use super::store::EntitySnapshot;
 use super::types::{
-    CellCoord, EntityError, EntityOwnership, EntityPayload, MAX_ENTITY_FOOTPRINT_CELLS,
-    MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
+    CellCoord, EntityError, EntityOwnership, EntityPayload, EntityView,
+    MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
 };
 use crate::content::{BlockStateId, Catalog, EntityTypeId};
 use crate::inventory::Inventory;
@@ -41,8 +41,8 @@ pub struct EntityTickPlan {
 /// entity. The callback receives immutable snapshots and cannot perform I/O.
 ///
 /// Implementations must be pure functions of their inputs: no wall clock,
-/// RNG, I/O, or global/thread-local state. The view holds only the declared
-/// read set; reads outside it fail closed and must surface as
+/// RNG, I/O, or global/thread-local state. The views hold only the declared
+/// read set; reads outside them fail closed and must surface as
 /// `EntityError::ViewOutOfRange`.
 pub trait EntityInteractionPolicy: Send + Sync + 'static {
     fn plan(
@@ -52,6 +52,7 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
         inventory: &Inventory,
         catalog: &Catalog,
         view: &VoxelView,
+        neighbours: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError>;
 
     /// Chunk read radius around the entity's chunk, captured by the
@@ -66,8 +67,8 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
 /// the returned footprint, block preimages, due-time, and payload before WAL.
 ///
 /// Implementations must be pure functions of their inputs: no wall clock,
-/// RNG, I/O, or global/thread-local state. The view holds only the declared
-/// read set; reads outside it fail closed and must surface as
+/// RNG, I/O, or global/thread-local state. The views hold only the declared
+/// read set; reads outside them fail closed and must surface as
 /// `EntityError::ViewOutOfRange`.
 pub trait EntityTickPolicy: Send + Sync + 'static {
     fn plan(
@@ -76,6 +77,7 @@ pub trait EntityTickPolicy: Send + Sync + 'static {
         current_tick: u64,
         catalog: &Catalog,
         view: &VoxelView,
+        neighbours: &EntityView,
     ) -> Result<EntityTickPlan, EntityError>;
 
     /// Chunk read radius around the entity's chunk, captured by the
@@ -187,6 +189,7 @@ impl EntityTypeDescriptor {
         inventory: &Inventory,
         catalog: &Catalog,
         view: &VoxelView,
+        neighbours: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         if request.is_empty() || request.len() > MAX_ENTITY_INTERACTION_REQUEST_BYTES {
             return Err(EntityError::InvalidPayload);
@@ -194,7 +197,7 @@ impl EntityTypeDescriptor {
         self.interaction_policy
             .as_ref()
             .ok_or(EntityError::InvalidType)?
-            .plan(snapshot, request, inventory, catalog, view)
+            .plan(snapshot, request, inventory, catalog, view, neighbours)
     }
 
     pub fn plan_tick(
@@ -203,11 +206,12 @@ impl EntityTypeDescriptor {
         current_tick: u64,
         catalog: &Catalog,
         view: &VoxelView,
+        neighbours: &EntityView,
     ) -> Result<EntityTickPlan, EntityError> {
         self.tick_planner
             .as_ref()
             .ok_or(EntityError::InvalidType)?
-            .plan(snapshot, current_tick, catalog, view)
+            .plan(snapshot, current_tick, catalog, view, neighbours)
     }
 
     pub fn encode_payload(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityError> {

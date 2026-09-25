@@ -587,6 +587,7 @@ impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
         inventory: &crate::inventory::Inventory,
         _catalog: &crate::content::Catalog,
         _view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
     ) -> Result<crate::server::entities::EntityInteractionPlan, crate::server::entities::EntityError>
     {
         use crate::server::entities::{EntityBlockStateChange, EntityInteractionPlan};
@@ -623,6 +624,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
         current_tick: u64,
         _catalog: &crate::content::Catalog,
         _view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
     ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         use crate::server::entities::EntityTickPlan;
         let Some(due) = snapshot.next_tick else {
@@ -655,6 +657,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
         current_tick: u64,
         catalog: &crate::content::Catalog,
         view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
     ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         use crate::server::entities::{
             EntityBlockStateChange, EntityError, EntityPayload, EntityTickPlan,
@@ -706,6 +709,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
         current_tick: u64,
         _catalog: &crate::content::Catalog,
         view: &crate::server::voxel_view::VoxelView,
+        _neighbours: &crate::server::entities::EntityView,
     ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         use crate::server::entities::{EntityError, EntityPayload, EntityTickPlan};
         let Some(due) = snapshot.next_tick else {
@@ -1008,10 +1012,16 @@ fn entity_planner_branches_on_neighbor_and_replans_identically() {
     // Identical inputs produce identical plans across repeated calls.
     let snapshot = state.entities.snapshot(id).unwrap();
     let view = entity::capture_view_for_plan(&mut state, &snapshot.location, 1).unwrap();
+    let neighbours =
+        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, id).unwrap();
     let catalog = state.world.catalog_arc();
     let descriptor = state.entities.types().descriptor(watcher_type).unwrap();
-    let first = descriptor.plan_tick(&snapshot, 6, &catalog, &view).unwrap();
-    let second = descriptor.plan_tick(&snapshot, 6, &catalog, &view).unwrap();
+    let first = descriptor
+        .plan_tick(&snapshot, 6, &catalog, &view, &neighbours)
+        .unwrap();
+    let second = descriptor
+        .plan_tick(&snapshot, 6, &catalog, &view, &neighbours)
+        .unwrap();
     assert_eq!(first.next_tick, second.next_tick);
     assert_eq!(first.block_states, second.block_states);
     let planned_byte = |plan: &crate::server::entities::EntityTickPlan| {

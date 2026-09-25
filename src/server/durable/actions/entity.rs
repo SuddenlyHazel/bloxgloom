@@ -12,7 +12,8 @@ use crate::server::State;
 use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
-    CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch, position_to_cell,
+    CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch, EntityView,
+    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, position_to_cell,
 };
 use crate::server::streaming::request_chunk;
 use crate::server::voxel_view::VoxelView;
@@ -37,11 +38,13 @@ type FootprintPlan = (
 /// chunk, and matches the footprint-preimage retry shape. Nothing is
 /// generated or read through to storage here, and the returned view cannot
 /// mutate the world.
-pub(super) fn capture_view_for_plan(
-    state: &mut State,
+/// The planner's declared read set: footprint chunks plus the Chebyshev
+/// neighborhood of the entity's chunk. Both views are captured over exactly
+/// these keys.
+fn plan_chunk_keys(
     location: &EntityLocation,
     radius_chunks: u8,
-) -> io::Result<VoxelView> {
+) -> io::Result<BTreeSet<ChunkKey>> {
     let center_chunk = match location {
         EntityLocation::Anchored { anchor, .. } => anchor.chunk(),
         EntityLocation::Mobile { position } => position_to_cell(*position)
@@ -64,6 +67,22 @@ pub(super) fn capture_view_for_plan(
             }
         }
     }
+    Ok(keys)
+}
+
+/// Captures the planner's declared read set as an immutable voxel view.
+/// Every key must already be resident; when any are missing, the whole
+/// missing set is requested before planning defers with `WouldBlock`.
+/// Requesting all of them converges in one loader round instead of stalling
+/// one round per chunk, and matches the footprint-preimage retry shape.
+/// Nothing is generated or read through to storage here, and the returned
+/// view cannot mutate the world.
+pub(super) fn capture_view_for_plan(
+    state: &mut State,
+    location: &EntityLocation,
+    radius_chunks: u8,
+) -> io::Result<VoxelView> {
+    let keys = plan_chunk_keys(location, radius_chunks)?;
     let catalog = state.world.catalog_arc();
     let mut chunks = Vec::with_capacity(keys.len());
     let mut missing = Vec::new();
@@ -91,6 +110,49 @@ pub(super) fn capture_view_for_plan(
             format!("entity view snapshot invalid: {error:?}"),
         )
     })
+}
+
+/// Assembles the planner's neighbour view from bounded per-chunk public
+/// projections over the same captured keys. The planner's own record is
+/// excluded; entries are sorted by entity ID for deterministic planning.
+/// Only public projections cross: another entity's private payload is never
+/// consulted here, and no path below reaches it. An overfull page or an
+/// over-cap view defers with `WouldBlock` instead of truncating, so a hot
+/// chunk retries later rather than planning from a partial neighbour set.
+pub(super) fn capture_entity_view_for_plan(
+    state: &mut State,
+    location: &EntityLocation,
+    radius_chunks: u8,
+    exclude: EntityId,
+) -> io::Result<EntityView> {
+    let keys = plan_chunk_keys(location, radius_chunks)?;
+    let mut collected = Vec::new();
+    for key in keys {
+        let views = state
+            .entities
+            .public_views_for_chunk_bounded(key, MAX_PLAN_NEIGHBOURS)
+            .map_err(|_| {
+                io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "entity neighbour page overfull, retry later",
+                )
+            })?;
+        collected.extend(views);
+    }
+    let view = EntityView::assemble(collected, exclude);
+    if view.len() > MAX_PLAN_NEIGHBOURS {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "entity neighbour view overfull, retry later",
+        ));
+    }
+    if view.bytes() > MAX_PLAN_NEIGHBOUR_BYTES {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "entity neighbour view overfull, retry later",
+        ));
+    }
+    Ok(view)
 }
 
 /// Plan an opaque entity interaction after the coordinator has validated its
@@ -147,13 +209,22 @@ pub(in crate::server) fn plan_interact(
     let read_radius = descriptor.interaction_read_radius();
     let catalog = state.world.catalog_arc();
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let neighbours =
+        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?;
     let descriptor = state
         .entities
         .types()
         .descriptor(snapshot.entity_type)
         .map_err(io::Error::other)?;
     let plan = descriptor
-        .plan_interaction(&snapshot, request, &inventory_before, &catalog, &view)
+        .plan_interaction(
+            &snapshot,
+            request,
+            &inventory_before,
+            &catalog,
+            &view,
+            &neighbours,
+        )
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     let expected_inventory_revision = inventory_before
         .revision
@@ -240,13 +311,15 @@ pub(in crate::server) fn plan_entity_tick(
     let read_radius = descriptor.tick_read_radius();
     let catalog = state.world.catalog_arc();
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    let neighbours =
+        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?;
     let descriptor = state
         .entities
         .types()
         .descriptor(snapshot.entity_type)
         .map_err(io::Error::other)?;
     let plan = descriptor
-        .plan_tick(&snapshot, current_tick, &catalog, &view)
+        .plan_tick(&snapshot, current_tick, &catalog, &view, &neighbours)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     if snapshot
         .next_tick
