@@ -1,7 +1,9 @@
 use super::*;
 use crate::server::durable::CommitAction;
+use crate::server::journal::StateKey;
 use crate::server::server_state;
 use crate::world::{AIR, Chunk, GLOWSTONE, WOOD, world_to_chunk};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -92,6 +94,43 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
     // sufficient to restore the burn after a second process restart.
     let state = server_state(71, path.clone()).unwrap();
     assert_eq!(state.world.cached_block(9, 96, 8), Some(AIR));
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn checkpoint_pressure_admits_a_durable_owner_prefix_without_losing_the_remainder() {
+    let path = temp_save();
+    let mut state = server_state(72, path.clone()).unwrap();
+    assert!(state.durability.dirty_checkpoints.is_empty());
+    for index in 0..MAX_DIRTY_CHECKPOINT_KEYS - 2 {
+        state.durability.remember_checkpoint(
+            StateKey::new("test:pressure", (index as u32).to_le_bytes().to_vec()),
+            vec![1],
+        );
+    }
+    let owners: BTreeMap<_, _> = (0..32)
+        .map(|x| (ChunkKey { x, y: 4, z: 0 }, vec![256]))
+        .collect();
+    let wave = state
+        .fire
+        .prepare_benchmark_frontier_wave(&owners, TickId::new(1))
+        .unwrap();
+    let candidates = wave.transactions.len();
+    assert!(candidates > 1);
+    stage_wave(&mut state, TickId::new(1), wave).unwrap();
+    assert_eq!(state.durability.pending.len(), 1);
+    assert_eq!(state.fire.load_metrics().admitted_transactions, 1);
+    assert_eq!(
+        state.fire.load_metrics().full_deferred_transactions,
+        (candidates - 1) as u64
+    );
+    drain_wal(&mut state);
+    assert_eq!(state.fire.load_metrics().frontier_cells, 1);
+    drop(state);
+
+    let state = server_state(72, path.clone()).unwrap();
+    assert_eq!(state.fire.load_metrics().frontier_cells, 1);
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }

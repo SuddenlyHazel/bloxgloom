@@ -1,8 +1,9 @@
-//! Whole-wave WAL admission for worker-prepared chunk-owned fire.
+//! Bounded WAL admission for worker-prepared chunk-owned fire.
 //!
-//! A validated wave is admitted as one bounded writer command, or none of its
-//! source frontiers/cursors advance. Each owner still has its own atomic WAL
-//! record and crash-replay identity; one disk sync may cover the whole batch.
+//! A deterministic, oldest-lane prefix of a validated candidate wave is
+//! admitted as one bounded writer command. Each selected owner still has its
+//! own atomic WAL record and crash-replay identity; deferred owners retain
+//! their original frontier and cursor for a later tick.
 
 use super::*;
 use crate::server::fire::{FireTransaction, FireWave};
@@ -12,7 +13,7 @@ impl Durability {
     pub(super) fn try_stage_fire_wave(
         &mut self,
         tick: TickId,
-        transactions: Vec<FireTransaction>,
+        transactions: &[FireTransaction],
     ) -> Result<bool, StageError> {
         if transactions.is_empty() {
             return Ok(false);
@@ -42,7 +43,7 @@ impl Durability {
         let mut keys_per_record = Vec::with_capacity(transactions.len());
         let mut checkpoints_per_record = Vec::with_capacity(transactions.len());
         let mut next_id = self.next_id;
-        for transaction in &transactions {
+        for transaction in transactions {
             let changes = transaction.changes().to_vec();
             if changes.is_empty() {
                 return Err(StageError::Invalid(io::Error::new(
@@ -93,7 +94,8 @@ impl Durability {
         self.next_id = next_id;
         self.reserved.extend(all_keys);
         for (((transaction, receiver), keys), checkpoint_sizes) in transactions
-            .into_iter()
+            .iter()
+            .cloned()
             .zip(receivers)
             .zip(keys_per_record)
             .zip(checkpoints_per_record)
@@ -121,40 +123,63 @@ pub(in crate::server) fn stage_wave(
         // records remain scheduled and the request is retried next tick.
         let _ = streaming::request_chunk(state, key)?;
     }
-    if wave.transactions.is_empty() {
+    let mut transactions = wave.transactions;
+    if transactions.is_empty() {
         return Ok(());
     }
-    let attempted = wave.transactions.len();
-    let admitted = wave.transactions.clone();
-    match state
-        .durability
-        .try_stage_fire_wave(tick, wave.transactions)
-    {
-        Ok(true) => {
-            state.fire.note_admitted(attempted);
-            for transaction in &admitted {
-                if let Err(error) = state.fire.mark_submitted(transaction) {
-                    state.durability.failed = true;
-                    return Err(io::Error::other(format!(
-                        "accepted fire wave could not reserve owner: {error}"
-                    )));
+    state.fire.prioritize_transactions(&mut transactions);
+    let mut prefix = transactions.len();
+    let mut deferred_reason = None;
+    loop {
+        match state
+            .durability
+            .try_stage_fire_wave(tick, &transactions[..prefix])
+        {
+            Ok(true) => {
+                state.fire.note_admitted(prefix);
+                for transaction in &transactions[..prefix] {
+                    if let Err(error) = state.fire.mark_submitted(transaction) {
+                        state.durability.failed = true;
+                        return Err(io::Error::other(format!(
+                            "accepted fire wave could not reserve owner: {error}"
+                        )));
+                    }
                 }
+                if prefix < transactions.len() {
+                    match deferred_reason.expect("a prefix was reduced after backpressure") {
+                        StageError::Conflict => {
+                            state.fire.note_conflict(transactions.len() - prefix)
+                        }
+                        StageError::Full => state.fire.note_full(transactions.len() - prefix),
+                        _ => unreachable!("only retryable admission errors reduce the prefix"),
+                    }
+                }
+                return Ok(());
+            }
+            Ok(false) => {
+                state.durability.failed = true;
+                return Err(io::Error::other("nonempty fire wave was not admitted"));
+            }
+            Err(reason @ (StageError::Conflict | StageError::Full)) => {
+                if prefix == 1 || state.durability.rotation_requested {
+                    match reason {
+                        StageError::Conflict => state.fire.note_conflict(transactions.len()),
+                        StageError::Full => state.fire.note_full(transactions.len()),
+                        _ => unreachable!(),
+                    }
+                    return Ok(());
+                }
+                deferred_reason = Some(reason);
+                prefix = prefix.div_ceil(2);
+            }
+            Err(error) => {
+                state.durability.failed = true;
+                return Err(io::Error::other(format!(
+                    "fire WAL admission failed: {error:?}"
+                )));
             }
         }
-        Ok(false) => {
-            state.durability.failed = true;
-            return Err(io::Error::other("nonempty fire wave was not admitted"));
-        }
-        Err(StageError::Conflict) => state.fire.note_conflict(attempted),
-        Err(StageError::Full) => state.fire.note_full(attempted),
-        Err(error) => {
-            state.durability.failed = true;
-            return Err(io::Error::other(format!(
-                "fire WAL admission failed: {error:?}"
-            )));
-        }
     }
-    Ok(())
 }
 
 pub(in crate::server) fn run_source(state: &mut State, tick: TickId) -> io::Result<()> {

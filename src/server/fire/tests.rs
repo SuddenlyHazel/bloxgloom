@@ -1,5 +1,5 @@
 use super::codec::{key_bytes, read_key};
-use super::scheduler::{cursor_key, frontier_key, mailbox_key, owner_lane};
+use super::scheduler::{FireCursor, cursor_key, frontier_key, mailbox_key, owner_lane};
 use super::*;
 use crate::server::journal::StateKey;
 use crate::server::simulation::TickId;
@@ -80,6 +80,38 @@ fn benchmark_frontier_bootstrap_precedes_first_live_fire_tick() {
             .iter()
             .all(|change| change.before != change.after)
     );
+}
+
+#[test]
+fn durable_lane_age_prioritizes_an_owner_deferred_by_wal_pressure() {
+    let recent = chunk(0, 4, 0);
+    let deferred = (1..32)
+        .map(|x| chunk(x, 4, 0))
+        .find(|owner| owner_lane(*owner) != owner_lane(recent))
+        .unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(
+            &cursor_key(owner_lane(recent)),
+            &FireCursor {
+                last_owner: Some(recent),
+                last_source: None,
+                last_tick: 9,
+            }
+            .encode(),
+        )
+        .unwrap();
+    let fire = FireRuntime::new(recovered, 1).unwrap();
+    let mut transactions = fire
+        .prepare_benchmark_frontier_wave(
+            &BTreeMap::from([(recent, vec![256]), (deferred, vec![256])]),
+            TickId::new(10),
+        )
+        .unwrap()
+        .transactions;
+    assert_eq!(transactions.len(), 2);
+    fire.prioritize_transactions(&mut transactions);
+    assert_eq!(transactions[0].owner(), deferred);
 }
 
 fn owner_apply_hash(workers: usize) -> u64 {

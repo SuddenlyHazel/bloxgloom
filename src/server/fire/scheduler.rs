@@ -384,6 +384,18 @@ impl FireRuntime {
             .saturating_add(count as u64);
     }
 
+    /// Prefer lanes that have gone longest without a committed owner update.
+    /// Lane cursors are WAL-durable, so a smaller admitted prefix cannot keep
+    /// choosing the same low-key owners while other active lanes starve.
+    pub(in crate::server) fn prioritize_transactions(&self, transactions: &mut [FireTransaction]) {
+        transactions.sort_by_key(|transaction| {
+            (
+                self.cursors[transaction.cursor_lane].last_tick,
+                transaction.owner,
+            )
+        });
+    }
+
     /// Called by the edit planner for an actual glowstone placement. The
     /// caller joins these `changes` to the BGED/inventory/receipt action, and
     /// calls `mark_seed_submitted` only after complete WAL admission.
