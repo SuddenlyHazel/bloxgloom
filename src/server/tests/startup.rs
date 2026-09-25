@@ -743,3 +743,61 @@ fn registered_owner_state_survives_a_real_restart() {
         Some((4, 45))
     );
 }
+
+#[test]
+fn interrupted_owner_commit_recovers_to_the_last_complete_record() {
+    use crate::server::journal::Transaction;
+    use crate::server::parallel::OwnerData;
+    use crate::server::runtime::owner_durable::OwnerWrite;
+
+    let save = TestSave::new("owner-interrupted-commit");
+    let (startup, system, owner) = durable_counter_startup();
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((1, 42))
+    );
+
+    // Crash between WAL append and apply: the wave's record is synced (its
+    // receipt is in hand) but the in-memory commit never runs.
+    let (revision, _) = state
+        .system_runtime
+        .owner_value::<u64>(&system, owner)
+        .unwrap();
+    let prepared = state
+        .system_runtime
+        .prepare_owner_wave(
+            &system,
+            vec![OwnerWrite::new(owner, revision, OwnerData::new(43u64))],
+        )
+        .unwrap();
+    let id = state.durability.next_id;
+    state.durability.next_id = id.checked_add(1).expect("transaction IDs remain");
+    let receiver = state
+        .durability
+        .writer
+        .try_submit(Transaction::new(id, 2, prepared.changes().to_vec()))
+        .unwrap();
+    let receipt = receiver.recv().unwrap().unwrap();
+    assert!(!receipt.duplicate);
+    drop(prepared);
+    drop(state);
+
+    // Recovery lands on the last complete record: the interrupted wave's
+    // after-value is durable even though the crashed process never applied
+    // it, and there is no half-applied state.
+    let (startup, system, owner) = durable_counter_startup();
+    let mut reopened =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((2, 43))
+    );
+    tick_once(&mut reopened, TickId::new(3), Instant::now()).unwrap();
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((3, 44))
+    );
+}
