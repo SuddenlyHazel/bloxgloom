@@ -1,7 +1,7 @@
 use super::store::EntitySnapshot;
 use super::types::{
-    CellCoord, EntityError, EntityOwnership, EntityPayload, EntityView,
-    MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
+    CellCoord, EntityError, EntityOwnership, EntityPayload, EntityView, MAX_ENTITY_FOOTPRINT_CELLS,
+    MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
 };
 use crate::content::{BlockStateId, Catalog, EntityTypeId};
 use crate::inventory::Inventory;

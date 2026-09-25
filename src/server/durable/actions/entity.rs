@@ -41,10 +41,7 @@ type FootprintPlan = (
 /// The planner's declared read set: footprint chunks plus the Chebyshev
 /// neighborhood of the entity's chunk. Both views are captured over exactly
 /// these keys.
-fn plan_chunk_keys(
-    location: &EntityLocation,
-    radius_chunks: u8,
-) -> io::Result<BTreeSet<ChunkKey>> {
+fn plan_chunk_keys(location: &EntityLocation, radius_chunks: u8) -> io::Result<BTreeSet<ChunkKey>> {
     let center_chunk = match location {
         EntityLocation::Anchored { anchor, .. } => anchor.chunk(),
         EntityLocation::Mobile { position } => position_to_cell(*position)
