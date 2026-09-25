@@ -8,6 +8,7 @@ use super::simulation::{CommandQueue, FixedStepClock, OrderKey, QueueError};
 use super::*;
 
 pub(in crate::server) mod adapters;
+pub(in crate::server) mod owner_codec;
 pub(in crate::server) mod owner_effects;
 pub(in crate::server) mod systems;
 
