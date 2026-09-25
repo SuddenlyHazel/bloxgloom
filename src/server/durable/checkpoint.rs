@@ -48,10 +48,10 @@ pub(in crate::server) fn remember_drops_checkpoint(state: &mut State) -> io::Res
 /// ever clearing dirty state. Refuses (fail closed) past the shared
 /// dirty-checkpoint bounds instead of growing without limit.
 fn remember_drop_snapshot(durability: &mut Durability, key: StateKey, bytes: Vec<u8>) -> bool {
-    if let Some(dirty) = durability.dirty_checkpoints.get(&key) {
-        if dirty.snapshot == bytes {
-            return true;
-        }
+    if let Some(dirty) = durability.dirty_checkpoints.get(&key)
+        && dirty.snapshot == bytes
+    {
+        return true;
     }
     // Overwriting this key frees its current bytes before the bound check.
     let held: usize = durability

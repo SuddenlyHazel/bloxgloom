@@ -311,12 +311,16 @@ impl Drops {
                 if mutation_chunk != chunk {
                     continue;
                 }
-                let old = mutation.before.is_empty().then_some(0).unwrap_or(
-                    super::persistence::RECORD + mutation.before.len().saturating_sub(21),
-                );
-                let after = mutation.after.is_empty().then_some(0).unwrap_or(
-                    super::persistence::RECORD + mutation.after.len().saturating_sub(21),
-                );
+                let old = if mutation.before.is_empty() {
+                    0
+                } else {
+                    super::persistence::RECORD + mutation.before.len().saturating_sub(21)
+                };
+                let after = if mutation.after.is_empty() {
+                    0
+                } else {
+                    super::persistence::RECORD + mutation.after.len().saturating_sub(21)
+                };
                 size = size.saturating_add(after).saturating_sub(old);
             }
             if size > MAX_SHARD_BYTES {
