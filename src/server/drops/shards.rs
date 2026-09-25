@@ -385,11 +385,17 @@ fn load_sharded_inner(
     has_allocator: bool,
     catalog: &crate::content::Catalog,
 ) -> io::Result<LoadedShards> {
-    if !has_allocator {
-        return Err(invalid("drop shards are missing their allocator checkpoint"));
-    }
-    let allocator_bytes = fs::read(allocator_path(dir))?;
-    let (mut next_id, revision) = decode_allocator(&allocator_bytes)?;
+    // A missing allocator file is reconstructed from shard IDs: every save
+    // writes the allocator first, so its absence means an interrupted save
+    // whose shard writes may also lag. The journal allocator overlay takes
+    // the max on recovery and rejects a stale value, so this cannot reuse
+    // an ID. A corrupt allocator file still fails closed.
+    let (mut next_id, revision) = if has_allocator {
+        let allocator_bytes = fs::read(allocator_path(dir))?;
+        decode_allocator(&allocator_bytes)?
+    } else {
+        (1, 0)
+    };
     chunk_files.sort();
     let mut drops = Vec::new();
     let mut seen = BTreeSet::new();
@@ -426,6 +432,40 @@ fn parse_chunk_file_name(path: &Path) -> Option<ChunkKey> {
         return None;
     }
     Some(ChunkKey { x, y, z })
+}
+
+/// Deletes shard files for chunks with no live drops. Chunks that lose
+/// their last drop normally delete their file through the checkpoint
+/// write; this only catches leftovers from an interrupted earlier save.
+/// Unknown and dotfiles (worker temporaries) are left alone.
+pub(super) fn sweep_stale_shards(
+    dir: &Path,
+    live: &BTreeMap<ChunkKey, BTreeSet<u64>>,
+) -> io::Result<()> {
+    let listing = match fs::read_dir(dir) {
+        Ok(listing) => listing,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let mut removed = false;
+    for entry in listing {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || name == "allocator.bin" {
+            continue;
+        }
+        let Some(chunk) = parse_chunk_file_name(&entry.path()) else {
+            continue;
+        };
+        if !live.contains_key(&chunk) {
+            fs::remove_file(entry.path())?;
+            removed = true;
+        }
+    }
+    if removed {
+        File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 pub(super) fn checksum(bytes: &[u8]) -> u32 {

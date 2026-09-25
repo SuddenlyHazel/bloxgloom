@@ -1,3 +1,4 @@
+use super::super::shards::SHARD_HEADER;
 use super::*;
 use std::{fs, time::Duration};
 
@@ -24,6 +25,23 @@ fn drops_survive_restart_and_are_still_collectible() {
     loaded.take(item.id, item.count);
     loaded.save().unwrap();
     assert_eq!(Drops::open(&root).unwrap().entries.len(), 1);
+    // Corrupting the live sharded base fails closed.
+    let shard_dir = root.join("drops.d");
+    let shard = std::fs::read_dir(&shard_dir)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("chunk_"))
+        })
+        .expect("save wrote a chunk shard");
+    let mut bytes = fs::read(&shard).unwrap();
+    bytes[SHARD_HEADER] ^= 1;
+    fs::write(&shard, bytes).unwrap();
+    assert!(Drops::open(&root).is_err());
+    // The legacy base still fails closed once no shard markers exist.
+    fs::remove_dir_all(&shard_dir).unwrap();
     let mut bytes = fs::read(root.join("drops.bin")).unwrap();
     bytes[HEADER] ^= 1;
     fs::write(root.join("drops.bin"), bytes).unwrap();

@@ -12,7 +12,7 @@ use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
 use super::{
-    DropEntityPayload, DropPlan, Drops, Entry, LIFETIME, expiry, invalid, spatial, unix_ms,
+    DropEntityPayload, DropPlan, Drops, Entry, LIFETIME, expiry, invalid, shards, spatial, unix_ms,
 };
 
 #[cfg(test)]
@@ -36,6 +36,63 @@ impl Drops {
         catalog: Arc<crate::content::Catalog>,
     ) -> io::Result<Self> {
         let path = root.join("drops.bin");
+        let shard_dir = shards::shard_dir_for_drops_file(&path);
+        match shards::load_sharded(&shard_dir, &catalog) {
+            // Shard markers win: every save writes the allocator first, so a
+            // shard directory always reflects a save point at least as fresh
+            // as the legacy file beside it. Journal replay still overlays
+            // ownership on top of either base.
+            Some(loaded) => Self::from_shards(path, loaded?, catalog),
+            None => Self::open_legacy(path, catalog),
+        }
+    }
+
+    fn from_shards(
+        path: PathBuf,
+        loaded: shards::LoadedShards,
+        catalog: Arc<crate::content::Catalog>,
+    ) -> io::Result<Self> {
+        let mut drops = Self {
+            entries: HashMap::with_capacity(loaded.drops.len()),
+            active: BTreeSet::new(),
+            spatial: spatial::DropSpatialIndex::new(),
+            expiry: expiry::ExpiryIndex::default(),
+            chunk_members: BTreeMap::new(),
+            chunk_dirty: BTreeSet::new(),
+            allocator_dirty: false,
+            next_id: loaded.next_id,
+            revision: loaded.revision,
+            path: Some(path),
+            catalog,
+            last_gc: Instant::now(),
+        };
+        let now_ms = unix_ms();
+        for (id, position, payload) in loaded.drops {
+            let age = Duration::from_millis(now_ms.saturating_sub(payload.created_unix_ms));
+            let age_since = Instant::now();
+            if drops
+                .entries
+                .insert(
+                    id,
+                    Entry::new(id, position, payload, 0.0, age, age_since),
+                )
+                .is_some()
+            {
+                return Err(invalid("duplicate drop ID across shards"));
+            }
+            drops.next_id = drops.next_id.max(id.saturating_add(1));
+            drops.spatial.insert(id, position);
+            drops.expiry.insert(id, age, age_since);
+            if age < LIFETIME {
+                drops.active.insert(id);
+            }
+        }
+        drops.next_id = drops.next_id.max(1);
+        drops.rebuild_chunk_members();
+        Ok(drops)
+    }
+
+    fn open_legacy(path: PathBuf, catalog: Arc<crate::content::Catalog>) -> io::Result<Self> {
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
@@ -166,11 +223,34 @@ impl Drops {
         Ok(drops)
     }
 
-    pub(in crate::server) fn save(&self) -> io::Result<()> {
-        let Some(path) = &self.path else {
+    pub(in crate::server) fn save(&mut self) -> io::Result<()> {
+        let Some(path) = self.path.clone() else {
             return Ok(());
         };
-        Self::write_snapshot(path, &self.snapshot_bytes()?)
+        Self::write_snapshot(&path, &self.snapshot_bytes()?)?;
+        self.save_shards(&path)
+    }
+
+    /// Brings the sharded checkpoint base level with the legacy snapshot:
+    /// allocator first (so markers never describe shards that are ahead of
+    /// it), then dirty shards, then a sweep of stale chunk files. Journal
+    /// replay stays authoritative over either base on the next restart.
+    fn save_shards(&mut self, drops_file: &Path) -> io::Result<()> {
+        let dir = shards::shard_dir_for_drops_file(drops_file);
+        shards::write_allocator_snapshot(
+            &shards::allocator_path(&dir),
+            &shards::encode_allocator(self.next_id, self.revision),
+        )?;
+        for (chunk, bytes) in self.take_dirty_shard_snapshots() {
+            shards::write_shard_snapshot(&shards::shard_path(&dir, chunk), &bytes)?;
+        }
+        // Chunks that lost their last drop delete their file through the
+        // checkpoint write above; the sweep only catches leftovers from an
+        // interrupted earlier save. Skip dotfiles (worker temporaries).
+        shards::sweep_stale_shards(&dir, &self.chunk_members)?;
+        self.chunk_dirty.clear();
+        self.allocator_dirty = false;
+        Ok(())
     }
 
     /// Captures the exact BGDP checkpoint, including motion position and components.
