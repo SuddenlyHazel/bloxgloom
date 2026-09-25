@@ -574,11 +574,116 @@ impl crate::server::entities::EntityPayloadCodec for CounterCodec {
     }
 }
 
+/// Private payload whose public projection deliberately omits a field.
+/// The codec encodes both bytes for persistence but projects only `shown`,
+/// so any planner-observable `secret` byte proves a privacy-boundary break.
+#[derive(Clone)]
+struct MatePayload {
+    shown: u8,
+    secret: u8,
+}
+
+struct MateCodec;
+
+impl crate::server::entities::EntityPayloadCodec for MateCodec {
+    fn decode(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::server::entities::EntityPayload, crate::server::entities::EntityCodecError>
+    {
+        let [shown, secret] = bytes else {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        };
+        Ok(crate::server::entities::EntityPayload::new(MatePayload {
+            shown: *shown,
+            secret: *secret,
+        }))
+    }
+
+    fn encode(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        payload
+            .downcast_ref::<MatePayload>()
+            .map(|mate| vec![mate.shown, mate.secret])
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)
+    }
+
+    fn public_view(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        payload
+            .downcast_ref::<MatePayload>()
+            .map(|mate| vec![mate.shown])
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)
+    }
+}
+
+/// A non-kiln anchored probe that branches on its neighbours: it copies the
+/// public last byte of the lowest-ID mate-type neighbour into its own
+/// payload. Echoing the last byte (not the first) keeps the privacy test
+/// sensitive: a leaked private encoding would end in the secret byte.
+struct PairTick {
+    mate_type: crate::content::EntityTypeId,
+}
+
+impl crate::server::entities::EntityTickPolicy for PairTick {
+    fn read_radius_chunks(&self) -> u8 {
+        1
+    }
+
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{
+            EntityBlockStateChange, EntityError, EntityPayload, EntityTickPlan,
+        };
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(EntityError::InvalidType);
+        }
+        let (anchor, anchor_state) = match &snapshot.location {
+            crate::server::entities::EntityLocation::Anchored {
+                anchor,
+                anchor_state,
+                ..
+            } => (*anchor, *anchor_state),
+            crate::server::entities::EntityLocation::Mobile { .. } => {
+                return Err(EntityError::WrongOwnership);
+            }
+        };
+        let echo = neighbours
+            .iter()
+            .filter(|view| view.entity_type == self.mate_type)
+            .min_by_key(|view| view.id)
+            .and_then(|view| view.payload.last().copied())
+            .ok_or(EntityError::InvalidType)?;
+        Ok(EntityTickPlan {
+            payload: Some(EntityPayload::new(echo)),
+            next_tick: current_tick + 5,
+            anchor_update: None,
+            block_states: vec![EntityBlockStateChange {
+                cell: anchor,
+                before: anchor_state,
+                after: anchor_state,
+            }],
+        })
+    }
+}
+
 /// A non-kiln anchored/mobile probe type. Its planners echo the live anchor
 /// state with no writes, so the test exercises generic dispatch and
 /// validation without coupling to kiln rules.
 struct CounterInteract;
-
 impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
     fn plan(
         &self,
@@ -1111,6 +1216,435 @@ fn entity_planner_read_outside_capture_is_an_error() {
         .entities
         .validate_prepared(action.entities.as_ref().unwrap())
         .unwrap();
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_planner_reads_neighbour_public_view() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("pair-neighbour-plan");
+    let mate_type = crate::content::EntityTypeId(70_008);
+    let watcher_type = crate::content::EntityTypeId(70_010);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [
+        (mate_type, "test:mate"),
+        (watcher_type, "test:pair_watcher"),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x5041_4952_5400_0001,
+            })
+            .unwrap();
+    }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:mate".into(),
+        ownership: EntityOwnership::anchored(compatible.clone(), 2),
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 2,
+        codec: Arc::new(MateCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:pair_watcher".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(PairTick { mate_type })),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    let y = anchor.y;
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    // Mate anchor states never touch the world at spawn time, so they can be
+    // arbitrary non-zero states; only the planned watcher's preimage is read.
+    let stone = crate::world::STONE;
+    let spawn_watcher = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: watcher_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let watcher_id = spawn_watcher.entity_id();
+    state.entities.apply_committed(spawn_watcher).unwrap();
+    let spawn_named =
+        |state: &mut State, anchor: CellCoord, footprint: Vec<CellCoord>, shown: u8, secret: u8| {
+            let spawn = state
+                .entities
+                .prepare_spawn(EntitySpawn::Anchored {
+                    entity_type: mate_type,
+                    anchor,
+                    anchor_state: stone,
+                    footprint,
+                    payload: EntityPayload::new(MatePayload { shown, secret }),
+                    spawn_tick: 1,
+                })
+                .unwrap();
+            let id = spawn.entity_id();
+            state.entities.apply_committed(spawn).unwrap();
+            id
+        };
+    let mate_a = spawn_named(
+        &mut state,
+        CellCoord::new(20, y, 0),
+        vec![CellCoord::new(20, y, 0)],
+        11,
+        12,
+    );
+    let mate_b = spawn_named(
+        &mut state,
+        CellCoord::new(-4, y, 0),
+        vec![CellCoord::new(-4, y, 0)],
+        22,
+        23,
+    );
+    let mate_c = spawn_named(
+        &mut state,
+        CellCoord::new(512, 80, 0),
+        vec![CellCoord::new(512, 80, 0)],
+        44,
+        45,
+    );
+    let upper = CellCoord::new(16, y, 0);
+    let mate_d = spawn_named(
+        &mut state,
+        CellCoord::new(15, y, 0),
+        vec![CellCoord::new(15, y, 0), upper],
+        33,
+        34,
+    );
+    assert!(mate_a < mate_b && mate_b < mate_d);
+    // The far mate's chunk is resident but outside the declared read set, so
+    // residency alone must never make it visible.
+    state.world.get_chunk(world_to_chunk(512, 80, 0).0).unwrap();
+
+    let mut action = None;
+    for _ in 0..50 {
+        match plan_durable_request(
+            &mut state,
+            &DurableRequest::EntityTick { id: watcher_id },
+            TickId::new(6),
+        ) {
+            Ok(planned) => {
+                action = planned;
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                for _ in 0..2_000 {
+                    crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            Err(error) => panic!("pair watcher tick must plan or defer, got {error:?}"),
+        }
+    }
+    let action = action.expect("pair read set becomes resident");
+    assert!(action.world_edits.is_empty());
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+
+    let snapshot = state.entities.snapshot(watcher_id).unwrap();
+    let neighbours =
+        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
+            .unwrap();
+    // Sorted by ID across chunk pages, deduplicated across the two pages
+    // mate D touches, self excluded, far mate outside the set absent.
+    assert_eq!(neighbours.len(), 3);
+    let ids: Vec<_> = neighbours.iter().map(|view| view.id).collect();
+    assert_eq!(ids, vec![mate_a, mate_b, mate_d]);
+    for (id, shown, secret) in [
+        (mate_a, 11u8, 12u8),
+        (mate_b, 22u8, 23u8),
+        (mate_d, 33u8, 34u8),
+    ] {
+        let entry = neighbours.iter().find(|view| view.id == id).unwrap();
+        assert_eq!(
+            entry.payload,
+            vec![shown],
+            "neighbour projection is exactly the public view; secret {secret} must not cross"
+        );
+    }
+    // Deterministic ordering across repeated captures.
+    let again = entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
+        .unwrap();
+    assert_eq!(again.iter().map(|view| view.id).collect::<Vec<_>>(), ids);
+
+    // The plan branches on the lowest-ID mate's public last byte. A leaked
+    // private encoding would end in the secret byte instead.
+    let view = entity::capture_view_for_plan(&mut state, &snapshot.location, 1).unwrap();
+    let catalog = state.world.catalog_arc();
+    let descriptor = state.entities.types().descriptor(watcher_type).unwrap();
+    let first = descriptor
+        .plan_tick(&snapshot, 6, &catalog, &view, &neighbours)
+        .unwrap();
+    let second = descriptor
+        .plan_tick(&snapshot, 6, &catalog, &view, &neighbours)
+        .unwrap();
+    let planned_byte = |plan: &crate::server::entities::EntityTickPlan| {
+        plan.payload.as_ref().unwrap().downcast_ref::<u8>().copied()
+    };
+    assert_eq!(planned_byte(&first), Some(11));
+    assert_eq!(planned_byte(&first), planned_byte(&second));
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_planner_unavailable_neighbour_defers() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("neighbour-defer-plan");
+    let roamer_type = crate::content::EntityTypeId(70_009);
+    let watcher_type = crate::content::EntityTypeId(70_006);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [(roamer_type, "test:roamer"), (watcher_type, "test:watcher")] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x524f_414d_4500_0001,
+            })
+            .unwrap();
+    }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:roamer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:watcher".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(WatcherTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    state
+        .world
+        .get_chunk(world_to_chunk(anchor.x, anchor.y + 1, anchor.z).0)
+        .unwrap();
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: watcher_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let watcher_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    // The roamer lives in a neighbouring chunk that nothing has loaded, so
+    // no fabricated empty entry may stand in for it.
+    let roamer = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: roamer_type,
+            position: [20.5, anchor.y as f32, 0.5],
+            payload: EntityPayload::new(3u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let roamer_id = roamer.entity_id();
+    state.entities.apply_committed(roamer).unwrap();
+
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: watcher_id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::WouldBlock),
+        "an unavailable neighbour must defer, not read empty"
+    );
+    assert_eq!(
+        state.entities.snapshot(watcher_id).unwrap().next_tick,
+        Some(6)
+    );
+
+    let mut action = None;
+    for _ in 0..50 {
+        match plan_durable_request(
+            &mut state,
+            &DurableRequest::EntityTick { id: watcher_id },
+            TickId::new(6),
+        ) {
+            Ok(planned) => {
+                action = planned;
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                for _ in 0..2_000 {
+                    crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            Err(error) => panic!("watcher tick must plan or defer, got {error:?}"),
+        }
+    }
+    let action = action.expect("neighbour chunk becomes resident");
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
+    let snapshot = state.entities.snapshot(watcher_id).unwrap();
+    let neighbours =
+        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
+            .unwrap();
+    assert!(neighbours.iter().any(|view| view.id == roamer_id));
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_neighbour_view_bound_is_an_error() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("neighbour-bound-plan");
+    let roamer_type = crate::content::EntityTypeId(70_009);
+    let tick_type = crate::content::EntityTypeId(70_013);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [(roamer_type, "test:roamer"), (tick_type, "test:cap_tick")] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x4341_5054_4300_0001,
+            })
+            .unwrap();
+    }
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:roamer".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:cap_tick".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(CounterTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: tick_type,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    for index in 0..65u16 {
+        let spawn = state
+            .entities
+            .prepare_spawn(EntitySpawn::Mobile {
+                entity_type: roamer_type,
+                position: [0.5 + f32::from(index) * 0.1, 80.0, 0.5],
+                payload: EntityPayload::new(0u8),
+                spawn_tick: 1,
+            })
+            .unwrap();
+        state.entities.apply_committed(spawn).unwrap();
+    }
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::WouldBlock
+            && error.to_string().contains("overfull")),
+        "an over-cap neighbour set must error, never truncate"
+    );
 
     drop(state);
     fs::remove_dir_all(path).unwrap();
