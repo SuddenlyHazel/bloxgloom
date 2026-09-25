@@ -27,8 +27,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {
-            let (addr, _server) = server::start_local_server(0xB10C_6100, "world-v5".into())?;
-            client::run_client(&addr.to_string())?;
+            let (addr, server) = server::start_local_server(0xB10C_6100, "world-v5".into())?;
+            let client_result = client::run_client(&addr.to_string());
+            let server_result = server.stop();
+            client_result?;
+            server_result?;
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());

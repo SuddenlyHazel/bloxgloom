@@ -105,6 +105,7 @@ pub(super) fn run_simulation_ticks(
                 return Err(io::Error::other("authoritative durability failed"));
             }
             if disconnected {
+                state.save_connected_positions()?;
                 return Ok(());
             }
         }

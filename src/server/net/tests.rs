@@ -5,6 +5,108 @@ use crate::server::{INPUT_CAPACITY, run_simulation_ticks};
 use std::sync::mpsc::TryRecvError;
 
 #[test]
+fn local_server_shutdown_restores_authoritative_position_on_next_start() {
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-position-loopback-{}-{suffix}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&save).unwrap();
+    let profile = 0x7345;
+    let (address, server) = super::super::start_local_server(7, save.clone()).unwrap();
+    let mut peer = TcpStream::connect(address).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Hello {
+            name: "position-test".into(),
+            profile,
+            content_fingerprint: crate::content::catalog().fingerprint(),
+        },
+    )
+    .unwrap();
+    complete_content_handshake(&mut peer);
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::Welcome { .. }
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::OwnedEntity { .. }
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::ActionSession { .. }
+    ));
+    let original = match protocol::read_server(&mut peer).unwrap() {
+        ServerMessage::Position { x, y, z, .. } => [x, y, z],
+        other => panic!("expected position, got {other:?}"),
+    };
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Move {
+            seq: 1,
+            dx: 0.1,
+            dy: 0.0,
+            dz: 0.0,
+        },
+    )
+    .unwrap();
+    let moved = loop {
+        if let ServerMessage::Position {
+            ack_seq: 1,
+            x,
+            y,
+            z,
+        } = protocol::read_server(&mut peer).unwrap()
+        {
+            break [x, y, z];
+        }
+    };
+    assert!(moved[0] > original[0]);
+    server.stop().unwrap();
+    drop(peer);
+
+    let (address, server) = super::super::start_local_server(7, save.clone()).unwrap();
+    let mut peer = TcpStream::connect(address).unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    protocol::write_client(
+        &mut peer,
+        &ClientMessage::Hello {
+            name: "position-test".into(),
+            profile,
+            content_fingerprint: crate::content::catalog().fingerprint(),
+        },
+    )
+    .unwrap();
+    complete_content_handshake(&mut peer);
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::Welcome { .. }
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::OwnedEntity { .. }
+    ));
+    assert!(matches!(
+        protocol::read_server(&mut peer).unwrap(),
+        ServerMessage::ActionSession { .. }
+    ));
+    match protocol::read_server(&mut peer).unwrap() {
+        ServerMessage::Position { x, y, z, .. } => assert_eq!([x, y, z], moved),
+        other => panic!("expected restored position, got {other:?}"),
+    }
+    server.stop().unwrap();
+    drop(peer);
+    std::fs::remove_dir_all(save).unwrap();
+}
+
+#[test]
 fn socket_join_reloads_inventory_after_coordinator_refresh() {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

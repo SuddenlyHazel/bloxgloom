@@ -20,6 +20,7 @@ mod net;
 mod outbound;
 mod parallel;
 mod perf;
+mod position_store;
 mod registry;
 mod runtime;
 mod simulation;
@@ -52,6 +53,7 @@ use movement::{MovementBatch, MovementCommand, MovementState};
 use net::serve_listener;
 use outbound::{OutboundQueue, OutboundTelemetry};
 use parallel::PhaseExecutor;
+use position_store::PositionStore;
 use registry::PhasePlan;
 use runtime::run_simulation_ticks;
 use runtime::systems::SystemRuntime;
@@ -143,6 +145,7 @@ struct State {
     admission_limit: usize,
     world: World,
     inventory_store: InventoryStore,
+    position_store: PositionStore,
     drops: Drops,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
@@ -215,6 +218,10 @@ impl State {
     /// clients' subscriptions keep their own pins on shared chunks.
     fn remove_client(&mut self, id: u64) -> Option<Client> {
         let client = self.clients.remove(&id)?;
+        if let Err(error) = self.position_store.save(client.profile, client.position()) {
+            self.durability.failed = true;
+            eprintln!("could not save player position for session {id}: {error}");
+        }
         for &key in &client.sent {
             let released = self.world.unpin_resident_chunk(key);
             debug_assert!(released, "client subscription lost its resident chunk");
@@ -233,6 +240,14 @@ impl State {
             }
         }
         Some(client)
+    }
+
+    fn save_connected_positions(&self) -> io::Result<()> {
+        for client in self.clients.values() {
+            self.position_store
+                .save(client.profile, client.position())?;
+        }
+        Ok(())
     }
 }
 
@@ -326,16 +341,35 @@ pub(crate) fn run_server_with_startup(
     serve_listener(listener, Box::new(state))
 }
 
-pub fn start_local_server(
-    seed: u64,
-    save_dir: PathBuf,
-) -> io::Result<(SocketAddr, thread::JoinHandle<io::Result<()>>)> {
+pub fn start_local_server(seed: u64, save_dir: PathBuf) -> io::Result<(SocketAddr, LocalServer)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let addr = listener.local_addr()?;
     let state = server_state(seed, save_dir)?;
     let state = Box::new(state);
-    let handle = thread::spawn(move || serve_listener(listener, state));
-    Ok((addr, handle))
+    let (stop, receiver) = std::sync::mpsc::channel();
+    let handle = thread::spawn(move || {
+        net::serve_listener_with_stats(
+            listener,
+            state,
+            receiver,
+            Arc::new(net::TransportStats::default()),
+        )
+    });
+    Ok((addr, LocalServer { stop, handle }))
+}
+
+pub struct LocalServer {
+    stop: std::sync::mpsc::Sender<()>,
+    handle: thread::JoinHandle<io::Result<()>>,
+}
+
+impl LocalServer {
+    pub fn stop(self) -> io::Result<()> {
+        let _ = self.stop.send(());
+        self.handle
+            .join()
+            .map_err(|_| io::Error::other("local server panicked"))?
+    }
 }
 
 fn server_state(seed: u64, save_dir: PathBuf) -> io::Result<State> {
@@ -385,6 +419,7 @@ fn server_state_with_startup(
     let mut world =
         World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
+    let position_store = PositionStore::new(&save_dir)?;
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();
     let entity_types = startup.entity_types_for(catalog.clone())?;
@@ -426,6 +461,7 @@ fn server_state_with_startup(
         admission_limit,
         world,
         inventory_store,
+        position_store,
         drops,
         entities,
         player_entities: PlayerEntityStore::default(),
@@ -494,7 +530,19 @@ fn join_client(
         Some(inventory) => inventory.clone(),
         None => loaded_inventory,
     };
-    let position = spawn_position_cached(state)?;
+    let position = match state.position_store.load(profile)? {
+        Some(saved) => match spawn::collides_cached(state, saved)? {
+            Some(false) => saved,
+            Some(true) => spawn_position_cached(state)?,
+            None => {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "saved position chunks are loading",
+                ));
+            }
+        },
+        None => spawn_position_cached(state)?,
+    };
     let id = state.next_id;
     let next_id = state
         .next_id
@@ -505,7 +553,12 @@ fn join_client(
         .player_entities
         .spawn_session(id, position)
         .map_err(io::Error::other)?;
-    let center = world_to_chunk(0, position[1] as i32, 0).0;
+    let center = world_to_chunk(
+        position[0].floor() as i32,
+        position[1].floor() as i32,
+        position[2].floor() as i32,
+    )
+    .0;
     // Queue the complete handshake before registering the client. The
     // publish phase can otherwise enqueue terrain before Welcome while the
     // connection thread is waiting for this reply.

@@ -73,7 +73,7 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
     }
 }
 
-fn collides_cached(state: &mut State, feet: [f32; 3]) -> io::Result<Option<bool>> {
+pub(super) fn collides_cached(state: &mut State, feet: [f32; 3]) -> io::Result<Option<bool>> {
     let mut missing = false;
     for x in [feet[0] - 0.3, feet[0] + 0.3] {
         for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
