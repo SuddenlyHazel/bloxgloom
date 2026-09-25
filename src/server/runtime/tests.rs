@@ -741,3 +741,32 @@ fn effect_consumers_cannot_gain_a_write_path() {
     assert_eq!(nudge_values(&harness), [0, 0, 0]);
     assert_eq!(harness.state.system_runtime.pending_wake_count(), 0);
 }
+
+#[test]
+fn replayed_wake_flags_land_in_the_durable_set() {
+    use crate::server::journal::Change;
+    use crate::server::runtime::owner_wake::{encode_wake_value, owner_wake_key};
+
+    let mut runtime = SystemRuntime::new(1).unwrap();
+    assert_eq!(runtime.durable_wake_count(), 0);
+    let system = SystemId::new("test:late_owner").unwrap();
+    let owner = chunk_owner(9);
+    // A receipted set-flag for a destination with no live cell is held
+    // durably instead of being skipped: it is due, not lost.
+    let set = Change::new(
+        owner_wake_key(&system, owner),
+        Vec::new(),
+        encode_wake_value(4),
+    );
+    runtime.apply_replayed_owner_changes(&[set]).unwrap();
+    assert_eq!(runtime.durable_wake_count(), 1);
+    assert_eq!(runtime.pending_wake_count(), 0);
+    // A receipted clear removes the flag; replay converges.
+    let clear = Change::new(
+        owner_wake_key(&system, owner),
+        encode_wake_value(4),
+        Vec::new(),
+    );
+    runtime.apply_replayed_owner_changes(&[clear]).unwrap();
+    assert_eq!(runtime.durable_wake_count(), 0);
+}

@@ -462,7 +462,7 @@ fn server_state_with_startup(
     )?;
     let block_actions = block_actions.freeze();
     let owner_configs = startup.owner_configs()?;
-    let (mut durability, recovered_fire, entities, owner_store) = Durability::open(
+    let (mut durability, recovered_fire, entities, owner_store, wake_store) = Durability::open(
         &save_dir,
         &mut world,
         &inventory_store,
@@ -485,7 +485,8 @@ fn server_state_with_startup(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
-    let mut system_runtime = SystemRuntime::with_durable_store(worker_count, owner_store)?;
+    let mut system_runtime =
+        SystemRuntime::with_durable_store(worker_count, owner_store, wake_store)?;
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     Ok(State {

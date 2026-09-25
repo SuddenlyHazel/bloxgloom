@@ -26,6 +26,7 @@ use crate::server::entity_checkpoint::EntityCheckpointMirror;
 use crate::server::fire::{FireCheckpointStore, FireRecovered};
 use crate::server::journal::Journal;
 use crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN;
+use crate::server::runtime::owner_wake::{OWNER_WAKE_DOMAIN, PendingWakeStore};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -36,7 +37,13 @@ pub(super) fn open(
     drops: &mut Drops,
     entity_types: Arc<EntityTypeRegistry>,
     owner_configs: Vec<OwnerSystemConfig>,
-) -> io::Result<(Durability, FireRecovered, EntityStore, DurableOwnerStore)> {
+) -> io::Result<(
+    Durability,
+    FireRecovered,
+    EntityStore,
+    DurableOwnerStore,
+    PendingWakeStore,
+)> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
     let recovered_entities =
@@ -49,6 +56,7 @@ pub(super) fn open(
     let mut receipt_replay = Vec::new();
     let mut inventory_revisions = HashMap::new();
     let mut owner_latest = BTreeMap::new();
+    let mut wake_latest = BTreeMap::new();
     let storage = world.storage_handle();
     let mut chunk_replay = Vec::new();
     let mut inventory_replay = Vec::new();
@@ -167,6 +175,14 @@ pub(super) fn open(
                 // closed with `InvalidData` while the save is untouched.
                 owner_latest.insert(key.clone(), value.clone());
             }
+            domain if domain == OWNER_WAKE_DOMAIN => {
+                // Pending owner wakes ride the same base+tail rotation as
+                // owner cells: no per-key file, decoded by
+                // `PendingWakeStore::recover` before any replay write below.
+                // Malformed keys and undecodable flags fail closed with
+                // `InvalidData` while the save is untouched.
+                wake_latest.insert(key.clone(), value.clone());
+            }
             domain => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -196,6 +212,7 @@ pub(super) fn open(
     // Fail closed before the first replay write below: a corrupt owner
     // record must reject the world without touching any save file.
     let owner_store = DurableOwnerStore::recover(owner_configs, &owner_latest)?;
+    let wake_store = PendingWakeStore::recover(&wake_latest)?;
 
     for (chunk, value) in chunk_replay {
         world.restore_snapshot(chunk, &value)?;
@@ -281,5 +298,6 @@ pub(super) fn open(
         fire_recovered,
         recovered_entities.entities,
         owner_store,
+        wake_store,
     ))
 }

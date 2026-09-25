@@ -18,6 +18,7 @@ use super::journal::{
     CommitReceipt, JournalWriter, RotateError, RotationReceipt, StateKey, SubmitError, Transaction,
 };
 use super::runtime::owner_durable::{DurableOwnerStore, OwnerSystemConfig};
+use super::runtime::owner_wake::PendingWakeStore;
 use super::simulation::TickId;
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{ClientMessage, DroppedItem};
@@ -316,7 +317,13 @@ impl Durability {
         drops: &mut Drops,
         entity_types: Arc<EntityTypeRegistry>,
         owner_configs: Vec<OwnerSystemConfig>,
-    ) -> io::Result<(Self, FireRecovered, EntityStore, DurableOwnerStore)> {
+    ) -> io::Result<(
+        Self,
+        FireRecovered,
+        EntityStore,
+        DurableOwnerStore,
+        PendingWakeStore,
+    )> {
         recovery::open(
             root,
             world,

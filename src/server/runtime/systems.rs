@@ -27,6 +27,7 @@ use super::owner_durable::{
     PreparedOwnerWave,
 };
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
+use super::owner_wake::PendingWakeStore;
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
@@ -52,6 +53,12 @@ pub(in crate::server) struct SystemRuntime {
     /// job budget next tick. In-memory only: losing them costs latency, never
     /// state.
     pending_wakes: BTreeMap<SystemId, BTreeSet<OwnerKey>>,
+    /// Durable pending-wake flags for destinations with no live cell. Staged
+    /// into the producer wave's WAL record and recovered at open, so a wake
+    /// to an unloaded owner is held until that owner loads instead of being
+    /// skipped. Carries no effect payload: the flag only asks the destination
+    /// to do its own durable work sooner.
+    durable_wakes: PendingWakeStore,
     /// When set, routed effects are discarded before any consumer runs while
     /// producer commits still apply. Tests use this to prove delivery is
     /// optional; it is never set by live routing.
@@ -60,7 +67,11 @@ pub(in crate::server) struct SystemRuntime {
 
 impl SystemRuntime {
     pub fn new(workers: usize) -> io::Result<Self> {
-        Self::with_durable_store(workers, DurableOwnerStore::new(Vec::new())?)
+        Self::with_durable_store(
+            workers,
+            DurableOwnerStore::new(Vec::new())?,
+            PendingWakeStore::new(),
+        )
     }
 
     /// Builds the live runtime over journal-recovered owner state. Recovery
@@ -69,6 +80,7 @@ impl SystemRuntime {
     pub(in crate::server) fn with_durable_store(
         workers: usize,
         durable: DurableOwnerStore,
+        durable_wakes: PendingWakeStore,
     ) -> io::Result<Self> {
         if workers == 0 || workers > MAX_PHASE_WORKERS {
             return Err(io::Error::new(
@@ -83,6 +95,7 @@ impl SystemRuntime {
             next_owner: BTreeMap::new(),
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
+            durable_wakes,
             drop_registered_effects: false,
         })
     }
@@ -175,7 +188,13 @@ impl SystemRuntime {
         &mut self,
         changes: &[Change],
     ) -> io::Result<()> {
-        self.durable.apply_replayed(changes)
+        self.durable.apply_replayed(changes)?;
+        self.durable_wakes.apply_replayed(changes)
+    }
+
+    /// Receipted durable wake flags held for destinations with no live cell.
+    pub(in crate::server) fn durable_wake_count(&self) -> usize {
+        self.durable_wakes.len()
     }
 
     pub fn owner_value<T: Any + Clone + Send + Sync>(
