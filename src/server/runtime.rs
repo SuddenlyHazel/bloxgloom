@@ -20,6 +20,7 @@ use super::*;
 
 pub(in crate::server) mod adapters;
 pub(in crate::server) mod owner_codec;
+pub(in crate::server) mod owner_commit;
 pub(in crate::server) mod owner_durable;
 pub(in crate::server) mod owner_effects;
 pub(in crate::server) mod owner_wake;
