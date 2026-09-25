@@ -68,5 +68,6 @@ pub(super) fn stable_items(items: &[DroppedItem]) -> Vec<(u64, ItemId, u16, [f32
 
 mod journal_recovery;
 mod persistence;
+mod pins;
 mod planning_pickup;
 mod spatial_physics;

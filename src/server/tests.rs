@@ -6,6 +6,8 @@ use super::*;
 mod clients;
 #[path = "tests/common.rs"]
 mod common;
+#[path = "tests/drop_pins.rs"]
+mod drop_pins;
 #[path = "tests/durable.rs"]
 mod durable;
 #[path = "tests/simulation.rs"]
