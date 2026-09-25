@@ -5,6 +5,11 @@ use crate::server::checkpoint::CheckpointSubmitError;
 use crate::server::drops::Drops;
 use crate::server::{State, durable};
 use crate::world::ChunkKey;
+use std::time::Duration;
+
+fn fire_batch_key() -> StateKey {
+    StateKey::new("bloxgloom:fire_checkpoint_batch", Vec::new())
+}
 
 pub(in crate::server) fn remember_drops_checkpoint(state: &mut State) -> io::Result<()> {
     let key = durable::drops_checkpoint_key();
@@ -25,6 +30,34 @@ pub(in crate::server) fn remember_drops_checkpoint(state: &mut State) -> io::Res
 
 pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
     for receipt in state.durability.poll_checkpoints() {
+        if receipt.key == fire_batch_key() {
+            let Some(batch) = state.durability.fire_checkpoint_batch.take() else {
+                state.durability.failed = true;
+                continue;
+            };
+            if batch.revision != receipt.revision {
+                state.durability.failed = true;
+                continue;
+            }
+            match receipt.result {
+                Ok(()) => {
+                    for (key, revision) in batch.covered {
+                        state.durability.checkpoint_committed(&key, revision);
+                    }
+                }
+                Err(error) => {
+                    for (key, revision) in batch.covered {
+                        if let Some(dirty) = state.durability.dirty_checkpoints.get_mut(&key)
+                            && dirty.revision == revision
+                        {
+                            dirty.retry_after = now + Duration::from_secs(1);
+                        }
+                    }
+                    eprintln!("checkpoint {} failed: {error}", receipt.key.domain);
+                }
+            }
+            continue;
+        }
         match receipt.result {
             Ok(()) => {
                 if let Some(snapshot) = state
@@ -75,6 +108,7 @@ pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
 
 pub(super) fn submit_dirty_checkpoints(state: &mut State) {
     let keys: Vec<_> = state.durability.dirty_checkpoints.keys().cloned().collect();
+    submit_fire_checkpoint_batch(state);
     for key in keys {
         match key.domain.as_str() {
             "bloxgloom:chunk_snapshot" => {
@@ -128,19 +162,64 @@ pub(super) fn submit_dirty_checkpoints(state: &mut State) {
                 }
             }
             "bloxgloom:fire_frontier" | "bloxgloom:fire_pending" | "bloxgloom:fire_cursor" => {
-                let store = state.durability.fire_store.clone();
-                let write_key = key.clone();
-                match state
-                    .durability
-                    .submit_checkpoint(key, move |bytes| store.write(&write_key, bytes))
-                {
-                    Ok(_) | Err(CheckpointSubmitError::Full) => {}
-                    Err(CheckpointSubmitError::Closed) => state.durability.failed = true,
-                }
+                // All fire keys share one complete-map aggregate and one
+                // worker write. The grouped receipt clears exact revisions.
             }
             _ => {}
         }
     }
+}
+
+fn submit_fire_checkpoint_batch(state: &mut State) {
+    if state.durability.fire_checkpoint_batch.is_some() {
+        return;
+    }
+    let now = Instant::now();
+    let mut snapshots = Vec::new();
+    let mut covered = Vec::new();
+    for (key, dirty) in &state.durability.dirty_checkpoints {
+        if !is_fire_checkpoint_key(key) || dirty.retry_after > now {
+            continue;
+        }
+        snapshots.push((key.clone(), dirty.snapshot.clone()));
+        covered.push((key.clone(), dirty.revision));
+    }
+    if snapshots.is_empty() {
+        return;
+    }
+
+    let revision = state.durability.next_checkpoint_revision;
+    let Some(next_revision) = revision.checked_add(1) else {
+        state.durability.failed = true;
+        return;
+    };
+    let store = state.durability.fire_store.clone();
+    let result = state.durability.checkpoint_writer.try_submit(
+        fire_batch_key(),
+        revision,
+        Vec::new(),
+        move |_| store.write_batch(&snapshots),
+    );
+    match result {
+        Ok(()) => {
+            state.durability.next_checkpoint_revision = next_revision;
+            state
+                .durability
+                .checkpoint_inflight
+                .insert(fire_batch_key(), revision);
+            state.durability.fire_checkpoint_batch =
+                Some(durable::FireCheckpointBatch { revision, covered });
+        }
+        Err(CheckpointSubmitError::Full) => {}
+        Err(CheckpointSubmitError::Closed) => state.durability.failed = true,
+    }
+}
+
+fn is_fire_checkpoint_key(key: &StateKey) -> bool {
+    matches!(
+        key.domain.as_str(),
+        "bloxgloom:fire_frontier" | "bloxgloom:fire_pending" | "bloxgloom:fire_cursor"
+    )
 }
 
 fn decode_chunk_checkpoint_key(bytes: &[u8]) -> Option<ChunkKey> {

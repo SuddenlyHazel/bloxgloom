@@ -337,14 +337,108 @@ fn checkpoint_store_rejects_orphans_and_corruption_and_cleans_interrupted_temp()
     store.cleanup_interrupted_temps().unwrap();
     assert!(!temp.exists());
 
-    let path = directory.0.join("fire/cursor_00.fire");
+    let path = directory.0.join("fire/checkpoints.fire");
     let mut corrupt = fs::read(&path).unwrap();
     corrupt[8] ^= 0x80;
     fs::write(&path, corrupt).unwrap();
-    assert!(store.read(&key).is_err());
+    assert!(FireCheckpointStore::new(&directory.0).is_err());
     store.write(&key, &value).unwrap();
     store.write(&key, &[]).unwrap();
     assert!(store.read(&key).unwrap().is_none());
+    assert!(!directory.0.join("fire/cursor_00.fire").exists());
+}
+
+#[test]
+fn checkpoint_batch_replaces_one_complete_snapshot_and_applies_tombstones() {
+    let directory = TestDir::new();
+    let store = FireCheckpointStore::new(&directory.0).unwrap();
+    let first = cursor_key(0);
+    let second = cursor_key(1);
+    let first_value = scheduler::FireCursor {
+        last_owner: None,
+        last_source: None,
+        last_tick: 11,
+    }
+    .encode();
+    let second_value = scheduler::FireCursor {
+        last_owner: None,
+        last_source: None,
+        last_tick: 12,
+    }
+    .encode();
+    store
+        .write_batch(&[
+            (first.clone(), first_value.clone()),
+            (second.clone(), second_value.clone()),
+        ])
+        .unwrap();
+    assert!(!directory.0.join("fire/cursor_00.fire").exists());
+    assert!(!directory.0.join("fire/cursor_01.fire").exists());
+
+    let reopened = FireCheckpointStore::new(&directory.0).unwrap();
+    assert_eq!(reopened.read(&first).unwrap(), Some(first_value));
+    assert_eq!(reopened.read(&second).unwrap(), Some(second_value.clone()));
+    let next_value = scheduler::FireCursor {
+        last_owner: None,
+        last_source: None,
+        last_tick: 13,
+    }
+    .encode();
+    reopened
+        .write_batch(&[
+            (first.clone(), Vec::new()),
+            (second.clone(), next_value.clone()),
+        ])
+        .unwrap();
+
+    let recovered = FireCheckpointStore::new(&directory.0).unwrap();
+    assert_eq!(recovered.read(&first).unwrap(), None);
+    assert_eq!(recovered.read(&second).unwrap(), Some(next_value.clone()));
+    recovered
+        .validate_no_orphans(&BTreeMap::from([(second.clone(), next_value)]))
+        .unwrap();
+    assert!(recovered.validate_no_orphans(&BTreeMap::new()).is_err());
+}
+
+#[test]
+fn first_aggregate_write_preserves_legacy_per_key_checkpoints() {
+    let directory = TestDir::new();
+    let old_key = cursor_key(2);
+    let new_key = cursor_key(3);
+    let old_value = scheduler::FireCursor {
+        last_owner: None,
+        last_source: None,
+        last_tick: 21,
+    }
+    .encode();
+    let new_value = scheduler::FireCursor {
+        last_owner: None,
+        last_source: None,
+        last_tick: 22,
+    }
+    .encode();
+    let fire_dir = directory.0.join("fire");
+    fs::create_dir_all(&fire_dir).unwrap();
+    fs::write(
+        fire_dir.join("cursor_02.fire"),
+        super::checkpoint::encode_envelope(&old_key, &old_value).unwrap(),
+    )
+    .unwrap();
+
+    let store = FireCheckpointStore::new(&directory.0).unwrap();
+    assert_eq!(store.read(&old_key).unwrap(), Some(old_value.clone()));
+    store
+        .write_batch(&[(new_key.clone(), new_value.clone())])
+        .unwrap();
+    let recovered = FireCheckpointStore::new(&directory.0).unwrap();
+    assert_eq!(recovered.read(&old_key).unwrap(), Some(old_value.clone()));
+    assert_eq!(recovered.read(&new_key).unwrap(), Some(new_value.clone()));
+    recovered
+        .validate_no_orphans(&BTreeMap::from([
+            (old_key, old_value),
+            (new_key, new_value),
+        ]))
+        .unwrap();
 }
 
 #[test]

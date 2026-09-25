@@ -90,6 +90,7 @@ pub(super) struct Durability {
     pub(super) checkpoint_writer: CheckpointWriter,
     pub(super) dirty_checkpoints: HashMap<StateKey, DirtyCheckpoint>,
     pub(super) checkpoint_inflight: HashMap<StateKey, u64>,
+    pub(super) fire_checkpoint_batch: Option<FireCheckpointBatch>,
     pub(super) next_checkpoint_revision: u64,
     pub(super) receipt_store: receipts::ReceiptStore,
     pub(super) fire_store: FireCheckpointStore,
@@ -115,6 +116,11 @@ pub(super) struct DirtyCheckpoint {
     pub(super) revision: u64,
     pub(super) snapshot: Vec<u8>,
     pub(super) retry_after: Instant,
+}
+
+pub(super) struct FireCheckpointBatch {
+    pub(super) revision: u64,
+    pub(super) covered: Vec<(StateKey, u64)>,
 }
 
 pub(super) struct PendingCommit {

@@ -7,29 +7,48 @@
 use super::codec::{checksum, invalid};
 use super::scheduler::FireRecovered;
 use crate::server::journal::StateKey;
-use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::collections::{BTreeMap, HashSet};
+use std::fs::{self, File};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+#[path = "checkpoint/aggregate.rs"]
+mod aggregate;
 
 const MAX_FIRE_VALUE_BYTES: usize = 128 * 1024;
 const MAX_FIRE_FILE_BYTES: usize = MAX_FIRE_VALUE_BYTES + 96;
-static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub(in crate::server) struct FireCheckpointStore {
     root: PathBuf,
+    values: Arc<Mutex<Option<BTreeMap<StateKey, Vec<u8>>>>>,
 }
 
 impl FireCheckpointStore {
     pub(in crate::server) fn new(world_dir: &Path) -> io::Result<Self> {
         let root = world_dir.join("fire");
         fs::create_dir_all(&root)?;
-        Ok(Self { root })
+        let values = aggregate::read_snapshot_file(&root.join(aggregate::FILE_NAME))?;
+        Ok(Self {
+            root,
+            values: Arc::new(Mutex::new(values)),
+        })
     }
 
     pub(in crate::server) fn read(&self, key: &StateKey) -> io::Result<Option<Vec<u8>>> {
+        if let Some(values) = self
+            .values
+            .lock()
+            .map_err(|_| io::Error::other("fire checkpoint state poisoned"))?
+            .as_ref()
+        {
+            return Ok(values.get(key).cloned());
+        }
+        self.read_legacy(key)
+    }
+
+    fn read_legacy(&self, key: &StateKey) -> io::Result<Option<Vec<u8>>> {
         let path = self.path(key)?;
         let file = match File::open(path) {
             Ok(file) => file,
@@ -48,43 +67,45 @@ impl FireCheckpointStore {
 
     /// The generic checkpoint worker calls this only after a WAL receipt.
     /// Empty after-values unlink the exact old key rather than leaving a
-    /// tombstone that might be mistaken for live work after rotation.
+    /// tombstone that might be mistaken for live work after rotation. The
+    /// physical checkpoint is a complete-map aggregate, replaced atomically.
     pub(in crate::server) fn write(&self, key: &StateKey, value: &[u8]) -> io::Result<()> {
-        let path = self.path(key)?;
-        validate_value(key, value)?;
-        if value.is_empty() {
-            match fs::remove_file(&path) {
-                Ok(()) => File::open(&self.root)?.sync_all(),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-                Err(error) => Err(error),
-            }?;
+        self.write_batch(&[(key.clone(), value.to_vec())])
+    }
+
+    /// Persist several post-WAL fire snapshots with one file and directory
+    /// fence. The in-memory map is owned by the checkpoint worker and is only
+    /// changed after the new complete snapshot has been atomically installed.
+    pub(in crate::server) fn write_batch(&self, updates: &[(StateKey, Vec<u8>)]) -> io::Result<()> {
+        if updates.is_empty() {
             return Ok(());
         }
-        let bytes = encode_envelope(key, value)?;
-        let filename = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| invalid("invalid fire checkpoint path"))?;
-        let temporary = self.root.join(format!(
-            ".{filename}.{}.{}.tmp",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        let result = (|| {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            drop(file);
-            fs::rename(&temporary, &path)?;
-            File::open(&self.root)?.sync_all()
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary);
+        let mut seen = HashSet::with_capacity(updates.len());
+        for (key, value) in updates {
+            validate_value(key, value)?;
+            if !seen.insert(key) {
+                return Err(invalid("duplicate key in fire checkpoint batch"));
+            }
         }
-        result
+
+        let mut state = self
+            .values
+            .lock()
+            .map_err(|_| io::Error::other("fire checkpoint state poisoned"))?;
+        let mut next = match state.as_ref() {
+            Some(values) => values.clone(),
+            None => self.load_legacy_values()?,
+        };
+        for (key, value) in updates {
+            if value.is_empty() {
+                next.remove(key);
+            } else {
+                next.insert(key.clone(), value.clone());
+            }
+        }
+        aggregate::write_snapshot_file(&self.root.join(aggregate::FILE_NAME), &next)?;
+        *state = Some(next);
+        Ok(())
     }
 
     /// Run in startup's read-only validation pass, before any replay write.
@@ -104,14 +125,24 @@ impl FireCheckpointStore {
             let name = name
                 .to_str()
                 .ok_or_else(|| invalid("non-UTF8 fire checkpoint filename"))?;
-            if parse_temporary(name).is_some() {
+            if is_interrupted_temporary(name) {
+                continue;
+            }
+            if name == aggregate::FILE_NAME {
+                let snapshot = aggregate::read_snapshot_file(&entry.path())?
+                    .ok_or_else(|| invalid("fire checkpoint aggregate disappeared"))?;
+                if snapshot.keys().any(|key| !latest.contains_key(key)) {
+                    return Err(invalid("fire checkpoint aggregate has no journal frontier"));
+                }
                 continue;
             }
             let key = parse_filename(name)?;
             if !latest.contains_key(&key) {
                 return Err(invalid("fire checkpoint has no journal frontier"));
             }
-            self.read(&key)?;
+            // Validate old per-key files even when the aggregate supersedes
+            // them. They remain save data until an explicit format migration.
+            self.read_legacy(&key)?;
         }
         Ok(())
     }
@@ -125,7 +156,7 @@ impl FireCheckpointStore {
             let name = name
                 .to_str()
                 .ok_or_else(|| invalid("non-UTF8 fire checkpoint filename"))?;
-            if parse_temporary(name).is_some() {
+            if is_interrupted_temporary(name) {
                 fs::remove_file(entry.path())?;
                 removed = true;
             }
@@ -139,9 +170,39 @@ impl FireCheckpointStore {
     fn path(&self, key: &StateKey) -> io::Result<PathBuf> {
         Ok(self.root.join(filename(key)?))
     }
+
+    fn load_legacy_values(&self) -> io::Result<BTreeMap<StateKey, Vec<u8>>> {
+        let mut values = BTreeMap::new();
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                return Err(invalid("unexpected non-file in fire checkpoint directory"));
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| invalid("non-UTF8 fire checkpoint filename"))?;
+            if is_interrupted_temporary(&name) || name == aggregate::FILE_NAME {
+                continue;
+            }
+            let key = parse_filename(&name)?;
+            let value = self
+                .read_legacy(&key)?
+                .ok_or_else(|| invalid("fire checkpoint disappeared while batching"))?;
+            if !value.is_empty() {
+                values.insert(key, value);
+            }
+        }
+        Ok(values)
+    }
 }
 
-fn encode_envelope(key: &StateKey, value: &[u8]) -> io::Result<Vec<u8>> {
+fn is_interrupted_temporary(name: &str) -> bool {
+    parse_temporary(name).is_some() || aggregate::is_snapshot_temporary(name)
+}
+
+#[cfg(test)]
+pub(super) fn encode_envelope(key: &StateKey, value: &[u8]) -> io::Result<Vec<u8>> {
     validate_value(key, value)?;
     let domain = domain_tag(key)?;
     let mut bytes = Vec::with_capacity(14 + key.bytes.len() + value.len());

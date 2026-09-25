@@ -174,8 +174,8 @@ pub(super) fn open(
     for (profile, value) in receipt_replay {
         receipt_store.write(profile, &value)?;
     }
-    for (key, value) in fire_replay {
-        fire_store.write(&key, &value)?;
+    if !fire_replay.is_empty() {
+        fire_store.write_batch(&fire_replay)?;
     }
     fire_store.cleanup_interrupted_temps()?;
     if drops.apply_recovered_journal(&drop_values, drop_owner_set_closed)? {
@@ -227,6 +227,7 @@ pub(super) fn open(
             ),
             dirty_checkpoints: HashMap::new(),
             checkpoint_inflight: HashMap::new(),
+            fire_checkpoint_batch: None,
             next_checkpoint_revision: 1,
             receipt_store,
             fire_store,

@@ -99,6 +99,139 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
 }
 
 #[test]
+fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
+    let path = temp_save();
+    let mut state = server_state(73, path.clone()).unwrap();
+    let (source, local) = world_to_chunk(8, 96, 8);
+    let cell = Chunk::index(local).unwrap() as u16;
+    let edits = state.world.prepare_edits(&[(8, 96, 8, GLOWSTONE)]).unwrap();
+    let seed = state
+        .fire
+        .prepare_seed_from_edit(TickId::new(1), source, cell, GLOWSTONE)
+        .unwrap()
+        .unwrap();
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: edits,
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: Some(seed.clone()),
+        entities: None,
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(1), &action, None, None)
+            .unwrap()
+    );
+    state.fire.mark_seed_submitted(&seed).unwrap();
+    drain_wal(&mut state);
+
+    let fire_count = state
+        .durability
+        .dirty_checkpoints
+        .keys()
+        .filter(|key| {
+            matches!(
+                key.domain.as_str(),
+                "bloxgloom:fire_frontier" | "bloxgloom:fire_pending" | "bloxgloom:fire_cursor"
+            )
+        })
+        .count();
+    assert!(fire_count > 1);
+    super::super::checkpoint::submit_dirty_checkpoints(&mut state);
+    let batch = state.durability.fire_checkpoint_batch.as_ref().unwrap();
+    assert_eq!(batch.covered.len(), fire_count);
+    let revised_key = batch.covered[0].0.clone();
+    let revised_snapshot = state.durability.dirty_checkpoints[&revised_key]
+        .snapshot
+        .clone();
+    state
+        .durability
+        .remember_checkpoint(revised_key.clone(), revised_snapshot);
+    assert!(
+        state
+            .durability
+            .checkpoint_inflight
+            .contains_key(&StateKey::new(
+                "bloxgloom:fire_checkpoint_batch",
+                Vec::new()
+            ))
+    );
+
+    for _ in 0..1_000 {
+        super::super::checkpoint::process_checkpoint_receipts(
+            &mut state,
+            std::time::Instant::now(),
+        );
+        if state.durability.fire_checkpoint_batch.is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(state.durability.fire_checkpoint_batch.is_none());
+    assert!(
+        state
+            .durability
+            .dirty_checkpoints
+            .contains_key(&revised_key)
+    );
+    assert_eq!(
+        state
+            .durability
+            .dirty_checkpoints
+            .keys()
+            .filter(|key| matches!(
+                key.domain.as_str(),
+                "bloxgloom:fire_frontier" | "bloxgloom:fire_pending" | "bloxgloom:fire_cursor"
+            ))
+            .count(),
+        1
+    );
+    super::super::checkpoint::submit_dirty_checkpoints(&mut state);
+    assert_eq!(
+        state
+            .durability
+            .fire_checkpoint_batch
+            .as_ref()
+            .unwrap()
+            .covered,
+        vec![(
+            revised_key.clone(),
+            state.durability.dirty_checkpoints[&revised_key].revision
+        )]
+    );
+    for _ in 0..1_000 {
+        super::super::checkpoint::process_checkpoint_receipts(
+            &mut state,
+            std::time::Instant::now(),
+        );
+        if state.durability.fire_checkpoint_batch.is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(state.durability.fire_checkpoint_batch.is_none());
+    assert!(
+        !state
+            .durability
+            .dirty_checkpoints
+            .contains_key(&revised_key)
+    );
+    assert!(path.join("fire/checkpoints.fire").exists());
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn checkpoint_pressure_admits_a_durable_owner_prefix_without_losing_the_remainder() {
     let path = temp_save();
     let mut state = server_state(72, path.clone()).unwrap();
