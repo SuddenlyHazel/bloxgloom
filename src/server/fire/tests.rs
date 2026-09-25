@@ -1,12 +1,17 @@
 use super::codec::{key_bytes, read_key};
 use super::scheduler::{FireCursor, cursor_key, frontier_key, mailbox_key, owner_lane};
 use super::*;
+use crate::lighting::{LightField, LightSample};
 use crate::server::journal::StateKey;
 use crate::server::simulation::TickId;
-use crate::world::{CHUNK_VOLUME, ChunkKey, GLOWSTONE, STONE, WOOD, World, world_to_chunk};
-use std::collections::BTreeMap;
+use crate::world::{
+    AIR, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey, GLOWSTONE, STONE, WOOD, World,
+    world_to_chunk,
+};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -774,4 +779,514 @@ fn cpu_fixture_hashes_match_for_128_active_chunks_across_worker_counts() {
     assert!(report.post_wal_apply_included);
     assert!(report.single_worker.post_wal_apply.total() > std::time::Duration::ZERO);
     assert!(report.comparison.post_wal_apply.total() > std::time::Duration::ZERO);
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour pins for the owner-path migration.
+//
+// These tests pin the OBSERVABLE outcomes of the current fire implementation
+// without changing any behaviour. After the migration onto the generic owner
+// / effect / domain path they must pass UNMODIFIED: any failure is a
+// behaviour change, not a stale test.
+// ---------------------------------------------------------------------------
+
+/// Applies block edits to the authoritative world cache.
+fn pin_apply(world: &mut World, edits: &[(i32, i32, i32, BlockId)]) {
+    let prepared = world.prepare_edits(edits).unwrap();
+    world.apply_prepared_edits(prepared).unwrap();
+}
+
+/// Commits one prepared fire transaction the way the coordinator does: admit
+/// to the WAL, apply the synced world edit, then install the receipt.
+fn pin_commit(runtime: &mut FireRuntime, world: &mut World, transaction: FireTransaction) {
+    runtime.mark_submitted(&transaction).unwrap();
+    if let Some(edit) = transaction.world_edit.clone() {
+        world.apply_prepared_edits(vec![edit]).unwrap();
+    }
+    runtime.install_synced(transaction).unwrap();
+}
+
+/// Runs one full fire tick in production order (source in Simulation,
+/// then delivery in InteractionCommit: pending mailboxes gate the NEXT
+/// tick's source admission) and commits every transaction. Returns
+/// (delivery transactions, source transactions, burned cells).
+fn pin_tick(runtime: &mut FireRuntime, world: &mut World, tick: u64) -> (usize, usize, usize) {
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+    let source = runtime
+        .prepare_source_wave(world, &plan, TickId::new(tick))
+        .unwrap();
+    let sources = source.transactions.len();
+    let burned = source
+        .transactions
+        .iter()
+        .map(|transaction| transaction.burns().len())
+        .sum();
+    for transaction in source.transactions {
+        pin_commit(runtime, world, transaction);
+    }
+    let delivery = runtime
+        .prepare_delivery_wave(world, &plan, TickId::new(tick))
+        .unwrap();
+    let delivered = delivery.transactions.len();
+    for transaction in delivery.transactions {
+        pin_commit(runtime, world, transaction);
+    }
+    (delivered, sources, burned)
+}
+
+fn pin_recovered(values: &[(StateKey, Vec<u8>)]) -> FireRecovered {
+    let mut recovered = FireRecovered::default();
+    for (key, value) in values {
+        assert!(recovered.apply_value(key, value).unwrap());
+    }
+    recovered
+}
+
+/// Fire crosses a chunk seam over successive ticks: the west cell burns at
+/// tick 1, its ignition is delivered into the east chunk, and the east cell
+/// burns at tick 2. Stone containment proves the fire then burns out.
+#[test]
+fn pin_fire_propagates_across_chunk_seam_over_time() {
+    let save = TestDir::new();
+    let west = chunk(0, 4, 0);
+    let east = chunk(1, 4, 0);
+    let mut world = World::with_capacity(61, save.0.clone(), 8).unwrap();
+    world.get_chunk(west).unwrap();
+    world.get_chunk(east).unwrap();
+    // Seam pair (local cells 287 and 272) plus a stone shell so every
+    // second-generation ignition targets non-flammable blocks.
+    let mut setup = vec![(15, 65, 1, WOOD), (16, 65, 1, WOOD)];
+    for (x, y, z) in [
+        (14, 65, 1),
+        (15, 64, 1),
+        (15, 66, 1),
+        (15, 65, 0),
+        (15, 65, 2),
+        (17, 65, 1),
+        (16, 64, 1),
+        (16, 66, 1),
+        (16, 65, 0),
+        (16, 65, 2),
+    ] {
+        setup.push((x, y, z, STONE));
+    }
+    pin_apply(&mut world, &setup);
+    let mut frontier = FireFrontier::default();
+    frontier.insert(287, 1).unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(west), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 2).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+
+    // Tick 1: the west cell burns and mails an ignition east.
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    assert_eq!(wave.transactions[0].owner(), west);
+    assert_eq!(wave.transactions[0].burns(), &[287]);
+    assert!(
+        wave.transactions[0]
+            .changes()
+            .iter()
+            .any(|change| change.key == mailbox_key(east, west)),
+        "west burn must mail the east chunk"
+    );
+    for transaction in wave.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    assert_eq!(world.cached_block(15, 65, 1), Some(AIR));
+    assert_eq!(world.cached_block(16, 65, 1), Some(WOOD));
+
+    // Delivery moves the ignition into the east frontier without a world edit.
+    let delivery = fire
+        .prepare_delivery_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert!(!delivery.transactions.is_empty());
+    let east_delivery = delivery
+        .transactions
+        .iter()
+        .find(|transaction| transaction.owner() == east)
+        .expect("east chunk must receive its ignition");
+    assert!(east_delivery.burns().is_empty());
+    assert!(east_delivery.world_edit.is_none());
+    for transaction in delivery.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    assert!(fire.pending_destinations().next().is_none());
+
+    // Tick 2: the east cell burns across the seam.
+    let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, 2);
+    assert_eq!((delivered, sources, burned), (2, 1, 1));
+    assert_eq!(world.cached_block(16, 65, 1), Some(AIR));
+
+    // The contained fire burns out: later ticks are completely quiet.
+    for tick in 3..=6 {
+        let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, tick);
+        if tick >= 4 {
+            assert_eq!((delivered, sources, burned), (0, 0, 0));
+        }
+    }
+}
+
+/// A glowstone placement ignites its wooden neighbours, the ring burns, and
+/// the fire goes out: glowstone and stone survive, wood becomes air, and the
+/// frontier disappears.
+#[test]
+fn pin_glowstone_ignition_burns_wood_ring_then_burns_out() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let mut world = World::with_capacity(62, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    // Stone box 0..4 x 64..68 x 0..4 containing one lamp and six wood cells.
+    let lamp = (1, 65, 1);
+    let ring = [
+        (0, 65, 1),
+        (2, 65, 1),
+        (1, 64, 1),
+        (1, 66, 1),
+        (1, 65, 0),
+        (1, 65, 2),
+    ];
+    let mut setup = Vec::new();
+    for x in 0..4 {
+        for y in 64..68 {
+            for z in 0..4 {
+                if (x, y, z) == lamp {
+                    setup.push((x, y, z, GLOWSTONE));
+                } else if ring.contains(&(x, y, z)) {
+                    setup.push((x, y, z, WOOD));
+                } else {
+                    setup.push((x, y, z, STONE));
+                }
+            }
+        }
+    }
+    pin_apply(&mut world, &setup);
+    let mut fire = FireRuntime::new(FireRecovered::default(), 2).unwrap();
+
+    // Ignition: placing glowstone mails its six neighbours in one mailbox.
+    let seed = fire
+        .prepare_seed_from_edit(TickId::new(7), owner, 273, GLOWSTONE)
+        .unwrap()
+        .expect("glowstone placement must seed fire");
+    assert_eq!(seed.changes().len(), 1);
+    assert_eq!(seed.changes()[0].key, mailbox_key(owner, owner));
+    fire.mark_seed_submitted(&seed).unwrap();
+    fire.install_seed_synced(seed).unwrap();
+
+    // Propagation: delivery moves ignitions into the frontier, source burns
+    // them. The ring burns exactly once per cell, then silence.
+    let mut total_burns = 0;
+    let mut quiet_ticks = 0;
+    for tick in 8..=24 {
+        let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, tick);
+        total_burns += burned;
+        if delivered == 0 && sources == 0 {
+            quiet_ticks += 1;
+        } else {
+            quiet_ticks = 0;
+        }
+        if quiet_ticks == 2 {
+            break;
+        }
+    }
+    assert_eq!(total_burns, 6, "each ring cell burns exactly once");
+    assert_eq!(quiet_ticks, 2, "contained fire must burn out");
+    for &(x, y, z) in &ring {
+        assert_eq!(world.cached_block(x, y, z), Some(AIR));
+    }
+    assert_eq!(world.cached_block(lamp.0, lamp.1, lamp.2), Some(GLOWSTONE));
+    assert!(
+        fire.snapshot()
+            .checkpoint_values()
+            .iter()
+            .all(|(key, _)| *key != frontier_key(owner)),
+        "burned-out frontier must disappear"
+    );
+}
+
+/// Cells whose blocks lack the FLAMMABLE flag are consumed from the frontier
+/// without burning: no world edit, stone untouched, wood burned.
+#[test]
+fn pin_nonflammable_cells_never_burn() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let mut world = World::with_capacity(63, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    let mut setup = vec![(1, 65, 1, WOOD), (2, 65, 1, STONE)];
+    for (x, y, z) in [
+        (0, 65, 1),
+        (1, 64, 1),
+        (1, 66, 1),
+        (1, 65, 0),
+        (1, 65, 2),
+        (3, 65, 1),
+        (2, 64, 1),
+        (2, 66, 1),
+        (2, 65, 0),
+        (2, 65, 2),
+    ] {
+        setup.push((x, y, z, STONE));
+    }
+    pin_apply(&mut world, &setup);
+    let mut frontier = FireFrontier::default();
+    frontier.insert(273, 1).unwrap();
+    frontier.insert(274, 1).unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(owner), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 1).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    // Both cells are consumed, but only the wooden one burns.
+    assert_eq!(wave.transactions[0].burns(), &[273]);
+    let edit = wave.transactions[0]
+        .world_edit
+        .clone()
+        .expect("wood burn publishes a world edit");
+    assert!(edit.changed);
+    for transaction in wave.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    assert_eq!(world.cached_block(1, 65, 1), Some(AIR));
+    assert_eq!(world.cached_block(2, 65, 1), Some(STONE));
+
+    // Second-generation ignitions all target stone or air: quiet after one
+    // delivery tick, and the frontier is gone.
+    let (delivered, _, _) = pin_tick(&mut fire, &mut world, 2);
+    assert!(delivered > 0, "emitted ignitions must be consumed");
+    let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, 3);
+    assert_eq!((delivered, sources, burned), (0, 0, 0));
+    assert!(
+        fire.snapshot()
+            .checkpoint_values()
+            .iter()
+            .all(|(key, _)| *key != frontier_key(owner))
+    );
+}
+
+/// Burning a wooden plug open relights the room beyond (glow propagates
+/// through the published AIR edit), while a sealed control room stays dark.
+#[test]
+fn pin_fire_edits_relight_room_and_sealed_cave_stays_dark() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let mut world = World::with_capacity(64, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    // Real fire half: a stone-contained wooden plug burns to air.
+    pin_apply(
+        &mut world,
+        &[
+            (5, 65, 4, WOOD),
+            (4, 65, 4, STONE),
+            (6, 65, 4, STONE),
+            (5, 64, 4, STONE),
+            (5, 66, 4, STONE),
+            (5, 65, 3, STONE),
+            (5, 65, 5, STONE),
+        ],
+    );
+    let mut frontier = FireFrontier::default();
+    frontier.insert(325, 1).unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(owner), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 1).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    assert_eq!(wave.transactions[0].burns(), &[325]);
+    for transaction in wave.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    // The exact transition the lighting half mirrors below.
+    assert_eq!(world.cached_block(5, 65, 4), Some(AIR));
+
+    // Lighting half: a synthetic sealed neighbourhood; lamp at local
+    // (4,1,4), plug at (5,1,4), probe room at (6,1,4), sealed control at
+    // (10,1,10). Everything else is solid stone.
+    let key = chunk(0, 4, 0);
+    let mut known: HashMap<ChunkKey, Arc<Chunk>> = HashMap::new();
+    for dy in -1..=1 {
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                let neighbour = ChunkKey {
+                    x: key.x + dx,
+                    y: key.y + dy,
+                    z: key.z + dz,
+                };
+                known.insert(
+                    neighbour,
+                    Arc::new(Chunk {
+                        key: neighbour,
+                        version: 0,
+                        blocks: vec![STONE; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE].into(),
+                    }),
+                );
+            }
+        }
+    }
+    let room = Arc::make_mut(known.get_mut(&key).unwrap());
+    room.blocks.set(Chunk::index([4, 1, 4]).unwrap(), GLOWSTONE);
+    room.blocks.set(Chunk::index([5, 1, 4]).unwrap(), WOOD);
+    room.blocks.set(Chunk::index([6, 1, 4]).unwrap(), AIR);
+    room.blocks.set(Chunk::index([10, 1, 10]).unwrap(), AIR);
+
+    // Plug in place: the probe room is dark, and so is the control.
+    let dark = LightField::build(key, &known, 0xB10C_6100);
+    let probe = dark.face([5, 1, 4], 0, 1);
+    assert_eq!(probe.glow, 0, "wooden plug must block lamp glow");
+    assert_eq!(probe.sky, 0);
+    let control = dark.face([9, 1, 10], 0, 1);
+    assert_eq!(control, LightSample::default());
+
+    // Plug burned away (the transition fire published above): lamp glow
+    // reaches the room, the sealed control stays dark.
+    let room = Arc::make_mut(known.get_mut(&key).unwrap());
+    room.blocks.set(Chunk::index([5, 1, 4]).unwrap(), AIR);
+    let lit = LightField::build(key, &known, 0xB10C_6100);
+    let probe = lit.face([5, 1, 4], 0, 1);
+    assert_eq!(probe.sky, 0);
+    assert_eq!(probe.glow, 13, "glow falls one level per air cell");
+    let control = lit.face([9, 1, 10], 0, 1);
+    assert_eq!(control, LightSample::default());
+}
+
+/// Restarting from the persisted fire values resumes identical state:
+/// checkpoint round-trip is exact and the next wave prepares byte-identical
+/// transactions on both runtimes.
+#[test]
+fn pin_restart_recovers_identical_fire_state() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let mut world = World::with_capacity(65, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    pin_apply(
+        &mut world,
+        &[
+            (1, 65, 1, WOOD),
+            (0, 65, 1, STONE),
+            (1, 64, 1, STONE),
+            (1, 66, 1, STONE),
+            (1, 65, 0, STONE),
+            (1, 65, 2, STONE),
+        ],
+    );
+    let mut frontier = FireFrontier::default();
+    frontier.insert(273, 1).unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(owner), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 2).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+
+    // Tick 1 burns through the WAL path, then the process "restarts".
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    for transaction in wave.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    let values = fire.snapshot().checkpoint_values();
+    let restarted = FireRuntime::new(pin_recovered(&values), 2).unwrap();
+    assert_eq!(restarted.snapshot().checkpoint_values(), values);
+
+    // Both runtimes prepare the identical next wave from identical state.
+    let canonical = |wave: FireWave| {
+        wave.transactions
+            .into_iter()
+            .map(|transaction| (transaction.owner(), transaction.changes().to_vec()))
+            .collect::<Vec<_>>()
+    };
+    let mut fire = fire;
+    let mut restarted = restarted;
+    let first = canonical(
+        fire.prepare_delivery_wave(&mut world, &plan, TickId::new(2))
+            .unwrap(),
+    );
+    let second = canonical(
+        restarted
+            .prepare_delivery_wave(&mut world, &plan, TickId::new(2))
+            .unwrap(),
+    );
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+}
+
+/// A crash between WAL admission and receipt recovers to the last complete
+/// record: no partial burn, the frontier is intact, and the retry prepares
+/// byte-identical changes.
+#[test]
+fn pin_crash_mid_commit_recovers_whole_without_partial_burn() {
+    let save = TestDir::new();
+    let owner = chunk(0, 4, 0);
+    let mut world = World::with_capacity(66, save.0.clone(), 8).unwrap();
+    world.get_chunk(owner).unwrap();
+    pin_apply(
+        &mut world,
+        &[
+            (1, 65, 1, WOOD),
+            (0, 65, 1, STONE),
+            (2, 65, 1, STONE),
+            (1, 64, 1, STONE),
+            (1, 66, 1, STONE),
+            (1, 65, 0, STONE),
+            (1, 65, 2, STONE),
+        ],
+    );
+    let mut frontier = FireFrontier::default();
+    frontier.insert(273, 1).unwrap();
+    let mut recovered = FireRecovered::default();
+    recovered
+        .apply_value(&frontier_key(owner), &frontier.encode())
+        .unwrap();
+    let mut fire = FireRuntime::new(recovered, 1).unwrap();
+    let plan = crate::server::builtins::builtin_phase_plan().unwrap();
+
+    // The last complete WAL record, before the doomed wave is prepared.
+    let pre_wave = fire.snapshot().checkpoint_values();
+    let wave = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(wave.transactions.len(), 1);
+    let lost = wave.transactions.into_iter().next().unwrap();
+    assert_eq!(lost.burns(), &[273]);
+    let lost_changes = lost.changes().to_vec();
+
+    // WAL admission succeeds, then the process crashes before the receipt:
+    // no world apply, no receipt install.
+    fire.mark_submitted(&lost).unwrap();
+    drop(fire);
+    assert_eq!(world.cached_block(1, 65, 1), Some(WOOD));
+    assert_eq!(world.cached_block(2, 65, 1), Some(STONE));
+
+    // Recovery replays the last complete record; the frontier is intact and
+    // the retry prepares the identical atomic change set.
+    let mut fire = FireRuntime::new(pin_recovered(&pre_wave), 1).unwrap();
+    assert_eq!(fire.snapshot().checkpoint_values(), pre_wave);
+    let retry = fire
+        .prepare_source_wave(&mut world, &plan, TickId::new(1))
+        .unwrap();
+    assert_eq!(retry.transactions.len(), 1);
+    assert_eq!(retry.transactions[0].burns(), &[273]);
+    assert_eq!(retry.transactions[0].changes(), lost_changes.as_slice());
+    for transaction in retry.transactions {
+        pin_commit(&mut fire, &mut world, transaction);
+    }
+    // The retried commit lands whole: wood burned, stone untouched.
+    assert_eq!(world.cached_block(1, 65, 1), Some(AIR));
+    assert_eq!(world.cached_block(2, 65, 1), Some(STONE));
 }
