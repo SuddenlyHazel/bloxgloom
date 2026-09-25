@@ -801,3 +801,188 @@ fn interrupted_owner_commit_recovers_to_the_last_complete_record() {
         Some((3, 44))
     );
 }
+
+#[test]
+fn entity_and_owner_state_commit_as_one_atomic_record() {
+    use crate::server::durable::CommitAction;
+    use crate::server::entities::{EntityPayload, EntitySpawn};
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use crate::server::startup::StartupEntityType;
+
+    let entity_id = crate::content::EntityTypeId(70_021);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: entity_id,
+            key: "test:combo_entity".into(),
+            schema_version: 1,
+            schema_fingerprint: 0xC0AB_0001,
+        })
+        .unwrap();
+    let system = SystemId::new("test:combo_owner").unwrap();
+    let owner = OwnerKey::Entity(99);
+    let build_startup = || {
+        let mut startup = ServerStartup::new(Arc::new(catalog.clone()));
+        startup.register_entity_type(StartupEntityType {
+            key: "test:combo_entity".into(),
+            ownership: crate::server::entities::EntityOwnership::Mobile,
+            tick_policy: crate::server::entities::TickPolicy::Never,
+            max_payload_bytes: 1,
+            codec: Arc::new(StartupProbeCodec),
+            interaction_policy: None,
+            tick_planner: None,
+        });
+        startup.register_system(
+            SystemDescriptor::new(
+                system.clone(),
+                Phase::Simulation,
+                OwnerPartition::Entity,
+                1,
+                0,
+            )
+            .write(ResourceId::new("test:combo_owner_state").unwrap()),
+            |job: &OwnerJob| {
+                use crate::server::registry::SystemHandlerError;
+                let value = job
+                    .snapshot(job.owner())
+                    .and_then(|snapshot| snapshot.value::<OwnerData>())
+                    .and_then(|data| data.get::<u64>())
+                    .copied()
+                    .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+                Ok(OwnerPatch::new(
+                    job,
+                    OwnerData::new(value + 1),
+                    PatchUsage {
+                        writes: 1,
+                        effects: 0,
+                        estimated_bytes: std::mem::size_of::<u64>(),
+                    },
+                ))
+            },
+        );
+        register_u64_owner_codec(&mut startup, &system);
+        startup
+    };
+
+    let save = TestSave::new("owner-entity-atomic-commit");
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, build_startup()).unwrap();
+    // One prepared transaction spans both domains: the entity spawn plus a
+    // fresh owner cell, joined through `add_related_change` into a single
+    // WAL record. Replay can only ever apply the record whole.
+    let mut batch = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type: entity_id,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let spawned = batch.entity_id();
+    let owner_change = state
+        .system_runtime
+        .stage_owner_insert(&system, owner, &OwnerData::new(9u64))
+        .unwrap();
+    batch.add_related_change(owner_change).unwrap();
+    assert!(
+        batch
+            .changes()
+            .iter()
+            .any(|change| change.key.domain == "bloxgloom:entity"),
+        "the transaction carries entity state"
+    );
+    assert!(
+        batch
+            .changes()
+            .iter()
+            .any(|change| change.key.domain == "bloxgloom:owner_state"),
+        "the transaction carries owner state"
+    );
+    // The spawn stages through the WAL so the entity checkpoint mirror
+    // replays the same batch as the live store.
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the combined spawn");
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(batch),
+        entity_wakes: Vec::new(),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(
+                crate::server::simulation::TickId::new(1),
+                &action,
+                None,
+                Some(permit)
+            )
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(
+            &mut state,
+            crate::server::simulation::TickId::new(1),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(
+        state.durability.pending.is_empty(),
+        "combined commit must apply"
+    );
+    // Both ends applied together through the real coordinator: no half-apply.
+    assert_eq!(
+        state
+            .entities
+            .snapshot(spawned)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&7u8)
+    );
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((0, 9))
+    );
+    drop(state);
+
+    let mut reopened =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, build_startup()).unwrap();
+    // The single record replayed whole: entity and owner state agree after
+    // restart, with no reconciliation between two tails.
+    assert_eq!(
+        reopened
+            .entities
+            .snapshot(spawned)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&7u8)
+    );
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((0, 9))
+    );
+}
