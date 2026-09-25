@@ -105,7 +105,6 @@ fn append_direct(journal: &mut Journal, tx: Transaction) -> io::Result<CommitRec
 }
 
 mod append_recovery;
-mod drop_compaction;
 #[path = "tests/rotation.rs"]
 mod rotation_tests;
 mod writer;

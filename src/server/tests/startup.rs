@@ -1076,7 +1076,6 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -1090,7 +1089,6 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
             .try_stage(
                 crate::server::simulation::TickId::new(1),
                 &action,
-                &[],
                 Some(permit)
             )
             .unwrap()
@@ -1403,7 +1401,6 @@ fn stage_tamper_batch(
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -1414,7 +1411,7 @@ fn stage_tamper_batch(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(tick), &action, &[], Some(permit))
+            .try_stage(TickId::new(tick), &action, Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -1531,7 +1528,7 @@ fn tampered_owner_before_values_reject_the_whole_record() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(2), &action, &[], Some(permit))
+            .try_stage(TickId::new(2), &action, Some(permit))
             .unwrap()
     );
     settle_until_fatal(&mut state, 2);
@@ -1576,7 +1573,7 @@ fn undecodable_owner_after_values_stop_recovery_fail_closed() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(2), &action, &[], Some(permit))
+            .try_stage(TickId::new(2), &action, Some(permit))
             .unwrap()
     );
     settle_until_fatal(&mut state, 2);
@@ -1605,7 +1602,6 @@ fn tamper_action(
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),

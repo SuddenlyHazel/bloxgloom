@@ -35,7 +35,6 @@ pub(super) fn apply_committed_action(
             "WAL-committed entity action has no checkpoint mirror reservation",
         ));
     }
-    state.drops.validate_plan(&action.drops)?;
     if let Some(entities) = &action.entities {
         state
             .entities
@@ -68,7 +67,6 @@ pub(super) fn apply_committed_action(
         .map(|edit| (edit.key, edit.after_snapshot.clone()))
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
-    state.drops.apply_plan(&action.drops)?;
     let mut entity_commit = None;
     if let (Some(entities), Some(permit)) = (action.entities.take(), entity_permit) {
         let mut commit = state
@@ -76,6 +74,13 @@ pub(super) fn apply_committed_action(
             .apply_committed(entities.clone())
             .map_err(io::Error::other)?;
         commit.registry_revision = state.advance_entity_public_revision()?;
+        if commit
+            .deltas
+            .iter()
+            .any(|delta| super::super::drops::is_drop_delta(delta))
+        {
+            state.drop_revision = state.drop_revision.wrapping_add(1);
+        }
         entity_commit = Some(commit);
         state
             .durability
@@ -153,12 +158,27 @@ pub(super) fn apply_committed_action(
             .durability
             .remember_checkpoint(durable::chunk_state_key(key), snapshot);
     }
-    if !action.drops.changes.is_empty() || action.drops.allocator.is_some() {
-        state.moving_drops_dirty = true;
-    }
     state.pending_block_changes.extend(action.changed_cells);
     let completed_pickup =
         action.action_id.is_none() && action.profile.is_some() && action.inventory.is_some();
+    if action.profile.is_none() {
+        state.durability.expire_queued = false;
+        // A full expiry batch may leave more expired drops behind; the next
+        // throttled scan re-queues the sweep.
+        state.durability.expire_again = entity_commit.as_ref().is_some_and(|commit| {
+            commit
+                .deltas
+                .iter()
+                .filter(|delta| {
+                    matches!(
+                        delta,
+                        crate::server::entities::EntityDelta::Despawned { .. }
+                    ) && super::super::drops::is_drop_delta(delta)
+                })
+                .count()
+                == 256
+        });
+    }
     state.durability.publish_queue.push(PublishEffects {
         client_id: action.client_id,
         profile: action.profile,
@@ -172,10 +192,6 @@ pub(super) fn apply_committed_action(
     });
     if completed_pickup && let Some(id) = action.client_id {
         state.durability.retry_pickups.remove(&id);
-    }
-    if action.profile.is_none() {
-        state.durability.expire_queued = false;
-        state.durability.expire_again = action.drops.changes.len() == 256;
     }
     Ok(())
 }

@@ -38,7 +38,6 @@ fn probe_place(
         inventory_before: None,
         inventory: None,
         world_edits,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: vec![CellCoord::new(command.x, command.y, command.z)],
         pickups: Vec::new(),

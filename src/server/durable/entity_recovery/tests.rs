@@ -242,7 +242,6 @@ fn one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt() {
         inventory_before: None,
         inventory: None,
         world_edits: edits,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -259,7 +258,7 @@ fn one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt() {
         .unwrap();
     assert!(
         live.durability
-            .try_stage(TickId::new(1), &action, &[], Some(entity_permit))
+            .try_stage(TickId::new(1), &action, Some(entity_permit))
             .unwrap()
     );
     live.durability.pending[0]
@@ -328,7 +327,6 @@ fn synced_entity_action_reaches_checkpoint_mirror_before_restart() {
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -344,7 +342,7 @@ fn synced_entity_action_reaches_checkpoint_mirror_before_restart() {
         .unwrap();
     assert!(
         live.durability
-            .try_stage(TickId::new(1), &action, &[], Some(permit))
+            .try_stage(TickId::new(1), &action, Some(permit))
             .unwrap()
     );
     let deadline = Instant::now() + Duration::from_secs(2);

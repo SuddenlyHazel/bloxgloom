@@ -15,10 +15,7 @@
 //! touch it: every owner wave is receipted before it is visible, hence
 //! already durable at any rotation cut.
 
-use super::state::{
-    decode_chunk_key, decode_drop_key, decode_profile_key, invalid_data,
-    valid_action_receipt_with_catalog,
-};
+use super::state::{decode_chunk_key, decode_profile_key, invalid_data, valid_action_receipt_with_catalog};
 use super::*;
 use crate::server::entities::decode_checkpoint;
 use crate::server::entities::{EntityStore, EntityTypeRegistry};
@@ -37,7 +34,6 @@ pub(super) fn open(
     root: &Path,
     world: &mut World,
     inventory_store: &InventoryStore,
-    drops: &mut Drops,
     entity_types: Arc<EntityTypeRegistry>,
     owner_configs: Vec<OwnerSystemConfig>,
 ) -> io::Result<(
@@ -104,32 +100,6 @@ pub(super) fn open(
                 if current != *value {
                     inventory_replay.push((profile, value.clone()));
                 }
-            }
-            "bloxgloom:drop_owner" => {
-                let id = decode_drop_key(&key.bytes)?;
-                journal.validate_snapshot(key, &drops.owner_snapshot(id))?;
-            }
-            "bloxgloom:drop_allocator" => {
-                if !key.bytes.is_empty() || value.len() != 8 {
-                    return Err(invalid_data("invalid journaled drop allocator"));
-                }
-                journal.validate_snapshot(key, &drops.allocator_snapshot())?;
-            }
-            "bloxgloom:drop_position" => {
-                if decode_drop_key(&key.bytes)? == 0
-                    || (!value.is_empty()
-                        && (value.len() != 12
-                            || value.chunks_exact(4).any(|bits| {
-                                !f32::from_le_bytes(bits.try_into().unwrap()).is_finite()
-                            })))
-                {
-                    return Err(invalid_data("invalid journaled drop position"));
-                }
-            }
-            "bloxgloom:action_receipt" => {
-                return Err(invalid_data(
-                    "legacy action receipts are unsupported in this save format",
-                ));
             }
             "bloxgloom:action_ledger" => {
                 let profile = decode_profile_key(&key.bytes)?;
@@ -206,21 +176,6 @@ pub(super) fn open(
     }
     receipt_store.validate_no_orphans(&latest)?;
     fire_store.validate_no_orphans(&latest)?;
-    let drop_owner_set_closed = journal.drop_owner_set_closed();
-    // The drop store receives only its registered keys. The full journal map
-    // was already checked above, so adding another persistent domain does not
-    // require teaching drop recovery to ignore that domain by name.
-    let drop_values = latest
-        .iter()
-        .filter(|(key, _)| {
-            matches!(
-                key.domain.as_str(),
-                "bloxgloom:drop_owner" | "bloxgloom:drop_position" | "bloxgloom:drop_allocator"
-            )
-        })
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-    drops.validate_recovered_journal(&drop_values, drop_owner_set_closed)?;
 
     // Fail closed before the first replay write below: a corrupt owner
     // record must reject the world without touching any save file.
@@ -255,9 +210,6 @@ pub(super) fn open(
         fire_store.write_batch(&fire_replay)?;
     }
     fire_store.cleanup_interrupted_temps()?;
-    if drops.apply_recovered_journal(&drop_values, drop_owner_set_closed)? {
-        drops.save()?;
-    }
     recovered_entities.publish_replay()?;
     // Give the checkpoint worker an independently decoded authoritative
     // baseline. It never borrows or serializes the live entity store on a

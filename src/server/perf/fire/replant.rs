@@ -63,7 +63,7 @@ impl Replanter {
             let replanted = edits.len() as u64;
             let prepared = state.world.prepare_edits(&edits)?;
             let action = fixture_action(prepared, None);
-            match state.durability.try_stage(tick, &action, &[], None) {
+            match state.durability.try_stage(tick, &action, None) {
                 Ok(true) => {
                     self.admitted += 1;
                     self.replanted += replanted;

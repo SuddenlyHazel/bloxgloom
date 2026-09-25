@@ -40,10 +40,9 @@ use crate::protocol::{
 use crate::world::{AIR, BEDROCK_Y, ChunkKey, World, world_to_chunk};
 use block_actions::{BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder};
 use chunk_loader::ChunkLoader;
-use drops::Drops;
 use durable::{
     Durability, handle_live_message, process_durable_actions, publish_committed,
-    queue_interaction_actions, remember_drops_checkpoint,
+    queue_interaction_actions,
 };
 use effects::{CellCoord, EffectKindRegistryFrozen};
 use entities::{EntityCommit, EntityDelta, EntityStore, PlayerEntityStore};
@@ -147,7 +146,6 @@ struct State {
     inventory_store: InventoryStore,
     position_store: PositionStore,
     admin_profile: Option<u128>,
-    drops: Drops,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
     /// Frozen notification-effect declarations installed at startup. Entity
@@ -161,9 +159,11 @@ struct State {
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
-    last_drop_save: Instant,
-    moving_drops_dirty: bool,
-    drops_landed_dirty: bool,
+    /// Streaming revision for client drop frames. Bumped at publication
+    /// whenever a committed entity delta touches a drop, so clients rescan
+    /// visibility without re-reading the whole entity store every tick.
+    drop_revision: u64,
+    last_expiry_scan: Instant,
     pending_block_changes: Vec<CellCoord>,
     durability: Durability,
     fire: FireRuntime,
@@ -448,7 +448,6 @@ fn server_state_with_startup(
         World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let position_store = PositionStore::new(&save_dir)?;
-    let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();
     let entity_types = startup.entity_types_for(catalog.clone())?;
     let effect_kinds = Arc::new(startup.effect_kinds()?);
@@ -467,7 +466,6 @@ fn server_state_with_startup(
             &save_dir,
             &mut world,
             &inventory_store,
-            &mut drops,
             entity_types,
             owner_configs,
         )?;
@@ -496,7 +494,6 @@ fn server_state_with_startup(
         inventory_store,
         position_store,
         admin_profile: None,
-        drops,
         entities,
         player_entities: PlayerEntityStore::default(),
         effect_kinds,
@@ -505,9 +502,8 @@ fn server_state_with_startup(
         seed,
         clients: HashMap::new(),
         next_id: 1,
-        last_drop_save: Instant::now(),
-        moving_drops_dirty: false,
-        drops_landed_dirty: false,
+        drop_revision: 0,
+        last_expiry_scan: Instant::now(),
         pending_block_changes: Vec::new(),
         durability,
         fire,

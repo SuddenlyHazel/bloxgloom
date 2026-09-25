@@ -6,19 +6,29 @@ fn zero_client_tick_advances_world_drops() {
     let mut state = state_for(&save, 7);
     assert!(state.clients.is_empty());
     let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
-    state.drops.spawn(
-        position,
-        crate::items::ItemId::new(crate::world::STONE.get()),
-        1,
-        Duration::ZERO,
-    );
-    let before = state.drops.nearby(position)[0].position[1];
+    let stone = crate::items::ItemId::new(crate::world::STONE.get());
+    reside_neighbourhood(&mut state, position);
+    spawn_drop(&mut state, 1, position, stone, 1, Duration::ZERO);
+    let before = drop_nearby(&state, position)[0].position[1];
 
-    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    // Motion stages through the WAL: ticks queue and plan the step while a
+    // later receipt applies it, so the test polls until the fall lands
+    // instead of assuming a single-tick step.
+    let mut moved = false;
+    let mut tick = 1;
+    for _ in 0..500 {
+        tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
+        tick += 1;
+        if drop_nearby(&state, position)[0].position[1] < before {
+            moved = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
 
-    let after = state.drops.nearby(position)[0].position[1];
+    let after = drop_nearby(&state, position)[0].position[1];
     assert!(
-        after < before,
+        moved && after < before,
         "drop did not advance during an unattended tick"
     );
 }
@@ -29,17 +39,20 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let surface_y = state.spawn_anchor[1] as i32;
-    state.drops.spawn(
+    let stone = crate::items::ItemId::new(crate::world::STONE.get());
+    spawn_drop(
+        &mut state,
+        tick,
         [0.5, surface_y as f32 + 0.25, 0.5],
-        crate::items::ItemId::new(crate::world::STONE.get()),
+        stone,
         1,
         Duration::ZERO,
     );
 
     for _ in 0..200 {
         run_empty_tick(&mut state, &mut tick);
-        if state.drops.active_len() == 0
-            && !state.moving_drops_dirty
+        if drop_active_len(&state) == 0
+            && state.durability.pending.is_empty()
             && state.durability.dirty_checkpoints.is_empty()
             && state.durability.checkpoint_inflight.is_empty()
         {
@@ -47,8 +60,8 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert_eq!(state.drops.active_len(), 0);
-    assert!(!state.moving_drops_dirty);
+    assert_eq!(drop_active_len(&state), 0);
+    assert!(state.durability.pending.is_empty());
     assert!(state.durability.dirty_checkpoints.is_empty());
 
     state.durability.rotation_requested = true;
@@ -94,14 +107,18 @@ fn player_count_does_not_change_authoritative_drop_trajectory() {
     assert_eq!(populated.clients.len(), 16);
 
     let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
-    for state in [&mut empty, &mut populated] {
-        state.drops.spawn(
-            position,
-            crate::items::ItemId::new(crate::world::STONE.get()),
-            1,
-            Duration::ZERO,
-        );
-    }
+    let stone = crate::items::ItemId::new(crate::world::STONE.get());
+    reside_neighbourhood(&mut empty, position);
+    reside_neighbourhood(&mut populated, position);
+    spawn_drop(&mut empty, 1, position, stone, 1, Duration::ZERO);
+    spawn_drop(
+        &mut populated,
+        populated_tick,
+        position,
+        stone,
+        1,
+        Duration::ZERO,
+    );
     for offset in 0..8 {
         tick_once(&mut empty, TickId::new(1 + offset), Instant::now()).unwrap();
         tick_once(
@@ -110,8 +127,13 @@ fn player_count_does_not_change_authoritative_drop_trajectory() {
             Instant::now(),
         )
         .unwrap();
-        let empty_drop = empty.drops.nearby(position);
-        let populated_drop = populated.drops.nearby(position);
+        // Receipt synchronization: both states apply every staged step
+        // before the comparison, so the per-step snapshots prove the physics
+        // is load-independent rather than receipt-timing-dependent.
+        drain_durable(&mut empty, 1 + offset);
+        drain_durable(&mut populated, populated_tick + offset);
+        let empty_drop = drop_nearby(&empty, position);
+        let populated_drop = drop_nearby(&populated, position);
         assert_eq!(empty_drop.len(), 1);
         assert_eq!(populated_drop.len(), 1);
         assert_eq!(

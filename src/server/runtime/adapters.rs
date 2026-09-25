@@ -28,10 +28,6 @@ pub(in crate::server) fn player_movement(context: &mut CoordinatorContext<'_>) -
     Ok(())
 }
 
-pub(in crate::server) fn drop_simulation(context: &mut CoordinatorContext<'_>) -> io::Result<()> {
-    advance_drops(context.state)
-}
-
 pub(in crate::server) fn fire_source(context: &mut CoordinatorContext<'_>) -> io::Result<()> {
     crate::server::durable::fire::run_source(context.state, context.tick)
 }
@@ -39,18 +35,11 @@ pub(in crate::server) fn fire_source(context: &mut CoordinatorContext<'_>) -> io
 pub(in crate::server) fn interaction_commit(
     context: &mut CoordinatorContext<'_>,
 ) -> io::Result<()> {
+    // Drop motion is scheduled entity work now: due drops queue as
+    // `EntityTick` requests and stage through the WAL, so this barrier only
+    // routes block-change wakes and queues interaction work.
     commit_block_effects(context.state, context.tick)?;
     queue_interaction_actions(context.state, context.tick);
-    if context.state.moving_drops_dirty
-        && (context.state.drops_landed_dirty
-            || context.now.duration_since(context.state.last_drop_save) >= Duration::from_secs(1))
-    {
-        remember_drops_checkpoint(context.state)?;
-        // Keep moving_drops_dirty until the matching checkpoint receipt, but
-        // do not replace a captured landing snapshot on every tick.
-        context.state.drops_landed_dirty = false;
-        context.state.last_drop_save = context.now;
-    }
     Ok(())
 }
 

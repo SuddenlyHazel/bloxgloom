@@ -7,12 +7,11 @@
 //! Hooks never receive `&mut State`. They inspect a read-only
 //! [`BlockActionContext`] and plan through a [`BlockCommitBuilder`], which
 //! exposes only world-edit preparation and chunk-load requests; entity and
-//! drop planning (`EntityStore::prepare_*`, `Drops::plan_*`) already take
+//! drop planning (`EntityStore::prepare_*`, `drops::plan_*`) already take
 //! shared borrows. Hooks only prepare one `CommitAction`; the coordinator
 //! still owns full-key WAL admission and post-receipt visibility.
 
 use super::State;
-use super::drops::Drops;
 use super::durable::CommitAction;
 use super::durable::actions::BlockEditCommand;
 use super::entities::EntityStore;
@@ -27,12 +26,11 @@ const MAX_BLOCK_ACTION_HANDLERS: usize = 65_536;
 
 /// Read-only planning view handed to block lifecycle hooks. Every member is
 /// a shared borrow or a cheap owned handle, so a hook can inspect client,
-/// entity, drop, and catalog state but cannot mutate the coordinator.
+/// entity, and catalog state but cannot mutate the coordinator.
 pub(super) struct BlockActionContext<'a> {
     catalog: Arc<Catalog>,
     clients: &'a HashMap<u64, super::Client>,
     entities: &'a EntityStore,
-    drops: &'a Drops,
     seed: u64,
 }
 
@@ -51,10 +49,6 @@ impl BlockActionContext<'_> {
 
     pub(super) fn entities(&self) -> &EntityStore {
         self.entities
-    }
-
-    pub(super) fn drops(&self) -> &Drops {
-        self.drops
     }
 
     pub(super) fn seed(&self) -> u64 {
@@ -131,7 +125,6 @@ pub(super) fn invoke_hook(
         catalog: state.world.catalog_arc(),
         clients: &state.clients,
         entities: &state.entities,
-        drops: &state.drops,
         seed: state.seed,
     };
     let mut builder = BlockCommitBuilder {

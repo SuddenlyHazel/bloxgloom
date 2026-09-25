@@ -165,7 +165,7 @@ pub(in crate::server) fn process_durable_actions(
                 payload,
                 "target state unavailable",
             );
-            match state.durability.try_stage(tick, &action, &[], None) {
+            match state.durability.try_stage(tick, &action, None) {
                 Ok(true) => {
                     blocked_profiles.insert(profile);
                 }
@@ -232,7 +232,6 @@ pub(in crate::server) fn process_durable_actions(
                         }
                         let accepted = action.inventory.is_some()
                             || !action.world_edits.is_empty()
-                            || !action.drops.changes.is_empty()
                             || action.entities.is_some();
                         let reason = if accepted {
                             String::new()
@@ -247,31 +246,6 @@ pub(in crate::server) fn process_durable_actions(
                             accepted,
                             reason,
                         ) {
-                            cancel_prepared_entities(state, &action);
-                            return Err(error);
-                        }
-                    }
-                }
-                // The action reserves exactly the drop shard keys it will
-                // dirty (affected chunks plus the allocator when it mints
-                // IDs) with honest per-shard sizes, so the checkpoint gate
-                // bounds real memory instead of one aggregate guess.
-                let mut projected_drop_checkpoints = Vec::new();
-                if !action.drops.changes.is_empty() || action.drops.allocator.is_some() {
-                    match state.drops.projected_checkpoint_sizes(&action.drops) {
-                        Ok((shards, allocator)) => {
-                            for (chunk, size) in shards {
-                                projected_drop_checkpoints
-                                    .push((super::state::drops_chunk_key(chunk), size));
-                            }
-                            if allocator {
-                                projected_drop_checkpoints.push((
-                                    super::state::drops_allocator_key(),
-                                    super::super::drops::SHARD_ALLOCATOR_LEN,
-                                ));
-                            }
-                        }
-                        Err(error) => {
                             cancel_prepared_entities(state, &action);
                             return Err(error);
                         }
@@ -303,12 +277,7 @@ pub(in crate::server) fn process_durable_actions(
                 } else {
                     None
                 };
-                match state.durability.try_stage(
-                    tick,
-                    &action,
-                    &projected_drop_checkpoints,
-                    entity_permit,
-                ) {
+                match state.durability.try_stage(tick, &action, entity_permit) {
                     Ok(true) => {
                         if let Some(seed) = &action.fire_seed
                             && let Err(error) = state.fire.mark_seed_submitted(seed)
@@ -387,13 +356,20 @@ fn durable_request_profile(state: &State, request: &DurableRequest) -> Option<u1
 }
 
 pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: TickId) {
-    if (state.durability.expire_again || state.drops.has_expired())
-        && !state.durability.expire_queued
-        && state.durability.queued.len() < MAX_DEFERRED_DURABLE_ACTIONS
-    {
-        state.durability.queued.push_back(DurableRequest::Expire);
-        state.durability.expire_queued = true;
-        state.durability.expire_again = false;
+    if state.last_expiry_scan.elapsed() >= Duration::from_secs(1) {
+        state.last_expiry_scan = Instant::now();
+        if (state.durability.expire_again
+            || crate::server::drops::has_expired(
+                &state.entities,
+                crate::server::drops::unix_ms(),
+            ))
+            && !state.durability.expire_queued
+            && state.durability.queued.len() < MAX_DEFERRED_DURABLE_ACTIONS
+        {
+            state.durability.queued.push_back(DurableRequest::Expire);
+            state.durability.expire_queued = true;
+            state.durability.expire_again = false;
+        }
     }
     let mut ids: Vec<_> = state.clients.keys().copied().collect();
     ids.sort_unstable();

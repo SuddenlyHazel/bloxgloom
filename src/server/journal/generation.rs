@@ -1,7 +1,7 @@
 //! Journal-generation switching at an externally checkpointed sequence.
 
 use super::rotation;
-use super::{DropCompaction, Journal, RotationReceipt, StateKey};
+use super::{Journal, RotationReceipt, StateKey};
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -10,21 +10,6 @@ impl Journal {
     pub(super) fn rotate(&mut self, expected_sequence: u64) -> io::Result<RotationReceipt> {
         self.rotate_using(
             expected_sequence,
-            None,
-            |path, manifest, cut, next_id, values, closed| {
-                rotation::rotate(path, manifest, cut, next_id, values, closed)
-            },
-        )
-    }
-
-    pub(super) fn rotate_with_drop_compaction(
-        &mut self,
-        expected_sequence: u64,
-        compaction: DropCompaction,
-    ) -> io::Result<RotationReceipt> {
-        self.rotate_using(
-            expected_sequence,
-            Some(compaction),
             |path, manifest, cut, next_id, values, closed| {
                 rotation::rotate(path, manifest, cut, next_id, values, closed)
             },
@@ -39,23 +24,6 @@ impl Journal {
     ) -> io::Result<RotationReceipt> {
         self.rotate_using(
             expected_sequence,
-            None,
-            |path, manifest, cut, next_id, values, closed| {
-                rotation::rotate_crashing_at(path, manifest, cut, next_id, values, closed, point)
-            },
-        )
-    }
-
-    #[cfg(test)]
-    pub(super) fn rotate_with_drop_compaction_crashing_at(
-        &mut self,
-        expected_sequence: u64,
-        compaction: DropCompaction,
-        point: rotation::CrashPoint,
-    ) -> io::Result<RotationReceipt> {
-        self.rotate_using(
-            expected_sequence,
-            Some(compaction),
             |path, manifest, cut, next_id, values, closed| {
                 rotation::rotate_crashing_at(path, manifest, cut, next_id, values, closed, point)
             },
@@ -65,7 +33,6 @@ impl Journal {
     fn rotate_using(
         &mut self,
         expected_sequence: u64,
-        compaction: Option<DropCompaction>,
         switch: impl FnOnce(
             &Path,
             Option<&rotation::Manifest>,
@@ -82,19 +49,6 @@ impl Journal {
             return Err(super::invalid_data(
                 "journal rotation sequence does not match durable sequence",
             ));
-        }
-
-        if let Some(compaction) = compaction {
-            let compacted_drops = compaction.into_values()?;
-            self.latest.retain(|key, _| {
-                !matches!(
-                    key.domain.as_str(),
-                    "bloxgloom:drop_owner" | "bloxgloom:drop_position" | "bloxgloom:drop_allocator"
-                )
-            });
-            self.latest.extend(compacted_drops);
-            self.latest.shrink_to_fit();
-            self.drop_owner_set_closed = true;
         }
 
         let generation = match switch(

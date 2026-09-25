@@ -54,7 +54,6 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
         inventory_before: None,
         inventory: None,
         world_edits: edits,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -65,7 +64,7 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, &[], None)
+            .try_stage(TickId::new(1), &action, None)
             .unwrap()
     );
     state.fire.mark_seed_submitted(&seed).unwrap();
@@ -120,7 +119,6 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
         inventory_before: None,
         inventory: None,
         world_edits: edits,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -131,7 +129,7 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, &[], None)
+            .try_stage(TickId::new(1), &action, None)
             .unwrap()
     );
     state.fire.mark_seed_submitted(&seed).unwrap();

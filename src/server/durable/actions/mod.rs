@@ -67,7 +67,6 @@ pub(in crate::server) fn plan_durable_request(
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
-                drops: Default::default(),
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
@@ -128,10 +127,17 @@ pub(in crate::server) fn plan_durable_request(
                     action.inventory = Some(next);
                     let mut dropped = stack;
                     dropped.count = *count;
-                    action.drops = state.drops.plan_spawn_stack(
+                    // The thrown stack leaves the inventory and lands in the
+                    // entity store in one WAL record: either both halves
+                    // commit or neither does.
+                    action.entities = crate::server::drops::plan_spawn_stack(
+                        &state.entities,
+                        &state.world.catalog_arc(),
                         [position[0], position[1] + 0.8, position[2]],
                         dropped,
                         Duration::from_millis(1_500),
+                        tick.get(),
+                        crate::server::drops::unix_ms(),
                     )?;
                 }
                 ClientMessage::Edit {
@@ -197,15 +203,18 @@ pub(in crate::server) fn plan_durable_request(
             let catalog = state.world.catalog_arc();
             let mut taken = Vec::new();
             let mut takes = Vec::new();
-            for item in state.drops.pickup_candidates(position) {
-                let mut stack = state.drops.stack(item.id).ok_or_else(|| {
-                    io::Error::new(ErrorKind::InvalidData, "pickup candidate disappeared")
-                })?;
+            for item in crate::server::drops::pickup_candidates(&state.entities, position) {
+                let Some(id) = crate::server::entities::EntityId::new(item.id) else {
+                    continue;
+                };
+                let Some(mut stack) = crate::server::drops::stack(&state.entities, id) else {
+                    continue;
+                };
                 stack.count = item.count;
                 let remaining = updated.insert_stack(&stack, &catalog);
                 if remaining != item.count {
                     let amount = item.count - remaining;
-                    takes.push((item.id, amount));
+                    takes.push((id, amount));
                     taken.push(DroppedItem {
                         count: amount,
                         ..item
@@ -215,6 +224,11 @@ pub(in crate::server) fn plan_durable_request(
             if taken.is_empty() {
                 return Ok(None);
             }
+            // Removing the drops and crediting the inventory is one WAL
+            // record: a crash lands on both halves or neither.
+            let Some(entities) = crate::server::drops::plan_take(&state.entities, &takes)? else {
+                return Ok(None);
+            };
             Ok(Some(CommitAction {
                 client_id: Some(*id),
                 profile: Some(profile),
@@ -227,22 +241,25 @@ pub(in crate::server) fn plan_durable_request(
                 )?),
                 inventory: Some(updated),
                 world_edits: Vec::new(),
-                drops: state.drops.plan_take(&takes)?,
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: taken,
                 fire_seed: None,
                 entity_wakes: Vec::new(),
-                entities: None,
+                entities: Some(entities),
             }))
         }
         DurableRequest::Expire => {
-            let plan = state.drops.plan_expired(256);
-            if plan.changes.is_empty() {
+            let Some(entities) = crate::server::drops::plan_expired(
+                &state.entities,
+                crate::server::drops::unix_ms(),
+                256,
+            )?
+            else {
                 state.durability.expire_queued = false;
                 state.durability.expire_again = false;
                 return Ok(None);
-            }
+            };
             Ok(Some(CommitAction {
                 client_id: None,
                 profile: None,
@@ -252,13 +269,12 @@ pub(in crate::server) fn plan_durable_request(
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
-                drops: plan,
                 deltas: Vec::new(),
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
                 fire_seed: None,
                 entity_wakes: Vec::new(),
-                entities: None,
+                entities: Some(entities),
             }))
         }
         DurableRequest::EntityTick { id } => {
@@ -402,7 +418,13 @@ fn plan_block_edit(
                 .unwrap_or(0);
             push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
         }
-        let drops = state.drops.plan_spawns(&drop_spawns)?;
+        let entities = crate::server::drops::plan_spawns(
+            &state.entities,
+            &catalog,
+            &drop_spawns,
+            tick.get(),
+            crate::server::drops::unix_ms(),
+        )?;
         let (source, local) = world_to_chunk(x, y, z);
         let cell = crate::world::Chunk::index(local)
             .and_then(|index| u16::try_from(index).ok())
@@ -422,12 +444,11 @@ fn plan_block_edit(
             )?),
             inventory: Some(updated),
             world_edits: prepared,
-            drops,
             deltas,
             changed_cells: vec![CellCoord::new(x, y, z)],
             pickups: Vec::new(),
             fire_seed,
-            entities: None,
+            entities,
             entity_wakes: Vec::new(),
         });
     }
@@ -473,7 +494,13 @@ fn plan_block_edit(
             .unwrap_or(0);
         push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
     }
-    let drops = state.drops.plan_spawns(&drop_spawns)?;
+    let entities = crate::server::drops::plan_spawns(
+        &state.entities,
+        &catalog,
+        &drop_spawns,
+        tick.get(),
+        crate::server::drops::unix_ms(),
+    )?;
     Ok(CommitAction {
         client_id: Some(id),
         profile: Some(profile),
@@ -483,7 +510,6 @@ fn plan_block_edit(
         inventory_before: None,
         inventory: None,
         world_edits: prepared,
-        drops,
         deltas,
         changed_cells: coords
             .into_iter()
@@ -492,7 +518,7 @@ fn plan_block_edit(
         pickups: Vec::new(),
         fire_seed: None,
         entity_wakes: Vec::new(),
-        entities: None,
+        entities,
     })
 }
 

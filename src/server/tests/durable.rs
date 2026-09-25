@@ -1,40 +1,9 @@
 use super::*;
 
 const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
-use std::fs;
-use std::path::PathBuf;
 
 fn action_id(state: &State, profile: u128, seq: u64) -> u128 {
     (u128::from(state.durability.receipt_ledger(profile).current_epoch()) << 64) | u128::from(seq)
-}
-
-/// Captures every file in the sharded drop base so a test can restore the
-/// exact older checkpoint bytes and replay journal recovery over them.
-fn snapshot_drop_shards(save: &TestSave) -> Vec<(PathBuf, Vec<u8>)> {
-    let dir = save.path().join("drops.d");
-    match fs::read_dir(&dir) {
-        Ok(listing) => listing
-            .flatten()
-            .map(|entry| {
-                let path = entry.path();
-                let bytes = fs::read(&path).unwrap();
-                (path, bytes)
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn restore_drop_shards(save: &TestSave, snapshot: &[(PathBuf, Vec<u8>)]) {
-    let dir = save.path().join("drops.d");
-    if let Ok(listing) = fs::read_dir(&dir) {
-        for entry in listing.flatten() {
-            let _ = fs::remove_file(entry.path());
-        }
-    }
-    for (path, bytes) in snapshot {
-        fs::write(path, bytes).unwrap();
-    }
 }
 
 #[test]
@@ -453,7 +422,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     );
     assert_eq!(action_result(&harvested, harvest_id), Some(true));
     assert_eq!(state.world.cached_block(0, target_y, 0), Some(AIR));
-    assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
+    assert_eq!(drop_nearby(&state, session.joined.position).len(), 1);
 
     let thrown = command_and_wait(
         &mut state,
@@ -469,7 +438,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     );
     assert_eq!(action_result(&thrown, drop_id), Some(true));
     assert!(state.clients[&session.id].inventory.slots[0].is_none());
-    assert_eq!(state.drops.nearby(session.joined.position).len(), 2);
+    assert_eq!(drop_nearby(&state, session.joined.position).len(), 2);
 
     drop(session);
     drop(state);
@@ -478,7 +447,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     assert_eq!(restarted.world.get_block(0, target_y, 0).unwrap(), AIR);
     let restored_inventory = restarted.inventory_store.load(profile).unwrap();
     assert!(restored_inventory.slots[0].is_none());
-    assert_eq!(restarted.drops.nearby([0.5, target_y as f32, 0.5]).len(), 2);
+    assert_eq!(drop_nearby(&restarted, [0.5, target_y as f32, 0.5]).len(), 2);
 }
 
 #[test]
@@ -508,7 +477,7 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
     );
     assert_eq!(action_result(&thrown, drop_id), Some(true));
     assert!(state.clients[&session.id].inventory.slots[0].is_none());
-    assert_eq!(state.drops.nearby(session.joined.position).len(), 1);
+    assert_eq!(drop_nearby(&state, session.joined.position).len(), 1);
 
     std::thread::sleep(Duration::from_millis(1_510));
     wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
@@ -516,7 +485,7 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
             .as_ref()
             .is_some_and(|stack| stack.item == STONE_ITEM && stack.count == 1)
     });
-    assert!(state.drops.nearby(session.joined.position).is_empty());
+    assert!(drop_nearby(&state, session.joined.position).is_empty());
     assert!(
         messages(&session)
             .iter()
@@ -533,7 +502,7 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
         restored_inventory.slots[0],
         Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
-    assert!(restarted.drops.nearby(pickup_position).is_empty());
+    assert!(drop_nearby(&restarted, pickup_position).is_empty());
 }
 
 #[test]
@@ -544,19 +513,9 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     let session = join(&mut state, &mut tick, 713);
     let position = session.joined.position;
 
-    // This starts as a legacy BGDP-only drop. The forced generation cut must
-    // materialize it in the base before pruning historical owner keys.
-    // Join queued the normal pickup probe while no drops existed; rotation
-    // holds it until the new base is durable.
-    state.durability.retry_pickups.insert(session.id);
-    assert!(
-        state
-            .durability
-            .queued
-            .iter()
-            .any(|request| matches!(request, DurableRequest::Pickup { id } if *id == session.id))
-    );
-    state.drops.spawn(position, STONE_ITEM, 1, Duration::ZERO);
+    // A WAL-staged spawn followed by a forced generation cut: the BGEN
+    // checkpoint now covers the drop, so everything after replays from WAL.
+    spawn_drop(&mut state, tick, position, STONE_ITEM, 1, Duration::ZERO);
     state.durability.rotation_requested = true;
     for _ in 0..2_000 {
         run_empty_tick(&mut state, &mut tick);
@@ -567,53 +526,38 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     }
     assert!(
         !state.durability.rotation_requested,
-        "closed-owner-set rotation did not finish"
+        "rotation did not finish"
     );
     assert!(state.durability.dirty_checkpoints.is_empty());
     assert!(state.durability.checkpoint_inflight.is_empty());
-    assert_eq!(state.drops.nearby(position).len(), 1);
-    // Capture the sharded drop base (with the drop) so the test can restore
-    // these exact older but checksum-valid bytes below. That recreates a
-    // crash after the WAL sync but before drop checkpointing.
-    let old_drop_shards = snapshot_drop_shards(&save);
-    assert!(
-        !old_drop_shards.is_empty(),
-        "rotation must have checkpointed the drop shards"
-    );
+    assert_eq!(drop_nearby(&state, position).len(), 1);
 
-    // Commit a post-cut pickup, then allow its checkpoint to finish so the
-    // test can restore the exact older but checksum-valid BGDP bytes below.
-    // That recreates a crash after the WAL sync but before drop checkpointing.
+    // Commit a post-cut pickup and let its WAL receipt apply — but do NOT
+    // rotate again. Restart must replay the pickup from the journal over
+    // the older checkpoint that still contains the drop.
     let mut completed = false;
     for _ in 0..1_000 {
         run_empty_tick(&mut state, &mut tick);
-        if state.durability.pending.is_empty()
-            && state.durability.dirty_checkpoints.is_empty()
-            && state.durability.checkpoint_inflight.is_empty()
-            && state.drops.nearby(position).is_empty()
-        {
+        if state.durability.pending.is_empty() && drop_nearby(&state, position).is_empty() {
             completed = true;
             break;
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert!(completed, "post-cut pickup/checkpoint did not complete");
+    assert!(completed, "post-cut pickup did not complete");
     assert_eq!(
         state.clients[&session.id].inventory.slots[0],
         Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
-    restore_drop_shards(&save, &old_drop_shards);
 
     drop(session);
     drop(state);
     let restarted = state_for(&save, 7);
-    assert!(restarted.drops.nearby(position).is_empty());
+    assert!(drop_nearby(&restarted, position).is_empty());
     assert_eq!(
         restarted.inventory_store.load(713).unwrap().slots[0],
         Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
-    let recovered_drops = Drops::open(save.path()).unwrap();
-    assert!(recovered_drops.nearby(position).is_empty());
 }
 
 #[test]
@@ -623,22 +567,26 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
     let surface_y = state.spawn_anchor[1] as i32;
     // Far above the surface so the fall crosses chunk y-boundaries on the
     // way down: every crossing is an atomic owner transfer.
-    state.drops.spawn(
+    let mut tick = 1;
+    spawn_drop(
+        &mut state,
+        tick,
         [0.5, surface_y as f32 + 64.0, 0.5],
         STONE_ITEM,
         200,
         Duration::ZERO,
     );
-    let mut tick = 1;
-    for _ in 0..2_000 {
+    // The 64-block fall needs ~140 staged motion steps (one WAL receipt
+    // each), so this loop budgets wall-clock time rather than tick counts.
+    for _ in 0..6_000 {
         run_empty_tick(&mut state, &mut tick);
-        if state.drops.active_len() == 0 {
+        if drop_active_len(&state) == 0 {
             break;
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert_eq!(state.drops.active_len(), 0);
-    let settled = state.drops.nearby([0.5, surface_y as f32, 0.5]);
+    assert_eq!(drop_active_len(&state), 0);
+    let settled = drop_nearby(&state, [0.5, surface_y as f32, 0.5]);
     assert_eq!(
         settled
             .iter()
@@ -650,27 +598,26 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
         .iter()
         .map(|drop| (drop.id, drop.count, drop.position))
         .collect();
-    state.drops.save().unwrap();
     // The 64-block fall crossed chunk y-boundaries: the settled owner
-    // differs from the spawn owner, so atomic transfers ran mid-fall.
+    // differs from the spawn owner, so atomic transfers ran mid-fall. The
+    // owner below is the entity's authoritative chunk owner, not a position
+    // derived guess.
     let spawn_owner = crate::world::world_to_chunk(0, surface_y + 64, 0).0;
-    let settled_owner = crate::world::world_to_chunk(0, settled[0].position[1].floor() as i32, 0).0;
+    let settled_id =
+        crate::server::entities::EntityId::new(settled[0].id).expect("settled drop has an ID");
+    let settled_owner = match state.entities.snapshot(settled_id).expect("settled drop exists").owner
+    {
+        crate::server::entities::EntityOwner::Mobile(chunk) => chunk,
+        owner => panic!("drops stay mobile, found {owner:?}"),
+    };
     assert_ne!(
         spawn_owner.y, settled_owner.y,
         "the fall must span chunk owners"
     );
-    // The checkpoint path persisted the landing shard.
-    assert!(
-        fs::read_dir(save.path().join("drops.d"))
-            .unwrap()
-            .flatten()
-            .any(|entry| { entry.file_name().to_string_lossy().starts_with("chunk_") }),
-        "settle must checkpoint a drop shard"
-    );
     drop(state);
 
     let restarted = state_for(&save, 7);
-    let after = restarted.drops.nearby([0.5, surface_y as f32, 0.5]);
+    let after = drop_nearby(&restarted, [0.5, surface_y as f32, 0.5]);
     assert_eq!(
         after
             .iter()

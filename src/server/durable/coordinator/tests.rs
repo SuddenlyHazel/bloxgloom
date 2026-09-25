@@ -91,7 +91,6 @@ fn inventory_action(state: &State, profile: u128, action_id: u128) -> CommitActi
         inventory_before: Some(InventoryStore::encode_snapshot(&before).unwrap()),
         inventory: Some(after),
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -115,7 +114,7 @@ fn wal_replay_keeps_result_and_world_effect_before_checkpoint() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(3), &action, &[], None)
+            .try_stage(TickId::new(3), &action, None)
             .unwrap()
     );
     poll_until_settled(&mut state);
@@ -149,7 +148,7 @@ fn acknowledged_result_stays_retired_across_rotation_and_restart() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(3), &action, &[], None)
+            .try_stage(TickId::new(3), &action, None)
             .unwrap()
     );
     poll_until_settled(&mut state);

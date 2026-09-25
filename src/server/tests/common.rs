@@ -216,3 +216,136 @@ pub(super) fn action_result(messages: &[ServerMessage], action_id: u128) -> Opti
         _ => None,
     })
 }
+
+/// Stages one drop spawn through the WAL and drains its receipt, so the
+/// live store and the checkpoint mirror advance together exactly as they do
+/// for gameplay spawns.
+pub(super) fn spawn_drop(
+    state: &mut State,
+    tick: u64,
+    position: [f32; 3],
+    item: crate::items::ItemId,
+    count: u16,
+    delay: Duration,
+) {
+    let catalog = state.world.catalog_arc();
+    let batch = crate::server::drops::plan_spawn(
+        &state.entities,
+        &catalog,
+        position,
+        item,
+        count,
+        delay,
+        tick,
+        crate::server::drops::unix_ms(),
+    )
+    .unwrap()
+    .expect("test drop spawn plans work");
+    stage_entity_batch(state, tick, batch);
+}
+
+/// Stages one drop take through the WAL and drains its receipt.
+pub(super) fn take_drop(state: &mut State, tick: u64, id: crate::server::entities::EntityId, count: u16) {
+    let batch = crate::server::drops::plan_take(&state.entities, &[(id, count)])
+        .unwrap()
+        .expect("test drop take plans work");
+    stage_entity_batch(state, tick, batch);
+}
+
+fn stage_entity_batch(
+    state: &mut State,
+    tick: u64,
+    batch: crate::server::entities::PreparedEntityBatch,
+) {
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the test drop batch");
+    let action = crate::server::durable::CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: Some(batch),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(tick), &action, Some(permit))
+            .unwrap()
+    );
+    drain_durable(state, tick);
+}
+
+/// Polls WAL receipts until every staged transaction has applied. Trajectory
+/// comparisons drain after each tick so both states apply the same staged
+/// steps before their snapshots are compared: without this, receipt timing
+/// (wall-clock) would decide how many staged steps are visible at a tick
+/// index, which is a test-scheduling artifact rather than physics.
+pub(super) fn drain_durable(state: &mut State, tick: u64) {
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(state, TickId::new(tick), Instant::now())
+            .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(state.durability.pending.is_empty(), "test drop batch must commit");
+}
+
+pub(super) fn drop_nearby(state: &State, position: [f32; 3]) -> Vec<crate::protocol::DroppedItem> {
+    crate::server::drops::nearby(&state.entities, position)
+}
+
+pub(super) fn drop_candidates(
+    state: &State,
+    position: [f32; 3],
+) -> Vec<crate::protocol::DroppedItem> {
+    crate::server::drops::pickup_candidates(&state.entities, position)
+}
+
+pub(super) fn drop_stack(
+    state: &State,
+    id: crate::server::entities::EntityId,
+) -> Option<crate::inventory::Stack> {
+    crate::server::drops::stack(&state.entities, id)
+}
+
+pub(super) fn drop_active_len(state: &State) -> usize {
+    crate::server::drops::airborne_count(&state.entities)
+}
+
+/// Forces the 27-chunk neighbourhood around a position resident through
+/// synchronous generation. Determinism pins use this to take the async
+/// chunk loader out of the equation; loader convergence itself is covered
+/// by the settle pins, which sleep for delivery.
+pub(super) fn reside_neighbourhood(state: &mut State, center: [f32; 3]) {
+    let (base, _) = crate::world::world_to_chunk(
+        center[0].floor() as i32,
+        center[1].floor() as i32,
+        center[2].floor() as i32,
+    );
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                let _ = state.world.get_block(
+                    (base.x + dx) * 16 + 8,
+                    (base.y + dy) * 16 + 8,
+                    (base.z + dz) * 16 + 8,
+                );
+            }
+        }
+    }
+}

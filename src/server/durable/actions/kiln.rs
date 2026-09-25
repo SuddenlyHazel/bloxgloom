@@ -102,13 +102,8 @@ pub(in crate::server) fn plan_place(
             displaced_plants.push((before, [cell.x, cell.y, cell.z]));
         }
     }
-    let entities = context
-        .entities()
-        .prepare_spawn(
-            payload
-                .spawn(anchor, tick.get(), &catalog)
-                .map_err(io::Error::other)?,
-        )
+    let kiln_spawn = payload
+        .spawn(anchor, tick.get(), &catalog)
         .map_err(io::Error::other)?;
     let mut inventory = inventory_before.clone();
     if !inventory.consume(command.slot, KILN_ITEM) {
@@ -131,7 +126,17 @@ pub(in crate::server) fn plan_place(
             context.seed(),
         );
     }
-    let drops = context.drops().plan_spawns(&drop_spawns)?;
+    // The kiln spawn rides in the same atomic batch as its displaced-plant
+    // drops: one WAL record, so the kiln and its loot never split.
+    let entities = crate::server::drops::plan_spawns_with_extra(
+        context.entities(),
+        &catalog,
+        &drop_spawns,
+        vec![kiln_spawn],
+        tick.get(),
+        crate::server::drops::unix_ms(),
+    )?
+    .ok_or_else(|| io::Error::other("kiln placement planned no work"))?;
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),
@@ -144,7 +149,6 @@ pub(in crate::server) fn plan_place(
         )?),
         inventory: Some(inventory),
         world_edits,
-        drops,
         deltas,
         changed_cells: coords
             .iter()
@@ -160,7 +164,7 @@ pub(in crate::server) fn plan_place(
 pub(in crate::server) fn plan_break(
     context: &BlockActionContext,
     builder: &mut BlockCommitBuilder,
-    _tick: TickId,
+    tick: TickId,
     command: BlockEditCommand,
     _previous: BlockId,
 ) -> io::Result<CommitAction> {
@@ -222,7 +226,20 @@ pub(in crate::server) fn plan_break(
         .into_iter()
         .map(|stack: Stack| (drop_position, stack, Duration::from_millis(250)))
         .collect();
-    let drops = context.drops().plan_stack_spawns(&spawns)?;
+    // The kiln despawn and its refund drops stage as one atomic batch.
+    let entities = match crate::server::drops::plan_stack_spawns(
+        context.entities(),
+        &catalog,
+        &spawns,
+        tick.get(),
+        crate::server::drops::unix_ms(),
+    )? {
+        Some(drops) => context
+            .entities()
+            .combine_prepared(vec![entities, drops])
+            .map_err(io::Error::other)?,
+        None => entities,
+    };
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),
@@ -232,7 +249,6 @@ pub(in crate::server) fn plan_break(
         inventory_before: None,
         inventory: None,
         world_edits,
-        drops,
         deltas,
         changed_cells: coords
             .iter()

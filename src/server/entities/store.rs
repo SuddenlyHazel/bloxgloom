@@ -790,6 +790,16 @@ impl EntityStore {
             }
             after.location = location;
             after.owner = owner;
+            // A WAL-planned move advances the motion revision exactly like a
+            // transfer does, so the motion-domain key tracks live motion and
+            // a later barrier transfer stages an exact preimage. Without
+            // this the record would move while its motion key stayed at the
+            // spawn value, and the first crossing would fail closed at the
+            // journal worker.
+            after.motion_revision = before
+                .motion_revision
+                .checked_add(1)
+                .ok_or(EntityError::RevisionExhausted)?;
         }
         if let Some(payload) = patch.payload {
             let encoded = descriptor.encode_payload(&payload)?;
@@ -818,11 +828,19 @@ impl EntityStore {
             .ok_or(EntityError::RevisionExhausted)?;
         self.validate_record(&after, descriptor)?;
         self.indexes.preview_change(Some(&before), Some(&after))?;
-        self.prepare_change(Operation::Replace {
-            before,
-            after,
+        let mut transaction = self.prepare_change(Operation::Replace {
+            before: before.clone(),
+            after: after.clone(),
             transferred: false,
-        })
+        })?;
+        if after.location != before.location {
+            transaction.add_related_change(Change::new(
+                motion_state_key(id),
+                encode_motion_value(&before)?,
+                encode_motion_value(&after)?,
+            ))?;
+        }
+        Ok(transaction)
     }
 
     /// Prepare a barrier transfer of a mobile entity across owner chunks.
@@ -1118,6 +1136,10 @@ impl EntityStore {
                 let descriptor = self.types.descriptor(after.entity_type)?;
                 let indexed_after = if transaction_is_transfer(&transaction.operation) {
                     after.clone()
+                } else if after.location != before.location {
+                    // Planned WAL move: preview the moved record, matching
+                    // what application installs instead of merging away.
+                    after.clone()
                 } else {
                     merge_durable_fields(current, after)
                 };
@@ -1261,7 +1283,14 @@ impl EntityStore {
                     .cloned()
                     .ok_or(EntityError::UnknownEntity(before.id))?;
                 let transferred_owner = transferred || before.owner != after.owner;
-                let applied = if transferred {
+                // A WAL transaction whose after-location differs from its own
+                // before-location is a planned move: merging the current
+                // location over it would silently discard the committed
+                // decision. WAL-motion types never run checkpoint motion, so
+                // `current` still matches `before` here; the preview below
+                // was validated against this same resolution.
+                let planned_move = !transferred && after.location != before.location;
+                let applied = if transferred || planned_move {
                     after
                 } else {
                     merge_durable_fields(&current, &after)
@@ -1281,6 +1310,8 @@ impl EntityStore {
                             .collect(),
                         view: applied.public_view(),
                     }
+                } else if planned_move {
+                    EntityDelta::Moved(applied.public_view())
                 } else {
                     EntityDelta::Updated {
                         before_touched_chunks,
@@ -1844,7 +1875,10 @@ fn apply_operation_to_projection(
             {
                 return Err(EntityError::InvalidTransaction);
             }
-            let applied = if *transferred {
+            // Same planned-move resolution as live application: a WAL
+            // transaction that moves its own preimage applies the move.
+            let planned_move = !transferred && after.location != before.location;
+            let applied = if *transferred || planned_move {
                 after.clone()
             } else {
                 merge_durable_fields(&current, after)

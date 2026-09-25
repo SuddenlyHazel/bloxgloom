@@ -266,7 +266,7 @@ fn install_forest(state: &mut State, owners: &[ChunkKey]) -> io::Result<()> {
         let action = fixture_action(prepared, None);
         if !state
             .durability
-            .try_stage(TickId::new(1), &action, &[], None)
+            .try_stage(TickId::new(1), &action, None)
             .map_err(stage_error)?
         {
             return Err(io::Error::other("forest WAL edit was empty"));
@@ -340,7 +340,6 @@ fn fixture_action(
         inventory_before: None,
         inventory: None,
         world_edits,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -392,7 +391,7 @@ impl IgnitionSource {
         };
         let prepared = state.world.prepare_edits(&[(x, y, z, GLOWSTONE)])?;
         let action = fixture_action(prepared, Some(seed.clone()));
-        match state.durability.try_stage(tick, &action, &[], None) {
+        match state.durability.try_stage(tick, &action, None) {
             Ok(true) => {
                 state.fire.mark_seed_submitted(&seed)?;
                 self.accepted += 1;

@@ -4,8 +4,8 @@ use super::*;
 use crate::server::State;
 
 /// Admissions stop at the WAL soft cap; already accepted transactions drain
-/// and become visible before the final BGDP snapshot and all dirty BGED/BGIN/
-/// BGDP files are fenced.
+/// and become visible before the fenced entity checkpoint and all dirty
+/// BGED/BGIN files are fenced.
 pub(super) fn progress_rotation(state: &mut State) -> io::Result<bool> {
     if let Some(receiver) = &state.durability.rotation_receipt {
         match receiver.try_recv() {
@@ -67,11 +67,6 @@ pub(super) fn progress_rotation(state: &mut State) -> io::Result<bool> {
     }
 
     if state.durability.pending.is_empty() && !state.durability.rotation_snapshot_ready {
-        // Shard submission can defer past the checkpoint backlog bounds;
-        // the fence waits until every dirty shard is at least submitted.
-        if !super::checkpoint::remember_drops_checkpoint(state)? {
-            return Ok(true);
-        }
         let Some(ticket) = state.durability.entity_mirror.try_begin_checkpoint()? else {
             return Ok(true);
         };
@@ -106,12 +101,7 @@ pub(super) fn progress_rotation(state: &mut State) -> io::Result<bool> {
         && state.durability.checkpoint_inflight.is_empty()
     {
         let sequence = state.durability.writer.sequence();
-        let compacted_drops = state.drops.rotation_compaction();
-        match state
-            .durability
-            .writer
-            .try_rotate_with_drop_compaction(sequence, compacted_drops)
-        {
+        match state.durability.writer.try_rotate(sequence) {
             Ok(receiver) => state.durability.rotation_receipt = Some(receiver),
             Err(RotateError::Full) => {}
             Err(RotateError::Closed) => {

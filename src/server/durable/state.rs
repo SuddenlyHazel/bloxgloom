@@ -42,27 +42,6 @@ pub(in crate::server) fn action_changes(
             InventoryStore::encode_snapshot_with_catalog(inventory, catalog)?,
         ));
     }
-    for mutation in &action.drops.changes {
-        changes.push(Change::new(
-            drop_owner_state_key(mutation.id),
-            mutation.before.clone(),
-            mutation.after.clone(),
-        ));
-        if let Some(position) = mutation.initial_position {
-            changes.push(Change::new(
-                drop_position_state_key(mutation.id),
-                Vec::new(),
-                encode_position(position),
-            ));
-        }
-    }
-    if let Some((before, after)) = action.drops.allocator {
-        changes.push(Change::new(
-            drop_allocator_state_key(),
-            before.to_le_bytes().to_vec(),
-            after.to_le_bytes().to_vec(),
-        ));
-    }
     if let Some(transition) = &action.receipt_transition {
         changes.push(Change::new(
             super::receipts::state_key(transition.profile),
@@ -87,34 +66,6 @@ pub(in crate::server) fn chunk_state_key(key: ChunkKey) -> StateKey {
 
 pub(in crate::server) fn inventory_state_key(profile: u128) -> StateKey {
     StateKey::new("bloxgloom:inventory", profile.to_le_bytes().to_vec())
-}
-
-fn drop_owner_state_key(id: u64) -> StateKey {
-    StateKey::new("bloxgloom:drop_owner", id.to_le_bytes().to_vec())
-}
-
-fn drop_position_state_key(id: u64) -> StateKey {
-    StateKey::new("bloxgloom:drop_position", id.to_le_bytes().to_vec())
-}
-
-fn drop_allocator_state_key() -> StateKey {
-    StateKey::new("bloxgloom:drop_allocator", Vec::new())
-}
-
-/// One chunk owner's drop shard. Motion and ownership changes dirty at most
-/// the affected chunks, so checkpoints serialize those shards only.
-pub(in crate::server) fn drops_chunk_key(chunk: ChunkKey) -> StateKey {
-    let mut bytes = Vec::with_capacity(12);
-    bytes.extend(chunk.x.to_le_bytes());
-    bytes.extend(chunk.y.to_le_bytes());
-    bytes.extend(chunk.z.to_le_bytes());
-    StateKey::new("bloxgloom:drops_chunk", bytes)
-}
-
-/// The drop allocator checkpoint. Staged with every spawn plan that mints
-/// IDs and checkpointed alongside the shards.
-pub(in crate::server) fn drops_allocator_key() -> StateKey {
-    StateKey::new("bloxgloom:drops_allocator", Vec::new())
 }
 
 #[cfg(test)]
@@ -183,8 +134,6 @@ pub(in crate::server) fn is_checkpoint_key(key: &StateKey) -> bool {
         key.domain.as_str(),
         "bloxgloom:chunk_snapshot"
             | "bloxgloom:inventory"
-            | "bloxgloom:drops_chunk"
-            | "bloxgloom:drops_allocator"
             | "bloxgloom:action_ledger"
             | "bloxgloom:fire_frontier"
             | "bloxgloom:fire_pending"
@@ -228,10 +177,6 @@ pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
         }
         _ => false,
     }
-}
-
-fn encode_position(position: [f32; 3]) -> Vec<u8> {
-    position.into_iter().flat_map(f32::to_le_bytes).collect()
 }
 
 pub(in crate::server::durable) fn decode_chunk_key(bytes: &[u8]) -> io::Result<ChunkKey> {

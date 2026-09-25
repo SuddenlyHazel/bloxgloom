@@ -167,7 +167,9 @@ fn full_outbound_queue_disconnects_only_the_slow_client() {
     let (sender, held_receiver) = state.outbound.client_queue_with_limits(1, 2 * 1024 * 1024);
     state.clients.get_mut(&slow.id).unwrap().sender = sender;
     assert!(state.clients[&slow.id].enqueue(ServerMessage::Pong { nonce: 1 }));
-    state.drops.spawn(
+    spawn_drop(
+        &mut state,
+        tick,
         slow.joined.position,
         crate::items::ItemId::new(crate::world::STONE.get()),
         1,

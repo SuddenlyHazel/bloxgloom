@@ -1,6 +1,6 @@
 //! Bounded nonblocking admission API for the journal worker.
 
-use super::{CommitReceipt, DropCompaction, Journal, MAX_QUEUE_CAPACITY, SubmitError, Transaction};
+use super::{CommitReceipt, Journal, MAX_QUEUE_CAPACITY, SubmitError, Transaction};
 use std::collections::HashSet;
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -220,32 +220,19 @@ impl JournalWriter {
     /// Queues an explicit generation switch after commands already submitted
     /// to this writer. The caller must freeze durable admissions, drain/apply
     /// commit receipts through `expected_sequence`, then drain successful
-    /// BGED/BGIN/BGDP checkpoint receipts for that exact state before calling.
+    /// BGED/BGIN checkpoint receipts for that exact state before calling.
     /// Checkpointing and this request must stay off the tick's blocking path.
     /// A sequence mismatch is reported through the returned receiver.
-    #[cfg(test)]
-    pub fn try_rotate(
+    pub(crate) fn try_rotate(
         &self,
         expected_sequence: u64,
     ) -> Result<Receiver<io::Result<RotationReceipt>>, RotateError> {
-        self.try_rotate_inner(expected_sequence, None)
-    }
-
-    /// Queues a generation switch whose base closes and compacts the drop ID
-    /// set from a synced BGDP checkpoint. The supplied baseline is immutable
-    /// and is consumed by the writer only after earlier appends drain.
-    pub(crate) fn try_rotate_with_drop_compaction(
-        &self,
-        expected_sequence: u64,
-        compaction: DropCompaction,
-    ) -> Result<Receiver<io::Result<RotationReceipt>>, RotateError> {
-        self.try_rotate_inner(expected_sequence, Some(compaction))
+        self.try_rotate_inner(expected_sequence)
     }
 
     fn try_rotate_inner(
         &self,
         expected_sequence: u64,
-        compaction: Option<DropCompaction>,
     ) -> Result<Receiver<io::Result<RotationReceipt>>, RotateError> {
         let _gate = self.submit_gate.try_lock().map_err(|_| RotateError::Full)?;
         if self
@@ -258,7 +245,6 @@ impl JournalWriter {
         let (acknowledge, receiver) = mpsc::channel();
         let command = WriterCommand::Rotate {
             expected_sequence,
-            compaction,
             acknowledge,
         };
         let Some(sender) = self.sender.as_ref() else {
@@ -314,7 +300,6 @@ enum WriterCommand {
     AppendBatch(Vec<Request>),
     Rotate {
         expected_sequence: u64,
-        compaction: Option<DropCompaction>,
         acknowledge: mpsc::Sender<io::Result<RotationReceipt>>,
     },
 }

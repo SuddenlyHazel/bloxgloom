@@ -373,7 +373,6 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         inventory_before: None,
         inventory: None,
         world_edits: overlapping_edit,
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -384,7 +383,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     assert!(matches!(
         state
             .durability
-            .try_stage(TickId::new(12), &overlapping_action, &[], None),
+            .try_stage(TickId::new(12), &overlapping_action, None),
         Err(super::super::StageError::Conflict)
     ));
     for current in 12..2_012 {
@@ -518,11 +517,15 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         anchor.y as f32 + 0.5,
         anchor.z as f32 + 0.5,
     ];
-    let stacks: Vec<_> = recovered
-        .drops
-        .nearby(drop_position)
+    let stacks: Vec<_> = crate::server::drops::nearby(&recovered.entities, drop_position)
         .iter()
-        .map(|drop| recovered.drops.stack(drop.id).unwrap())
+        .map(|drop| {
+            crate::server::drops::stack(
+                &recovered.entities,
+                crate::server::entities::EntityId::new(drop.id).unwrap(),
+            )
+            .unwrap()
+        })
         .collect();
     assert_eq!(stacks.len(), 2);
     assert_eq!(stacks.iter().map(|stack| stack.count).sum::<u16>(), 2);
@@ -2270,7 +2273,6 @@ fn stage_entity_spawn(
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -2281,7 +2283,7 @@ fn stage_entity_spawn(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, &[], Some(permit))
+            .try_stage(TickId::new(1), &action, Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -2343,7 +2345,6 @@ fn stage_entity_spawn_batch(
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -2354,7 +2355,7 @@ fn stage_entity_spawn_batch(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, &[], Some(permit))
+            .try_stage(TickId::new(1), &action, Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -3206,7 +3207,6 @@ fn stage_entity_update(
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
-        drops: Default::default(),
         deltas: Vec::new(),
         changed_cells: Vec::new(),
         pickups: Vec::new(),
@@ -3217,7 +3217,7 @@ fn stage_entity_update(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(tick), &action, &[], Some(permit))
+            .try_stage(TickId::new(tick), &action, Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -3245,7 +3245,7 @@ fn settle_commit_action(state: &mut State, action: &CommitAction, tick: u64) {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(tick), action, &[], Some(permit))
+            .try_stage(TickId::new(tick), action, Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {

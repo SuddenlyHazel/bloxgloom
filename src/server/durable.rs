@@ -6,7 +6,6 @@
 //! receipt.
 
 use super::checkpoint::{CheckpointReceipt, CheckpointSubmitError, CheckpointWriter};
-use super::drops::{DropPlan, Drops};
 use super::effects::CellCoord;
 use super::entities::{
     EntityCheckpointStore, EntityCommit, EntityId, EntityStore, EntityTypeRegistry,
@@ -54,17 +53,13 @@ mod recovery;
 mod rotation;
 #[path = "durable/state.rs"]
 mod state;
-pub(super) use checkpoint::remember_drops_checkpoint;
 pub(super) use coordinator::{
     handle_live_message, process_durable_actions, queue_interaction_actions,
 };
 pub(super) use publication::publish_committed;
 #[cfg(test)]
 pub(super) use state::encode_action_receipt;
-pub(super) use state::{
-    action_changes, chunk_state_key, drops_allocator_key, drops_chunk_key, inventory_state_key,
-    is_checkpoint_key,
-};
+pub(super) use state::{action_changes, chunk_state_key, inventory_state_key, is_checkpoint_key};
 
 pub(super) const MAX_PENDING_DURABLE_ACTIONS: usize = 256;
 pub(super) const MAX_DEFERRED_DURABLE_ACTIONS: usize = 256;
@@ -156,7 +151,6 @@ pub(super) struct CommitAction {
     pub(super) inventory_before: Option<Vec<u8>>,
     pub(super) inventory: Option<Inventory>,
     pub(super) world_edits: Vec<PreparedEdit>,
-    pub(super) drops: DropPlan,
     pub(super) deltas: Vec<BlockDelta>,
     pub(super) changed_cells: Vec<CellCoord>,
     pub(super) pickups: Vec<DroppedItem>,
@@ -179,7 +173,6 @@ impl CommitAction {
             inventory_before: None,
             inventory: None,
             world_edits: Vec::new(),
-            drops: Default::default(),
             deltas: Vec::new(),
             changed_cells: Vec::new(),
             pickups: Vec::new(),
@@ -271,7 +264,7 @@ impl Durability {
             receipts::ReceiptEvent::EpochGrant,
         )
         .map_err(StageError::Invalid)?;
-        match self.try_stage(tick, &CommitAction::receipt_only(transition), &[], None)? {
+        match self.try_stage(tick, &CommitAction::receipt_only(transition), None)? {
             true => {
                 self.pending_grants.insert(profile);
                 Ok(None)
@@ -304,7 +297,7 @@ impl Durability {
         let transition =
             receipts::ReceiptTransition::new(profile, &before, after, receipts::ReceiptEvent::Ack)
                 .map_err(StageError::Invalid)?;
-        self.try_stage(tick, &CommitAction::receipt_only(transition), &[], None)
+        self.try_stage(tick, &CommitAction::receipt_only(transition), None)
     }
     /// Opens and recovers all journal-backed after-values before the server can
     /// accept clients. Existing saves are decoded before any replay replacement.
@@ -317,7 +310,6 @@ impl Durability {
         root: &Path,
         world: &mut World,
         inventory_store: &InventoryStore,
-        drops: &mut Drops,
         entity_types: Arc<EntityTypeRegistry>,
         owner_configs: Vec<OwnerSystemConfig>,
     ) -> io::Result<(
@@ -328,14 +320,7 @@ impl Durability {
         PendingWakeStore,
         BTreeMap<SystemId, OwnerKey>,
     )> {
-        recovery::open(
-            root,
-            world,
-            inventory_store,
-            drops,
-            entity_types,
-            owner_configs,
-        )
+        recovery::open(root, world, inventory_store, entity_types, owner_configs)
     }
 
     /// Nonblocking stage: conflicts and queue pressure are explicit failures.
@@ -344,7 +329,6 @@ impl Durability {
         &mut self,
         tick: TickId,
         action: &CommitAction,
-        projected_drop_checkpoints: &[(StateKey, usize)],
         entity_permit: Option<MirrorPermit>,
     ) -> Result<bool, StageError> {
         if action.entities.is_some() != entity_permit.is_some() {
@@ -364,7 +348,6 @@ impl Durability {
             changes,
             read_keys,
             PendingPayload::Action(action.clone()),
-            projected_drop_checkpoints,
             entity_permit,
         )
     }
@@ -375,7 +358,6 @@ impl Durability {
         changes: Vec<super::journal::Change>,
         read_keys: Vec<StateKey>,
         payload: PendingPayload,
-        projected_drop_checkpoints: &[(StateKey, usize)],
         mut entity_permit: Option<MirrorPermit>,
     ) -> Result<bool, StageError> {
         if changes.is_empty() {
@@ -403,13 +385,6 @@ impl Durability {
             }
             keys.insert(key);
         }
-        let mut drops_checkpoint_sizes: HashMap<StateKey, usize> = HashMap::new();
-        for (key, size) in projected_drop_checkpoints {
-            drops_checkpoint_sizes
-                .entry(key.clone())
-                .and_modify(|entry| *entry = (*entry).max(*size))
-                .or_insert(*size);
-        }
         let mut projected_checkpoint_keys: HashSet<StateKey> =
             self.dirty_checkpoints.keys().cloned().collect();
         let mut projected_checkpoint_bytes: HashMap<StateKey, usize> = self
@@ -430,11 +405,6 @@ impl Durability {
                 projected_checkpoint_bytes.insert(change.key.clone(), change.after.len());
             }
         }
-        for (key, size) in &drops_checkpoint_sizes {
-            projected_checkpoint_keys.insert(key.clone());
-            let entry = projected_checkpoint_bytes.entry(key.clone()).or_default();
-            *entry = (*entry).max(*size);
-        }
         if projected_checkpoint_keys.len() > MAX_DIRTY_CHECKPOINT_KEYS {
             return Err(StageError::Full);
         }
@@ -446,17 +416,11 @@ impl Durability {
             return Err(StageError::Full);
         }
 
-        let mut checkpoint_sizes: HashMap<StateKey, usize> = changes
+        let checkpoint_sizes: HashMap<StateKey, usize> = changes
             .iter()
             .filter(|change| is_checkpoint_key(&change.key))
             .map(|change| (change.key.clone(), change.after.len()))
             .collect();
-        for (key, size) in &drops_checkpoint_sizes {
-            checkpoint_sizes
-                .entry(key.clone())
-                .and_modify(|entry| *entry = (*entry).max(*size))
-                .or_insert(*size);
-        }
 
         let id = self.next_id;
         let next_id = id.checked_add(1).ok_or(StageError::IdExhausted)?;

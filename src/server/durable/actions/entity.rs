@@ -301,7 +301,6 @@ pub(in crate::server) fn plan_interact(
         )?),
         inventory: Some(plan.inventory),
         world_edits,
-        drops: Default::default(),
         deltas,
         changed_cells: changed_cells
             .into_iter()
@@ -491,7 +490,6 @@ pub(in crate::server) fn plan_entity_tick(
         inventory_before: None,
         inventory: None,
         world_edits,
-        drops: Default::default(),
         deltas,
         changed_cells: changed_cells
             .into_iter()

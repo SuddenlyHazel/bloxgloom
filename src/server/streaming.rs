@@ -95,9 +95,9 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
     };
     let position = client.position();
     let anchor = position.map(|coordinate| (coordinate / 4.0).floor() as i32);
-    let drop_revision = state.drops.revision();
+    let drop_revision = state.drop_revision;
     if client.last_drops_revision != drop_revision || client.last_drop_anchor != anchor {
-        let items = state.drops.nearby(position);
+        let items = crate::server::drops::nearby(&state.entities, position);
         if !same_drop_positions(&items, &client.last_sent_drops) {
             if !client.enqueue(ServerMessage::Drops {
                 revision: drop_revision,

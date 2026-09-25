@@ -319,12 +319,59 @@ fn add_clients_and_seed_drops(
     }
     state.next_id = PLAYER_COUNT as u64 + 1;
 
-    // This is explicit fixture setup on a unique disposable save. Runtime
-    // durable edits and receipts below still pass through the real WAL path.
-    let drop_plan = state.drops.plan_spawns(&spawn_requests)?;
-    state.drops.apply_plan(&drop_plan)?;
-    state.drops.save()?;
-    if state.drops.active_len() < PLAYER_COUNT {
+    // This is explicit fixture setup on a unique disposable save. The seed
+    // stages through the real WAL path so the entity checkpoint mirror
+    // replays the same batch as the live store; runtime edits and receipts
+    // below then continue through the normal durable flow.
+    let catalog = state.world.catalog_arc();
+    let spawns = crate::server::drops::plan_spawns(
+        &state.entities,
+        &catalog,
+        &spawn_requests,
+        1,
+        crate::server::drops::unix_ms(),
+    )?
+    .ok_or_else(|| io::Error::other("server-perf planned no seed drops"))?;
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()?
+        .ok_or_else(|| io::Error::other("server-perf mirror refused the seed"))?;
+    let seed = crate::server::durable::CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: Some(spawns),
+    };
+    let tick = crate::server::simulation::TickId::new(1);
+    if !state
+        .durability
+        .try_stage(tick, &seed, Some(permit))
+        .map_err(|error| io::Error::other(format!("server-perf seed WAL stage: {error:?}")))?
+    {
+        return Err(io::Error::other("server-perf seed staged no changes"));
+    }
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(state, tick, std::time::Instant::now())?;
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    if !state.durability.pending.is_empty() {
+        return Err(io::Error::other("server-perf seed did not commit"));
+    }
+    if crate::server::drops::airborne_count(&state.entities) < PLAYER_COUNT {
         return Err(io::Error::other("server-perf failed to seed active drops"));
     }
     Ok(ScenarioSetup {

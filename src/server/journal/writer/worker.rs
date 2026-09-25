@@ -28,15 +28,9 @@ pub(super) fn writer_loop(
             WriterCommand::AppendBatch(requests) => requests,
             WriterCommand::Rotate {
                 expected_sequence,
-                compaction,
                 acknowledge,
             } => {
-                let result = match compaction {
-                    Some(compaction) => {
-                        journal.rotate_with_drop_compaction(expected_sequence, compaction)
-                    }
-                    None => journal.rotate(expected_sequence),
-                };
+                let result = journal.rotate(expected_sequence);
                 usage.store(journal.bytes(), Ordering::Release);
                 if result.is_ok() {
                     projected_usage.store(journal.bytes(), Ordering::Release);

@@ -44,7 +44,6 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
     let auth = id("input_authorization")?;
     let durable = id("durable_actions")?;
     let movement = id("player_movement")?;
-    let simulation = id("drop_simulation")?;
     let interactions = id("interaction_commit")?;
     let publish = id("publish")?;
     let fire = SystemId::new("bloxgloom:fire_propagate")
@@ -80,7 +79,7 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .read(resource("authorized_actions")?)
             .read(resource("world")?)
             .read(resource("inventory")?)
-            .read(resource("drops")?)
+            .read(resource("entities")?)
             .write(resource("journal")?)
             .write(resource("committed_state")?)
             .after(auth.clone()),
@@ -104,24 +103,6 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
-        .register_coordinator_adapter(
-            SystemDescriptor::new(
-                simulation.clone(),
-                Phase::Simulation,
-                // Drop motion is one coordinator-owned batch today. Register
-                // the real execution shape, not a speculative per-drop job.
-                OwnerPartition::Global,
-                1,
-                0,
-            )
-            .read(resource("world")?)
-            .read(resource("drops")?)
-            .write(resource("drops")?)
-            .after(movement.clone()),
-            adapters::drop_simulation,
-        )
-        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
-    registry
         .register_handler_with_driver(
             SystemDescriptor::new(
                 fire.clone(),
@@ -134,7 +115,7 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
             .read(resource("world")?)
             .read(resource("fire_frontier")?)
             .write(resource("fire_intents")?)
-            .after(simulation.clone()),
+            .after(movement.clone()),
             FireHandler,
             adapters::fire_source,
         )
@@ -151,10 +132,9 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
                 4_096,
             )
             .read(resource("committed_state")?)
-            .read(resource("drops")?)
-            .write(resource("drops")?)
+            .read(resource("entities")?)
             .write(resource("deferred_actions")?)
-            .after(simulation.clone()),
+            .after(movement.clone()),
             adapters::interaction_commit,
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;

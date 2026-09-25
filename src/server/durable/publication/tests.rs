@@ -65,7 +65,6 @@ fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
         inventory_before: None,
         inventory: None,
         world_edits: prepared,
-        drops: Default::default(),
         deltas: vec![
             BlockDelta {
                 key,
