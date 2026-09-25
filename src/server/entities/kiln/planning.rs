@@ -110,6 +110,7 @@ impl EntityTickPolicy for KilnTickPlanner {
             anchor_update: Some(anchor_update),
             block_states,
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }

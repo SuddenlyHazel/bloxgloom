@@ -678,6 +678,7 @@ impl crate::server::entities::EntityTickPolicy for PairTick {
                 after: anchor_state,
             }],
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }
@@ -747,6 +748,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }
@@ -801,6 +803,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
                 after: anchor_state,
             }],
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }
@@ -847,6 +850,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
                     anchor_update: None,
                     block_states: Vec::new(),
                     wakes: Vec::new(),
+                    transfer: None,
                 }),
             };
         }
@@ -858,6 +862,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }
@@ -2059,6 +2064,7 @@ impl crate::server::entities::EntityTickPolicy for PokeConsumer {
             anchor_update: None,
             block_states: Vec::new(),
             wakes: Vec::new(),
+            transfer: None,
         })
     }
 }
@@ -2099,6 +2105,7 @@ impl crate::server::entities::EntityTickPolicy for PokeProducer {
             anchor_update: None,
             block_states: Vec::new(),
             wakes,
+            transfer: None,
         })
     }
 }
@@ -2126,6 +2133,7 @@ impl crate::server::entities::EntityTickPolicy for PokeBlind {
             anchor_update: None,
             block_states: Vec::new(),
             wakes: vec![crate::server::entities::EntityId::new(999_999).unwrap()],
+            transfer: None,
         })
     }
 }
@@ -2742,6 +2750,625 @@ fn entity_interaction_wakes_route_to_next_tick_delivery() {
     assert_eq!(state.entities.snapshot(consumer_id).unwrap().revision, 2);
 
     drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+/// Probe item-bin payload for transfer tests: one stack, no components.
+/// Counts stay inside the 128-block cap; zero is an empty bin that keeps its
+/// item key so a later deposit can adopt it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BinPayload {
+    item: crate::items::ItemId,
+    count: u16,
+}
+
+struct BinCodec;
+
+impl crate::server::entities::EntityPayloadCodec for BinCodec {
+    fn decode(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::server::entities::EntityPayload, crate::server::entities::EntityCodecError>
+    {
+        if bytes.len() != 6 {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        }
+        let item = crate::items::ItemId(u32::from_le_bytes(bytes[0..4].try_into().unwrap()));
+        let count = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
+        if item.0 == 0 || count > crate::inventory::STACK_LIMIT {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        }
+        Ok(crate::server::entities::EntityPayload::new(BinPayload {
+            item,
+            count,
+        }))
+    }
+
+    fn encode(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        let bin = payload
+            .downcast_ref::<BinPayload>()
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)?;
+        if bin.item.0 == 0 || bin.count > crate::inventory::STACK_LIMIT {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        }
+        let mut bytes = Vec::with_capacity(6);
+        bytes.extend(bin.item.0.to_le_bytes());
+        bytes.extend(bin.count.to_le_bytes());
+        Ok(bytes)
+    }
+
+    fn public_view(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        // The full stock is public: planners branch on neighbour counts, and
+        // the trusted layer never consults another entity's private payload.
+        self.encode(payload)
+    }
+}
+
+/// Pure exchange hooks for the bin probe. Withdraw removes exactly the
+/// requested count and returns the taken stack; deposit adds the whole stack
+/// or refuses it whole. Both are deterministic functions of their inputs.
+struct BinExchange;
+
+impl crate::server::entities::EntityTransferPolicy for BinExchange {
+    fn withdraw(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+        item: crate::items::ItemId,
+        count: u16,
+        catalog: &crate::content::Catalog,
+    ) -> Result<
+        Option<(
+            crate::server::entities::EntityPayload,
+            crate::inventory::Stack,
+        )>,
+        crate::server::entities::EntityError,
+    > {
+        use crate::server::entities::{EntityError, EntityPayload};
+        let bin = payload
+            .downcast_ref::<BinPayload>()
+            .ok_or(EntityError::InvalidPayload)?;
+        if count == 0 || count > crate::inventory::STACK_LIMIT || catalog.item(item).is_none() {
+            return Err(EntityError::InvalidPayload);
+        }
+        if bin.item != item || bin.count < count {
+            return Ok(None);
+        }
+        let taken = crate::inventory::Stack::new(item, count);
+        if !taken.valid_in(catalog) {
+            return Err(EntityError::InvalidPayload);
+        }
+        let mut after = bin.clone();
+        after.count -= count;
+        Ok(Some((EntityPayload::new(after), taken)))
+    }
+
+    fn deposit(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+        stack: &crate::inventory::Stack,
+        catalog: &crate::content::Catalog,
+    ) -> Result<Option<crate::server::entities::EntityPayload>, crate::server::entities::EntityError>
+    {
+        use crate::server::entities::{EntityError, EntityPayload};
+        let bin = payload
+            .downcast_ref::<BinPayload>()
+            .ok_or(EntityError::InvalidPayload)?;
+        if !stack.valid_in(catalog) {
+            return Err(EntityError::InvalidPayload);
+        }
+        let mut after = bin.clone();
+        if after.count == 0 {
+            after.item = stack.item;
+        }
+        if after.item != stack.item {
+            return Ok(None);
+        }
+        let total = u32::from(after.count) + u32::from(stack.count);
+        if total > u32::from(crate::inventory::STACK_LIMIT) {
+            return Ok(None);
+        }
+        after.count = total as u16;
+        Ok(Some(EntityPayload::new(after)))
+    }
+}
+
+/// A mobile receiver that pulls a fixed count from a visible bin peer while
+/// its own stock is below target. It plans from public projections only: the
+/// source count comes from the neighbour view, never from private state.
+/// `blind_source` bypasses discovery to declare a pull the plan cannot see,
+/// which the trusted layer must reject.
+struct BinPullTick {
+    source_type: crate::content::EntityTypeId,
+    item: crate::items::ItemId,
+    count: u16,
+    target: u16,
+    blind_source: Option<crate::server::entities::EntityId>,
+}
+
+impl crate::server::entities::EntityTickPolicy for BinPullTick {
+    fn plan(
+        &self,
+        snapshot: &crate::server::entities::EntitySnapshot,
+        current_tick: u64,
+        _catalog: &crate::content::Catalog,
+        _view: &crate::server::voxel_view::VoxelView,
+        neighbours: &crate::server::entities::EntityView,
+    ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
+        use crate::server::entities::{EntityError, EntityItemTransfer, EntityTickPlan};
+        let Some(due) = snapshot.next_tick else {
+            return Err(EntityError::InvalidType);
+        };
+        if current_tick < due {
+            return Err(EntityError::InvalidType);
+        }
+        let own = snapshot
+            .private_payload
+            .downcast_ref::<BinPayload>()
+            .ok_or(EntityError::InvalidPayload)?;
+        let next_tick = due.checked_add(5).ok_or(EntityError::RevisionExhausted)?;
+        if let Some(source) = self.blind_source {
+            return Ok(EntityTickPlan {
+                payload: None,
+                next_tick,
+                anchor_update: None,
+                block_states: Vec::new(),
+                wakes: Vec::new(),
+                transfer: Some(EntityItemTransfer {
+                    source,
+                    item: self.item,
+                    count: self.count,
+                }),
+            });
+        }
+        let peer = neighbours
+            .iter()
+            .filter(|view| view.entity_type == self.source_type)
+            .min_by_key(|view| view.id);
+        let source_count = peer
+            .and_then(|view| {
+                let bytes = view.payload.as_slice();
+                let item_bytes: [u8; 4] = bytes.get(0..4)?.try_into().ok()?;
+                let count_bytes: [u8; 2] = bytes.get(4..6)?.try_into().ok()?;
+                (bytes.len() == 6
+                    && crate::items::ItemId(u32::from_le_bytes(item_bytes)) == self.item)
+                    .then(|| u16::from_le_bytes(count_bytes))
+            })
+            .unwrap_or(0);
+        let transfer =
+            (own.count < self.target && source_count >= self.count).then(|| EntityItemTransfer {
+                source: peer.expect("source has stock, so a peer is visible").id,
+                item: self.item,
+                count: self.count,
+            });
+        // The payload update itself is empty: the deposit computes the
+        // receiver's after-payload from this snapshot inside the trusted
+        // layer, so the planner never touches another entity's state.
+        Ok(EntityTickPlan {
+            payload: None,
+            next_tick,
+            anchor_update: None,
+            block_states: Vec::new(),
+            wakes: Vec::new(),
+            transfer,
+        })
+    }
+}
+
+fn bin_catalog(
+    source: crate::content::EntityTypeId,
+    sink: crate::content::EntityTypeId,
+) -> crate::content::Catalog {
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key, fingerprint) in [
+        (source, "test:bin_source", 0x4249_4e53_5200_0001),
+        (sink, "test:bin_sink", 0x4249_4e53_4b00_0001),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: fingerprint,
+            })
+            .unwrap();
+    }
+    catalog
+}
+
+fn bin_startup(
+    catalog: crate::content::Catalog,
+    source: crate::content::EntityTypeId,
+    sink: crate::content::EntityTypeId,
+    blind_source: Option<crate::server::entities::EntityId>,
+    target: u16,
+) -> crate::server::startup::ServerStartup {
+    use crate::server::entities::{EntityOwnership, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let key_of = |id| {
+        if id == source {
+            "test:bin_source".to_owned()
+        } else {
+            "test:bin_sink".to_owned()
+        }
+    };
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    // The source is passive: no schedule, only exchange hooks. It never
+    // deducts speculatively; stock leaves only inside the receiver's batch.
+    startup.register_entity_type(StartupEntityType {
+        key: key_of(source),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 6,
+        codec: Arc::new(BinCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_transfer_policy(
+        key_of(source),
+        Arc::new(BinExchange) as Arc<dyn crate::server::entities::EntityTransferPolicy>,
+    );
+    startup.register_entity_type(StartupEntityType {
+        key: key_of(sink),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 6,
+        codec: Arc::new(BinCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(BinPullTick {
+            source_type: source,
+            item: STICK,
+            count: 30,
+            target,
+            blind_source,
+        })
+            as Arc<dyn crate::server::entities::EntityTickPolicy>),
+    });
+    startup.register_entity_transfer_policy(
+        key_of(sink),
+        Arc::new(BinExchange) as Arc<dyn crate::server::entities::EntityTransferPolicy>,
+    );
+    startup
+}
+
+fn bin_count(state: &State, id: crate::server::entities::EntityId) -> u16 {
+    state
+        .entities
+        .snapshot(id)
+        .unwrap()
+        .private_payload
+        .downcast_ref::<BinPayload>()
+        .unwrap()
+        .count
+}
+
+fn stage_bin(
+    state: &mut State,
+    entity_type: crate::content::EntityTypeId,
+    position: [f32; 3],
+    count: u16,
+) -> crate::server::entities::EntityId {
+    use crate::server::entities::{EntityPayload, EntitySpawn};
+
+    stage_entity_spawn(
+        state,
+        EntitySpawn::Mobile {
+            entity_type,
+            position,
+            payload: EntityPayload::new(BinPayload { item: STICK, count }),
+            spawn_tick: 1,
+        },
+    )
+}
+
+/// Stages one prepared entity payload update through the WAL so the live
+/// store and the checkpoint mirror advance together.
+fn stage_entity_update(
+    state: &mut State,
+    id: crate::server::entities::EntityId,
+    patch: crate::server::entities::EntityPatch,
+    tick: u64,
+) {
+    let snapshot = state.entities.snapshot(id).unwrap();
+    let prepared = state
+        .entities
+        .prepare_update(id, snapshot.revision, patch)
+        .unwrap();
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the update");
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(prepared),
+        entity_wakes: Vec::new(),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(tick), &action, None, Some(permit))
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            state,
+            TickId::new(tick),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(state.durability.pending.is_empty(), "update must commit");
+}
+
+fn settle_commit_action(state: &mut State, action: &CommitAction, tick: u64) {
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the transfer");
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(tick), action, None, Some(permit))
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            state,
+            TickId::new(tick),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(state.durability.pending.is_empty(), "transfer must commit");
+}
+
+#[test]
+fn entity_tick_transfer_moves_items_atomically_and_conserves() {
+    let source_type = crate::content::EntityTypeId(71_101);
+    let sink_type = crate::content::EntityTypeId(71_102);
+    let path = temp_save_dir("bin-transfer-commit");
+    let catalog = bin_catalog(source_type, sink_type);
+    let startup = bin_startup(catalog, source_type, sink_type, None, 40);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let source_id = stage_bin(&mut state, source_type, [0.5, 80.0, 0.5], 100);
+    let sink_id = stage_bin(&mut state, sink_type, [2.5, 80.0, 0.5], 10);
+    assert_eq!(
+        bin_count(&state, source_id) + bin_count(&state, sink_id),
+        110
+    );
+
+    // The plan holds both ends in one prepared transaction: both entity IDs,
+    // both entity keys, and exactly one revision watermark — one WAL record.
+    let planned = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: sink_id },
+        TickId::new(6),
+    )
+    .unwrap()
+    .expect("due pull plans a transfer");
+    let batch = planned.entities.as_ref().expect("transfer stages entities");
+    let mut ids = batch.entity_ids();
+    ids.sort_unstable();
+    let mut expected = vec![source_id, sink_id];
+    expected.sort_unstable();
+    assert_eq!(ids, expected, "one transaction covers both entities");
+    assert_eq!(
+        batch
+            .changes()
+            .iter()
+            .filter(|change| change.key.domain == crate::server::entities::ENTITY_REVISION_DOMAIN)
+            .count(),
+        1,
+        "one WAL record carries the whole move"
+    );
+    state.entities.validate_prepared(batch).unwrap();
+    // Planning stages nothing: both payloads are untouched before the receipt.
+    assert_eq!(bin_count(&state, source_id), 100);
+    assert_eq!(bin_count(&state, sink_id), 10);
+
+    // The commit applies both ends together through the real coordinator.
+    drive_poke_tick(&mut state, 6, false);
+    assert!(!state.durability.failed);
+    assert_eq!(bin_count(&state, source_id), 70);
+    assert_eq!(bin_count(&state, sink_id), 40);
+    assert_eq!(
+        bin_count(&state, source_id) + bin_count(&state, sink_id),
+        110,
+        "items are neither created nor destroyed"
+    );
+    // The sender's schedule is untouched by the receiver-triggered pull.
+    assert_eq!(state.entities.snapshot(source_id).unwrap().next_tick, None);
+    assert_eq!(
+        state.entities.snapshot(sink_id).unwrap().next_tick,
+        Some(11)
+    );
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_tick_transfer_rejects_whole_on_stale_preimage_and_replans() {
+    use crate::server::entities::EntityPatch;
+
+    let source_type = crate::content::EntityTypeId(71_101);
+    let sink_type = crate::content::EntityTypeId(71_102);
+    let path = temp_save_dir("bin-transfer-stale-retry");
+    let catalog = bin_catalog(source_type, sink_type);
+    let startup = bin_startup(catalog, source_type, sink_type, None, 40);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let source_id = stage_bin(&mut state, source_type, [0.5, 80.0, 0.5], 100);
+    let sink_id = stage_bin(&mut state, sink_type, [2.5, 80.0, 0.5], 10);
+
+    // Plan the pull, then advance the recipient's revision through the WAL
+    // (a schedule-only update: stock is untouched) so the planned `before`
+    // goes stale before it can stage.
+    let planned = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: sink_id },
+        TickId::new(6),
+    )
+    .unwrap()
+    .expect("due pull plans a transfer");
+    stage_entity_update(
+        &mut state,
+        sink_id,
+        EntityPatch {
+            payload: None,
+            next_tick: Some(Some(11)),
+            position: None,
+        },
+        6,
+    );
+    assert_eq!(bin_count(&state, source_id), 100);
+    assert_eq!(bin_count(&state, sink_id), 10);
+
+    // The whole transaction is rejected: the stale `before` fails validation
+    // and nothing moved.
+    let stale = planned.entities.as_ref().expect("transfer stages entities");
+    assert!(
+        matches!(
+            state.entities.validate_prepared(stale),
+            Err(crate::server::entities::EntityError::InvalidTransaction
+                | crate::server::entities::EntityError::StaleRevision { .. })
+        ),
+        "a stale recipient preimage must reject the whole batch"
+    );
+    assert_eq!(bin_count(&state, source_id), 100);
+    assert_eq!(bin_count(&state, sink_id), 10);
+    assert_eq!(
+        bin_count(&state, source_id) + bin_count(&state, sink_id),
+        110
+    );
+
+    // The work re-plans against the fresh revision and eventually commits.
+    let retry = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: sink_id },
+        TickId::new(11),
+    )
+    .unwrap()
+    .expect("stale work re-plans");
+    state
+        .entities
+        .validate_prepared(retry.entities.as_ref().unwrap())
+        .unwrap();
+    settle_commit_action(&mut state, &retry, 11);
+    assert!(!state.durability.failed);
+    assert_eq!(bin_count(&state, source_id), 70);
+    assert_eq!(bin_count(&state, sink_id), 40);
+    assert_eq!(
+        bin_count(&state, source_id) + bin_count(&state, sink_id),
+        110,
+        "total item count is identical across success, rejection, and retry"
+    );
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_tick_transfer_full_destination_defers_without_partial_apply() {
+    let source_type = crate::content::EntityTypeId(71_101);
+    let sink_type = crate::content::EntityTypeId(71_102);
+    let path = temp_save_dir("bin-transfer-full-defer");
+    let catalog = bin_catalog(source_type, sink_type);
+    let startup = bin_startup(catalog, source_type, sink_type, None, 128);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    // 120 + 30 would exceed the 128 cap, so the pull must defer whole.
+    let source_id = stage_bin(&mut state, source_type, [0.5, 80.0, 0.5], 100);
+    let sink_id = stage_bin(&mut state, sink_type, [2.5, 80.0, 0.5], 120);
+
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: sink_id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::WouldBlock),
+        "a non-fitting transfer defers instead of half-applying"
+    );
+    assert!(!state.durability.failed);
+    assert_eq!(bin_count(&state, source_id), 100);
+    assert_eq!(bin_count(&state, sink_id), 120);
+    assert_eq!(
+        state.entities.snapshot(sink_id).unwrap().next_tick,
+        Some(6),
+        "deferred work keeps its schedule"
+    );
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn entity_tick_transfer_source_outside_view_rejects_the_plan() {
+    let source_type = crate::content::EntityTypeId(71_101);
+    let sink_type = crate::content::EntityTypeId(71_102);
+    let path = temp_save_dir("bin-transfer-undeclared");
+    let catalog = bin_catalog(source_type, sink_type);
+    // The planner names a source its captured view cannot see. The trusted
+    // layer must reject the write it did not declare, without failing.
+    let distant = crate::server::entities::EntityId::new(1).unwrap();
+    let startup = bin_startup(catalog, source_type, sink_type, Some(distant), 40);
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    // Far outside the receiver's radius-0 capture: resident or not, the
+    // planner's declared view cannot see it.
+    let source_id = stage_bin(&mut state, source_type, [512.5, 80.0, 0.5], 100);
+    let sink_id = stage_bin(&mut state, sink_type, [2.5, 80.0, 0.5], 10);
+    assert_eq!(source_id, distant);
+
+    let result = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: sink_id },
+        TickId::new(6),
+    );
+    assert!(
+        matches!(result, Err(error) if error.kind() == ErrorKind::InvalidInput),
+        "a policy cannot cause a write it did not declare"
+    );
+    assert!(!state.durability.failed);
+    assert_eq!(state.entities.snapshot(sink_id).unwrap().revision, 1);
+    assert_eq!(state.entities.snapshot(source_id).unwrap().revision, 1);
+    assert_eq!(bin_count(&state, source_id), 100);
+    assert_eq!(bin_count(&state, sink_id), 10);
+
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }

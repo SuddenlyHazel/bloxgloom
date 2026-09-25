@@ -11,6 +11,7 @@ mod player;
 mod registry;
 mod spatial;
 mod store;
+mod transfer;
 mod types;
 pub(super) mod wake;
 
@@ -39,6 +40,7 @@ pub(super) use store::{
     EntitySnapshot, EntitySpawn, EntityStore, MAX_ENTITY_SPAWN_BATCH, MAX_ENTITY_TRANSACTION_BYTES,
     MAX_ENTITY_TRANSACTION_CHANGES, PreparedEntityBatch, PreparedEntityTransaction,
 };
+pub(super) use transfer::{EntityItemTransfer, EntityTransferPolicy};
 pub(super) use types::{
     AnchorUpdate, CellCoord, EntityError, EntityId, EntityLocation, EntityMotionSnapshot,
     EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, EntityView,

@@ -8,7 +8,8 @@ use super::builtins;
 use super::effects::{EffectKindRegistry, EffectKindRegistryFrozen};
 use super::entities::{
     EntityError, EntityInteractionPolicy, EntityOwnership, EntityPayloadCodec, EntityTickPolicy,
-    EntityTypeRegistration, EntityTypeRegistry, EntityTypeRegistryBuilder, TickPolicy,
+    EntityTransferPolicy, EntityTypeRegistration, EntityTypeRegistry, EntityTypeRegistryBuilder,
+    TickPolicy,
 };
 use super::parallel::{OwnerData, OwnerKey};
 use super::registry::{
@@ -37,6 +38,7 @@ pub(crate) struct StartupEntityType {
 pub(crate) struct ServerStartup {
     catalog: Arc<Catalog>,
     entity_types: Vec<StartupEntityType>,
+    transfer_policies: Vec<(String, Arc<dyn EntityTransferPolicy>)>,
     systems: Vec<(SystemDescriptor, Arc<dyn SystemHandler>)>,
     owners: Vec<(SystemId, OwnerKey, OwnerData)>,
 }
@@ -46,6 +48,7 @@ impl ServerStartup {
         Self {
             catalog,
             entity_types: Vec::new(),
+            transfer_policies: Vec::new(),
             systems: Vec::new(),
             owners: Vec::new(),
         }
@@ -53,6 +56,18 @@ impl ServerStartup {
 
     pub(crate) fn register_entity_type(&mut self, registration: StartupEntityType) {
         self.entity_types.push(registration);
+    }
+
+    /// Registers the pure exchange hooks for one entity type by content key.
+    /// Kept separate from [`StartupEntityType`] so existing registrations are
+    /// untouched: a passive store needs no schedule to be a transfer
+    /// endpoint, and ticking types opt in independently of their planner.
+    pub(crate) fn register_entity_transfer_policy(
+        &mut self,
+        key: String,
+        policy: Arc<dyn EntityTransferPolicy>,
+    ) {
+        self.transfer_policies.push((key, policy));
     }
 
     pub(crate) fn register_system<H: SystemHandler>(
@@ -109,6 +124,14 @@ impl ServerStartup {
                     .register_tick_planner(id, Arc::clone(planner))
                     .map_err(entity_error)?;
             }
+        }
+        for (key, policy) in &self.transfer_policies {
+            let id = catalog
+                .entity_type_id_by_key(key)
+                .ok_or_else(|| entity_error(EntityError::InvalidType))?;
+            types
+                .register_transfer_policy(id, Arc::clone(policy))
+                .map_err(entity_error)?;
         }
         types.freeze().map(Arc::new).map_err(entity_error)
     }

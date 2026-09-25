@@ -12,8 +12,9 @@ use crate::server::State;
 use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
-    CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch, EntityView,
-    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, canonical_wakes, interact_producer,
+    AnchorUpdate, CellCoord, EntityBlockStateChange, EntityId, EntityItemTransfer, EntityLocation,
+    EntityPatch, EntityPayload, EntitySnapshot, EntityView, MAX_PLAN_NEIGHBOUR_BYTES,
+    MAX_PLAN_NEIGHBOURS, PreparedEntityTransaction, canonical_wakes, interact_producer,
     position_to_cell, route_wakes, tick_producer,
 };
 use crate::server::registry::SystemId;
@@ -345,8 +346,13 @@ pub(in crate::server) fn plan_entity_tick(
     // no-op commit (`NoChanges`) or churn the schedule on every stray wake;
     // reaffirming is a no-op that leaves the entity on its durable grid, so
     // dropping the wake converges to the same state. The due path below is
-    // unchanged: only woken attempts may reaffirm.
-    if woken && plan.payload.is_none() && snapshot.next_tick == Some(plan.next_tick) {
+    // unchanged: only woken attempts may reaffirm. A declared transfer is
+    // something to do, so it never reaffirms away.
+    if woken
+        && plan.payload.is_none()
+        && plan.transfer.is_none()
+        && snapshot.next_tick == Some(plan.next_tick)
+    {
         return Ok(None);
     }
     if snapshot
@@ -383,18 +389,40 @@ pub(in crate::server) fn plan_entity_tick(
         id,
     )?;
     let patch = EntityPatch {
-        payload: plan.payload,
+        payload: plan.payload.clone(),
         next_tick: Some(Some(plan.next_tick)),
         position: None,
     };
-    let mut entities = if let Some(anchor_update) = plan.anchor_update {
+    let mut entities = if let Some(transfer) = &plan.transfer {
+        // The recipient pulls on its own schedule: its tick plan carries its
+        // own payload update (or none) plus the declared pull, and this layer
+        // stages both ends atomically. The sender's schedule is untouched.
+        let receiver_base = plan
+            .payload
+            .clone()
+            .unwrap_or_else(|| snapshot.private_payload.clone());
+        plan_transfer_batch(
+            state,
+            id,
+            &snapshot,
+            &neighbours,
+            &receiver_base,
+            plan.anchor_update.as_ref(),
+            plan.next_tick,
+            transfer,
+            &catalog,
+        )?
+    } else if let Some(anchor_update) = plan.anchor_update {
         state
             .entities
             .prepare_anchor_update(id, snapshot.revision, anchor_update, patch)
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?
     } else {
-        state.entities.prepare_update(id, snapshot.revision, patch)
-    }
-    .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
+        state
+            .entities
+            .prepare_update(id, snapshot.revision, patch)
+            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?
+    };
     for chunk in read_chunks {
         entities.add_read_key(super::super::chunk_state_key(chunk));
     }
@@ -419,6 +447,139 @@ pub(in crate::server) fn plan_entity_tick(
         entities: Some(entities),
         entity_wakes: wakes,
     }))
+}
+
+/// Assembles one atomic cross-entity item transfer as a single WAL batch.
+///
+/// The recipient declared `transfer` in its tick plan; this trusted layer
+/// resolves both snapshots, runs both pure exchange hooks, and stages both
+/// payload updates with real `before` preimages in one `Operation::Batch`.
+/// The check and the move are the same statement: a recipient `before` that
+/// goes stale before the receipt rejects the whole transaction, so items are
+/// neither created nor destroyed and a non-fitting transfer never partially
+/// applies. The 128 stack cap is enforced on the taken stack and by both
+/// type validators during preparation.
+///
+/// The sender's schedule is untouched: it never deducts speculatively, it
+/// only loses stock inside this batch. Unavailable stock or a full
+/// destination defers (`WouldBlock`) so the work re-plans. Anything the
+/// planner got wrong — an unknown source, a source outside its declared
+/// neighbour view, a missing exchange hook, a mismatched take — rejects the
+/// whole plan (`InvalidInput`). No outcome here stops the coordinator.
+#[allow(clippy::too_many_arguments)]
+fn plan_transfer_batch(
+    state: &State,
+    receiver: EntityId,
+    snapshot: &EntitySnapshot,
+    neighbours: &EntityView,
+    receiver_base: &EntityPayload,
+    anchor_update: Option<&AnchorUpdate>,
+    next_tick: u64,
+    transfer: &EntityItemTransfer,
+    catalog: &crate::content::Catalog,
+) -> io::Result<PreparedEntityTransaction> {
+    transfer
+        .validate(receiver)
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    // A policy can only move items it can already see. The source must be in
+    // the captured neighbour view: anything else is a write the plan did not
+    // declare, so the whole plan is rejected.
+    if !neighbours.iter().any(|view| view.id == transfer.source) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "transfer source is outside the declared neighbour view",
+        ));
+    }
+    let source_snapshot = state
+        .entities
+        .snapshot(transfer.source)
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "transfer source is unknown"))?;
+    if catalog.item(transfer.item).is_none() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "transfer item is unknown",
+        ));
+    }
+    let receiver_descriptor = state
+        .entities
+        .types()
+        .descriptor(snapshot.entity_type)
+        .map_err(io::Error::other)?;
+    let source_descriptor = state
+        .entities
+        .types()
+        .descriptor(source_snapshot.entity_type)
+        .map_err(io::Error::other)?;
+    let receiver_exchange = receiver_descriptor.transfer_policy().ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::InvalidInput,
+            "receiving type cannot exchange items",
+        )
+    })?;
+    let source_exchange = source_descriptor.transfer_policy().ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::InvalidInput,
+            "transfer source type cannot exchange items",
+        )
+    })?;
+    let (sender_after, taken) = source_exchange
+        .withdraw(
+            &source_snapshot.private_payload,
+            transfer.item,
+            transfer.count,
+            catalog,
+        )
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
+        .ok_or_else(|| io::Error::new(ErrorKind::WouldBlock, "transfer source has no stock"))?;
+    if taken.item != transfer.item || taken.count != transfer.count || !taken.valid_in(catalog) {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "transfer source returned a mismatched take",
+        ));
+    }
+    let receiver_after = receiver_exchange
+        .deposit(receiver_base, &taken, catalog)
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
+        .ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::WouldBlock,
+                "transfer destination cannot fit the stack",
+            )
+        })?;
+    let receiver_patch = EntityPatch {
+        payload: Some(receiver_after),
+        next_tick: Some(Some(next_tick)),
+        position: None,
+    };
+    let receiver_prepared = if let Some(anchor_update) = anchor_update {
+        state.entities.prepare_anchor_update(
+            receiver,
+            snapshot.revision,
+            anchor_update.clone(),
+            receiver_patch,
+        )
+    } else {
+        state
+            .entities
+            .prepare_update(receiver, snapshot.revision, receiver_patch)
+    }
+    .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    let sender_prepared = state
+        .entities
+        .prepare_update(
+            transfer.source,
+            source_snapshot.revision,
+            EntityPatch {
+                payload: Some(sender_after),
+                next_tick: None,
+                position: None,
+            },
+        )
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    state
+        .entities
+        .combine_prepared(vec![receiver_prepared, sender_prepared])
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))
 }
 
 fn validate_footprint_plan(

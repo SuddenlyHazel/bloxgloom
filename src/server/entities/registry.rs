@@ -1,4 +1,5 @@
 use super::store::EntitySnapshot;
+use super::transfer::{EntityItemTransfer, EntityTransferPolicy};
 use super::types::{
     CellCoord, EntityError, EntityId, EntityOwnership, EntityPayload, EntityView,
     MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
@@ -44,6 +45,11 @@ pub struct EntityTickPlan {
     /// Notification-only wake requests, with the same delivery contract as
     /// [`EntityInteractionPlan::wakes`].
     pub wakes: Vec<EntityId>,
+    /// Optional pull of items from one visible neighbour. The planner only
+    /// declares intent; the trusted durable layer resolves both snapshots,
+    /// runs both pure exchange hooks, and stages both payload updates as one
+    /// atomic batch. `None` plans the tick's own payload alone.
+    pub transfer: Option<EntityItemTransfer>,
 }
 
 /// Trusted server-only policy for bounded client requests directed at an
@@ -142,6 +148,7 @@ pub struct EntityTypeDescriptor {
     interaction_read_radius: u8,
     tick_planner: Option<Arc<dyn EntityTickPolicy>>,
     tick_read_radius: u8,
+    transfer_policy: Option<Arc<dyn EntityTransferPolicy>>,
 }
 
 impl EntityTypeDescriptor {
@@ -179,6 +186,14 @@ impl EntityTypeDescriptor {
 
     pub const fn has_tick_planner(&self) -> bool {
         self.tick_planner.is_some()
+    }
+
+    /// Pure exchange hooks for one transfer endpoint, resolved by the trusted
+    /// durable layer. Policies never see this: they only declare intent.
+    /// `None` is not an error by itself: a tick plan naming this type as a
+    /// transfer endpoint is rejected as a planner bug instead.
+    pub fn transfer_policy(&self) -> Option<&dyn EntityTransferPolicy> {
+        self.transfer_policy.as_deref()
     }
 
     /// Declared chunk read radius captured for interaction planning.
@@ -350,6 +365,7 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             interaction_read_radius: 0,
             tick_planner: None,
             tick_read_radius: 0,
+            transfer_policy: None,
         };
         self.descriptors.insert(registration.id, descriptor);
         Ok(())
@@ -395,6 +411,26 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
         }
         descriptor.tick_read_radius = planner.read_radius_chunks();
         descriptor.tick_planner = Some(planner);
+        Ok(())
+    }
+
+    /// Registers the pure exchange hooks that let this type give and receive
+    /// items through the atomic transfer plan. Unlike tick planners this is
+    /// available to never-ticking types too: a passive store needs no
+    /// schedule to be a transfer endpoint.
+    pub fn register_transfer_policy(
+        &mut self,
+        id: EntityTypeId,
+        policy: Arc<dyn EntityTransferPolicy>,
+    ) -> Result<(), EntityError> {
+        let descriptor = self
+            .descriptors
+            .get_mut(&id)
+            .ok_or(EntityError::UnknownType(id))?;
+        if descriptor.transfer_policy.is_some() {
+            return Err(EntityError::DuplicateType(id));
+        }
+        descriptor.transfer_policy = Some(policy);
         Ok(())
     }
 
