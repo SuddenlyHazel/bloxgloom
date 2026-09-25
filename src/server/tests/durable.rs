@@ -2,9 +2,39 @@ use super::*;
 
 const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 use std::fs;
+use std::path::PathBuf;
 
 fn action_id(state: &State, profile: u128, seq: u64) -> u128 {
     (u128::from(state.durability.receipt_ledger(profile).current_epoch()) << 64) | u128::from(seq)
+}
+
+/// Captures every file in the sharded drop base so a test can restore the
+/// exact older checkpoint bytes and replay journal recovery over them.
+fn snapshot_drop_shards(save: &TestSave) -> Vec<(PathBuf, Vec<u8>)> {
+    let dir = save.path().join("drops.d");
+    match fs::read_dir(&dir) {
+        Ok(listing) => listing
+            .flatten()
+            .map(|entry| {
+                let path = entry.path();
+                let bytes = fs::read(&path).unwrap();
+                (path, bytes)
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn restore_drop_shards(save: &TestSave, snapshot: &[(PathBuf, Vec<u8>)]) {
+    let dir = save.path().join("drops.d");
+    if let Ok(listing) = fs::read_dir(&dir) {
+        for entry in listing.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    for (path, bytes) in snapshot {
+        fs::write(path, bytes).unwrap();
+    }
 }
 
 #[test]
@@ -542,7 +572,14 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     assert!(state.durability.dirty_checkpoints.is_empty());
     assert!(state.durability.checkpoint_inflight.is_empty());
     assert_eq!(state.drops.nearby(position).len(), 1);
-    let old_drops_snapshot = fs::read(save.path().join("drops.bin")).unwrap();
+    // Capture the sharded drop base (with the drop) so the test can restore
+    // these exact older but checksum-valid bytes below. That recreates a
+    // crash after the WAL sync but before drop checkpointing.
+    let old_drop_shards = snapshot_drop_shards(&save);
+    assert!(
+        !old_drop_shards.is_empty(),
+        "rotation must have checkpointed the drop shards"
+    );
 
     // Commit a post-cut pickup, then allow its checkpoint to finish so the
     // test can restore the exact older but checksum-valid BGDP bytes below.
@@ -565,7 +602,7 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
         state.clients[&session.id].inventory.slots[0],
         Some(crate::inventory::Stack::new(STONE_ITEM, 1))
     );
-    Drops::write_snapshot(&save.path().join("drops.bin"), &old_drops_snapshot).unwrap();
+    restore_drop_shards(&save, &old_drop_shards);
 
     drop(session);
     drop(state);

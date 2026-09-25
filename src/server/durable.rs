@@ -62,7 +62,8 @@ pub(super) use publication::publish_committed;
 #[cfg(test)]
 pub(super) use state::encode_action_receipt;
 pub(super) use state::{
-    action_changes, chunk_state_key, drops_checkpoint_key, inventory_state_key, is_checkpoint_key,
+    action_changes, chunk_state_key, drops_allocator_key, drops_chunk_key, inventory_state_key,
+    is_checkpoint_key,
 };
 
 pub(super) const MAX_PENDING_DURABLE_ACTIONS: usize = 256;
@@ -270,7 +271,7 @@ impl Durability {
             receipts::ReceiptEvent::EpochGrant,
         )
         .map_err(StageError::Invalid)?;
-        match self.try_stage(tick, &CommitAction::receipt_only(transition), None, None)? {
+        match self.try_stage(tick, &CommitAction::receipt_only(transition), &[], None)? {
             true => {
                 self.pending_grants.insert(profile);
                 Ok(None)
@@ -303,7 +304,7 @@ impl Durability {
         let transition =
             receipts::ReceiptTransition::new(profile, &before, after, receipts::ReceiptEvent::Ack)
                 .map_err(StageError::Invalid)?;
-        self.try_stage(tick, &CommitAction::receipt_only(transition), None, None)
+        self.try_stage(tick, &CommitAction::receipt_only(transition), &[], None)
     }
     /// Opens and recovers all journal-backed after-values before the server can
     /// accept clients. Existing saves are decoded before any replay replacement.
@@ -343,7 +344,7 @@ impl Durability {
         &mut self,
         tick: TickId,
         action: &CommitAction,
-        projected_drop_snapshot_size: Option<usize>,
+        projected_drop_checkpoints: &[(StateKey, usize)],
         entity_permit: Option<MirrorPermit>,
     ) -> Result<bool, StageError> {
         if action.entities.is_some() != entity_permit.is_some() {
@@ -363,7 +364,7 @@ impl Durability {
             changes,
             read_keys,
             PendingPayload::Action(action.clone()),
-            projected_drop_snapshot_size,
+            projected_drop_checkpoints,
             entity_permit,
         )
     }
@@ -374,7 +375,7 @@ impl Durability {
         changes: Vec<super::journal::Change>,
         read_keys: Vec<StateKey>,
         payload: PendingPayload,
-        projected_drop_snapshot_size: Option<usize>,
+        projected_drop_checkpoints: &[(StateKey, usize)],
         mut entity_permit: Option<MirrorPermit>,
     ) -> Result<bool, StageError> {
         if changes.is_empty() {
@@ -402,7 +403,13 @@ impl Durability {
             }
             keys.insert(key);
         }
-        let drops_key = drops_checkpoint_key();
+        let mut drops_checkpoint_sizes: HashMap<StateKey, usize> = HashMap::new();
+        for (key, size) in projected_drop_checkpoints {
+            drops_checkpoint_sizes
+                .entry(key.clone())
+                .and_modify(|entry| *entry = (*entry).max(*size))
+                .or_insert(*size);
+        }
         let mut projected_checkpoint_keys: HashSet<StateKey> =
             self.dirty_checkpoints.keys().cloned().collect();
         let mut projected_checkpoint_bytes: HashMap<StateKey, usize> = self
@@ -423,12 +430,10 @@ impl Durability {
                 projected_checkpoint_bytes.insert(change.key.clone(), change.after.len());
             }
         }
-        if let Some(size) = projected_drop_snapshot_size {
-            projected_checkpoint_keys.insert(drops_key.clone());
-            let entry = projected_checkpoint_bytes
-                .entry(drops_key.clone())
-                .or_default();
-            *entry = (*entry).max(size);
+        for (key, size) in &drops_checkpoint_sizes {
+            projected_checkpoint_keys.insert(key.clone());
+            let entry = projected_checkpoint_bytes.entry(key.clone()).or_default();
+            *entry = (*entry).max(*size);
         }
         if projected_checkpoint_keys.len() > MAX_DIRTY_CHECKPOINT_KEYS {
             return Err(StageError::Full);
@@ -446,8 +451,11 @@ impl Durability {
             .filter(|change| is_checkpoint_key(&change.key))
             .map(|change| (change.key.clone(), change.after.len()))
             .collect();
-        if let Some(size) = projected_drop_snapshot_size {
-            checkpoint_sizes.insert(drops_key, size);
+        for (key, size) in &drops_checkpoint_sizes {
+            checkpoint_sizes
+                .entry(key.clone())
+                .and_modify(|entry| *entry = (*entry).max(*size))
+                .or_insert(*size);
         }
 
         let id = self.next_id;

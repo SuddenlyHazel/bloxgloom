@@ -9,6 +9,9 @@ mod shards;
 mod spatial;
 
 pub(super) use entity::{DropEntityPayload, register_entity_type};
+pub(in crate::server) use shards::{
+    SHARD_ALLOCATOR_LEN, write_allocator_snapshot, write_shard_snapshot,
+};
 pub(super) use planning::DropPlan;
 
 #[cfg(test)]
@@ -272,16 +275,6 @@ impl Drops {
             }
         }
         self.chunk_dirty.insert(chunk);
-    }
-
-    fn index_moved(&mut self, id: u64, old_position: [f32; 3], new_position: [f32; 3]) {
-        transfer_chunk_member(
-            &mut self.chunk_members,
-            &mut self.chunk_dirty,
-            id,
-            old_position,
-            new_position,
-        );
     }
 }
 

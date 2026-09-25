@@ -24,28 +24,30 @@ use super::{DropEntityPayload, Drops, Entry, chunk_of, invalid};
 pub(super) const SHARD_MAGIC: &[u8; 4] = b"BGDC";
 pub(super) const SHARD_FORMAT: u16 = 1;
 pub(super) const SHARD_HEADER: usize = 4 + 2 + 12 + 4;
-const MAX_SHARD_BYTES: usize = 64 * 1024 * 1024;
+pub(super) const MAX_SHARD_BYTES: usize = 64 * 1024 * 1024;
 
 pub(super) const ALLOC_MAGIC: &[u8; 4] = b"BGDA";
 pub(super) const ALLOC_FORMAT: u16 = 1;
 const ALLOC_BODY: usize = 8 + 8;
 const ALLOC_LEN: usize = 4 + 2 + ALLOC_BODY + 4;
+/// Encoded allocator checkpoint length, reserved at WAL staging time.
+pub(in crate::server) const SHARD_ALLOCATOR_LEN: usize = ALLOC_LEN;
 
-pub(super) fn shard_dir_for_drops_file(path: &Path) -> PathBuf {
+pub(in crate::server) fn shard_dir_for_drops_file(path: &Path) -> PathBuf {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.join("drops.d"),
         _ => PathBuf::from("drops.d"),
     }
 }
 
-pub(super) fn shard_path(dir: &Path, chunk: ChunkKey) -> PathBuf {
+pub(in crate::server) fn shard_path(dir: &Path, chunk: ChunkKey) -> PathBuf {
     dir.join(format!(
         "chunk_{}_{}_{}.bin",
         chunk.x, chunk.y, chunk.z
     ))
 }
 
-pub(super) fn allocator_path(dir: &Path) -> PathBuf {
+pub(in crate::server) fn allocator_path(dir: &Path) -> PathBuf {
     dir.join("allocator.bin")
 }
 
@@ -253,7 +255,7 @@ pub(super) fn decode_allocator(bytes: &[u8]) -> io::Result<(u64, u64)> {
 /// deletes its file instead of writing one: a missing shard loads as an
 /// empty owner set, and the WAL journal overlay stays authoritative for
 /// ownership either way.
-pub(super) fn write_shard_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(in crate::server) fn write_shard_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if bytes.len() < SHARD_HEADER + 4
         || &bytes[..4] != SHARD_MAGIC
         || u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != SHARD_FORMAT
@@ -308,7 +310,7 @@ pub(super) fn write_shard_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> 
     atomic_replace(path, bytes)
 }
 
-pub(super) fn write_allocator_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(in crate::server) fn write_allocator_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> {
     decode_allocator(bytes)?;
     atomic_replace(path, bytes)
 }
@@ -475,25 +477,10 @@ pub(super) fn checksum(bytes: &[u8]) -> u32 {
 }
 
 impl Drops {
-    /// Groups live entries by chunk for inspection. Used by shard
-    /// checkpointing; the returned map borrows the live store.
-    pub(super) fn chunk_entries(&self) -> BTreeMap<ChunkKey, Vec<&Entry>> {
-        let mut grouped: BTreeMap<ChunkKey, Vec<&Entry>> = BTreeMap::new();
-        for (&id, members) in &self.chunk_members {
-            let mut entries: Vec<&Entry> = members
-                .iter()
-                .filter_map(|member| self.entries.get(member))
-                .collect();
-            entries.sort_by_key(|entry| entry.id);
-            grouped.insert(id, entries);
-        }
-        grouped
-    }
-
     /// Drains the dirty-chunk set into per-chunk snapshot bytes in chunk
     /// order. One moving drop serializes only its chunk owners, never the
     /// whole drop set.
-    pub(super) fn take_dirty_shard_snapshots(&mut self) -> Vec<(ChunkKey, Vec<u8>)> {
+    pub(in crate::server) fn take_dirty_shard_snapshots(&mut self) -> Vec<(ChunkKey, Vec<u8>)> {
         let chunks: Vec<ChunkKey> = std::mem::take(&mut self.chunk_dirty)
             .into_iter()
             .collect();
@@ -517,11 +504,46 @@ impl Drops {
     }
 
     /// Drains the allocator-dirty flag into allocator checkpoint bytes.
-    pub(super) fn take_allocator_snapshot(&mut self) -> Option<Vec<u8>> {
+    pub(in crate::server) fn take_allocator_snapshot(&mut self) -> Option<Vec<u8>> {
         if !self.allocator_dirty {
             return None;
         }
         self.allocator_dirty = false;
         Some(encode_allocator(self.next_id, self.revision))
+    }
+
+    /// Checkpoint directory for this store's shards, if it has a save path.
+    pub(in crate::server) fn shard_dir(&self) -> Option<PathBuf> {
+        self.path
+            .as_ref()
+            .map(|path| shard_dir_for_drops_file(path))
+    }
+
+    /// Shard file for one chunk owner, if this store has a save path.
+    pub(in crate::server) fn shard_snapshot_path(&self, chunk: ChunkKey) -> Option<PathBuf> {
+        self.shard_dir().map(|dir| shard_path(&dir, chunk))
+    }
+
+    /// Allocator checkpoint file, if this store has a save path.
+    pub(in crate::server) fn allocator_snapshot_path(&self) -> Option<PathBuf> {
+        self.shard_dir().map(|dir| allocator_path(&dir))
+    }
+
+    /// Re-queues shard snapshots the checkpoint backlog refused, so the
+    /// next attempt retries them instead of dropping work.
+    pub(in crate::server) fn restore_shard_dirtiness(
+        &mut self,
+        chunks: Vec<ChunkKey>,
+        allocator: bool,
+    ) {
+        self.chunk_dirty.extend(chunks);
+        self.allocator_dirty |= allocator;
+    }
+
+    /// True while shard snapshots still wait for checkpoint submission.
+    /// The receipt path clears the coordinator dirty flags only once this
+    /// and every submitted drops key have drained.
+    pub(in crate::server) fn has_uncheckpointed_shards(&self) -> bool {
+        !self.chunk_dirty.is_empty() || self.allocator_dirty
     }
 }

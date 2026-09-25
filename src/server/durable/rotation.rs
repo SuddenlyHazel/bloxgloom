@@ -67,7 +67,11 @@ pub(super) fn progress_rotation(state: &mut State) -> io::Result<bool> {
     }
 
     if state.durability.pending.is_empty() && !state.durability.rotation_snapshot_ready {
-        super::checkpoint::remember_drops_checkpoint(state)?;
+        // Shard submission can defer past the checkpoint backlog bounds;
+        // the fence waits until every dirty shard is at least submitted.
+        if !super::checkpoint::remember_drops_checkpoint(state)? {
+            return Ok(true);
+        }
         let Some(ticket) = state.durability.entity_mirror.try_begin_checkpoint()? else {
             return Ok(true);
         };

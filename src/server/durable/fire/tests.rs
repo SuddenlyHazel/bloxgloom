@@ -65,7 +65,7 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, None, None)
+            .try_stage(TickId::new(1), &action, &[], None)
             .unwrap()
     );
     state.fire.mark_seed_submitted(&seed).unwrap();
@@ -131,7 +131,7 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, None, None)
+            .try_stage(TickId::new(1), &action, &[], None)
             .unwrap()
     );
     state.fire.mark_seed_submitted(&seed).unwrap();

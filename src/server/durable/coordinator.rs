@@ -165,7 +165,7 @@ pub(in crate::server) fn process_durable_actions(
                 payload,
                 "target state unavailable",
             );
-            match state.durability.try_stage(tick, &action, None, None) {
+            match state.durability.try_stage(tick, &action, &[], None) {
                 Ok(true) => {
                     blocked_profiles.insert(profile);
                 }
@@ -252,18 +252,31 @@ pub(in crate::server) fn process_durable_actions(
                         }
                     }
                 }
-                let projected_drop_snapshot_size =
-                    if action.drops.changes.is_empty() && action.drops.allocator.is_none() {
-                        None
-                    } else {
-                        match state.drops.projected_snapshot_size(&action.drops) {
-                            Ok(size) => Some(size),
-                            Err(error) => {
-                                cancel_prepared_entities(state, &action);
-                                return Err(error);
+                // The action reserves exactly the drop shard keys it will
+                // dirty (affected chunks plus the allocator when it mints
+                // IDs) with honest per-shard sizes, so the checkpoint gate
+                // bounds real memory instead of one aggregate guess.
+                let mut projected_drop_checkpoints = Vec::new();
+                if !action.drops.changes.is_empty() || action.drops.allocator.is_some() {
+                    match state.drops.projected_checkpoint_sizes(&action.drops) {
+                        Ok((shards, allocator)) => {
+                            for (chunk, size) in shards {
+                                projected_drop_checkpoints
+                                    .push((super::state::drops_chunk_key(chunk), size));
+                            }
+                            if allocator {
+                                projected_drop_checkpoints.push((
+                                    super::state::drops_allocator_key(),
+                                    super::super::drops::SHARD_ALLOCATOR_LEN,
+                                ));
                             }
                         }
-                    };
+                        Err(error) => {
+                            cancel_prepared_entities(state, &action);
+                            return Err(error);
+                        }
+                    }
+                }
                 if let Some(entities) = &action.entities {
                     if let Err(error) = state.entities.validate_prepared(entities) {
                         cancel_prepared_entities(state, &action);
@@ -293,7 +306,7 @@ pub(in crate::server) fn process_durable_actions(
                 match state.durability.try_stage(
                     tick,
                     &action,
-                    projected_drop_snapshot_size,
+                    &projected_drop_checkpoints,
                     entity_permit,
                 ) {
                     Ok(true) => {

@@ -384,7 +384,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     assert!(matches!(
         state
             .durability
-            .try_stage(TickId::new(12), &overlapping_action, None, None),
+            .try_stage(TickId::new(12), &overlapping_action, &[], None),
         Err(super::super::StageError::Conflict)
     ));
     for current in 12..2_012 {
@@ -2273,7 +2273,7 @@ fn stage_entity_spawn(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, None, Some(permit))
+            .try_stage(TickId::new(1), &action, &[], Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -2346,7 +2346,7 @@ fn stage_entity_spawn_batch(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(1), &action, None, Some(permit))
+            .try_stage(TickId::new(1), &action, &[], Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -3207,7 +3207,7 @@ fn stage_entity_update(
     assert!(
         state
             .durability
-            .try_stage(TickId::new(tick), &action, None, Some(permit))
+            .try_stage(TickId::new(tick), &action, &[], Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {
@@ -3235,7 +3235,7 @@ fn settle_commit_action(state: &mut State, action: &CommitAction, tick: u64) {
     assert!(
         state
             .durability
-            .try_stage(TickId::new(tick), action, None, Some(permit))
+            .try_stage(TickId::new(tick), action, &[], Some(permit))
             .unwrap()
     );
     for _ in 0..2_000 {

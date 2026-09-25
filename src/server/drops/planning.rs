@@ -1,5 +1,5 @@
 //! Durable drop transaction planning and application.
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -7,8 +7,10 @@ use super::{
     DropEntityPayload, Drops, Entry, LIFETIME, chunk_of, distance_sq, invalid, journal, spatial,
     unix_ms,
 };
+use super::shards::{MAX_SHARD_BYTES, SHARD_HEADER};
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
+use crate::world::ChunkKey;
 
 /// Exact logical ownership change for one drop. Position is only included for
 /// newly allocated drops; motion remains a checkpointed simulation detail.
@@ -263,6 +265,66 @@ impl Drops {
             }
         }
         Ok(())
+    }
+
+    /// Projects per-chunk checkpoint sizes for the WAL staging gate so one
+    /// action reserves exactly the shard keys it will dirty, plus whether
+    /// the allocator checkpoint joins them. Sizes derive from live member
+    /// records plus the plan delta, so the gate bounds real checkpoint
+    /// memory instead of one aggregate guess.
+    pub(in crate::server) fn projected_checkpoint_sizes(
+        &self,
+        plan: &DropPlan,
+    ) -> io::Result<(Vec<(ChunkKey, usize)>, bool)> {
+        self.validate_plan(plan)?;
+        let mut affected = BTreeSet::new();
+        for mutation in &plan.changes {
+            if let Some(position) = mutation.initial_position {
+                affected.insert(chunk_of(position));
+            } else if let Some(entry) = self.entries.get(&mutation.id) {
+                affected.insert(chunk_of(entry.position));
+            }
+        }
+        let mut sizes = Vec::with_capacity(affected.len());
+        for chunk in affected {
+            let mut size = SHARD_HEADER + 4;
+            if let Some(members) = self.chunk_members.get(&chunk) {
+                for id in members {
+                    let entry = &self.entries[id];
+                    size += super::persistence::RECORD
+                        + entry
+                            .drop_payload()
+                            .stack
+                            .components
+                            .as_ref()
+                            .map_or(0, |component| component.bytes.len());
+                }
+            }
+            for mutation in &plan.changes {
+                let mutation_chunk = if let Some(position) = mutation.initial_position {
+                    chunk_of(position)
+                } else if let Some(entry) = self.entries.get(&mutation.id) {
+                    chunk_of(entry.position)
+                } else {
+                    continue;
+                };
+                if mutation_chunk != chunk {
+                    continue;
+                }
+                let old = mutation.before.is_empty().then_some(0).unwrap_or(
+                    super::persistence::RECORD + mutation.before.len().saturating_sub(21),
+                );
+                let after = mutation.after.is_empty().then_some(0).unwrap_or(
+                    super::persistence::RECORD + mutation.after.len().saturating_sub(21),
+                );
+                size = size.saturating_add(after).saturating_sub(old);
+            }
+            if size > MAX_SHARD_BYTES {
+                return Err(invalid("drops shard snapshot too large"));
+            }
+            sizes.push((chunk, size));
+        }
+        Ok((sizes, plan.allocator.is_some()))
     }
 
     pub(in crate::server) fn apply_plan(&mut self, plan: &DropPlan) -> io::Result<()> {

@@ -12,7 +12,7 @@ use crate::items::ItemId;
 use crate::protocol::DroppedItem;
 
 use super::{
-    DropEntityPayload, DropPlan, Drops, Entry, LIFETIME, expiry, invalid, shards, spatial, unix_ms,
+    DropEntityPayload, Drops, Entry, LIFETIME, expiry, invalid, shards, spatial, unix_ms,
 };
 
 #[cfg(test)]
@@ -328,57 +328,6 @@ impl Drops {
             && revision == self.revision
             && next_id == self.next_id
             && count == self.entries.len()
-    }
-
-    pub(in crate::server) fn projected_snapshot_size(&self, plan: &DropPlan) -> io::Result<usize> {
-        self.validate_plan(plan)?;
-        let mut count = self.entries.len();
-        for mutation in &plan.changes {
-            let exists = self.entries.contains_key(&mutation.id);
-            match (exists, mutation.after.is_empty()) {
-                (false, false) => count += 1,
-                (true, true) => count -= 1,
-                _ => {}
-            }
-        }
-        if count > 1_000_000 {
-            return Err(invalid("too many drops"));
-        }
-        let mut size = HEADER + 4;
-        for entry in self.entries.values() {
-            size += RECORD
-                + entry
-                    .drop_payload()
-                    .stack
-                    .components
-                    .as_ref()
-                    .map_or(0, |component| component.bytes.len());
-        }
-        for mutation in &plan.changes {
-            let old = self.entries.get(&mutation.id).map_or(0, |entry| {
-                RECORD
-                    + entry
-                        .drop_payload()
-                        .stack
-                        .components
-                        .as_ref()
-                        .map_or(0, |component| component.bytes.len())
-            });
-            let new = if mutation.after.is_empty() {
-                0
-            } else {
-                RECORD + mutation.after.len() - 21
-            };
-            size = size - old + new;
-        }
-        if size > MAX_SNAPSHOT_BYTES {
-            return Err(invalid("drops snapshot too large"));
-        }
-        Ok(size)
-    }
-
-    pub(in crate::server) fn checkpoint_path(&self) -> Option<PathBuf> {
-        self.path.clone()
     }
 
     pub(in crate::server) fn write_snapshot(path: &Path, bytes: &[u8]) -> io::Result<()> {
