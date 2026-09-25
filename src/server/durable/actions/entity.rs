@@ -421,7 +421,9 @@ pub(in crate::server) fn plan_entity_tick(
             return Err(corrupt("anchored entity planner returned a position"));
         }
         if !position.iter().all(|coordinate| coordinate.is_finite()) {
-            return Err(corrupt("entity tick planner returned a non-finite position"));
+            return Err(corrupt(
+                "entity tick planner returned a non-finite position",
+            ));
         }
         // Same-owner motion stages as one update; a chunk crossing stages
         // as one fenced barrier transfer carrying the same payload and
@@ -449,7 +451,9 @@ pub(in crate::server) fn plan_entity_tick(
         // pull without a receiver schedule is not expressible: suspension
         // with a transfer would leave the batch half-specified.
         let Some(next_tick) = plan.next_tick else {
-            return Err(corrupt("entity tick planner returned a transfer without a due time"));
+            return Err(corrupt(
+                "entity tick planner returned a transfer without a due time",
+            ));
         };
         let receiver_base = plan
             .payload

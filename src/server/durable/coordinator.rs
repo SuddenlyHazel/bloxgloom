@@ -359,10 +359,7 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
     if state.last_expiry_scan.elapsed() >= Duration::from_secs(1) {
         state.last_expiry_scan = Instant::now();
         if (state.durability.expire_again
-            || crate::server::drops::has_expired(
-                &state.entities,
-                crate::server::drops::unix_ms(),
-            ))
+            || crate::server::drops::has_expired(&state.entities, crate::server::drops::unix_ms()))
             && !state.durability.expire_queued
             && state.durability.queued.len() < MAX_DEFERRED_DURABLE_ACTIONS
         {

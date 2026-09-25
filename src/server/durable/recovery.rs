@@ -15,7 +15,9 @@
 //! touch it: every owner wave is receipted before it is visible, hence
 //! already durable at any rotation cut.
 
-use super::state::{decode_chunk_key, decode_profile_key, invalid_data, valid_action_receipt_with_catalog};
+use super::state::{
+    decode_chunk_key, decode_profile_key, invalid_data, valid_action_receipt_with_catalog,
+};
 use super::*;
 use crate::server::entities::decode_checkpoint;
 use crate::server::entities::{EntityStore, EntityTypeRegistry};
