@@ -81,11 +81,6 @@ impl std::fmt::Debug for OwnerWaveDurables {
 }
 
 /// Arbitration outcome for one prepared wave, in canonical wave order.
-//
-// Live dispatch still stages one wave at a time (overlap falls back to the
-// reservation check in `stage_owner_wave`); multi-wave dispatch is the next
-// item and will arbitrate through this type.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::server) enum WaveDisposition {
     /// No key overlaps any earlier wave: may stage alongside it.
@@ -104,10 +99,10 @@ pub(in crate::server) enum WaveDisposition {
 /// key with an earlier committing wave reports [`WaveDisposition::Retry`]
 /// against the earliest such wave. Retried waves never block disjoint ones:
 /// arbitration is by construction, not by timing.
-//
-// Live dispatch still stages one wave at a time; multi-wave dispatch is the
-// next item and will arbitrate through this function.
-#[allow(dead_code)]
+///
+/// The live coordinator arbitrates each newly prepared wave against the
+/// already-staged key sets ahead of it; the reservation check in
+/// `stage_owner_wave` remains as the backstop for gameplay reservations.
 pub(in crate::server) fn arbitrate_key_sets(key_sets: &[Vec<StateKey>]) -> Vec<WaveDisposition> {
     let sorted: Vec<BTreeSet<&StateKey>> =
         key_sets.iter().map(|keys| keys.iter().collect()).collect();
@@ -142,10 +137,6 @@ pub(in crate::server) fn arbitrate_key_sets(key_sets: &[Vec<StateKey>]) -> Vec<W
 /// Collects one wave's full change key set in canonical order for
 /// arbitration. Duplicate keys within one wave are collapsed: a transaction
 /// never touches the same key twice.
-//
-// Live dispatch still stages one wave at a time; multi-wave dispatch is the
-// next item and will collect key sets through this function.
-#[allow(dead_code)]
 pub(in crate::server) fn canonical_key_set<'a>(
     changes: impl Iterator<Item = &'a Change>,
 ) -> Vec<StateKey> {

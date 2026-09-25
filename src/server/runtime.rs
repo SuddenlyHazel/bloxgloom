@@ -361,6 +361,16 @@ pub(super) fn tick_with_inputs(
                 "no systems registered for {phase:?}"
             )));
         }
+        // Registered owner waves stage without blocking so every wave's
+        // fsync is in flight before any receipt is polled: disjoint waves
+        // never block each other's submission, and overlapping ones defer
+        // deterministically at stage time. Trusted drivers run inline in
+        // plan order between stages; the whole staged set drains at the
+        // phase barrier through the single shared apply gate.
+        let mut pending: Vec<systems::PendingRegisteredWave> = Vec::new();
+        // Staged key sets in canonical stage order, parallel to `pending`,
+        // for arbitration of each newly prepared wave.
+        let mut staged_key_sets: Vec<Vec<super::journal::StateKey>> = Vec::new();
         for index in 0..system_count {
             let registered = context.state.phase_plan.systems(phase)[index].clone();
             if let Some(driver) = registered.driver() {
@@ -369,20 +379,45 @@ pub(super) fn tick_with_inputs(
                 let batch_wave = u16::try_from(index)
                     .map_err(|_| io::Error::other("too many registered phase systems"))?;
                 let effect_kinds = Arc::clone(&context.state.effect_kinds);
-                // Split the borrows: the owner wave commits through the
+                // Split the borrows: the owner wave stages through the
                 // shared durable journal while applying to the runtime store.
                 let (system_runtime, durability) = (
                     &mut context.state.system_runtime,
                     &mut context.state.durability,
                 );
-                system_runtime.run_registered(
+                match system_runtime.stage_registered_wave(
                     &registered,
                     tick,
                     batch_wave,
                     &effect_kinds,
                     durability,
-                )?;
+                    &staged_key_sets,
+                ) {
+                    Ok(Some(wave)) => {
+                        staged_key_sets.push(wave.keys().to_vec());
+                        pending.push(wave);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        // The failed wave staged nothing, but earlier waves
+                        // are already submitted: drain them so their receipted
+                        // records still apply before the deferral propagates.
+                        if let Err(drain_error) =
+                            system_runtime.drain_registered_waves(pending, durability)
+                        {
+                            return Err(drain_error);
+                        }
+                        return Err(error);
+                    }
+                }
             }
+        }
+        {
+            let (system_runtime, durability) = (
+                &mut context.state.system_runtime,
+                &mut context.state.durability,
+            );
+            system_runtime.drain_registered_waves(pending, durability)?;
         }
         phase_times[phase_index] = phase_started.elapsed();
     }
