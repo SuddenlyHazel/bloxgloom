@@ -462,14 +462,15 @@ fn server_state_with_startup(
     )?;
     let block_actions = block_actions.freeze();
     let owner_configs = startup.owner_configs()?;
-    let (mut durability, recovered_fire, entities, owner_store, wake_store) = Durability::open(
-        &save_dir,
-        &mut world,
-        &inventory_store,
-        &mut drops,
-        entity_types,
-        owner_configs,
-    )?;
+    let (mut durability, recovered_fire, entities, owner_store, wake_store, cursors) =
+        Durability::open(
+            &save_dir,
+            &mut world,
+            &inventory_store,
+            &mut drops,
+            entity_types,
+            owner_configs,
+        )?;
     let fire_last_tick = recovered_fire.last_tick();
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
@@ -486,7 +487,7 @@ fn server_state_with_startup(
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
     let mut system_runtime =
-        SystemRuntime::with_durable_store(worker_count, owner_store, wake_store)?;
+        SystemRuntime::with_durable_store(worker_count, owner_store, wake_store, cursors)?;
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     Ok(State {

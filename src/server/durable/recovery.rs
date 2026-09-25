@@ -26,6 +26,9 @@ use crate::server::entity_checkpoint::EntityCheckpointMirror;
 use crate::server::fire::{FireCheckpointStore, FireRecovered};
 use crate::server::journal::Journal;
 use crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN;
+use crate::server::runtime::owner_codec::{
+    OWNER_CURSOR_DOMAIN, decode_cursor_value, decode_owner_cursor_key,
+};
 use crate::server::runtime::owner_wake::{OWNER_WAKE_DOMAIN, PendingWakeStore};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -43,6 +46,7 @@ pub(super) fn open(
     EntityStore,
     DurableOwnerStore,
     PendingWakeStore,
+    BTreeMap<SystemId, OwnerKey>,
 )> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
@@ -57,6 +61,7 @@ pub(super) fn open(
     let mut inventory_revisions = HashMap::new();
     let mut owner_latest = BTreeMap::new();
     let mut wake_latest = BTreeMap::new();
+    let mut cursor_latest = BTreeMap::new();
     let storage = world.storage_handle();
     let mut chunk_replay = Vec::new();
     let mut inventory_replay = Vec::new();
@@ -183,6 +188,14 @@ pub(super) fn open(
                 // `InvalidData` while the save is untouched.
                 wake_latest.insert(key.clone(), value.clone());
             }
+            domain if domain == OWNER_CURSOR_DOMAIN => {
+                // Per-system round-robin cursors ride the same base+tail
+                // rotation as owner cells: no per-key file, decoded below
+                // before any replay write. Malformed keys, cursors for
+                // unregistered systems, and undecodable values fail closed
+                // with `InvalidData` while the save is untouched.
+                cursor_latest.insert(key.clone(), value.clone());
+            }
             domain => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -213,6 +226,21 @@ pub(super) fn open(
     // record must reject the world without touching any save file.
     let owner_store = DurableOwnerStore::recover(owner_configs, &owner_latest)?;
     let wake_store = PendingWakeStore::recover(&wake_latest)?;
+    let mut cursors = BTreeMap::new();
+    for (key, value) in &cursor_latest {
+        let Some(system_name) = decode_owner_cursor_key(key) else {
+            return Err(invalid_data("owner cursor key is malformed"));
+        };
+        let system = SystemId::new(system_name)
+            .map_err(|_| invalid_data("owner cursor key has a bad system id"))?;
+        if !owner_store.is_registered(&system) {
+            return Err(invalid_data("owner cursor names an unregistered system"));
+        }
+        let owner = decode_cursor_value(value)?;
+        if cursors.insert(system, owner).is_some() {
+            return Err(invalid_data("duplicate owner cursor key"));
+        }
+    }
 
     for (chunk, value) in chunk_replay {
         world.restore_snapshot(chunk, &value)?;
@@ -299,5 +327,6 @@ pub(super) fn open(
         recovered_entities.entities,
         owner_store,
         wake_store,
+        cursors,
     ))
 }

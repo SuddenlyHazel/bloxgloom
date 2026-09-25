@@ -1679,3 +1679,89 @@ fn dropped_wake_flags_delay_but_do_not_change_the_outcome() {
     assert_eq!(live_history[1], [1, 0, 1]);
     assert_eq!(drop_history[1], [1, 1, 0]);
 }
+
+/// Three plain incrementing owners on a one-job budget. Rebuilt identically
+/// for every reopen so recovery — never the seed — supplies the cursor.
+fn rotation_cursor_startup() -> (
+    ServerStartup,
+    crate::server::registry::SystemId,
+    [crate::server::parallel::OwnerKey; 3],
+) {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+
+    let system = SystemId::new("test:rotation_cursor").unwrap();
+    let owners = [
+        OwnerKey::Entity(1),
+        OwnerKey::Entity(2),
+        OwnerKey::Entity(3),
+    ];
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            0,
+        )
+        .write(ResourceId::new("test:rotation_cursor_state").unwrap()),
+        |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            let value = job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .copied()
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerData::new(value + 1),
+                PatchUsage {
+                    writes: 1,
+                    effects: 0,
+                    estimated_bytes: std::mem::size_of::<u64>(),
+                },
+            ))
+        },
+    );
+    register_u64_owner_codec(&mut startup, &system);
+    for owner in owners {
+        startup.seed_owner(system.clone(), owner, 0u64);
+    }
+    (startup, system, owners)
+}
+
+#[test]
+fn rotation_cursor_survives_restart_without_starving() {
+    let save = TestSave::new("owner-cursor-restart");
+    let (startup, system, owners) = rotation_cursor_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    tick_once(&mut state, TickId::new(2), Instant::now()).unwrap();
+    // Round-robin from the lowest owner served each exactly once.
+    let values = |state: &State| {
+        owners.map(|owner| {
+            state
+                .system_runtime
+                .owner_value::<u64>(&system, owner)
+                .unwrap()
+                .1
+        })
+    };
+    assert_eq!(values(&state), [1, 1, 0]);
+    assert!(!state.durability.failed);
+    // No clean shutdown: the cursor's last receipted record is the truth.
+    drop(state);
+
+    // The rotation resumes after its last served owner instead of restarting
+    // at the lowest: the previously starved owner runs next, not last.
+    let (startup, _, _) = rotation_cursor_startup();
+    let mut reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut reopened, TickId::new(3), Instant::now()).unwrap();
+    assert_eq!(values(&reopened), [1, 1, 1]);
+    // And the rotation keeps wrapping fairly from there.
+    tick_once(&mut reopened, TickId::new(4), Instant::now()).unwrap();
+    assert_eq!(values(&reopened), [2, 1, 1]);
+    assert!(!reopened.durability.failed);
+}

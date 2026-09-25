@@ -23,6 +23,12 @@ pub(in crate::server) const MAX_OWNER_VALUE_BYTES: usize = 64 * 1024;
 /// encoding uses it.
 pub(in crate::server) const OWNER_STATE_DOMAIN: &str = "bloxgloom:owner_state";
 
+/// Journal domain for per-system round-robin cursors. New persisted state:
+/// one tiny record per system, staged in that system's own wave record, so
+/// scheduling fairness does not reset on restart. Existing encodings are
+/// untouched, so no world-folder version bump is needed.
+pub(in crate::server) const OWNER_CURSOR_DOMAIN: &str = "bloxgloom:owner_cursor";
+
 /// Magic for the owner-cell value envelope: `revision + codec version +
 /// payload`. The envelope is new persisted state; the payload itself is
 /// codec-defined.
@@ -190,6 +196,123 @@ pub(in crate::server) fn decode_cell_value(
         _ => return Err(invalid_data("owner cell value has a bad due flag")),
     };
     Ok((revision, codec_version, due_tick, body[25..].to_vec()))
+}
+
+/// Stable journal address for one system's round-robin cursor.
+pub(in crate::server) fn owner_cursor_key(system: &SystemId) -> StateKey {
+    let system_bytes = system.as_str().as_bytes();
+    let mut bytes = Vec::with_capacity(2 + system_bytes.len());
+    let system_len = u16::try_from(system_bytes.len()).expect("system id fits in u16");
+    bytes.extend(system_len.to_le_bytes());
+    bytes.extend(system_bytes);
+    StateKey::new(OWNER_CURSOR_DOMAIN, bytes)
+}
+
+/// Decodes the system identity from a cursor key. Returns `None` for
+/// malformed keys so recovery can fail closed with `InvalidData`.
+pub(in crate::server) fn decode_owner_cursor_key(key: &StateKey) -> Option<String> {
+    if key.domain != OWNER_CURSOR_DOMAIN || key.bytes.len() < 2 {
+        return None;
+    }
+    let system_len = usize::from(u16::from_le_bytes(key.bytes[0..2].try_into().ok()?));
+    if key.bytes.len() != 2 + system_len {
+        return None;
+    }
+    let system_bytes = key.bytes.get(2..2 + system_len)?;
+    let system = std::str::from_utf8(system_bytes).ok()?.to_owned();
+    SystemId::new(&system).ok()?;
+    Some(system)
+}
+
+/// Magic for the cursor value envelope: `owner tag + owner bytes + checksum`.
+/// The envelope is new persisted state; the owner encoding mirrors the state
+/// key tags so destinations stay comparable across domains.
+const OWNER_CURSOR_MAGIC: &[u8; 4] = b"BGOC";
+const OWNER_CURSOR_VERSION: u16 = 1;
+
+/// Exact encoded length of one cursor value for each owner kind: magic +
+/// version + tag + owner bytes + checksum. Fixed and tiny by construction.
+pub(in crate::server) const OWNER_CURSOR_VALUE_LEN: usize = 4 + 2 + 1 + 16 + 4;
+
+/// Encodes a round-robin cursor value: the owner the next wave resumes
+/// after. Profile owners use the full width; shorter kinds are zero-padded
+/// so every cursor value has one fixed length.
+pub(in crate::server) fn encode_cursor_value(owner: OwnerKey) -> Vec<u8> {
+    let mut value = Vec::with_capacity(OWNER_CURSOR_VALUE_LEN);
+    value.extend(OWNER_CURSOR_MAGIC);
+    value.extend(OWNER_CURSOR_VERSION.to_le_bytes());
+    match owner {
+        OwnerKey::Chunk(key) => {
+            value.push(0);
+            value.extend(key.x.to_le_bytes());
+            value.extend(key.y.to_le_bytes());
+            value.extend(key.z.to_le_bytes());
+            value.extend([0u8; 4]);
+        }
+        OwnerKey::Entity(id) => {
+            value.push(1);
+            value.extend(id.to_le_bytes());
+            value.extend([0u8; 8]);
+        }
+        OwnerKey::Profile(id) => {
+            value.push(2);
+            value.extend(id.to_le_bytes());
+        }
+    }
+    let crc = crc32(&value);
+    value.extend(crc.to_le_bytes());
+    debug_assert_eq!(value.len(), OWNER_CURSOR_VALUE_LEN);
+    value
+}
+
+/// Decodes a cursor value into the owner the next wave resumes after. Any
+/// structural problem is `InvalidData`: genuine corruption that may stop the
+/// coordinator. Capacity pressure is never reported through this path.
+pub(in crate::server) fn decode_cursor_value(value: &[u8]) -> io::Result<OwnerKey> {
+    if value.len() != OWNER_CURSOR_VALUE_LEN {
+        return Err(invalid_data("owner cursor value has a bad length"));
+    }
+    let (body, crc_bytes) = value.split_at(value.len() - 4);
+    let expected = u32::from_le_bytes(crc_bytes.try_into().expect("crc is 4 bytes"));
+    if crc32(body) != expected {
+        return Err(invalid_data("owner cursor value checksum mismatch"));
+    }
+    if &body[0..4] != OWNER_CURSOR_MAGIC {
+        return Err(invalid_data("owner cursor value has a bad magic"));
+    }
+    if u16::from_le_bytes(body[4..6].try_into().expect("version is 2 bytes"))
+        != OWNER_CURSOR_VERSION
+    {
+        return Err(invalid_data(
+            "owner cursor value has an unsupported version",
+        ));
+    }
+    let rest = &body[7..];
+    let owner = match body[6] {
+        0 => {
+            if rest[12..] != [0u8; 4] {
+                return Err(invalid_data("owner cursor value has bad padding"));
+            }
+            OwnerKey::Chunk(ChunkKey {
+                x: i32::from_le_bytes(rest[0..4].try_into().expect("x is 4 bytes")),
+                y: i32::from_le_bytes(rest[4..8].try_into().expect("y is 4 bytes")),
+                z: i32::from_le_bytes(rest[8..12].try_into().expect("z is 4 bytes")),
+            })
+        }
+        1 => {
+            if rest[8..] != [0u8; 8] {
+                return Err(invalid_data("owner cursor value has bad padding"));
+            }
+            OwnerKey::Entity(u64::from_le_bytes(
+                rest[0..8].try_into().expect("id is 8 bytes"),
+            ))
+        }
+        2 => OwnerKey::Profile(u128::from_le_bytes(
+            rest[0..16].try_into().expect("id is 16 bytes"),
+        )),
+        _ => return Err(invalid_data("owner cursor value has a bad owner tag")),
+    };
+    Ok(owner)
 }
 
 fn invalid_data(message: &'static str) -> io::Error {

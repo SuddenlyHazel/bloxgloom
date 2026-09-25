@@ -20,6 +20,7 @@ use super::super::parallel::{
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
+use super::owner_codec::{encode_cursor_value, owner_cursor_key};
 #[cfg(test)]
 use super::owner_durable::OwnerSystemConfig;
 use super::owner_durable::{
@@ -71,16 +72,20 @@ impl SystemRuntime {
             workers,
             DurableOwnerStore::new(Vec::new())?,
             PendingWakeStore::new(),
+            BTreeMap::new(),
         )
     }
 
     /// Builds the live runtime over journal-recovered owner state. Recovery
     /// runs before the server accepts work, so this store already holds the
-    /// last receipted wave for every registered system.
+    /// last receipted wave for every registered system, and `cursors` resumes
+    /// each system's round-robin rotation where the last receipted wave left
+    /// it instead of restarting at the lowest owner.
     pub(in crate::server) fn with_durable_store(
         workers: usize,
         durable: DurableOwnerStore,
         durable_wakes: PendingWakeStore,
+        cursors: BTreeMap<SystemId, OwnerKey>,
     ) -> io::Result<Self> {
         if workers == 0 || workers > MAX_PHASE_WORKERS {
             return Err(io::Error::new(
@@ -92,7 +97,7 @@ impl SystemRuntime {
             executor: None,
             worker_count: workers,
             durable,
-            next_owner: BTreeMap::new(),
+            next_owner: cursors,
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
             durable_wakes,
@@ -356,6 +361,19 @@ impl SystemRuntime {
                 *selected.last().expect("selected owners are non-empty"),
             )
             .expect("non-empty owner store has a successor");
+        // The rotation cursor persists in this wave's own record, so fairness
+        // does not reset on restart. Staging mutates nothing: the live cursor
+        // advances only after the receipt, and the staged before-value chains
+        // from the last receipted cursor. A fixed-point cursor (one owner)
+        // stages nothing: the journal rejects identical before/after values.
+        let cursor_after = encode_cursor_value(next_cursor);
+        let cursor_before = self
+            .next_owner
+            .get(&id)
+            .map(|owner| encode_cursor_value(*owner))
+            .unwrap_or_default();
+        let cursor_change = (cursor_before != cursor_after)
+            .then(|| Change::new(owner_cursor_key(&id), cursor_before, cursor_after));
 
         let batch = BatchId::new(tick, system.phase(), batch_wave);
         let limits = OwnerWaveLimits {
@@ -551,8 +569,14 @@ impl SystemRuntime {
                 .or_default()
                 .insert(*owner);
         }
-        let applied =
-            self.commit_owner_wave(prepared, tick, durability, wake_sets, durable_served)?;
+        let applied = self.commit_owner_wave(
+            prepared,
+            tick,
+            durability,
+            wake_sets,
+            durable_served,
+            cursor_change,
+        )?;
         self.next_owner.insert(id, next_cursor);
         Ok(applied)
     }
@@ -580,6 +604,7 @@ impl SystemRuntime {
         durability: &mut Durability,
         wake_sets: PreparedWakeSets,
         durable_served: Vec<(SystemId, OwnerKey)>,
+        cursor: Option<Change>,
     ) -> io::Result<usize> {
         let wake_changes = wake_sets.changes().to_vec();
         let clear_changes = self.durable_wakes.stage_clears(&durable_served);
@@ -595,6 +620,7 @@ impl SystemRuntime {
             .iter()
             .chain(wake_changes.iter())
             .chain(clear_changes.iter())
+            .chain(cursor.iter())
             .map(|change| change.after.len())
             .sum();
         if bytes > MAX_OWNER_WAVE_BYTES {
@@ -622,6 +648,7 @@ impl SystemRuntime {
             .iter()
             .chain(wake_changes.iter())
             .chain(clear_changes.iter())
+            .chain(cursor.iter())
             .map(|change| change.key.clone())
             .collect();
         for key in &keys {
@@ -641,6 +668,7 @@ impl SystemRuntime {
         let mut changes = prepared.changes().to_vec();
         changes.extend(wake_changes);
         changes.extend(clear_changes);
+        changes.extend(cursor);
         let transaction = Transaction::new(id, tick.get(), changes);
         let receiver = durability
             .writer

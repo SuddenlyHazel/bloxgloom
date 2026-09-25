@@ -17,13 +17,15 @@ use super::fire::{FireCheckpointStore, FireRecovered, FireSeed, FireTransaction}
 use super::journal::{
     CommitReceipt, JournalWriter, RotateError, RotationReceipt, StateKey, SubmitError, Transaction,
 };
+use super::parallel::OwnerKey;
+use super::registry::SystemId;
 use super::runtime::owner_durable::{DurableOwnerStore, OwnerSystemConfig};
 use super::runtime::owner_wake::PendingWakeStore;
 use super::simulation::TickId;
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{ClientMessage, DroppedItem};
 use crate::world::{BlockId, ChunkKey, PreparedEdit, World};
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::{self, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
@@ -323,6 +325,7 @@ impl Durability {
         EntityStore,
         DurableOwnerStore,
         PendingWakeStore,
+        BTreeMap<SystemId, OwnerKey>,
     )> {
         recovery::open(
             root,
