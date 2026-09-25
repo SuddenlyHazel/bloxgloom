@@ -656,3 +656,90 @@ fn startup_registered_effects_are_optional_for_convergence() {
         "live saturated at {live_saturated}, dropped at {drop_saturated}"
     );
 }
+
+// --- Durable owner state through the live path ---------------------------------
+//
+// The store below is the single source of truth: every owner wave commits as
+// one main-journal transaction (staged before-values, one receipt, visibility
+// only after the receipt), and recovery rebuilds it from the same
+// `server.wal` latest-values map as every other domain. These tests prove the
+// headline: a real registered owner system's state survives a real restart
+// through `ServerStartup`, receipt-exact, with no second store involved.
+
+/// A plain incrementing owner system with a fixed owner. Rebuilt identically
+/// for every reopen so recovery — never the seed — supplies the state.
+fn durable_counter_startup() -> (
+    ServerStartup,
+    crate::server::registry::SystemId,
+    crate::server::parallel::OwnerKey,
+) {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+
+    let system = SystemId::new("test:durable_counter").unwrap();
+    let owner = OwnerKey::Entity(7);
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(system.clone(), Phase::Simulation, OwnerPartition::Entity, 1, 0)
+            .write(ResourceId::new("test:durable_counter_state").unwrap()),
+        |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            let value = job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .copied()
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerData::new(value + 1),
+                PatchUsage {
+                    writes: 1,
+                    effects: 0,
+                    estimated_bytes: std::mem::size_of::<u64>(),
+                },
+            ))
+        },
+    );
+    register_u64_owner_codec(&mut startup, &system);
+    startup.seed_owner(system.clone(), owner, 41u64);
+    (startup, system, owner)
+}
+
+#[test]
+fn registered_owner_state_survives_a_real_restart() {
+    let save = TestSave::new("owner-durable-restart");
+    let (startup, system, owner) = durable_counter_startup();
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    for tick in 1..=3u64 {
+        tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
+    }
+    // Three waves, three receipts: the seed record plus one WAL record per
+    // wave, nothing else staged on an idle server.
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((3, 44))
+    );
+    assert_eq!(state.durability.writer.sequence(), 4);
+    assert!(!state.durability.failed);
+    // No clean shutdown: the runtime is simply dropped, the way a crashed
+    // process leaves its WAL tail.
+    drop(state);
+
+    let (startup, system, owner) = durable_counter_startup();
+    let mut reopened =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    // Exactly the last acknowledged receipt's state: the seed replays as a
+    // no-op and the three waves replay whole.
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((3, 44))
+    );
+    // And the recovered store keeps ticking through the same journal.
+    tick_once(&mut reopened, TickId::new(4), Instant::now()).unwrap();
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((4, 45))
+    );
+}
