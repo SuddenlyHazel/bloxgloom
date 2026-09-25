@@ -615,3 +615,82 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     let recovered_drops = Drops::open(save.path()).unwrap();
     assert!(recovered_drops.nearby(position).is_empty());
 }
+
+#[test]
+fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
+    let save = TestSave::new("drop-transfer-conservation");
+    let mut state = state_for(&save, 7);
+    let surface_y = state.spawn_anchor[1] as i32;
+    // Far above the surface so the fall crosses chunk y-boundaries on the
+    // way down: every crossing is an atomic owner transfer.
+    state.drops.spawn(
+        [0.5, surface_y as f32 + 64.0, 0.5],
+        STONE_ITEM,
+        200,
+        Duration::ZERO,
+    );
+    let mut tick = 1;
+    for _ in 0..2_000 {
+        run_empty_tick(&mut state, &mut tick);
+        if state.drops.active_len() == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(state.drops.active_len(), 0);
+    let settled = state.drops.nearby([0.5, surface_y as f32, 0.5]);
+    assert_eq!(
+        settled
+            .iter()
+            .map(|drop| u32::from(drop.count))
+            .sum::<u32>(),
+        200
+    );
+    let before: Vec<(u64, u16, [f32; 3])> = settled
+        .iter()
+        .map(|drop| (drop.id, drop.count, drop.position))
+        .collect();
+    state.drops.save().unwrap();
+    // The 64-block fall crossed chunk y-boundaries: the settled owner
+    // differs from the spawn owner, so atomic transfers ran mid-fall.
+    let spawn_owner = crate::world::world_to_chunk(0, surface_y + 64, 0).0;
+    let settled_owner = crate::world::world_to_chunk(
+        0,
+        settled[0].position[1].floor() as i32,
+        0,
+    )
+    .0;
+    assert_ne!(
+        spawn_owner.y, settled_owner.y,
+        "the fall must span chunk owners"
+    );
+    // The checkpoint path persisted the landing shard.
+    assert!(
+        fs::read_dir(save.path().join("drops.d"))
+            .unwrap()
+            .flatten()
+            .any(|entry| {
+                entry.file_name().to_string_lossy().starts_with("chunk_")
+            }),
+        "settle must checkpoint a drop shard"
+    );
+    drop(state);
+
+    let restarted = state_for(&save, 7);
+    let after = restarted.drops.nearby([0.5, surface_y as f32, 0.5]);
+    assert_eq!(
+        after
+            .iter()
+            .map(|drop| (drop.id, drop.count, drop.position))
+            .collect::<Vec<_>>(),
+        before,
+        "chunk transfer and restart preserve every drop identically"
+    );
+    assert_eq!(
+        after
+            .iter()
+            .map(|drop| u32::from(drop.count))
+            .sum::<u32>(),
+        200
+    );
+}

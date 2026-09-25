@@ -212,3 +212,115 @@ fn empty_shard_write_deletes_its_file() {
     assert!(loaded.drops.is_empty());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// THE HEADLINE — bounded checkpoint work. With N drops spread across
+/// chunks and one drop changing, the shard drain serializes only the
+/// affected chunk owner. N=10 and N=10,000 cost exactly the same.
+#[test]
+fn checkpoint_work_is_proportional_to_change_not_drop_count() {
+    fn drain_work(total: usize) -> (usize, usize, usize) {
+        let mut drops = Drops::new();
+        for index in 0..total {
+            insert_entry(
+                &mut drops,
+                index as u64 + 1,
+                [index as f32 * 2.0, 2.0, 3.0],
+                2,
+                10,
+                Duration::ZERO,
+                Duration::ZERO,
+            );
+        }
+        // Pretend the baseline already checkpointed; only the next change
+        // may cause serialization work.
+        drops.chunk_dirty.clear();
+        drops.allocator_dirty = false;
+        // One drop changes on the first chunk; nothing else moves.
+        drops.take(1, 3);
+        let snapshots = drops.take_dirty_shard_snapshots();
+        let chunks = snapshots.len();
+        let bytes: usize = snapshots.iter().map(|(_, bytes)| bytes.len()).sum();
+        let mut entries = 0;
+        for (_, bytes) in &snapshots {
+            entries += decode_shard(bytes, drops.catalog.as_ref())
+                .unwrap()
+                .drops
+                .len();
+        }
+        assert!(entries < total, "checkpoint must not serialize every drop");
+        (chunks, entries, bytes)
+    }
+
+    let small = drain_work(10);
+    let large = drain_work(10_000);
+    assert_eq!(small, large);
+    // One chunk, its 8 members, header + 8 records + checksum: the exact
+    // cost of one changed drop, independent of the other 9,992.
+    assert_eq!(small, (1, 8, 346));
+}
+
+/// A drop falling across a chunk boundary transfers atomically: it leaves
+/// the old owner set and joins the new one together, both shards dirty,
+/// item count conserved, no residue in the shard left behind.
+#[test]
+fn falling_drop_transfers_atomically_across_chunk_boundary() {
+    use crate::world::World;
+
+    let root = temp_root("bloxgloom-drop-shard-transfer");
+    std::fs::create_dir_all(&root).unwrap();
+    let mut world = World::new(19, root.clone()).unwrap();
+    // A stone floor high above generated terrain, with the fall column
+    // resident so physics never defers on missing chunks.
+    for x in [0, 1] {
+        for z in [0, 1] {
+            world.edit(x, 496, z, crate::world::STONE).unwrap();
+        }
+    }
+    for y in [500, 504, 508, 512] {
+        world.get_block(0, y, 0).unwrap();
+    }
+    let mut drops = Drops::new();
+    drops.spawn([0.5, 512.05, 0.5], item(2), 7, Duration::ZERO);
+    let old_chunk = super::super::chunk_of([0.5, 512.05, 0.5]);
+    drops.chunk_dirty.clear();
+    drops.allocator_dirty = false;
+    for _ in 0..400 {
+        drops.step(&world, Duration::from_millis(20));
+        if super::super::chunk_of(drops.entries[&1].position) != old_chunk {
+            break;
+        }
+    }
+    let position = drops.entries[&1].position;
+    let new_chunk = super::super::chunk_of(position);
+    assert_ne!(new_chunk, old_chunk, "drop must cross a chunk boundary");
+    assert!(drops.chunk_dirty.contains(&old_chunk));
+    assert!(drops.chunk_dirty.contains(&new_chunk));
+    assert_spatial_members_match_entries(&drops);
+
+    let snapshots = drops.take_dirty_shard_snapshots();
+    assert_eq!(snapshots.len(), 2);
+    let mut total = 0;
+    for (chunk, bytes) in &snapshots {
+        let decoded = decode_shard(bytes, drops.catalog.as_ref()).unwrap();
+        assert_eq!(decoded.chunk, *chunk);
+        total += decoded
+            .drops
+            .iter()
+            .map(|(_, _, payload)| u32::from(payload.stack.count))
+            .sum::<u32>();
+    }
+    assert_eq!(total, 7, "chunk transfer conserves items");
+    assert!(
+        snapshots
+            .iter()
+            .find(|(chunk, _)| *chunk == old_chunk)
+            .is_some_and(|(_, bytes)| {
+                decode_shard(bytes, drops.catalog.as_ref())
+                    .unwrap()
+                    .drops
+                    .is_empty()
+            }),
+        "the shard left behind holds no residue"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

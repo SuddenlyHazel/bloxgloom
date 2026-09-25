@@ -233,20 +233,21 @@ impl Drops {
 
     /// Brings the sharded checkpoint base level with the legacy snapshot:
     /// allocator first (so markers never describe shards that are ahead of
-    /// it), then dirty shards, then a sweep of stale chunk files. Journal
-    /// replay stays authoritative over either base on the next restart.
+    /// it), then every live shard, then a sweep of stale chunk files. The
+    /// full synchronous write matches the old save() contract: a save that
+    /// follows an unsubmitted remember still reaches disk. Journal replay
+    /// stays authoritative over either base on the next restart.
     fn save_shards(&mut self, drops_file: &Path) -> io::Result<()> {
         let dir = shards::shard_dir_for_drops_file(drops_file);
         shards::write_allocator_snapshot(
             &shards::allocator_path(&dir),
             &shards::encode_allocator(self.next_id, self.revision),
         )?;
-        for (chunk, bytes) in self.take_dirty_shard_snapshots() {
+        for (chunk, bytes) in self.encode_all_shard_snapshots() {
             shards::write_shard_snapshot(&shards::shard_path(&dir, chunk), &bytes)?;
         }
-        // Chunks that lost their last drop delete their file through the
-        // checkpoint write above; the sweep only catches leftovers from an
-        // interrupted earlier save. Skip dotfiles (worker temporaries).
+        // The full write above covers every live chunk, so the sweep only
+        // removes files for chunks with no live drops.
         shards::sweep_stale_shards(&dir, &self.chunk_members)?;
         self.chunk_dirty.clear();
         self.allocator_dirty = false;

@@ -484,23 +484,36 @@ impl Drops {
         let chunks: Vec<ChunkKey> = std::mem::take(&mut self.chunk_dirty)
             .into_iter()
             .collect();
-        let mut snapshots = Vec::with_capacity(chunks.len());
-        for chunk in chunks {
-            let members = self.chunk_members.get(&chunk);
-            let mut entries: Vec<&Entry> = members
-                .map(|set| {
-                    set.iter()
-                        .filter_map(|member| self.entries.get(member))
-                        .collect()
-                })
-                .unwrap_or_default();
-            entries.sort_by_key(|entry| entry.id);
-            // Encoding cannot fail on live entries: they were validated at
-            // insertion and only change through validated plans.
-            let bytes = encode_shard(chunk, &entries).expect("live drop shard encodes");
-            snapshots.push((chunk, bytes));
-        }
-        snapshots
+        chunks
+            .into_iter()
+            .map(|chunk| (chunk, self.encode_chunk_snapshot(chunk)))
+            .collect()
+    }
+
+    /// Encodes every live chunk owner in chunk order. Synchronous saves use
+    /// this full view (like the legacy snapshot did); the per-tick
+    /// checkpoint path drains dirty chunks only.
+    pub(in crate::server) fn encode_all_shard_snapshots(&self) -> Vec<(ChunkKey, Vec<u8>)> {
+        self.chunk_members
+            .keys()
+            .copied()
+            .map(|chunk| (chunk, self.encode_chunk_snapshot(chunk)))
+            .collect()
+    }
+
+    fn encode_chunk_snapshot(&self, chunk: ChunkKey) -> Vec<u8> {
+        let members = self.chunk_members.get(&chunk);
+        let mut entries: Vec<&Entry> = members
+            .map(|set| {
+                set.iter()
+                    .filter_map(|member| self.entries.get(member))
+                    .collect()
+            })
+            .unwrap_or_default();
+        entries.sort_by_key(|entry| entry.id);
+        // Encoding cannot fail on live entries: they were validated at
+        // insertion and only change through validated plans.
+        encode_shard(chunk, &entries).expect("live drop shard encodes")
     }
 
     /// Drains the allocator-dirty flag into allocator checkpoint bytes.
