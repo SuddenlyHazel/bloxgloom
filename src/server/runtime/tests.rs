@@ -883,3 +883,258 @@ fn deferred_producer_waves_restage_their_durable_wakes() {
     assert_eq!(nudge_values(&harness), [1, 3, 0]);
     assert_eq!(harness.state.system_runtime.durable_wake_count(), 1);
 }
+
+// --- Parallel durable commits ------------------------------------------------
+//
+// The wave below is staged without blocking, polled without blocking, and
+// applied only after its receipt. These tests prove the split contract:
+// progress while a fsync is in flight, no unconfirmed visibility, disjoint
+// waves never blocking each other, and overlapping waves serializing with
+// exactly one winner.
+
+use crate::server::runtime::owner_durable::OwnerWrite;
+use crate::server::runtime::systems::{OwnerCommitPoll, StagedOwnerCommit};
+
+/// Builds live (non-WAL-seeded) owner state over a real journal: enough to
+/// stage and poll real receipts through the real writer.
+fn staged_harness() -> (TestSave, crate::server::State, SystemId, [OwnerKey; 2]) {
+    let save = TestSave::new();
+    let mut state = crate::server::server_state(115, save.0.clone()).unwrap();
+    state.system_runtime = SystemRuntime::new(2).unwrap();
+    let system = SystemId::new("test:staged_owner").unwrap();
+    register_u64_state(&mut state.system_runtime, &system);
+    let owners = [chunk_owner(0), chunk_owner(1)];
+    for (owner, seed) in owners.iter().zip([10u64, 20]) {
+        state
+            .system_runtime
+            .insert_owner(system.clone(), *owner, seed)
+            .unwrap();
+    }
+    (save, state, system, owners)
+}
+
+/// Polls a staged wave to completion. A `Pending` outcome always returns the
+/// wave untouched so the caller can do other work first.
+fn poll_to_applied(state: &mut crate::server::State, mut staged: StagedOwnerCommit) -> usize {
+    for _ in 0..2_000 {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        match runtime.poll_staged_owner_wave(staged, durability).unwrap() {
+            OwnerCommitPoll::Applied(applied) => return applied,
+            OwnerCommitPoll::Pending(waiting) => {
+                staged = waiting;
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+    }
+    panic!("staged owner wave did not apply");
+}
+
+#[test]
+fn staged_owner_waves_apply_only_after_their_receipt() {
+    let (_save, mut state, system, owners) = staged_harness();
+    let (revision, _) = state
+        .system_runtime
+        .owner_value::<u64>(&system, owners[0])
+        .unwrap();
+    let staged = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_test_wave(
+                &system,
+                vec![OwnerWrite::new(owners[0], revision, OwnerData::new(41u64))],
+                TickId::new(1),
+                durability,
+            )
+            .unwrap()
+    };
+    // Staging reserves the key but applies nothing: no unconfirmed work is
+    // ever visible.
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((revision, 10))
+    );
+    assert_eq!(poll_to_applied(&mut state, staged), 1);
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((revision + 1, 41))
+    );
+    assert!(!state.durability.failed);
+}
+
+#[test]
+fn disjoint_staged_waves_do_not_block_each_other() {
+    let (_save, mut state, system, owners) = staged_harness();
+    // Stage the second wave while the first fsync is still in flight: the
+    // coordinator makes progress because disjoint key sets never block each
+    // other — by construction, not by timing.
+    let first = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_test_wave(
+                &system,
+                vec![OwnerWrite::new(owners[0], 0, OwnerData::new(41u64))],
+                TickId::new(1),
+                durability,
+            )
+            .unwrap()
+    };
+    let second = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_test_wave(
+                &system,
+                vec![OwnerWrite::new(owners[1], 0, OwnerData::new(42u64))],
+                TickId::new(1),
+                durability,
+            )
+            .unwrap()
+    };
+    // Neither record is confirmed yet, so neither is visible.
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((0, 10))
+    );
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[1]),
+        Some((0, 20))
+    );
+    assert_eq!(poll_to_applied(&mut state, first), 1);
+    assert_eq!(poll_to_applied(&mut state, second), 1);
+    // Both applied whole: no lost update, nothing created or destroyed.
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((1, 41))
+    );
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[1]),
+        Some((1, 42))
+    );
+    assert!(!state.durability.failed);
+}
+
+#[test]
+fn overlapping_staged_waves_serialize_one_wins_the_other_retries() {
+    let (_save, mut state, system, owners) = staged_harness();
+    let staged = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_test_wave(
+                &system,
+                vec![OwnerWrite::new(owners[0], 0, OwnerData::new(41u64))],
+                TickId::new(1),
+                durability,
+            )
+            .unwrap()
+    };
+    // The same key staged twice in flight serializes: the second wave defers
+    // with `WouldBlock` — exactly one wins — and never with `InvalidData`.
+    let conflict = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime.stage_test_wave(
+            &system,
+            vec![OwnerWrite::new(owners[0], 0, OwnerData::new(42u64))],
+            TickId::new(1),
+            durability,
+        )
+    };
+    let error = conflict.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::WouldBlock);
+    assert_ne!(error.kind(), ErrorKind::InvalidData);
+    assert!(!state.durability.failed);
+    assert_eq!(poll_to_applied(&mut state, staged), 1);
+    // The loser retries against the winner's receipted revision and commits:
+    // no lost update, no duplicated state.
+    let retry = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_test_wave(
+                &system,
+                vec![OwnerWrite::new(owners[0], 1, OwnerData::new(42u64))],
+                TickId::new(2),
+                durability,
+            )
+            .unwrap()
+    };
+    assert_eq!(poll_to_applied(&mut state, retry), 1);
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((2, 42))
+    );
+    assert!(!state.durability.failed);
+}
+
+#[test]
+fn parallel_and_serial_owner_waves_reach_identical_state_and_receipts() {
+    // The workload mixes overlapping revisions (the ring emitter reads its
+    // own owner every tick, chaining on the last receipt) with disjoint
+    // owners committing in one wave. Same inputs must produce the same
+    // plans, the same commit results, and the same final state regardless
+    // of worker count or scheduling order.
+    fn run(workers: usize) -> (Vec<(u64, u64)>, u64, Vec<DeliveryRecord>) {
+        let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
+        let runs = Arc::new(Mutex::new(Vec::new()));
+        let kind = EffectKindId::new("test:nudge").unwrap();
+        let ring = owners;
+        let mut harness = nudge_harness(
+            workers,
+            3,
+            32,
+            8,
+            false,
+            [0, 0, 0],
+            PatchUsage::default(),
+            move |job: &OwnerJob| {
+                runs.lock().unwrap().push(job.owner());
+                let value = job
+                    .snapshot(job.owner())
+                    .and_then(|snapshot| snapshot.value::<OwnerData>())
+                    .and_then(|data| data.get::<u64>())
+                    .copied()
+                    .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+                let position = ring.iter().position(|owner| *owner == job.owner()).unwrap();
+                let emissions = vec![EmittedOwnerEffect::new(
+                    kind.clone(),
+                    Nudge {
+                        to: ring[(position + 1) % ring.len()],
+                        amount: 1,
+                    },
+                )];
+                Ok(OwnerPatch::new(
+                    job,
+                    OwnerEffectPatch::new(
+                        OwnerData::new(value.saturating_add(1).min(100)),
+                        emissions,
+                    ),
+                    PatchUsage {
+                        writes: 1,
+                        effects: 1,
+                        estimated_bytes: 8,
+                    },
+                ))
+            },
+        );
+        for tick in 1..=6u64 {
+            tick_nudge(&mut harness, tick).unwrap();
+        }
+        let finals = owners
+            .map(|owner| {
+                harness
+                    .state
+                    .system_runtime
+                    .owner_value::<u64>(&harness.system, owner)
+                    .unwrap()
+            })
+            .to_vec();
+        // Identical commit receipts: the same number of WAL records in the
+        // same order.
+        let sequence = harness.state.durability.writer.sequence();
+        let log = std::mem::take(&mut *harness.deliveries.lock().unwrap());
+        (finals, sequence, log)
+    }
+
+    let serial = run(1);
+    let parallel = run(4);
+    assert_eq!(serial.0, parallel.0);
+    assert_eq!(serial.1, parallel.1);
+    assert_eq!(serial.2, parallel.2);
+}

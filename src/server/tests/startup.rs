@@ -804,6 +804,163 @@ fn interrupted_owner_commit_recovers_to_the_last_complete_record() {
     );
 }
 
+/// A two-owner incrementing system: one wave covers both owners so an
+/// interrupted commit must recover both or neither.
+fn durable_pair_startup() -> (
+    ServerStartup,
+    crate::server::registry::SystemId,
+    [crate::server::parallel::OwnerKey; 2],
+) {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+
+    let system = SystemId::new("test:durable_pair").unwrap();
+    let owners = [OwnerKey::Entity(7), OwnerKey::Entity(8)];
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            2,
+            0,
+        )
+        .write(ResourceId::new("test:durable_pair_state").unwrap()),
+        |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            let value = job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .copied()
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerData::new(value + 1),
+                PatchUsage {
+                    writes: 1,
+                    effects: 0,
+                    estimated_bytes: std::mem::size_of::<u64>(),
+                },
+            ))
+        },
+    );
+    register_u64_owner_codec(&mut startup, &system);
+    startup.seed_owner(system.clone(), owners[0], 41u64);
+    startup.seed_owner(system.clone(), owners[1], 100u64);
+    (startup, system, owners)
+}
+
+#[test]
+fn interrupted_multi_owner_wave_recovers_atomically() {
+    use crate::server::journal::Transaction;
+    use crate::server::parallel::OwnerData;
+    use crate::server::runtime::owner_durable::OwnerWrite;
+
+    // Crash after the receipt but before the apply: the two-owner record is
+    // synced whole, so recovery lands on the last complete record with both
+    // owners advanced — never one without the other.
+    let save = TestSave::new("owner-interrupted-pair-receipted");
+    let (startup, system, owners) = durable_pair_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[0]),
+        Some((1, 42))
+    );
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owners[1]),
+        Some((1, 101))
+    );
+    let prepared = state
+        .system_runtime
+        .prepare_owner_wave(
+            &system,
+            vec![
+                OwnerWrite::new(owners[0], 1, OwnerData::new(43u64)),
+                OwnerWrite::new(owners[1], 1, OwnerData::new(102u64)),
+            ],
+        )
+        .unwrap();
+    assert_eq!(prepared.changes().len(), 2);
+    let id = state.durability.next_id;
+    state.durability.next_id = id.checked_add(1).expect("transaction IDs remain");
+    let receiver = state
+        .durability
+        .writer
+        .try_submit(Transaction::new(id, 2, prepared.changes().to_vec()))
+        .unwrap();
+    let receipt = receiver.recv().unwrap().unwrap();
+    assert!(!receipt.duplicate);
+    drop(prepared);
+    drop(state);
+
+    let (startup, system, owners) = durable_pair_startup();
+    let reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, owners[0]),
+        Some((2, 43))
+    );
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&system, owners[1]),
+        Some((2, 102))
+    );
+}
+
+#[test]
+fn interrupted_multi_owner_wave_before_sync_recovers_whole_or_nothing() {
+    use crate::server::journal::Transaction;
+    use crate::server::parallel::OwnerData;
+    use crate::server::runtime::owner_durable::OwnerWrite;
+
+    // Crash between stage and receipt: the record may or may not have synced
+    // before the process died. Either way recovery lands on a complete
+    // record — both owners old or both owners new — never a half-applied
+    // wave. The assertion holds regardless of scheduling, so it is not a
+    // timing test.
+    let save = TestSave::new("owner-interrupted-pair-staged");
+    let (startup, system, owners) = durable_pair_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    let prepared = state
+        .system_runtime
+        .prepare_owner_wave(
+            &system,
+            vec![
+                OwnerWrite::new(owners[0], 1, OwnerData::new(43u64)),
+                OwnerWrite::new(owners[1], 1, OwnerData::new(102u64)),
+            ],
+        )
+        .unwrap();
+    let id = state.durability.next_id;
+    state.durability.next_id = id.checked_add(1).expect("transaction IDs remain");
+    let _receiver = state
+        .durability
+        .writer
+        .try_submit(Transaction::new(id, 2, prepared.changes().to_vec()))
+        .unwrap();
+    drop(prepared);
+    drop(state);
+
+    let (startup, system, owners) = durable_pair_startup();
+    let reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let first = reopened
+        .system_runtime
+        .owner_value::<u64>(&system, owners[0]);
+    let second = reopened
+        .system_runtime
+        .owner_value::<u64>(&system, owners[1]);
+    assert!(
+        (first == Some((1, 42)) && second == Some((1, 101)))
+            || (first == Some((2, 43)) && second == Some((2, 102))),
+        "recovery must land on a complete record, got {first:?} and {second:?}"
+    );
+}
+
 #[test]
 fn entity_and_owner_state_commit_as_one_atomic_record() {
     use crate::server::durable::CommitAction;
