@@ -8,6 +8,7 @@ use super::simulation::{CommandQueue, FixedStepClock, OrderKey, QueueError};
 use super::*;
 
 pub(in crate::server) mod adapters;
+pub(in crate::server) mod owner_effects;
 pub(in crate::server) mod systems;
 
 #[cfg(test)]
@@ -352,10 +353,13 @@ pub(super) fn tick_with_inputs(
             } else {
                 let batch_wave = u16::try_from(index)
                     .map_err(|_| io::Error::other("too many registered phase systems"))?;
-                context
-                    .state
-                    .system_runtime
-                    .run_registered(&registered, tick, batch_wave)?;
+                let effect_kinds = Arc::clone(&context.state.effect_kinds);
+                context.state.system_runtime.run_registered(
+                    &registered,
+                    tick,
+                    batch_wave,
+                    &effect_kinds,
+                )?;
             }
         }
         phase_times[phase_index] = phase_started.elapsed();

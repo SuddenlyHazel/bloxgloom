@@ -481,6 +481,27 @@ impl EffectKindRegistryFrozen {
             payload_bytes,
         })
     }
+
+    /// Type-erased admission for intents whose concrete payload type is only
+    /// known to the producer. Validation is identical to the typed path: the
+    /// kind must be registered and its payload validator and size measure
+    /// must accept the value.
+    fn intent_erased(
+        &self,
+        key: RegisteredEffectOrderKey,
+        id: &EffectKindId,
+        payload: Arc<dyn Any + Send + Sync>,
+    ) -> Result<RegisteredEffectIntent, RegisteredEffectError> {
+        let kind = self.get(id)?;
+        let payload_bytes = kind.validate_payload(payload.as_ref())?;
+        Ok(RegisteredEffectIntent {
+            key,
+            kind_id: id.clone(),
+            kind,
+            payload,
+            payload_bytes,
+        })
+    }
 }
 
 /// Fixed-capacity effect output for one `(tick, phase, system, source owner)`.
@@ -529,6 +550,20 @@ impl<'a> RegisteredEffectBuffer<'a> {
         id: &EffectKindId,
         payload: P,
     ) -> Result<(), RegisteredEffectError> {
+        self.emit_erased(id, Arc::new(payload))
+    }
+
+    /// Type-erased emission for producers that only know their payload as a
+    /// shared trait object. Bounds, sequencing, and validation match `emit`
+    /// exactly; a failed validation rejects that emission without poisoning
+    /// the buffer, while any overflow poisons the whole producer output.
+    /// (Effective visibility is capped by the `pub(super)` re-export in
+    /// `effects.rs`, like every other buffer method.)
+    pub fn emit_erased(
+        &mut self,
+        id: &EffectKindId,
+        payload: Arc<dyn Any + Send + Sync>,
+    ) -> Result<(), RegisteredEffectError> {
         if self.overflowed || self.effects.len() >= self.limit {
             self.overflowed = true;
             return Err(RegisteredEffectError::ProducerOverflow { limit: self.limit });
@@ -541,7 +576,7 @@ impl<'a> RegisteredEffectBuffer<'a> {
             self.source,
             sequence,
         );
-        let effect = self.registry.intent(key, id, payload)?;
+        let effect = self.registry.intent_erased(key, id, payload)?;
         let next_payload_bytes = self.payload_bytes.saturating_add(effect.payload_bytes);
         if next_payload_bytes > MAX_EFFECT_BUFFER_PAYLOAD_BYTES {
             self.overflowed = true;
