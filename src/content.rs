@@ -555,6 +555,16 @@ impl Catalog {
         self.entities.get(id.0 as usize)?.as_ref()
     }
 
+    /// Startup lookup for a registered entity implementation. Save-local
+    /// numeric assignments may differ; canonical keys are the stable contract.
+    pub fn entity_type_id_by_key(&self, key: &str) -> Option<EntityTypeId> {
+        self.entities
+            .iter()
+            .flatten()
+            .find(|definition| definition.key == key)
+            .map(|definition| definition.id)
+    }
+
     #[inline]
     pub fn texture(&self, id: TextureId) -> Option<&TextureDef> {
         self.textures.get(id.0 as usize)

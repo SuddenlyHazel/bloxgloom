@@ -24,6 +24,7 @@ mod registry;
 mod runtime;
 mod simulation;
 mod spawn;
+mod startup;
 mod streaming;
 mod voxel_view;
 
@@ -37,7 +38,6 @@ use crate::protocol::{
 };
 use crate::world::{AIR, BEDROCK_Y, ChunkKey, World, world_to_chunk};
 use block_actions::{BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder};
-use builtins::builtin_phase_plan;
 use chunk_loader::ChunkLoader;
 use drops::Drops;
 use durable::{
@@ -45,9 +45,7 @@ use durable::{
     queue_interaction_actions, remember_drops_checkpoint,
 };
 use effects::CellCoord;
-use entities::{
-    EntityCommit, EntityDelta, EntityStore, EntityTypeRegistryBuilder, PlayerEntityStore,
-};
+use entities::{EntityCommit, EntityDelta, EntityStore, PlayerEntityStore};
 use fire::FireRuntime;
 use metrics::{MetricsRecorder, TickSample};
 use movement::{MovementBatch, MovementCommand, MovementState};
@@ -65,6 +63,7 @@ use simulation::{FIXED_STEP, Phase, TickId};
 #[cfg(test)]
 use spawn::collides;
 use spawn::{spawn_position, spawn_position_cached};
+use startup::ServerStartup;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -306,8 +305,24 @@ pub fn run_server_with_limit_and_catalog(
     admission_limit: usize,
     catalog: Arc<crate::content::Catalog>,
 ) -> io::Result<()> {
+    run_server_with_startup(
+        addr,
+        seed,
+        save_dir,
+        admission_limit,
+        ServerStartup::new(catalog),
+    )
+}
+
+pub(crate) fn run_server_with_startup(
+    addr: &str,
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+    startup: ServerStartup,
+) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    let state = server_state_with_limit_and_catalog(seed, save_dir, admission_limit, catalog)?;
+    let state = server_state_with_startup(seed, save_dir, admission_limit, startup)?;
     serve_listener(listener, Box::new(state))
 }
 
@@ -346,35 +361,33 @@ fn server_state_with_limit_and_catalog(
     admission_limit: usize,
     catalog: Arc<crate::content::Catalog>,
 ) -> io::Result<State> {
+    server_state_with_startup(seed, save_dir, admission_limit, ServerStartup::new(catalog))
+}
+
+fn server_state_with_startup(
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+    startup: ServerStartup,
+) -> io::Result<State> {
     if !(1..=MAX_CLIENTS).contains(&admission_limit) {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
             "admission limit must be 1..=256",
         ));
     }
-    let register_entity_types = |catalog: Arc<crate::content::Catalog>| {
-        let mut types = EntityTypeRegistryBuilder::new(&catalog);
-        drops::register_entity_type(&mut types, Arc::clone(&catalog))
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-        entities::register_player_entity_type(&mut types)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-        entities::register_kiln_entity_type(&mut types, Arc::clone(&catalog))
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-        types
-            .freeze()
-            .map(Arc::new)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))
-    };
+    let phase_plan = startup.phase_plan()?;
+    let catalog = startup.catalog();
     // A missing entity codec is a startup error, not a reason to create or
     // rewrite content.map before rejecting the world. Repeat after loading
     // because an existing world's manifest may resolve numeric IDs.
-    let _ = register_entity_types(Arc::clone(&catalog))?;
+    let _ = startup.entity_types_for(Arc::clone(&catalog))?;
     let mut world =
         World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();
-    let entity_types = register_entity_types(catalog.clone())?;
+    let entity_types = startup.entity_types_for(catalog.clone())?;
     let mut block_actions = BlockActionRegistryBuilder::new(&catalog);
     block_actions.register(
         crate::content::KILN_BLOCK_TYPE,
@@ -395,7 +408,6 @@ fn server_state_with_limit_and_catalog(
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
-    let phase_plan = builtin_phase_plan()?;
     let loader = ChunkLoader::new(&world, LOADER_CAPACITY)?;
     let worker_count = thread::available_parallelism()
         .map_or(2, |count| count.get())
@@ -407,7 +419,8 @@ fn server_state_with_limit_and_catalog(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
-    let system_runtime = SystemRuntime::new(worker_count)?;
+    let mut system_runtime = SystemRuntime::new(worker_count)?;
+    startup.install_owners(&mut system_runtime)?;
     let entity_public_revision = entities.revision();
     Ok(State {
         admission_limit,

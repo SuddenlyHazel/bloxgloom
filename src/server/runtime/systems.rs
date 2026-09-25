@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::Arc;
 
-const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
+pub(in crate::server) const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
 
 pub(in crate::server) struct SystemRuntime {
     executor: Option<PhaseExecutor<OwnerPatch, SystemHandlerError>>,
@@ -52,6 +52,15 @@ impl SystemRuntime {
         owner: OwnerKey,
         value: T,
     ) -> io::Result<()> {
+        self.insert_owner_data(system, owner, OwnerData::new(value))
+    }
+
+    pub fn insert_owner_data(
+        &mut self,
+        system: SystemId,
+        owner: OwnerKey,
+        value: OwnerData,
+    ) -> io::Result<()> {
         let store = self.owners.entry(system).or_default();
         if store.revision(owner).is_none() && store.len() >= MAX_OWNER_VALUES_PER_SYSTEM {
             return Err(io::Error::other(format!(
@@ -59,7 +68,7 @@ impl SystemRuntime {
             )));
         }
         store
-            .insert(owner, 0, OwnerData::new(value))
+            .insert(owner, 0, value)
             .map_err(|error| store_error("insert", error))
     }
 
