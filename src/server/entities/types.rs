@@ -250,6 +250,8 @@ impl EntityView {
         self.entries.iter().map(|view| view.payload.len()).sum()
     }
 
+    /// Stable neighbour iteration for planners and diagnostics.
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = &EntityPublicView> {
         self.entries.iter()
     }

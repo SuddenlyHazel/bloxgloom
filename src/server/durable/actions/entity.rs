@@ -30,14 +30,6 @@ type FootprintPlan = (
     Vec<(i32, i32, i32, BlockId)>,
 );
 
-/// Captures the planner's declared read set as an immutable view: footprint
-/// chunks plus the Chebyshev neighborhood of the entity's chunk. Every key
-/// must already be resident; when any are missing, the whole missing set is
-/// requested before planning defers with `WouldBlock`. Requesting all of
-/// them converges in one loader round instead of stalling one round per
-/// chunk, and matches the footprint-preimage retry shape. Nothing is
-/// generated or read through to storage here, and the returned view cannot
-/// mutate the world.
 /// The planner's declared read set: footprint chunks plus the Chebyshev
 /// neighborhood of the entity's chunk. Both views are captured over exactly
 /// these keys.
@@ -113,9 +105,18 @@ pub(super) fn capture_view_for_plan(
 /// projections over the same captured keys. The planner's own record is
 /// excluded; entries are sorted by entity ID for deterministic planning.
 /// Only public projections cross: another entity's private payload is never
-/// consulted here, and no path below reaches it. An overfull page or an
-/// over-cap view defers with `WouldBlock` instead of truncating, so a hot
-/// chunk retries later rather than planning from a partial neighbour set.
+/// consulted here, and no path below reaches it.
+///
+/// Missing chunks defer (see `capture_view_for_plan`); over-cap pages and
+/// views do not. Unlike a chunk that simply has not loaded, exceeding the
+/// capture bound is stable: no amount of waiting makes more than
+/// `MAX_PLAN_NEIGHBOURS` neighbours fit. Deferring would re-queue forever
+/// and pin a deferred queue slot, starving other entities' work; truncating
+/// would plan from a partial neighbour set; silently rejecting the request
+/// would let the due scan re-enqueue the same unplannable entity every
+/// pass. So the stable case escalates as the coordinator's reported
+/// unrecoverable outcome (`InvalidData` closes durable admission), matching
+/// how other entity-state violations fail closed.
 pub(super) fn capture_entity_view_for_plan(
     state: &mut State,
     location: &EntityLocation,
@@ -130,8 +131,8 @@ pub(super) fn capture_entity_view_for_plan(
             .public_views_for_chunk_bounded(key, MAX_PLAN_NEIGHBOURS)
             .map_err(|_| {
                 io::Error::new(
-                    ErrorKind::WouldBlock,
-                    "entity neighbour page overfull, retry later",
+                    ErrorKind::InvalidData,
+                    "entity neighbour page exceeds its capture bound",
                 )
             })?;
         collected.extend(views);
@@ -139,14 +140,14 @@ pub(super) fn capture_entity_view_for_plan(
     let view = EntityView::assemble(collected, exclude);
     if view.len() > MAX_PLAN_NEIGHBOURS {
         return Err(io::Error::new(
-            ErrorKind::WouldBlock,
-            "entity neighbour view overfull, retry later",
+            ErrorKind::InvalidData,
+            "entity neighbour view exceeds its capture count bound",
         ));
     }
     if view.bytes() > MAX_PLAN_NEIGHBOUR_BYTES {
         return Err(io::Error::new(
-            ErrorKind::WouldBlock,
-            "entity neighbour view overfull, retry later",
+            ErrorKind::InvalidData,
+            "entity neighbour view exceeds its capture byte bound",
         ));
     }
     Ok(view)

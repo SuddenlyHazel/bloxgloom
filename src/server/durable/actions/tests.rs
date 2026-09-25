@@ -1390,6 +1390,10 @@ fn entity_planner_reads_neighbour_public_view() {
     assert_eq!(neighbours.len(), 3);
     let ids: Vec<_> = neighbours.iter().map(|view| view.id).collect();
     assert_eq!(ids, vec![mate_a, mate_b, mate_d]);
+    assert!(
+        !ids.contains(&mate_c),
+        "a neighbour outside the declared capture set is invisible"
+    );
     for (id, shown, secret) in [
         (mate_a, 11u8, 12u8),
         (mate_b, 22u8, 23u8),
@@ -1574,13 +1578,14 @@ fn entity_planner_unavailable_neighbour_defers() {
 fn entity_neighbour_view_bound_is_an_error() {
     use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
     use crate::server::startup::StartupEntityType;
+    use std::collections::BTreeSet;
     use std::sync::Arc;
 
     let path = temp_save_dir("neighbour-bound-plan");
     let roamer_type = crate::content::EntityTypeId(70_009);
-    let tick_type = crate::content::EntityTypeId(70_013);
+    let watcher_type = crate::content::EntityTypeId(70_006);
     let mut catalog = crate::content::Catalog::builtins();
-    for (id, key) in [(roamer_type, "test:roamer"), (tick_type, "test:cap_tick")] {
+    for (id, key) in [(roamer_type, "test:roamer"), (watcher_type, "test:watcher")] {
         catalog
             .register_entity_type(crate::content::EntityTypeDef {
                 id,
@@ -1590,6 +1595,12 @@ fn entity_neighbour_view_bound_is_an_error() {
             })
             .unwrap();
     }
+    let compatible: BTreeSet<_> = catalog
+        .identities()
+        .into_iter()
+        .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
+        .map(|(_, id, _, _)| crate::content::BlockStateId(id))
+        .collect();
     let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
     startup.register_entity_type(StartupEntityType {
         key: "test:roamer".into(),
@@ -1597,6 +1608,191 @@ fn entity_neighbour_view_bound_is_an_error() {
         tick_policy: TickPolicy::Never,
         max_payload_bytes: 1,
         codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_entity_type(StartupEntityType {
+        key: "test:watcher".into(),
+        ownership: EntityOwnership::anchored(compatible, 1),
+        tick_policy: TickPolicy::Interval(5),
+        max_payload_bytes: 1,
+        codec: Arc::new(CounterCodec),
+        interaction_policy: None,
+        tick_planner: Some(Arc::new(WatcherTick)),
+    });
+
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    let mut anchor = None;
+    for y in (1..100).rev() {
+        let key = world_to_chunk(0, y, 0).0;
+        state.world.get_chunk(key).unwrap();
+        if state.world.cached_block(0, y, 0) != Some(AIR) {
+            anchor = Some(CellCoord::new(0, y, 0));
+            break;
+        }
+    }
+    let anchor = anchor.expect("terrain column has a non-air cell");
+    let y = anchor.y;
+    let resident = state
+        .world
+        .cached_block(anchor.x, anchor.y, anchor.z)
+        .expect("chosen anchor cell is resident");
+    let spawn = state
+        .entities
+        .prepare_spawn(EntitySpawn::Anchored {
+            entity_type: watcher_type,
+            anchor,
+            anchor_state: resident,
+            footprint: vec![anchor],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let watcher_id = spawn.entity_id();
+    state.entities.apply_committed(spawn).unwrap();
+    // 40 roamers in each of two chunks inside the declared read set: every
+    // page fits its per-chunk limit, but the assembled neighbour set is 80.
+    // A capture that truncated to the 64-entry bound would plan happily.
+    for (base_x, count) in [(20.5f32, 40u16), (-4.5f32, 40u16)] {
+        for index in 0..count {
+            let spawn = state
+                .entities
+                .prepare_spawn(EntitySpawn::Mobile {
+                    entity_type: roamer_type,
+                    position: [base_x + f32::from(index) * 0.1, y as f32, 0.5],
+                    payload: EntityPayload::new(0u8),
+                    spawn_tick: 1,
+                })
+                .unwrap();
+            state.entities.apply_committed(spawn).unwrap();
+        }
+    }
+
+    // Drive the coordinator's own drain: while chunks load the request
+    // defers, and once the set is resident the stable over-cap condition
+    // must escalate as a reported failure instead of retrying forever.
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+    let mut escalated = None;
+    let mut deferred_passes = 0;
+    for _ in 0..5_000 {
+        crate::server::streaming::poll_chunk_loads(&mut state).unwrap();
+        match super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(6),
+            Instant::now(),
+        ) {
+            Ok(()) => {
+                // Still waiting on the declared read set: the request is
+                // preserved across passes, not dropped or escalated early.
+                assert!(
+                    state.durability.queued.iter().any(
+                        |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
+                    )
+                );
+                deferred_passes += 1;
+            }
+            Err(error) => {
+                escalated = Some(error);
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        deferred_passes > 0,
+        "missing chunks must defer before the bound trips"
+    );
+    let error = escalated.expect("over-cap capture must escalate, not defer forever");
+    assert_eq!(error.kind(), ErrorKind::InvalidData, "{error}");
+    assert!(
+        error.to_string().contains("count bound"),
+        "expected the assembled-set bound to trip, got {error:?}"
+    );
+    // Fail closed: admission is reported shut, nothing was planned from a
+    // truncated set, and no deferred slot is pinned by the unplannable tick.
+    assert!(state.durability.failed);
+    assert!(state.durability.pending.is_empty());
+    assert!(
+        !state.durability.queued.iter().any(
+            |request| matches!(request, DurableRequest::EntityTick { id } if *id == watcher_id)
+        )
+    );
+    let closed = super::super::coordinator::process_durable_actions(
+        &mut state,
+        TickId::new(6),
+        Instant::now(),
+    );
+    assert!(closed.is_err(), "durable admission must stay closed");
+
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+struct WideCodec;
+
+impl crate::server::entities::EntityPayloadCodec for WideCodec {
+    fn decode(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::server::entities::EntityPayload, crate::server::entities::EntityCodecError>
+    {
+        let [value] = bytes else {
+            return Err(crate::server::entities::EntityCodecError::InvalidData);
+        };
+        Ok(crate::server::entities::EntityPayload::new(*value))
+    }
+
+    fn encode(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        payload
+            .downcast_ref::<u8>()
+            .copied()
+            .map(|value| vec![value])
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)
+    }
+
+    fn public_view(
+        &self,
+        payload: &crate::server::entities::EntityPayload,
+    ) -> Result<Vec<u8>, crate::server::entities::EntityCodecError> {
+        // Each projection is the maximum public view; 20 neighbours exceed
+        // the capture byte bound while staying under the count bound.
+        payload
+            .downcast_ref::<u8>()
+            .map(|value| vec![*value; crate::server::entities::MAX_ENTITY_PUBLIC_VIEW_BYTES])
+            .ok_or(crate::server::entities::EntityCodecError::InvalidData)
+    }
+}
+
+#[test]
+fn entity_neighbour_view_byte_bound_is_an_error() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("neighbour-byte-bound");
+    let wide_type = crate::content::EntityTypeId(70_012);
+    let tick_type = crate::content::EntityTypeId(70_013);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [(wide_type, "test:wide"), (tick_type, "test:cap_tick")] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x4259_5445_4200_0001,
+            })
+            .unwrap();
+    }
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:wide".into(),
+        ownership: EntityOwnership::Mobile,
+        tick_policy: TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(WideCodec),
         interaction_policy: None,
         tick_planner: None,
     });
@@ -1623,12 +1819,12 @@ fn entity_neighbour_view_bound_is_an_error() {
         .unwrap();
     let id = spawn.entity_id();
     state.entities.apply_committed(spawn).unwrap();
-    for index in 0..65u16 {
+    for index in 0..20u16 {
         let spawn = state
             .entities
             .prepare_spawn(EntitySpawn::Mobile {
-                entity_type: roamer_type,
-                position: [0.5 + f32::from(index) * 0.1, 80.0, 0.5],
+                entity_type: wide_type,
+                position: [0.5 + f32::from(index) * 0.2, 80.0, 0.5],
                 payload: EntityPayload::new(0u8),
                 spawn_tick: 1,
             })
@@ -1641,9 +1837,9 @@ fn entity_neighbour_view_bound_is_an_error() {
         TickId::new(6),
     );
     assert!(
-        matches!(result, Err(error) if error.kind() == ErrorKind::WouldBlock
-            && error.to_string().contains("overfull")),
-        "an over-cap neighbour set must error, never truncate"
+        matches!(result, Err(error) if error.kind() == ErrorKind::InvalidData
+            && error.to_string().contains("byte bound")),
+        "the capture byte bound must be enforced as an error, never truncated"
     );
 
     drop(state);
