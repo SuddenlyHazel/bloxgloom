@@ -986,3 +986,163 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
         Some((0, 9))
     );
 }
+
+#[test]
+fn owner_state_survives_journal_rotation_and_bounds_the_tail() {
+    let save = TestSave::new("owner-rotation-tail");
+    let (startup, system, owner) = durable_counter_startup();
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    for tick in 1..=3u64 {
+        tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
+    }
+    assert!(state.durability.pending.is_empty());
+    let tail_before = state.durability.writer.bytes();
+    assert!(tail_before > 0);
+
+    // Rotation materializes the full latest-value map — every domain,
+    // including `bloxgloom:owner_state` — into the new base generation, so
+    // the truncated tail stays bounded without a per-key checkpoint file.
+    state.durability.force_rotation_at_sequence = Some(state.durability.writer.sequence());
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(
+            &mut state,
+            TickId::new(4),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.completed_rotations == 1 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(state.durability.completed_rotations, 1);
+    assert!(
+        state.durability.writer.bytes() < tail_before,
+        "rotation must truncate the tail that carried the owner waves"
+    );
+    drop(state);
+
+    let (startup, system, owner) = durable_counter_startup();
+    let reopened =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((3, 44))
+    );
+}
+
+#[test]
+fn stale_owner_reads_reject_the_wave_on_the_live_path() {
+    use crate::server::parallel::OwnerData;
+    use crate::server::runtime::owner_durable::{OwnerDurableError, OwnerWrite};
+
+    let save = TestSave::new("owner-stale-live");
+    let (startup, system, owner) = durable_counter_startup();
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((1, 42))
+    );
+
+    // A wave prepared against revision 0 is stale once the live store is at
+    // revision 1. The whole wave rejects before anything is staged: no WAL
+    // record, no partial apply, and the coordinator keeps running.
+    let sequence_before = state.durability.writer.sequence();
+    let error = state
+        .system_runtime
+        .prepare_owner_wave(
+            &system,
+            vec![OwnerWrite::new(owner, 0, OwnerData::new(999u64))],
+        )
+        .unwrap_err();
+    assert!(
+        matches!(error, OwnerDurableError::StaleRevision { .. }),
+        "stale reads must reject the wave, got {error:?}"
+    );
+    assert_eq!(state.durability.writer.sequence(), sequence_before);
+    assert!(!state.durability.failed);
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((1, 42))
+    );
+    tick_once(&mut state, TickId::new(2), Instant::now()).unwrap();
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((2, 43))
+    );
+}
+
+#[test]
+fn oversized_owner_values_defer_without_failing_durability() {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use crate::server::runtime::owner_codec::{OwnerCodecError, OwnerValueCodec};
+
+    struct BlobCodec;
+
+    impl OwnerValueCodec for BlobCodec {
+        fn decode(&self, payload: &[u8]) -> Result<OwnerData, OwnerCodecError> {
+            Ok(OwnerData::new(payload.to_vec()))
+        }
+
+        fn encode(&self, value: &OwnerData) -> Result<Vec<u8>, OwnerCodecError> {
+            value
+                .get::<Vec<u8>>()
+                .cloned()
+                .ok_or(OwnerCodecError::InvalidData)
+        }
+    }
+
+    let system = SystemId::new("test:blob_owner").unwrap();
+    let owner = OwnerKey::Entity(11);
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    startup.register_system(
+        SystemDescriptor::new(system.clone(), Phase::Simulation, OwnerPartition::Entity, 1, 0)
+            .write(ResourceId::new("test:blob_owner_state").unwrap()),
+        |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerData::new(vec![0u8; 64]),
+                PatchUsage {
+                    writes: 1,
+                    effects: 0,
+                    estimated_bytes: 64,
+                },
+            ))
+        },
+    );
+    startup.register_owner_codec(
+        system.clone(),
+        crate::server::startup::StartupOwnerCodec {
+            codec: Arc::new(BlobCodec),
+            codec_version: 1,
+            max_bytes: 8,
+        },
+    );
+    startup.seed_owner(system.clone(), owner, vec![1u8; 8]);
+
+    let save = TestSave::new("owner-capacity-live");
+    let mut state =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let sequence_before = state.durability.writer.sequence();
+    let error = tick_once(&mut state, TickId::new(1), Instant::now()).unwrap_err();
+    // Capacity defers one owner; it never takes the coordinator's
+    // `InvalidData` path, which would close every client socket.
+    assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+    assert_ne!(error.kind(), std::io::ErrorKind::InvalidData);
+    assert!(!state.durability.failed);
+    // Nothing staged and nothing committed: no WAL record was written and
+    // the live cell is untouched.
+    assert_eq!(state.durability.writer.sequence(), sequence_before);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap(),
+        (0, vec![1u8; 8])
+    );
+}
