@@ -97,7 +97,7 @@ fn edit_for_hit_with_catalog(
 fn escape_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Pause,
-        UiScreen::Inventory | UiScreen::Pause => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Admin | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
     }
 }
@@ -143,6 +143,7 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
         ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
+        | ClientMessage::AdminGive { action_id, .. }
         | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }
@@ -198,6 +199,7 @@ impl ActionTracker {
     }
 }
 
+mod admin;
 mod entities;
 mod workers;
 use entities::kiln::KilnCommand;
@@ -263,6 +265,9 @@ struct ClientApp {
     last_report: Instant,
     frame_ms: Vec<f32>,
     disconnected: bool,
+    admin_enabled: bool,
+    admin_input: String,
+    admin_page: usize,
 }
 
 impl ClientApp {
@@ -320,6 +325,9 @@ impl ClientApp {
             last_report: now,
             frame_ms: Vec::with_capacity(512),
             disconnected: false,
+            admin_enabled: false,
+            admin_input: String::new(),
+            admin_page: 0,
         }
     }
 
@@ -464,6 +472,21 @@ impl ClientApp {
             UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
+            UiControl::OpenAdmin if self.admin_enabled => self.set_screen(UiScreen::Admin),
+            UiControl::OpenAdmin => {}
+            UiControl::AdminItem(index) if self.screen == UiScreen::Admin => {
+                self.admin_grant_index(index)
+            }
+            UiControl::AdminItem(_) => {}
+            UiControl::AdminPrev if self.screen == UiScreen::Admin => {
+                self.admin_page = self.admin_page.saturating_sub(1)
+            }
+            UiControl::AdminNext if self.screen == UiScreen::Admin => {
+                let pages = self.catalog.items().count().div_ceil(24).max(1);
+                self.admin_page = (self.admin_page + 1).min(pages - 1);
+            }
+            UiControl::AdminRun if self.screen == UiScreen::Admin => self.admin_run(),
+            UiControl::AdminPrev | UiControl::AdminNext | UiControl::AdminRun => {}
             UiControl::Exit => event_loop.exit(),
             UiControl::Back => self.set_screen(UiScreen::Pause),
             UiControl::Decrease(setting) => self.change_setting(setting, false),
@@ -482,7 +505,22 @@ impl ClientApp {
             UiScreen::Inventory => (0..crate::inventory::SLOTS as u8)
                 .map(UiControl::InventorySlot)
                 .collect(),
-            UiScreen::Pause => vec![UiControl::Resume, UiControl::OpenSettings, UiControl::Exit],
+            UiScreen::Admin => (0..24u8)
+                .map(UiControl::AdminItem)
+                .chain([
+                    UiControl::AdminPrev,
+                    UiControl::AdminNext,
+                    UiControl::AdminRun,
+                ])
+                .collect(),
+            UiScreen::Pause => {
+                let mut controls = vec![UiControl::Resume, UiControl::OpenSettings];
+                if self.admin_enabled {
+                    controls.push(UiControl::OpenAdmin);
+                }
+                controls.push(UiControl::Exit);
+                controls
+            }
             UiScreen::Settings => vec![
                 UiControl::Decrease(SettingId::Sensitivity),
                 UiControl::Increase(SettingId::Sensitivity),
@@ -1085,6 +1123,9 @@ impl ClientApp {
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),
             inventory_source: self.inventory_source,
+            admin_enabled: self.admin_enabled,
+            admin_page: self.admin_page,
+            admin_input: &self.admin_input,
             target,
             status,
             debug: self.config.debug_hud.then_some(UiDebug {
@@ -1154,12 +1195,22 @@ impl ClientApp {
 mod events;
 
 pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+    run_client_inner(addr, false)
+}
+
+pub fn run_client_with_admin(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+    run_client_inner(addr, true)
+}
+
+fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = Config::default_path();
     let mut config = Config::load(&config_path);
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
     let event_loop = EventLoop::new()?;
-    event_loop.run_app(&mut ClientApp::new(network, config, config_path))?;
+    let mut app = ClientApp::new(network, config, config_path);
+    app.admin_enabled = admin_enabled;
+    event_loop.run_app(&mut app)?;
     Ok(())
 }
 

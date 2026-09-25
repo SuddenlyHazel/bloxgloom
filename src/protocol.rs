@@ -57,6 +57,12 @@ pub enum ClientMessage {
         slot: u8,
         count: u16,
     },
+    /// Server-authorized creative grant, journaled with an action receipt.
+    AdminGive {
+        action_id: u128,
+        item: ItemId,
+        count: u16,
+    },
     /// Opaque, bounded command for the entity anchored at a touched world cell.
     /// The server resolves type, reach, and private inventory authority.
     EntityInteract {
@@ -341,6 +347,22 @@ pub fn write_client_with_catalog(
             out.push(8);
             out.extend(action_id.to_le_bytes());
             out.push(*slot);
+            out.extend(count.to_le_bytes());
+        }
+        ClientMessage::AdminGive {
+            action_id,
+            item,
+            count,
+        } => {
+            if !valid_action_id(*action_id)
+                || content_catalog.item(*item).is_none()
+                || !(1..=STACK_LIMIT).contains(count)
+            {
+                return Err(invalid("invalid admin grant"));
+            }
+            out.push(12);
+            out.extend(action_id.to_le_bytes());
+            out.extend(item.0.to_le_bytes());
             out.extend(count.to_le_bytes());
         }
         ClientMessage::ContentReady { fingerprint } => {
@@ -837,6 +859,22 @@ pub fn read_client_with_catalog(
                 action_id,
                 target,
                 payload: c.take(len)?.to_vec(),
+            }
+        }
+        12 => {
+            let action_id = c.u128()?;
+            let item = ItemId(c.u32()?);
+            let count = c.u16()?;
+            if !valid_action_id(action_id)
+                || content_catalog.item(item).is_none()
+                || !(1..=STACK_LIMIT).contains(&count)
+            {
+                return Err(invalid("invalid admin grant"));
+            }
+            ClientMessage::AdminGive {
+                action_id,
+                item,
+                count,
             }
         }
         _ => return Err(invalid("unknown client message")),

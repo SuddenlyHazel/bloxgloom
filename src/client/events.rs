@@ -68,6 +68,27 @@ impl ApplicationHandler for ClientApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if pressed && self.screen == UiScreen::Admin {
+                        match code {
+                            KeyCode::Escape | KeyCode::F4 => self.set_screen(UiScreen::Playing),
+                            KeyCode::Enter | KeyCode::NumpadEnter => self.admin_run(),
+                            KeyCode::Backspace => {
+                                self.admin_input.pop();
+                            }
+                            _ => {
+                                if let Some(value) = &event.text {
+                                    for character in value.chars().filter(|character| {
+                                        character.is_ascii_graphic() || *character == ' '
+                                    }) {
+                                        if self.admin_input.len() < 96 {
+                                            self.admin_input.push(character);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
                     if pressed && !event.repeat {
                         if matches!(self.screen, UiScreen::Playing | UiScreen::Inventory)
                             && let Some(slot) = digit_slot(code)
@@ -76,6 +97,10 @@ impl ApplicationHandler for ClientApp {
                             return;
                         }
                         match code {
+                            KeyCode::F4 if self.admin_enabled => {
+                                self.set_screen(UiScreen::Admin);
+                                return;
+                            }
                             KeyCode::Escape => {
                                 self.on_escape();
                                 return;

@@ -1,5 +1,29 @@
 use super::*;
 
+#[test]
+fn admin_grant_wire_round_trips_and_rejects_invalid_counts() {
+    let item = crate::items::STICK;
+    let message = ClientMessage::AdminGive {
+        action_id: (1u128 << 64) | 1,
+        item,
+        count: 128,
+    };
+    let mut wire = Vec::new();
+    write_client(&mut wire, &message).unwrap();
+    assert_eq!(read_client(wire.as_slice()).unwrap(), message);
+    assert!(
+        write_client(
+            &mut Vec::new(),
+            &ClientMessage::AdminGive {
+                action_id: (1u128 << 64) | 1,
+                item,
+                count: 129,
+            }
+        )
+        .is_err()
+    );
+}
+
 fn catalog_with_many_states(count: usize) -> Catalog {
     let mut catalog = Catalog::builtins();
     let mut block = catalog

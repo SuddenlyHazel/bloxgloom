@@ -38,6 +38,7 @@ impl UiBuilder<'_> {
         match frame.screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
+            UiScreen::Admin => self.draw_admin(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
             UiScreen::Settings => self.draw_settings(frame, layout),
         }
@@ -150,7 +151,7 @@ impl UiBuilder<'_> {
                 TEXT,
             );
         }
-        if frame.screen == UiScreen::Playing
+        if matches!(frame.screen, UiScreen::Playing | UiScreen::Admin)
             && let Some(status) = frame.status.filter(|s| !s.is_empty())
         {
             let max_chars =

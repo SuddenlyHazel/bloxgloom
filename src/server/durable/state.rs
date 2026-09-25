@@ -141,6 +141,11 @@ pub(in crate::server) fn encode_action_receipt_with_catalog(
             value.extend([2, *slot]);
             value.extend(count.to_le_bytes());
         }
+        ClientMessage::AdminGive { item, count, .. } => {
+            value.push(4);
+            value.extend(item.0.to_le_bytes());
+            value.extend(count.to_le_bytes());
+        }
         ClientMessage::EntityInteract {
             target, payload, ..
         } => {
@@ -190,6 +195,14 @@ pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
         }
         [2, 2, slot, count0, count1] => {
             usize::from(*slot) < SLOTS
+                && (1..=STACK_LIMIT).contains(&u16::from_le_bytes([*count0, *count1]))
+        }
+        [2, 4, item0, item1, item2, item3, count0, count1] => {
+            catalog
+                .item(crate::items::ItemId(u32::from_le_bytes([
+                    *item0, *item1, *item2, *item3,
+                ])))
+                .is_some()
                 && (1..=STACK_LIMIT).contains(&u16::from_le_bytes([*count0, *count1]))
         }
         [2, 3, ..] if value.len() >= 17 => {

@@ -99,6 +99,49 @@ fn settle_live_action(state: &mut State, tick: u64, message: ClientMessage) {
 }
 
 #[test]
+fn admin_grant_requires_server_authorization_and_persists_inventory() {
+    let path = temp_save_dir("admin-grant");
+    let mut state = server_state(23, path.clone()).unwrap();
+    let _peer = add_test_client(&mut state, [0.5, 80.0, 0.5], Inventory::default());
+    let epoch = grant_action_epoch(&mut state, 17);
+    let item = state.world.catalog().items().next().unwrap().id;
+    settle_live_action(
+        &mut state,
+        3,
+        ClientMessage::AdminGive {
+            action_id: (u128::from(epoch) << 64) | 1,
+            item,
+            count: 128,
+        },
+    );
+    assert!(!state.durability.failed);
+    assert_eq!(state.clients[&1].inventory.slots[0], None);
+
+    state.admin_profile = Some(17);
+    settle_live_action(
+        &mut state,
+        4,
+        ClientMessage::AdminGive {
+            action_id: (u128::from(epoch) << 64) | 2,
+            item,
+            count: 128,
+        },
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0],
+        Some(crate::inventory::Stack::new(item, 128))
+    );
+    drop(state);
+    let state = server_state(23, path.clone()).unwrap();
+    assert_eq!(
+        state.inventory_store.load(17).unwrap().slots[0],
+        Some(crate::inventory::Stack::new(item, 128))
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn missing_plant_support_requests_its_exact_vertical_neighbor() {
     let path = temp_save_dir("edit-support-prefetch");
     let mut state = server_state(23, path.clone()).unwrap();

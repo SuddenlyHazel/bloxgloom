@@ -78,6 +78,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         for (screen, name) in [
             (UiScreen::Playing, "playing"),
             (UiScreen::Inventory, "inventory"),
+            (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
         ] {
@@ -94,6 +95,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     for (screen, name) in [
         (UiScreen::Playing, "playing"),
         (UiScreen::Inventory, "inventory"),
+        (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
     ] {
@@ -811,6 +813,9 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
+        admin_enabled: true,
+        admin_page: 0,
+        admin_input: "give bloxgloom:stone 128",
         target,
         status: (screen == UiScreen::Playing).then_some("E OPENS INVENTORY  /  Q DROPS ITEM"),
         debug: None,
@@ -825,6 +830,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         hovered: match screen {
             UiScreen::Playing => None,
             UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
+            UiScreen::Admin => Some(UiControl::AdminItem(0)),
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
         },
@@ -837,6 +843,9 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
         selected_slot: 4,
         inventory: sample_inventory(),
         inventory_source: None,
+        admin_enabled: false,
+        admin_page: 0,
+        admin_input: "",
         target: None,
         status: None,
         debug: Some(ui::UiDebug {

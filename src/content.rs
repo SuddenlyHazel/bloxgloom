@@ -550,6 +550,10 @@ impl Catalog {
         self.items.get(id.0 as usize)?.as_ref()
     }
 
+    pub fn items(&self) -> impl Iterator<Item = &ItemDef> {
+        self.items.iter().flatten()
+    }
+
     #[inline]
     pub fn entity_type(&self, id: EntityTypeId) -> Option<&EntityTypeDef> {
         self.entities.get(id.0 as usize)?.as_ref()

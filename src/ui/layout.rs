@@ -34,6 +34,7 @@ impl UiLayout {
         match screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => layout.add_inventory(),
+            UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings => layout.add_settings(),
         }
@@ -114,24 +115,29 @@ impl UiLayout {
         let button_width = panel.width * 0.72;
         let compact = panel.height < 360.0 * self.scale;
         let button_height = if compact {
-            38.0 * self.scale
+            34.0 * self.scale
         } else {
-            (48.0 * self.scale).clamp(36.0, 56.0)
+            (42.0 * self.scale).clamp(34.0, 50.0)
         };
         let gap = if compact {
-            8.0 * self.scale
+            6.0 * self.scale
         } else {
-            14.0 * self.scale
+            10.0 * self.scale
         };
         let first_y = if compact {
-            panel.y + 86.0 * self.scale
+            panel.y + 62.0 * self.scale
         } else {
-            panel.y + panel.height * 0.38
+            panel.y + panel.height * 0.30
         };
         let x = panel.x + (panel.width - button_width) * 0.5;
-        for (index, control) in [UiControl::Resume, UiControl::OpenSettings, UiControl::Exit]
-            .into_iter()
-            .enumerate()
+        for (index, control) in [
+            UiControl::Resume,
+            UiControl::OpenSettings,
+            UiControl::OpenAdmin,
+            UiControl::Exit,
+        ]
+        .into_iter()
+        .enumerate()
         {
             self.push(
                 control,
@@ -140,6 +146,54 @@ impl UiLayout {
                     y: first_y + index as f32 * (button_height + gap),
                     width: button_width,
                     height: button_height,
+                },
+            );
+        }
+    }
+
+    fn add_admin(&mut self) {
+        let panel = self.admin_panel();
+        let gap = 8.0 * self.scale;
+        let cell_width = (panel.width - 48.0 * self.scale - 5.0 * gap) / 6.0;
+        let cell_height = ((panel.height - 194.0 * self.scale - 3.0 * gap) / 4.0).max(22.0);
+        for index in 0..24u8 {
+            let col = index as usize % 6;
+            let row = index as usize / 6;
+            self.push(
+                UiControl::AdminItem(index),
+                UiRect {
+                    x: panel.x + 24.0 * self.scale + col as f32 * (cell_width + gap),
+                    y: panel.y + 72.0 * self.scale + row as f32 * (cell_height + gap),
+                    width: cell_width,
+                    height: cell_height,
+                },
+            );
+        }
+        let bottom = panel.y + panel.height - 44.0 * self.scale;
+        for (control, x, width) in [
+            (
+                UiControl::AdminPrev,
+                panel.x + 24.0 * self.scale,
+                78.0 * self.scale,
+            ),
+            (
+                UiControl::AdminNext,
+                panel.x + 112.0 * self.scale,
+                78.0 * self.scale,
+            ),
+            (
+                UiControl::AdminRun,
+                panel.x + panel.width - 116.0 * self.scale,
+                92.0 * self.scale,
+            ),
+        ] {
+            self.push(
+                control,
+                UiRect {
+                    x,
+                    y: bottom,
+                    width,
+                    height: 30.0 * self.scale,
                 },
             );
         }
@@ -253,6 +307,16 @@ impl UiLayout {
             720.0 * self.scale,
             540.0 * self.scale,
             14.0,
+        )
+    }
+
+    pub(super) fn admin_panel(&self) -> UiRect {
+        centered_panel(
+            self.width,
+            self.height,
+            820.0 * self.scale,
+            560.0 * self.scale,
+            14.0 * self.scale,
         )
     }
 }

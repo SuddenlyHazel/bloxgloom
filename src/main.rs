@@ -27,8 +27,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         None => {
-            let (addr, server) = server::start_local_server(0xB10C_6100, "world-v5".into())?;
-            let client_result = client::run_client(&addr.to_string());
+            let config_path = config::Config::default_path();
+            let mut config = config::Config::load(&config_path);
+            config.ensure_profile(&config_path)?;
+            let (addr, server) = server::start_local_server_with_admin(
+                0xB10C_6100,
+                "world-v5".into(),
+                config.profile,
+            )?;
+            let client_result = client::run_client_with_admin(&addr.to_string());
             let server_result = server.stop();
             client_result?;
             server_result?;

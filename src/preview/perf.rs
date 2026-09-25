@@ -295,6 +295,9 @@ pub(super) async fn run_perf_benchmark_async(
             selected_slot: 1,
             inventory: sample_inventory(),
             inventory_source: None,
+            admin_enabled: false,
+            admin_page: 0,
+            admin_input: "",
             target: Some(target_block),
             status: None,
             debug: Some(ui::UiDebug {

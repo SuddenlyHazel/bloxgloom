@@ -8,6 +8,7 @@ use crate::server::{
 };
 use crate::world::BlockId;
 
+mod admin;
 pub(in crate::server) mod kiln;
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -28,6 +29,7 @@ pub(in crate::server) fn plan_durable_request(
                 ClientMessage::Edit { action_id, .. }
                 | ClientMessage::InventoryMove { action_id, .. }
                 | ClientMessage::DropStack { action_id, .. }
+                | ClientMessage::AdminGive { action_id, .. }
                 | ClientMessage::EntityInteract { action_id, .. } => *action_id,
                 _ => {
                     return Err(io::Error::new(
@@ -71,6 +73,24 @@ pub(in crate::server) fn plan_durable_request(
                 entities: None,
             };
             match message {
+                ClientMessage::AdminGive { item, count, .. } => {
+                    let Some(next) = admin::plan_grant(
+                        state.admin_profile,
+                        profile,
+                        &inventory,
+                        *item,
+                        *count,
+                        state.world.catalog(),
+                    )?
+                    else {
+                        return Ok(None);
+                    };
+                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
+                        &inventory,
+                        state.world.catalog(),
+                    )?);
+                    action.inventory = Some(next);
+                }
                 ClientMessage::InventoryMove {
                     from, to, count, ..
                 } => {

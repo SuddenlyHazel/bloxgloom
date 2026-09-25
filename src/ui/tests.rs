@@ -7,6 +7,29 @@ use super::{
 };
 
 #[test]
+fn admin_catalog_controls_fit_compact_and_desktop_panels() {
+    for (width, height, scale) in [(1280, 720, 1.0), (640, 360, 1.0), (640, 360, 2.0)] {
+        let layout = UiLayout::new(width, height, scale, UiScreen::Admin);
+        let panel = layout.admin_panel();
+        for index in 0..24 {
+            let rect = layout.rect(UiControl::AdminItem(index)).unwrap();
+            assert!(rect.x >= panel.x && rect.y >= panel.y);
+            assert!(rect.x + rect.width <= panel.x + panel.width);
+            assert!(rect.y + rect.height < panel.y + panel.height - 90.0 * layout.scale);
+        }
+        for control in [
+            UiControl::AdminPrev,
+            UiControl::AdminNext,
+            UiControl::AdminRun,
+        ] {
+            let rect = layout.rect(control).unwrap();
+            assert!(rect.x >= panel.x && rect.x + rect.width <= panel.x + panel.width);
+            assert!(rect.y >= panel.y && rect.y + rect.height <= panel.y + panel.height);
+        }
+    }
+}
+
+#[test]
 fn world_and_inventory_items_have_distinct_hud_names_and_swatch_colors() {
     let vegetation = [
         (
@@ -196,6 +219,7 @@ fn large_ui_scale_fits_small_windows_without_losing_controls() {
         for screen in [
             UiScreen::Playing,
             UiScreen::Inventory,
+            UiScreen::Admin,
             UiScreen::Pause,
             UiScreen::Settings,
         ] {
@@ -241,6 +265,9 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 selected_slot: 8,
                 inventory: std::array::from_fn(|_| None),
                 inventory_source: None,
+                admin_enabled: true,
+                admin_page: 0,
+                admin_input: "give bloxgloom:stone 128",
                 target: Some([10, 20, -30]),
                 status: Some(long_status),
                 debug: Some(debug),

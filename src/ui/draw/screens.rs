@@ -1,6 +1,7 @@
 //! Screen-specific menu drawing.
 
 use super::*;
+mod admin;
 
 impl UiBuilder<'_> {
     pub(super) fn draw_inventory(
@@ -122,9 +123,12 @@ impl UiBuilder<'_> {
         for (control, label) in [
             (UiControl::Resume, "RESUME"),
             (UiControl::OpenSettings, "SETTINGS"),
+            (UiControl::OpenAdmin, "ADMIN TOOLS"),
             (UiControl::Exit, "EXIT GAME"),
         ] {
-            if let Some(rect) = layout.rect(control) {
+            if (control != UiControl::OpenAdmin || frame.admin_enabled)
+                && let Some(rect) = layout.rect(control)
+            {
                 self.button(rect, label, frame.hovered == Some(control), false);
             }
         }

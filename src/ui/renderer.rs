@@ -20,6 +20,8 @@ struct UiCacheKey {
     selected_slot: usize,
     inventory: [Option<crate::inventory::Stack>; crate::inventory::SLOTS],
     inventory_source: Option<u8>,
+    admin_enabled: bool,
+    admin_page: usize,
     debug: Option<UiDebug>,
     settings: UiSettings,
     hovered: Option<UiControl>,
@@ -35,6 +37,7 @@ pub(crate) struct UiRenderer {
     layout: Option<UiLayout>,
     cache_key: Option<UiCacheKey>,
     cached_status: Option<String>,
+    cached_admin_input: String,
     width: u32,
     height: u32,
 }
@@ -176,6 +179,7 @@ impl UiRenderer {
             layout: None,
             cache_key: None,
             cached_status: None,
+            cached_admin_input: String::new(),
             width: 1,
             height: 1,
         }
@@ -199,11 +203,16 @@ impl UiRenderer {
             selected_slot: frame.selected_slot,
             inventory: frame.inventory.clone(),
             inventory_source: frame.inventory_source,
+            admin_enabled: frame.admin_enabled,
+            admin_page: frame.admin_page,
             debug: frame.debug,
             settings: frame.settings,
             hovered: frame.hovered,
         };
-        if self.cache_key.as_ref() == Some(&key) && self.cached_status.as_deref() == frame.status {
+        if self.cache_key.as_ref() == Some(&key)
+            && self.cached_status.as_deref() == frame.status
+            && self.cached_admin_input == frame.admin_input
+        {
             return;
         }
         let rebuild_layout = self.layout.as_ref().is_none_or(|layout| {
@@ -233,6 +242,10 @@ impl UiRenderer {
         }
         self.cache_key = Some(key);
         self.cached_status = frame.status.map(str::to_owned);
+        if self.cached_admin_input != frame.admin_input {
+            self.cached_admin_input.clear();
+            self.cached_admin_input.push_str(frame.admin_input);
+        }
     }
 
     pub(crate) fn encode<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) {

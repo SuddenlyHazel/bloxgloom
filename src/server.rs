@@ -146,6 +146,7 @@ struct State {
     world: World,
     inventory_store: InventoryStore,
     position_store: PositionStore,
+    admin_profile: Option<u128>,
     drops: Drops,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
@@ -342,9 +343,32 @@ pub(crate) fn run_server_with_startup(
 }
 
 pub fn start_local_server(seed: u64, save_dir: PathBuf) -> io::Result<(SocketAddr, LocalServer)> {
+    start_local_server_for_profile(seed, save_dir, None)
+}
+
+pub fn start_local_server_with_admin(
+    seed: u64,
+    save_dir: PathBuf,
+    admin_profile: u128,
+) -> io::Result<(SocketAddr, LocalServer)> {
+    if admin_profile == 0 {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "missing admin profile",
+        ));
+    }
+    start_local_server_for_profile(seed, save_dir, Some(admin_profile))
+}
+
+fn start_local_server_for_profile(
+    seed: u64,
+    save_dir: PathBuf,
+    admin_profile: Option<u128>,
+) -> io::Result<(SocketAddr, LocalServer)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let addr = listener.local_addr()?;
-    let state = server_state(seed, save_dir)?;
+    let mut state = server_state(seed, save_dir)?;
+    state.admin_profile = admin_profile;
     let state = Box::new(state);
     let (stop, receiver) = std::sync::mpsc::channel();
     let handle = thread::spawn(move || {
@@ -462,6 +486,7 @@ fn server_state_with_startup(
         world,
         inventory_store,
         position_store,
+        admin_profile: None,
         drops,
         entities,
         player_entities: PlayerEntityStore::default(),
@@ -676,6 +701,7 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         ClientMessage::Edit { .. }
         | ClientMessage::InventoryMove { .. }
         | ClientMessage::DropStack { .. }
+        | ClientMessage::AdminGive { .. }
         | ClientMessage::EntityInteract { .. }
         | ClientMessage::ActionAck { .. } => Err(io::Error::new(
             ErrorKind::InvalidData,
