@@ -680,8 +680,14 @@ fn durable_counter_startup() -> (
     let owner = OwnerKey::Entity(7);
     let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
     startup.register_system(
-        SystemDescriptor::new(system.clone(), Phase::Simulation, OwnerPartition::Entity, 1, 0)
-            .write(ResourceId::new("test:durable_counter_state").unwrap()),
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            0,
+        )
+        .write(ResourceId::new("test:durable_counter_state").unwrap()),
         |job: &OwnerJob| {
             use crate::server::registry::SystemHandlerError;
             let value = job
@@ -710,8 +716,7 @@ fn durable_counter_startup() -> (
 fn registered_owner_state_survives_a_real_restart() {
     let save = TestSave::new("owner-durable-restart");
     let (startup, system, owner) = durable_counter_startup();
-    let mut state =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     for tick in 1..=3u64 {
         tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
     }
@@ -728,8 +733,7 @@ fn registered_owner_state_survives_a_real_restart() {
     drop(state);
 
     let (startup, system, owner) = durable_counter_startup();
-    let mut reopened =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     // Exactly the last acknowledged receipt's state: the seed replays as a
     // no-op and the three waves replay whole.
     assert_eq!(
@@ -752,8 +756,7 @@ fn interrupted_owner_commit_recovers_to_the_last_complete_record() {
 
     let save = TestSave::new("owner-interrupted-commit");
     let (startup, system, owner) = durable_counter_startup();
-    let mut state =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
     assert_eq!(
         state.system_runtime.owner_value::<u64>(&system, owner),
@@ -789,8 +792,7 @@ fn interrupted_owner_commit_recovers_to_the_last_complete_record() {
     // after-value is durable even though the crashed process never applied
     // it, and there is no half-applied state.
     let (startup, system, owner) = durable_counter_startup();
-    let mut reopened =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     assert_eq!(
         reopened.system_runtime.owner_value::<u64>(&system, owner),
         Some((2, 43))
@@ -968,7 +970,7 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
     );
     drop(state);
 
-    let mut reopened =
+    let reopened =
         server_state_with_startup(7, save.path().to_path_buf(), 1, build_startup()).unwrap();
     // The single record replayed whole: entity and owner state agree after
     // restart, with no reconciliation between two tails.
@@ -990,9 +992,8 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
 #[test]
 fn owner_state_survives_journal_rotation_and_bounds_the_tail() {
     let save = TestSave::new("owner-rotation-tail");
-    let (startup, system, owner) = durable_counter_startup();
-    let mut state =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let (startup, _, _) = durable_counter_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     for tick in 1..=3u64 {
         tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
     }
@@ -1005,12 +1006,8 @@ fn owner_state_survives_journal_rotation_and_bounds_the_tail() {
     // the truncated tail stays bounded without a per-key checkpoint file.
     state.durability.force_rotation_at_sequence = Some(state.durability.writer.sequence());
     for _ in 0..2_000 {
-        crate::server::durable::process_durable_actions(
-            &mut state,
-            TickId::new(4),
-            Instant::now(),
-        )
-        .unwrap();
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(4), Instant::now())
+            .unwrap();
         if state.durability.completed_rotations == 1 {
             break;
         }
@@ -1024,8 +1021,7 @@ fn owner_state_survives_journal_rotation_and_bounds_the_tail() {
     drop(state);
 
     let (startup, system, owner) = durable_counter_startup();
-    let reopened =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     assert_eq!(
         reopened.system_runtime.owner_value::<u64>(&system, owner),
         Some((3, 44))
@@ -1039,8 +1035,7 @@ fn stale_owner_reads_reject_the_wave_on_the_live_path() {
 
     let save = TestSave::new("owner-stale-live");
     let (startup, system, owner) = durable_counter_startup();
-    let mut state =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
     assert_eq!(
         state.system_runtime.owner_value::<u64>(&system, owner),
@@ -1100,10 +1095,15 @@ fn oversized_owner_values_defer_without_failing_durability() {
     let owner = OwnerKey::Entity(11);
     let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
     startup.register_system(
-        SystemDescriptor::new(system.clone(), Phase::Simulation, OwnerPartition::Entity, 1, 0)
-            .write(ResourceId::new("test:blob_owner_state").unwrap()),
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            0,
+        )
+        .write(ResourceId::new("test:blob_owner_state").unwrap()),
         |job: &OwnerJob| {
-            use crate::server::registry::SystemHandlerError;
             Ok(OwnerPatch::new(
                 job,
                 OwnerData::new(vec![0u8; 64]),
@@ -1126,8 +1126,7 @@ fn oversized_owner_values_defer_without_failing_durability() {
     startup.seed_owner(system.clone(), owner, vec![1u8; 8]);
 
     let save = TestSave::new("owner-capacity-live");
-    let mut state =
-        server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     let sequence_before = state.durability.writer.sequence();
     let error = tick_once(&mut state, TickId::new(1), Instant::now()).unwrap_err();
     // Capacity defers one owner; it never takes the coordinator's
@@ -1145,4 +1144,327 @@ fn oversized_owner_values_defer_without_failing_durability() {
             .unwrap(),
         (0, vec![1u8; 8])
     );
+}
+// --- Tampered multi-domain commits -----------------------------------------------
+//
+// One WAL record carries both halves of a combined entity+owner transaction.
+// These tests tamper with the owner half after staging to prove both
+// enforcement points: the journal worker rechecks every before-value against
+// committed history before appending, and the apply path rechecks them again
+// before mutating memory. Genuine corruption stops the coordinator; it never
+// half-applies.
+
+/// Startup with one mobile probe entity and one u64 owner cell, plus the
+/// handles both halves' tests need to rebuild it for reopen.
+fn tamper_startup() -> (
+    ServerStartup,
+    crate::content::EntityTypeId,
+    crate::server::registry::SystemId,
+    crate::server::parallel::OwnerKey,
+) {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+    use crate::server::startup::StartupEntityType;
+
+    let entity_type = crate::content::EntityTypeId(70_022);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_entity_type(crate::content::EntityTypeDef {
+            id: entity_type,
+            key: "test:tamper_entity".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x7A_F00D_0001,
+        })
+        .unwrap();
+    let system = SystemId::new("test:tamper_owner").unwrap();
+    let owner = OwnerKey::Entity(13);
+    let mut startup = ServerStartup::new(Arc::new(catalog));
+    startup.register_entity_type(StartupEntityType {
+        key: "test:tamper_entity".into(),
+        ownership: crate::server::entities::EntityOwnership::Mobile,
+        tick_policy: crate::server::entities::TickPolicy::Never,
+        max_payload_bytes: 1,
+        codec: Arc::new(StartupProbeCodec),
+        interaction_policy: None,
+        tick_planner: None,
+    });
+    startup.register_system(
+        SystemDescriptor::new(
+            system.clone(),
+            Phase::Simulation,
+            OwnerPartition::Entity,
+            1,
+            0,
+        )
+        .write(ResourceId::new("test:tamper_owner_state").unwrap()),
+        |job: &OwnerJob| {
+            use crate::server::registry::SystemHandlerError;
+            let value = job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .copied()
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerData::new(value + 1),
+                PatchUsage {
+                    writes: 1,
+                    effects: 0,
+                    estimated_bytes: std::mem::size_of::<u64>(),
+                },
+            ))
+        },
+    );
+    register_u64_owner_codec(&mut startup, &system);
+    startup.seed_owner(system.clone(), owner, 0u64);
+    (startup, entity_type, system, owner)
+}
+
+/// Stages one entity batch through the WAL — with its checkpoint-mirror
+/// reservation — and settles it, so the live store and the mirror advance
+/// together.
+fn stage_tamper_batch(
+    state: &mut State,
+    batch: crate::server::entities::PreparedEntityBatch,
+    tick: u64,
+) {
+    use crate::server::durable::CommitAction;
+
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the batch");
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(batch),
+        entity_wakes: Vec::new(),
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(tick), &action, None, Some(permit))
+            .unwrap()
+    );
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(state, TickId::new(tick), Instant::now())
+            .unwrap();
+        if state.durability.pending.is_empty() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("tamper batch must settle");
+}
+
+/// Settles until the coordinator stops: a commit the journal refused or an
+/// apply that failed must surface as an error, never as a quiet settle.
+fn settle_until_fatal(state: &mut State, tick: u64) {
+    for _ in 0..2_000 {
+        match crate::server::durable::process_durable_actions(
+            state,
+            TickId::new(tick),
+            Instant::now(),
+        ) {
+            Ok(()) if state.durability.pending.is_empty() => {
+                panic!("tampered commit must not settle")
+            }
+            Ok(()) => {}
+            Err(_) => return,
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("tampered commit must stop the coordinator");
+}
+
+/// Spawns the probe entity through the WAL and returns its ID.
+fn spawn_tamper_entity(
+    state: &mut State,
+    entity_type: crate::content::EntityTypeId,
+) -> crate::server::entities::EntityId {
+    use crate::server::entities::{EntityPayload, EntitySpawn};
+
+    let prepared = state
+        .entities
+        .prepare_spawn(EntitySpawn::Mobile {
+            entity_type,
+            position: [0.5, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .unwrap();
+    let id = prepared.entity_id();
+    stage_tamper_batch(state, prepared, 1);
+    id
+}
+
+/// Prepares the probe update (payload 7 to 8) with a prepared owner wave
+/// joined in, so one record spans both domains.
+fn tampered_update(
+    state: &mut State,
+    spawned: crate::server::entities::EntityId,
+    system: &crate::server::registry::SystemId,
+    owner: crate::server::parallel::OwnerKey,
+    tamper: impl FnOnce(&mut crate::server::journal::Change),
+) -> crate::server::entities::PreparedEntityBatch {
+    use crate::server::entities::{EntityPatch, EntityPayload};
+    use crate::server::parallel::OwnerData;
+    use crate::server::runtime::owner_durable::OwnerWrite;
+
+    let snapshot = state.entities.snapshot(spawned).unwrap();
+    let mut update = state
+        .entities
+        .prepare_update(
+            spawned,
+            snapshot.revision,
+            EntityPatch {
+                payload: Some(EntityPayload::new(8u8)),
+                next_tick: None,
+                position: None,
+            },
+        )
+        .unwrap();
+    let wave = state
+        .system_runtime
+        .prepare_owner_wave(
+            system,
+            vec![OwnerWrite::new(owner, 0, OwnerData::new(1u64))],
+        )
+        .unwrap();
+    let mut change = wave.changes()[0].clone();
+    tamper(&mut change);
+    update.add_related_change(change).unwrap();
+    update
+}
+
+#[test]
+fn tampered_owner_before_values_reject_the_whole_record() {
+    let save = TestSave::new("owner-tamper-before");
+    let (startup, entity_type, system, owner) = tamper_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let spawned = spawn_tamper_entity(&mut state, entity_type);
+    let update = tampered_update(&mut state, spawned, &system, owner, |change| {
+        change.before = vec![0xFF];
+    });
+    // The journal worker rechecks every before-value against committed
+    // history before appending, so the whole record is rejected: the entity
+    // half cannot slip through without the owner half. The coordinator stops
+    // with nothing committed anywhere.
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the update");
+    let action = tamper_action(update);
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(2), &action, None, Some(permit))
+            .unwrap()
+    );
+    settle_until_fatal(&mut state, 2);
+    assert!(state.durability.failed);
+    assert_eq!(tamper_payload(&state, spawned), Some(7u8));
+    assert_eq!(
+        state.system_runtime.owner_value::<u64>(&system, owner),
+        Some((0, 0))
+    );
+    drop(state);
+
+    // Restart agrees: neither half is durable, so both still hold their
+    // pre-transaction state. Atomicity holds before and after the crash.
+    let (startup, _, system, owner) = tamper_startup();
+    let reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(tamper_payload(&reopened, spawned), Some(7u8));
+    assert_eq!(
+        reopened.system_runtime.owner_value::<u64>(&system, owner),
+        Some((0, 0))
+    );
+}
+
+#[test]
+fn undecodable_owner_after_values_stop_recovery_fail_closed() {
+    let save = TestSave::new("owner-tamper-after");
+    let (startup, entity_type, system, owner) = tamper_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    let spawned = spawn_tamper_entity(&mut state, entity_type);
+    // A tampered after-value passes the journal (before-values match) but
+    // cannot decode at apply. The apply fails fatal in memory, and reopening
+    // refuses the world fail-closed instead of running on undecodable state.
+    let update = tampered_update(&mut state, spawned, &system, owner, |change| {
+        change.after = vec![0xAA; 8];
+    });
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the update");
+    let action = tamper_action(update);
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(2), &action, None, Some(permit))
+            .unwrap()
+    );
+    settle_until_fatal(&mut state, 2);
+    assert!(state.durability.failed);
+    drop(state);
+
+    let (startup, _, _, _) = tamper_startup();
+    let error = server_state_with_startup(7, save.path().to_path_buf(), 1, startup)
+        .err()
+        .expect("reopening undecodable owner state must fail");
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+}
+
+/// Wraps a prepared entity batch (possibly spanning owner state) for staging.
+fn tamper_action(
+    batch: crate::server::entities::PreparedEntityBatch,
+) -> crate::server::durable::CommitAction {
+    use crate::server::durable::CommitAction;
+
+    CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        drops: Default::default(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities: Some(batch),
+        entity_wakes: Vec::new(),
+    }
+}
+
+/// Private entity payload byte for the tamper probe.
+fn tamper_payload(state: &State, id: crate::server::entities::EntityId) -> Option<u8> {
+    state
+        .entities
+        .snapshot(id)
+        .unwrap()
+        .private_payload
+        .downcast_ref::<u8>()
+        .copied()
 }

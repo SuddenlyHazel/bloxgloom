@@ -240,6 +240,7 @@ impl DurableOwnerStore {
     /// use this to install codecs without going through `ServerStartup`;
     /// production builds the whole descriptor set up front so recovery sees
     /// every system before the first replayed key.
+    #[cfg(test)]
     pub fn register(&mut self, config: OwnerSystemConfig) -> io::Result<()> {
         if self.descriptors.contains_key(&config.system) {
             return Err(io::Error::other(format!(
@@ -737,23 +738,6 @@ impl DurableOwnerStore {
             .into_iter()
             .map(|(tick, system, owner)| (tick, system, owner))
             .collect()
-    }
-
-    /// Full envelope bytes for one cell, for tests assembling journal maps.
-    #[cfg(test)]
-    pub fn envelope(&self, system: &SystemId, owner: OwnerKey) -> Option<Vec<u8>> {
-        self.cells.get(&(system.clone(), owner)).map(|cell| {
-            let descriptor = self
-                .descriptors
-                .get(system)
-                .expect("descriptor for live cell");
-            encode_cell_value(
-                cell.revision,
-                descriptor.codec_version,
-                cell.due_tick,
-                &cell.encoded,
-            )
-        })
     }
 }
 

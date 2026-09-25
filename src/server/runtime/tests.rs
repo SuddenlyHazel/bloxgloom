@@ -5,9 +5,9 @@ use crate::server::registry::{
     OwnerPartition, ResourceId, SystemDescriptor, SystemHandler, SystemHandlerError, SystemId,
     SystemRegistry,
 };
-use crate::server::runtime::owner_effects::{EmittedOwnerEffect, OwnerEffectPatch};
-use crate::server::runtime::owner_durable::OwnerSystemConfig;
 use crate::server::runtime::owner_codec::{OwnerCodecError, OwnerValueCodec};
+use crate::server::runtime::owner_durable::OwnerSystemConfig;
+use crate::server::runtime::owner_effects::{EmittedOwnerEffect, OwnerEffectPatch};
 use crate::server::runtime::systems::SystemRuntime;
 use crate::server::simulation::Phase;
 use crate::world::ChunkKey;
@@ -612,7 +612,13 @@ fn unknown_effect_kinds_are_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
+        .run_registered(
+            &system,
+            TickId::new(1),
+            0,
+            &kinds,
+            &mut harness.state.durability,
+        )
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
     assert_ne!(error.kind(), ErrorKind::InvalidData);
@@ -662,7 +668,13 @@ fn dishonest_effect_accounting_is_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
+        .run_registered(
+            &system,
+            TickId::new(1),
+            0,
+            &kinds,
+            &mut harness.state.durability,
+        )
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
     assert_eq!(nudge_revisions(&harness), before);
@@ -714,7 +726,13 @@ fn effect_consumers_cannot_gain_a_write_path() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
+        .run_registered(
+            &system,
+            TickId::new(1),
+            0,
+            &kinds,
+            &mut harness.state.durability,
+        )
         .unwrap_err();
     // The consumer declared a write, so the whole wave defers before the
     // producer's replacement can commit: no consumer write path exists.

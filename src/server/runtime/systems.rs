@@ -87,7 +87,10 @@ impl SystemRuntime {
 
     /// Installs one system's value codec. Every live system needs its codec
     /// before its first seed or wave: without it the value cannot be encoded
-    /// for the WAL, so the wave cannot be staged.
+    /// for the WAL, so the wave cannot be staged. Test harnesses driving
+    /// `SystemRuntime` directly install codecs here; production builds the
+    /// descriptor set from `ServerStartup` before recovery.
+    #[cfg(test)]
     pub(in crate::server) fn register_owner_system(
         &mut self,
         config: OwnerSystemConfig,
@@ -153,6 +156,7 @@ impl SystemRuntime {
     /// changes without applying anything. Used by tests driving
     /// multi-domain commits; the live path prepares from validated patches
     /// inside [`SystemRuntime::run_registered`].
+    #[cfg(test)]
     pub(in crate::server) fn prepare_owner_wave(
         &self,
         system: &SystemId,
@@ -307,7 +311,10 @@ impl SystemRuntime {
         }
         let next_cursor = self
             .durable
-            .successor(&id, *selected.last().expect("selected owners are non-empty"))
+            .successor(
+                &id,
+                *selected.last().expect("selected owners are non-empty"),
+            )
             .expect("non-empty owner store has a successor");
 
         let batch = BatchId::new(tick, system.phase(), batch_wave);
@@ -487,7 +494,7 @@ impl SystemRuntime {
             .durable
             .prepare(&id, writes)
             .map_err(OwnerDurableError::io)?;
-        let applied = self.commit_owner_wave(&id, prepared, tick, durability)?;
+        let applied = self.commit_owner_wave(prepared, tick, durability)?;
         self.next_owner.insert(id, next_cursor);
         Ok(applied)
     }
@@ -500,7 +507,6 @@ impl SystemRuntime {
     /// coordinator, matching the gameplay apply path.
     fn commit_owner_wave(
         &mut self,
-        system: &SystemId,
         prepared: PreparedOwnerWave,
         tick: TickId,
         durability: &mut Durability,
@@ -545,17 +551,20 @@ impl SystemRuntime {
             .checked_add(1)
             .ok_or_else(|| io::Error::other("durable transaction IDs exhausted"))?;
         let transaction = Transaction::new(id, tick.get(), prepared.changes().to_vec());
-        let receiver = durability.writer.try_submit(transaction).map_err(|error| match error {
-            SubmitError::Full => io::Error::new(
-                ErrorKind::WouldBlock,
-                "durable journal is full; owner wave defers",
-            ),
-            SubmitError::Closed => io::Error::other("durable journal writer is closed"),
-            SubmitError::Invalid(error) => {
-                durability.failed = true;
-                error
-            }
-        })?;
+        let receiver = durability
+            .writer
+            .try_submit(transaction)
+            .map_err(|error| match error {
+                SubmitError::Full => io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "durable journal is full; owner wave defers",
+                ),
+                SubmitError::Closed => io::Error::other("durable journal writer is closed"),
+                SubmitError::Invalid(error) => {
+                    durability.failed = true;
+                    error
+                }
+            })?;
         // Reserved only after the writer accepts the complete transaction,
         // mirroring gameplay staging: a rejected wave reserves nothing.
         durability.reserved.extend(keys.iter().cloned());
@@ -566,7 +575,9 @@ impl SystemRuntime {
                     durability.reserved.remove(key);
                 }
                 durability.failed = true;
-                return Err(io::Error::other(format!("durable WAL write failed: {error}")));
+                return Err(io::Error::other(format!(
+                    "durable WAL write failed: {error}"
+                )));
             }
             Err(_) => {
                 for key in &keys {

@@ -52,10 +52,10 @@ pub(crate) struct ServerStartup {
 /// durable store; the codec serializes them only for WAL change values, with
 /// a declared per-system byte bound enforced fail-closed at insert and patch
 /// time. Every registered system needs one before its first seed or wave.
-pub(crate) struct StartupOwnerCodec {
-    pub(crate) codec: Arc<dyn OwnerValueCodec>,
-    pub(crate) codec_version: u16,
-    pub(crate) max_bytes: usize,
+pub(in crate::server) struct StartupOwnerCodec {
+    pub(in crate::server) codec: Arc<dyn OwnerValueCodec>,
+    pub(in crate::server) codec_version: u16,
+    pub(in crate::server) max_bytes: usize,
 }
 
 impl ServerStartup {
@@ -107,7 +107,11 @@ impl ServerStartup {
     /// live system's codec before replaying the first owner key, so a
     /// registered system without one is a startup error, not a silent
     /// transient fallback.
-    pub(crate) fn register_owner_codec(&mut self, system: SystemId, codec: StartupOwnerCodec) {
+    pub(in crate::server) fn register_owner_codec(
+        &mut self,
+        system: SystemId,
+        codec: StartupOwnerCodec,
+    ) {
         self.owner_codecs.insert(system, codec);
     }
 
