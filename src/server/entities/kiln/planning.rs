@@ -67,6 +67,7 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
             payload: next_payload.into_entity_payload(),
             inventory: next_inventory,
             block_states,
+            wakes: Vec::new(),
         })
     }
 }
@@ -108,6 +109,7 @@ impl EntityTickPolicy for KilnTickPlanner {
             next_tick: tick.next_tick,
             anchor_update: Some(anchor_update),
             block_states,
+            wakes: Vec::new(),
         })
     }
 }

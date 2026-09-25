@@ -12,6 +12,7 @@ mod registry;
 mod spatial;
 mod store;
 mod types;
+pub(super) mod wake;
 
 #[cfg(test)]
 mod tests;
@@ -43,4 +44,8 @@ pub(super) use types::{
     EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, EntityView,
     MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES,
     MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, TickPolicy, position_to_cell,
+};
+pub(super) use wake::{
+    INTERACT_PRODUCER_ID, MAX_WAKES_PER_PLAN, TICK_PRODUCER_ID, WAKE_KIND_ID, canonical_wakes,
+    interact_producer, register_wake_kind, route_wakes, tick_producer,
 };

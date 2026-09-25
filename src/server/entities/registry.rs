@@ -1,7 +1,8 @@
 use super::store::EntitySnapshot;
 use super::types::{
-    CellCoord, EntityError, EntityOwnership, EntityPayload, EntityView, MAX_ENTITY_FOOTPRINT_CELLS,
-    MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES, TickPolicy,
+    CellCoord, EntityError, EntityId, EntityOwnership, EntityPayload, EntityView,
+    MAX_ENTITY_FOOTPRINT_CELLS, MAX_ENTITY_PAYLOAD_BYTES, MAX_ENTITY_PUBLIC_VIEW_BYTES,
+    TickPolicy,
 };
 use crate::content::{BlockStateId, Catalog, EntityTypeId};
 use crate::inventory::Inventory;
@@ -27,6 +28,12 @@ pub struct EntityInteractionPlan {
     pub payload: EntityPayload,
     pub inventory: Inventory,
     pub block_states: Vec<EntityBlockStateChange>,
+    /// Notification-only wake requests for neighbour entities. Each ID is
+    /// routed through the registered `bloxgloom:wake_entity` effect kind and
+    /// delivered as a transient tick attempt: the destination runs its own
+    /// durable work sooner, or not at all when the wake is dropped. Wakes
+    /// never carry state and never authorize a write on their own.
+    pub wakes: Vec<EntityId>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,6 +42,9 @@ pub struct EntityTickPlan {
     pub next_tick: u64,
     pub anchor_update: Option<super::types::AnchorUpdate>,
     pub block_states: Vec<EntityBlockStateChange>,
+    /// Notification-only wake requests, with the same delivery contract as
+    /// [`EntityInteractionPlan::wakes`].
+    pub wakes: Vec<EntityId>,
 }
 
 /// Trusted server-only policy for bounded client requests directed at an

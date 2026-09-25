@@ -45,7 +45,7 @@ use durable::{
     Durability, handle_live_message, process_durable_actions, publish_committed,
     queue_interaction_actions, remember_drops_checkpoint,
 };
-use effects::CellCoord;
+use effects::{CellCoord, EffectKindRegistryFrozen};
 use entities::{EntityCommit, EntityDelta, EntityStore, PlayerEntityStore};
 use fire::FireRuntime;
 use metrics::{MetricsRecorder, TickSample};
@@ -150,6 +150,10 @@ struct State {
     drops: Drops,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
+    /// Frozen notification-effect declarations installed at startup. Entity
+    /// plans emit wakes against this registry; delivery only schedules
+    /// transient tick attempts and never persists anything.
+    effect_kinds: Arc<EffectKindRegistryFrozen>,
     /// Shared per-chunk public entity revision for durable and session-only
     /// changes. It is intentionally separate from the WAL/checkpoint frontier.
     entity_public_revision: u64,
@@ -447,6 +451,7 @@ fn server_state_with_startup(
     let mut drops = Drops::open_with_catalog(&save_dir, world.catalog_arc())?;
     let catalog = world.catalog_arc();
     let entity_types = startup.entity_types_for(catalog.clone())?;
+    let effect_kinds = Arc::new(startup.effect_kinds()?);
     let mut block_actions = BlockActionRegistryBuilder::new(&catalog);
     block_actions.register(
         crate::content::KILN_BLOCK_TYPE,
@@ -490,6 +495,7 @@ fn server_state_with_startup(
         drops,
         entities,
         player_entities: PlayerEntityStore::default(),
+        effect_kinds,
         entity_public_revision,
         block_actions,
         seed,
