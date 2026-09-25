@@ -11,6 +11,7 @@ pub(in crate::server) mod adapters;
 pub(in crate::server) mod owner_codec;
 pub(in crate::server) mod owner_durable;
 pub(in crate::server) mod owner_effects;
+pub(in crate::server) mod owner_journal;
 pub(in crate::server) mod systems;
 
 #[cfg(test)]

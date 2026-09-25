@@ -245,6 +245,41 @@ impl DurableOwnerStore {
         self.active.len()
     }
 
+    /// Stages the exact WAL change for a new cell without inserting it.
+    /// Validation (including the byte bound) runs here so a caller can
+    /// spend a transaction ID and wait for the receipt before the cell
+    /// becomes visible through [`DurableOwnerStore::insert`].
+    pub fn stage_insert(
+        &self,
+        system: &SystemId,
+        owner: OwnerKey,
+        value: &OwnerData,
+    ) -> Result<Change, OwnerDurableError> {
+        let descriptor =
+            self.descriptors
+                .get(system)
+                .ok_or_else(|| OwnerDurableError::UnknownSystem {
+                    system: system.clone(),
+                })?;
+        if self.cells.contains_key(&(system.clone(), owner)) {
+            return Err(OwnerDurableError::DuplicateOwner {
+                system: system.clone(),
+                owner,
+            });
+        }
+        if self.cells.len() >= super::systems::MAX_OWNER_VALUES_PER_SYSTEM {
+            return Err(OwnerDurableError::TooManyOwners {
+                system: system.clone(),
+            });
+        }
+        let encoded = encode_bounded(descriptor, system, owner, value)?;
+        Ok(Change::new(
+            owner_state_key(system, owner),
+            Vec::new(),
+            encode_cell_value(0, descriptor.codec_version, None, &encoded),
+        ))
+    }
+
     /// Inserts a new owner cell. Oversized values and a full owner count
     /// report `WouldBlock`: capacity defers one owner, never state.
     pub fn insert(
