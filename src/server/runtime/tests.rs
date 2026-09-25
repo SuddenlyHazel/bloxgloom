@@ -750,6 +750,56 @@ fn effect_consumers_cannot_gain_a_write_path() {
 }
 
 #[test]
+fn replayed_cursor_changes_advance_the_rotation_cursor() {
+    use crate::server::journal::Change;
+    use crate::server::registry::SystemId;
+    use crate::server::runtime::owner_codec::{
+        OWNER_CURSOR_DOMAIN, decode_owner_cursor_key, encode_cursor_value, owner_cursor_key,
+    };
+    use crate::server::runtime::owner_wake::{encode_wake_value, owner_wake_key};
+
+    let system = SystemId::new("test:cursor_replay").unwrap();
+    let first = chunk_owner(1);
+    let second = chunk_owner(2);
+    // A receipted cursor change converges the in-memory rotation cursor, and
+    // a receipted wake flag for an unloaded owner is held durably. Both must
+    // survive the publication path instead of being dropped.
+    let cursor = Change::new(
+        owner_cursor_key(&system),
+        Vec::new(),
+        encode_cursor_value(first),
+    );
+    assert_eq!(cursor.key.domain, OWNER_CURSOR_DOMAIN);
+    assert!(decode_owner_cursor_key(&cursor.key).is_some());
+    let wake = Change::new(
+        owner_wake_key(&system, second),
+        Vec::new(),
+        encode_wake_value(7),
+    );
+    let mut runtime = SystemRuntime::new(1).unwrap();
+    register_u64_state(&mut runtime, &system);
+    runtime
+        .apply_replayed_owner_changes(&[cursor, wake])
+        .unwrap();
+    // Cursor advanced; wake held for the unloaded destination.
+    let replayed = Change::new(
+        owner_cursor_key(&system),
+        encode_cursor_value(first),
+        encode_cursor_value(second),
+    );
+    runtime.apply_replayed_owner_changes(&[replayed]).unwrap();
+    assert_eq!(runtime.durable_wake_count(), 1);
+    // A stale cursor before-value is corruption, not a skip.
+    let stale = Change::new(
+        owner_cursor_key(&system),
+        Vec::new(),
+        encode_cursor_value(first),
+    );
+    let error = runtime.apply_replayed_owner_changes(&[stale]).unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::InvalidData);
+}
+
+#[test]
 fn replayed_wake_flags_land_in_the_durable_set() {
     use crate::server::journal::Change;
     use crate::server::runtime::owner_wake::{encode_wake_value, owner_wake_key};

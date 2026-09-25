@@ -518,8 +518,15 @@ fn cached_block_or_request(
         return Ok(block);
     }
     let key = world_to_chunk(x, y, z).0;
-    let _ = request_chunk(state, key);
-    Err(io::Error::new(ErrorKind::WouldBlock, reason))
+    // Capacity pressure (a full loader queue or an unrequestable chunk) only
+    // defers the command with `WouldBlock` so it can retry later. A genuine
+    // loader failure keeps its own kind — including `InvalidData`, which
+    // stops the coordinator through the caller's fatal path — instead of
+    // being conflated with "not available yet".
+    match request_chunk(state, key) {
+        Ok(_) => Err(io::Error::new(ErrorKind::WouldBlock, reason)),
+        Err(error) => Err(error),
+    }
 }
 
 fn ensure_no_unhandled_anchor(

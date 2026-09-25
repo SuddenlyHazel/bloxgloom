@@ -4,8 +4,19 @@ use super::*;
 use crate::protocol::ServerMessage;
 use crate::server::fire::FireTransaction;
 use crate::server::journal::Change;
-use crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN;
+use crate::server::runtime::owner_codec::{OWNER_CURSOR_DOMAIN, OWNER_STATE_DOMAIN};
+use crate::server::runtime::owner_wake::OWNER_WAKE_DOMAIN;
 use crate::server::{State, durable};
+
+/// Owner-wave domains that converge through publication. State cells carry
+/// the values, wake flags carry durable "due" markers, and cursors carry
+/// the round-robin rotation: dropping any of them here would silently lose
+/// receipted work that rode a `CommitAction`.
+pub(super) fn is_owner_publication_key(key: &StateKey) -> bool {
+    key.domain == OWNER_STATE_DOMAIN
+        || key.domain == OWNER_WAKE_DOMAIN
+        || key.domain == OWNER_CURSOR_DOMAIN
+}
 
 #[path = "publication/commit.rs"]
 mod commit;
@@ -31,10 +42,13 @@ pub(super) fn apply_committed_action(
             .validate_prepared(entities)
             .map_err(io::Error::other)?;
     }
-    // Owner cells piggybacked on this transaction through
-    // `add_related_change` ride the same WAL record and the same receipt.
-    // Their before-values are rechecked at apply; a mismatch is genuine
-    // corruption and stops the coordinator through the caller's fatal path.
+    // Owner cells, durable wake flags, and rotation cursors piggybacked
+    // on this transaction through `add_related_change` ride the same WAL
+    // record and the same receipt. Their before-values are rechecked at
+    // apply; a mismatch is genuine corruption and stops the coordinator
+    // through the caller's fatal path. Wake and cursor changes must reach
+    // publication: filtering to the state domain only would silently drop
+    // them here.
     let owner_changes: Vec<Change> = action
         .entities
         .as_ref()
@@ -42,7 +56,7 @@ pub(super) fn apply_committed_action(
             entities
                 .changes()
                 .iter()
-                .filter(|change| change.key.domain == OWNER_STATE_DOMAIN)
+                .filter(|change| is_owner_publication_key(&change.key))
                 .cloned()
                 .collect()
         })

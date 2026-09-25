@@ -18,6 +18,32 @@ fn temp_save_dir() -> PathBuf {
 }
 
 #[test]
+fn owner_publication_filter_keeps_wake_and_cursor_changes() {
+    use crate::server::journal::StateKey;
+    use crate::server::runtime::owner_codec::{OWNER_CURSOR_DOMAIN, OWNER_STATE_DOMAIN};
+    use crate::server::runtime::owner_wake::OWNER_WAKE_DOMAIN;
+
+    // A wake or cursor change riding a CommitAction must reach publication.
+    // Filtering to the state domain only would silently drop receipted work.
+    assert!(is_owner_publication_key(&StateKey::new(
+        OWNER_STATE_DOMAIN,
+        vec![1]
+    )));
+    assert!(is_owner_publication_key(&StateKey::new(
+        OWNER_WAKE_DOMAIN,
+        vec![2]
+    )));
+    assert!(is_owner_publication_key(&StateKey::new(
+        OWNER_CURSOR_DOMAIN,
+        vec![3]
+    )));
+    assert!(!is_owner_publication_key(&StateKey::new(
+        "bloxgloom:chunk_snapshot",
+        vec![4]
+    )));
+}
+
+#[test]
 fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
     let path = temp_save_dir();
     let mut state = server_state(53, path.clone()).unwrap();

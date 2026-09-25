@@ -20,7 +20,10 @@ use super::super::parallel::{
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
-use super::owner_codec::{encode_cursor_value, owner_cursor_key};
+use super::owner_codec::{
+    OWNER_CURSOR_DOMAIN, decode_cursor_value, decode_owner_cursor_key, encode_cursor_value,
+    owner_cursor_key,
+};
 #[cfg(test)]
 use super::owner_durable::OwnerSystemConfig;
 use super::owner_durable::{
@@ -187,14 +190,53 @@ impl SystemRuntime {
 
     /// Applies WAL-committed owner changes after their receipt, whether they
     /// arrived in a standalone owner wave or piggybacked on an entity
-    /// transaction. A before-value mismatch is genuine corruption and stops
-    /// the coordinator; capacity can never surface here.
+    /// transaction. State cells, durable wake flags, and rotation cursors are
+    /// all applied here so piggybacked records converge exactly like
+    /// standalone owner waves. A before-value mismatch is genuine corruption
+    /// and stops the coordinator; capacity can never surface here.
     pub(in crate::server) fn apply_replayed_owner_changes(
         &mut self,
         changes: &[Change],
     ) -> io::Result<()> {
         self.durable.apply_replayed(changes)?;
-        self.durable_wakes.apply_replayed(changes)
+        self.durable_wakes.apply_replayed(changes)?;
+        for change in changes {
+            if change.key.domain != OWNER_CURSOR_DOMAIN {
+                continue;
+            }
+            let Some(system_name) = decode_owner_cursor_key(&change.key) else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "owner cursor key is malformed",
+                ));
+            };
+            let system = SystemId::new(system_name).map_err(|_| {
+                io::Error::new(
+                    ErrorKind::InvalidData,
+                    "owner cursor key has a bad system id",
+                )
+            })?;
+            if !self.durable.is_registered(&system) {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "owner cursor names an unregistered system",
+                ));
+            }
+            let current = self
+                .next_owner
+                .get(&system)
+                .map(|owner| encode_cursor_value(*owner))
+                .unwrap_or_default();
+            if current != change.before {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "owner cursor replay precondition mismatch",
+                ));
+            }
+            let owner = decode_cursor_value(&change.after)?;
+            self.next_owner.insert(system, owner);
+        }
+        Ok(())
     }
 
     /// Receipted durable wake flags held for destinations with no live cell.
