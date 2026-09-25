@@ -83,7 +83,6 @@ const DEFAULT_CLIENTS: usize = 128;
 const MAX_CLIENTS: usize = 256;
 const OUTBOUND_CAPACITY: usize = 128;
 const DEFAULT_VIEW: u8 = 3;
-const STREAM_INTERVAL: Duration = FIXED_STEP;
 const INPUT_CAPACITY: usize = 8192;
 const MAX_INPUTS_PER_TICK: usize = 1024;
 const MAX_CATCH_UP_TICKS: usize = 3;

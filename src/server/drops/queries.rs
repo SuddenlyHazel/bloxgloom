@@ -39,13 +39,11 @@ fn live_drop(store: &EntityStore, id: EntityId) -> Option<LiveDrop> {
     })
 }
 
-fn collect_in_aabb(
-    store: &EntityStore,
-    min: [f32; 3],
-    max: [f32; 3],
-) -> Vec<LiveDrop> {
+fn collect_in_aabb(store: &EntityStore, min: [f32; 3], max: [f32; 3]) -> Vec<LiveDrop> {
     let ids = store.query_mobile_aabb(min, max).unwrap_or_default();
-    ids.into_iter().filter_map(|id| live_drop(store, id)).collect()
+    ids.into_iter()
+        .filter_map(|id| live_drop(store, id))
+        .collect()
 }
 
 fn snapshot_item(drop: &LiveDrop, now_ms: u64) -> DroppedItem {

@@ -12,9 +12,11 @@ fn test_store() -> (EntityStore, Arc<Catalog>) {
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     super::super::entity::register_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     crate::server::entities::register_player_entity_type(&mut builder).unwrap();
-    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog))
-        .unwrap();
-    (EntityStore::new(Arc::new(builder.freeze().unwrap())), catalog)
+    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
+    (
+        EntityStore::new(Arc::new(builder.freeze().unwrap())),
+        catalog,
+    )
 }
 
 fn spawn_direct(
@@ -43,7 +45,13 @@ fn spawn_direct(
 fn pickup_delay_gates_candidates_but_not_visibility() {
     let (mut store, _catalog) = test_store();
     let born_ms = super::super::unix_ms();
-    spawn_direct(&mut store, [0.0, 0.0, 0.0], 1, born_ms, Duration::from_secs(3_600));
+    spawn_direct(
+        &mut store,
+        [0.0, 0.0, 0.0],
+        1,
+        born_ms,
+        Duration::from_secs(3_600),
+    );
     let gated = spawn_direct(&mut store, [0.5, 0.0, 0.0], 1, born_ms, Duration::ZERO);
     // Wall clock has just passed both births, so only the delay gates.
     let candidates = pickup_candidates(&store, [0.0, 0.0, 0.0]);
@@ -88,5 +96,7 @@ fn airborne_count_tracks_schedule_not_records() {
     // The settled drop still owns its chunk for wake routing.
     let chunk = crate::world::world_to_chunk(0, 0, 0).0;
     assert_eq!(sleeping_drop_ids_in_chunk(&store, chunk), vec![id]);
-    assert!(sleeping_drop_ids_in_chunk(&store, crate::world::ChunkKey { x: 9, y: 9, z: 9 }).is_empty());
+    assert!(
+        sleeping_drop_ids_in_chunk(&store, crate::world::ChunkKey { x: 9, y: 9, z: 9 }).is_empty()
+    );
 }

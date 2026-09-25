@@ -56,7 +56,7 @@ fn drop_snapshot(id: u64, position: [f32; 3], speed: f32) -> EntitySnapshot {
         .into_entity_payload();
     let location = EntityLocation::Mobile { position };
     let owner = location.owner().unwrap();
-    assert_eq!(catalog.item(ItemId::new(1)).is_some(), true);
+    assert!(catalog.item(ItemId::new(1)).is_some());
     EntitySnapshot {
         id: crate::server::entities::EntityId::new(id).unwrap(),
         entity_type: EntityTypeId(1),
@@ -90,7 +90,12 @@ fn falling_drop_integrates_exactly_one_fixed_step() {
     let speed = (0.0 - GRAVITY * dt).max(-TERMINAL_SPEED);
     let expected_y = position[1] - DROP_RADIUS + speed * dt + DROP_RADIUS;
     assert_eq!(plan.position, Some([position[0], expected_y, position[2]]));
-    let payload = plan.payload.unwrap().downcast_ref::<DropEntityPayload>().unwrap().clone();
+    let payload = plan
+        .payload
+        .unwrap()
+        .downcast_ref::<DropEntityPayload>()
+        .unwrap()
+        .clone();
     assert_eq!(payload.vertical_speed.to_bits(), speed.to_bits());
     assert_eq!(plan.next_tick, Some(10));
     assert!(plan.transfer.is_none());

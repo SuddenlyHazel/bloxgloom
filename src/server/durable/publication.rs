@@ -74,11 +74,7 @@ pub(super) fn apply_committed_action(
             .apply_committed(entities.clone())
             .map_err(io::Error::other)?;
         commit.registry_revision = state.advance_entity_public_revision()?;
-        if commit
-            .deltas
-            .iter()
-            .any(|delta| super::super::drops::is_drop_delta(delta))
-        {
+        if commit.deltas.iter().any(super::super::drops::is_drop_delta) {
             state.drop_revision = state.drop_revision.wrapping_add(1);
         }
         entity_commit = Some(commit);

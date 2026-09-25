@@ -229,13 +229,10 @@ pub(super) fn spawn_drop(
     delay: Duration,
 ) {
     let catalog = state.world.catalog_arc();
-    let batch = crate::server::drops::plan_spawn(
+    let batch = crate::server::drops::plan_spawns(
         &state.entities,
         &catalog,
-        position,
-        item,
-        count,
-        delay,
+        &[(position, item, count, delay)],
         tick,
         crate::server::drops::unix_ms(),
     )
@@ -245,7 +242,12 @@ pub(super) fn spawn_drop(
 }
 
 /// Stages one drop take through the WAL and drains its receipt.
-pub(super) fn take_drop(state: &mut State, tick: u64, id: crate::server::entities::EntityId, count: u16) {
+pub(super) fn take_drop(
+    state: &mut State,
+    tick: u64,
+    id: crate::server::entities::EntityId,
+    count: u16,
+) {
     let batch = crate::server::drops::plan_take(&state.entities, &[(id, count)])
         .unwrap()
         .expect("test drop take plans work");
@@ -302,7 +304,10 @@ pub(super) fn drain_durable(state: &mut State, tick: u64) {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    assert!(state.durability.pending.is_empty(), "test drop batch must commit");
+    assert!(
+        state.durability.pending.is_empty(),
+        "test drop batch must commit"
+    );
 }
 
 pub(super) fn drop_nearby(state: &State, position: [f32; 3]) -> Vec<crate::protocol::DroppedItem> {

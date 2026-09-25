@@ -27,25 +27,6 @@ fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
 /// Existing merge targets resolve in stable ID order; newly allocated IDs
 /// follow the store allocator deterministically. Returns `None` when every
 /// requested count is zero.
-pub(in crate::server) fn plan_spawn(
-    store: &EntityStore,
-    catalog: &Catalog,
-    position: [f32; 3],
-    item: ItemId,
-    count: u16,
-    pickup_delay: Duration,
-    spawn_tick: u64,
-    now_ms: u64,
-) -> io::Result<Option<PreparedEntityBatch>> {
-    plan_spawns(
-        store,
-        catalog,
-        &[(position, item, count, pickup_delay)],
-        spawn_tick,
-        now_ms,
-    )
-}
-
 pub(in crate::server) fn plan_spawn_stack(
     store: &EntityStore,
     catalog: &Catalog,
@@ -146,8 +127,8 @@ fn plan_stack_spawns_inner(
                     (&mut entry.stack, true)
                 } else {
                     let slot = merged.entry(id).or_insert_with(|| {
-                        let live = super::queries::stack(store, id)
-                            .expect("merge target is a live drop");
+                        let live =
+                            super::queries::stack(store, id).expect("merge target is a live drop");
                         (live, *pickup_delay)
                     });
                     (&mut slot.0, false)
@@ -183,7 +164,8 @@ fn plan_stack_spawns_inner(
     }
     if merged.is_empty() && fresh.is_empty() && extra_spawns.is_empty() {
         return Ok(None);
-    }    let mut transactions = Vec::new();
+    }
+    let mut transactions = Vec::new();
     let mut fresh_spawns = Vec::with_capacity(fresh.len());
     for (id, (stack, delay)) in merged {
         let snapshot = store
@@ -222,16 +204,14 @@ fn plan_stack_spawns_inner(
     }
     fresh_spawns.extend(extra_spawns);
     if !fresh_spawns.is_empty() {
-        let batch = store.prepare_spawn_batch(fresh_spawns).map_err(plan_error)?;
+        let batch = store
+            .prepare_spawn_batch(fresh_spawns)
+            .map_err(plan_error)?;
         // The allocator must hand out exactly the predicted sequence:
         // drops first, extras after. Anything else means live state moved
         // under the plan and the whole action must not stage.
         let expected: Option<Vec<EntityId>> = (0..batch.entity_ids().len())
-            .map(|offset| {
-                first_id
-                    .checked_add(offset as u64)
-                    .and_then(EntityId::new)
-            })
+            .map(|offset| first_id.checked_add(offset as u64).and_then(EntityId::new))
             .collect();
         if Some(batch.entity_ids()) != expected {
             return Err(invalid("drop allocator changed before durable apply"));
@@ -242,7 +222,7 @@ fn plan_stack_spawns_inner(
         .combine_prepared(transactions)
         .map_err(plan_error)
         .map(Some)
-    }
+}
 
 struct PlannedNew {
     id: EntityId,
@@ -349,7 +329,11 @@ pub(in crate::server) fn plan_take(
             .cloned()
             .ok_or_else(|| invalid("drop changed before durable take"))?;
         if amount >= live.stack.count {
-            transactions.push(store.prepare_despawn(id, snapshot.revision).map_err(plan_error)?);
+            transactions.push(
+                store
+                    .prepare_despawn(id, snapshot.revision)
+                    .map_err(plan_error)?,
+            );
         } else {
             let mut after = live;
             after.stack.count -= amount;

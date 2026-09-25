@@ -10,9 +10,11 @@ fn test_store() -> (EntityStore, Arc<Catalog>) {
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     super::super::entity::register_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     crate::server::entities::register_player_entity_type(&mut builder).unwrap();
-    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog))
-        .unwrap();
-    (EntityStore::new(Arc::new(builder.freeze().unwrap())), catalog)
+    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
+    (
+        EntityStore::new(Arc::new(builder.freeze().unwrap())),
+        catalog,
+    )
 }
 
 fn item() -> ItemId {
@@ -30,9 +32,15 @@ fn spawn(
     count: u16,
     now_ms: u64,
 ) -> Vec<EntityId> {
-    let batch = plan_spawn(store, catalog, position, item(), count, Duration::ZERO, 1, now_ms)
-        .unwrap()
-        .expect("nonzero spawn plans work");
+    let batch = plan_spawns(
+        store,
+        catalog,
+        &[(position, item(), count, Duration::ZERO)],
+        1,
+        now_ms,
+    )
+    .unwrap()
+    .expect("nonzero spawn plans work");
     let ids = batch.entity_ids();
     apply(store, batch);
     ids
@@ -126,26 +134,20 @@ fn expired_drops_plan_bounded_despawns() {
 fn invalid_spawns_fail_closed_without_staging() {
     let (store, catalog) = test_store();
     assert!(
-        plan_spawn(
+        plan_spawns(
             &store,
             &catalog,
-            [f32::NAN, 0.0, 0.0],
-            item(),
-            1,
-            Duration::ZERO,
+            &[([f32::NAN, 0.0, 0.0], item(), 1, Duration::ZERO)],
             1,
             1_000
         )
         .is_err()
     );
     assert!(
-        plan_spawn(
+        plan_spawns(
             &store,
             &catalog,
-            [0.0, 0.0, 0.0],
-            ItemId::new(u32::MAX),
-            1,
-            Duration::ZERO,
+            &[([0.0, 0.0, 0.0], ItemId::new(u32::MAX), 1, Duration::ZERO)],
             1,
             1_000
         )

@@ -447,7 +447,10 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     assert_eq!(restarted.world.get_block(0, target_y, 0).unwrap(), AIR);
     let restored_inventory = restarted.inventory_store.load(profile).unwrap();
     assert!(restored_inventory.slots[0].is_none());
-    assert_eq!(drop_nearby(&restarted, [0.5, target_y as f32, 0.5]).len(), 2);
+    assert_eq!(
+        drop_nearby(&restarted, [0.5, target_y as f32, 0.5]).len(),
+        2
+    );
 }
 
 #[test]
@@ -561,6 +564,183 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
 }
 
 #[test]
+fn crash_mid_pickup_cannot_lose_or_duplicate_the_item() {
+    let save = TestSave::new("mid-pickup-crash");
+    let profile = 1551;
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let at = session.joined.position;
+    // One stone on the ground, immediately pickable. No ticks run after the
+    // spawn, so the automatic pickup probe cannot beat the manual staging.
+    spawn_drop(&mut state, tick, at, STONE_ITEM, 1, Duration::ZERO);
+    // Plan the real pickup and sync it to the journal, then crash before
+    // the coordinator ever applies it.
+    let request = DurableRequest::Pickup { id: session.id };
+    let action = crate::server::durable::actions::plan_durable_request(
+        &mut state,
+        &request,
+        TickId::new(tick),
+    )
+    .unwrap()
+    .expect("pickup plans while the drop is down");
+    let permit = state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .expect("mirror admits the pickup");
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(tick), &action, Some(permit))
+            .unwrap()
+    );
+    state.durability.pending[0]
+        .receiver
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    drop(session);
+    drop(state);
+    // Recovery replays the synced-but-unapplied pickup atomically: the stone
+    // reaches the inventory exactly once and no drop remains.
+    let restarted = state_for(&save, 7);
+    let inventory = restarted.inventory_store.load(profile).unwrap();
+    assert_eq!(
+        inventory
+            .slots
+            .iter()
+            .flatten()
+            .map(|stack| u32::from(stack.count))
+            .sum::<u32>(),
+        1
+    );
+    assert!(drop_nearby(&restarted, at).is_empty());
+}
+
+#[test]
+fn stacking_pickup_and_restart_conserve_every_item() {
+    let save = TestSave::new("stacking-conservation");
+    let profile = 1552;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 100));
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let at = session.joined.position;
+    // 100 more stone on the ground stacks into the half-full inventory
+    // through the normal proximity pickup: 128 + 72, nothing created.
+    spawn_drop(&mut state, tick, at, STONE_ITEM, 100, Duration::ZERO);
+    wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
+        inventory
+            .slots
+            .iter()
+            .flatten()
+            .map(|stack| u32::from(stack.count))
+            .sum::<u32>()
+            == 200
+    });
+    assert!(drop_nearby(&state, at).is_empty());
+    drop(session);
+    drop(state);
+    let restarted = state_for(&save, 7);
+    let inventory = restarted.inventory_store.load(profile).unwrap();
+    assert_eq!(
+        inventory
+            .slots
+            .iter()
+            .flatten()
+            .map(|stack| u32::from(stack.count))
+            .sum::<u32>(),
+        200
+    );
+    assert!(drop_nearby(&restarted, at).is_empty());
+}
+
+#[test]
+fn presentation_timing_cannot_create_or_remove_drops() {
+    let save = TestSave::new("presentation-isolation");
+    let profile = 1553;
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    // One stone settles far outside pickup range; the idle client sends
+    // nothing for the rest of the test, so only server ticks run.
+    let surface_y = state.spawn_anchor[1] as i32;
+    let far = [
+        session.joined.position[0] + 40.0,
+        surface_y as f32 + 0.25,
+        session.joined.position[2],
+    ];
+    spawn_drop(&mut state, tick, far, STONE_ITEM, 7, Duration::ZERO);
+    for _ in 0..2_000 {
+        run_empty_tick(&mut state, &mut tick);
+        if drop_active_len(&state) == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(drop_active_len(&state), 0);
+    let before = drop_nearby(&state, far);
+    assert_eq!(before.len(), 1);
+    let _ = messages(&session);
+    for _ in 0..20 {
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Server ticks alone change nothing: same drop, same position, and no
+    // pickup event without proximity. Ages advance with the server clock,
+    // so only ownership fields compare.
+    let owned = |items: &[crate::protocol::DroppedItem]| {
+        items
+            .iter()
+            .map(|drop| (drop.id, drop.item, drop.count, drop.position))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(owned(&drop_nearby(&state, far)), owned(&before));
+    assert!(
+        messages(&session)
+            .iter()
+            .all(|message| !matches!(message, ServerMessage::Pickups { .. }))
+    );
+    drop(session);
+}
+
+#[test]
+fn mid_fall_crash_conserves_every_item() {
+    let save = TestSave::new("mid-fall-crash");
+    let mut state = state_for(&save, 7);
+    let surface_y = state.spawn_anchor[1] as i32;
+    let mut tick = 1;
+    spawn_drop(
+        &mut state,
+        tick,
+        [0.5, surface_y as f32 + 64.0, 0.5],
+        STONE_ITEM,
+        200,
+        Duration::ZERO,
+    );
+    for _ in 0..150 {
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Still falling: nowhere near settled, so the crash lands mid-transfer.
+    assert!(drop_active_len(&state) > 0);
+    drop(state);
+    // Every item survives the crash mid-flight: 200 across live drops,
+    // none created, none lost.
+    let restarted = state_for(&save, 7);
+    let after = drop_nearby(&restarted, [0.5, surface_y as f32 + 32.0, 0.5]);
+    assert!(!after.is_empty());
+    assert_eq!(
+        after.iter().map(|drop| u32::from(drop.count)).sum::<u32>(),
+        200
+    );
+}
+
+#[test]
 fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
     let save = TestSave::new("drop-transfer-conservation");
     let mut state = state_for(&save, 7);
@@ -605,7 +785,11 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
     let spawn_owner = crate::world::world_to_chunk(0, surface_y + 64, 0).0;
     let settled_id =
         crate::server::entities::EntityId::new(settled[0].id).expect("settled drop has an ID");
-    let settled_owner = match state.entities.snapshot(settled_id).expect("settled drop exists").owner
+    let settled_owner = match state
+        .entities
+        .snapshot(settled_id)
+        .expect("settled drop exists")
+        .owner
     {
         crate::server::entities::EntityOwner::Mobile(chunk) => chunk,
         owner => panic!("drops stay mobile, found {owner:?}"),

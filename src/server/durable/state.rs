@@ -201,17 +201,6 @@ pub(in crate::server::durable) fn decode_profile_key(bytes: &[u8]) -> io::Result
     Ok(profile)
 }
 
-pub(in crate::server::durable) fn decode_drop_key(bytes: &[u8]) -> io::Result<u64> {
-    if bytes.len() != 8 {
-        return Err(invalid_data("invalid journal drop key"));
-    }
-    let id = u64::from_le_bytes(bytes.try_into().unwrap());
-    if id == 0 {
-        return Err(invalid_data("invalid journal drop ID"));
-    }
-    Ok(id)
-}
-
 pub(in crate::server::durable) fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidData, message)
 }

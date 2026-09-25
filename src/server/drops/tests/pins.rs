@@ -121,7 +121,10 @@ fn pin_expired_drop_is_listed_but_never_pickable_then_removed() {
 fn pin_fresh_drops_are_never_planned_as_expired() {
     let mut world = drop_world();
     spawn(&mut world, [0.0, 0.0, 0.0], item(2), 7, Duration::ZERO);
-    assert_eq!(apply_expired(&mut world, usize::MAX, super::super::unix_ms()), 0);
+    assert_eq!(
+        apply_expired(&mut world, usize::MAX, super::super::unix_ms()),
+        0
+    );
 }
 
 #[test]
@@ -161,7 +164,9 @@ fn pin_snapshot_round_trip_preserves_state_and_allocator() {
     let before = stable_items(&nearby(&world, [20.0, 2.5, 3.5]));
     assert_eq!(before.len(), 3);
     let checkpoint = crate::server::entities::EntityCheckpointStore::new(&root).unwrap();
-    checkpoint.write(&encode_checkpoint(&world.store).unwrap()).unwrap();
+    checkpoint
+        .write(&encode_checkpoint(&world.store).unwrap())
+        .unwrap();
 
     let reread = checkpoint.read().unwrap().unwrap();
     let restored_store = decode_checkpoint(&reread, Arc::clone(&world.types)).unwrap();

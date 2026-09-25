@@ -13,11 +13,11 @@ mod planning;
 mod queries;
 mod tick;
 
-pub(super) use entity::{DROP_ENTITY_TYPE, register_entity_type};
 #[cfg(test)]
 pub(super) use entity::DropEntityPayload;
+pub(super) use entity::{DROP_ENTITY_TYPE, register_entity_type};
 pub(in crate::server) use planning::{
-    plan_expired, plan_spawn, plan_spawn_stack, plan_spawns, plan_spawns_with_extra, plan_stack_spawns,
+    plan_expired, plan_spawn_stack, plan_spawns, plan_spawns_with_extra, plan_stack_spawns,
     plan_take,
 };
 pub(in crate::server) use queries::{

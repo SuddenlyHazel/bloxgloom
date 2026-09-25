@@ -2,7 +2,6 @@
 use super::entity::{DROP_ENTITY_TYPE, DropEntityPayload, register_entity_type};
 use super::planning;
 use super::queries;
-use super::tick::DropTickPlanner;
 use crate::content::Catalog;
 use crate::inventory::Stack;
 use crate::items::ItemId;
@@ -38,8 +37,7 @@ pub(super) fn drop_world() -> DropWorld {
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     register_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     crate::server::entities::register_player_entity_type(&mut builder).unwrap();
-    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog))
-        .unwrap();
+    crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     let types = Arc::new(builder.freeze().unwrap());
     DropWorld {
         store: EntityStore::new(Arc::clone(&types)),
@@ -69,13 +67,10 @@ pub(super) fn spawn_at(
     pickup_delay: Duration,
     now_ms: u64,
 ) -> Vec<EntityId> {
-    let batch = planning::plan_spawn(
+    let batch = planning::plan_spawns(
         &world.store,
         &world.catalog,
-        position,
-        item,
-        count,
-        pickup_delay,
+        &[(position, item, count, pickup_delay)],
         1,
         now_ms,
     )
@@ -194,8 +189,5 @@ pub(super) fn stable_items(items: &[DroppedItem]) -> Vec<(u64, ItemId, u16, [f32
         .collect()
 }
 
-pub(super) fn tick_planner() -> DropTickPlanner {
-    DropTickPlanner
-}
-
+mod bounded;
 mod pins;

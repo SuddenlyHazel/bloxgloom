@@ -28,7 +28,14 @@ fn drop_totals(state: &State, at: [f32; 3]) -> (usize, u32) {
 fn pin_spawn_merge_and_cap_hold_at_coordinator_level() {
     let save = TestSave::new("drop-pin-merge");
     let mut state = state_for(&save, 7);
-    spawn_drop(&mut state, 1, [4.0, 4.0, 4.0], PIN_STONE, 300, Duration::ZERO);
+    spawn_drop(
+        &mut state,
+        1,
+        [4.0, 4.0, 4.0],
+        PIN_STONE,
+        300,
+        Duration::ZERO,
+    );
     let nearby = drop_nearby(&state, [4.0, 4.0, 4.0]);
     let mut counts: Vec<u16> = nearby.iter().map(|drop| drop.count).collect();
     counts.sort_unstable();

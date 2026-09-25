@@ -225,13 +225,6 @@ impl Journal {
             .collect()
     }
 
-    /// Whether the selected base proves that every drop ID in its checkpoint
-    /// was materialized in the journal. Legacy WALs and version-1 bases do not
-    /// carry this guarantee.
-    pub fn drop_owner_set_closed(&self) -> bool {
-        self.drop_owner_set_closed
-    }
-
     /// Replays each unique transaction in the current tail in log order.
     #[cfg(test)]
     pub fn replay(&self, mut apply: impl FnMut(&Transaction) -> io::Result<()>) -> io::Result<()> {
