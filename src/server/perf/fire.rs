@@ -346,6 +346,7 @@ fn fixture_action(
         pickups: Vec::new(),
         fire_seed,
         entities: None,
+        entity_wakes: Vec::new(),
     }
 }
 

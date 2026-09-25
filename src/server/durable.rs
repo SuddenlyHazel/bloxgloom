@@ -82,6 +82,10 @@ pub(super) struct Durability {
     /// In-memory round-robin cursor; resets on restart, while entity due
     /// times remain WAL-owned on each record.
     pub(super) entity_tick_cursor: Option<(u64, EntityId)>,
+    /// Committed wake destinations waiting for the interaction/commit
+    /// barrier. Transient scheduling state: dropping entries only delays the
+    /// destination's own durable work, which stays on its persisted schedule.
+    pub(super) pending_wakes: Vec<EntityId>,
     pub(super) retry_pickups: HashSet<u64>,
     pub(super) expire_queued: bool,
     pub(super) expire_again: bool,
@@ -153,6 +157,10 @@ pub(super) struct CommitAction {
     pub(super) pickups: Vec<DroppedItem>,
     pub(super) fire_seed: Option<FireSeed>,
     pub(super) entities: Option<PreparedEntityBatch>,
+    /// Routed wake destinations declared by an entity plan. Transient
+    /// scheduling only: never part of the WAL change set, delivered as
+    /// tick attempts at the commit barrier when this action applies.
+    pub(super) entity_wakes: Vec<EntityId>,
 }
 
 impl CommitAction {
@@ -172,6 +180,7 @@ impl CommitAction {
             pickups: Vec::new(),
             fire_seed: None,
             entities: None,
+            entity_wakes: Vec::new(),
         }
     }
 }
@@ -208,6 +217,13 @@ pub(super) enum DurableRequest {
     },
     Expire,
     EntityTick {
+        id: EntityId,
+    },
+    /// Transient wake: run the destination's tick planner early. Unlike the
+    /// due-scan `EntityTick`, a woken attempt runs even before the entity's
+    /// persisted due time; the planner's durable work still commits through
+    /// the normal path, so a dropped wake only delays that work.
+    EntityWake {
         id: EntityId,
     },
 }

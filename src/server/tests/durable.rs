@@ -218,7 +218,8 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
             },
             DurableRequest::Pickup { .. }
             | DurableRequest::Expire
-            | DurableRequest::EntityTick { .. } => None,
+            | DurableRequest::EntityTick { .. }
+            | DurableRequest::EntityWake { .. } => None,
         })
         .collect();
     assert_eq!(queued_command_ids, [second_id]);

@@ -46,6 +46,5 @@ pub(super) use types::{
     MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, TickPolicy, position_to_cell,
 };
 pub(super) use wake::{
-    INTERACT_PRODUCER_ID, MAX_WAKES_PER_PLAN, TICK_PRODUCER_ID, WAKE_KIND_ID, canonical_wakes,
-    interact_producer, register_wake_kind, route_wakes, tick_producer,
+    canonical_wakes, interact_producer, register_wake_kind, route_wakes, tick_producer,
 };

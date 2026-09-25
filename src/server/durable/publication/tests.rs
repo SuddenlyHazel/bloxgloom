@@ -57,6 +57,7 @@ fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
         changed_cells: vec![CellCoord::new(10, 80, 10), CellCoord::new(11, 80, 10)],
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: None,
     };
 

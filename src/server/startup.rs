@@ -119,7 +119,10 @@ impl ServerStartup {
     pub(super) fn effect_kinds(&self) -> io::Result<EffectKindRegistryFrozen> {
         let mut registry = EffectKindRegistry::new();
         super::entities::register_wake_kind(&mut registry).map_err(|error| {
-            io::Error::new(ErrorKind::InvalidData, format!("wake effect kind: {error:?}"))
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("wake effect kind: {error:?}"),
+            )
         })?;
         Ok(registry.freeze())
     }

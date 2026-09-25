@@ -13,8 +13,11 @@ use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
     CellCoord, EntityBlockStateChange, EntityId, EntityLocation, EntityPatch, EntityView,
-    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, position_to_cell,
+    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, canonical_wakes, interact_producer,
+    position_to_cell, route_wakes, tick_producer,
 };
+use crate::server::registry::SystemId;
+use crate::server::simulation::TickId;
 use crate::server::streaming::request_chunk;
 use crate::server::voxel_view::VoxelView;
 use crate::world::{BlockId, ChunkKey, PreparedEdit};
@@ -164,6 +167,7 @@ pub(in crate::server) fn plan_interact(
     target: [i32; 3],
     request: &[u8],
     receipt_value: Vec<u8>,
+    tick: TickId,
 ) -> io::Result<CommitAction> {
     let target_cell = CellCoord::new(target[0], target[1], target[2]);
     if target[1] <= crate::world::BEDROCK_Y {
@@ -242,6 +246,14 @@ pub(in crate::server) fn plan_interact(
     }
     let (world_edits, changed_cells, read_chunks, write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
+    let wakes = plan_wakes(
+        state,
+        &neighbours,
+        &plan.wakes,
+        tick,
+        interact_producer(),
+        id,
+    )?;
     let mut entities = state
         .entities
         .prepare_update(
@@ -279,20 +291,28 @@ pub(in crate::server) fn plan_interact(
         pickups: Vec::new(),
         fire_seed: None,
         entities: Some(entities),
+        entity_wakes: wakes,
     })
 }
 
 /// Plan one due tick through the registered type policy. All block preimages
 /// and the entity payload/next due time are staged under the same WAL receipt.
+///
+/// A woken attempt (`woken == true`, delivered from another plan's wake
+/// effect) runs the planner even before the persisted due time so the
+/// destination's own durable work happens sooner. Every other validation —
+/// footprint preimages, due-time advancement, payload rules — is identical to
+/// the due path.
 pub(in crate::server) fn plan_entity_tick(
     state: &mut State,
     id: EntityId,
     current_tick: u64,
+    woken: bool,
 ) -> io::Result<Option<CommitAction>> {
     let Some(snapshot) = state.entities.snapshot(id) else {
         return Ok(None);
     };
-    if snapshot.next_tick.is_none_or(|due| due > current_tick) {
+    if !woken && snapshot.next_tick.is_none_or(|due| due > current_tick) {
         return Ok(None);
     }
     let descriptor = state
@@ -344,6 +364,14 @@ pub(in crate::server) fn plan_entity_tick(
     }
     let (world_edits, changed_cells, read_chunks, write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
+    let wakes = plan_wakes(
+        state,
+        &neighbours,
+        &plan.wakes,
+        TickId::new(current_tick),
+        tick_producer(),
+        id,
+    )?;
     let patch = EntityPatch {
         payload: plan.payload,
         next_tick: Some(Some(plan.next_tick)),
@@ -379,6 +407,7 @@ pub(in crate::server) fn plan_entity_tick(
         pickups: Vec::new(),
         fire_seed: None,
         entities: Some(entities),
+        entity_wakes: wakes,
     }))
 }
 
@@ -455,4 +484,46 @@ pub(super) fn corrupt(reason: &'static str) -> io::Error {
 
 pub(super) fn permission(reason: &'static str) -> io::Error {
     io::Error::new(ErrorKind::PermissionDenied, reason)
+}
+
+/// Canonicalizes a plan's wake list against its captured neighbours, checks
+/// every destination is a scheduled tickable entity, and routes the set
+/// through this producer's bounded effect buffer.
+///
+/// The existing plan validation (footprint preimages, inventory revisions,
+/// neighbour-view caps) is untouched; this only constrains the new channel.
+/// Over-bound or unroutable sets defer the plan (`WouldBlock`), never the
+/// coordinator-fatal `InvalidData` path: a local effect-capacity condition
+/// must not be able to stop the server. Destinations the planner cannot see,
+/// that are unknown, or that cannot tick reject the whole plan
+/// (`InvalidInput`).
+fn plan_wakes(
+    state: &State,
+    neighbours: &EntityView,
+    wakes: &[EntityId],
+    tick: TickId,
+    producer: SystemId,
+    source: EntityId,
+) -> io::Result<Vec<EntityId>> {
+    if wakes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let canonical = canonical_wakes(neighbours, wakes)?;
+    for id in &canonical {
+        let snapshot = state.entities.snapshot(*id).ok_or_else(|| {
+            io::Error::new(ErrorKind::InvalidInput, "wake destination is unknown")
+        })?;
+        let descriptor = state
+            .entities
+            .types()
+            .descriptor(snapshot.entity_type)
+            .map_err(io::Error::other)?;
+        if !descriptor.has_tick_planner() || snapshot.next_tick.is_none() {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "wake destination cannot tick",
+            ));
+        }
+    }
+    route_wakes(&state.effect_kinds, tick, producer, source, &canonical)
 }

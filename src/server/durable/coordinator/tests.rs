@@ -96,6 +96,7 @@ fn inventory_action(state: &State, profile: u128, action_id: u128) -> CommitActi
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: None,
     }
 }

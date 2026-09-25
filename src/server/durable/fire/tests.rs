@@ -59,6 +59,7 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: Some(seed.clone()),
+        entity_wakes: Vec::new(),
         entities: None,
     };
     assert!(
@@ -124,6 +125,7 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: Some(seed.clone()),
+        entity_wakes: Vec::new(),
         entities: None,
     };
     assert!(

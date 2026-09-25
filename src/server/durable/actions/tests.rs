@@ -378,6 +378,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: None,
     };
     assert!(matches!(
@@ -676,6 +677,7 @@ impl crate::server::entities::EntityTickPolicy for PairTick {
                 before: anchor_state,
                 after: anchor_state,
             }],
+            wakes: Vec::new(),
         })
     }
 }
@@ -716,6 +718,7 @@ impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
                 before: anchor_state,
                 after: anchor_state,
             }],
+            wakes: Vec::new(),
         })
     }
 }
@@ -743,6 +746,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
             next_tick: current_tick + 5,
             anchor_update: None,
             block_states: Vec::new(),
+            wakes: Vec::new(),
         })
     }
 }
@@ -796,6 +800,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
                 before: anchor_state,
                 after: anchor_state,
             }],
+            wakes: Vec::new(),
         })
     }
 }
@@ -841,6 +846,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
                     next_tick: current_tick + 5,
                     anchor_update: None,
                     block_states: Vec::new(),
+                    wakes: Vec::new(),
                 }),
             };
         }
@@ -851,6 +857,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
             next_tick: current_tick + 5,
             anchor_update: None,
             block_states: Vec::new(),
+            wakes: Vec::new(),
         })
     }
 }

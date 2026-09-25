@@ -50,6 +50,15 @@ pub(super) fn apply_committed_action(
             .entity_mirror
             .submit_durable(permit, entities)?;
     }
+    // Delivery at the commit barrier: the producer's transaction is now
+    // durable, so its routed wakes become transient tick attempts. They wait
+    // in `pending_wakes` for the interaction/commit barrier, which queues
+    // them for planning no earlier than the next tick. This extends only
+    // in-memory scheduling state; nothing here enters the WAL.
+    if !action.entity_wakes.is_empty() {
+        let wakes = std::mem::take(&mut action.entity_wakes);
+        state.durability.pending_wakes.extend(wakes);
+    }
     if let Some(seed) = action.fire_seed.take() {
         for change in seed.changes() {
             state

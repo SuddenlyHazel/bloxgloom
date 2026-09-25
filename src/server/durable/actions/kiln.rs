@@ -152,6 +152,7 @@ pub(in crate::server) fn plan_place(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: Some(entities),
     })
 }
@@ -239,6 +240,7 @@ pub(in crate::server) fn plan_break(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: Some(entities),
     })
 }

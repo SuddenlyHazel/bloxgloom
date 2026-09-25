@@ -367,7 +367,9 @@ fn durable_request_profile(state: &State, request: &DurableRequest) -> Option<u1
         DurableRequest::Command { id, .. } | DurableRequest::Pickup { id } => {
             state.clients.get(id).map(|client| client.profile)
         }
-        DurableRequest::Expire | DurableRequest::EntityTick { .. } => None,
+        DurableRequest::Expire
+        | DurableRequest::EntityTick { .. }
+        | DurableRequest::EntityWake { .. } => None,
     }
 }
 
@@ -396,6 +398,7 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
             .push_back(DurableRequest::Pickup { id });
     }
     queue_due_entity_ticks(state, tick);
+    queue_woken_entity_ticks(state);
 }
 
 fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
@@ -409,7 +412,7 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
         .queued
         .iter()
         .filter_map(|request| match request {
-            DurableRequest::EntityTick { id } => Some(*id),
+            DurableRequest::EntityTick { id } | DurableRequest::EntityWake { id } => Some(*id),
             _ => None,
         })
         .collect();
@@ -436,6 +439,56 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
     }
 }
 
+/// Releases committed wakes as transient tick attempts. This runs at the
+/// interaction/commit barrier, after the durable phase planned and staged
+/// the producer: a wake committed during tick N is queued here and planned
+/// no earlier than tick N+1, so delivery never cascades within a tick.
+/// Already-scheduled entities collapse duplicate wakes (timing only), and
+/// overflow waits for the next barrier instead of dropping or erroring.
+fn queue_woken_entity_ticks(state: &mut State) {
+    if state.durability.pending_wakes.is_empty() {
+        return;
+    }
+    let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
+    if available == 0 {
+        return;
+    }
+    let mut queued_ids: HashSet<_> = state
+        .durability
+        .queued
+        .iter()
+        .filter_map(|request| match request {
+            DurableRequest::EntityTick { id } | DurableRequest::EntityWake { id } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    for pending in &state.durability.pending {
+        if let PendingPayload::Action(action) = &pending.payload
+            && let Some(entities) = &action.entities
+        {
+            queued_ids.extend(entities.entity_ids());
+        }
+    }
+    let wakes = std::mem::take(&mut state.durability.pending_wakes);
+    let mut remaining = available;
+    let mut leftover = Vec::new();
+    for id in wakes {
+        if remaining == 0 {
+            leftover.push(id);
+            continue;
+        }
+        if !queued_ids.insert(id) {
+            continue;
+        }
+        state
+            .durability
+            .queued
+            .push_back(DurableRequest::EntityWake { id });
+        remaining -= 1;
+    }
+    state.durability.pending_wakes = leftover;
+}
+
 fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
     match request {
         DurableRequest::Command { .. } => {}
@@ -446,7 +499,7 @@ fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
             state.durability.expire_queued = false;
             state.durability.expire_again = false;
         }
-        DurableRequest::EntityTick { .. } => {}
+        DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. } => {}
     }
 }
 

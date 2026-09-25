@@ -216,6 +216,7 @@ pub(super) fn open(
             reserved: HashSet::new(),
             queued: VecDeque::new(),
             entity_tick_cursor: None,
+            pending_wakes: Vec::new(),
             retry_pickups: HashSet::new(),
             expire_queued: false,
             expire_again: false,

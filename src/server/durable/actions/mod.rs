@@ -72,6 +72,7 @@ pub(in crate::server) fn plan_durable_request(
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
                 fire_seed: None,
+                entity_wakes: Vec::new(),
                 entities: None,
             };
             match message {
@@ -171,6 +172,7 @@ pub(in crate::server) fn plan_durable_request(
                         *target,
                         payload,
                         receipt_value,
+                        tick,
                     )
                     .map(Some);
                 }
@@ -230,6 +232,7 @@ pub(in crate::server) fn plan_durable_request(
                 changed_cells: Vec::new(),
                 pickups: taken,
                 fire_seed: None,
+                entity_wakes: Vec::new(),
                 entities: None,
             }))
         }
@@ -254,10 +257,14 @@ pub(in crate::server) fn plan_durable_request(
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
                 fire_seed: None,
+                entity_wakes: Vec::new(),
                 entities: None,
             }))
         }
-        DurableRequest::EntityTick { id } => entity::plan_entity_tick(state, *id, tick.get()),
+        DurableRequest::EntityTick { id } => {
+            entity::plan_entity_tick(state, *id, tick.get(), false)
+        }
+        DurableRequest::EntityWake { id } => entity::plan_entity_tick(state, *id, tick.get(), true),
     }
 }
 
@@ -421,6 +428,7 @@ fn plan_block_edit(
             pickups: Vec::new(),
             fire_seed,
             entities: None,
+            entity_wakes: Vec::new(),
         });
     }
 
@@ -483,6 +491,7 @@ fn plan_block_edit(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        entity_wakes: Vec::new(),
         entities: None,
     })
 }
