@@ -22,12 +22,12 @@ use super::super::effects::{
     route_registered_effects,
 };
 use super::super::parallel::{
-    BatchId, JobKey, OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerStore, OwnerWaveLimits,
+    BatchId, JobKey, OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerSnapshot, OwnerWaveLimits,
 };
 use super::super::registry::{ExecutableSystem, SystemId};
 use super::super::simulation::TickId;
+use super::owner_durable::DurableOwnerStore;
 use std::any::Any;
-use std::collections::BTreeMap;
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
@@ -100,14 +100,14 @@ impl OwnerEffectPatch {
 /// When `drop_before_delivery` is set, intents are still built and routed
 /// (identical bound enforcement) but the batch is discarded before any
 /// consumer runs: the producer commits still apply while no destination is
-/// woken. Deliveries to owners absent from every live store are skipped in
+/// woken. Deliveries to owners absent from the live store are skipped in
 /// place; a missing destination only costs latency.
 ///
 /// Every failure is `WouldBlock`: the producing work defers and retries, and
 /// nothing commits.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::server) fn route_and_consume(
-    stores: &BTreeMap<SystemId, OwnerStore<OwnerData>>,
+    owners: &DurableOwnerStore,
     patches: &[OwnerPatch],
     tick: TickId,
     system: &ExecutableSystem,
@@ -175,13 +175,11 @@ pub(in crate::server) fn route_and_consume(
 
     let mut wakes = Vec::new();
     for group in batch.owners() {
-        for (id, store) in stores {
-            let Some(revision) = store.revision(group.owner) else {
+        for id in owners.systems() {
+            let Some((revision, data)) = owners.snapshot(id, group.owner) else {
                 continue;
             };
-            let snapshot = store
-                .snapshot(group.owner)
-                .map_err(|error| blocked(format!("destination snapshot missing: {error:?}")))?;
+            let snapshot = OwnerSnapshot::new(group.owner, revision, Arc::new(data));
             debug_assert_eq!(snapshot.revision(), revision);
             let job = OwnerJob::new(
                 id.clone(),

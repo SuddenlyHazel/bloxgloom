@@ -1,25 +1,33 @@
 //! Live executor for registered owner handlers without trusted adapters.
 //!
-//! Each system owns a revisioned store of typed, immutable values. The
+//! Each system owns revisioned cells in one barrier-owned
+//! [`DurableOwnerStore`]: the single source of truth for owner state. The
 //! coordinator selects a stable bounded owner prefix, workers prepare
-//! replacements from snapshots, and one validated wave commits through the
-//! store. This first runtime slice is transient: it does not persist state,
-//! route effects, or assemble neighbor snapshots. Owner count and declared
-//! patch accounting are bounded; arbitrary heap usage inside `Any` payloads is
-//! not measured or sandboxed.
+//! replacements from immutable snapshots, and one validated wave commits
+//! through the main journal — staged before-values, one WAL record, apply
+//! only after the receipt — before anything becomes visible. This runtime
+//! assembles no neighbor snapshots. Owner count and declared patch accounting
+//! are bounded; arbitrary heap usage inside `Any` payloads is not measured or
+//! sandboxed.
 
+use super::super::durable::Durability;
 use super::super::effects::{EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH};
+use super::super::journal::{Change, StateKey, SubmitError, Transaction};
 use super::super::parallel::{
     BatchId, JobKey, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY, MAX_PHASE_WORKERS,
-    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerStore, OwnerStoreError, OwnerWaveError,
-    OwnerWaveLimits, PhaseExecutor, ValidatedOwnerWave,
+    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerSnapshot, OwnerWaveError, OwnerWaveLimits,
+    PhaseExecutor, ValidatedOwnerWave,
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
+use super::owner_durable::{
+    DurableOwnerStore, MAX_OWNER_WAVE_BYTES, OwnerDurableError, OwnerSystemConfig, OwnerWalReceipt,
+    OwnerWrite, PreparedOwnerWave,
+};
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io;
+use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
 pub(in crate::server) const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
@@ -32,7 +40,10 @@ pub(in crate::server) const MAX_PENDING_OWNER_WAKES: usize = MAX_EFFECTS_PER_BAT
 pub(in crate::server) struct SystemRuntime {
     executor: Option<PhaseExecutor<OwnerPatch, SystemHandlerError>>,
     worker_count: usize,
-    owners: BTreeMap<SystemId, OwnerStore<OwnerData>>,
+    /// The single source of truth for owner state. Workers never touch it;
+    /// waves prepare against read revisions and commit through the main
+    /// journal with a receipt in hand. There is no second store.
+    durable: DurableOwnerStore,
     next_owner: BTreeMap<SystemId, OwnerKey>,
     unvalidated_owners: BTreeSet<SystemId>,
     /// Destinations woken by routed effects, served from each system's normal
@@ -47,6 +58,16 @@ pub(in crate::server) struct SystemRuntime {
 
 impl SystemRuntime {
     pub fn new(workers: usize) -> io::Result<Self> {
+        Self::with_durable_store(workers, DurableOwnerStore::new(Vec::new())?)
+    }
+
+    /// Builds the live runtime over journal-recovered owner state. Recovery
+    /// runs before the server accepts work, so this store already holds the
+    /// last receipted wave for every registered system.
+    pub(in crate::server) fn with_durable_store(
+        workers: usize,
+        durable: DurableOwnerStore,
+    ) -> io::Result<Self> {
         if workers == 0 || workers > MAX_PHASE_WORKERS {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -56,7 +77,7 @@ impl SystemRuntime {
         Ok(Self {
             executor: None,
             worker_count: workers,
-            owners: BTreeMap::new(),
+            durable,
             next_owner: BTreeMap::new(),
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
@@ -64,7 +85,17 @@ impl SystemRuntime {
         })
     }
 
-    /// Installs runtime-local owner state before its first scheduled tick.
+    /// Installs one system's value codec. Every live system needs its codec
+    /// before its first seed or wave: without it the value cannot be encoded
+    /// for the WAL, so the wave cannot be staged.
+    pub(in crate::server) fn register_owner_system(
+        &mut self,
+        config: OwnerSystemConfig,
+    ) -> io::Result<()> {
+        self.durable.register(config)
+    }
+
+    /// Installs owner state before its first scheduled tick.
     pub fn insert_owner<T: Any + Send + Sync>(
         &mut self,
         system: SystemId,
@@ -80,17 +111,65 @@ impl SystemRuntime {
         owner: OwnerKey,
         value: OwnerData,
     ) -> io::Result<()> {
-        let store = self.owners.entry(system.clone()).or_default();
-        if store.revision(owner).is_none() && store.len() >= MAX_OWNER_VALUES_PER_SYSTEM {
-            return Err(io::Error::other(format!(
-                "registered owner store exceeds {MAX_OWNER_VALUES_PER_SYSTEM} owners"
-            )));
+        if !self.durable.is_registered(&system) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "registered owner system {} has no owner codec",
+                    system.as_str()
+                ),
+            ));
         }
-        store
-            .insert(owner, 0, value)
-            .map_err(|error| store_error("insert", error))?;
+        self.durable
+            .insert(&system, owner, value)
+            .map_err(OwnerDurableError::io)?;
         self.unvalidated_owners.insert(system);
         Ok(())
+    }
+
+    /// Stages the exact WAL change for a fresh cell. The caller submits it,
+    /// waits for the receipt, then makes the cell visible with
+    /// [`SystemRuntime::insert_owner_data`].
+    pub(in crate::server) fn stage_owner_insert(
+        &self,
+        system: &SystemId,
+        owner: OwnerKey,
+        value: &OwnerData,
+    ) -> io::Result<Change> {
+        self.durable
+            .stage_insert(system, owner, value)
+            .map_err(OwnerDurableError::io)
+    }
+
+    pub(in crate::server) fn owner_snapshot(
+        &self,
+        system: &SystemId,
+        owner: OwnerKey,
+    ) -> Option<(u64, OwnerData)> {
+        self.durable.snapshot(system, owner)
+    }
+
+    /// Validates a wave against the live store and stages its exact WAL
+    /// changes without applying anything. Used by tests driving
+    /// multi-domain commits; the live path prepares from validated patches
+    /// inside [`SystemRuntime::run_registered`].
+    pub(in crate::server) fn prepare_owner_wave(
+        &self,
+        system: &SystemId,
+        writes: Vec<OwnerWrite>,
+    ) -> Result<PreparedOwnerWave, OwnerDurableError> {
+        self.durable.prepare(system, writes)
+    }
+
+    /// Applies WAL-committed owner changes after their receipt, whether they
+    /// arrived in a standalone owner wave or piggybacked on an entity
+    /// transaction. A before-value mismatch is genuine corruption and stops
+    /// the coordinator; capacity can never surface here.
+    pub(in crate::server) fn apply_replayed_owner_changes(
+        &mut self,
+        changes: &[Change],
+    ) -> io::Result<()> {
+        self.durable.apply_replayed(changes)
     }
 
     pub fn owner_value<T: Any + Clone + Send + Sync>(
@@ -98,9 +177,9 @@ impl SystemRuntime {
         system: &SystemId,
         owner: OwnerKey,
     ) -> Option<(u64, T)> {
-        let snapshot = self.owners.get(system)?.snapshot(owner).ok()?;
-        let value = snapshot.value::<OwnerData>()?.get::<T>()?.clone();
-        Some((snapshot.revision(), value))
+        let (revision, data) = self.durable.snapshot(system, owner)?;
+        let value = data.get::<T>()?.clone();
+        Some((revision, value))
     }
 
     pub fn worker_count(&self) -> usize {
@@ -126,12 +205,19 @@ impl SystemRuntime {
     /// staged in `pending_wakes`, served from its own system's normal job
     /// budget next tick. Any routing, bound, or consumer violation rejects
     /// the whole wave with `WouldBlock` before anything commits.
+    ///
+    /// The validated wave commits as one main-journal transaction: staged
+    /// before-values, one receipt, visibility only after the receipt. WAL
+    /// admission (reservations, rotation fence, backpressure) is shared with
+    /// every other domain, so a wave never half-applies and never jumps the
+    /// coordinator order.
     pub fn run_registered(
         &mut self,
         system: &ExecutableSystem,
         tick: TickId,
         batch_wave: u16,
         effect_kinds: &EffectKindRegistryFrozen,
+        durability: &mut Durability,
     ) -> io::Result<usize> {
         if system.is_coordinator_adapter() {
             return Err(io::Error::other(format!(
@@ -173,11 +259,7 @@ impl SystemRuntime {
             .remove(&id)
             .unwrap_or_default()
             .into_iter()
-            .filter(|owner| {
-                self.owners
-                    .get(&id)
-                    .is_some_and(|store| store.revision(*owner).is_some())
-            })
+            .filter(|owner| self.durable.revision(&id, *owner).is_some())
             .collect();
         if selected.len() > system.max_jobs_per_tick() {
             let leftover: Vec<OwnerKey> = selected.split_off(system.max_jobs_per_tick());
@@ -187,11 +269,13 @@ impl SystemRuntime {
                 .extend(leftover);
         }
         let mut seen: BTreeSet<OwnerKey> = selected.iter().copied().collect();
-        let Some(store) = self.owners.get(&id) else {
-            return Ok(0);
-        };
         if self.unvalidated_owners.contains(&id) {
-            if let Some(owner) = store.owners().find(|owner| !system.accepts_owner(*owner)) {
+            if let Some(owner) = self
+                .durable
+                .owners_of(&id)
+                .into_iter()
+                .find(|owner| !system.accepts_owner(*owner))
+            {
                 return Err(io::Error::other(format!(
                     "registered system {} owns a value in the wrong partition: {owner:?}",
                     id.as_str()
@@ -199,7 +283,7 @@ impl SystemRuntime {
             }
             self.unvalidated_owners.remove(&id);
         }
-        if store.len() == 0 {
+        if self.durable.owner_count(&id) == 0 {
             return Ok(0);
         }
 
@@ -208,7 +292,8 @@ impl SystemRuntime {
         // rotation prefix run once; the cursor resumes after the last owner
         // served either way.
         if selected.len() < system.max_jobs_per_tick() {
-            for owner in store.owners_from(
+            for owner in self.durable.owners_from(
+                &id,
                 self.next_owner.get(&id).copied(),
                 system.max_jobs_per_tick(),
             ) {
@@ -220,8 +305,9 @@ impl SystemRuntime {
                 }
             }
         }
-        let next_cursor = store
-            .successor(*selected.last().expect("selected owners are non-empty"))
+        let next_cursor = self
+            .durable
+            .successor(&id, *selected.last().expect("selected owners are non-empty"))
             .expect("non-empty owner store has a successor");
 
         let batch = BatchId::new(tick, system.phase(), batch_wave);
@@ -238,9 +324,12 @@ impl SystemRuntime {
         let mut jobs = Vec::with_capacity(selected.len());
         let mut expected = Vec::with_capacity(selected.len());
         for (job_id, owner) in selected.iter().copied().enumerate() {
-            let snapshot = store
-                .snapshot(owner)
-                .map_err(|error| store_error("snapshot", error))?;
+            let (revision, data) = self.durable.snapshot(&id, owner).ok_or_else(|| {
+                io::Error::other(format!(
+                    "registered owner {owner:?} vanished before dispatch"
+                ))
+            })?;
+            let snapshot = OwnerSnapshot::new(owner, revision, Arc::new(data));
             let key = JobKey::new(batch, owner, job_id as u64, snapshot.revision());
             let job = OwnerJob::new(id.clone(), key, vec![snapshot])
                 .map_err(|error| io::Error::other(format!("registered owner job: {error:?}")))?;
@@ -294,7 +383,7 @@ impl SystemRuntime {
 
         let results = executor
             .barrier_with(batch, |key| {
-                store.revision(key.owner) == Some(key.snapshot_revision)
+                self.durable.revision(&id, key.owner) == Some(key.snapshot_revision)
             })
             .map_err(|error| io::Error::other(format!("registered-system barrier: {error:?}")))?;
         let validated = ValidatedOwnerWave::validate(
@@ -303,7 +392,7 @@ impl SystemRuntime {
             results,
             batch,
             limits,
-            |owner| store.revision(owner),
+            |owner| self.durable.revision(&id, owner),
             |patch| Ok(OwnerEffectPatch::emitted_count(patch)),
             |patch| {
                 if patch.usage().writes != 1 {
@@ -312,12 +401,10 @@ impl SystemRuntime {
                 let Some(replacement) = OwnerEffectPatch::replacement(patch) else {
                     return Err("owner patch must contain replacement OwnerData".into());
                 };
-                let snapshot = store
-                    .snapshot(patch.owner())
-                    .map_err(|error| format!("current owner state missing: {error:?}"))?;
-                let current = snapshot
-                    .value::<OwnerData>()
-                    .ok_or_else(|| "current owner data has an invalid storage type".to_owned())?;
+                let (_, current) = self
+                    .durable
+                    .snapshot(&id, patch.owner())
+                    .ok_or_else(|| "current owner state missing".to_owned())?;
                 if !current.same_type(&replacement) {
                     return Err("owner replacement changes its registered state type".into());
                 }
@@ -343,7 +430,7 @@ impl SystemRuntime {
         // wave and defers the producing work. Staged wakes are served from
         // each destination system's normal budget next tick, never this one.
         let wakes = route_and_consume(
-            &self.owners,
+            &self.durable,
             validated.patches(),
             tick,
             system,
@@ -377,21 +464,136 @@ impl SystemRuntime {
                 .or_default()
                 .insert(owner);
         }
-        let applied = self
-            .owners
-            .get_mut(&id)
-            .expect("owner store validated above")
-            .apply_validated_with(validated, |patch| {
-                OwnerEffectPatch::replacement(patch).ok_or(OwnerStoreError::WrongPayloadType {
-                    owner: patch.owner(),
-                })
-            })
-            .map_err(|error| store_error("commit", error))?;
+        let mut writes = Vec::with_capacity(validated.patches().len());
+        for patch in validated.patches() {
+            let Some(replacement) = OwnerEffectPatch::replacement(patch) else {
+                return Err(io::Error::other(format!(
+                    "registered owner patch for {:?} has no replacement",
+                    patch.owner()
+                )));
+            };
+            writes.push(OwnerWrite {
+                owner: patch.owner(),
+                reads: patch
+                    .revisions()
+                    .iter()
+                    .map(|stamp| (stamp.owner, stamp.revision))
+                    .collect(),
+                value: replacement,
+                due_tick: None,
+            });
+        }
+        let prepared = self
+            .durable
+            .prepare(&id, writes)
+            .map_err(OwnerDurableError::io)?;
+        let applied = self.commit_owner_wave(&id, prepared, tick, durability)?;
         self.next_owner.insert(id, next_cursor);
         Ok(applied)
     }
-}
 
-fn store_error(action: &str, error: OwnerStoreError) -> io::Error {
-    io::Error::other(format!("registered owner-store {action}: {error:?}"))
+    /// Submits one prepared owner wave as one main-journal transaction and
+    /// commits it only after its receipt. Stale reads and oversized values
+    /// reject the wave before anything is staged; journal backpressure and a
+    /// requested rotation defer it with `WouldBlock`. A receipted wave whose
+    /// in-memory commit fails is genuine corruption and stops the
+    /// coordinator, matching the gameplay apply path.
+    fn commit_owner_wave(
+        &mut self,
+        system: &SystemId,
+        prepared: PreparedOwnerWave,
+        tick: TickId,
+        durability: &mut Durability,
+    ) -> io::Result<usize> {
+        let bytes: usize = prepared
+            .changes()
+            .iter()
+            .map(|change| change.after.len())
+            .sum();
+        if bytes > MAX_OWNER_WAVE_BYTES {
+            return Err(io::Error::new(
+                ErrorKind::WouldBlock,
+                format!("owner wave of {bytes} bytes exceeds {MAX_OWNER_WAVE_BYTES}"),
+            ));
+        }
+        if durability.failed {
+            return Err(io::Error::other(
+                "durable subsystem failed; owner wave not staged",
+            ));
+        }
+        if durability.rotation_requested {
+            return Err(io::Error::new(
+                ErrorKind::WouldBlock,
+                "journal rotation in progress; owner wave defers",
+            ));
+        }
+        let keys: Vec<StateKey> = prepared
+            .changes()
+            .iter()
+            .map(|change| change.key.clone())
+            .collect();
+        for key in &keys {
+            if durability.reserved.contains(key) {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "owner key has a pending durable action; wave defers",
+                ));
+            }
+        }
+        let id = durability.next_id;
+        durability.next_id = id
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("durable transaction IDs exhausted"))?;
+        let transaction = Transaction::new(id, tick.get(), prepared.changes().to_vec());
+        let receiver = durability.writer.try_submit(transaction).map_err(|error| match error {
+            SubmitError::Full => io::Error::new(
+                ErrorKind::WouldBlock,
+                "durable journal is full; owner wave defers",
+            ),
+            SubmitError::Closed => io::Error::other("durable journal writer is closed"),
+            SubmitError::Invalid(error) => {
+                durability.failed = true;
+                error
+            }
+        })?;
+        // Reserved only after the writer accepts the complete transaction,
+        // mirroring gameplay staging: a rejected wave reserves nothing.
+        durability.reserved.extend(keys.iter().cloned());
+        let receipt = match receiver.recv() {
+            Ok(Ok(receipt)) => receipt,
+            Ok(Err(error)) => {
+                for key in &keys {
+                    durability.reserved.remove(key);
+                }
+                durability.failed = true;
+                return Err(io::Error::other(format!("durable WAL write failed: {error}")));
+            }
+            Err(_) => {
+                for key in &keys {
+                    durability.reserved.remove(key);
+                }
+                durability.failed = true;
+                return Err(io::Error::other("durable journal worker stopped"));
+            }
+        };
+        let applied = self
+            .durable
+            .commit(
+                prepared,
+                OwnerWalReceipt {
+                    sequence: receipt.sequence,
+                },
+            )
+            .map_err(|error| {
+                for key in &keys {
+                    durability.reserved.remove(key);
+                }
+                durability.failed = true;
+                error.io()
+            })?;
+        for key in &keys {
+            durability.reserved.remove(key);
+        }
+        Ok(applied)
+    }
 }

@@ -1,4 +1,19 @@
 //! Startup validation and replay of the durable journal.
+//!
+//! JOURNAL DECISION (single journal): owner cells live in the main
+//! `server.wal` under the `bloxgloom:owner_state` domain and recover from its
+//! latest-values map alongside every other domain. A separate owner log was
+//! rejected: a commit spanning entity state and owner state must be one WAL
+//! record, and two tails would force recovery to reconcile them.
+//!
+//! Owner cells need no per-key checkpoint file. Rotation materializes the
+//! full latest-value map — every domain — into the new base generation, so
+//! owner state survives rotation with the base itself; the rotation gate
+//! (empty pending, fenced entity checkpoint, drained per-key checkpoints)
+//! already covers it. Registering dirty-checkpoint entries without a backing
+//! file would wedge that gate forever, so owner commits deliberately do not
+//! touch it: every owner wave is receipted before it is visible, hence
+//! already durable at any rotation cut.
 
 use super::state::{
     decode_chunk_key, decode_drop_key, decode_profile_key, invalid_data,
@@ -10,6 +25,8 @@ use crate::server::entities::{EntityStore, EntityTypeRegistry};
 use crate::server::entity_checkpoint::EntityCheckpointMirror;
 use crate::server::fire::{FireCheckpointStore, FireRecovered};
 use crate::server::journal::Journal;
+use crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub(super) fn open(
@@ -18,7 +35,8 @@ pub(super) fn open(
     inventory_store: &InventoryStore,
     drops: &mut Drops,
     entity_types: Arc<EntityTypeRegistry>,
-) -> io::Result<(Durability, FireRecovered, EntityStore)> {
+    owner_configs: Vec<OwnerSystemConfig>,
+) -> io::Result<(Durability, FireRecovered, EntityStore, DurableOwnerStore)> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
     let recovered_entities =
@@ -30,6 +48,7 @@ pub(super) fn open(
     let mut receipt_ledgers = HashMap::new();
     let mut receipt_replay = Vec::new();
     let mut inventory_revisions = HashMap::new();
+    let mut owner_latest = BTreeMap::new();
     let storage = world.storage_handle();
     let mut chunk_replay = Vec::new();
     let mut inventory_replay = Vec::new();
@@ -139,6 +158,15 @@ pub(super) fn open(
                 // Entity codecs, checkpoint reachability, and derived indexes
                 // were validated as one aggregate before this replay pass.
             }
+            domain if domain == OWNER_STATE_DOMAIN => {
+                // The journal base+tail is the primary store for owner
+                // cells; there is no per-key file to validate against.
+                // Collected here, decoded by `DurableOwnerStore::recover`
+                // before any replay write below: malformed keys, unknown
+                // systems, bad envelopes, and undecodable payloads fail
+                // closed with `InvalidData` while the save is untouched.
+                owner_latest.insert(key.clone(), value.clone());
+            }
             domain => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -164,6 +192,10 @@ pub(super) fn open(
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     drops.validate_recovered_journal(&drop_values, drop_owner_set_closed)?;
+
+    // Fail closed before the first replay write below: a corrupt owner
+    // record must reject the world without touching any save file.
+    let owner_store = DurableOwnerStore::recover(owner_configs, &owner_latest)?;
 
     for (chunk, value) in chunk_replay {
         world.restore_snapshot(chunk, &value)?;
@@ -248,5 +280,6 @@ pub(super) fn open(
         },
         fire_recovered,
         recovered_entities.entities,
+        owner_store,
     ))
 }

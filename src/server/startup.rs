@@ -5,16 +5,20 @@
 //! durable owner-state contract.
 
 use super::builtins;
+use super::durable::Durability;
 use super::effects::{EffectKindRegistry, EffectKindRegistryFrozen};
 use super::entities::{
     EntityError, EntityInteractionPolicy, EntityOwnership, EntityPayloadCodec, EntityTickPolicy,
     EntityTransferPolicy, EntityTypeRegistration, EntityTypeRegistry, EntityTypeRegistryBuilder,
     TickPolicy,
 };
+use super::journal::Transaction;
 use super::parallel::{OwnerData, OwnerKey};
 use super::registry::{
     OwnerPartition, PhasePlan, SystemDescriptor, SystemHandler, SystemId, SystemRegistry,
 };
+use super::runtime::owner_codec::OwnerValueCodec;
+use super::runtime::owner_durable::OwnerSystemConfig;
 use super::runtime::systems::{MAX_OWNER_VALUES_PER_SYSTEM, SystemRuntime};
 use crate::content::Catalog;
 use std::any::Any;
@@ -40,7 +44,18 @@ pub(crate) struct ServerStartup {
     entity_types: Vec<StartupEntityType>,
     transfer_policies: Vec<(String, Arc<dyn EntityTransferPolicy>)>,
     systems: Vec<(SystemDescriptor, Arc<dyn SystemHandler>)>,
+    owner_codecs: BTreeMap<SystemId, StartupOwnerCodec>,
     owners: Vec<(SystemId, OwnerKey, OwnerData)>,
+}
+
+/// Value codec for one registered owner system. Values live decoded in the
+/// durable store; the codec serializes them only for WAL change values, with
+/// a declared per-system byte bound enforced fail-closed at insert and patch
+/// time. Every registered system needs one before its first seed or wave.
+pub(crate) struct StartupOwnerCodec {
+    pub(crate) codec: Arc<dyn OwnerValueCodec>,
+    pub(crate) codec_version: u16,
+    pub(crate) max_bytes: usize,
 }
 
 impl ServerStartup {
@@ -50,6 +65,7 @@ impl ServerStartup {
             entity_types: Vec::new(),
             transfer_policies: Vec::new(),
             systems: Vec::new(),
+            owner_codecs: BTreeMap::new(),
             owners: Vec::new(),
         }
     }
@@ -85,6 +101,40 @@ impl ServerStartup {
         value: T,
     ) {
         self.owners.push((system, owner, OwnerData::new(value)));
+    }
+
+    /// Registers the value codec for one owner system. Recovery needs every
+    /// live system's codec before replaying the first owner key, so a
+    /// registered system without one is a startup error, not a silent
+    /// transient fallback.
+    pub(crate) fn register_owner_codec(&mut self, system: SystemId, codec: StartupOwnerCodec) {
+        self.owner_codecs.insert(system, codec);
+    }
+
+    /// Builds the durable-store descriptors for every registered system.
+    /// Called before storage opens so recovery can rebuild owner state from
+    /// the main journal's latest values.
+    pub(super) fn owner_configs(&self) -> io::Result<Vec<OwnerSystemConfig>> {
+        let mut configs = Vec::with_capacity(self.systems.len());
+        for (descriptor, _) in &self.systems {
+            let system = descriptor.id();
+            let Some(codec) = self.owner_codecs.get(system) else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "registered owner system {} has no owner codec",
+                        system.as_str()
+                    ),
+                ));
+            };
+            configs.push(OwnerSystemConfig::new(
+                system.clone(),
+                Arc::clone(&codec.codec),
+                codec.codec_version,
+                codec.max_bytes,
+            )?);
+        }
+        Ok(configs)
     }
 
     pub(super) fn catalog(&self) -> Arc<Catalog> {
@@ -228,8 +278,63 @@ impl ServerStartup {
         Ok(plan)
     }
 
-    pub(super) fn install_owners(self, runtime: &mut SystemRuntime) -> io::Result<()> {
+    pub(super) fn install_owners(
+        self,
+        runtime: &mut SystemRuntime,
+        durability: &mut Durability,
+    ) -> io::Result<()> {
+        // Seeds journal fresh cells through the main WAL before serving: a
+        // restart before the first wave must still recover them. Recovered
+        // cells win — the WAL is authoritative — so a seed for an existing
+        // cell only checks that the registered value type still matches.
+        let mut fresh = Vec::new();
         for (system, owner, value) in self.owners {
+            match runtime.owner_snapshot(&system, owner) {
+                Some((_, current)) => {
+                    if !current.same_type(&value) {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            format!(
+                                "recovered owner state for {} has an unexpected value type",
+                                system.as_str()
+                            ),
+                        ));
+                    }
+                }
+                None => fresh.push((system, owner, value)),
+            }
+        }
+        if fresh.is_empty() {
+            return Ok(());
+        }
+        // Every fallible check runs before the transaction ID is spent, so a
+        // rejected seed reserves nothing and stages nothing.
+        let mut changes = Vec::with_capacity(fresh.len());
+        for (system, owner, value) in &fresh {
+            changes.push(runtime.stage_owner_insert(system, *owner, value)?);
+        }
+        let id = durability.next_id;
+        durability.next_id = id
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("durable transaction IDs exhausted"))?;
+        let receiver = durability
+            .writer
+            .try_submit(Transaction::new(id, 0, changes))
+            .map_err(|error| match error {
+                super::journal::SubmitError::Full => io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "durable journal is full; owner seeds defer",
+                ),
+                super::journal::SubmitError::Closed => {
+                    io::Error::other("durable journal writer is closed")
+                }
+                super::journal::SubmitError::Invalid(error) => error,
+            })?;
+        let receipt = receiver
+            .recv()
+            .map_err(|_| io::Error::other("durable journal worker stopped"))??;
+        let _ = receipt.sequence;
+        for (system, owner, value) in fresh {
             runtime.insert_owner_data(system, owner, value)?;
         }
         Ok(())

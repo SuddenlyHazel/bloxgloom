@@ -367,11 +367,18 @@ pub(super) fn tick_with_inputs(
                 let batch_wave = u16::try_from(index)
                     .map_err(|_| io::Error::other("too many registered phase systems"))?;
                 let effect_kinds = Arc::clone(&context.state.effect_kinds);
-                context.state.system_runtime.run_registered(
+                // Split the borrows: the owner wave commits through the
+                // shared durable journal while applying to the runtime store.
+                let (system_runtime, durability) = (
+                    &mut context.state.system_runtime,
+                    &mut context.state.durability,
+                );
+                system_runtime.run_registered(
                     &registered,
                     tick,
                     batch_wave,
                     &effect_kinds,
+                    durability,
                 )?;
             }
         }

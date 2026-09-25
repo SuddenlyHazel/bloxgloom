@@ -461,12 +461,14 @@ fn server_state_with_startup(
         ),
     )?;
     let block_actions = block_actions.freeze();
-    let (durability, recovered_fire, entities) = Durability::open(
+    let owner_configs = startup.owner_configs()?;
+    let (mut durability, recovered_fire, entities, owner_store) = Durability::open(
         &save_dir,
         &mut world,
         &inventory_store,
         &mut drops,
         entity_types,
+        owner_configs,
     )?;
     let fire_last_tick = recovered_fire.last_tick();
     // Only startup may synchronously load the origin terrain. Each live join
@@ -483,8 +485,8 @@ fn server_state_with_startup(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
-    let mut system_runtime = SystemRuntime::new(worker_count)?;
-    startup.install_owners(&mut system_runtime)?;
+    let mut system_runtime = SystemRuntime::with_durable_store(worker_count, owner_store)?;
+    startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     Ok(State {
         admission_limit,

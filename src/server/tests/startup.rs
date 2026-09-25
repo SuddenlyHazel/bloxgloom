@@ -33,6 +33,52 @@ impl crate::server::entities::EntityPayloadCodec for StartupProbeCodec {
     }
 }
 
+struct StartupOwnerU64Codec;
+
+impl crate::server::runtime::owner_codec::OwnerValueCodec for StartupOwnerU64Codec {
+    fn decode(
+        &self,
+        payload: &[u8],
+    ) -> Result<
+        crate::server::parallel::OwnerData,
+        crate::server::runtime::owner_codec::OwnerCodecError,
+    > {
+        if payload.len() != 8 {
+            return Err(crate::server::runtime::owner_codec::OwnerCodecError::InvalidData);
+        }
+        Ok(crate::server::parallel::OwnerData::new(u64::from_le_bytes(
+            payload.try_into().expect("checked length"),
+        )))
+    }
+
+    fn encode(
+        &self,
+        value: &crate::server::parallel::OwnerData,
+    ) -> Result<Vec<u8>, crate::server::runtime::owner_codec::OwnerCodecError> {
+        value
+            .get::<u64>()
+            .map(|value| value.to_le_bytes().to_vec())
+            .ok_or(crate::server::runtime::owner_codec::OwnerCodecError::InvalidData)
+    }
+}
+
+/// Registers the little-endian u64 owner codec the startup owner tests use.
+/// Production systems register their own codec; a registered system without
+/// one is a startup error, never a transient fallback.
+fn register_u64_owner_codec(
+    startup: &mut ServerStartup,
+    system: &crate::server::registry::SystemId,
+) {
+    startup.register_owner_codec(
+        system.clone(),
+        crate::server::startup::StartupOwnerCodec {
+            codec: Arc::new(StartupOwnerU64Codec),
+            codec_version: 1,
+            max_bytes: 8,
+        },
+    );
+}
+
 #[test]
 fn startup_extension_registers_entity_codec_and_executes_owner_system() {
     use crate::server::entities::{EntityOwnership, EntityPayload, TickPolicy};
@@ -91,6 +137,7 @@ fn startup_extension_registers_entity_codec_and_executes_owner_system() {
             ))
         },
     );
+    register_u64_owner_codec(&mut startup, &system);
     let owner = OwnerKey::chunk(crate::world::ChunkKey { x: 0, y: 0, z: 0 });
     startup.seed_owner(system.clone(), owner, 41u64);
 
@@ -332,6 +379,7 @@ fn startup_effect_emitting_owner_system_delivers_next_tick() {
             u64::MAX,
         ),
     );
+    register_u64_owner_codec(&mut startup, &system);
     startup.seed_owner(system.clone(), source, 0u64);
     startup.seed_owner(system.clone(), target, 0u64);
 
@@ -509,6 +557,7 @@ fn startup_effect_overflow_defers_without_failing_durability() {
             ))
         },
     );
+    register_u64_owner_codec(&mut startup, &system);
     for owner in owners {
         startup.seed_owner(system.clone(), owner, 0u64);
     }
@@ -566,6 +615,7 @@ fn startup_registered_effects_are_optional_for_convergence() {
             .write(ResourceId::new("test:effect_state").unwrap()),
             saturating_wake_emitter(owners[0], EntityId::new(3).unwrap(), Arc::clone(&runs), 3),
         );
+        register_u64_owner_codec(&mut startup, &system);
         for (owner, seed) in owners.iter().zip([0u64, 3, 0]) {
             startup.seed_owner(system.clone(), *owner, seed);
         }

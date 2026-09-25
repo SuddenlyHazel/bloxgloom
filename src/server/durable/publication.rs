@@ -3,6 +3,8 @@
 use super::*;
 use crate::protocol::ServerMessage;
 use crate::server::fire::FireTransaction;
+use crate::server::journal::Change;
+use crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN;
 use crate::server::{State, durable};
 
 #[path = "publication/commit.rs"]
@@ -29,6 +31,22 @@ pub(super) fn apply_committed_action(
             .validate_prepared(entities)
             .map_err(io::Error::other)?;
     }
+    // Owner cells piggybacked on this transaction through
+    // `add_related_change` ride the same WAL record and the same receipt.
+    // Their before-values are rechecked at apply; a mismatch is genuine
+    // corruption and stops the coordinator through the caller's fatal path.
+    let owner_changes: Vec<Change> = action
+        .entities
+        .as_ref()
+        .map(|entities| {
+            entities
+                .changes()
+                .iter()
+                .filter(|change| change.key.domain == OWNER_STATE_DOMAIN)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
     let world_edits = std::mem::take(&mut action.world_edits);
     let chunk_checkpoints: Vec<_> = world_edits
         .iter()
@@ -49,6 +67,11 @@ pub(super) fn apply_committed_action(
             .durability
             .entity_mirror
             .submit_durable(permit, entities)?;
+    }
+    if !owner_changes.is_empty() {
+        state
+            .system_runtime
+            .apply_replayed_owner_changes(&owner_changes)?;
     }
     // Delivery at the commit barrier: the producer's transaction is now
     // durable, so its routed wakes become transient tick attempts. They wait

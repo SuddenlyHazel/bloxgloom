@@ -17,6 +17,7 @@ use super::fire::{FireCheckpointStore, FireRecovered, FireSeed, FireTransaction}
 use super::journal::{
     CommitReceipt, JournalWriter, RotateError, RotationReceipt, StateKey, SubmitError, Transaction,
 };
+use super::runtime::owner_durable::{DurableOwnerStore, OwnerSystemConfig};
 use super::simulation::TickId;
 use crate::inventory::{Inventory, InventoryStore};
 use crate::protocol::{ClientMessage, DroppedItem};
@@ -303,14 +304,27 @@ impl Durability {
     }
     /// Opens and recovers all journal-backed after-values before the server can
     /// accept clients. Existing saves are decoded before any replay replacement.
+    ///
+    /// Owner cells recover from the same `server.wal` latest-values map as
+    /// every other domain — one journal, one tail — through the descriptors
+    /// in `owner_configs`. See `recovery` for why owner state needs no
+    /// per-key checkpoint file.
     pub(super) fn open(
         root: &Path,
         world: &mut World,
         inventory_store: &InventoryStore,
         drops: &mut Drops,
         entity_types: Arc<EntityTypeRegistry>,
-    ) -> io::Result<(Self, FireRecovered, EntityStore)> {
-        recovery::open(root, world, inventory_store, drops, entity_types)
+        owner_configs: Vec<OwnerSystemConfig>,
+    ) -> io::Result<(Self, FireRecovered, EntityStore, DurableOwnerStore)> {
+        recovery::open(
+            root,
+            world,
+            inventory_store,
+            drops,
+            entity_types,
+            owner_configs,
+        )
     }
 
     /// Nonblocking stage: conflicts and queue pressure are explicit failures.

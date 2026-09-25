@@ -6,6 +6,8 @@ use crate::server::registry::{
     SystemRegistry,
 };
 use crate::server::runtime::owner_effects::{EmittedOwnerEffect, OwnerEffectPatch};
+use crate::server::runtime::owner_durable::OwnerSystemConfig;
+use crate::server::runtime::owner_codec::{OwnerCodecError, OwnerValueCodec};
 use crate::server::runtime::systems::SystemRuntime;
 use crate::server::simulation::Phase;
 use crate::world::ChunkKey;
@@ -18,6 +20,37 @@ use std::thread::{self, ThreadId};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+/// Little-endian u64 owner codec for test harnesses that drive
+/// `SystemRuntime` directly. Production systems register their codec through
+/// `ServerStartup::register_owner_codec`.
+struct U64OwnerCodec;
+
+impl OwnerValueCodec for U64OwnerCodec {
+    fn decode(&self, payload: &[u8]) -> Result<OwnerData, OwnerCodecError> {
+        if payload.len() != 8 {
+            return Err(OwnerCodecError::InvalidData);
+        }
+        Ok(OwnerData::new(u64::from_le_bytes(
+            payload.try_into().expect("checked length"),
+        )))
+    }
+
+    fn encode(&self, value: &OwnerData) -> Result<Vec<u8>, OwnerCodecError> {
+        value
+            .get::<u64>()
+            .map(|value| value.to_le_bytes().to_vec())
+            .ok_or(OwnerCodecError::InvalidData)
+    }
+}
+
+fn register_u64_state(runtime: &mut SystemRuntime, system: &SystemId) {
+    runtime
+        .register_owner_system(
+            OwnerSystemConfig::new(system.clone(), Arc::new(U64OwnerCodec), 1, 8).unwrap(),
+        )
+        .unwrap();
+}
 
 struct TestSave(PathBuf);
 
@@ -110,6 +143,7 @@ fn driverless_startup_handler_runs_on_one_and_four_workers_and_commits() {
         );
         state.phase_plan = plan;
         for system in &systems {
+            register_u64_state(&mut state.system_runtime, system);
             for x in 0..8 {
                 state
                     .system_runtime
@@ -252,6 +286,7 @@ where
         )
         .unwrap();
     state.phase_plan = registry.freeze().unwrap();
+    register_u64_state(&mut state.system_runtime, &system);
     let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
     for (owner, seed) in owners.iter().zip(seeds) {
         state
@@ -577,7 +612,7 @@ fn unknown_effect_kinds_are_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds)
+        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
     assert_ne!(error.kind(), ErrorKind::InvalidData);
@@ -627,7 +662,7 @@ fn dishonest_effect_accounting_is_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds)
+        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
     assert_eq!(nudge_revisions(&harness), before);
@@ -679,7 +714,7 @@ fn effect_consumers_cannot_gain_a_write_path() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(&system, TickId::new(1), 0, &kinds)
+        .run_registered(&system, TickId::new(1), 0, &kinds, &mut harness.state.durability)
         .unwrap_err();
     // The consumer declared a write, so the whole wave defers before the
     // producer's replacement can commit: no consumer write path exists.
