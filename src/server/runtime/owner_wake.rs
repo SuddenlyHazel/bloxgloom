@@ -18,11 +18,6 @@
 //! the coordinator can stop. Capacity (too many pending wakes) reports
 //! `WouldBlock`: the producing wave defers and retries, and nothing commits.
 
-//! NOTE: staging into the producer wave is wired; serving a flagged
-//! destination and clearing its flag follows next. Until then staged flags
-//! are exercised by unit tests and the apply path only.
-#![allow(dead_code)]
-
 use super::super::journal::{Change, StateKey};
 use super::super::parallel::OwnerKey;
 use super::super::registry::SystemId;
@@ -236,18 +231,11 @@ impl PendingWakeStore {
         Ok(store)
     }
 
+    /// Receipted flag count. Test builds use this to assert staging,
+    /// recovery, and clearing without exposing the set itself.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.pending.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    /// Whether the destination has a receipted flag. Staged-but-unreceipted
-    /// flags are not visible here: nothing is served before its WAL receipt.
-    pub fn contains(&self, system: &SystemId, owner: OwnerKey) -> bool {
-        self.pending.contains_key(&(system.clone(), owner))
     }
 
     /// Flagged destinations for one system in canonical order, with their
@@ -418,10 +406,6 @@ pub(in crate::server) struct PreparedWakeSets {
 impl PreparedWakeSets {
     pub fn changes(&self) -> &[Change] {
         &self.changes
-    }
-
-    pub fn changes_len(&self) -> usize {
-        self.staged.len()
     }
 }
 

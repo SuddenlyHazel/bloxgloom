@@ -198,6 +198,8 @@ impl SystemRuntime {
     }
 
     /// Receipted durable wake flags held for destinations with no live cell.
+    /// Test builds use this to assert staging, recovery, and clearing.
+    #[cfg(test)]
     pub(in crate::server) fn durable_wake_count(&self) -> usize {
         self.durable_wakes.len()
     }
