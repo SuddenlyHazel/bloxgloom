@@ -44,13 +44,18 @@ fn malformed_owner_keys_decode_to_none() {
 
 #[test]
 fn cell_values_round_trip_and_reject_tampering() {
-    let encoded = encode_cell_value(41, 3, &[1, 2, 3, 4]);
+    let encoded = encode_cell_value(41, 3, Some(77), &[1, 2, 3, 4]);
     assert_eq!(
         decode_cell_value(&encoded).unwrap(),
-        (41, 3, vec![1, 2, 3, 4])
+        (41, 3, Some(77), vec![1, 2, 3, 4])
+    );
+    let undated = encode_cell_value(41, 3, None, &[1, 2, 3, 4]);
+    assert_eq!(
+        decode_cell_value(&undated).unwrap(),
+        (41, 3, None, vec![1, 2, 3, 4])
     );
     let mut tampered = encoded.clone();
-    tampered[16] ^= 0xff;
+    tampered[25] ^= 0xff;
     assert_eq!(
         decode_cell_value(&tampered).unwrap_err().kind(),
         ErrorKind::InvalidData

@@ -128,28 +128,44 @@ pub(in crate::server) fn decode_owner_state_key(key: &StateKey) -> Option<(Strin
     Some((system, owner))
 }
 
-/// Encodes a durable cell value: envelope plus codec payload.
+/// Encodes a durable cell value: envelope plus codec payload. The optional
+/// due tick is part of the envelope so the sparse schedule survives restart
+/// with the cell itself.
 pub(in crate::server) fn encode_cell_value(
     revision: u64,
     codec_version: u16,
+    due_tick: Option<u64>,
     payload: &[u8],
 ) -> Vec<u8> {
-    let mut value = Vec::with_capacity(4 + 2 + 8 + 2 + payload.len() + 4);
+    let mut value = Vec::with_capacity(4 + 2 + 8 + 2 + 1 + 8 + payload.len() + 4);
     value.extend(OWNER_CELL_MAGIC);
     value.extend(OWNER_CELL_VERSION.to_le_bytes());
     value.extend(revision.to_le_bytes());
     value.extend(codec_version.to_le_bytes());
+    match due_tick {
+        Some(tick) => {
+            value.push(1);
+            value.extend(tick.to_le_bytes());
+        }
+        None => {
+            value.push(0);
+            value.extend([0u8; 8]);
+        }
+    }
     value.extend(payload);
     let crc = crc32(&value);
     value.extend(crc.to_le_bytes());
     value
 }
 
-/// Decodes a durable cell value into `(revision, codec_version, payload)`.
-/// Any structural problem is `InvalidData`: genuine corruption that may stop
-/// the coordinator. Capacity pressure is never reported through this path.
-pub(in crate::server) fn decode_cell_value(value: &[u8]) -> io::Result<(u64, u16, Vec<u8>)> {
-    if value.len() < 4 + 2 + 8 + 2 + 4 {
+/// Decodes a durable cell value into `(revision, codec_version, due_tick,
+/// payload)`. Any structural problem is `InvalidData`: genuine corruption
+/// that may stop the coordinator. Capacity pressure is never reported
+/// through this path.
+pub(in crate::server) fn decode_cell_value(
+    value: &[u8],
+) -> io::Result<(u64, u16, Option<u64>, Vec<u8>)> {
+    if value.len() < 4 + 2 + 8 + 2 + 1 + 8 + 4 {
         return Err(invalid_data("owner cell value is truncated"));
     }
     let (body, crc_bytes) = value.split_at(value.len() - 4);
@@ -166,7 +182,14 @@ pub(in crate::server) fn decode_cell_value(value: &[u8]) -> io::Result<(u64, u16
     }
     let revision = u64::from_le_bytes(body[6..14].try_into().expect("revision is 8 bytes"));
     let codec_version = u16::from_le_bytes(body[14..16].try_into().expect("codec is 2 bytes"));
-    Ok((revision, codec_version, body[16..].to_vec()))
+    let due_tick = match body[16] {
+        0 => None,
+        1 => Some(u64::from_le_bytes(
+            body[17..25].try_into().expect("due tick is 8 bytes"),
+        )),
+        _ => return Err(invalid_data("owner cell value has a bad due flag")),
+    };
+    Ok((revision, codec_version, due_tick, body[25..].to_vec()))
 }
 
 fn invalid_data(message: &'static str) -> io::Error {
