@@ -269,6 +269,10 @@ pub enum EntityError {
     RevisionExhausted,
     IdExhausted,
     SpatialQueryTooBroad,
+    /// A planner read outside its declared captured view. Fail-closed: the
+    /// coordinator never backfills with air or generated terrain.
+    #[allow(dead_code)]
+    ViewOutOfRange,
     CorruptCheckpoint,
     UnknownRequiredType(EntityTypeId),
 }

@@ -43,7 +43,7 @@ pub struct EntityTickPlan {
 /// Implementations must be pure functions of their inputs: no wall clock,
 /// RNG, I/O, or global/thread-local state. The view holds only the declared
 /// read set; reads outside it fail closed and must surface as
-/// `EntityError::InvalidType`.
+/// `EntityError::ViewOutOfRange`.
 pub trait EntityInteractionPolicy: Send + Sync + 'static {
     fn plan(
         &self,
@@ -68,7 +68,7 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
 /// Implementations must be pure functions of their inputs: no wall clock,
 /// RNG, I/O, or global/thread-local state. The view holds only the declared
 /// read set; reads outside it fail closed and must surface as
-/// `EntityError::InvalidType`.
+/// `EntityError::ViewOutOfRange`.
 pub trait EntityTickPolicy: Send + Sync + 'static {
     fn plan(
         &self,

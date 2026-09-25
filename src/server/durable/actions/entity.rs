@@ -31,10 +31,12 @@ type FootprintPlan = (
 
 /// Captures the planner's declared read set as an immutable view: footprint
 /// chunks plus the Chebyshev neighborhood of the entity's chunk. Every key
-/// must already be resident; the first missing chunk is requested and
-/// planning defers with `WouldBlock`, matching the footprint-preimage retry
-/// shape. Nothing is generated or read through to storage here, and the
-/// returned view cannot mutate the world.
+/// must already be resident; when any are missing, the whole missing set is
+/// requested before planning defers with `WouldBlock`. Requesting all of
+/// them converges in one loader round instead of stalling one round per
+/// chunk, and matches the footprint-preimage retry shape. Nothing is
+/// generated or read through to storage here, and the returned view cannot
+/// mutate the world.
 pub(super) fn capture_view_for_plan(
     state: &mut State,
     location: &EntityLocation,
@@ -73,7 +75,10 @@ pub(super) fn capture_view_for_plan(
     }
     if !missing.is_empty() {
         for key in missing {
-            let _ = request_chunk(state, key)?;
+            // Best-effort prefetch, matching invoke_hook: a failed request
+            // must not decide the plan. Anything not queued stays missing,
+            // so planning still defers below.
+            let _ = request_chunk(state, key);
         }
         return Err(io::Error::new(
             ErrorKind::WouldBlock,
@@ -332,6 +337,10 @@ fn validate_footprint_plan(
     let mut changed_cells = Vec::new();
     let mut read_chunks = BTreeSet::new();
     for change in block_states {
+        // Footprint states must be catalog-known. Anchor states additionally
+        // exclude air by construction: registration rejects `BlockStateId(0)`
+        // in compatible sets and spawning requires compatible membership, so
+        // the anchor representation is always a real block.
         if catalog.state(change.before).is_none() || catalog.state(change.after).is_none() {
             return Err(corrupt("entity policy returned an unknown block state"));
         }

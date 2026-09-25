@@ -677,7 +677,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
         };
         let above = view
             .block(anchor.x, anchor.y + 1, anchor.z)
-            .map_err(|_| EntityError::InvalidType)?;
+            .map_err(|_| EntityError::ViewOutOfRange)?;
         let solid = catalog.block_flags(above) & crate::content::SOLID != 0;
         Ok(EntityTickPlan {
             payload: Some(EntityPayload::new(u8::from(solid))),
@@ -692,9 +692,11 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
     }
 }
 
-/// A radius-zero mobile probe that reads far outside its captured home
-/// chunk. A leaked read would plan successfully; the MissingChunk mapping
-/// must reject it instead.
+/// A radius-zero mobile probe for the retry contract. On its first due tick
+/// it reads far outside its captured home chunk and must fail closed; on any
+/// later tick it reads inside the capture and must plan normally. The tick
+/// does the scoping because planners are pure: only the tick (and the world)
+/// can differ between attempts.
 struct FarReadTick;
 
 impl crate::server::entities::EntityTickPolicy for FarReadTick {
@@ -718,19 +720,29 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
                 return Err(EntityError::WrongOwnership);
             }
         };
-        match view.block(
-            position[0] as i32 + 64,
-            position[1] as i32,
-            position[2] as i32,
-        ) {
-            Err(_) => Err(EntityError::InvalidType),
-            Ok(_) => Ok(EntityTickPlan {
-                payload: Some(EntityPayload::new(42u8)),
-                next_tick: current_tick + 5,
-                anchor_update: None,
-                block_states: Vec::new(),
-            }),
+        if current_tick == due {
+            return match view.block(
+                position[0] as i32 + 64,
+                position[1] as i32,
+                position[2] as i32,
+            ) {
+                Err(_) => Err(EntityError::ViewOutOfRange),
+                Ok(_) => Ok(EntityTickPlan {
+                    payload: Some(EntityPayload::new(42u8)),
+                    next_tick: current_tick + 5,
+                    anchor_update: None,
+                    block_states: Vec::new(),
+                }),
+            };
         }
+        view.block(position[0] as i32, position[1] as i32, position[2] as i32)
+            .map_err(|_| EntityError::ViewOutOfRange)?;
+        Ok(EntityTickPlan {
+            payload: Some(EntityPayload::new(43u8)),
+            next_tick: current_tick + 5,
+            anchor_update: None,
+            block_states: Vec::new(),
+        })
     }
 }
 
@@ -1073,6 +1085,22 @@ fn entity_planner_read_outside_capture_is_an_error() {
         "a read outside the captured set must error, not read air"
     );
     assert!(!state.durability.failed);
+    // A rejected plan must leave the entity schedulable: its due tick is
+    // unchanged, it is still due, and a later attempt with an in-range read
+    // plans normally.
+    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(6));
+    assert!(state.entities.due_entities(7, 8).contains(&id));
+    let action = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id },
+        TickId::new(7),
+    )
+    .unwrap()
+    .expect("in-range retry plans after the rejected attempt");
+    state
+        .entities
+        .validate_prepared(action.entities.as_ref().unwrap())
+        .unwrap();
 
     drop(state);
     fs::remove_dir_all(path).unwrap();
