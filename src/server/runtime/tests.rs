@@ -1138,3 +1138,469 @@ fn parallel_and_serial_owner_waves_reach_identical_state_and_receipts() {
     assert_eq!(serial.1, parallel.1);
     assert_eq!(serial.2, parallel.2);
 }
+
+// --- Live multi-wave dispatch ------------------------------------------------
+//
+// The coordinator loop stages every registered wave in a phase before polling
+// any receipt, arbitrating each candidate against the already-staged key
+// sets. These tests drive that production path (`stage_registered_wave` /
+// `drain_registered_waves` — the same functions `tick_with_inputs` calls):
+// progress while a receipt is deliberately left unpolled, no unconfirmed
+// visibility, deterministic arbitration, and identical multi-wave commits at
+// any worker count.
+
+/// Two incrementing owner systems sharing one Simulation phase: every live
+/// tick stages two waves, so each tick has two waves in flight at once.
+struct TwinHarness {
+    _save: TestSave,
+    state: crate::server::State,
+    systems: [SystemId; 2],
+    owners: [[OwnerKey; 2]; 2],
+}
+
+fn twin_harness(workers: usize) -> TwinHarness {
+    let save = TestSave::new();
+    let mut state = crate::server::server_state(117, save.0.clone()).unwrap();
+    state.system_runtime = SystemRuntime::new(workers).unwrap();
+    let mut registry = SystemRegistry::new();
+    crate::server::builtins::register_builtin_systems(&mut registry).unwrap();
+    let systems = [
+        SystemId::new("test:twin_a").unwrap(),
+        SystemId::new("test:twin_b").unwrap(),
+    ];
+    for system in &systems {
+        let resource =
+            ResourceId::new(format!("test:{}_state", system.as_str().replace(':', "_"))).unwrap();
+        registry
+            .register_handler(
+                SystemDescriptor::new(
+                    system.clone(),
+                    Phase::Simulation,
+                    OwnerPartition::Chunk,
+                    2,
+                    0,
+                )
+                .write(resource),
+                |job: &OwnerJob| {
+                    let value = job
+                        .snapshot(job.owner())
+                        .and_then(|snapshot| snapshot.value::<OwnerData>())
+                        .and_then(|data| data.get::<u64>())
+                        .copied()
+                        .ok_or_else(|| {
+                            SystemHandlerError::Rejected("missing owner state".into())
+                        })?;
+                    Ok(OwnerPatch::new(
+                        job,
+                        OwnerData::new(value + 1),
+                        PatchUsage {
+                            writes: 1,
+                            effects: 0,
+                            estimated_bytes: 8,
+                        },
+                    ))
+                },
+            )
+            .unwrap();
+    }
+    state.phase_plan = registry.freeze().unwrap();
+    let owners = [
+        [chunk_owner(0), chunk_owner(1)],
+        [chunk_owner(10), chunk_owner(11)],
+    ];
+    let seeds = [[10u64, 20], [30, 40]];
+    for ((system, owners), seeds) in systems.iter().zip(owners.iter()).zip(seeds.iter()) {
+        register_u64_state(&mut state.system_runtime, system);
+        for (owner, seed) in owners.iter().zip(seeds.iter()) {
+            state
+                .system_runtime
+                .insert_owner(system.clone(), *owner, *seed)
+                .unwrap();
+        }
+    }
+    TwinHarness {
+        _save: save,
+        state,
+        systems,
+        owners,
+    }
+}
+
+fn twin_values(harness: &TwinHarness) -> Vec<u64> {
+    harness
+        .systems
+        .iter()
+        .zip(harness.owners.iter())
+        .flat_map(|(system, owners)| {
+            owners.iter().map(|owner| {
+                harness
+                    .state
+                    .system_runtime
+                    .owner_value::<u64>(system, *owner)
+                    .unwrap()
+                    .1
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn live_coordinator_stages_disjoint_waves_before_polling_any_receipt() {
+    let mut harness = twin_harness(2);
+    let kinds = Arc::clone(&harness.state.effect_kinds);
+    let first = harness
+        .state
+        .phase_plan
+        .system(&harness.systems[0])
+        .unwrap()
+        .clone();
+    let second = harness
+        .state
+        .phase_plan
+        .system(&harness.systems[1])
+        .unwrap()
+        .clone();
+    // Stage the first wave through the production entry the coordinator loop
+    // calls, then deliberately leave its receipt unpolled: from the
+    // coordinator's side a slow journal looks exactly like this.
+    let staged_first = {
+        let (runtime, durability) = (
+            &mut harness.state.system_runtime,
+            &mut harness.state.durability,
+        );
+        runtime
+            .stage_registered_wave(&first, TickId::new(1), 0, &kinds, durability, &[])
+            .unwrap()
+            .expect("first twin wave stages")
+    };
+    // Progress while the first fsync is still unobserved: the second system
+    // prepares and stages against the first wave's in-flight key set. The key
+    // sets are disjoint, so arbitration commits both — by construction, not
+    // by timing — and the second stage succeeds while the first receipt is
+    // still pending.
+    let staged_second = {
+        let (runtime, durability) = (
+            &mut harness.state.system_runtime,
+            &mut harness.state.durability,
+        );
+        runtime
+            .stage_registered_wave(
+                &second,
+                TickId::new(1),
+                1,
+                &kinds,
+                durability,
+                &[staged_first.keys().to_vec()],
+            )
+            .unwrap()
+            .expect("disjoint twin wave stages while the first receipt is in flight")
+    };
+    // Nothing unconfirmed is ever visible: both waves are staged, neither has
+    // applied.
+    assert_eq!(twin_values(&harness), vec![10, 20, 30, 40]);
+    // Both receipts drain through the single shared apply gate, whole.
+    let (runtime, durability) = (
+        &mut harness.state.system_runtime,
+        &mut harness.state.durability,
+    );
+    let applied = runtime
+        .drain_registered_waves(vec![staged_first, staged_second], durability)
+        .unwrap();
+    assert_eq!(applied.len(), 2);
+    assert_eq!(twin_values(&harness), vec![11, 21, 31, 41]);
+    assert!(!harness.state.durability.failed);
+}
+
+#[test]
+fn multi_wave_live_commits_match_at_one_and_four_workers() {
+    // Two waves in flight every tick: same inputs must produce the same final
+    // state and the same receipt order regardless of worker count.
+    fn run(workers: usize) -> (Vec<u64>, u64) {
+        let mut harness = twin_harness(workers);
+        for tick in 1..=4u64 {
+            tick_with_inputs(
+                &mut harness.state,
+                TickId::new(tick),
+                Instant::now(),
+                vec![],
+                vec![],
+            )
+            .unwrap();
+        }
+        let sequence = harness.state.durability.writer.sequence();
+        (twin_values(&harness), sequence)
+    }
+
+    let (single_values, single_sequence) = run(1);
+    assert_eq!(single_values, vec![14, 24, 34, 44]);
+    assert_eq!(run(4), (single_values, single_sequence));
+}
+
+#[test]
+fn overlapping_production_waves_retry_then_commit_without_loss() {
+    let mut harness = twin_harness(2);
+    let kinds = Arc::clone(&harness.state.effect_kinds);
+    let system = harness
+        .state
+        .phase_plan
+        .system(&harness.systems[0])
+        .unwrap()
+        .clone();
+    let wave = {
+        let (runtime, durability) = (
+            &mut harness.state.system_runtime,
+            &mut harness.state.durability,
+        );
+        runtime
+            .stage_registered_wave(&system, TickId::new(1), 0, &kinds, durability, &[])
+            .unwrap()
+            .expect("first wave stages")
+    };
+    // Same system restaged at the same revision touches the same keys: the
+    // second wave shares every key with the in-flight winner, so arbitration
+    // defers it with `WouldBlock` — exactly one wins — and never with
+    // `InvalidData`, which capacity conditions must never reach.
+    let conflict = {
+        let (runtime, durability) = (
+            &mut harness.state.system_runtime,
+            &mut harness.state.durability,
+        );
+        runtime.stage_registered_wave(
+            &system,
+            TickId::new(1),
+            1,
+            &kinds,
+            durability,
+            &[wave.keys().to_vec()],
+        )
+    };
+    let error = conflict.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::WouldBlock);
+    assert_ne!(error.kind(), ErrorKind::InvalidData);
+    assert!(!harness.state.durability.failed);
+    // Nothing unconfirmed is visible while the winner is still in flight.
+    assert_eq!(twin_values(&harness), vec![10, 20, 30, 40]);
+    // The winner applies whole; the loser retries against the receipted
+    // revision and commits: no lost update, nothing created or destroyed.
+    let (runtime, durability) = (
+        &mut harness.state.system_runtime,
+        &mut harness.state.durability,
+    );
+    let applied = runtime
+        .drain_registered_waves(vec![wave], durability)
+        .unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(twin_values(&harness), vec![11, 21, 30, 40]);
+    let retry = {
+        let (runtime, durability) = (
+            &mut harness.state.system_runtime,
+            &mut harness.state.durability,
+        );
+        runtime
+            .stage_registered_wave(&system, TickId::new(2), 0, &kinds, durability, &[])
+            .unwrap()
+            .expect("retry stages after the winner's receipt")
+    };
+    let (runtime, durability) = (
+        &mut harness.state.system_runtime,
+        &mut harness.state.durability,
+    );
+    let applied = runtime
+        .drain_registered_waves(vec![retry], durability)
+        .unwrap();
+    assert_eq!(applied.len(), 1);
+    assert_eq!(twin_values(&harness), vec![12, 22, 30, 40]);
+    assert!(!harness.state.durability.failed);
+}
+
+#[test]
+fn arbitrated_retry_withdraws_staged_wake_flags() {
+    use std::collections::VecDeque;
+
+    // One owner that always wakes an unloaded destination, with the
+    // destination popped from a script so each prepared wave stages a fresh
+    // flag: X, then Y (withdrawn on retry), then Z, then Y again. If the
+    // retry leaked its staged flag, the final Y would chain onto the leak
+    // and never reach the durable set.
+    let script = Arc::new(Mutex::new(VecDeque::from([
+        chunk_owner(91),
+        chunk_owner(92),
+        chunk_owner(93),
+        chunk_owner(92),
+    ])));
+    let deliveries: DeliveryLog = Arc::new(Mutex::new(Vec::new()));
+    let kind = EffectKindId::new("test:retry_wake").unwrap();
+    let mut kinds = EffectKindRegistry::new();
+    let delivery_log = Arc::clone(&deliveries);
+    kinds
+        .register(
+            kind.clone(),
+            1,
+            64,
+            4,
+            |_: &Nudge| 8usize,
+            |nudge: &Nudge| {
+                if nudge.amount == 0 {
+                    Err("zero nudge".to_owned())
+                } else {
+                    Ok(())
+                }
+            },
+            |nudge: &Nudge| Ok(vec![nudge.to]),
+            move |job: &OwnerJob, nudges: &[&Nudge]| {
+                delivery_log.lock().unwrap().push((
+                    job.owner(),
+                    nudges.iter().map(|nudge| nudge.amount).collect(),
+                ));
+                let sum = nudges.iter().map(|nudge| nudge.amount).sum::<u32>();
+                Ok(EffectConsumerOutput::new(sum, PatchUsage::default()))
+            },
+        )
+        .unwrap();
+    let save = TestSave::new();
+    let mut state = crate::server::server_state(119, save.0.clone()).unwrap();
+    state.system_runtime = SystemRuntime::new(1).unwrap();
+    state.effect_kinds = Arc::new(kinds.freeze());
+    let system = SystemId::new("test:retry_wake").unwrap();
+    let mut registry = SystemRegistry::new();
+    crate::server::builtins::register_builtin_systems(&mut registry).unwrap();
+    registry
+        .register_handler(
+            SystemDescriptor::new(
+                system.clone(),
+                Phase::Simulation,
+                OwnerPartition::Chunk,
+                1,
+                8,
+            )
+            .effects_per_job(4)
+            .write(ResourceId::new("test:retry_wake_state").unwrap()),
+            move |job: &OwnerJob| {
+                let value = job
+                    .snapshot(job.owner())
+                    .and_then(|snapshot| snapshot.value::<OwnerData>())
+                    .and_then(|data| data.get::<u64>())
+                    .copied()
+                    .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+                let to = script
+                    .lock()
+                    .unwrap()
+                    .pop_front()
+                    .expect("wake script remains");
+                let emissions = vec![EmittedOwnerEffect::new(
+                    kind.clone(),
+                    Nudge { to, amount: 1 },
+                )];
+                Ok(OwnerPatch::new(
+                    job,
+                    OwnerEffectPatch::new(OwnerData::new(value + 1), emissions),
+                    PatchUsage {
+                        writes: 1,
+                        effects: 1,
+                        estimated_bytes: 8,
+                    },
+                ))
+            },
+        )
+        .unwrap();
+    state.phase_plan = registry.freeze().unwrap();
+    register_u64_state(&mut state.system_runtime, &system);
+    let owner = chunk_owner(0);
+    state
+        .system_runtime
+        .insert_owner(system.clone(), owner, 0u64)
+        .unwrap();
+    let executable = state.phase_plan.system(&system).unwrap().clone();
+    let kinds = Arc::clone(&state.effect_kinds);
+
+    let value = |state: &crate::server::State| {
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, owner)
+            .unwrap()
+            .1
+    };
+    // Wave 1 stages its flag for X; wave 2 overlaps it and must retry.
+    let wave_x = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_registered_wave(&executable, TickId::new(1), 0, &kinds, durability, &[])
+            .unwrap()
+            .expect("first wave stages")
+    };
+    let conflict = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime.stage_registered_wave(
+            &executable,
+            TickId::new(1),
+            1,
+            &kinds,
+            durability,
+            &[wave_x.keys().to_vec()],
+        )
+    };
+    assert_eq!(conflict.unwrap_err().kind(), ErrorKind::WouldBlock);
+    // The deferral withdrew wave 2's staged flag for Y: nothing is visible
+    // and nothing is left half-staged.
+    assert_eq!(value(&state), 0);
+    assert_eq!(state.system_runtime.durable_wake_count(), 0);
+    // Wave 1 applies once with exactly its own flag; wave 3 stages Z fresh.
+    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+    assert_eq!(
+        runtime
+            .drain_registered_waves(vec![wave_x], durability)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(value(&state), 1);
+    assert_eq!(state.system_runtime.durable_wake_count(), 1);
+    let wave_z = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_registered_wave(&executable, TickId::new(2), 2, &kinds, durability, &[])
+            .unwrap()
+            .expect("third wave stages")
+    };
+    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+    assert_eq!(
+        runtime
+            .drain_registered_waves(vec![wave_z], durability)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(value(&state), 2);
+    assert_eq!(state.system_runtime.durable_wake_count(), 2);
+    // Y re-stages fresh on the retry: a leaked flag would have chained onto
+    // the withdrawn set and this record would carry no flag.
+    let wave_y = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_registered_wave(&executable, TickId::new(3), 1, &kinds, durability, &[])
+            .unwrap()
+            .expect("retried Y stages fresh after the withdrawal")
+    };
+    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+    assert_eq!(
+        runtime
+            .drain_registered_waves(vec![wave_y], durability)
+            .unwrap()
+            .len(),
+        1
+    );
+    // Every wave applied exactly once, in order; every flag landed once; no
+    // consumer ever ran because no destination was ever loaded.
+    assert_eq!(value(&state), 3);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&system, owner)
+            .unwrap()
+            .0,
+        3
+    );
+    assert_eq!(state.system_runtime.durable_wake_count(), 3);
+    assert!(deliveries.lock().unwrap().is_empty());
+    assert!(!state.durability.failed);
+}

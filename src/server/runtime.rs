@@ -402,11 +402,7 @@ pub(super) fn tick_with_inputs(
                         // The failed wave staged nothing, but earlier waves
                         // are already submitted: drain them so their receipted
                         // records still apply before the deferral propagates.
-                        if let Err(drain_error) =
-                            system_runtime.drain_registered_waves(pending, durability)
-                        {
-                            return Err(drain_error);
-                        }
+                        system_runtime.drain_registered_waves(pending, durability)?;
                         return Err(error);
                     }
                 }

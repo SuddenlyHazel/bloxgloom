@@ -1977,3 +1977,147 @@ fn pending_wakes_and_cursors_survive_rotation_without_wedging_the_gate() {
     assert_eq!(reopened.system_runtime.durable_wake_count(), 0);
     assert!(!reopened.durability.failed);
 }
+
+/// Two incrementing systems with one owner each: every live tick stages two
+/// waves, so a crash can catch several waves in flight at once.
+fn durable_twin_startup() -> (
+    ServerStartup,
+    [crate::server::registry::SystemId; 2],
+    [crate::server::parallel::OwnerKey; 2],
+) {
+    use crate::server::parallel::{OwnerData, OwnerJob, OwnerKey, OwnerPatch, PatchUsage};
+    use crate::server::registry::{OwnerPartition, ResourceId, SystemDescriptor, SystemId};
+
+    let systems = [
+        SystemId::new("test:durable_twin_a").unwrap(),
+        SystemId::new("test:durable_twin_b").unwrap(),
+    ];
+    let owners = [OwnerKey::Entity(7), OwnerKey::Entity(8)];
+    let mut startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()));
+    for ((system, owner), seed) in systems.iter().zip(owners.iter()).zip([41u64, 100]) {
+        startup.register_system(
+            SystemDescriptor::new(
+                system.clone(),
+                Phase::Simulation,
+                OwnerPartition::Entity,
+                1,
+                0,
+            )
+            .write(
+                ResourceId::new(format!("test:{}_state", system.as_str().replace(':', "_")))
+                    .unwrap(),
+            ),
+            |job: &OwnerJob| {
+                use crate::server::registry::SystemHandlerError;
+                let value = job
+                    .snapshot(job.owner())
+                    .and_then(|snapshot| snapshot.value::<OwnerData>())
+                    .and_then(|data| data.get::<u64>())
+                    .copied()
+                    .ok_or_else(|| SystemHandlerError::Rejected("missing owner state".into()))?;
+                Ok(OwnerPatch::new(
+                    job,
+                    OwnerData::new(value + 1),
+                    PatchUsage {
+                        writes: 1,
+                        effects: 0,
+                        estimated_bytes: std::mem::size_of::<u64>(),
+                    },
+                ))
+            },
+        );
+        register_u64_owner_codec(&mut startup, system);
+        startup.seed_owner(system.clone(), *owner, seed);
+    }
+    (startup, systems, owners)
+}
+
+#[test]
+fn interrupted_multi_wave_commit_recovers_whole_waves_only() {
+    // Two systems commit through the live loop, then two more waves are
+    // staged through the production path and only the first is polled before
+    // the crash. The second record was submitted but never polled; the writer
+    // drains it to the WAL tail on shutdown, so recovery must contain both
+    // waves whole — never a mix, never half-applied, never doubled.
+    let save = TestSave::new("owner-interrupted-twin-waves");
+    let (startup, systems, owners) = durable_twin_startup();
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    tick_once(&mut state, TickId::new(1), Instant::now()).unwrap();
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&systems[0], owners[0]),
+        Some((1, 42))
+    );
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&systems[1], owners[1]),
+        Some((1, 101))
+    );
+
+    let kinds = Arc::clone(&state.effect_kinds);
+    let first = state.phase_plan.system(&systems[0]).unwrap().clone();
+    let second = state.phase_plan.system(&systems[1]).unwrap().clone();
+    let wave_a = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_registered_wave(&first, TickId::new(2), 0, &kinds, durability, &[])
+            .unwrap()
+            .expect("twin A stages")
+    };
+    let wave_b = {
+        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+        runtime
+            .stage_registered_wave(
+                &second,
+                TickId::new(2),
+                1,
+                &kinds,
+                durability,
+                &[wave_a.keys().to_vec()],
+            )
+            .unwrap()
+            .expect("disjoint twin B stages while A is in flight")
+    };
+    // Neither staged wave is visible before its receipt.
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&systems[0], owners[0]),
+        Some((1, 42))
+    );
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<u64>(&systems[1], owners[1]),
+        Some((1, 101))
+    );
+    // Crash after applying only the first wave.
+    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
+    assert_eq!(
+        runtime
+            .drain_registered_waves(vec![wave_a], durability)
+            .unwrap()
+            .len(),
+        1
+    );
+    drop(wave_b);
+    drop(state);
+
+    let (startup, systems, owners) = durable_twin_startup();
+    let reopened = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&systems[0], owners[0]),
+        Some((2, 43))
+    );
+    assert_eq!(
+        reopened
+            .system_runtime
+            .owner_value::<u64>(&systems[1], owners[1]),
+        Some((2, 102))
+    );
+    assert!(!reopened.durability.failed);
+}

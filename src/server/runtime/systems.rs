@@ -121,6 +121,16 @@ impl PendingRegisteredWave {
     }
 }
 
+impl std::fmt::Debug for PendingRegisteredWave {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingRegisteredWave")
+            .field("system", &self.system.as_str())
+            .field("keys", &self.staged.keys.len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// Nonblocking receipt poll outcome for a staged owner wave.
 ///
 /// The live coordinator stages every wave in a phase before polling any of
@@ -746,14 +756,8 @@ impl SystemRuntime {
         effect_kinds: &EffectKindRegistryFrozen,
         durability: &mut Durability,
     ) -> io::Result<usize> {
-        let pending = self.stage_registered_wave(
-            system,
-            tick,
-            batch_wave,
-            effect_kinds,
-            durability,
-            &[],
-        )?;
+        let pending =
+            self.stage_registered_wave(system, tick, batch_wave, effect_kinds, durability, &[])?;
         let Some(pending) = pending else {
             return Ok(0);
         };
@@ -790,10 +794,7 @@ impl SystemRuntime {
         let mut sets: Vec<Vec<StateKey>> = in_flight.to_vec();
         sets.push(candidate);
         let dispositions = arbitrate_key_sets(&sets);
-        if matches!(
-            dispositions.last(),
-            Some(WaveDisposition::Retry { .. })
-        ) {
+        if matches!(dispositions.last(), Some(WaveDisposition::Retry { .. })) {
             let PreparedRegisteredWave {
                 durables: OwnerWaveDurables { wake_sets, .. },
                 ..
