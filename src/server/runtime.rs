@@ -1,6 +1,17 @@
 //! Fixed-step coordinator and phase barriers. The coordinator owns admission
 //! and publication; validated disjoint owner commits may apply on workers
 //! behind a barrier. Handlers only prepare results from immutable snapshots.
+//!
+//! Owner state is durable in the single main journal under the
+//! `bloxgloom:owner_state` domain (`runtime::owner_codec`). There is exactly
+//! one owner store — the barrier-owned `DurableOwnerStore` inside
+//! `SystemRuntime` — and one WAL record per owner wave. A separate owner log
+//! was deliberately rejected: two tails would make a commit spanning entity
+//! state and owner state non-atomic and force recovery to reconcile two
+//! tails. Rotation materializes the full latest-value map (every domain)
+//! into the new base generation, so owner cells survive rotation with no
+//! per-key checkpoint file; adding dirty-checkpoint entries without a
+//! backing file would wedge the rotation gate instead of bounding the tail.
 
 use super::effects::{Effect, EffectBuffer, EffectLimits, route_effects};
 use super::metrics::{Metric, TickSample};
@@ -11,7 +22,6 @@ pub(in crate::server) mod adapters;
 pub(in crate::server) mod owner_codec;
 pub(in crate::server) mod owner_durable;
 pub(in crate::server) mod owner_effects;
-pub(in crate::server) mod owner_journal;
 pub(in crate::server) mod systems;
 
 #[cfg(test)]
