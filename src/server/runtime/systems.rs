@@ -16,7 +16,7 @@ use super::super::parallel::{
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
 use std::any::Any;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::sync::Arc;
 
@@ -27,6 +27,7 @@ pub(in crate::server) struct SystemRuntime {
     worker_count: usize,
     owners: BTreeMap<SystemId, OwnerStore<OwnerData>>,
     next_owner: BTreeMap<SystemId, OwnerKey>,
+    unvalidated_owners: BTreeSet<SystemId>,
 }
 
 impl SystemRuntime {
@@ -42,6 +43,7 @@ impl SystemRuntime {
             worker_count: workers,
             owners: BTreeMap::new(),
             next_owner: BTreeMap::new(),
+            unvalidated_owners: BTreeSet::new(),
         })
     }
 
@@ -61,7 +63,7 @@ impl SystemRuntime {
         owner: OwnerKey,
         value: OwnerData,
     ) -> io::Result<()> {
-        let store = self.owners.entry(system).or_default();
+        let store = self.owners.entry(system.clone()).or_default();
         if store.revision(owner).is_none() && store.len() >= MAX_OWNER_VALUES_PER_SYSTEM {
             return Err(io::Error::other(format!(
                 "registered owner store exceeds {MAX_OWNER_VALUES_PER_SYSTEM} owners"
@@ -69,7 +71,9 @@ impl SystemRuntime {
         }
         store
             .insert(owner, 0, value)
-            .map_err(|error| store_error("insert", error))
+            .map_err(|error| store_error("insert", error))?;
+        self.unvalidated_owners.insert(system);
+        Ok(())
     }
 
     pub fn owner_value<T: Any + Clone + Send + Sync>(
@@ -129,28 +133,26 @@ impl SystemRuntime {
         let Some(store) = self.owners.get_mut(&id) else {
             return Ok(0);
         };
-        let owners: Vec<_> = store.owners().collect();
-        if let Some(owner) = owners.iter().find(|owner| !system.accepts_owner(**owner)) {
-            return Err(io::Error::other(format!(
-                "registered system {} owns a value in the wrong partition: {owner:?}",
-                id.as_str()
-            )));
+        if self.unvalidated_owners.contains(&id) {
+            if let Some(owner) = store.owners().find(|owner| !system.accepts_owner(*owner)) {
+                return Err(io::Error::other(format!(
+                    "registered system {} owns a value in the wrong partition: {owner:?}",
+                    id.as_str()
+                )));
+            }
+            self.unvalidated_owners.remove(&id);
         }
-        if owners.is_empty() {
+        if store.len() == 0 {
             return Ok(0);
         }
 
-        let admitted = owners.len().min(system.max_jobs_per_tick());
-        let cursor = self.next_owner.get(&id).copied();
-        let start = match cursor {
-            Some(cursor) => owners.binary_search(&cursor).unwrap_or_else(|index| index),
-            None => 0,
-        };
-        let start = if start == owners.len() { 0 } else { start };
-        let selected: Vec<_> = (0..admitted)
-            .map(|offset| owners[(start + offset) % owners.len()])
-            .collect();
-        let next_cursor = owners[(start + admitted) % owners.len()];
+        let selected = store.owners_from(
+            self.next_owner.get(&id).copied(),
+            system.max_jobs_per_tick(),
+        );
+        let next_cursor = store
+            .successor(*selected.last().expect("non-empty owner store admits a job"))
+            .expect("non-empty owner store has a successor");
 
         let batch = BatchId::new(tick, system.phase(), batch_wave);
         let limits = OwnerWaveLimits {

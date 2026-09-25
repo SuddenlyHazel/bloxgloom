@@ -110,6 +110,38 @@ impl<T: Send + Sync + 'static> OwnerStore<T> {
         self.owners.keys().copied()
     }
 
+    /// Selects a bounded, canonical round-robin prefix without walking owners
+    /// that cannot be admitted in this wave. A removed cursor key resumes at
+    /// its successor; wrapping visits low keys only after high keys.
+    pub fn owners_from(&self, cursor: Option<OwnerKey>, limit: usize) -> Vec<OwnerKey> {
+        let count = limit.min(self.owners.len());
+        let mut selected = Vec::with_capacity(count);
+        if count == 0 {
+            return selected;
+        }
+        if let Some(cursor) = cursor {
+            selected.extend(self.owners.range(cursor..).take(count).map(|(key, _)| *key));
+            selected.extend(
+                self.owners
+                    .range(..cursor)
+                    .take(count - selected.len())
+                    .map(|(key, _)| *key),
+            );
+        } else {
+            selected.extend(self.owners.keys().take(count).copied());
+        }
+        selected
+    }
+
+    pub fn successor(&self, owner: OwnerKey) -> Option<OwnerKey> {
+        use std::ops::Bound::{Excluded, Unbounded};
+        self.owners
+            .range((Excluded(owner), Unbounded))
+            .next()
+            .or_else(|| self.owners.first_key_value())
+            .map(|(key, _)| *key)
+    }
+
     /// Replaces each owner with its typed patch value after rechecking every
     /// captured read revision. The mutable store borrow is the exclusive
     /// commit lease: no snapshot or competing wave can observe a partial apply.

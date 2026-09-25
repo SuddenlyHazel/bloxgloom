@@ -156,3 +156,23 @@ fn duplicate_insertion_does_not_replace_an_owner_value() {
     );
     assert_eq!(store.snapshot(owner).unwrap().value::<u64>(), Some(&4));
 }
+
+#[test]
+fn bounded_selection_wraps_and_resumes_after_a_missing_cursor() {
+    let mut store = OwnerStore::new();
+    for x in [1, 3, 5, 7] {
+        store.insert(chunk(x), 0, x as u64).unwrap();
+    }
+    assert_eq!(store.owners_from(None, 2), [chunk(1), chunk(3)]);
+    assert_eq!(store.successor(chunk(3)), Some(chunk(5)));
+    assert_eq!(store.owners_from(Some(chunk(5)), 2), [chunk(5), chunk(7)]);
+    assert_eq!(
+        store.owners_from(Some(chunk(6)), 3),
+        [chunk(7), chunk(1), chunk(3)]
+    );
+    assert_eq!(
+        store.owners_from(Some(chunk(7)), 4),
+        [chunk(7), chunk(1), chunk(3), chunk(5)]
+    );
+    assert!(store.owners_from(None, 0).is_empty());
+}
