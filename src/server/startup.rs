@@ -154,16 +154,31 @@ impl ServerStartup {
         let mut registry = SystemRegistry::new();
         builtins::register_builtin_systems(&mut registry)?;
         for (descriptor, handler) in &self.systems {
-            if matches!(descriptor.partition(), OwnerPartition::Global)
-                || descriptor.writes().is_empty()
-                || descriptor.max_effects_per_tick() != 0
-                || descriptor.neighbor_radius_chunks() != 0
-            {
+            if matches!(descriptor.partition(), OwnerPartition::Global) {
                 return Err(io::Error::new(
                     ErrorKind::Unsupported,
                     format!(
-                        "registered owner system {} requires unsupported live capabilities",
+                        "registered owner system {} uses unsupported global partition",
                         descriptor.id().as_str()
+                    ),
+                ));
+            }
+            if descriptor.writes().is_empty() {
+                return Err(io::Error::new(
+                    ErrorKind::Unsupported,
+                    format!(
+                        "registered owner system {} declares no owner-state write",
+                        descriptor.id().as_str()
+                    ),
+                ));
+            }
+            if descriptor.neighbor_radius_chunks() != 0 {
+                return Err(io::Error::new(
+                    ErrorKind::Unsupported,
+                    format!(
+                        "registered owner system {} declares unsupported neighbor snapshots (radius {})",
+                        descriptor.id().as_str(),
+                        descriptor.neighbor_radius_chunks()
                     ),
                 ));
             }
