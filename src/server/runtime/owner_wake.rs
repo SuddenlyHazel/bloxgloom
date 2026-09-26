@@ -241,10 +241,49 @@ impl PendingWakeStore {
     /// Flagged destinations for one system in canonical order, with their
     /// producing ticks. The caller serves only those with live cells; flags
     /// for still-absent owners stay held.
+    #[cfg(test)]
     pub fn flagged_for(&self, system: &SystemId) -> Vec<(OwnerKey, u64)> {
         self.pending
             .iter()
             .filter(|((candidate, _), _)| candidate == system)
+            .map(|((_, owner), tick)| (*owner, *tick))
+            .collect()
+    }
+
+    /// Bounded rotating inspection, including unloaded destinations. The
+    /// caller advances the cursor past inspected flags so absent low keys do
+    /// not hide loaded higher keys on every wave.
+    pub fn flagged_from(
+        &self,
+        system: &SystemId,
+        cursor: Option<OwnerKey>,
+        limit: usize,
+    ) -> Vec<(OwnerKey, u64)> {
+        if limit == 0 {
+            return Vec::new();
+        }
+        let first = OwnerKey::Chunk(crate::world::ChunkKey {
+            x: i32::MIN,
+            y: i32::MIN,
+            z: i32::MIN,
+        });
+        let start = cursor.unwrap_or(first);
+        let bound = if cursor.is_some() {
+            std::ops::Bound::Excluded((system.clone(), start))
+        } else {
+            std::ops::Bound::Included((system.clone(), start))
+        };
+        let after = self
+            .pending
+            .range((bound, std::ops::Bound::Unbounded))
+            .take_while(|((id, _), _)| id == system);
+        let before = self
+            .pending
+            .range((system.clone(), first)..=(system.clone(), start))
+            .take(if cursor.is_some() { limit } else { 0 });
+        after
+            .chain(before)
+            .take(limit)
             .map(|((_, owner), tick)| (*owner, *tick))
             .collect()
     }

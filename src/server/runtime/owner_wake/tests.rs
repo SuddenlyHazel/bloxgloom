@@ -285,3 +285,25 @@ fn served_flags_clear_exactly_once() {
     assert!(store.flagged_for(&a.0).is_empty());
     assert!(store.stage_clears(&served).is_empty());
 }
+
+#[test]
+fn flagged_inspection_rotates_past_absent_low_keys_with_a_bounded_capture() {
+    let mut store = PendingWakeStore::new();
+    let id = system("test:wake_a");
+    let flags: Vec<_> = (1..=8)
+        .map(|owner| (id.clone(), OwnerKey::Entity(owner)))
+        .collect();
+    let prepared = store.prepare_sets(&flags, 7, 8).unwrap();
+    store.commit_sets(prepared);
+    let first = store.flagged_from(&id, None, 2);
+    assert_eq!(
+        first.iter().map(|(owner, _)| *owner).collect::<Vec<_>>(),
+        vec![OwnerKey::Entity(1), OwnerKey::Entity(2)]
+    );
+    let second = store.flagged_from(&id, Some(first[1].0), 2);
+    assert_eq!(
+        second.iter().map(|(owner, _)| *owner).collect::<Vec<_>>(),
+        vec![OwnerKey::Entity(3), OwnerKey::Entity(4)]
+    );
+    assert_eq!(store.flagged_from(&id, Some(OwnerKey::Entity(8)), 2), first);
+}

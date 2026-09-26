@@ -164,6 +164,7 @@ pub(in crate::server) struct SystemRuntime {
     /// skipped. Carries no effect payload: the flag only asks the destination
     /// to do its own durable work sooner.
     durable_wakes: PendingWakeStore,
+    durable_wake_cursor: BTreeMap<SystemId, OwnerKey>,
     /// When set, routed effects are discarded before any consumer runs while
     /// producer commits still apply. Tests use this to prove delivery is
     /// optional; it is never set by live routing.
@@ -205,6 +206,7 @@ impl SystemRuntime {
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
             durable_wakes,
+            durable_wake_cursor: BTreeMap::new(),
             drop_registered_effects: false,
         })
     }
@@ -489,7 +491,12 @@ impl SystemRuntime {
         // at commit time below), so a served flag is never served twice.
         let mut durable_served: Vec<(SystemId, OwnerKey)> = Vec::new();
         if selected.len() < wake_budget {
-            for (owner, _) in self.durable_wakes.flagged_for(&id) {
+            for (owner, _) in self.durable_wakes.flagged_from(
+                &id,
+                self.durable_wake_cursor.get(&id).copied(),
+                system.max_jobs_per_tick(),
+            ) {
+                self.durable_wake_cursor.insert(id.clone(), owner);
                 if selected.len() >= wake_budget {
                     break;
                 }
