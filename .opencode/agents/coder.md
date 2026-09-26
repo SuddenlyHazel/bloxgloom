@@ -1,7 +1,7 @@
 ---
 description: Implements one scoped code change per task prompt, then reports
 mode: all
-model: openai/gpt-6-sol
+model: openai/gpt-6-sol#high
 permissions:
   - action: edit
     resource: "docs/**"
