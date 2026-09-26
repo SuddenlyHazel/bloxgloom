@@ -2269,12 +2269,10 @@ fn interrupted_multi_wave_commit_recovers_whole_waves_only() {
         Some((1, 101))
     );
     // Crash after applying only the first wave.
-    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
     assert_eq!(
-        runtime
-            .drain_registered_waves(vec![wave_a], durability)
+        crate::server::durable::complete_barrier(&mut state, wave_a.barrier())
             .unwrap()
-            .len(),
+            .commits,
         1
     );
     drop(wave_b);

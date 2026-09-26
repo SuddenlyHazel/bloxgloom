@@ -8,6 +8,9 @@ use std::sync::{Arc, mpsc};
 
 const PROBE: crate::content::EntityTypeId = crate::content::EntityTypeId(80);
 
+#[path = "lifecycle_tests.rs"]
+mod lifecycle;
+
 struct Probe(bool);
 impl crate::server::entities::EntityTickPolicy for Probe {
     fn reads_neighbours(&self) -> bool {

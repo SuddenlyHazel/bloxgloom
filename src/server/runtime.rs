@@ -12,6 +12,13 @@
 //! into the new base generation, so owner cells survive rotation with no
 //! per-key checkpoint file; adding dirty-checkpoint entries without a
 //! backing file would wedge the rotation gate instead of bounding the tail.
+//!
+//! Logical ticks consume confirmed state only. Motion's deterministic batch
+//! barrier and each phase's last registered-owner admission must apply before
+//! their boundary completes. These waits can stretch a tick in wall time;
+//! the socket reactor remains independent. Ordinary asynchronous actions and
+//! fire may still wait for a later receipt poll, never becoming speculative
+//! inputs. No receipt timing selects a physics step or permits tick rollback.
 
 use super::effects::{Effect, EffectBuffer, EffectLimits, route_effects};
 use super::metrics::{Metric, TickSample};
@@ -367,14 +374,19 @@ pub(super) fn tick_with_inputs(
         // deterministically at stage time. Trusted drivers run inline in
         // plan order between stages; the whole staged set drains at the
         // phase barrier through the single shared apply gate.
-        let mut pending: Vec<systems::PendingRegisteredWave> = Vec::new();
-        // Staged key sets in canonical stage order, parallel to `pending`,
+        let mut barrier = None;
+        // Staged key sets in canonical stage order,
         // for arbitration of each newly prepared wave.
         let mut staged_key_sets: Vec<Vec<super::journal::StateKey>> = Vec::new();
         for index in 0..system_count {
             let registered = context.state.phase_plan.systems(phase)[index].clone();
             if let Some(driver) = registered.driver() {
-                driver(&mut context)?;
+                if let Err(error) = driver(&mut context) {
+                    if let Some(barrier) = barrier {
+                        durable::complete_barrier(context.state, barrier)?;
+                    }
+                    return Err(error);
+                }
             } else {
                 let batch_wave = u16::try_from(index)
                     .map_err(|_| io::Error::other("too many registered phase systems"))?;
@@ -395,25 +407,23 @@ pub(super) fn tick_with_inputs(
                 ) {
                     Ok(Some(wave)) => {
                         staged_key_sets.push(wave.keys().to_vec());
-                        pending.push(wave);
+                        barrier = Some(wave.barrier());
                     }
                     Ok(None) => {}
                     Err(error) => {
                         // The failed wave staged nothing, but earlier waves
                         // are already submitted: drain them so their receipted
                         // records still apply before the deferral propagates.
-                        system_runtime.drain_registered_waves(pending, durability)?;
+                        if let Some(barrier) = barrier {
+                            durable::complete_barrier(context.state, barrier)?;
+                        }
                         return Err(error);
                     }
                 }
             }
         }
-        {
-            let (system_runtime, durability) = (
-                &mut context.state.system_runtime,
-                &mut context.state.durability,
-            );
-            system_runtime.drain_registered_waves(pending, durability)?;
+        if let Some(barrier) = barrier {
+            durable::complete_barrier(context.state, barrier)?;
         }
         phase_times[phase_index] = phase_started.elapsed();
     }

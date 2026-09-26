@@ -884,6 +884,16 @@ impl StagedWrite {
 }
 
 impl PreparedOwnerWave {
+    /// Carry every captured owner read into admission, including owners not
+    /// replaced by this wave. Writes dominate shared reads in the common gate.
+    pub fn read_keys(&self) -> Vec<StateKey> {
+        self.staged
+            .iter()
+            .flat_map(|staged| staged.write.reads.iter())
+            .map(|(owner, _)| owner_state_key(&self.system, *owner))
+            .collect()
+    }
+
     pub fn changes(&self) -> &[Change] {
         &self.changes
     }

@@ -5,9 +5,8 @@
 //! journal. This module holds the deterministic glue between that worker
 //! phase and the single ordered publication:
 //!
-//! * [`OwnerWaveDurables`] bundles the wave-attached durable pieces that
-//!   [`SystemRuntime::commit_owner_wave`](super::systems::SystemRuntime) used
-//!   to take as six separate parameters.
+//! * [`OwnerWaveDurables`] bundles the wave-attached durable preparation.
+//!   Accepted [`OwnerCommit`] payloads live in the common durable queue.
 //! * [`arbitrate_key_sets`] serializes only overlapping key sets: two
 //!   prepared transactions with disjoint [`StateKey`]s never block each
 //!   other, while two sharing a key serialize — exactly one wins, the other
@@ -16,9 +15,8 @@
 //! * [`build_owner_writes_parallel`] rebuilds the per-commit revision logs
 //!   (the `OwnerWrite` vec publication consumes) on scoped worker threads,
 //!   still collected in stable owner order behind the one barrier.
-//! * Stage / receipt / apply stay split: the coordinator stages a complete
-//!   transaction and may keep making progress while its fsync is in flight,
-//!   but nothing becomes visible before its receipt.
+//! * Stage / receipt / apply stay split. The shared receipt gate applies in
+//!   admission order; the coordinator waits at explicit logical boundaries.
 //!
 //! Built-in durable actions (block edits, pickups, kiln actions, admin
 //! grants, drop removal) are NOT parallelized here: they stay one global
@@ -34,19 +32,30 @@ use super::owner_wake::PreparedWakeSets;
 use std::collections::BTreeSet;
 use std::io;
 
+/// Specialized apply data owned by the common durable queue after admission.
+/// No receipt or reservation is held by the feature runtime.
+#[derive(Debug)]
+pub(in crate::server) struct OwnerCommit {
+    pub prepared: PreparedOwnerWave,
+    pub wake_sets: PreparedWakeSets,
+    pub durable_served: Vec<(SystemId, OwnerKey)>,
+    pub cursor: Option<Change>,
+    pub live_wakes: Vec<(SystemId, OwnerKey)>,
+    pub tick: TickId,
+}
+
 /// Wave-attached durable pieces for one owner commit.
 ///
-/// This bundles what `commit_owner_wave` used to take as six parameters
-/// (`prepared`, `tick`, `durability`, `wake_sets`, `durable_served`,
-/// `cursor`) into one struct. The journal handle (`&mut Durability`) is
-/// still passed separately at the call site; everything attached to the wave
-/// itself travels here.
+/// State, deadline, durable wakes and cursor share one WAL record. Live wake
+/// capacity is reserved during preparation but hints publish only on receipt,
+/// tagged with their producing tick so later phase barriers cannot cascade.
 pub(in crate::server) struct OwnerWaveDurables {
     pub prepared: PreparedOwnerWave,
     pub tick: TickId,
     pub wake_sets: PreparedWakeSets,
     pub durable_served: Vec<(SystemId, OwnerKey)>,
     pub cursor: Option<Change>,
+    pub live_wakes: Vec<(SystemId, OwnerKey)>,
 }
 
 impl OwnerWaveDurables {
@@ -63,7 +72,13 @@ impl OwnerWaveDurables {
             wake_sets,
             durable_served,
             cursor,
+            live_wakes: Vec::new(),
         }
+    }
+
+    pub fn with_live_wakes(mut self, wakes: Vec<(SystemId, OwnerKey)>) -> Self {
+        self.live_wakes = wakes;
+        self
     }
 }
 

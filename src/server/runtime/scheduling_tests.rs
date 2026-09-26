@@ -61,16 +61,22 @@ fn scheduled_startup(jobs: usize, owners: i32) -> (ServerStartup, SystemId) {
 
 fn run(state: &mut crate::server::State, system: &SystemId, tick: u64) -> usize {
     let executable = state.phase_plan.system(system).unwrap().clone();
-    state
+    let pending = state
         .system_runtime
-        .run_registered(
+        .stage_registered_wave(
             &executable,
             TickId::new(tick),
             0,
             &state.effect_kinds,
             &mut state.durability,
+            &[],
         )
-        .unwrap()
+        .unwrap();
+    pending.map_or(0, |pending| {
+        complete_barrier(state, pending.barrier())
+            .unwrap()
+            .owner_writes
+    })
 }
 
 #[test]
@@ -158,10 +164,7 @@ fn due_reschedule_waits_for_receipt_and_deferral_preserves_eligibility() {
             .owner_value::<u64>(&system, chunk_owner(0)),
         Some((1, 1))
     );
-    state
-        .system_runtime
-        .drain_registered_waves(vec![pending], &mut state.durability)
-        .unwrap();
+    complete_barrier(&mut state, pending.barrier()).unwrap();
     assert_eq!(
         run(&mut state, &system, 21),
         0,

@@ -10,9 +10,9 @@
 //! are bounded; arbitrary heap usage inside `Any` payloads is not measured or
 //! sandboxed.
 
-use super::super::durable::Durability;
+use super::super::durable::{CommitBarrier, Durability};
 use super::super::effects::{EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH};
-use super::super::journal::{Change, CommitReceipt, StateKey, SubmitError, Transaction};
+use super::super::journal::{Change, StateKey};
 use super::super::parallel::{
     BatchId, JobKey, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY, MAX_PHASE_WORKERS,
     OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerSchedule, OwnerSnapshot, OwnerWaveError,
@@ -30,47 +30,32 @@ use super::owner_commit::{
 };
 #[cfg(test)]
 use super::owner_durable::OwnerSystemConfig;
+use super::owner_durable::{DurableOwnerStore, OwnerDurableError};
 #[cfg(test)]
-use super::owner_durable::OwnerWrite;
-use super::owner_durable::{
-    DurableOwnerStore, MAX_OWNER_WAVE_BYTES, OwnerDurableError, OwnerWalReceipt, PreparedOwnerWave,
-};
+use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
-use super::owner_wake::{PendingWakeStore, PreparedWakeSets};
+use super::owner_wake::PendingWakeStore;
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError};
 
 pub(in crate::server) const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
+
+#[path = "systems/commit.rs"]
+mod commit;
 
 /// Bound on staged next-tick owner wakes. The set only schedules work that
 /// the destination would do on its own rotation; when it fills, producing
 /// waves defer with `WouldBlock` instead of growing it.
 pub(in crate::server) const MAX_PENDING_OWNER_WAKES: usize = MAX_EFFECTS_PER_BATCH;
 
-/// One staged owner wave: submitted to the journal, reserved, but not yet
-/// receipted. The coordinator may do other work while its fsync is in
-/// flight; the wave becomes visible only when
-/// [`SystemRuntime::poll_staged_owner_wave`] observes its receipt.
+/// Admission metadata only. The shared durable queue owns the payload,
+/// receipt and reservations; losing this handle cannot lose accepted work.
+#[derive(Debug)]
 pub(in crate::server) struct StagedOwnerCommit {
     keys: Vec<StateKey>,
-    receiver: Receiver<io::Result<CommitReceipt>>,
-    prepared: PreparedOwnerWave,
-    wake_sets: Option<PreparedWakeSets>,
-    durable_served: Vec<(SystemId, OwnerKey)>,
-}
-
-impl std::fmt::Debug for StagedOwnerCommit {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("StagedOwnerCommit")
-            .field("keys", &self.keys.len())
-            .field("changes", &self.prepared.changes().len())
-            .field("served", &self.durable_served.len())
-            .finish_non_exhaustive()
-    }
+    pub barrier: CommitBarrier,
 }
 
 /// One validated owner wave, prepared but not yet staged: worker execution,
@@ -79,8 +64,6 @@ impl std::fmt::Debug for StagedOwnerCommit {
 /// stage and the receipt. Preparing every wave in a phase before staging any
 /// of them lets the coordinator arbitrate overlapping key sets up front.
 pub(in crate::server) struct PreparedRegisteredWave {
-    id: SystemId,
-    next_cursor: OwnerKey,
     durables: OwnerWaveDurables,
 }
 
@@ -110,8 +93,6 @@ impl PreparedRegisteredWave {
 /// WAL-backed state and never double-applies.
 pub(in crate::server) struct PendingRegisteredWave {
     staged: StagedOwnerCommit,
-    system: SystemId,
-    next_cursor: OwnerKey,
 }
 
 impl PendingRegisteredWave {
@@ -119,30 +100,19 @@ impl PendingRegisteredWave {
     pub(in crate::server) fn keys(&self) -> &[StateKey] {
         &self.staged.keys
     }
+
+    pub(in crate::server) fn barrier(&self) -> CommitBarrier {
+        self.staged.barrier
+    }
 }
 
 impl std::fmt::Debug for PendingRegisteredWave {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PendingRegisteredWave")
-            .field("system", &self.system.as_str())
             .field("keys", &self.staged.keys.len())
             .finish_non_exhaustive()
     }
-}
-
-/// Nonblocking receipt poll outcome for a staged owner wave.
-///
-/// The live coordinator stages every wave in a phase before polling any of
-/// them, so one wave's fsync never blocks another wave's submission; a
-/// `Pending` wave is returned untouched so the coordinator can poll it again
-/// on the next sweep.
-pub(in crate::server) enum OwnerCommitPoll {
-    /// The fsync is still in flight; the staged wave is returned untouched
-    /// so the coordinator can poll it again later.
-    Pending(StagedOwnerCommit),
-    /// The receipt arrived and the WAL-confirmed wave applied.
-    Applied(usize),
 }
 
 pub(in crate::server) struct SystemRuntime {
@@ -157,7 +127,9 @@ pub(in crate::server) struct SystemRuntime {
     /// Destinations woken by routed effects, served from each system's normal
     /// job budget next tick. In-memory only: losing them costs latency, never
     /// state.
-    pending_wakes: BTreeMap<SystemId, BTreeSet<OwnerKey>>,
+    pending_wakes: BTreeMap<SystemId, BTreeMap<OwnerKey, u64>>,
+    /// Capacity held by prepared/accepted waves, not yet public hints.
+    staged_live_wakes: usize,
     /// Durable pending-wake flags for destinations with no live cell. Staged
     /// into the producer wave's WAL record and recovered at open, so a wake
     /// to an unloaded owner is held until that owner loads instead of being
@@ -205,6 +177,7 @@ impl SystemRuntime {
             next_owner: cursors,
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
+            staged_live_wakes: 0,
             durable_wakes,
             durable_wake_cursor: BTreeMap::new(),
             drop_registered_effects: false,
@@ -281,7 +254,7 @@ impl SystemRuntime {
     /// Stages a bare prepared wave for tests driving the split commit path:
     /// prepares `writes` against current revisions, attaches an empty wake
     /// set, and submits without blocking. The caller polls with
-    /// [`SystemRuntime::poll_staged_owner_wave`].
+    /// the common durable receipt gate.
     #[cfg(test)]
     pub(in crate::server) fn stage_test_wave(
         &mut self,
@@ -306,7 +279,7 @@ impl SystemRuntime {
     /// Validates a wave against the live store and stages its exact WAL
     /// changes without applying anything. Used by tests driving
     /// multi-domain commits; the live path prepares from validated patches
-    /// inside [`SystemRuntime::run_registered`].
+    /// inside [`SystemRuntime::stage_registered_wave`].
     #[cfg(test)]
     pub(in crate::server) fn prepare_owner_wave(
         &self,
@@ -395,7 +368,7 @@ impl SystemRuntime {
     }
 
     pub(in crate::server) fn pending_wake_count(&self) -> usize {
-        self.pending_wakes.values().map(BTreeSet::len).sum()
+        self.pending_wakes.values().map(BTreeMap::len).sum()
     }
 
     /// Validates, executes, routes, and bundles one registered wave without
@@ -403,14 +376,13 @@ impl SystemRuntime {
     /// immutable snapshots, the wave is validated and its effects routed at
     /// the barrier, revision logs are rebuilt, and durable wake flags are
     /// prepared. The returned wave carries everything `stage_owner_wave`
-    /// needs; live wake inserts and staged wake flags are already in place,
-    /// exactly as if the wave were about to commit. Returns `None` when the
-    /// system owns nothing this tick.
+    /// needs; wake capacity is reserved, but no hint is visible yet. Returns
+    /// `None` when the system owns nothing this tick.
     ///
     /// Producer patches may carry effect emissions alongside their owner
     /// replacement. At the commit barrier those emissions are routed through
     /// the shared registered-effect machinery and each live destination is
-    /// staged in `pending_wakes`, served from its own system's normal job
+    /// carried with the commit, served from its own system's normal job
     /// budget next tick. Any routing, bound, or consumer violation rejects
     /// the whole wave with `WouldBlock` before anything commits.
     fn prepare_registered_wave(
@@ -470,19 +442,20 @@ impl SystemRuntime {
         // Woken destinations take precedence within the normal job budget
         // next tick; leftovers stay staged. Owners that no longer exist are
         // dropped here: a missing destination only costs latency.
-        let mut selected: Vec<OwnerKey> = self
-            .pending_wakes
-            .remove(&id)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|owner| self.durable.revision(&id, *owner).is_some())
-            .collect();
-        if selected.len() > wake_budget {
-            let leftover: Vec<OwnerKey> = selected.split_off(wake_budget);
-            self.pending_wakes
-                .entry(id.clone())
-                .or_default()
-                .extend(leftover);
+        let pending = self.pending_wakes.remove(&id).unwrap_or_default();
+        let mut selected = Vec::new();
+        for (owner, produced_tick) in pending {
+            if self.durable.revision(&id, owner).is_none() {
+                continue;
+            }
+            if produced_tick < tick.get() && selected.len() < wake_budget {
+                selected.push(owner);
+            } else {
+                self.pending_wakes
+                    .entry(id.clone())
+                    .or_default()
+                    .insert(owner, produced_tick);
+            }
         }
         let mut seen: BTreeSet<OwnerKey> = selected.iter().copied().collect();
         // Durable flags for destinations that have loaded since the wake was
@@ -497,6 +470,13 @@ impl SystemRuntime {
                 system.max_jobs_per_tick(),
             ) {
                 self.durable_wake_cursor.insert(id.clone(), owner);
+                if self
+                    .durable_wakes
+                    .published_at(&id, owner)
+                    .is_some_and(|produced| produced >= tick.get())
+                {
+                    continue;
+                }
                 if selected.len() >= wake_budget {
                     break;
                 }
@@ -711,7 +691,7 @@ impl SystemRuntime {
                 ),
             )
         })?;
-        let staged_wakes: usize = self.pending_wakes.values().map(BTreeSet::len).sum();
+        let staged_wakes = self.pending_wake_count() + self.staged_live_wakes;
         if staged_wakes.saturating_add(wakes.live().len()) > MAX_PENDING_OWNER_WAKES {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
@@ -748,56 +728,23 @@ impl SystemRuntime {
                     ),
                 )
             })?;
-        for (system_id, owner) in wakes.live() {
-            self.pending_wakes
-                .entry(system_id.clone())
-                .or_default()
-                .insert(*owner);
-        }
+        self.staged_live_wakes += wakes.live().len();
         Ok(Some(PreparedRegisteredWave {
-            id,
-            next_cursor,
             durables: OwnerWaveDurables::new(
                 prepared,
                 tick,
                 wake_sets,
                 durable_served,
                 cursor_change,
-            ),
+            )
+            .with_live_wakes(wakes.live().to_vec()),
         }))
-    }
-
-    /// Executes one registered handler as an independently ordered owner
-    /// batch. `batch_wave` is unique within the phase for this tick.
-    ///
-    /// The validated wave commits as one main-journal transaction: staged
-    /// before-values, one receipt, visibility only after the receipt. WAL
-    /// admission (reservations, rotation fence, backpressure) is shared with
-    /// every other domain, so a wave never half-applies and never jumps the
-    /// coordinator order. Staging never blocks: the wave is submitted and its
-    /// receipt is polled with [`SystemRuntime::poll_staged_owner_wave`], so a
-    /// slow fsync never wedges the caller between submission and apply.
-    pub fn run_registered(
-        &mut self,
-        system: &ExecutableSystem,
-        tick: TickId,
-        batch_wave: u16,
-        effect_kinds: &EffectKindRegistryFrozen,
-        durability: &mut Durability,
-    ) -> io::Result<usize> {
-        let pending =
-            self.stage_registered_wave(system, tick, batch_wave, effect_kinds, durability, &[])?;
-        let Some(pending) = pending else {
-            return Ok(0);
-        };
-        let applied = self.drain_registered_waves(vec![pending], durability)?;
-        Ok(applied.into_iter().map(|(_, count)| count).sum())
     }
 
     /// Prepares one registered wave and stages it as one main-journal
     /// transaction without blocking: after this returns, the caller may do
     /// other work while the fsync is in flight. Nothing is visible until the
-    /// wave is drained with [`SystemRuntime::drain_registered_waves`].
+    /// common durable barrier completes through the returned admission ID.
     ///
     /// `in_flight` holds the reserved key sets of waves already staged ahead
     /// of this one, in canonical stage order. The candidate is arbitrated
@@ -825,10 +772,16 @@ impl SystemRuntime {
         let dispositions = arbitrate_key_sets(&sets);
         if matches!(dispositions.last(), Some(WaveDisposition::Retry { .. })) {
             let PreparedRegisteredWave {
-                durables: OwnerWaveDurables { wake_sets, .. },
+                durables:
+                    OwnerWaveDurables {
+                        wake_sets,
+                        live_wakes,
+                        ..
+                    },
                 ..
             } = prepared;
             self.durable_wakes.cancel_sets(wake_sets);
+            self.staged_live_wakes -= live_wakes.len();
             return Err(io::Error::new(
                 ErrorKind::WouldBlock,
                 format!(
@@ -837,272 +790,8 @@ impl SystemRuntime {
                 ),
             ));
         }
-        let PreparedRegisteredWave {
-            id,
-            next_cursor,
-            durables,
-        } = prepared;
+        let PreparedRegisteredWave { durables } = prepared;
         let staged = self.stage_owner_wave(durables, durability)?;
-        Ok(Some(PendingRegisteredWave {
-            staged,
-            system: id,
-            next_cursor,
-        }))
-    }
-
-    /// Polls every staged registered wave to its receipt and applies each
-    /// WAL-confirmed wave through the single shared
-    /// [`SystemRuntime::poll_staged_owner_wave`] gate: never apply
-    /// unconfirmed work. Each applied wave advances its system's
-    /// rotation cursor, so a retried wave re-stages from WAL-backed state.
-    /// Waves were staged in canonical order with disjoint key sets, so every
-    /// sweep polls the whole set and no wave blocks another's submission.
-    pub(in crate::server) fn drain_registered_waves(
-        &mut self,
-        mut pending: Vec<PendingRegisteredWave>,
-        durability: &mut Durability,
-    ) -> io::Result<Vec<(SystemId, usize)>> {
-        let mut applied = Vec::with_capacity(pending.len());
-        let mut waiting = std::mem::take(&mut pending);
-        while !waiting.is_empty() {
-            let mut still_pending = Vec::with_capacity(waiting.len());
-            let mut progressed = false;
-            for wave in waiting {
-                let PendingRegisteredWave {
-                    staged,
-                    system,
-                    next_cursor,
-                } = wave;
-                match self.poll_staged_owner_wave(staged, durability)? {
-                    OwnerCommitPoll::Applied(count) => {
-                        self.next_owner.insert(system.clone(), next_cursor);
-                        applied.push((system, count));
-                        progressed = true;
-                    }
-                    OwnerCommitPoll::Pending(staged) => still_pending.push(PendingRegisteredWave {
-                        staged,
-                        system,
-                        next_cursor,
-                    }),
-                }
-            }
-            waiting = still_pending;
-            if !waiting.is_empty() && !progressed {
-                std::thread::yield_now();
-            }
-        }
-        Ok(applied)
-    }
-
-    /// Stages one prepared owner wave as one main-journal transaction without
-    /// blocking: after this returns, the coordinator may do other work while
-    /// the fsync is in flight. Nothing is visible until
-    /// [`SystemRuntime::poll_staged_owner_wave`] observes the receipt.
-    /// Any deferral before the receipt withdraws the staged wake flags so a
-    /// retry re-stages from WAL-backed state.
-    pub(in crate::server) fn stage_owner_wave(
-        &mut self,
-        durables: OwnerWaveDurables,
-        durability: &mut Durability,
-    ) -> io::Result<StagedOwnerCommit> {
-        let OwnerWaveDurables {
-            prepared,
-            tick,
-            wake_sets,
-            durable_served,
-            cursor,
-        } = durables;
-        let wake_changes = wake_sets.changes().to_vec();
-        let clear_changes = self.durable_wakes.stage_clears(&durable_served);
-        // Each deferral before the receipt withdraws the staged flags so a
-        // retry re-stages; exactly one site consumes the set.
-        let mut wake_sets = Some(wake_sets);
-        let mut cancel_wakes = || {
-            self.durable_wakes
-                .cancel_sets(wake_sets.take().expect("wake set consumed once"));
-        };
-        let bytes: usize = prepared
-            .changes()
-            .iter()
-            .chain(wake_changes.iter())
-            .chain(clear_changes.iter())
-            .chain(cursor.iter())
-            .map(|change| change.after.len())
-            .sum();
-        if bytes > MAX_OWNER_WAVE_BYTES {
-            cancel_wakes();
-            return Err(io::Error::new(
-                ErrorKind::WouldBlock,
-                format!("owner wave of {bytes} bytes exceeds {MAX_OWNER_WAVE_BYTES}"),
-            ));
-        }
-        if durability.failed {
-            cancel_wakes();
-            return Err(io::Error::other(
-                "durable subsystem failed; owner wave not staged",
-            ));
-        }
-        if durability.rotation_requested {
-            cancel_wakes();
-            return Err(io::Error::new(
-                ErrorKind::WouldBlock,
-                "journal rotation in progress; owner wave defers",
-            ));
-        }
-        let keys: Vec<StateKey> = prepared
-            .changes()
-            .iter()
-            .chain(wake_changes.iter())
-            .chain(clear_changes.iter())
-            .chain(cursor.iter())
-            .map(|change| change.key.clone())
-            .collect();
-        for key in &keys {
-            if durability.reserved.contains(key) {
-                cancel_wakes();
-                return Err(io::Error::new(
-                    ErrorKind::WouldBlock,
-                    "owner key has a pending durable action; wave defers",
-                ));
-            }
-        }
-        let id = durability.next_id;
-        durability.next_id = id.checked_add(1).ok_or_else(|| {
-            cancel_wakes();
-            io::Error::other("durable transaction IDs exhausted")
-        })?;
-        let mut changes = prepared.changes().to_vec();
-        changes.extend(wake_changes);
-        changes.extend(clear_changes);
-        changes.extend(cursor);
-        let transaction = Transaction::new(id, tick.get(), changes);
-        let receiver = durability
-            .writer
-            .try_submit(transaction)
-            .map_err(|error| match error {
-                SubmitError::Full => {
-                    cancel_wakes();
-                    io::Error::new(
-                        ErrorKind::WouldBlock,
-                        "durable journal is full; owner wave defers",
-                    )
-                }
-                SubmitError::Closed => {
-                    cancel_wakes();
-                    io::Error::other("durable journal writer is closed")
-                }
-                SubmitError::Invalid(error) => {
-                    durability.failed = true;
-                    error
-                }
-            })?;
-        // Reserved only after the writer accepts the complete transaction,
-        // mirroring gameplay staging: a rejected wave reserves nothing.
-        durability.reserved.extend(keys.iter().cloned());
-        Ok(StagedOwnerCommit {
-            keys,
-            receiver,
-            prepared,
-            wake_sets,
-            durable_served,
-        })
-    }
-
-    /// Nonblocking receipt poll for a staged owner wave. `Pending` returns
-    /// the staged wave untouched — the coordinator keeps making progress
-    /// while the fsync is in flight — and `Applied` applies only
-    /// WAL-confirmed work: never apply unconfirmed work.
-    pub(in crate::server) fn poll_staged_owner_wave(
-        &mut self,
-        staged: StagedOwnerCommit,
-        durability: &mut Durability,
-    ) -> io::Result<OwnerCommitPoll> {
-        let receipt = match staged.receiver.try_recv() {
-            Ok(Ok(receipt)) => receipt,
-            Ok(Err(error)) => {
-                return Err(self.abort_staged_owner_wave(staged, durability, &format!("{error}")));
-            }
-            Err(TryRecvError::Empty) => return Ok(OwnerCommitPoll::Pending(staged)),
-            Err(TryRecvError::Disconnected) => {
-                return Err(self.abort_staged_owner_wave(
-                    staged,
-                    durability,
-                    "durable journal worker stopped",
-                ));
-            }
-        };
-        self.apply_receipted_owner_wave(staged, receipt, durability)
-            .map(OwnerCommitPoll::Applied)
-    }
-
-    /// Applies a WAL-receipted staged wave: the visibility gate. Only ever
-    /// called with a receipt in hand — never apply unconfirmed work. A
-    /// receipted wave whose in-memory commit fails is genuine corruption and
-    /// stops the coordinator.
-    fn apply_receipted_owner_wave(
-        &mut self,
-        staged: StagedOwnerCommit,
-        receipt: CommitReceipt,
-        durability: &mut Durability,
-    ) -> io::Result<usize> {
-        let StagedOwnerCommit {
-            keys,
-            mut wake_sets,
-            durable_served,
-            prepared,
-            ..
-        } = staged;
-        let applied = self
-            .durable
-            .commit(
-                prepared,
-                OwnerWalReceipt {
-                    sequence: receipt.sequence,
-                },
-            )
-            .map_err(|error| {
-                for key in &keys {
-                    durability.reserved.remove(key);
-                }
-                self.durable_wakes
-                    .cancel_sets(wake_sets.take().expect("wake set consumed once"));
-                durability.failed = true;
-                error.io()
-            })?;
-        // The record is receipted: staged flags become visible together with
-        // the producer wave they rode in on, and served flags clear in the
-        // same record. No half-applied wave, no second serving.
-        self.durable_wakes
-            .commit_sets(wake_sets.take().expect("wake set consumed once"));
-        self.durable_wakes.commit_clears(&durable_served);
-        for key in &keys {
-            durability.reserved.remove(key);
-        }
-        Ok(applied)
-    }
-
-    /// Aborts a staged owner wave whose receipt reported an error: releases
-    /// its reservations, withdraws its staged wake flags, marks the durable
-    /// subsystem failed, and reports the cause. The wave never applies.
-    fn abort_staged_owner_wave(
-        &mut self,
-        staged: StagedOwnerCommit,
-        durability: &mut Durability,
-        reason: &str,
-    ) -> io::Error {
-        let StagedOwnerCommit {
-            keys,
-            mut wake_sets,
-            ..
-        } = staged;
-        for key in &keys {
-            durability.reserved.remove(key);
-        }
-        if wake_sets.is_some() {
-            self.durable_wakes
-                .cancel_sets(wake_sets.take().expect("wake set consumed once"));
-        }
-        durability.failed = true;
-        io::Error::other(format!("durable WAL write failed: {reason}"))
+        Ok(Some(PendingRegisteredWave { staged }))
     }
 }

@@ -347,7 +347,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     assert!(state.durability.reserved.contains(&upper_key));
     let staged = match &state.durability.pending[0].payload {
         super::super::PendingPayload::Action(action) => action,
-        super::super::PendingPayload::Fire(_) => panic!("kiln action staged as fire"),
+        _ => panic!("kiln action staged as non-action"),
     };
     assert!(staged.world_edits.is_empty());
     assert!(

@@ -184,6 +184,10 @@ fn crc32(bytes: &[u8]) -> u32 {
 pub(in crate::server) struct PendingWakeStore {
     pending: BTreeMap<(SystemId, OwnerKey), u64>,
     staged: BTreeMap<(SystemId, OwnerKey), u64>,
+    /// Same-process publication barrier only, bounded by pending flags. WAL
+    /// wake ticks are informational across restart, not deadlines. Recovered
+    /// flags have no publication fence and can be served immediately.
+    published: BTreeMap<(SystemId, OwnerKey), u64>,
 }
 
 impl std::fmt::Debug for PendingWakeStore {
@@ -201,6 +205,7 @@ impl PendingWakeStore {
         Self {
             pending: BTreeMap::new(),
             staged: BTreeMap::new(),
+            published: BTreeMap::new(),
         }
     }
 
@@ -318,7 +323,12 @@ impl PendingWakeStore {
     pub fn commit_clears(&mut self, served: &[(SystemId, OwnerKey)]) {
         for (system, owner) in served {
             self.pending.remove(&(system.clone(), *owner));
+            self.published.remove(&(system.clone(), *owner));
         }
+    }
+
+    pub fn published_at(&self, system: &SystemId, owner: OwnerKey) -> Option<u64> {
+        self.published.get(&(system.clone(), owner)).copied()
     }
 
     /// Prepares set-flags for destinations with no live flag, chaining onto
@@ -383,6 +393,7 @@ impl PendingWakeStore {
     pub fn commit_sets(&mut self, prepared: PreparedWakeSets) {
         for key in prepared.staged {
             if let Some(tick) = self.staged.remove(&key) {
+                self.published.insert(key.clone(), tick);
                 self.pending.insert(key, tick);
             }
         }
@@ -424,9 +435,11 @@ impl PendingWakeStore {
             }
             if change.after.is_empty() {
                 self.pending.remove(&key);
+                self.published.remove(&key);
                 continue;
             }
             let tick = decode_wake_value(&change.after)?;
+            self.published.insert(key.clone(), tick);
             self.pending.insert(key, tick);
         }
         Ok(())

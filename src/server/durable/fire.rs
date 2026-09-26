@@ -93,14 +93,16 @@ impl Durability {
             })?;
         self.next_id = next_id;
         self.reserved.extend(all_keys);
-        for (((transaction, receiver), keys), checkpoint_sizes) in transactions
+        for (index, (((transaction, receiver), keys), checkpoint_sizes)) in transactions
             .iter()
             .cloned()
             .zip(receivers)
             .zip(keys_per_record)
             .zip(checkpoints_per_record)
+            .enumerate()
         {
             self.pending.push(PendingCommit {
+                id: self.next_id - transactions.len() as u128 + index as u128,
                 shared_read_keys: Vec::new(),
                 receiver,
                 submitted_at: Instant::now(),

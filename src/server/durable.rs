@@ -33,6 +33,7 @@ use std::time::{Duration, Instant};
 
 #[path = "durable/actions/mod.rs"]
 pub(super) mod actions;
+mod admission;
 #[path = "durable/checkpoint.rs"]
 mod checkpoint;
 #[path = "durable/coordinator.rs"]
@@ -42,6 +43,7 @@ mod entity_dispatch;
 mod entity_recovery;
 #[path = "durable/fire.rs"]
 pub(super) mod fire;
+mod owner;
 #[path = "durable/publication.rs"]
 mod publication;
 #[path = "durable/receipt.rs"]
@@ -60,6 +62,7 @@ pub(super) use coordinator::{
 pub(super) use publication::publish_committed;
 #[cfg(test)]
 pub(super) use receipt::poll_journal_receipts;
+pub(super) use receipt::{CommitBarrier, complete_barrier};
 #[cfg(test)]
 pub(super) use state::encode_action_receipt;
 pub(super) use state::{action_changes, chunk_state_key, inventory_state_key, is_checkpoint_key};
@@ -79,6 +82,12 @@ pub(super) struct Durability {
     /// Last WAL-committed inventory revision per profile, retained after its
     /// BGIN checkpoint so delayed socket reads cannot authorize stale joins.
     pub(super) inventory_revisions: HashMap<u128, u64>,
+    /// Every accepted producer lives here until ordered apply. A fatal error
+    /// quarantines the unapplied suffix and its permits; it cannot be polled
+    /// again. On shutdown `writer` drops/joins before this queue is destroyed,
+    /// completing or failing accepted writes on the one WAL. Recovery owns
+    /// the valid tail, including records not applied in memory; no shutdown
+    /// checkpoint fabricates visibility.
     pub(super) pending: Vec<PendingCommit>,
     pub(super) reserved: HashSet<StateKey>,
     /// Shared read reservations are included in `reserved`, so all existing
@@ -159,6 +168,7 @@ pub(super) struct FireCheckpointBatch {
 }
 
 pub(super) struct PendingCommit {
+    pub(super) id: u128,
     pub(super) receiver: Receiver<io::Result<CommitReceipt>>,
     pub(super) submitted_at: Instant,
     pub(super) keys: Vec<StateKey>,
@@ -171,6 +181,7 @@ pub(super) struct PendingCommit {
 pub(super) enum PendingPayload {
     Action(CommitAction),
     Fire(FireTransaction),
+    Owner(super::runtime::owner_commit::OwnerCommit),
 }
 
 #[derive(Clone)]
@@ -397,127 +408,13 @@ impl Durability {
             tick,
             changes,
             read_keys,
-            PendingPayload::Action(action),
+            &mut Some(PendingPayload::Action(action)),
             entity_permit,
         )?;
         if staged && let Some(frontier) = frontier {
             self.entity_publication_frontier = frontier;
         }
         Ok(staged)
-    }
-
-    fn try_stage_changes(
-        &mut self,
-        tick: TickId,
-        changes: Vec<super::journal::Change>,
-        read_keys: Vec<StateKey>,
-        payload: PendingPayload,
-        mut entity_permit: Option<MirrorPermit>,
-    ) -> Result<bool, StageError> {
-        if changes.is_empty() {
-            return Ok(false);
-        }
-        if self.failed {
-            return Err(StageError::Closed);
-        }
-        if self.rotation_requested {
-            return Err(StageError::Full);
-        }
-        if self.pending.len() >= MAX_PENDING_DURABLE_ACTIONS {
-            return Err(StageError::Full);
-        }
-        let mut keys = BTreeSet::new();
-        for change in &changes {
-            // Finalized above into one ordered preimage chain, not reserved
-            // as an entity conflict identity. All actual state keys remain.
-            if change.key.domain == super::entities::ENTITY_REVISION_DOMAIN {
-                continue;
-            }
-            if self.reserved.contains(&change.key) {
-                return Err(StageError::Conflict);
-            }
-            keys.insert(change.key.clone());
-        }
-        let mut shared_read_keys = BTreeSet::new();
-        for key in read_keys {
-            if keys.contains(&key) {
-                continue;
-            }
-            if self.reserved.contains(&key) && !self.shared_reads.contains_key(&key) {
-                return Err(StageError::Conflict);
-            }
-            shared_read_keys.insert(key);
-        }
-        let mut projected_checkpoint_keys: HashSet<StateKey> =
-            self.dirty_checkpoints.keys().cloned().collect();
-        let mut projected_checkpoint_bytes: HashMap<StateKey, usize> = self
-            .dirty_checkpoints
-            .iter()
-            .map(|(key, checkpoint)| (key.clone(), checkpoint.snapshot.len()))
-            .collect();
-        for pending in &self.pending {
-            for (key, size) in &pending.checkpoint_sizes {
-                projected_checkpoint_keys.insert(key.clone());
-                let entry = projected_checkpoint_bytes.entry(key.clone()).or_default();
-                *entry = (*entry).max(*size);
-            }
-        }
-        for change in &changes {
-            if is_checkpoint_key(&change.key) {
-                projected_checkpoint_keys.insert(change.key.clone());
-                projected_checkpoint_bytes.insert(change.key.clone(), change.after.len());
-            }
-        }
-        if projected_checkpoint_keys.len() > MAX_DIRTY_CHECKPOINT_KEYS {
-            return Err(StageError::Full);
-        }
-        let projected_bytes = projected_checkpoint_bytes
-            .values()
-            .copied()
-            .fold(0usize, usize::saturating_add);
-        if projected_bytes > MAX_DIRTY_CHECKPOINT_BYTES {
-            return Err(StageError::Full);
-        }
-
-        let checkpoint_sizes: HashMap<StateKey, usize> = changes
-            .iter()
-            .filter(|change| is_checkpoint_key(&change.key))
-            .map(|change| (change.key.clone(), change.after.len()))
-            .collect();
-
-        let id = self.next_id;
-        let next_id = id.checked_add(1).ok_or(StageError::IdExhausted)?;
-        let transaction = Transaction::new(id, tick.get(), changes);
-        let receiver = self
-            .writer
-            .try_submit(transaction)
-            .map_err(|error| match error {
-                SubmitError::Full => StageError::Full,
-                SubmitError::Closed => StageError::Closed,
-                SubmitError::Invalid(error) => StageError::Invalid(error),
-            })?;
-        if let Some(permit) = &mut entity_permit {
-            if let Err(error) = permit.mark_authoritative_change() {
-                self.failed = true;
-                return Err(StageError::Invalid(error));
-            }
-        }
-        self.reserved.extend(keys.iter().cloned());
-        for key in &shared_read_keys {
-            *self.shared_reads.entry(key.clone()).or_default() += 1;
-            self.reserved.insert(key.clone());
-        }
-        self.next_id = next_id;
-        self.pending.push(PendingCommit {
-            receiver,
-            submitted_at: Instant::now(),
-            keys: keys.into_iter().collect(),
-            shared_read_keys: shared_read_keys.into_iter().collect(),
-            checkpoint_sizes,
-            payload,
-            entity_permit,
-        });
-        Ok(true)
     }
 
     pub(super) fn profile_reserved(&self, profile: u128) -> bool {

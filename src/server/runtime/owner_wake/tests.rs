@@ -307,3 +307,29 @@ fn flagged_inspection_rotates_past_absent_low_keys_with_a_bounded_capture() {
     );
     assert_eq!(store.flagged_from(&id, Some(OwnerKey::Entity(8)), 2), first);
 }
+#[test]
+fn publication_fence_is_transient_while_recovered_wake_eligibility_is_durable() {
+    let system = SystemId::new("test:publication_fence").unwrap();
+    let owner = OwnerKey::Entity(42);
+    let mut store = PendingWakeStore::new();
+    let prepared = store
+        .prepare_sets(&[(system.clone(), owner)], 100, 1)
+        .unwrap();
+    let latest = prepared
+        .changes()
+        .iter()
+        .map(|change| (change.key.clone(), change.after.clone()))
+        .collect();
+    assert_eq!(store.published_at(&system, owner), None);
+    store.commit_sets(prepared);
+    assert_eq!(store.published_at(&system, owner), Some(100));
+    let recovered = PendingWakeStore::recover(&latest).unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(
+        recovered.published_at(&system, owner),
+        None,
+        "restarting the logical clock must not delay recovered flags"
+    );
+    store.commit_clears(&[(system.clone(), owner)]);
+    assert_eq!(store.published_at(&system, owner), None);
+}

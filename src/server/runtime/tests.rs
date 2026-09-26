@@ -24,6 +24,9 @@ static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 #[path = "scheduling_tests.rs"]
 mod scheduling;
 
+#[path = "commit_lifecycle_tests.rs"]
+mod commit_lifecycle;
+
 /// Little-endian u64 owner codec for test harnesses that drive
 /// `SystemRuntime` directly. Production systems register their codec through
 /// `ServerStartup::register_owner_codec`.
@@ -714,12 +717,13 @@ fn unknown_effect_kinds_are_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(
+        .stage_registered_wave(
             &system,
             TickId::new(1),
             0,
             &kinds,
             &mut harness.state.durability,
+            &[],
         )
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
@@ -770,12 +774,13 @@ fn dishonest_effect_accounting_is_rejected() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(
+        .stage_registered_wave(
             &system,
             TickId::new(1),
             0,
             &kinds,
             &mut harness.state.durability,
+            &[],
         )
         .unwrap_err();
     assert_eq!(error.kind(), ErrorKind::WouldBlock);
@@ -828,12 +833,13 @@ fn effect_consumers_cannot_gain_a_write_path() {
     let error = harness
         .state
         .system_runtime
-        .run_registered(
+        .stage_registered_wave(
             &system,
             TickId::new(1),
             0,
             &kinds,
             &mut harness.state.durability,
+            &[],
         )
         .unwrap_err();
     // The consumer declared a write, so the whole wave defers before the
@@ -987,8 +993,9 @@ fn deferred_producer_waves_restage_their_durable_wakes() {
 // waves never blocking each other, and overlapping waves serializing with
 // exactly one winner.
 
+use crate::server::durable::complete_barrier;
 use crate::server::runtime::owner_durable::OwnerWrite;
-use crate::server::runtime::systems::{OwnerCommitPoll, StagedOwnerCommit};
+use crate::server::runtime::systems::StagedOwnerCommit;
 
 /// Builds live (non-WAL-seeded) owner state over a real journal: enough to
 /// stage and poll real receipts through the real writer.
@@ -1008,20 +1015,12 @@ fn staged_harness() -> (TestSave, crate::server::State, SystemId, [OwnerKey; 2])
     (save, state, system, owners)
 }
 
-/// Polls a staged wave to completion. A `Pending` outcome always returns the
-/// wave untouched so the caller can do other work first.
-fn poll_to_applied(state: &mut crate::server::State, mut staged: StagedOwnerCommit) -> usize {
-    for _ in 0..2_000 {
-        let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
-        match runtime.poll_staged_owner_wave(staged, durability).unwrap() {
-            OwnerCommitPoll::Applied(applied) => return applied,
-            OwnerCommitPoll::Pending(waiting) => {
-                staged = waiting;
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-        }
-    }
-    panic!("staged owner wave did not apply");
+/// The production barrier waits on the explicit admission frontier, not a
+/// sleep/retry loop or a feature-specific receipt poll.
+fn poll_to_applied(state: &mut crate::server::State, staged: StagedOwnerCommit) -> usize {
+    complete_barrier(state, staged.barrier)
+        .unwrap()
+        .owner_writes
 }
 
 #[test]
@@ -1239,7 +1238,7 @@ fn parallel_and_serial_owner_waves_reach_identical_state_and_receipts() {
 // The coordinator loop stages every registered wave in a phase before polling
 // any receipt, arbitrating each candidate against the already-staged key
 // sets. These tests drive that production path (`stage_registered_wave` /
-// `drain_registered_waves` — the same functions `tick_with_inputs` calls):
+// the shared durable barrier — the same path `tick_with_inputs` calls):
 // progress while a receipt is deliberately left unpolled, no unconfirmed
 // visibility, deterministic arbitration, and identical multi-wave commits at
 // any worker count.
@@ -1394,14 +1393,8 @@ fn live_coordinator_stages_disjoint_waves_before_polling_any_receipt() {
     // applied.
     assert_eq!(twin_values(&harness), vec![10, 20, 30, 40]);
     // Both receipts drain through the single shared apply gate, whole.
-    let (runtime, durability) = (
-        &mut harness.state.system_runtime,
-        &mut harness.state.durability,
-    );
-    let applied = runtime
-        .drain_registered_waves(vec![staged_first, staged_second], durability)
-        .unwrap();
-    assert_eq!(applied.len(), 2);
+    let applied = complete_barrier(&mut harness.state, staged_second.barrier()).unwrap();
+    assert_eq!(applied.commits, 2);
     assert_eq!(twin_values(&harness), vec![11, 21, 31, 41]);
     assert!(!harness.state.durability.failed);
 }
@@ -1477,14 +1470,8 @@ fn overlapping_production_waves_retry_then_commit_without_loss() {
     assert_eq!(twin_values(&harness), vec![10, 20, 30, 40]);
     // The winner applies whole; the loser retries against the receipted
     // revision and commits: no lost update, nothing created or destroyed.
-    let (runtime, durability) = (
-        &mut harness.state.system_runtime,
-        &mut harness.state.durability,
-    );
-    let applied = runtime
-        .drain_registered_waves(vec![wave], durability)
-        .unwrap();
-    assert_eq!(applied.len(), 1);
+    let applied = complete_barrier(&mut harness.state, wave.barrier()).unwrap();
+    assert_eq!(applied.commits, 1);
     assert_eq!(twin_values(&harness), vec![11, 21, 30, 40]);
     let retry = {
         let (runtime, durability) = (
@@ -1496,14 +1483,8 @@ fn overlapping_production_waves_retry_then_commit_without_loss() {
             .unwrap()
             .expect("retry stages after the winner's receipt")
     };
-    let (runtime, durability) = (
-        &mut harness.state.system_runtime,
-        &mut harness.state.durability,
-    );
-    let applied = runtime
-        .drain_registered_waves(vec![retry], durability)
-        .unwrap();
-    assert_eq!(applied.len(), 1);
+    let applied = complete_barrier(&mut harness.state, retry.barrier()).unwrap();
+    assert_eq!(applied.commits, 1);
     assert_eq!(twin_values(&harness), vec![12, 22, 30, 40]);
     assert!(!harness.state.durability.failed);
 }
@@ -1640,12 +1621,10 @@ fn arbitrated_retry_withdraws_staged_wake_flags() {
     assert_eq!(value(&state), 0);
     assert_eq!(state.system_runtime.durable_wake_count(), 0);
     // Wave 1 applies once with exactly its own flag; wave 3 stages Z fresh.
-    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
     assert_eq!(
-        runtime
-            .drain_registered_waves(vec![wave_x], durability)
+        complete_barrier(&mut state, wave_x.barrier())
             .unwrap()
-            .len(),
+            .commits,
         1
     );
     assert_eq!(value(&state), 1);
@@ -1657,12 +1636,10 @@ fn arbitrated_retry_withdraws_staged_wake_flags() {
             .unwrap()
             .expect("third wave stages")
     };
-    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
     assert_eq!(
-        runtime
-            .drain_registered_waves(vec![wave_z], durability)
+        complete_barrier(&mut state, wave_z.barrier())
             .unwrap()
-            .len(),
+            .commits,
         1
     );
     assert_eq!(value(&state), 2);
@@ -1676,12 +1653,10 @@ fn arbitrated_retry_withdraws_staged_wake_flags() {
             .unwrap()
             .expect("retried Y stages fresh after the withdrawal")
     };
-    let (runtime, durability) = (&mut state.system_runtime, &mut state.durability);
     assert_eq!(
-        runtime
-            .drain_registered_waves(vec![wave_y], durability)
+        complete_barrier(&mut state, wave_y.barrier())
             .unwrap()
-            .len(),
+            .commits,
         1
     );
     // Every wave applied exactly once, in order; every flag landed once; no
