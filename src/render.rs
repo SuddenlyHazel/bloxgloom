@@ -300,6 +300,11 @@ impl Renderer {
         self.avatars.set(&self.queue, avatars);
     }
 
+    /// Whether geometry is already available to draw while a replacement builds.
+    pub fn has_chunk_mesh(&self, key: ChunkKey) -> bool {
+        self.meshes.contains_key(&key)
+    }
+
     /// Replace a pending mesh of the same chunk; a full queue returns ownership for retry.
     #[allow(clippy::result_large_err)] // Returning ownership avoids copying mesh buffers on queue pressure.
     pub fn enqueue_mesh(&mut self, mesh: ChunkMesh, urgent: bool) -> Result<(), ChunkMesh> {

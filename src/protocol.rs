@@ -18,6 +18,8 @@ pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
 const WIRE_VERSION: u8 = 8;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
+/// Fixed vertical streaming/retention radius shared by server and client.
+pub const VERTICAL_VIEW_DISTANCE: i32 = 4;
 const MAX_NAME: usize = 32;
 const BLOCK_COUNT: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 

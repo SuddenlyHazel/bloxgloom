@@ -4,7 +4,7 @@ use super::*;
 fn visits_every_interest_key_once_in_distance_order() {
     let center = ChunkKey { x: -11, y: 5, z: 9 };
     let keys = nearest_unsent(center, 3, &HashSet::new(), usize::MAX);
-    assert_eq!(keys.len(), 3 * 7 * 7);
+    assert_eq!(keys.len(), 9 * 7 * 7);
     assert_eq!(keys[0], center);
     assert_eq!(
         keys.iter().copied().collect::<HashSet<_>>().len(),
@@ -16,7 +16,7 @@ fn visits_every_interest_key_once_in_distance_order() {
     );
     assert!(keys.iter().all(|key| {
         (key.x - center.x).abs() <= 3
-            && (key.y - center.y).abs() <= 1
+            && (key.y - center.y).abs() <= crate::protocol::VERTICAL_VIEW_DISTANCE
             && (key.z - center.z).abs() <= 3
     }));
 }
@@ -41,7 +41,7 @@ fn boundaries_skip_unrepresentable_chunk_keys() {
         z: i32::MAX,
     };
     let keys = nearest_unsent(center, 1, &HashSet::new(), usize::MAX);
-    assert_eq!(keys.len(), 2 * 2 * 2);
+    assert_eq!(keys.len(), 2 * 5 * 2);
     assert!(
         keys.iter()
             .all(|key| key.x <= center.x && key.y >= center.y && key.z <= center.z)
@@ -53,8 +53,9 @@ fn optimized_shell_walk_preserves_nearest_first_tie_order() {
     let center = ChunkKey { x: -4, y: 2, z: 7 };
     for radius in 1i32..=6 {
         let mut expected = Vec::new();
-        for distance in 0..=(2 * radius + 1) {
-            for y in -1i32..=1 {
+        let vertical = crate::protocol::VERTICAL_VIEW_DISTANCE;
+        for distance in 0..=(2 * radius + vertical) {
+            for y in -vertical..=vertical {
                 for z in -radius..=radius {
                     for x in -radius..=radius {
                         if x.abs() + y.abs() + z.abs() == distance {

@@ -135,7 +135,8 @@ impl Client {
 
     fn interested(&self, key: ChunkKey) -> bool {
         (key.x as i64 - self.center.x as i64).abs() <= self.radius as i64
-            && (key.y as i64 - self.center.y as i64).abs() <= 1
+            && (key.y as i64 - self.center.y as i64).abs()
+                <= i64::from(crate::protocol::VERTICAL_VIEW_DISTANCE)
             && (key.z as i64 - self.center.z as i64).abs() <= self.radius as i64
     }
 }

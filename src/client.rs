@@ -21,7 +21,9 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
 const SPEED: f32 = 8.0;
-const MAX_CHUNKS: usize = 512;
+// Diagnostic interest-volume bound, not an eviction budget.
+const MAX_CHUNKS: usize = (2 * crate::protocol::MAX_VIEW_DISTANCE as usize + 1).pow(2)
+    * (2 * crate::protocol::VERTICAL_VIEW_DISTANCE as usize + 1);
 const MAX_OUTSTANDING_ACTIONS: usize = 128;
 const MAX_INCOMING_PER_FRAME: usize = 32;
 const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
@@ -126,10 +128,32 @@ fn digit_slot(code: KeyCode) -> Option<usize> {
     }
 }
 
+/// Urgent edits first, then missing geometry, then background replacements.
+/// Distance and coordinates provide stable ordering instead of hash iteration.
+fn mesh_priority(
+    key: ChunkKey,
+    center: ChunkKey,
+    urgent: bool,
+    displayed: bool,
+) -> (u8, u64, i32, i32, i32) {
+    let lane = if urgent {
+        0
+    } else if !displayed {
+        1
+    } else {
+        2
+    };
+    let distance = i64::from(key.x).abs_diff(i64::from(center.x))
+        + i64::from(key.y).abs_diff(i64::from(center.y))
+        + i64::from(key.z).abs_diff(i64::from(center.z));
+    (lane, distance, key.x, key.y, key.z)
+}
+
 fn chunk_in_view(key: ChunkKey, center: ChunkKey, radius: u8) -> bool {
     let radius = i64::from(radius);
     (i64::from(key.x) - i64::from(center.x)).abs() <= radius
-        && (i64::from(key.y) - i64::from(center.y)).abs() <= 1
+        && (i64::from(key.y) - i64::from(center.y)).abs()
+            <= i64::from(crate::protocol::VERTICAL_VIEW_DISTANCE)
         && (i64::from(key.z) - i64::from(center.z)).abs() <= radius
 }
 
@@ -925,13 +949,16 @@ impl ClientApp {
             return;
         };
         for _ in 0..16 {
-            let Some(key) = self
-                .urgent_mesh
-                .iter()
-                .find(|key| self.pending_mesh.contains_key(key))
-                .copied()
-                .or_else(|| self.pending_mesh.keys().next().copied())
-            else {
+            let Some(key) = self.pending_mesh.keys().copied().min_by_key(|key| {
+                mesh_priority(
+                    *key,
+                    center,
+                    self.urgent_mesh.contains(key),
+                    self.renderer
+                        .as_ref()
+                        .is_some_and(|renderer| renderer.has_chunk_mesh(*key)),
+                )
+            }) else {
                 break;
             };
             let revision = self.pending_mesh.remove(&key).unwrap();

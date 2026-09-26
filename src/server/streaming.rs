@@ -160,7 +160,8 @@ fn can_stream_snapshot_size(
 
 fn inside_view(key: ChunkKey, center: ChunkKey, radius: i64) -> bool {
     (i64::from(key.x) - i64::from(center.x)).abs() <= radius
-        && (i64::from(key.y) - i64::from(center.y)).abs() <= 1
+        && (i64::from(key.y) - i64::from(center.y)).abs()
+            <= i64::from(crate::protocol::VERTICAL_VIEW_DISTANCE)
         && (i64::from(key.z) - i64::from(center.z)).abs() <= radius
 }
 

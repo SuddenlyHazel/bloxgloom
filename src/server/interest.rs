@@ -11,7 +11,7 @@ use std::collections::HashSet;
 mod tests;
 
 /// Returns at most `limit` unsent keys, nearest first. The vertical interest
-/// range is the current three-chunk band, independent of horizontal radius.
+/// range is shared with subscription checks and client retention.
 pub(super) fn nearest_unsent(
     center: ChunkKey,
     radius: u8,
@@ -22,9 +22,12 @@ pub(super) fn nearest_unsent(
         return Vec::new();
     }
     let radius = i32::from(radius);
-    let mut keys = Vec::with_capacity(limit.min((2 * radius as usize + 1).pow(2) * 3));
-    for distance in 0..=(radius * 2 + 1) {
-        for y in -1i32..=1 {
+    let vertical = crate::protocol::VERTICAL_VIEW_DISTANCE;
+    let mut keys = Vec::with_capacity(
+        limit.min((2 * radius as usize + 1).pow(2) * (2 * vertical as usize + 1)),
+    );
+    for distance in 0..=(radius * 2 + vertical) {
+        for y in -vertical..=vertical {
             for z in -radius..=radius {
                 // Solve the Manhattan shell for x instead of rescanning the
                 // entire interest volume at every distance. The two signed

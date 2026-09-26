@@ -2,6 +2,41 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn missing_meshes_are_nearest_first_without_delaying_urgent_edits() {
+    let center = ChunkKey { x: 0, y: 0, z: 0 };
+    let near = ChunkKey { x: 1, ..center };
+    let far = ChunkKey { x: 5, ..center };
+    assert!(mesh_priority(near, center, false, false) < mesh_priority(far, center, false, false));
+    assert!(mesh_priority(far, center, false, false) < mesh_priority(near, center, false, true));
+    assert!(mesh_priority(far, center, true, true) < mesh_priority(near, center, false, false));
+}
+
+#[test]
+fn client_retains_the_expanded_vertical_band() {
+    let center = ChunkKey { x: -2, y: -3, z: 1 };
+    for offset in [-4, 4] {
+        assert!(chunk_in_view(
+            ChunkKey {
+                y: center.y + offset,
+                ..center
+            },
+            center,
+            1
+        ));
+    }
+    for offset in [-5, 5] {
+        assert!(!chunk_in_view(
+            ChunkKey {
+                y: center.y + offset,
+                ..center
+            },
+            center,
+            1
+        ));
+    }
+}
+
+#[test]
 fn action_ids_keep_session_and_order_without_reuse() {
     let first = action_id(0x1234, 1);
     let second = action_id(0x1234, 2);
@@ -225,5 +260,5 @@ fn client_cache_uses_server_view_radius() {
         center,
         3
     ));
-    assert!(!chunk_in_view(ChunkKey { x: -10, y: 6, z: 5 }, center, 6));
+    assert!(!chunk_in_view(ChunkKey { x: -10, y: 9, z: 5 }, center, 6));
 }
