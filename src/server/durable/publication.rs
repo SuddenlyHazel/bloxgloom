@@ -1,7 +1,6 @@
 //! Apply WAL-acknowledged actions and publish their committed state.
 
 use super::*;
-use crate::protocol::ServerMessage;
 use crate::server::fire::FireTransaction;
 use crate::server::journal::Change;
 use crate::server::runtime::owner_codec::{OWNER_CURSOR_DOMAIN, OWNER_STATE_DOMAIN};
@@ -20,6 +19,8 @@ pub(super) fn is_owner_publication_key(key: &StateKey) -> bool {
 
 #[path = "publication/commit.rs"]
 mod commit;
+#[path = "publication/dispatch.rs"]
+mod dispatch;
 
 #[cfg(test)]
 #[path = "publication/tests.rs"]
@@ -251,88 +252,5 @@ pub(super) fn publish_committed_fire_after_world(
 }
 
 pub(in crate::server) fn publish_committed(state: &mut State) -> io::Result<()> {
-    let effects = std::mem::take(&mut state.durability.publish_queue);
-    for effect in effects {
-        let changes = commit::collect(&effect, state.world.catalog())?;
-        let commit_id = if changes.is_empty() {
-            None
-        } else {
-            let id = state.durability.next_publish_commit_id;
-            state.durability.next_publish_commit_id = id
-                .checked_add(1)
-                .ok_or_else(|| io::Error::other("world publication commit ID exhausted"))?;
-            Some(id)
-        };
-        let mut disconnected = Vec::new();
-        let mut released_subscriptions = Vec::new();
-        for (&id, client) in &mut state.clients {
-            let mut healthy = true;
-            if let Some(commit_id) = commit_id {
-                match commit::for_client(&changes, client, commit_id)? {
-                    Some(plan) => {
-                        for part in plan.parts {
-                            if !client.enqueue(ServerMessage::WorldCommitPart(part)) {
-                                healthy = false;
-                                break;
-                            }
-                        }
-                        if healthy {
-                            for (key, block_revision, entity_revision) in plan.revisions {
-                                client.sent_block_versions.insert(key, block_revision);
-                                client.sent_entity_revisions.insert(key, entity_revision);
-                            }
-                        }
-                    }
-                    None => {
-                        // One oversized interested group is not partially visible.
-                        // A fresh epoch for each affected chunk is streamed next.
-                        for key in changes.subscribed_keys(client) {
-                            if client.sent.remove(&key) {
-                                released_subscriptions.push(key);
-                            }
-                            client.sent_epochs.remove(&key);
-                            client.sent_block_versions.remove(&key);
-                            client.sent_entity_revisions.remove(&key);
-                        }
-                    }
-                }
-            }
-            if healthy
-                && effect.client_id == Some(id)
-                && effect
-                    .profile
-                    .is_none_or(|profile| client.profile == profile)
-            {
-                if let Some(action_id) = effect.action_id {
-                    healthy = client.enqueue(ServerMessage::ActionResult {
-                        action_id,
-                        accepted: effect.accepted,
-                        reason: effect.reason.clone(),
-                    });
-                }
-                if healthy && let Some(inventory) = &effect.inventory {
-                    healthy = client.enqueue(ServerMessage::Inventory {
-                        revision: inventory.revision,
-                        slots: inventory.slots.clone(),
-                    });
-                }
-                if healthy && !effect.pickups.is_empty() {
-                    healthy = client.enqueue(ServerMessage::Pickups {
-                        items: effect.pickups.clone(),
-                    });
-                }
-            }
-            if !healthy {
-                disconnected.push(id);
-            }
-        }
-        for key in released_subscriptions {
-            let released = state.world.unpin_resident_chunk(key);
-            debug_assert!(released, "resnapshot subscription lost its resident chunk");
-        }
-        for id in disconnected {
-            state.remove_client(id);
-        }
-    }
-    Ok(())
+    dispatch::publish(state)
 }

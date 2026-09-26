@@ -101,3 +101,51 @@ fn airborne_count_tracks_schedule_not_records() {
             .is_empty()
     );
 }
+
+#[test]
+fn immutable_mobile_pages_keep_old_capture_and_project_nearest_without_full_output_allocation() {
+    let (mut store, _) = test_store();
+    let id = spawn_direct(&mut store, [0.5, 0.5, 0.5], 1, 1000, Duration::ZERO);
+    let old = capture_nearby(&store, [0.5, 0.5, 0.5]).unwrap();
+    let motion = store
+        .prepare_update(
+            id,
+            store.snapshot(id).unwrap().revision,
+            crate::server::entities::EntityPatch {
+                position: Some([5.5, 0.5, 0.5]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    store.apply_committed(motion).unwrap();
+    assert_eq!(
+        project_nearby(old, [0.5, 0.5, 0.5], 2000)[0].position,
+        [0.5, 0.5, 0.5]
+    );
+    let current = project_nearby(
+        capture_nearby(&store, [0.5, 0.5, 0.5]).unwrap(),
+        [0.5, 0.5, 0.5],
+        2000,
+    );
+    assert_eq!(current[0].position, [5.5, 0.5, 0.5]);
+    assert_eq!(current[0].age_ms, 1000);
+    let spawns = (0..300)
+        .map(|_| EntitySpawn::Mobile {
+            entity_type: DROP_ENTITY_TYPE,
+            position: [0.5, 0.5, 0.5],
+            payload: DropEntityPayload::new(Stack::new(ItemId::new(1), 1), 1000, Duration::ZERO)
+                .into_entity_payload(),
+            spawn_tick: 1,
+        })
+        .collect();
+    let batch = store.prepare_spawn_batch(spawns).unwrap();
+    store.apply_committed(batch).unwrap();
+    let nearest = project_nearby(
+        capture_nearby(&store, [0.5, 0.5, 0.5]).unwrap(),
+        [0.5, 0.5, 0.5],
+        2000,
+    );
+    assert_eq!(nearest.len(), 256);
+    assert_eq!(nearest[0].id, id.get() + 1);
+    assert_eq!(nearest[255].id, id.get() + 256);
+}

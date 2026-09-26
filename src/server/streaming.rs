@@ -12,7 +12,11 @@ use super::outbound::{
 use super::*;
 
 pub(in crate::server) mod entities;
+mod interest_projection;
+pub(in crate::server) mod shared;
 pub(in crate::server) mod snapshots;
+pub(in crate::server) mod subscriptions;
+pub(in crate::server) mod workers;
 
 const MAX_LOAD_RESULTS_PER_TICK: usize = 32;
 const MAX_PREFETCH_CANDIDATES: usize = 16;
@@ -74,7 +78,7 @@ pub(super) fn request_chunk(state: &mut State, key: ChunkKey) -> io::Result<bool
 }
 
 pub(super) fn publish_streams(state: &mut State) -> io::Result<()> {
-    reduce_view_under_pressure(state);
+    interest_projection::reduce_view_under_pressure(state)?;
     let mut ids: Vec<_> = state.clients.keys().copied().collect();
     if ids.is_empty() {
         return Ok(());
@@ -84,66 +88,20 @@ pub(super) fn publish_streams(state: &mut State) -> io::Result<()> {
     ids.rotate_left(start);
     state.stream_cursor = state.stream_cursor.wrapping_add(1);
     let mut snapshots = snapshots::Selection::default();
-    for id in ids {
-        if !stream_one(state, id, &mut snapshots)? {
-            state.remove_client(id);
-        }
-    }
+    interest_projection::prepare(state, &ids, &mut snapshots)?;
     snapshots::publish(state, snapshots)?;
     Ok(())
 }
 
-fn stream_one(
+fn stream_candidates(
     state: &mut State,
     id: u64,
+    candidates: Vec<ChunkKey>,
     snapshots: &mut snapshots::Selection,
-) -> io::Result<bool> {
+) -> io::Result<()> {
     let Some(client) = state.clients.get_mut(&id) else {
-        return Ok(false);
+        return Ok(());
     };
-    let position = client.position();
-    let anchor = position.map(|coordinate| (coordinate / 4.0).floor() as i32);
-    let drop_revision = state.drop_revision;
-    if client.last_drops_revision != drop_revision || client.last_drop_anchor != anchor {
-        let items = crate::server::drops::nearby(&state.entities, position);
-        if !same_drop_positions(&items, &client.last_sent_drops) {
-            if !client.enqueue(ServerMessage::Drops {
-                revision: drop_revision,
-                items: items.clone(),
-            }) {
-                return Ok(false);
-            }
-            client.last_sent_drops = items;
-        }
-        client.last_drops_revision = drop_revision;
-        client.last_drop_anchor = anchor;
-    }
-
-    let center = client.center;
-    let radius = i64::from(client.radius);
-    let mut released = Vec::new();
-    client.sent.retain(|key| {
-        let keep = inside_view(*key, center, radius);
-        if !keep {
-            released.push(*key);
-        }
-        keep
-    });
-    for key in released {
-        let unpinned = state.world.unpin_resident_chunk(key);
-        debug_assert!(unpinned, "out-of-view subscription lost its resident chunk");
-    }
-    client
-        .sent_epochs
-        .retain(|key, _| client.sent.contains(key));
-    client
-        .sent_block_versions
-        .retain(|key, _| client.sent.contains(key));
-    client
-        .sent_entity_revisions
-        .retain(|key, _| client.sent.contains(key));
-    let candidates =
-        interest::nearest_unsent(center, client.radius, &client.sent, MAX_PREFETCH_CANDIDATES);
     let mut sent_chunk = false;
     let mut new_loads = 0;
     for key in candidates {
@@ -169,7 +127,7 @@ fn stream_one(
             }
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -204,63 +162,6 @@ fn inside_view(key: ChunkKey, center: ChunkKey, radius: i64) -> bool {
     (i64::from(key.x) - i64::from(center.x)).abs() <= radius
         && (i64::from(key.y) - i64::from(center.y)).abs() <= 1
         && (i64::from(key.z) - i64::from(center.z)).abs() <= radius
-}
-
-/// A full pinned cache cannot accept a new authoritative owner. Reduce one
-/// interested client's effective view and tell it before releasing its pins.
-/// This is a bounded pressure response, not silent eviction of subscriptions.
-fn reduce_view_under_pressure(state: &mut State) {
-    if state.world.can_admit_chunk() {
-        return;
-    }
-    let candidate = state
-        .clients
-        .iter()
-        .filter(|(_, client)| client.radius > MIN_VIEW_DISTANCE)
-        .map(|(&id, client)| {
-            let next = i64::from(client.radius - 1);
-            let reclaim = client
-                .sent
-                .iter()
-                .filter(|&&key| !inside_view(key, client.center, next))
-                .count();
-            (id, reclaim, client.sent.len(), client.radius)
-        })
-        .max_by_key(|&(id, reclaim, sent, radius)| (reclaim > 0, radius, reclaim, sent, id));
-    let Some((id, _, _, _)) = candidate else {
-        return;
-    };
-    let client = state.clients.get_mut(&id).expect("selected live client");
-    client.radius -= 1;
-    if !client.enqueue(ServerMessage::ViewDistance {
-        radius: client.radius,
-    }) {
-        state.remove_client(id);
-        return;
-    }
-    let center = client.center;
-    let radius = i64::from(client.radius);
-    let mut released = Vec::new();
-    client.sent.retain(|key| {
-        let keep = inside_view(*key, center, radius);
-        if !keep {
-            released.push(*key);
-        }
-        keep
-    });
-    client
-        .sent_epochs
-        .retain(|key, _| client.sent.contains(key));
-    client
-        .sent_block_versions
-        .retain(|key, _| client.sent.contains(key));
-    client
-        .sent_entity_revisions
-        .retain(|key, _| client.sent.contains(key));
-    for key in released {
-        let unpinned = state.world.unpin_resident_chunk(key);
-        debug_assert!(unpinned, "view reduction lost its resident chunk");
-    }
 }
 
 pub(super) fn same_drop_positions(a: &[DroppedItem], b: &[DroppedItem]) -> bool {

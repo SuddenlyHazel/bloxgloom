@@ -6,10 +6,10 @@ use crate::protocol::{
     BlockCellChange, MAX_FRAME, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_COMMIT_PARTS, PublicEntityChange,
     ServerMessage, WorldCommitPart, server_wire_len,
 };
-use crate::server::Client;
 use crate::server::durable::PublishEffects;
 use crate::server::entities::{EntityDelta, EntityPublicView};
 use crate::server::streaming::entities::project;
+use crate::server::streaming::subscriptions::Capture;
 use crate::world::ChunkKey;
 use std::collections::BTreeMap;
 use std::io;
@@ -29,7 +29,7 @@ impl CommitChanges {
         self.0.is_empty()
     }
 
-    pub(super) fn subscribed_keys(&self, client: &Client) -> Vec<ChunkKey> {
+    pub(super) fn subscribed_keys(&self, client: &Capture) -> Vec<ChunkKey> {
         self.0
             .keys()
             .filter(|key| client.sent.contains(key))
@@ -47,7 +47,7 @@ pub(super) struct CommitPlan {
 /// bound. The caller invalidates its subscribed keys and streams fresh epochs.
 pub(super) fn for_client(
     changes: &CommitChanges,
-    client: &Client,
+    client: &Capture,
     commit_id: u64,
 ) -> io::Result<Option<CommitPlan>> {
     let subscribed: Vec<_> = changes
@@ -71,21 +71,24 @@ pub(super) fn for_client(
     let mut total_bytes = 0usize;
     for (index, (&key, change)) in subscribed.into_iter().enumerate() {
         let epoch = *client
-            .sent_epochs
+            .epochs
             .get(&key)
             .ok_or_else(|| io::Error::other("subscribed chunk has no snapshot epoch"))?;
         let block_from = *client
-            .sent_block_versions
+            .blocks
             .get(&key)
             .ok_or_else(|| io::Error::other("subscribed chunk has no block revision"))?;
         let entity_from = *client
-            .sent_entity_revisions
+            .entities
             .get(&key)
             .ok_or_else(|| io::Error::other("subscribed chunk has no entity revision"))?;
         let block_to = change.block_version.unwrap_or(block_from);
         let entity_to = change.entity_revision.unwrap_or(entity_from);
         if block_to < block_from || entity_to < entity_from {
             return Err(io::Error::other("committed world revision regressed"));
+        }
+        if change.blocks.len() > crate::world::CHUNK_VOLUME || change.entities.len() > 256 {
+            return Ok(None);
         }
         let part = WorldCommitPart {
             commit_id,
@@ -100,9 +103,6 @@ pub(super) fn for_client(
             blocks: change.blocks.clone(),
             entities: change.entities.clone(),
         };
-        if part.blocks.len() > crate::world::CHUNK_VOLUME || part.entities.len() > 256 {
-            return Ok(None);
-        }
         let bytes = server_wire_len(&ServerMessage::WorldCommitPart(part.clone()));
         total_bytes = total_bytes.saturating_add(bytes);
         if bytes > MAX_FRAME + 4 || total_bytes > MAX_WORLD_COMMIT_BYTES {
@@ -114,9 +114,18 @@ pub(super) fn for_client(
     Ok(Some(CommitPlan { parts, revisions }))
 }
 
-pub(super) fn collect(effect: &PublishEffects, catalog: &Catalog) -> io::Result<CommitChanges> {
+pub(super) fn collect(
+    effect: &PublishEffects,
+    catalog: &Catalog,
+) -> io::Result<Option<CommitChanges>> {
+    if effect.deltas.len() > MAX_GROUP_ENTRIES {
+        return Ok(None);
+    }
     let mut grouped = BTreeMap::<ChunkKey, KeyChanges>::new();
     for delta in &effect.deltas {
+        if grouped.len() >= MAX_GROUP_KEYS && !grouped.contains_key(&delta.key) {
+            return Ok(None);
+        }
         let entry = grouped.entry(delta.key).or_default();
         if let Some(version) = entry.block_version
             && version != delta.version
@@ -135,7 +144,30 @@ pub(super) fn collect(effect: &PublishEffects, catalog: &Catalog) -> io::Result<
         });
     }
     if let Some(commit) = &effect.entity_commit {
+        // Fanout is bounded before allocating or traversing all expanded
+        // anchored footprints. An oversized group causes complete resnapshots,
+        // never a truncated transaction. The original effect remains intact.
+        let mut fanout = effect.deltas.len();
         for delta in &commit.deltas {
+            let (old, new) = match delta {
+                EntityDelta::Spawned(view) | EntityDelta::Moved(view) => {
+                    (0, fanout_bound(&view.location))
+                }
+                EntityDelta::Updated {
+                    before_touched_chunks,
+                    view,
+                }
+                | EntityDelta::Transferred {
+                    before_touched_chunks,
+                    view,
+                    ..
+                } => (before_touched_chunks.len(), fanout_bound(&view.location)),
+                EntityDelta::Despawned { touched_chunks, .. } => (touched_chunks.len(), 0),
+            };
+            fanout = fanout.saturating_add(old).saturating_add(new);
+            if fanout > MAX_GROUP_ENTRIES {
+                return Ok(None);
+            }
             match delta {
                 EntityDelta::Spawned(view) | EntityDelta::Moved(view) => {
                     add_upsert(&mut grouped, view, commit.registry_revision, catalog)?;
@@ -171,9 +203,24 @@ pub(super) fn collect(effect: &PublishEffects, catalog: &Catalog) -> io::Result<
                     commit.registry_revision,
                 ),
             }
+            if grouped.len() > MAX_GROUP_KEYS {
+                return Ok(None);
+            }
         }
     }
-    Ok(CommitChanges(grouped))
+    Ok(Some(CommitChanges(grouped)))
+}
+
+const MAX_GROUP_KEYS: usize = 4096;
+// Each entry has <=4KiB public payload. This bounds expansion memory to
+// 16MiB plus headers, independently of the transaction's private byte budget.
+const MAX_GROUP_ENTRIES: usize = 4096;
+
+fn fanout_bound(location: &crate::server::entities::EntityLocation) -> usize {
+    match location {
+        crate::server::entities::EntityLocation::Mobile { .. } => 1,
+        crate::server::entities::EntityLocation::Anchored { footprint, .. } => footprint.len(),
+    }
 }
 
 fn add_upsert(

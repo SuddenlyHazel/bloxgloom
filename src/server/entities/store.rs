@@ -256,6 +256,7 @@ pub type PreparedEntityBatch = PreparedEntityTransaction;
 pub struct EntityStore {
     types: Arc<EntityTypeRegistry>,
     records: BTreeMap<EntityId, EntityRecord>,
+    mobile_pages: super::mobile_pages::MobilePages,
     indexes: EntityIndexes,
     next_id: u64,
     revision: u64,
@@ -279,6 +280,7 @@ impl EntityStore {
         Self {
             types,
             records: BTreeMap::new(),
+            mobile_pages: Default::default(),
             indexes,
             next_id: 1,
             revision: 0,
@@ -319,6 +321,13 @@ impl EntityStore {
             private_payload: record.payload.clone(),
             next_tick: record.next_tick,
         })
+    }
+
+    pub(in crate::server) fn mobile_publication_page(
+        &self,
+        key: ChunkKey,
+    ) -> Option<super::MobilePage> {
+        self.mobile_pages.page(key)
     }
 
     pub fn public_view(&self, id: EntityId) -> Option<EntityPublicView> {
@@ -460,6 +469,7 @@ impl EntityStore {
         self.validate_record(&after, descriptor)?;
         self.indexes.preview_change(Some(&before), Some(&after))?;
         self.indexes.replace(Some(&before), Some(&after))?;
+        self.mobile_pages.replace(Some(&before), Some(&after))?;
         self.records.insert(id, after.clone());
         Ok(EntityCommit {
             registry_revision: self.revision,
@@ -1310,6 +1320,7 @@ impl EntityStore {
                 let mut deltas = Vec::with_capacity(after.len());
                 for record in after {
                     self.indexes.insert(&record)?;
+                    self.mobile_pages.replace(None, Some(&record))?;
                     self.records.insert(record.id, record.clone());
                     deltas.push(EntityDelta::Spawned(record.public_view()));
                 }
@@ -1344,6 +1355,7 @@ impl EntityStore {
                 let before_touched_chunks =
                     current.location.touched_chunks()?.into_iter().collect();
                 self.indexes.replace(Some(&current), Some(&applied))?;
+                self.mobile_pages.replace(Some(&current), Some(&applied))?;
                 self.records.insert(applied.id, applied.clone());
                 let delta = if transferred_owner {
                     self.motion_fences.remove(&before.id);
@@ -1376,6 +1388,7 @@ impl EntityStore {
                     .cloned()
                     .ok_or(EntityError::UnknownEntity(before.id))?;
                 self.indexes.replace(Some(&current), None)?;
+                self.mobile_pages.replace(Some(&current), None)?;
                 self.records.remove(&before.id);
                 Ok(vec![EntityDelta::Despawned {
                     id: before.id,
@@ -1449,6 +1462,7 @@ impl EntityStore {
                 .map_err(|_| EntityError::UnknownRequiredType(record.entity_type))?;
             store.validate_record(record, descriptor)?;
             store.indexes.insert(record)?;
+            store.mobile_pages.replace(None, Some(record))?;
         }
         store.indexes.validate_against_records(&store.records)?;
         Ok(store)

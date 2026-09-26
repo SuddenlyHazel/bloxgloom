@@ -479,3 +479,57 @@ fn dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs() {
         "next batch remains usable after capacity failure"
     );
 }
+
+#[test]
+fn worker_interest_change_releases_old_pins_before_publishing_new_center() {
+    let mut fixture = Fixture::new("interest-worker");
+    let session = fixture.join(1);
+    durable::publish_committed(&mut fixture.state).unwrap();
+    streaming::publish_streams(&mut fixture.state).unwrap();
+    snapshots(&session);
+    let old = fixture.state.clients[&session.id].center;
+    let new = ChunkKey {
+        x: old.x + 20,
+        ..old
+    };
+    fixture.state.world.get_chunk(new).unwrap();
+    fixture.state.clients.get_mut(&session.id).unwrap().center = new;
+    streaming::publish_streams(&mut fixture.state).unwrap();
+    assert!(!fixture.state.clients[&session.id].sent.contains(&old));
+    assert!(fixture.state.clients[&session.id].sent.contains(&new));
+    assert_eq!(fixture.state.world.pinned_chunk_count(), 1);
+    assert!(snapshots(&session).iter().any(|frame| matches!(frame.message(), ServerMessage::WorldSnapshotStart(start) if start.chunk.key == new)));
+}
+
+#[test]
+fn pressure_reclaim_is_worker_prepared_and_coordinator_announces_then_releases() {
+    let mut fixture = Fixture::new("pressure-worker");
+    let session = fixture.join(1);
+    let center = fixture.state.clients[&session.id].center;
+    let radius = fixture.state.clients[&session.id].radius;
+    let edge = ChunkKey {
+        x: center.x + i32::from(radius),
+        ..center
+    };
+    fixture.state.world.reset_cache_for_test(2);
+    for key in [center, edge] {
+        let chunk = fixture.state.world.get_chunk(key).unwrap();
+        assert!(fixture.state.world.pin_resident_chunk(key));
+        let client = fixture.state.clients.get_mut(&session.id).unwrap();
+        client.sent.insert(key);
+        client.sent_epochs.insert(key, 1);
+        client.sent_block_versions.insert(key, chunk.version);
+        client
+            .sent_entity_revisions
+            .insert(key, fixture.state.entity_public_revision);
+    }
+    assert!(!fixture.state.world.can_admit_chunk());
+    super::super::interest_projection::reduce_view_under_pressure(&mut fixture.state).unwrap();
+    assert!(
+        matches!(session.receiver.try_recv().unwrap().message(), ServerMessage::ViewDistance { radius: reduced } if *reduced == radius - 1)
+    );
+    assert_eq!(fixture.state.clients[&session.id].sent.len(), 1);
+    assert!(fixture.state.clients[&session.id].sent.contains(&center));
+    assert!(fixture.state.world.can_admit_chunk());
+    assert_eq!(fixture.state.world.pinned_chunk_count(), 1);
+}

@@ -6,8 +6,10 @@
 mod checkpoint;
 mod codec;
 mod kiln;
+mod mobile_pages;
 mod persistence;
 mod player;
+pub(in crate::server) use mobile_pages::MobilePage;
 mod registry;
 mod spatial;
 mod store;

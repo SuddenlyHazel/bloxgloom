@@ -11,6 +11,7 @@
 mod entity;
 mod planning;
 mod queries;
+pub(in crate::server) use queries::{capture_nearby, project_nearby};
 mod tick;
 
 #[cfg(test)]
@@ -20,8 +21,10 @@ pub(in crate::server) use planning::{
     plan_expired, plan_spawn_stack, plan_spawns, plan_spawns_with_extra, plan_stack_spawns,
     plan_take,
 };
+#[cfg(test)]
+pub(in crate::server) use queries::nearby;
 pub(in crate::server) use queries::{
-    airborne_count, has_expired, nearby, pickup_candidates, sleeping_drop_ids_in_chunk, stack,
+    airborne_count, has_expired, pickup_candidates, sleeping_drop_ids_in_chunk, stack,
 };
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

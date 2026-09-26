@@ -101,10 +101,10 @@ struct Client {
     last_sent_drops: Vec<DroppedItem>,
     sender: OutboundQueue,
     socket: TcpStream,
-    sent: HashSet<ChunkKey>,
-    sent_epochs: HashMap<ChunkKey, u64>,
-    sent_block_versions: HashMap<ChunkKey, u64>,
-    sent_entity_revisions: HashMap<ChunkKey, u64>,
+    sent: streaming::shared::Shared<HashSet<ChunkKey>>,
+    sent_epochs: streaming::shared::Shared<HashMap<ChunkKey, u64>>,
+    sent_block_versions: streaming::shared::Shared<HashMap<ChunkKey, u64>>,
+    sent_entity_revisions: streaming::shared::Shared<HashMap<ChunkKey, u64>>,
     next_snapshot_epoch: u64,
     center: ChunkKey,
     radius: u8,
@@ -175,6 +175,7 @@ struct State {
         PhaseExecutor<durable::actions::entity::TickWorkerResult, entities::EntityError>,
     entity_tick_dispatch_batch: Option<(simulation::TickId, u16)>,
     snapshot_workers: streaming::snapshots::Workers,
+    publication_workers: streaming::workers::Workers,
     metrics: MetricsRecorder,
     /// Optional bounded, nonblocking trace for the production-TCP soak.
     /// The live server leaves this absent; the benchmark must drain it.
@@ -230,7 +231,7 @@ impl State {
             self.durability.failed = true;
             eprintln!("could not save player position for session {id}: {error}");
         }
-        for &key in &client.sent {
+        for &key in client.sent.iter() {
             let released = self.world.unpin_resident_chunk(key);
             debug_assert!(released, "client subscription lost its resident chunk");
         }
@@ -524,6 +525,7 @@ fn server_state_with_startup(
         entity_tick_executor,
         entity_tick_dispatch_batch: None,
         snapshot_workers: streaming::snapshots::Workers::new(worker_count)?,
+        publication_workers: streaming::workers::Workers::new(worker_count)?,
         metrics: MetricsRecorder::new(),
         tick_observer: None,
         stream_cursor: 0,
@@ -651,10 +653,10 @@ fn join_client(
             last_sent_drops: Vec::new(),
             sender,
             socket,
-            sent: HashSet::new(),
-            sent_epochs: HashMap::new(),
-            sent_block_versions: HashMap::new(),
-            sent_entity_revisions: HashMap::new(),
+            sent: Default::default(),
+            sent_epochs: Default::default(),
+            sent_block_versions: Default::default(),
+            sent_entity_revisions: Default::default(),
             next_snapshot_epoch: 1,
             center,
             radius: DEFAULT_VIEW,
