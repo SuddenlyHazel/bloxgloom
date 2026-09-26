@@ -149,6 +149,13 @@ fn mesh_priority(
     (lane, distance, key.x, key.y, key.z)
 }
 
+/// Propagated light uses a local halo; direct sky also reads captured columns above it.
+fn lighting_depends_on(target: ChunkKey, changed: ChunkKey) -> bool {
+    i64::from(target.x).abs_diff(i64::from(changed.x)) <= 1
+        && i64::from(target.z).abs_diff(i64::from(changed.z)) <= 1
+        && i64::from(target.y) <= i64::from(changed.y) + 1
+}
+
 fn chunk_in_view(key: ChunkKey, center: ChunkKey, radius: u8) -> bool {
     let radius = i64::from(radius);
     (i64::from(key.x) - i64::from(center.x)).abs() <= radius
@@ -627,28 +634,13 @@ impl ClientApp {
     }
 
     fn queue_relight(&mut self, key: ChunkKey, include_neighbors: bool) {
-        let reach = if include_neighbors { 1 } else { 0 };
-        for dy in -reach..=reach {
-            for dz in -reach..=reach {
-                for dx in -reach..=reach {
-                    let (Some(x), Some(y), Some(z)) = (
-                        key.x.checked_add(dx),
-                        key.y.checked_add(dy),
-                        key.z.checked_add(dz),
-                    ) else {
-                        continue;
-                    };
-                    let affected = ChunkKey { x, y, z };
-                    if !self.chunks.contains_key(&affected) {
-                        continue;
-                    }
-                    let revision = self.next_lighting_revision;
-                    self.next_lighting_revision =
-                        self.next_lighting_revision.wrapping_add(1).max(1);
-                    self.lighting_revisions.insert(affected, revision);
-                    self.pending_mesh.insert(affected, revision);
-                }
-            }
+        for affected in self.chunks.keys().copied().filter(|affected| {
+            *affected == key || (include_neighbors && lighting_depends_on(*affected, key))
+        }) {
+            let revision = self.next_lighting_revision;
+            self.next_lighting_revision = self.next_lighting_revision.wrapping_add(1).max(1);
+            self.lighting_revisions.insert(affected, revision);
+            self.pending_mesh.insert(affected, revision);
         }
     }
 
@@ -662,25 +654,11 @@ impl ClientApp {
     }
 
     fn lighting_snapshot(&self, key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
-        let mut known = HashMap::with_capacity(27);
-        for dy in -1i32..=1 {
-            for dz in -1i32..=1 {
-                for dx in -1i32..=1 {
-                    let (Some(x), Some(y), Some(z)) = (
-                        key.x.checked_add(dx),
-                        key.y.checked_add(dy),
-                        key.z.checked_add(dz),
-                    ) else {
-                        continue;
-                    };
-                    let neighbor = ChunkKey { x, y, z };
-                    if let Some(chunk) = self.chunks.get(&neighbor) {
-                        known.insert(neighbor, Arc::clone(chunk));
-                    }
-                }
-            }
-        }
-        known
+        self.chunks
+            .iter()
+            .filter(|(neighbor, _)| lighting_depends_on(key, **neighbor))
+            .map(|(neighbor, chunk)| (*neighbor, Arc::clone(chunk)))
+            .collect()
     }
 
     fn accept(&mut self, message: ServerMessage) {

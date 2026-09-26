@@ -12,6 +12,8 @@ const PLANE: usize = SIDE * SIDE;
 const VOLUME: usize = SIDE * SIDE * SIDE;
 const MAX_LIGHT: u8 = 15;
 
+mod skylight;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LightSample {
     pub sky: u8,
@@ -26,9 +28,9 @@ pub struct LightField {
 }
 
 impl LightField {
-    /// The one-chunk halo is wider than the 15-step propagation range. Chunks
-    /// not yet streamed use the deterministic baseline until their snapshot
-    /// arrives, at which point the client re-lights affected neighbors.
+    /// The one-chunk halo covers local propagation; direct sky additionally
+    /// checks columns above it. Missing chunks use the deterministic baseline
+    /// until streamed snapshots arrive and invalidate dependent lighting.
     #[cfg(test)]
     pub fn build(key: ChunkKey, known: &HashMap<ChunkKey, Arc<Chunk>>, seed: u64) -> Self {
         Self::build_with_catalog(key, known, seed, content::catalog())
@@ -96,14 +98,10 @@ impl LightField {
         let mut glow = vec![0; VOLUME];
         let mut sky_frontier = VecDeque::new();
         let mut glow_frontier = VecDeque::new();
-        let top_world_y = (i64::from(key.y) + 2) * CHUNK_SIZE as i64 - 1;
-        let first_x = (i64::from(key.x) - 1) * CHUNK_SIZE as i64;
-        let first_z = (i64::from(key.z) - 1) * CHUNK_SIZE as i64;
+        let incoming_sky = skylight::incoming(key, known, seed, catalog, &blocks);
         for z in 0..SIDE {
             for x in 0..SIDE {
-                let mut open_to_sky =
-                    world::terrain_height(first_x + x as i64, first_z + z as i64, seed)
-                        <= top_world_y;
+                let mut open_to_sky = incoming_sky[z * SIDE + x];
                 for y in (0..SIDE).rev() {
                     let at = index(x, y, z);
                     let emission = catalog.emission(blocks[at]);

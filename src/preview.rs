@@ -146,6 +146,18 @@ pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> 
             PreviewScene::Cave { lamp, bounced },
         ))?;
     }
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: directory.join("natural-cavern.png"),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (16, 20),
+        PreviewScene::NaturalCavern,
+    ))?;
     Ok(())
 }
 
@@ -236,6 +248,7 @@ enum PreviewScene {
     Drops(DropPhase),
     Avatars,
     Cave { lamp: bool, bounced: bool },
+    NaturalCavern,
 }
 
 async fn render_previews(
@@ -307,6 +320,9 @@ async fn render_previews(
             (target + offset, target)
         }
         PreviewScene::Cave { .. } => (Vec3::new(40.5, 12.0, 16.5), Vec3::new(29.5, 12.0, 16.5)),
+        PreviewScene::NaturalCavern => {
+            (Vec3::new(264.7, 3.3, 333.3), Vec3::new(264.0, -12.0, 327.0))
+        }
     };
     let direction = (target - camera_position).normalize();
     let camera_template = Camera {
@@ -317,9 +333,14 @@ async fn render_previews(
     };
 
     let mut chunks = HashMap::new();
+    let bottom_chunk = if matches!(scene, PreviewScene::NaturalCavern) {
+        -4
+    } else {
+        0
+    };
     for z in -2..=2 {
         for x in -2..=2 {
-            for y in 0..=4 {
+            for y in bottom_chunk..=4 {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
                     y,
@@ -402,7 +423,7 @@ async fn render_previews(
     let mut gpu_meshes = Vec::new();
     for z in -2..=2 {
         for x in -2..=2 {
-            for y in 0..=4 {
+            for y in bottom_chunk..=4 {
                 let key = ChunkKey {
                     x: center_chunk.0 + x,
                     y,

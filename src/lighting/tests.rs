@@ -1,6 +1,56 @@
 use super::*;
 use crate::world::{AIR, GLOWSTONE, LEAVES, MOSS, RED_FLOWER, WOOD};
 
+#[test]
+fn natural_cavern_skylight_crosses_the_zero_height_chunk_boundary() {
+    let seed = 0xB10C_6100;
+    let key = ChunkKey {
+        x: 16,
+        y: -1,
+        z: 20,
+    };
+    let mut known = HashMap::new();
+    for y in -2..=world::MAX_GENERATED_HEIGHT / CHUNK_SIZE as i32 {
+        for z in 19..=21 {
+            for x in 15..=17 {
+                let key = ChunkKey { x, y, z };
+                known.insert(key, Arc::new(world::generate_chunk(key, seed)));
+            }
+        }
+    }
+    let field = LightField::build(key, &known, seed);
+    let local: HashMap<_, _> = known
+        .iter()
+        .filter(|(k, _)| k.y <= key.y + 1)
+        .map(|(k, chunk)| (*k, Arc::clone(chunk)))
+        .collect();
+    let fallback = LightField::build(key, &local, seed);
+    let mut open_columns = 0;
+    for z in 0..CHUNK_SIZE {
+        for x in 0..CHUNK_SIZE {
+            let wx = key.x * CHUNK_SIZE as i32 + x as i32;
+            let wz = key.z * CHUNK_SIZE as i32 + z as i32;
+            let open = (-1..=world::MAX_GENERATED_HEIGHT).all(|y| {
+                let (chunk, local) = world::world_to_chunk(wx, y, wz);
+                !is_opaque(content::catalog(), known[&chunk].block(local).unwrap())
+            });
+            if open {
+                open_columns += 1;
+                assert_eq!(fallback.face([x, 15, z], 1, 0).sky, 15);
+                assert_eq!(
+                    field.face([x, 15, z], 1, 0).sky,
+                    15,
+                    "open natural column {wx}, {wz}"
+                );
+            }
+        }
+    }
+    assert!(
+        open_columns > 0,
+        "fixture must contain a naturally open shaft"
+    );
+}
+
 fn sealed_neighborhood(key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
     let mut known = HashMap::new();
     for dy in -1..=1 {
@@ -19,6 +69,39 @@ fn sealed_neighborhood(key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
         }
     }
     known
+}
+
+#[test]
+fn distant_streamed_roof_blocks_and_reopens_a_deep_shaft() {
+    let key = ChunkKey { x: 0, y: -2, z: 0 };
+    let mut known = sealed_neighborhood(key);
+    for y in -2..=5 {
+        let upper = ChunkKey { y, ..key };
+        let mut chunk = Chunk {
+            key: upper,
+            version: 1,
+            blocks: vec![STONE; world::CHUNK_VOLUME].into(),
+        };
+        for y in 0..CHUNK_SIZE {
+            chunk.blocks.set(Chunk::index([8, y, 8]).unwrap(), AIR);
+        }
+        known.insert(upper, Arc::new(chunk));
+    }
+    let roof = ChunkKey { y: 3, ..key };
+    for bounced in [false, true] {
+        let open = LightField::build_with_bounce(key, &known, 0xB10C_6100, bounced);
+        assert_eq!(open.face([8, 8, 8], 1, 0).sky, 15);
+        Arc::make_mut(known.get_mut(&roof).unwrap())
+            .blocks
+            .set(Chunk::index([8, 0, 8]).unwrap(), STONE);
+        let closed = LightField::build_with_bounce(key, &known, 0xB10C_6100, bounced);
+        assert_eq!(closed.face([8, 8, 8], 1, 0), LightSample::default());
+        Arc::make_mut(known.get_mut(&roof).unwrap())
+            .blocks
+            .set(Chunk::index([8, 0, 8]).unwrap(), AIR);
+        let reopened = LightField::build_with_bounce(key, &known, 0xB10C_6100, bounced);
+        assert_eq!(reopened.face([8, 8, 8], 1, 0).sky, 15);
+    }
 }
 
 #[test]

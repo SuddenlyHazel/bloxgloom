@@ -2,6 +2,26 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn skylight_capture_and_invalidation_include_distant_roofs() {
+    let target = ChunkKey {
+        x: 16,
+        y: -1,
+        z: 20,
+    };
+    assert!(lighting_depends_on(target, ChunkKey { y: 4, ..target }));
+    assert!(lighting_depends_on(target, ChunkKey { y: -2, ..target }));
+    assert!(!lighting_depends_on(target, ChunkKey { y: -3, ..target }));
+    assert!(!lighting_depends_on(
+        target,
+        ChunkKey {
+            x: 18,
+            y: 4,
+            ..target
+        }
+    ));
+}
+
+#[test]
 fn missing_meshes_are_nearest_first_without_delaying_urgent_edits() {
     let center = ChunkKey { x: 0, y: 0, z: 0 };
     let near = ChunkKey { x: 1, ..center };
