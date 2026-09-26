@@ -701,6 +701,7 @@ impl ClientApp {
             let revision = self.next_lighting_revision;
             self.next_lighting_revision = self.next_lighting_revision.wrapping_add(1).max(1);
             self.lighting_revisions.insert(affected, revision);
+            self.mesher.invalidate(affected, Some(revision));
             self.pending_mesh.insert(affected, revision);
             // Renderer uploads have already passed the client revision check.
             // Cancel them here as soon as any lighting dependency changes.
@@ -947,6 +948,7 @@ impl ClientApp {
             .retain(|key, _| self.chunks.contains_key(key));
         self.urgent_mesh.retain(|key| self.chunks.contains_key(key));
         for &(key, modified) in &evicted {
+            self.mesher.invalidate(key, None);
             if modified {
                 self.queue_relight(key, true);
             }

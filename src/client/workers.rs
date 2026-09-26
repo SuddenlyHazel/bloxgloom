@@ -218,6 +218,7 @@ pub(super) struct Mesher {
     pub(super) jobs: SyncSender<MesherJob>,
     pub(super) urgent_jobs: SyncSender<MesherJob>,
     pub(super) results: Receiver<MesherResult>,
+    revisions: Arc<Mutex<HashMap<ChunkKey, u64>>>,
 }
 
 pub(super) struct MesherResult {
@@ -237,16 +238,29 @@ pub(super) struct MesherJob {
 }
 
 impl Mesher {
+    /// Invalidate queued work before it consumes a lighting/mesh worker. The
+    /// window thread's result/upload checks still guard races with active jobs.
+    pub(super) fn invalidate(&self, key: ChunkKey, revision: Option<u64>) {
+        let mut revisions = self.revisions.lock().unwrap();
+        if let Some(revision) = revision {
+            revisions.insert(key, revision);
+        } else {
+            revisions.remove(&key);
+        }
+    }
+
     pub(super) fn new() -> Self {
         let (jobs, jobs_rx) = mpsc::sync_channel::<MesherJob>(64);
         let (urgent_jobs, urgent_rx) = mpsc::sync_channel::<MesherJob>(16);
         let (results_tx, results) = mpsc::sync_channel(64);
         let shared = Arc::new(Mutex::new(jobs_rx));
         let urgent = Arc::new(Mutex::new(urgent_rx));
+        let revisions = Arc::new(Mutex::new(HashMap::new()));
         for _ in 0..2 {
             let jobs_rx = Arc::clone(&shared);
             let urgent_rx = Arc::clone(&urgent);
             let results_tx = results_tx.clone();
+            let revisions = Arc::clone(&revisions);
             thread::spawn(move || {
                 loop {
                     let job = match urgent_rx.lock().unwrap().try_recv() {
@@ -264,6 +278,11 @@ impl Mesher {
                         }
                         Err(mpsc::TryRecvError::Disconnected) => break,
                     };
+                    let current =
+                        || revisions.lock().unwrap().get(&job.chunk.key) == Some(&job.revision);
+                    if !current() {
+                        continue;
+                    }
                     let light = if job.bounced_gi {
                         LightField::build_with_bounce_and_catalog(
                             job.chunk.key,
@@ -280,6 +299,11 @@ impl Mesher {
                             &job.catalog,
                         )
                     };
+                    // A new edit can arrive during propagation. Do not spend
+                    // additional time meshing an already obsolete light field.
+                    if !current() {
+                        continue;
+                    }
                     let mesh = render::mesh_chunk_lit_with_catalog(
                         &job.chunk,
                         &light,
@@ -294,6 +318,9 @@ impl Mesher {
                                 lighting.push(light.face([x, y, z], 1, 0));
                             }
                         }
+                    }
+                    if !current() {
+                        continue;
                     }
                     if results_tx
                         .send(MesherResult {
@@ -311,6 +338,7 @@ impl Mesher {
             jobs,
             urgent_jobs,
             results,
+            revisions,
         }
     }
 }

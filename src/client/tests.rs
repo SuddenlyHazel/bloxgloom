@@ -2,6 +2,62 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn latest_edit_mesh_survives_a_superseded_kiln_relight_backlog() {
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join("unused-kiln-backlog-config"),
+    );
+    let key = ChunkKey { x: 0, y: 5, z: 0 };
+    let mut blocks = vec![crate::world::AIR; crate::world::CHUNK_VOLUME];
+    blocks[Chunk::index([8, 1, 8]).unwrap()] =
+        crate::content::BlockStateId(crate::content::KILN_DEFAULT_STATE.0 + 1);
+    app.chunks
+        .insert(key, Arc::new(Chunk::from_blocks(key, 1, blocks)));
+    let start = Instant::now();
+    let mut queued = Vec::new();
+    for _ in 0..16 {
+        app.queue_relight(key, false);
+        let revision = app.lighting_revisions[&key];
+        queued.push(MesherJob {
+            chunk: app.chunks[&key].clone(),
+            known: app.lighting_snapshot(key),
+            catalog: app.catalog.clone(),
+            seed: 7,
+            revision,
+            bounced_gi: false,
+        });
+    }
+    let revision = app.lighting_revisions[&key];
+    // Model jobs already queued when a newer edit invalidates their light
+    // fields. Publish invalidation first so cancellation is race-independent.
+    for job in queued {
+        app.mesher.urgent_jobs.send(job).unwrap();
+    }
+    let mut obsolete = 0;
+    loop {
+        let result = app
+            .mesher
+            .results
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap();
+        if result.mesh.lighting_revision == revision {
+            break;
+        }
+        obsolete += 1;
+    }
+    eprintln!(
+        "latest kiln-neighborhood mesh: {:?}, obsolete completed results: {obsolete}",
+        start.elapsed()
+    );
+    assert_eq!(
+        obsolete, 0,
+        "superseded jobs must be skipped before lighting and meshing"
+    );
+    app.config_writer.finish();
+}
+
+#[test]
 fn moving_object_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
     let mut app = ClientApp::new(
         Network::disconnected_for_test(),

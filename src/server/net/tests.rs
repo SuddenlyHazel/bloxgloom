@@ -512,6 +512,9 @@ fn complete_content_handshake(peer: &mut TcpStream) {
     protocol::write_client(peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
 }
 
+#[path = "tests/kiln_latency.rs"]
+mod kiln_latency;
+
 #[test]
 fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
     let suffix = std::time::SystemTime::now()

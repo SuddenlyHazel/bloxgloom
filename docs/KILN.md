@@ -51,3 +51,33 @@ they are not a live gameplay recording. A single `perf 300 6` comparison against
 Scene setup was 1768.0 → 1723.9 ms, steady CPU median 0.331 → 0.321 ms, and
 steady GPU median 0.280 → 0.293 ms. This terrain scene does not measure active
 Kiln simulation or multiplayer inventory contention.
+
+## Placement-latency investigation
+
+A real nonblocking-listener test now places and removes blocks in the Kiln's
+chunk and across a neighboring seam, first idle and then burning. The initial
+release probe measured acknowledgement at 27–86 ms idle and 24–56 ms burning;
+it did not reproduce a substantial server-side stall. These are observations,
+not timing assertions in the test. The test also checks that authoritative
+block publication has arrived when the action is acknowledged.
+
+The client did have avoidable queue latency: invalidated light/mesh jobs were
+still computed, then discarded only after reaching the window thread. A
+16-job superseded-relight probe took 420 ms to deliver the newest mesh in a
+debug build, completing 15 useless results. Worker-side revision cancellation
+reduced the same exploratory probe to 54 ms and zero obsolete results. Workers
+now skip stale/evicted jobs before lighting, recheck after lighting, and recheck
+before publishing a mesh. An already-running lighting pass is not interrupted.
+Existing result/upload revision checks still protect against races.
+
+A deterministic regression queues superseded jobs after invalidation and
+requires that only the current mesh reaches the result channel. Full checks
+passed 629 tests and strict Clippy. The offscreen Kiln preview was inspected;
+live-window placement-to-display latency has not been measured, so this fixes
+the demonstrated backlog mechanism without claiming the user's exact stall
+has been fully reproduced.
+
+The terrain-only `perf 300 6` check retained 17,292,744 mesh bytes and 88,026
+visible triangles. Compared with the previous recorded Kiln run, setup was
+1723.9 → 1699.8 ms, steady CPU median 0.321 → 0.313 ms, and GPU median
+0.293 → 0.282 ms. That benchmark does not exercise this client work queue.
