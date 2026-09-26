@@ -34,7 +34,7 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
         .unwrap();
     assert_eq!(projected[0].model, crate::render::AvatarModel::Mossbun);
     assert_eq!(projected[0].pose[0], std::f32::consts::FRAC_PI_2);
-    for payload in [vec![], vec![4, 0], vec![0, 2], vec![0; 3]] {
+    for payload in [vec![], vec![4, 0], vec![0, 4], vec![0; 3]] {
         let mut invalid = bun.clone();
         invalid.payload = payload;
         assert!(registry.project(&BTreeMap::from([(91, invalid)])).is_err());

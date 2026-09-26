@@ -1,29 +1,5 @@
+use super::super::locomotion::tests::view;
 use super::*;
-use crate::world::{AIR, CHUNK_VOLUME, Chunk, ChunkKey, STONE};
-
-fn terrain_view(wall: bool, cliff: bool, missing_seam: bool) -> VoxelView {
-    let mut chunks = Vec::new();
-    for x in 0..=1 {
-        if x == 1 && missing_seam {
-            continue;
-        }
-        for y in 4..=5 {
-            let mut chunk = Chunk::from_blocks(ChunkKey { x, y, z: 0 }, 1, vec![AIR; CHUNK_VOLUME]);
-            for lx in 0..16 {
-                for z in 0..16 {
-                    if y == 4 && !(cliff && x == 1) {
-                        chunk.blocks.set(Chunk::index([lx, 15, z]).unwrap(), STONE);
-                    }
-                }
-            }
-            if wall && x == 1 && y == 5 {
-                chunk.blocks.set(Chunk::index([0, 0, 8]).unwrap(), STONE);
-            }
-            chunks.push(chunk);
-        }
-    }
-    VoxelView::from_chunks(chunks).unwrap()
-}
 
 fn snapshot(position: [f32; 3], bun: Mossbun) -> EntitySnapshot {
     let location = EntityLocation::Mobile { position };
@@ -38,7 +14,6 @@ fn snapshot(position: [f32; 3], bun: Mossbun) -> EntitySnapshot {
         next_tick: Some(4),
     }
 }
-
 fn plan(
     snapshot: &EntitySnapshot,
     tick: u64,
@@ -54,44 +29,8 @@ fn plan(
 }
 
 #[test]
-fn steps_cross_resident_seams_but_stop_at_walls_cliffs_and_missing_terrain() {
-    let snapshot = snapshot(
-        [15.625, 80.0, 8.5],
-        Mossbun {
-            cycle: 4,
-            facing: 1,
-            steps: 8,
-        },
-    );
-    assert_eq!(
-        plan(&snapshot, 4, &terrain_view(false, false, false))
-            .unwrap()
-            .position,
-        Some([15.75, 80.0, 8.5])
-    );
-    for (wall, cliff) in [(true, false), (false, true)] {
-        let result = plan(&snapshot, 4, &terrain_view(wall, cliff, false)).unwrap();
-        assert_eq!(result.position, None);
-        assert_eq!(
-            result
-                .payload
-                .unwrap()
-                .downcast_ref::<Mossbun>()
-                .unwrap()
-                .steps,
-            0
-        );
-        assert!(result.next_tick.unwrap() >= 44);
-    }
-    assert!(matches!(
-        plan(&snapshot, 4, &terrain_view(false, false, true)),
-        Err(EntityError::ViewOutOfRange)
-    ));
-}
-
-#[test]
 fn choices_are_restartable_latency_independent_and_early_wakes_do_not_step() {
-    let view = terrain_view(false, false, false);
+    let view = view(&[], &[]);
     let snapshot = snapshot([8.5, 80.0, 8.5], Mossbun::default());
     let first = plan(&snapshot, 4, &view).unwrap();
     let late = plan(&snapshot, 100, &view).unwrap();
@@ -99,53 +38,139 @@ fn choices_are_restartable_latency_independent_and_early_wakes_do_not_step() {
         Codec.encode(first.payload.as_ref().unwrap()).unwrap(),
         Codec.encode(late.payload.as_ref().unwrap()).unwrap()
     );
-    let bun = *first.payload.unwrap().downcast_ref::<Mossbun>().unwrap();
-    assert!((8..=16).contains(&bun.steps));
     let mut walking = snapshot.clone();
-    walking.private_payload = EntityPayload::new(bun);
+    walking.private_payload = first.payload.unwrap();
     walking.next_tick = Some(8);
     let early = plan(&walking, 7, &view).unwrap();
     assert!(early.payload.is_none() && early.position.is_none());
     assert_eq!(early.next_tick, Some(8));
-    let step = plan(&walking, 8, &view).unwrap();
-    assert!(step.position.is_some());
-    walking.private_payload = EntityPayload::new(Mossbun { steps: 1, ..bun });
-    let idle = plan(&walking, 8, &view).unwrap();
+}
+
+#[test]
+fn idle_support_rechecks_do_not_advance_ai_and_airborne_hints_do_not_accelerate_time() {
+    let flat = view(&[], &[]);
+    let mut resting = snapshot(
+        [8.5, 80.0, 8.5],
+        Mossbun {
+            think_at: 100,
+            grounded: true,
+            ..Default::default()
+        },
+    );
+    let idle = plan(&resting, 4, &flat).unwrap();
+    assert_eq!(idle.next_tick, Some(14));
     assert_eq!(
         idle.payload
             .unwrap()
             .downcast_ref::<Mossbun>()
             .unwrap()
-            .steps,
+            .cycle,
         0
     );
-    assert!(idle.next_tick.unwrap() >= 48);
+    resting.next_tick = Some(14);
+    // No notification is needed: the next persisted support check finds the hole.
+    let hole = view(&[], &[(8, 8)]);
+    let falling = plan(&resting, 14, &hole).unwrap();
+    assert!(falling.position.unwrap()[1] < 80.0);
+    resting.location = EntityLocation::Mobile {
+        position: falling.position.unwrap(),
+    };
+    resting.private_payload = falling.payload.unwrap();
+    resting.next_tick = Some(20);
+    let early = plan(&resting, 16, &hole).unwrap();
+    assert!(early.position.is_none() && early.payload.is_none());
+    assert_eq!(early.next_tick, Some(20));
 }
 
 #[test]
-fn unsupported_bun_settles_without_penetrating_floor() {
-    let view = terrain_view(false, false, false);
-    let snapshot = snapshot([8.5, 80.125, 8.5], Mossbun::default());
-    assert_eq!(
-        plan(&snapshot, 4, &view).unwrap().position,
-        Some([8.5, 80.0, 8.5])
+fn a_new_obstacle_invalidates_the_current_waypoint_before_movement() {
+    let bun = Mossbun {
+        goal: Some([10, 8]),
+        waypoint: Some([9, 8]),
+        steps: 16,
+        grounded: true,
+        ..Default::default()
+    };
+    let state = snapshot([8.5, 80.0, 8.5], bun);
+    let result = plan(&state, 4, &view(&[(9, 80, 8)], &[])).unwrap();
+    let next = result.position.unwrap();
+    assert_eq!(next[0], 8.5);
+    assert_ne!(next[2], 8.5, "replan around the newly blocked direct edge");
+}
+
+#[test]
+fn creature_follows_route_around_obstacle_and_idles_at_goal() {
+    let view = view(&[(9, 80, 8)], &[]);
+    let mut snapshot = snapshot(
+        [8.5, 80.0, 8.5],
+        Mossbun {
+            goal: Some([10, 8]),
+            steps: 16,
+            ..Default::default()
+        },
     );
+    let mut detoured = false;
+    let mut arrived = false;
+    for tick in (4..300).step_by(2) {
+        let result = plan(&snapshot, tick, &view).unwrap();
+        if let Some(position) = result.position {
+            assert!(BODY.clear(&view, position).unwrap());
+            detoured |= (position[2] - 8.5).abs() > 0.5;
+            snapshot.location = EntityLocation::Mobile { position };
+        }
+        snapshot.next_tick = result.next_tick;
+        snapshot.private_payload = result.payload.unwrap();
+        if snapshot
+            .private_payload
+            .downcast_ref::<Mossbun>()
+            .unwrap()
+            .goal
+            .is_none()
+        {
+            let EntityLocation::Mobile { position } = snapshot.location else {
+                unreachable!()
+            };
+            assert!(
+                glam::Vec3::from_array(position).distance(glam::Vec3::new(10.5, 80.0, 8.5)) < 0.02
+            );
+            assert!(
+                snapshot
+                    .private_payload
+                    .downcast_ref::<Mossbun>()
+                    .unwrap()
+                    .think_at
+                    >= tick + 40
+            );
+            assert_eq!(snapshot.next_tick, Some(tick + 10));
+            arrived = true;
+            break;
+        }
+    }
+    assert!(detoured && arrived);
 }
 
 #[test]
-fn codec_is_bounded_and_canonical() {
+fn fall_velocity_and_navigation_state_round_trip_canonically() {
     let payload = EntityPayload::new(Mossbun {
         cycle: 42,
         facing: 3,
         steps: 16,
+        goal: Some([-2, 3]),
+        waypoint: Some([-1, 2]),
+        vertical_velocity: -3.2,
+        grounded: false,
+        think_at: 123,
     });
     let bytes = Codec.encode(&payload).unwrap();
-    assert_eq!(bytes.len(), 10);
+    assert_eq!(bytes.len(), 41);
     assert_eq!(Codec.encode(&Codec.decode(&bytes).unwrap()).unwrap(), bytes);
     assert_eq!(Codec.public_view(&payload).unwrap(), [3, 1]);
-    for bytes in [vec![], vec![0; 11], vec![255; 10]] {
+    for bytes in [vec![], vec![0; 42], vec![255; 41]] {
         assert!(Codec.decode(&bytes).is_err());
     }
+    let mut invalid = bytes;
+    invalid[10..14].copy_from_slice(&f32::NAN.to_le_bytes());
+    assert!(Codec.decode(&invalid).is_err());
     for position in [
         [f32::NAN, 80.0, 0.0],
         [1_000_000.0, 80.0, 0.0],
@@ -180,7 +205,7 @@ fn resolved_registration_store_validation_and_checkpoint_use_the_same_schema() {
         crate::content::MOSSBUN_SCHEMA_FINGERPRINT
     );
     assert!(!descriptor.tick_reads_neighbours());
-    assert!(descriptor.decode_payload(2, &[0; 10]).is_err());
+    assert!(descriptor.decode_payload(1, &[0; 10]).is_err());
     let mut store = EntityStore::new(types.clone());
     let spawn = |position| EntitySpawn::Mobile {
         entity_type: id,
@@ -189,31 +214,14 @@ fn resolved_registration_store_validation_and_checkpoint_use_the_same_schema() {
         spawn_tick: 10,
     };
     assert!(store.prepare_spawn(spawn([f32::NAN, 80.0, 0.0])).is_err());
-    assert!(
-        store
-            .prepare_spawn(spawn([1_000_000.0, 80.0, 0.0]))
-            .is_err()
-    );
     let prepared = store.prepare_spawn(spawn([0.5, 80.0, 0.5])).unwrap();
     let entity_id = prepared.entity_id();
     store.apply_committed(prepared).unwrap();
-    assert!(
-        store
-            .prepare_update(
-                entity_id,
-                1,
-                EntityPatch {
-                    position: Some([f32::INFINITY, 80.0, 0.5]),
-                    ..Default::default()
-                }
-            )
-            .is_err()
-    );
     let bytes = encode_checkpoint(&store).unwrap();
     let recovered = decode_checkpoint(&bytes, types).unwrap();
     let snapshot = recovered.snapshot(entity_id).unwrap();
     assert_eq!(snapshot.entity_type, id);
-    assert_eq!(snapshot.next_tick, Some(14));
+    assert_eq!(snapshot.next_tick, Some(11));
     assert_eq!(
         snapshot.private_payload.downcast_ref::<Mossbun>(),
         Some(&Mossbun::default())

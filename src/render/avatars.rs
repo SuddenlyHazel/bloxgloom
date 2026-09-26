@@ -20,8 +20,9 @@ pub(crate) enum AvatarModel {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualAvatar {
     pub model: AvatarModel,
-    /// Yaw and cosmetic stride. Never used for authoritative movement.
-    pub pose: [f32; 2],
+    /// Yaw, stride, body bob, squash. Never used for authoritative movement.
+    pub pose: [f32; 4],
+    pub airborne: bool,
     pub id: u64,
     pub position: Vec3,
     pub cosmetics: [u8; 4],
@@ -38,7 +39,7 @@ struct AvatarInstance {
     cosmetics: [u8; 4],
     light_levels: [u8; 4],
     bounce: [u8; 4],
-    pose: [f32; 2],
+    pose: [f32; 4],
 }
 
 pub(crate) struct AvatarRenderer {
@@ -99,7 +100,7 @@ impl AvatarRenderer {
             4 => Uint8x4,
             5 => Uint8x4,
             6 => Uint8x4,
-            7 => Float32x2,
+            7 => Float32x4,
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced public avatars"),

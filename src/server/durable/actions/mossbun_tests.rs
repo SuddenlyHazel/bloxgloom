@@ -111,7 +111,7 @@ fn mossbun_authorized_spawn_worker_steps_and_restart_preserve_identity() {
             .cycle,
         1
     );
-    assert_eq!(after.next_tick, Some(16));
+    assert_eq!(after.next_tick, Some(13));
     drop(state);
     let recovered = server_state(23, path.clone()).unwrap();
     let restored = recovered.entities.snapshot(id).unwrap();

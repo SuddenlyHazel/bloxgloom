@@ -194,7 +194,8 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
     }
     Ok(Some(crate::render::VisualAvatar {
         model: crate::render::AvatarModel::Player,
-        pose: [0.0; 2],
+        pose: [0.0; 4],
+        airborne: false,
         id: entity.id,
         position: glam::Vec3::from_array(*position),
         cosmetics: [0xA5, 0x5A, 0, 0],

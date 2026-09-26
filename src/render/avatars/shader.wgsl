@@ -9,7 +9,7 @@ struct VertexInput {
     @location(4) cosmetics: vec4<u32>,
     @location(5) light_levels: vec4<u32>,
     @location(6) bounce: vec4<u32>,
-    @location(7) pose: vec2<f32>,
+    @location(7) pose: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -41,10 +41,18 @@ const PANTS = array<vec3<f32>, 6>(
     var local = input.local;
     if input.part == 10u { local.y += max(0.0, input.pose.y) * 0.045; }
     if input.part == 11u { local.y += max(0.0, -input.pose.y) * 0.045; }
+    if input.part >= 5u {
+        local.y *= 1.0 - input.pose.w;
+        local.x *= 1.0 + input.pose.w * 0.5;
+        local.z *= 1.0 + input.pose.w * 0.5;
+        if input.part != 10u && input.part != 11u { local.y += input.pose.z; }
+        // Upper-ear sway follows the same continuous pose as the body.
+        if input.local.y > 0.65 { local.z += input.pose.z * 2.0; }
+    }
     let c = cos(input.pose.x);
     let s = sin(input.pose.x);
     let world = vec3<f32>(local.x * c + local.z * s, local.y, local.z * c - local.x * s) + input.origin;
-    let normal = vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s);
+    let normal = normalize(vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s));
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
     var albedo = SKINS[input.cosmetics.x % 6u];
     if input.part == 1u { albedo = SHIRTS[input.cosmetics.y % 8u]; }

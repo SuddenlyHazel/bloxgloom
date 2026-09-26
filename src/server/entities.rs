@@ -6,8 +6,10 @@
 mod checkpoint;
 mod codec;
 mod kiln;
+mod locomotion;
 mod mobile_pages;
 pub(in crate::server) mod mossbun;
+mod navigation;
 mod persistence;
 mod player;
 pub(in crate::server) use mobile_pages::MobilePage;

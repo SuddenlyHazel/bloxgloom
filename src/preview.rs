@@ -1,4 +1,5 @@
 //! Headless GPU renders of the world and each interface screen.
+mod actors;
 mod perf;
 
 use perf::run_perf_benchmark_async;
@@ -233,6 +234,25 @@ pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Er
     Ok(())
 }
 
+pub fn render_mossbun_motion_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    for frame in [0, 18, 30, 42, 52, 72] {
+        pollster::block_on(render_previews(
+            vec![PreviewOutput {
+                path: directory.join(format!("frame-{frame:02}.png")),
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: None,
+            }],
+            (0, 0),
+            PreviewScene::MossbunMotion(frame),
+        ))?;
+    }
+    Ok(())
+}
+
 /// Render the production voxel, target-outline, and playing-HUD passes offscreen while
 /// exercising the same bounded chunk upload path used by the windowed renderer.
 pub fn run_perf_benchmark(
@@ -266,6 +286,7 @@ enum PreviewScene {
     Drops(DropPhase),
     Avatars,
     Mossbuns,
+    MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
     NaturalCavern,
 }
@@ -327,13 +348,19 @@ async fn render_previews(
             );
             (target + Vec3::new(9.0, 5.0, 11.0), target)
         }
-        PreviewScene::Drops(_) | PreviewScene::Avatars | PreviewScene::Mossbuns => {
+        PreviewScene::Drops(_)
+        | PreviewScene::Avatars
+        | PreviewScene::Mossbuns
+        | PreviewScene::MossbunMotion(_) => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
                 target_height as f32 + 1.0,
                 target_xz.1 as f32 + 0.5,
             );
-            let offset = if matches!(scene, PreviewScene::Mossbuns) {
+            let offset = if matches!(
+                scene,
+                PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+            ) {
                 Vec3::new(2.8, 1.7, 4.1)
             } else if matches!(scene, PreviewScene::Avatars) {
                 Vec3::new(5.5, 3.1, 7.0)
@@ -373,7 +400,10 @@ async fn render_previews(
             }
         }
     }
-    if matches!(scene, PreviewScene::Mossbuns) {
+    if matches!(
+        scene,
+        PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+    ) {
         // A small display lawn makes feet and the player scale reference
         // inspectable instead of burying them in generated slopes/foliage.
         for x in target_xz.0 - 4..=target_xz.0 + 5 {
@@ -600,63 +630,79 @@ async fn render_previews(
     } else {
         None
     };
-    if matches!(scene, PreviewScene::Avatars | PreviewScene::Mossbuns) {
-        avatar_renderer.set(
-            &queue,
-            &[
-                render::VisualAvatar {
-                    id: 1,
-                    model: if matches!(scene, PreviewScene::Mossbuns) {
-                        render::AvatarModel::Mossbun
-                    } else {
-                        render::AvatarModel::Player
-                    },
-                    pose: [0.0, 0.0],
-                    position: Vec3::new(
-                        target_xz.0 as f32 - 1.25,
-                        target_height as f32 + 1.0,
-                        target_xz.1 as f32 + 0.5,
-                    ),
-                    cosmetics: [0, 0, 0, 0],
-                    light_levels: [15, 0, 0, 0],
-                    bounce: [0; 4],
+    if matches!(
+        scene,
+        PreviewScene::Avatars | PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+    ) {
+        let mut visuals = [
+            render::VisualAvatar {
+                id: 1,
+                model: if matches!(
+                    scene,
+                    PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+                ) {
+                    render::AvatarModel::Mossbun
+                } else {
+                    render::AvatarModel::Player
                 },
-                render::VisualAvatar {
-                    id: 2,
-                    model: if matches!(scene, PreviewScene::Mossbuns) {
-                        render::AvatarModel::Mossbun
-                    } else {
-                        render::AvatarModel::Player
-                    },
-                    pose: if matches!(scene, PreviewScene::Mossbuns) {
-                        [std::f32::consts::FRAC_PI_2, 0.8]
-                    } else {
-                        [0.0; 2]
-                    },
-                    position: Vec3::new(
-                        target_xz.0 as f32 + 0.5,
-                        target_height as f32 + 1.0,
-                        target_xz.1 as f32 + 0.5,
-                    ),
-                    cosmetics: [2, 4, 2, 0],
-                    light_levels: [15, 0, 0, 0],
-                    bounce: [0; 4],
+                pose: [0.0, 0.0, 0.004, 0.0],
+                airborne: false,
+                position: Vec3::new(
+                    target_xz.0 as f32 - 1.25,
+                    target_height as f32 + 1.0,
+                    target_xz.1 as f32 + 0.5,
+                ),
+                cosmetics: [0, 0, 0, 0],
+                light_levels: [15, 0, 0, 0],
+                bounce: [0; 4],
+            },
+            render::VisualAvatar {
+                id: 2,
+                model: if matches!(
+                    scene,
+                    PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+                ) {
+                    render::AvatarModel::Mossbun
+                } else {
+                    render::AvatarModel::Player
                 },
-                render::VisualAvatar {
-                    id: 3,
-                    model: render::AvatarModel::Player,
-                    pose: [0.0; 2],
-                    position: Vec3::new(
-                        target_xz.0 as f32 + 2.25,
-                        target_height as f32 + 1.0,
-                        target_xz.1 as f32 + 0.5,
-                    ),
-                    cosmetics: [4, 1, 4, 0],
-                    light_levels: [15, 0, 0, 0],
-                    bounce: [0; 4],
+                pose: if matches!(
+                    scene,
+                    PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+                ) {
+                    [std::f32::consts::FRAC_PI_2, 0.8, 0.018, 0.12]
+                } else {
+                    [0.0; 4]
                 },
-            ],
-        );
+                airborne: false,
+                position: Vec3::new(
+                    target_xz.0 as f32 + 0.5,
+                    target_height as f32 + 1.0,
+                    target_xz.1 as f32 + 0.5,
+                ),
+                cosmetics: [2, 4, 2, 0],
+                light_levels: [15, 0, 0, 0],
+                bounce: [0; 4],
+            },
+            render::VisualAvatar {
+                id: 3,
+                model: render::AvatarModel::Player,
+                pose: [0.0; 4],
+                airborne: false,
+                position: Vec3::new(
+                    target_xz.0 as f32 + 2.25,
+                    target_height as f32 + 1.0,
+                    target_xz.1 as f32 + 0.5,
+                ),
+                cosmetics: [4, 1, 4, 0],
+                light_levels: [15, 0, 0, 0],
+                bounce: [0; 4],
+            },
+        ];
+        if let PreviewScene::MossbunMotion(frame) = scene {
+            actors::animate(&mut visuals, frame);
+        }
+        avatar_renderer.set(&queue, &visuals);
     }
 
     for output in outputs {

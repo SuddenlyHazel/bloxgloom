@@ -233,6 +233,7 @@ impl ActionTracker {
     }
 }
 
+pub(crate) mod actors;
 mod admin;
 mod entities;
 mod workers;
@@ -253,6 +254,7 @@ struct ClientApp {
     catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
+    actor_animator: actors::ActorAnimator,
     drops_revision: u64,
     inventory_source: Option<u8>,
     network: Network,
@@ -315,6 +317,7 @@ impl ClientApp {
             catalog,
             inventory: Inventory::default(),
             drop_animator: DropAnimator::new(now),
+            actor_animator: actors::ActorAnimator::default(),
             drops_revision: 0,
             inventory_source: None,
             network,
@@ -1228,6 +1231,7 @@ impl ClientApp {
         let mut visual_avatars = self
             .replicas
             .visual_avatars(self.position, self.owned_entity_id);
+        self.actor_animator.present(&mut visual_avatars, now);
         for avatar in &mut visual_avatars {
             let height = match avatar.model {
                 crate::render::AvatarModel::Player => 1.45,

@@ -21,6 +21,7 @@ The execution contract we are working toward:
 - **Done:** slice 5B, streaming checkpoints and bounded capture, reviewed with the parked-fire and rotation-latency limits below.
 - **Deferred by user:** independent extension crate below; validate the foundation with real gameplay first.
 - **Done:** first wandering NPC, Mossbun (`b6b478a`), registered within the repository. Parent reviewed the server/client paths, inspected the rendered preview and independently ran **12 Mossbun-filtered tests**, all passing. Coder reported **609 full-suite tests passed** and clean check/fmt/strict Clippy. This demonstrates the in-repository entity path, not external-crate API completeness.
+- **Done:** creature movement follow-up, implemented directly without delegation: shared body locomotion and accelerating gravity, bounded local ground A*, persisted AI deadlines/waypoints, client actor interpolation and procedural animation. **621 tests passed**, strict Clippy passed, and the production animation preview frames were inspected. Schema 2 uses `world-v7`; see [capabilities and limits](docs/CREATURE-MOVEMENT.md). No live game window was observed.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done

@@ -63,8 +63,19 @@ fn terrain_edit_interrupts_idle_mossbun_on_the_next_tick_across_a_seam() {
         "wake cannot cascade in its producing tick"
     );
     tick_once(&mut state, TickId::new(5), Instant::now()).unwrap();
-    assert_eq!(position(&state, id), [rest[0], rest[1] - 0.25, rest[2]]);
-    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(9));
+    let first = position(&state, id);
+    assert!(
+        first[1] < rest[1],
+        "support loss must interrupt the idle deadline"
+    );
+    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(6));
+    tick_once(&mut state, TickId::new(6), Instant::now()).unwrap();
+    tick_once(&mut state, TickId::new(7), Instant::now()).unwrap();
+    let second = position(&state, id);
+    assert!(
+        first[1] - second[1] > rest[1] - first[1],
+        "gravity accelerates"
+    );
     assert!(!state.durability.failed);
 }
 

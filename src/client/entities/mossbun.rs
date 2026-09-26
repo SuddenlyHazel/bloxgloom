@@ -16,11 +16,11 @@ fn project(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     let PublicEntityLocation::Mobile { position } = entity.location else {
         return Err(());
     };
-    let [facing, walking] = entity.payload.as_slice() else {
+    let [facing, flags] = entity.payload.as_slice() else {
         return Err(());
     };
     if *facing > 3
-        || *walking > 1
+        || *flags > 3
         || position
             .iter()
             .any(|v| !v.is_finite() || v.abs() >= 999_999.0)
@@ -32,12 +32,11 @@ fn project(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
         model: AvatarModel::Mossbun,
         pose: [
             f32::from(*facing) * std::f32::consts::FRAC_PI_2,
-            if *walking == 1 {
-                ((position[0] + position[2]) * std::f32::consts::TAU).sin()
-            } else {
-                0.0
-            },
+            0.0,
+            0.0,
+            0.0,
         ],
+        airborne: *flags & 2 == 0,
         id: entity.id,
         position: glam::Vec3::from_array(position),
         cosmetics: [0; 4],

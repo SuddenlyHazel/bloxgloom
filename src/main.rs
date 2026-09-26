@@ -32,7 +32,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             config.ensure_profile(&config_path)?;
             let (addr, server) = server::start_local_server_with_admin(
                 0xB10C_6100,
-                "world-v6".into(),
+                "world-v7".into(),
                 config.profile,
             )?;
             let client_result = client::run_client_with_admin(&addr.to_string());
@@ -42,7 +42,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
-            let save_dir = args.next().unwrap_or_else(|| "world-v6".to_string());
+            let save_dir = args.next().unwrap_or_else(|| "world-v7".to_string());
             let admission_limit = args
                 .next()
                 .map(|value| value.parse::<usize>())
@@ -196,6 +196,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_drop_animation_previews(std::path::Path::new(&directory))?;
             println!("wrote drop animation previews to {directory}");
+        }
+        Some("mossbun-motion-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "mossbun-motion-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: mossbun-motion-preview [directory]".into());
+            }
+            preview::render_mossbun_motion_previews(std::path::Path::new(&path))?;
         }
         Some("mossbun-preview") => {
             let path = args
