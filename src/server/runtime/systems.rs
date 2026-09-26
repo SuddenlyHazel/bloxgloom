@@ -81,7 +81,6 @@ impl std::fmt::Debug for StagedOwnerCommit {
 pub(in crate::server) struct PreparedRegisteredWave {
     id: SystemId,
     next_cursor: OwnerKey,
-    wake_only: Option<OwnerKey>,
     durables: OwnerWaveDurables,
 }
 
@@ -113,7 +112,6 @@ pub(in crate::server) struct PendingRegisteredWave {
     staged: StagedOwnerCommit,
     system: SystemId,
     next_cursor: OwnerKey,
-    wake_only: Option<OwnerKey>,
 }
 
 impl PendingRegisteredWave {
@@ -155,9 +153,6 @@ pub(in crate::server) struct SystemRuntime {
     /// journal with a receipt in hand. There is no second store.
     durable: DurableOwnerStore,
     next_owner: BTreeMap<SystemId, OwnerKey>,
-    /// One wake-only cursor jump preserves first-delivery priority; later
-    /// wake-only waves leave the ordinary rotation where it was.
-    wake_cursor_advanced: BTreeSet<SystemId>,
     unvalidated_owners: BTreeSet<SystemId>,
     /// Destinations woken by routed effects, served from each system's normal
     /// job budget next tick. In-memory only: losing them costs latency, never
@@ -207,7 +202,6 @@ impl SystemRuntime {
             worker_count: workers,
             durable,
             next_owner: cursors,
-            wake_cursor_advanced: BTreeSet::new(),
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
             durable_wakes,
@@ -522,12 +516,12 @@ impl SystemRuntime {
             }
             self.unvalidated_owners.remove(&id);
         }
-        if self.durable.owner_count(&id) == 0 {
+        if !self.durable.has_owner(&id) {
             return Ok(None);
         }
 
-        // Due and active owners use the persisted rotation cursor. Wake
-        // selection never jumps that cursor past unserved ordinary work.
+        // Due and active owners use the persisted rotation cursor. A wake-only
+        // wave leaves the ordinary cursor unchanged, including across replay.
         let ordinary_cursor = ordinary.first().copied();
         let mut last_ordinary = None;
         if selected.len() < system.max_jobs_per_tick() {
@@ -544,17 +538,10 @@ impl SystemRuntime {
         if selected.is_empty() {
             return Ok(None);
         }
-        let wake_only = (last_ordinary.is_none() && ordinary_cursor.is_some())
-            .then(|| *selected.last().expect("non-empty wake selection"));
         let next_cursor = if let Some(last) = last_ordinary {
             self.durable.successor(&id, last)
         } else if ordinary_cursor.is_some() {
-            let wake = *selected.last().expect("non-empty wake selection");
-            if self.wake_cursor_advanced.contains(&id) {
-                self.next_owner.get(&id).copied().or(ordinary_cursor)
-            } else {
-                self.durable.successor(&id, wake)
-            }
+            self.next_owner.get(&id).copied().or(ordinary_cursor)
         } else {
             self.durable.successor(
                 &id,
@@ -760,7 +747,6 @@ impl SystemRuntime {
         Ok(Some(PreparedRegisteredWave {
             id,
             next_cursor,
-            wake_only,
             durables: OwnerWaveDurables::new(
                 prepared,
                 tick,
@@ -844,7 +830,6 @@ impl SystemRuntime {
         let PreparedRegisteredWave {
             id,
             next_cursor,
-            wake_only,
             durables,
         } = prepared;
         let staged = self.stage_owner_wave(durables, durability)?;
@@ -852,7 +837,6 @@ impl SystemRuntime {
             staged,
             system: id,
             next_cursor,
-            wake_only,
         }))
     }
 
@@ -878,14 +862,10 @@ impl SystemRuntime {
                     staged,
                     system,
                     next_cursor,
-                    wake_only,
                 } = wave;
                 match self.poll_staged_owner_wave(staged, durability)? {
                     OwnerCommitPoll::Applied(count) => {
                         self.next_owner.insert(system.clone(), next_cursor);
-                        if wake_only.is_some() {
-                            self.wake_cursor_advanced.insert(system.clone());
-                        }
                         applied.push((system, count));
                         progressed = true;
                     }
@@ -893,7 +873,6 @@ impl SystemRuntime {
                         staged,
                         system,
                         next_cursor,
-                        wake_only,
                     }),
                 }
             }

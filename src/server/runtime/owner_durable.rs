@@ -24,6 +24,7 @@ use super::owner_codec::{
     MAX_OWNER_VALUE_BYTES, OWNER_STATE_DOMAIN, OwnerCodecError, OwnerValueCodec, decode_cell_value,
     decode_owner_state_key, encode_cell_value, owner_state_key,
 };
+use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
@@ -32,6 +33,11 @@ use std::sync::Arc;
 /// it defer with `WouldBlock` instead of pressing the journal's record
 /// limit; genuine journal validation failures still report `InvalidData`.
 pub(in crate::server) const MAX_OWNER_WAVE_BYTES: usize = 512 * 1024;
+const FIRST_OWNER: OwnerKey = OwnerKey::Chunk(ChunkKey {
+    x: i32::MIN,
+    y: i32::MIN,
+    z: i32::MIN,
+});
 
 /// Startup registration for one system's durable owner state.
 pub(in crate::server) struct OwnerSystemConfig {
@@ -126,6 +132,10 @@ pub(in crate::server) struct DurableOwnerStore {
     active: BTreeSet<(SystemId, OwnerKey)>,
     /// Sparse due-tick index, updated at commit time only.
     schedule: BTreeMap<(u64, SystemId, OwnerKey), ()>,
+    /// Per-system due ordering feeds a bounded owner-key-ready index.
+    schedule_by_system: BTreeSet<(SystemId, u64, OwnerKey)>,
+    ready_due: BTreeSet<(SystemId, OwnerKey)>,
+    due_feed_cursor: BTreeMap<SystemId, (u64, OwnerKey)>,
 }
 
 impl std::fmt::Debug for DurableOwnerStore {
@@ -166,6 +176,9 @@ impl DurableOwnerStore {
             cells: BTreeMap::new(),
             active: BTreeSet::new(),
             schedule: BTreeMap::new(),
+            schedule_by_system: BTreeSet::new(),
+            ready_due: BTreeSet::new(),
+            due_feed_cursor: BTreeMap::new(),
         })
     }
 
@@ -234,6 +247,9 @@ impl DurableOwnerStore {
                 store.active.insert((system.clone(), owner));
             }
             if let Some(due) = due_tick {
+                store
+                    .schedule_by_system
+                    .insert((system.clone(), due, owner));
                 store.schedule.insert((due, system, owner), ());
             }
         }
@@ -294,29 +310,29 @@ impl DurableOwnerStore {
         self.descriptors.keys()
     }
 
-    pub fn owner_count(&self, system: &SystemId) -> usize {
+    pub fn has_owner(&self, system: &SystemId) -> bool {
         self.cells
-            .keys()
-            .filter(|(candidate, _)| candidate == system)
-            .count()
+            .range((system.clone(), FIRST_OWNER)..)
+            .next()
+            .is_some_and(|((candidate, _), _)| candidate == system)
     }
 
-    /// Every live owner of one system in stable order. The live scheduler
-    /// drives its round-robin rotation from this set; commits maintain the
-    /// sparse active/due indexes separately.
+    /// Every live owner of one system in stable order. Used only for the
+    /// startup partition validation; per-wave admission uses sparse indexes.
     pub fn owners_of(&self, system: &SystemId) -> Vec<OwnerKey> {
         self.cells
-            .keys()
-            .filter(|(candidate, _)| candidate == system)
-            .map(|(_, owner)| *owner)
+            .range((system.clone(), FIRST_OWNER)..)
+            .take_while(|((candidate, _), _)| candidate == system)
+            .map(|((_, owner), _)| *owner)
             .collect()
     }
 
     /// Ordinary runnable owners: unscheduled active cells and scheduled cells
-    /// whose persisted deadline has arrived. Rotate over eligible keys rather
-    /// than all stored cells so sleeping owners do not consume the job budget.
+    /// whose persisted deadline has arrived. A bounded due feed keeps a
+    /// ready-by-owner index; at most two bounded index prefixes are captured
+    /// per wave, regardless of owner population or other systems' deadlines.
     pub fn runnable_from(
-        &self,
+        &mut self,
         system: &SystemId,
         through_tick: u64,
         cursor: Option<OwnerKey>,
@@ -325,37 +341,86 @@ impl DurableOwnerStore {
         if limit == 0 {
             return Vec::new();
         }
-        let mut eligible: BTreeSet<OwnerKey> = self
+        // Feed at most one job budget per wave. The feed cursor wraps over
+        // persisted deadlines; every due owner eventually reaches ready_due
+        // without constructing a population-sized temporary set.
+        let start = self.due_feed_cursor.get(system).copied();
+        let lower = (system.clone(), 0, FIRST_OWNER);
+        let upper = (system.clone(), through_tick, OwnerKey::Profile(u128::MAX));
+        let next = start
+            .filter(|(due, _)| *due <= through_tick)
+            .and_then(|(due, owner)| {
+                self.schedule_by_system
+                    .range((
+                        std::ops::Bound::Excluded((system.clone(), due, owner)),
+                        std::ops::Bound::Included(upper.clone()),
+                    ))
+                    .next()
+                    .cloned()
+            })
+            .or_else(|| self.schedule_by_system.range(lower..=upper).next().cloned());
+        if let Some((_, due, owner)) = next {
+            self.due_feed_cursor.insert(system.clone(), (due, owner));
+            self.ready_due.insert((system.clone(), owner));
+        }
+        let from = cursor.unwrap_or(FIRST_OWNER);
+        let active = self
             .active
-            .iter()
-            .filter(|(id, _)| id == system)
+            .range((system.clone(), from)..)
+            .take_while(|(id, _)| id == system)
             .map(|(_, owner)| *owner)
-            .collect();
-        eligible.extend(
-            self.schedule
-                .iter()
-                .take_while(|((due, _, _), _)| *due <= through_tick)
-                .filter(|((_, id, _), _)| id == system)
-                .map(|((_, _, owner), _)| *owner),
-        );
-        let Some(start) = cursor.or_else(|| eligible.first().copied()) else {
-            return Vec::new();
-        };
-        eligible
-            .range(start..)
-            .chain(eligible.range(..start))
-            .copied()
             .take(limit)
-            .collect()
+            .chain(
+                self.active
+                    .range((system.clone(), FIRST_OWNER)..(system.clone(), from))
+                    .map(|(_, owner)| *owner)
+                    .take(limit),
+            );
+        let due = self
+            .ready_due
+            .range((system.clone(), from)..)
+            .take_while(|(id, _)| id == system)
+            .map(|(_, owner)| *owner)
+            .take(limit)
+            .chain(
+                self.ready_due
+                    .range((system.clone(), FIRST_OWNER)..(system.clone(), from))
+                    .map(|(_, owner)| *owner)
+                    .take(limit),
+            );
+        let mut active = active.take(limit);
+        let mut due = due.take(limit);
+        let mut selected = Vec::with_capacity(limit);
+        while selected.len() < limit {
+            let next = if through_tick % 2 == (selected.len() as u64) % 2 {
+                due.next().or_else(|| active.next())
+            } else {
+                active.next().or_else(|| due.next())
+            };
+            let Some(owner) = next else { break };
+            if !selected.contains(&owner) {
+                selected.push(owner);
+            }
+        }
+        selected
     }
 
     pub fn successor(&self, system: &SystemId, owner: OwnerKey) -> Option<OwnerKey> {
-        let mut owners = self.owners_of(system);
-        owners.retain(|candidate| *candidate > owner);
-        owners
-            .into_iter()
+        self.cells
+            .range((
+                std::ops::Bound::Excluded((system.clone(), owner)),
+                std::ops::Bound::Unbounded,
+            ))
             .next()
-            .or_else(|| self.owners_of(system).into_iter().next())
+            .filter(|((id, _), _)| id == system)
+            .map(|((_, owner), _)| *owner)
+            .or_else(|| {
+                self.cells
+                    .range((system.clone(), FIRST_OWNER)..)
+                    .next()
+                    .filter(|((id, _), _)| id == system)
+                    .map(|((_, owner), _)| *owner)
+            })
     }
 
     pub fn snapshot(&self, system: &SystemId, owner: OwnerKey) -> Option<(u64, OwnerData)> {
@@ -603,7 +668,10 @@ impl DurableOwnerStore {
             let key = (prepared.system.clone(), staged.write.owner);
             if let Some(previous_due) = self.cells.get(&key).and_then(|cell| cell.due_tick) {
                 self.schedule.remove(&(previous_due, key.0.clone(), key.1));
+                self.schedule_by_system
+                    .remove(&(key.0.clone(), previous_due, key.1));
             }
+            self.ready_due.remove(&key);
             let cell = self
                 .cells
                 .get_mut(&key)
@@ -618,6 +686,7 @@ impl DurableOwnerStore {
                 self.active.remove(&key);
             }
             if let Some(due) = staged.write.due_tick {
+                self.schedule_by_system.insert((key.0.clone(), due, key.1));
                 self.schedule.insert((due, key.0, key.1), ());
             }
         }
@@ -687,7 +756,10 @@ impl DurableOwnerStore {
             let key = (system, owner);
             if let Some(previous_due) = self.cells.get(&key).and_then(|cell| cell.due_tick) {
                 self.schedule.remove(&(previous_due, key.0.clone(), key.1));
+                self.schedule_by_system
+                    .remove(&(key.0.clone(), previous_due, key.1));
             }
+            self.ready_due.remove(&key);
             self.cells.insert(
                 key.clone(),
                 DurableCell {
@@ -703,6 +775,7 @@ impl DurableOwnerStore {
                 self.active.remove(&key);
             }
             if let Some(due) = due_tick {
+                self.schedule_by_system.insert((key.0.clone(), due, key.1));
                 self.schedule.insert((due, key.0, key.1), ());
             }
         }

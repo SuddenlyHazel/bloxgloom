@@ -213,6 +213,34 @@ fn scheduling_is_proportional_to_due_owners_not_total_owners() {
 }
 
 #[test]
+fn runnable_capture_feeds_one_due_owner_per_one_job_wave() {
+    let mut store = counter_store();
+    let id = system("test:counters");
+    for x in 0..128 {
+        store
+            .insert(&id, chunk(x), OwnerData::new(x as u64))
+            .unwrap();
+        let prepared = store
+            .prepare(
+                &id,
+                vec![OwnerWrite::new(chunk(x), 0, OwnerData::new(x as u64)).scheduled(Some(5))],
+            )
+            .unwrap();
+        store.commit(prepared, receipt()).unwrap();
+    }
+    assert_eq!(store.ready_due.len(), 0);
+    assert_eq!(store.runnable_from(&id, 4, None, 1), Vec::<OwnerKey>::new());
+    assert_eq!(store.ready_due.len(), 0);
+    assert_eq!(store.runnable_from(&id, 5, None, 1), vec![chunk(0)]);
+    assert_eq!(store.ready_due.len(), 1);
+    assert_eq!(
+        store.runnable_from(&id, 5, Some(chunk(1)), 1),
+        vec![chunk(1)]
+    );
+    assert_eq!(store.ready_due.len(), 2);
+}
+
+#[test]
 fn byte_bound_is_enforced_at_insert_and_at_prepare_without_truncation() {
     let mut store = DurableOwnerStore::new(vec![
         OwnerSystemConfig::new(

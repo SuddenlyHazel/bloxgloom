@@ -1919,7 +1919,8 @@ fn wake_to_an_unloaded_owner_survives_restart_and_runs_once() {
     drop(reopened);
 
     // A further restart replays no wake: the destination runs only on its own
-    // rotation now, exactly once across replays, never once per replay.
+    // rotation now, exactly once across replays, never once per replay. The
+    // wake-only wave did not jump the ordinary cursor over the bystander.
     let (startup, system, producer, destination) = wake_flag_startup(true);
     let mut replayed = server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
     assert_eq!(replayed.system_runtime.durable_wake_count(), 0);
@@ -1928,7 +1929,7 @@ fn wake_to_an_unloaded_owner_survives_restart_and_runs_once() {
         replayed
             .system_runtime
             .owner_value::<u64>(&system, producer),
-        Some((2, 2))
+        Some((1, 1))
     );
     assert_eq!(
         replayed
@@ -1937,6 +1938,20 @@ fn wake_to_an_unloaded_owner_survives_restart_and_runs_once() {
         Some((1, 1))
     );
     assert_eq!(replayed.system_runtime.durable_wake_count(), 0);
+    tick_once(&mut replayed, TickId::new(4), Instant::now()).unwrap();
+    assert_eq!(
+        replayed
+            .system_runtime
+            .owner_value::<u64>(&system, destination),
+        Some((2, 2))
+    );
+    tick_once(&mut replayed, TickId::new(5), Instant::now()).unwrap();
+    assert_eq!(
+        replayed
+            .system_runtime
+            .owner_value::<u64>(&system, producer),
+        Some((2, 2))
+    );
     assert!(!replayed.durability.failed);
 }
 
