@@ -15,7 +15,8 @@ The execution contract we are working toward:
 - **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.
 - **Done:** slice 1 and direct review of its scheduling corrections, with the capacity and atomic-wave limitations documented below.
 - **Done:** slice 2 and direct review of bounded suspended-entity rechecks (`f05f2c5`).
-- **Pending:** slices 3–5 and the independent extension crate below.
+- **Done:** slice 3 and direct review of entity conflict/publication separation (`2ca8e12`).
+- **Pending:** slices 4–5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -93,11 +94,20 @@ No save/wire format or world-version change. Recheck latency scales with sleepin
 
 This may be small after slice 1, but it has a distinct behavioural claim.
 
-The next implementation task is slice 3, subject to the user's go-ahead.
+This slice is complete.
 
 ## 3. Separate conflict revisions from publication ordering
 
-**Status: pending.**
+**Status: done — reviewed, with conservative spatial dependencies.**
+
+- [x] Removed the global entity watermark from conflict reservations. Entity record/motion, changed membership/budget pages, anchored cells, and allocator keys retain their actual preimages (`2ca8e12`).
+- [x] Finalize the publication watermark at WAL admission from the last accepted transaction, including unapplied records. Rejected admission does not advance the frontier; receipt apply and checkpoint-mirror delivery retain admission order.
+- [x] Neighbour and spatial reads carry searched pages (including empty pages) and member record/motion dependencies. Shared read reservations permit independent readers while fencing writers until the last reader applies. Actual state preimages are not rebased.
+- [x] Wire dependencies into entity planning, interactions, pickup, drop merging, and block-edit occupancy checks. Preserve atomic ownership changes, full terrain fences, deterministic motion batches, and receipt-before-apply.
+- [x] Parent reviewed the production diff and independently ran all seven new conflict regressions: **7 passed**. Coverage includes independent in-flight updates in one owner chunk, live coordinator pickups, overlapping transfers, negative spatial reads, shared terrain reservation lifetime, ordered receipts/publication, recovery before apply, and exact checkpoint-mirror agreement.
+- [x] Coder reported **554 full-suite tests passed**, formatting and diff checks passed. Strict Clippy remains blocked by existing warnings. The stale-worker test now invalidates captured terrain rather than an unrelated global revision; another fixture initializes through WAL admission. Existing rejection/retry and behavioral assertions were retained.
+
+No encoding or world-version change. Spatial dependencies remain conservative at page scope; real shared page/allocator changes can still serialize, and oversized dependency sets reject/defer rather than truncate. Session-player projections are validated at the coordinator decision boundary, not frozen until WAL completion. The public stream counter still includes transient player publication. Whole-store projection costs and general commit orchestration remain later work.
 
 **Problem:** the global entity revision key makes independent entity mutations conflict. Motion batching addresses one symptom, but the underlying transaction model still limits independence.
 
@@ -111,6 +121,8 @@ The next implementation task is slice 3, subject to the user's go-ahead.
 **Result:** unrelated entity updates can be prepared and admitted independently without conflicting merely because both are entities.
 
 This is the most delicate slice. Use a coder followed by a targeted reviewer pass for conflict detection and recovery.
+
+The parent performed this review directly. The next implementation task is slice 4, subject to the user's go-ahead.
 
 ## 4. Consolidate commit orchestration and make barriers explicit
 
