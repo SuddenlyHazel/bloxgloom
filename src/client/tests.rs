@@ -2,6 +2,77 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
+    use crate::world::{AIR, GLOWSTONE, STONE};
+
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join(format!("bloxgloom-seam-{}.toml", std::process::id())),
+    );
+    let left = ChunkKey { x: 0, y: 0, z: 0 };
+    let right = ChunkKey { x: 1, ..left };
+    for y in -1..=1 {
+        for z in -1..=1 {
+            for x in -1..=2 {
+                let key = ChunkKey { x, y, z };
+                app.chunks.insert(
+                    key,
+                    Arc::new(Chunk {
+                        key,
+                        version: 0,
+                        blocks: vec![STONE; crate::world::CHUNK_VOLUME].into(),
+                    }),
+                );
+            }
+        }
+    }
+    for x in 14..=18 {
+        let (key, local) = crate::world::world_to_chunk(x, 8, 8);
+        Arc::make_mut(app.chunks.get_mut(&key).unwrap())
+            .blocks
+            .set(Chunk::index(local).unwrap(), AIR);
+    }
+    for (version, block, expected_glow) in [(1, GLOWSTONE, 14), (2, AIR, 0)] {
+        app.urgent_mesh.clear();
+        app.queue_relight(right, false);
+        let old_revision = app.lighting_revisions[&right];
+        app.pending_upload.push_back(ChunkMesh {
+            key: right,
+            version: 0,
+            lighting_revision: old_revision,
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            cutout_vertices: Vec::new(),
+            cutout_indices: Vec::new(),
+        });
+        app.accept(ServerMessage::Delta {
+            key: left,
+            version,
+            x: 15,
+            y: 8,
+            z: 8,
+            block,
+        });
+        assert!(app.urgent_mesh.contains(&left));
+        assert!(
+            app.urgent_mesh.contains(&right),
+            "the neighbour must not wait behind terrain streaming"
+        );
+        assert!(app.lighting_revisions[&right] > old_revision);
+        assert_eq!(app.pending_mesh[&right], app.lighting_revisions[&right]);
+        assert!(
+            app.pending_upload.is_empty(),
+            "old neighbour lighting must not reach upload"
+        );
+        let lighting =
+            crate::lighting::LightField::build(right, &app.lighting_snapshot(right), 0xB10C_6100);
+        assert_eq!(lighting.face([0, 8, 8], 1, 0).glow, expected_glow);
+    }
+    app.config_writer.finish();
+}
+
+#[test]
 fn skylight_capture_and_invalidation_include_distant_roofs() {
     let target = ChunkKey {
         x: 16,

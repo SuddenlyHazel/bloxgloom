@@ -641,16 +641,26 @@ impl ClientApp {
             self.next_lighting_revision = self.next_lighting_revision.wrapping_add(1).max(1);
             self.lighting_revisions.insert(affected, revision);
             self.pending_mesh.insert(affected, revision);
+            // Renderer uploads have already passed the client revision check.
+            // Cancel them here as soon as any lighting dependency changes.
+            if let Some(renderer) = &mut self.renderer {
+                renderer.discard_pending_chunk(affected);
+            }
         }
+        self.pending_upload
+            .retain(|mesh| self.lighting_revisions.get(&mesh.key) == Some(&mesh.lighting_revision));
     }
 
     fn queue_edited_chunk_relight(&mut self, key: ChunkKey) {
         self.queue_relight(key, true);
-        self.pending_upload.retain(|mesh| mesh.key != key);
-        if let Some(renderer) = &mut self.renderer {
-            renderer.discard_pending_chunk(key);
-        }
-        self.urgent_mesh.insert(key);
+        // The light footprint belongs to the edit too: rebuilding only its
+        // own chunk urgently leaves neighbouring faces lit by an old lamp.
+        self.urgent_mesh.extend(
+            self.chunks
+                .keys()
+                .copied()
+                .filter(|affected| lighting_depends_on(*affected, key)),
+        );
     }
 
     fn lighting_snapshot(&self, key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
