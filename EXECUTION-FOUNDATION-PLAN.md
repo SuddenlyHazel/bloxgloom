@@ -13,7 +13,7 @@ The execution contract we are working toward:
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.
 - **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.
-- **In progress:** slice 1; initial implementation landed, with direct-review corrections underway for bounded owner selection and fair retry admission.
+- **Done:** slice 1 and direct review of its scheduling corrections, with the capacity and atomic-wave limitations documented below.
 - **Pending:** slices 2–5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
@@ -39,7 +39,7 @@ The parent performed the focused review directly. Necessary corrections remain p
 
 ## 1. Scheduling and progress under capacity pressure
 
-**Status: in progress — review corrections underway.**
+**Status: done — reviewed, with explicit limits below.**
 
 - [x] Explicit neighbour-read declarations are wired into live entity capture; drop and kiln planners skip unused neighbour views (`2c35bb6`).
 - [x] Active/due owner selection and entity wake/due admission changes are wired into production dispatch (`87a2ac6`).
@@ -47,9 +47,11 @@ The parent performed the focused review directly. Necessary corrections remain p
 - [x] Replace population-sized owner selection with bounded indexed traversal; successor/empty-owner checks and durable wake inspection also use bounded lookups (`c634b78`, `ca1bdb1`).
 - [x] Rotate unavailable entity ticks out of admission while preserving persisted due eligibility. A production-path regression covers 256 distinct blocked entities followed by ready work (`c241155`).
 - [x] Remove the transient first-wake cursor exception. The restart test preserves wake-delivery/no-duplicate assertions and explicitly changes the ordinary rotation expectation (`c634b78`).
-- [ ] Correct due-index feeding: it currently admits only one new due owner per wave even when the configured job budget allows more.
-- [ ] Complete the handler-to-schedule path: ordinary registered owner writes still set `due_tick: None`, so handlers cannot express their next deadline through that result path. Selecting pre-scheduled cells does not establish recurring due-driven execution.
-- [ ] Finish direct review of final corrections. Coder reported 533 tests passing for the latest implementation; the parent inspected the correction diffs, but the remaining due-scheduling gaps are not covered by that result.
+- [x] Due-index feeding now uses up to the job allowance and removes fed entries from the transient unfed index, avoiding repeated feeding of the same ready owners (`cb45511`). Active and due work share one circular order, preventing recurring deadlines from resetting another lane's progress.
+- [x] Registered handlers select `OwnerSchedule::Active` (the existing default) or `AtTick(t)` through the live patch/validation/write/journal/apply path. Deadlines must be after the producing tick; wakes may run scheduled owners early, and the handler selects its next schedule again. Existing due persistence is reused without format changes (`cb45511`).
+- [x] Parent reviewed the final production diff and regression tests and independently ran all six runtime scheduling tests: **6 passed**. Coder reported **540 full-suite tests passed**, formatting and diff checks passed. Strict Clippy remains blocked by existing warnings.
+
+Limits retained: genuinely oversized neighbour-dependent views are locally rejected/backed off, not made executable; atomic owner-wave rejection or deferral can delay otherwise healthy owners in that wave. Persisted deadlines and ordinary rotation survive restart, but exact transient ready-set/feed ordering is not guaranteed across restart. The scheduling API is wired through registered production dispatch and exercised by test registrations; built-in adapters do not yet emit scheduled owner patches. These are not claims of reliable sleeping-entity wakes (slice 2) or isolated per-owner commit orchestration (slice 4).
 
 **Problem:** bounded execution protects memory and prevents global failure, but does not always guarantee local progress. Dense neighbour views can prevent drop motion; wake-prioritized work can compete with normal scheduling.
 
@@ -62,7 +64,7 @@ The parent performed the focused review directly. Necessary corrections remain p
 
 **Result:** a dense but valid region continues simulating, and an oversized or unavailable job does not repeatedly obstruct unrelated work.
 
-This is the recommended next implementation task after reviewing the current worker slice.
+This slice is complete. The next implementation task is slice 2, subject to the user's go-ahead.
 
 ## 2. Reliable wake and sleep semantics
 
