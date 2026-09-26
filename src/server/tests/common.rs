@@ -290,11 +290,11 @@ fn stage_entity_batch(
     drain_durable(state, tick);
 }
 
-/// Polls WAL receipts until every staged transaction has applied. Trajectory
-/// comparisons drain after each tick so both states apply the same staged
-/// steps before their snapshots are compared: without this, receipt timing
-/// (wall-clock) would decide how many staged steps are visible at a tick
-/// index, which is a test-scheduling artifact rather than physics.
+/// Polls WAL receipts until every staged transaction has applied. Ticks commit
+/// their server-scheduled motion synchronously, so a plain `tick_once` loop
+/// already advances the full trajectory: draining here only covers tails the
+/// tick leaves async (fire waves, rotation) and is a no-op once motion is
+/// the only staged work.
 pub(super) fn drain_durable(state: &mut State, tick: u64) {
     for _ in 0..2_000 {
         crate::server::durable::process_durable_actions(state, TickId::new(tick), Instant::now())

@@ -2,7 +2,7 @@
 
 use super::actions::plan_durable_request;
 use super::checkpoint::{process_checkpoint_receipts, submit_dirty_checkpoints};
-use super::receipt::poll_journal_receipts;
+use super::receipt::{drain_staged_receipts, poll_journal_receipts};
 use super::receipts::{Admission, ReceiptEvent, ReceiptTransition, ResultRecord};
 use super::rotation::progress_rotation;
 use super::*;
@@ -103,6 +103,10 @@ pub(in crate::server) fn process_durable_actions(
         .queued
         .len()
         .min(MAX_PENDING_DURABLE_ACTIONS);
+    // Receipts staged before this tick (a command fenced by an earlier
+    // test, a fire wave from a later phase) are not ours: only the suffix
+    // staged below can trigger the synchronous motion commit.
+    let staged_base = state.durability.pending.len();
     let mut deferred = std::collections::VecDeque::new();
     let mut blocked_profiles = HashSet::new();
     while attempts > 0 {
@@ -326,6 +330,15 @@ pub(in crate::server) fn process_durable_actions(
         }
     }
     state.durability.queued.append(&mut deferred);
+    if staged_server_entity_work(state, staged_base) {
+        // Motion is a pure function of the tick: every record staged above
+        // is committed and applied before this tick ends, so the next tick
+        // plans from applied state. Receipt (fsync) latency stretches this
+        // tick's wall time but can never change the trajectory. Commands,
+        // pickups, and fire keep their async receipt path when no motion
+        // staged alongside them, so their reservation fencing is unchanged.
+        drain_staged_receipts(state)?;
+    }
     submit_dirty_checkpoints(state);
     fail_if_durability_failed(state)
 }
@@ -336,6 +349,25 @@ fn fail_if_durability_failed(state: &State) -> io::Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// True when this tick staged server-scheduled entity work (motion, expiry):
+/// an entity batch carrying no client, profile, action, receipt, or
+/// inventory. Those records are the tick's motion commit; everything else
+/// (commands, pickups, grants, acks, fire) keeps its existing receipt path.
+fn staged_server_entity_work(state: &State, base: usize) -> bool {
+    state.durability.pending.get(base..).is_some_and(|staged| {
+        staged.iter().any(|commit| {
+            matches!(&commit.payload, PendingPayload::Action(action)
+            if action.entities.is_some()
+                && action.client_id.is_none()
+                && action.profile.is_none()
+                && action.action_id.is_none()
+                && action.receipt_value.is_none()
+                && action.receipt_transition.is_none()
+                && action.inventory.is_none())
+        })
+    })
 }
 
 fn cancel_prepared_entities(state: &mut State, action: &CommitAction) {
