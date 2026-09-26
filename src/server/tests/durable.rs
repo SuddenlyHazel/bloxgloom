@@ -822,7 +822,12 @@ fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
     // chunk-loader wall time can intervene: any per-tick difference here is
     // receipt timing, not terrain streaming. Phase 2 settles with loader
     // sleeps and compares only the final rest.
-    fn run(drained: bool) -> (Vec<(u64, crate::items::ItemId, u16, [f32; 3])>, (u64, u16, [f32; 3])) {
+    fn run(
+        drained: bool,
+    ) -> (
+        Vec<(u64, crate::items::ItemId, u16, [f32; 3])>,
+        (u64, u16, [f32; 3]),
+    ) {
         let save = TestSave::new("drop-timing-proof");
         let mut state = state_for(&save, 7);
         let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
@@ -871,11 +876,11 @@ fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
 
     let (tight, tight_rest) = run(false);
     let (drained, drained_rest) = run(true);
-    assert!(tight.len() == 119, "the resident window must run its full length");
-    assert_eq!(
-        tight, drained,
-        "receipt timing changed the drop trajectory"
+    assert!(
+        tight.len() == 119,
+        "the resident window must run its full length"
     );
+    assert_eq!(tight, drained, "receipt timing changed the drop trajectory");
     assert_eq!(tight_rest, drained_rest, "receipt timing changed the rest");
 }
 
@@ -931,10 +936,7 @@ fn staggered_drop_merge_resolves_identically_under_receipt_timing() {
             .iter()
             .map(|drop| (drop.id, drop.count, drop.position))
             .collect();
-        assert_eq!(
-            rest.iter().map(|drop| u32::from(drop.1)).sum::<u32>(),
-            70
-        );
+        assert_eq!(rest.iter().map(|drop| u32::from(drop.1)).sum::<u32>(), 70);
         (sequence, rest)
     }
 
@@ -971,8 +973,7 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
     }
     assert!(reference.durability.pending.is_empty());
     assert!(delayed.durability.pending.is_empty());
-    let id =
-        crate::server::entities::EntityId::new(drop_nearby(&delayed, position)[0].id).unwrap();
+    let id = crate::server::entities::EntityId::new(drop_nearby(&delayed, position)[0].id).unwrap();
 
     // Stage one motion step by hand and withhold its receipt: planning the
     // next tick from still-unapplied state must not stage a second record.
@@ -1059,7 +1060,8 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
     );
     for (index, snapshot) in delayed_seq.iter().enumerate() {
         assert_eq!(
-            *snapshot, reference_seq[index + shift],
+            *snapshot,
+            reference_seq[index + shift],
             "delayed receipts diverged at delayed index {index}"
         );
     }
@@ -1098,7 +1100,11 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
     let delayed_rest = drop_nearby(&delayed, delayed_center);
     assert_eq!(reference_rest.len(), 1);
     assert_eq!(
-        (delayed_rest[0].id, delayed_rest[0].count, delayed_rest[0].position),
+        (
+            delayed_rest[0].id,
+            delayed_rest[0].count,
+            delayed_rest[0].position
+        ),
         (
             reference_rest[0].id,
             reference_rest[0].count,
@@ -1204,7 +1210,10 @@ fn hot_chunk_motion_is_bounded_conserved_and_settles() {
         "the whole bounded budget applies in its tick, no more"
     );
     assert_eq!(
-        after.iter().map(|(_, _, count)| u32::from(*count)).sum::<u32>(),
+        after
+            .iter()
+            .map(|(_, _, count)| u32::from(*count))
+            .sum::<u32>(),
         260
     );
     assert!(
@@ -1365,7 +1374,11 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
         300
     );
     // A staggered spawn merges into the settled remainder stack.
-    let partial = settled.iter().find(|drop| drop.count == 44).unwrap().position;
+    let partial = settled
+        .iter()
+        .find(|drop| drop.count == 44)
+        .unwrap()
+        .position;
     spawn_drop(&mut state, tick, partial, STONE_ITEM, 50, Duration::ZERO);
     let mut merged: Vec<u16> = drop_nearby(&state, [0.5, surface_y as f32, 0.5])
         .iter()
@@ -1374,9 +1387,10 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
     merged.sort_unstable();
     assert_eq!(merged, vec![94, 128, 128]);
     // Take from a full stack, then restart: totals and caps hold.
-    let victim =
-        crate::server::entities::EntityId::new(settled.iter().find(|drop| drop.count == 128).unwrap().id)
-            .unwrap();
+    let victim = crate::server::entities::EntityId::new(
+        settled.iter().find(|drop| drop.count == 128).unwrap().id,
+    )
+    .unwrap();
     take_drop(&mut state, tick, victim, 100);
     assert_eq!(
         drop_nearby(&state, [0.5, surface_y as f32, 0.5])
@@ -1385,7 +1399,10 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
             .sum::<u32>(),
         250
     );
-    assert_eq!(drop_stack(&state, victim).map(|stack| stack.count), Some(28));
+    assert_eq!(
+        drop_stack(&state, victim).map(|stack| stack.count),
+        Some(28)
+    );
     drop(state);
     let mut restarted = state_for(&save, 7);
     let mut reopened: Vec<u16> = drop_nearby(&restarted, [0.5, surface_y as f32, 0.5])

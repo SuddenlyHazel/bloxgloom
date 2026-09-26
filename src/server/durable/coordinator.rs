@@ -429,7 +429,9 @@ fn stage_motion_batch(
     let mut front: Vec<DurableRequest> = Vec::new();
     for request in motion {
         match plan_durable_request(state, &request, tick) {
-            Ok(Some(action)) if batchable_motion(&action) && candidates.len() < MAX_MOTION_BATCH => {
+            Ok(Some(action))
+                if batchable_motion(&action) && candidates.len() < MAX_MOTION_BATCH =>
+            {
                 candidates.push((request, action));
             }
             Ok(Some(_)) => {
@@ -542,7 +544,10 @@ fn stage_motion_batch(
             return Ok(false);
         }
     };
-    match state.durability.try_stage(tick, &batch_action, entity_permit) {
+    match state
+        .durability
+        .try_stage(tick, &batch_action, entity_permit)
+    {
         Ok(true) => Ok(true),
         Ok(false) => Err(io::Error::other("empty motion batch")),
         Err(StageError::Conflict | StageError::Full) => {
