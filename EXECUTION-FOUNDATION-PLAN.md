@@ -2,7 +2,7 @@
 
 ## Goal
 
-Finish the execution foundation before adding more infrastructure. After the current worker-based entity-planning slice, follow the focused slices below, then build an independent extension crate. Fire spread and its migration remain parked.
+Finish the execution foundation before adding more infrastructure. The slices below are complete; the user chose a real gameplay feature as the first consumer instead of the originally proposed independent extension crate. Fire spread and its migration remain parked.
 
 The execution contract we are working toward:
 
@@ -19,7 +19,8 @@ The execution contract we are working toward:
 - **Done:** slice 4 and direct review of shared commit admission and ordered barriers (`273a70d`).
 - **Done:** slice 5A, off-thread publication, reviewed with synchronous bounded worker barriers.
 - **Done:** slice 5B, streaming checkpoints and bounded capture, reviewed with the parked-fire and rotation-latency limits below.
-- **Pending:** independent extension crate below.
+- **Deferred by user:** independent extension crate below; validate the foundation with real gameplay first.
+- **Done:** first wandering NPC, Mossbun (`b6b478a`), registered within the repository. Parent reviewed the server/client paths, inspected the rendered preview and independently ran **12 Mossbun-filtered tests**, all passing. Coder reported **609 full-suite tests passed** and clean check/fmt/strict Clippy. This demonstrates the in-repository entity path, not external-crate API completeness.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -201,9 +202,9 @@ If publication and checkpointing touch substantially different paths, execute th
 
 ## Then: build a real extension
 
-**Status: pending.**
+**Status: deferred by user in favor of real gameplay.**
 
-Slices 1–5 are reviewed. This is the next task, subject to the user's go-ahead; texture paging remains separately scoped and fire stays parked.
+Slices 1–5 are reviewed. The first gameplay exercise is now Mossbun: admin spawning, worker-based wandering and terrain checks, WAL persistence/restart, registered client presentation and a procedural voxel model. Texture paging remains separately scoped and fire stays parked. The extension proposal below is retained for reference, not an authorized next task.
 
 Complete missing startup registration hooks while building the independent extension crate, rather than designing every possible hook in advance.
 
