@@ -164,6 +164,14 @@ Execute as two sequential tasks with parent review of each:
 - [ ] **5A — Publication:** immutable committed inputs/logs, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
 - [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. Begin after reviewing publication under the same user authorization.
 
+Publication progress:
+
+- [x] Bounded chunk snapshot worker preparation and matching-publication shared messages/encoded bytes (`e9cddc1`). Existing codec workers encode shared frames once; per-client outbound accounting remains independent. Parent inspected the implementation and independently ran all eight snapshot regressions: **8 passed**.
+- [ ] Move remaining interest/subscription preparation, drop visibility, and committed player/entity delta grouping/projection off the coordinator with bounded immutable inputs. Implementation continues; snapshot preparation alone does not complete 5A.
+- [ ] Verify local handling of oversized snapshot captures and worker-batch cleanup after recoverable capture/submission failure, alongside mixed snapshot/delta/disconnect ordering.
+
+For the snapshot unit, coder reported **570 full-suite tests passed**, strengthened real nonblocking TCP snapshot/delta/result ordering coverage, and passing formatting/diff checks. Strict Clippy remains blocked by existing warnings. A headless preview was inspected, but no release gameplay window was observed. Snapshot sharing is within matching publication groups, and the coordinator waits at a bounded publication barrier; this is not cross-tick asynchronous publication.
+
 **Problem:** expensive work can still accumulate after simulation has finished.
 
 ### Scope
