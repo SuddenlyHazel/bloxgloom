@@ -6,8 +6,9 @@
 //! queue is needed. Unselected/backpressured chunks remain unsent and eligible.
 
 use super::{can_stream_snapshot_size, entities};
+use crate::server::entities::EntityError;
 use crate::server::outbound::SharedMessage;
-use crate::server::parallel::{BatchId, JobKey, JobOutcome, PhaseExecutor};
+use crate::server::parallel::{BatchId, JobKey, JobOutcome, PhaseExecutor, SubmitError};
 use crate::server::simulation::{Phase, TickId};
 use crate::server::{Client, State};
 use crate::world::ChunkKey;
@@ -48,8 +49,10 @@ impl Selection {
 }
 
 pub(in crate::server) struct Workers {
-    executor: PhaseExecutor<Prepared, io::Error>,
+    executor: PhaseExecutor<Prepared, entities::SnapshotError>,
     generation: u64,
+    targets: BTreeMap<JobKey, Vec<Target>>,
+    oversized: Vec<Target>,
 }
 
 impl Workers {
@@ -58,6 +61,8 @@ impl Workers {
             executor: PhaseExecutor::new(worker_count, MAX_SNAPSHOT_JOBS, MAX_SNAPSHOT_JOBS)
                 .map_err(|error| io::Error::other(format!("snapshot worker pool: {error:?}")))?,
             generation: 0,
+            targets: BTreeMap::new(),
+            oversized: Vec::new(),
         })
     }
 }
@@ -100,53 +105,77 @@ fn dispatch(state: &mut State, selection: Selection) -> io::Result<BatchId> {
         let Some(chunk) = state.world.cached_arc_chunk(key) else {
             continue;
         };
-        let mut views = state
-            .entities
-            .public_views_for_chunk_bounded_bytes(
+        let capture = (|| {
+            let mut views = state.entities.public_views_for_chunk_bounded_bytes(
                 key,
                 entities::MAX_PUBLIC_ENTITIES_PER_CHUNK,
                 entities::MAX_PUBLIC_ENTITY_BYTES_PER_CHUNK,
-            )
-            .map_err(io::Error::other)?;
-        let remaining = entities::MAX_PUBLIC_ENTITIES_PER_CHUNK - views.len();
-        // Session payloads have a fixed four-byte bound and at most 256 entries.
-        views.extend(
-            state
-                .player_entities
-                .public_views_for_chunk_bounded(key, remaining)
-                .map_err(io::Error::other)?,
-        );
+            )?;
+            let remaining = entities::MAX_PUBLIC_ENTITIES_PER_CHUNK - views.len();
+            // Session payloads have a fixed four-byte bound and at most 256 entries.
+            views.extend(
+                state
+                    .player_entities
+                    .public_views_for_chunk_bounded(key, remaining)?,
+            );
+            Ok::<_, EntityError>(views)
+        })();
+        let views = match capture {
+            Ok(views) => views,
+            Err(EntityError::SpatialQueryTooBroad) => {
+                workers.oversized.extend(targets);
+                continue;
+            }
+            Err(error) => {
+                // Even corruption must not leave previously accepted jobs in
+                // an open batch if the caller handles the error.
+                let _ = workers.executor.barrier(batch);
+                workers.targets.clear();
+                workers.oversized.clear();
+                return Err(io::Error::other(error));
+            }
+        };
         let catalog = state.world.catalog_arc();
         let block_revision = chunk.version;
         let entity_revision = state.entity_public_revision;
         let job = JobKey::new(batch, key, epoch, block_revision);
-        workers
-            .executor
-            .try_submit(job, move |_| {
-                let messages = entities::snapshot_messages(
-                    (*chunk).clone(),
-                    epoch,
-                    entity_revision,
-                    views,
-                    &catalog,
-                )?;
-                let frames: Vec<_> = messages.into_iter().map(SharedMessage::new).collect();
-                let bytes = frames.iter().map(|frame| frame.wire_len() as u64).sum();
-                // Validate a whole snapshot before retaining it in the result queue.
-                can_stream_snapshot_size(Default::default(), frames.len(), bytes)?;
-                Ok(Prepared {
-                    key,
-                    epoch,
-                    block_revision,
-                    entity_revision,
-                    targets,
-                    frames,
-                    bytes,
-                    #[cfg(test)]
-                    worker: std::thread::current().id(),
-                })
+        let failed_targets = targets.clone();
+        let submitted = workers.executor.try_submit(job, move |_| {
+            let messages = entities::snapshot_messages(
+                (*chunk).clone(),
+                epoch,
+                entity_revision,
+                views,
+                &catalog,
+            )?;
+            let frames: Vec<_> = messages.into_iter().map(SharedMessage::new).collect();
+            let bytes = frames.iter().map(|frame| frame.wire_len() as u64).sum();
+            // Validate a whole snapshot before retaining it in the result queue.
+            can_stream_snapshot_size(Default::default(), frames.len(), bytes)?;
+            Ok(Prepared {
+                key,
+                epoch,
+                block_revision,
+                entity_revision,
+                targets,
+                frames,
+                bytes,
+                #[cfg(test)]
+                worker: std::thread::current().id(),
             })
-            .map_err(|error| io::Error::other(format!("snapshot dispatch: {error:?}")))?;
+        });
+        match submitted {
+            Ok(()) => {
+                workers.targets.insert(job, failed_targets);
+            }
+            Err(SubmitError::QueueSaturated { .. }) => {} // remains unsent
+            Err(error) => {
+                let _ = workers.executor.barrier(batch);
+                workers.targets.clear();
+                workers.oversized.clear();
+                return Err(io::Error::other(format!("snapshot dispatch: {error:?}")));
+            }
+        }
     }
     Ok(batch)
 }
@@ -157,17 +186,37 @@ fn finish(state: &mut State, batch: BatchId) -> io::Result<()> {
         .executor
         .barrier(batch)
         .map_err(|error| io::Error::other(format!("snapshot barrier: {error:?}")))?;
+    let mut disconnect = std::mem::take(&mut state.snapshot_workers.oversized);
+    let mut targets = std::mem::take(&mut state.snapshot_workers.targets);
+    let mut fatal = None;
     for owner in results.owners {
         for job in owner.jobs {
             match job.outcome {
-                JobOutcome::Completed(prepared) => apply(state, prepared)?,
-                JobOutcome::Failed(error) => return Err(error),
-                JobOutcome::Panicked(error) => {
-                    return Err(io::Error::other(format!("snapshot worker: {error}")));
+                JobOutcome::Completed(prepared) => {
+                    if let Err(error) = apply(state, prepared) {
+                        fatal = Some(error);
+                    }
+                }
+                JobOutcome::Failed(entities::SnapshotError::Invalid(error)) => {
+                    fatal = Some(error);
+                }
+                JobOutcome::Failed(entities::SnapshotError::Capacity) | JobOutcome::Panicked(_) => {
+                    disconnect.extend(targets.remove(&job.key).unwrap_or_default());
                 }
                 JobOutcome::Cancelled | JobOutcome::Stale => {}
             }
         }
+    }
+    for target in disconnect {
+        if let Some(client) = state.clients.get(&target.session) {
+            let _ = client.socket.shutdown(Shutdown::Both);
+        }
+        // An impossible complete snapshot is not an endlessly retried request.
+        // No partial epoch was queued; other sessions/groups remain usable.
+        state.remove_client(target.session);
+    }
+    if let Some(error) = fatal {
+        return Err(error);
     }
     Ok(())
 }

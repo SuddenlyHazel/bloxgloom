@@ -385,3 +385,97 @@ fn snapshots_do_not_overtake_player_removals_queued_by_slow_client_disconnects()
     // older despawn revision. All those effects preceded this initial epoch.
     durable::publish_committed(&mut fixture.state).unwrap();
 }
+
+#[test]
+fn dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs() {
+    use crate::server::{
+        drops,
+        entities::{EntityPayload, EntitySpawn},
+    };
+    let mut fixture = Fixture::new("dense-local");
+    let healthy = fixture.join(1);
+    let dense = fixture.join(2);
+    let key = ChunkKey { x: 20, y: 8, z: 0 };
+    fixture.state.world.get_chunk(key).unwrap();
+    fixture.state.clients.get_mut(&dense.id).unwrap().center = key;
+    let payload = drops::DropEntityPayload::new(
+        crate::inventory::Stack {
+            item: crate::items::ItemId::new(STONE.get()),
+            count: 1,
+            components: None,
+        },
+        drops::unix_ms(),
+        Duration::ZERO,
+    );
+    let entities = fixture
+        .state
+        .entities
+        .prepare_spawn_batch(
+            (0..1025)
+                .map(|_| EntitySpawn::Mobile {
+                    entity_type: drops::DROP_ENTITY_TYPE,
+                    position: [320.5, 128.5, 0.5],
+                    payload: EntityPayload::new(payload.clone()),
+                    spawn_tick: 1,
+                })
+                .collect(),
+        )
+        .unwrap();
+    let permit = fixture
+        .state
+        .durability
+        .entity_mirror
+        .try_reserve_durable()
+        .unwrap()
+        .unwrap();
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: Some(entities),
+    };
+    assert!(
+        fixture
+            .state
+            .durability
+            .try_stage(TickId::new(1), &action, Some(permit))
+            .unwrap()
+    );
+    durable::complete_barrier(&mut fixture.state, CommitBarrier::AllStaged).unwrap();
+    durable::publish_committed(&mut fixture.state).unwrap();
+    let healthy_key = fixture.state.clients[&healthy.id].center;
+    assert!(
+        healthy_key < key,
+        "healthy group is accepted before oversized capture"
+    );
+    let mut selected = selection(&fixture.state, &[&healthy], healthy_key);
+    selected.select(dense.id, &fixture.state.clients[&dense.id], key);
+    let batch = dispatch(&mut fixture.state, selected).unwrap();
+    finish(&mut fixture.state, batch).unwrap();
+    assert!(fixture.state.clients.contains_key(&healthy.id));
+    assert!(!fixture.state.clients.contains_key(&dense.id));
+    assert!(!snapshots(&healthy).is_empty());
+    assert!(snapshots(&dense).is_empty());
+    durable::publish_committed(&mut fixture.state).unwrap();
+    crate::server::handle_message(
+        &mut fixture.state,
+        healthy.id,
+        ClientMessage::Resync { key: healthy_key },
+    )
+    .unwrap();
+    streaming::publish_streams(&mut fixture.state).unwrap();
+    assert!(
+        !snapshots(&healthy).is_empty(),
+        "next batch remains usable after capacity failure"
+    );
+}

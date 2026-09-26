@@ -12,15 +12,27 @@ use std::io;
 pub(super) const MAX_PUBLIC_ENTITIES_PER_CHUNK: usize = 1024;
 pub(super) const MAX_PUBLIC_ENTITY_BYTES_PER_CHUNK: usize = 1024 * 1024;
 
+#[derive(Debug)]
+pub(super) enum SnapshotError {
+    Capacity,
+    Invalid(io::Error),
+}
+
+impl From<io::Error> for SnapshotError {
+    fn from(error: io::Error) -> Self {
+        Self::Invalid(error)
+    }
+}
+
 pub(super) fn snapshot_messages(
     chunk: Chunk,
     epoch: u64,
     entity_revision: u64,
     views: Vec<EntityPublicView>,
     catalog: &Catalog,
-) -> io::Result<Vec<ServerMessage>> {
+) -> Result<Vec<ServerMessage>, SnapshotError> {
     if views.len() > MAX_PUBLIC_ENTITIES_PER_CHUNK {
-        return Err(io::Error::other("public entity count exceeds chunk bound"));
+        return Err(SnapshotError::Capacity);
     }
     let mut entities = views
         .into_iter()
@@ -28,7 +40,7 @@ pub(super) fn snapshot_messages(
         .collect::<Vec<PublicEntity>>();
     entities.sort_unstable_by_key(|entity| entity.id);
     if entities.windows(2).any(|pair| pair[0].id == pair[1].id) {
-        return Err(io::Error::other("duplicate public entity in chunk"));
+        return Err(io::Error::other("duplicate public entity in chunk").into());
     }
     let mut pages = Vec::<Vec<PublicEntity>>::new();
     let mut public_bytes = 0usize;
@@ -49,10 +61,10 @@ pub(super) fn snapshot_messages(
             .checked_add(entity_bytes)
             .ok_or_else(|| io::Error::other("public entity byte count overflow"))?;
         if public_bytes > MAX_PUBLIC_ENTITY_BYTES_PER_CHUNK {
-            return Err(io::Error::other("public entity bytes exceed chunk bound"));
+            return Err(SnapshotError::Capacity);
         }
         if page_header + entity_bytes > MAX_FRAME + 4 {
-            return Err(io::Error::other("one public entity exceeds frame bound"));
+            return Err(SnapshotError::Capacity);
         }
         if pages.is_empty() {
             pages.push(Vec::new());
@@ -65,7 +77,7 @@ pub(super) fn snapshot_messages(
         pages.last_mut().expect("page exists").push(entity);
         page_bytes += entity_bytes;
         if pages.len() > MAX_ENTITY_SNAPSHOT_PAGES {
-            return Err(io::Error::other("public entity pages exceed chunk bound"));
+            return Err(SnapshotError::Capacity);
         }
     }
     let checksum = snapshot_checksum(&chunk, epoch, entity_revision, &pages, catalog)?;
@@ -80,7 +92,7 @@ pub(super) fn snapshot_messages(
         checksum,
     };
     if server_wire_len(&ServerMessage::WorldSnapshotStart(start.clone())) > MAX_FRAME + 4 {
-        return Err(io::Error::other("world snapshot start exceeds frame bound"));
+        return Err(SnapshotError::Capacity);
     }
     let mut messages = Vec::with_capacity(pages.len() + 1);
     messages.push(ServerMessage::WorldSnapshotStart(start));
