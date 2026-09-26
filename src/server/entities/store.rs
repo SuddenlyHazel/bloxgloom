@@ -342,6 +342,16 @@ impl EntityStore {
         chunk: ChunkKey,
         limit: usize,
     ) -> Result<Vec<EntityPublicView>, EntityError> {
+        self.public_views_for_chunk_bounded_bytes(chunk, limit, usize::MAX)
+    }
+
+    /// Publication capture bounds payload cloning as well as reference traversal.
+    pub(in crate::server) fn public_views_for_chunk_bounded_bytes(
+        &self,
+        chunk: ChunkKey,
+        limit: usize,
+        byte_limit: usize,
+    ) -> Result<Vec<EntityPublicView>, EntityError> {
         let Some(page) = self.indexes.chunks.get(&chunk) else {
             return Ok(Vec::new());
         };
@@ -349,11 +359,16 @@ impl EntityStore {
             return Err(EntityError::SpatialQueryTooBroad);
         }
         let mut views = Vec::with_capacity(page.entity_ids.len());
+        let mut bytes = 0usize;
         for id in &page.entity_ids {
             let record = self
                 .records
                 .get(id)
                 .ok_or(EntityError::InvalidTransaction)?;
+            bytes = bytes.saturating_add(record.public_view.len());
+            if bytes > byte_limit {
+                return Err(EntityError::SpatialQueryTooBroad);
+            }
             views.push(record.public_view());
         }
         Ok(views)

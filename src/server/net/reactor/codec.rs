@@ -25,7 +25,7 @@ struct EncodeRequest {
 }
 
 pub(super) struct EncodedFrame {
-    pub(super) bytes: Vec<u8>,
+    pub(super) bytes: Arc<[u8]>,
     pub(super) reservation: OutboundFrame,
 }
 
@@ -195,14 +195,10 @@ fn encode_worker(
             return;
         };
         let started = Instant::now();
-        let mut bytes = Vec::with_capacity(protocol::server_wire_len(request.frame.message()));
-        let result =
-            protocol::write_server_with_catalog(&mut bytes, request.frame.message(), &catalog).map(
-                |()| EncodedFrame {
-                    bytes,
-                    reservation: request.frame,
-                },
-            );
+        let result = request.frame.encode(&catalog).map(|bytes| EncodedFrame {
+            bytes,
+            reservation: request.frame,
+        });
         stats.encode_busy(started.elapsed());
         let _ = request.reply.try_send(result);
         stats.encode_finished();

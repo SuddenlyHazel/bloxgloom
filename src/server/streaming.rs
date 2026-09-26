@@ -1,7 +1,8 @@
 //! Authoritative chunk loading and bounded per-tick interest publication.
 //!
 //! No path here reads or generates a chunk on the coordinator. Loader workers
-//! supply resident chunks; the socket reactor serializes them.
+//! supply resident chunks; publication workers prepare snapshots and the socket
+//! reactor's codec pool serializes shared frames.
 
 use super::chunk_loader::{RequestError, RequestStatus};
 use super::metrics::LatencyEvent;
@@ -11,6 +12,7 @@ use super::outbound::{
 use super::*;
 
 pub(in crate::server) mod entities;
+pub(in crate::server) mod snapshots;
 
 const MAX_LOAD_RESULTS_PER_TICK: usize = 32;
 const MAX_PREFETCH_CANDIDATES: usize = 16;
@@ -81,15 +83,21 @@ pub(super) fn publish_streams(state: &mut State) -> io::Result<()> {
     let start = state.stream_cursor as usize % ids.len();
     ids.rotate_left(start);
     state.stream_cursor = state.stream_cursor.wrapping_add(1);
+    let mut snapshots = snapshots::Selection::default();
     for id in ids {
-        if !stream_one(state, id)? {
+        if !stream_one(state, id, &mut snapshots)? {
             state.remove_client(id);
         }
     }
+    snapshots::publish(state, snapshots)?;
     Ok(())
 }
 
-fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
+fn stream_one(
+    state: &mut State,
+    id: u64,
+    snapshots: &mut snapshots::Selection,
+) -> io::Result<bool> {
     let Some(client) = state.clients.get_mut(&id) else {
         return Ok(false);
     };
@@ -141,58 +149,7 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
     for key in candidates {
         if state.world.cached_version(key).is_some() {
             if !sent_chunk {
-                let chunk = state
-                    .world
-                    .cached_chunk(key)
-                    .expect("resident version has a resident chunk");
-                let epoch = client.next_snapshot_epoch;
-                let next_epoch = epoch
-                    .checked_add(1)
-                    .ok_or_else(|| io::Error::other("client snapshot epoch exhausted"))?;
-                let mut views = state
-                    .entities
-                    .public_views_for_chunk_bounded(key, entities::MAX_PUBLIC_ENTITIES_PER_CHUNK)
-                    .map_err(io::Error::other)?;
-                let remaining = entities::MAX_PUBLIC_ENTITIES_PER_CHUNK.saturating_sub(views.len());
-                views.extend(
-                    state
-                        .player_entities
-                        .public_views_for_chunk_bounded(key, remaining)
-                        .map_err(io::Error::other)?,
-                );
-                let messages = entities::snapshot_messages(
-                    chunk,
-                    epoch,
-                    state.entity_public_revision,
-                    views,
-                    state.world.catalog(),
-                )?;
-                if !can_stream_snapshot(client.sender.snapshot(), &messages)? {
-                    // Chunk snapshots are deferrable. Reserve queue room for
-                    // movement acknowledgements and durable results instead
-                    // of disconnecting a healthy client during view fill.
-                    break;
-                }
-                let block_version = match &messages[0] {
-                    ServerMessage::WorldSnapshotStart(start) => start.chunk.version,
-                    _ => unreachable!("snapshot builder starts with chunk"),
-                };
-                let entity_revision = state.entity_public_revision;
-                for message in messages {
-                    if !client.enqueue(message) {
-                        return Ok(false);
-                    }
-                }
-                if !state.world.pin_resident_chunk(key) {
-                    return Err(io::Error::other(
-                        "snapshot chunk was evicted before subscription pin",
-                    ));
-                }
-                client.next_snapshot_epoch = next_epoch;
-                client.sent.insert(key);
-                client.sent_epochs.insert(key, epoch);
-                client.sent_block_versions.insert(key, block_version);
-                client.sent_entity_revisions.insert(key, entity_revision);
+                snapshots.select(id, client, key);
                 sent_chunk = true;
             }
             continue;
@@ -215,6 +172,7 @@ fn stream_one(state: &mut State, id: u64) -> io::Result<bool> {
     Ok(true)
 }
 
+#[cfg(test)]
 fn can_stream_snapshot(
     queued: OutboundClientSnapshot,
     messages: &[ServerMessage],
@@ -223,17 +181,23 @@ fn can_stream_snapshot(
         total.checked_add(crate::protocol::server_wire_len(message) as u64)
     });
     let bytes = bytes.ok_or_else(|| io::Error::other("chunk snapshot byte count overflow"))?;
-    if messages.len() > OUTBOUND_FRAME_CAPACITY || bytes > OUTBOUND_CLIENT_BYTE_CAPACITY {
+    can_stream_snapshot_size(queued, messages.len(), bytes)
+}
+
+fn can_stream_snapshot_size(
+    queued: OutboundClientSnapshot,
+    frames: usize,
+    bytes: u64,
+) -> io::Result<bool> {
+    if frames > OUTBOUND_FRAME_CAPACITY || bytes > OUTBOUND_CLIENT_BYTE_CAPACITY {
         return Err(io::Error::other(
             "one chunk snapshot exceeds the outbound queue bound",
         ));
     }
-    let frame_limit = (OUTBOUND_FRAME_CAPACITY - SNAPSHOT_FRAME_HEADROOM).max(messages.len());
+    let frame_limit = (OUTBOUND_FRAME_CAPACITY - SNAPSHOT_FRAME_HEADROOM).max(frames);
     let byte_limit = (OUTBOUND_CLIENT_BYTE_CAPACITY - SNAPSHOT_BYTE_HEADROOM).max(bytes);
-    Ok(
-        queued.queued_frames.saturating_add(messages.len()) <= frame_limit
-            && queued.queued_bytes.saturating_add(bytes) <= byte_limit,
-    )
+    Ok(queued.queued_frames.saturating_add(frames) <= frame_limit
+        && queued.queued_bytes.saturating_add(bytes) <= byte_limit)
 }
 
 fn inside_view(key: ChunkKey, center: ChunkKey, radius: i64) -> bool {

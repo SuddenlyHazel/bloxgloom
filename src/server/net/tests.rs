@@ -582,6 +582,45 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
             position[1].floor() as i32 - 1,
             position[2].floor() as i32,
         ];
+        // Exercise the live snapshot projection -> shared codec -> nonblocking
+        // socket path before asking for a durable update to this same epoch.
+        let (key, local) = crate::world::world_to_chunk(block[0], block[1], block[2]);
+        let mut snapshot = None;
+        for _ in 0..128 {
+            if let ServerMessage::WorldSnapshotStart(start) =
+                protocol::read_server(&mut peer).unwrap()
+                && start.chunk.key == key
+            {
+                snapshot = Some(start);
+                break;
+            }
+        }
+        let snapshot = snapshot.expect("production reactor did not stream the edit chunk");
+        assert_ne!(snapshot.chunk.block(local), Some(crate::world::AIR));
+        let mut pages = Vec::new();
+        for index in 0..snapshot.entity_page_count {
+            let ServerMessage::EntitySnapshotPage(page) = protocol::read_server(&mut peer).unwrap()
+            else {
+                panic!("snapshot entity pages must immediately follow their chunk");
+            };
+            assert_eq!(page.key, key);
+            assert_eq!(page.epoch, snapshot.epoch);
+            assert_eq!(page.entity_revision, snapshot.entity_revision);
+            assert_eq!(page.page_index, index);
+            assert_eq!(page.checksum, snapshot.checksum);
+            pages.push(page.entities);
+        }
+        assert_eq!(
+            snapshot.checksum,
+            protocol::snapshot_checksum(
+                &snapshot.chunk,
+                snapshot.epoch,
+                snapshot.entity_revision,
+                &pages,
+                crate::content::catalog()
+            )
+            .unwrap()
+        );
         let action_id = u128::from(epoch) << 64 | 1;
         protocol::write_client(
             &mut peer,
@@ -596,17 +635,33 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
         )
         .unwrap();
         let mut accepted = false;
+        let mut updated = false;
         for _ in 0..512 {
-            if let ServerMessage::ActionResult {
-                action_id: received,
-                accepted: result,
-                reason,
-            } = protocol::read_server(&mut peer).unwrap()
-                && received == action_id
-            {
-                assert!(result, "production reactor rejected edit: {reason}");
-                accepted = true;
-                break;
+            match protocol::read_server(&mut peer).unwrap() {
+                ServerMessage::WorldCommitPart(part) if part.key == key => {
+                    assert_eq!(part.epoch, snapshot.epoch);
+                    if part.blocks.iter().any(|change| {
+                        change.local == local.map(|v| v as u8) && change.block == crate::world::AIR
+                    }) {
+                        assert_eq!(part.block_from, snapshot.chunk.version);
+                        assert!(part.block_to > part.block_from);
+                        updated = true;
+                    }
+                }
+                ServerMessage::ActionResult {
+                    action_id: received,
+                    accepted: result,
+                    reason,
+                } if received == action_id => {
+                    assert!(result, "production reactor rejected edit: {reason}");
+                    assert!(
+                        updated,
+                        "confirmed chunk update must precede its action result"
+                    );
+                    accepted = true;
+                    break;
+                }
+                _ => {}
             }
         }
         assert!(

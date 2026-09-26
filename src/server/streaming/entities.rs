@@ -10,7 +10,7 @@ use crate::world::Chunk;
 use std::io;
 
 pub(super) const MAX_PUBLIC_ENTITIES_PER_CHUNK: usize = 1024;
-const MAX_PUBLIC_ENTITY_BYTES_PER_CHUNK: usize = 1024 * 1024;
+pub(super) const MAX_PUBLIC_ENTITY_BYTES_PER_CHUNK: usize = 1024 * 1024;
 
 pub(super) fn snapshot_messages(
     chunk: Chunk,

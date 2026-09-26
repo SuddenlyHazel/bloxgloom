@@ -56,9 +56,9 @@ impl PendingWrite {
         }
     }
 
-    fn outbound(bytes: Vec<u8>, reservation: OutboundFrame) -> Self {
+    fn outbound(bytes: Arc<[u8]>, reservation: OutboundFrame) -> Self {
         Self {
-            bytes: Arc::from(bytes),
+            bytes,
             offset: 0,
             kind: PendingWriteKind::Outbound,
             reservation: Some(reservation),

@@ -174,6 +174,7 @@ struct State {
     entity_tick_executor:
         PhaseExecutor<durable::actions::entity::TickWorkerResult, entities::EntityError>,
     entity_tick_dispatch_batch: Option<(simulation::TickId, u16)>,
+    snapshot_workers: streaming::snapshots::Workers,
     metrics: MetricsRecorder,
     /// Optional bounded, nonblocking trace for the production-TCP soak.
     /// The live server leaves this absent; the benchmark must drain it.
@@ -522,6 +523,7 @@ fn server_state_with_startup(
         movement_executor,
         entity_tick_executor,
         entity_tick_dispatch_batch: None,
+        snapshot_workers: streaming::snapshots::Workers::new(worker_count)?,
         metrics: MetricsRecorder::new(),
         tick_observer: None,
         stream_cursor: 0,

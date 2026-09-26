@@ -117,3 +117,31 @@ fn oversized_and_disconnected_admissions_are_explicit_and_release_reservations()
     assert_eq!(snapshot.queued_messages, 0);
     assert_eq!(snapshot.rejections, 3);
 }
+
+#[test]
+fn shared_encoding_keeps_independent_byte_reservations_until_each_client_releases() {
+    let telemetry = Arc::new(OutboundTelemetry::with_aggregate_byte_limit(28));
+    let (first, first_receiver) = telemetry.client_queue_with_limits(4, 14);
+    let (second, second_receiver) = telemetry.client_queue_with_limits(4, 14);
+    let shared = SharedMessage::new(pong(1));
+    first.try_send_shared(Arc::clone(&shared)).unwrap();
+    second.try_send_shared(Arc::clone(&shared)).unwrap();
+    assert_eq!(telemetry.snapshot().queued_bytes, 28);
+    let a = first_receiver.recv().unwrap();
+    let b = second_receiver.recv().unwrap();
+    // Concurrent codec callers must converge on one immutable encoded page.
+    let (a_bytes, b_bytes) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| a.encode(crate::content::catalog()).unwrap());
+        let second = scope.spawn(|| b.encode(crate::content::catalog()).unwrap());
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    assert!(Arc::ptr_eq(&a_bytes, &b_bytes));
+    drop(a);
+    assert_eq!(telemetry.snapshot().queued_bytes, 14);
+    assert_eq!(
+        second.try_send_shared(shared),
+        Err(OutboundError::ClientByteLimit)
+    );
+    drop(b);
+    assert_eq!(telemetry.snapshot().queued_bytes, 0);
+}

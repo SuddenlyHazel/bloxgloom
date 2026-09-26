@@ -4,6 +4,7 @@
 //! held until its frame is written or dropped, so the limit includes a frame
 //! currently being written as well as frames still in the channel.
 
+use crate::content::Catalog;
 use crate::protocol::{self, ServerMessage};
 use polling::Poller;
 use std::io;
@@ -142,9 +143,50 @@ pub(super) enum OutboundError {
     TooLarge,
 }
 
+type EncodedMessage = Result<Arc<[u8]>, (io::ErrorKind, String)>;
+
+/// Immutable wire content shared only by publications with identical epochs,
+/// revisions and payloads. Encoding stays in the existing reactor codec pool.
+/// The cache lives exactly as long as the bounded outbound frames referencing it.
+pub(super) struct SharedMessage {
+    message: ServerMessage,
+    wire_len: usize,
+    encoded: OnceLock<EncodedMessage>,
+}
+
+impl SharedMessage {
+    pub(super) fn new(message: ServerMessage) -> Arc<Self> {
+        Arc::new(Self {
+            wire_len: protocol::server_wire_len(&message),
+            message,
+            encoded: OnceLock::new(),
+        })
+    }
+
+    pub(super) fn wire_len(&self) -> usize {
+        self.wire_len
+    }
+
+    fn encode(&self, catalog: &Catalog) -> io::Result<Arc<[u8]>> {
+        self.encoded
+            .get_or_init(|| {
+                let mut bytes = Vec::with_capacity(self.wire_len);
+                protocol::write_server_with_catalog(&mut bytes, &self.message, catalog)
+                    .map(|()| Arc::from(bytes))
+                    .map_err(|error| (error.kind(), error.to_string()))
+            })
+            .clone()
+            .map_err(|(kind, message)| io::Error::new(kind, message))
+    }
+}
+
 impl OutboundQueue {
     pub(super) fn try_send(&self, message: ServerMessage) -> Result<(), OutboundError> {
-        let bytes = match u64::try_from(protocol::server_wire_len(&message)) {
+        self.try_send_shared(SharedMessage::new(message))
+    }
+
+    pub(super) fn try_send_shared(&self, message: Arc<SharedMessage>) -> Result<(), OutboundError> {
+        let bytes = match u64::try_from(message.wire_len()) {
             Ok(bytes) => bytes,
             Err(_) => return self.reject(OutboundError::TooLarge),
         };
@@ -216,7 +258,7 @@ impl OutboundQueue {
 /// A queued message owns all admission reservations until it is fully sent or
 /// dropped. This also covers receiver shutdown and failed socket writes.
 pub(super) struct OutboundFrame {
-    message: Option<ServerMessage>,
+    message: Option<Arc<SharedMessage>>,
     telemetry: Arc<OutboundTelemetry>,
     client: Option<Arc<ClientQueueTelemetry>>,
     bytes: u64,
@@ -226,9 +268,18 @@ pub(super) struct OutboundFrame {
 
 impl OutboundFrame {
     pub(super) fn message(&self) -> &ServerMessage {
+        &self
+            .message
+            .as_ref()
+            .expect("outbound frame still owns message")
+            .message
+    }
+
+    pub(super) fn encode(&self, catalog: &Catalog) -> io::Result<Arc<[u8]>> {
         self.message
             .as_ref()
             .expect("outbound frame still owns message")
+            .encode(catalog)
     }
 
     pub(super) fn record_sent(&self) {
@@ -243,9 +294,14 @@ impl OutboundFrame {
 
     #[cfg(test)]
     pub(super) fn into_message(mut self) -> ServerMessage {
-        self.message
+        let shared = self
+            .message
             .take()
-            .expect("outbound frame still owns message")
+            .expect("outbound frame still owns message");
+        match Arc::try_unwrap(shared) {
+            Ok(shared) => shared.message,
+            Err(shared) => shared.message.clone(),
+        }
     }
 }
 
