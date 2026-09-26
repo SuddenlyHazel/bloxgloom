@@ -1755,6 +1755,20 @@ fn entity_neighbour_view_bound_rejects_one_entity_and_keeps_serving() {
         Some(6)
     );
     assert!(state.entities.due_entities(7, 8).contains(&watcher_id));
+    assert_eq!(
+        state.durability.oversized_entity_retry.get(&watcher_id),
+        Some(&38)
+    );
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(7));
+    assert!(!state.durability.queued.iter().any(|request| matches!(
+        request,
+        DurableRequest::EntityTick { id } if *id == watcher_id
+    )));
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(38));
+    assert!(state.durability.queued.iter().any(|request| matches!(
+        request,
+        DurableRequest::EntityTick { id } if *id == watcher_id
+    )));
     // The stable over-cap condition rejects as capacity, not corruption: no
     // truncation happened, and the coordinator is still serving. Missing
     // chunks still defer first; only the resident set must reject.

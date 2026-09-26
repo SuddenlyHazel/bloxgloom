@@ -247,6 +247,7 @@ pub(super) fn open(
             reserved: HashSet::new(),
             queued: VecDeque::new(),
             entity_tick_cursor: None,
+            oversized_entity_retry: BTreeMap::new(),
             pending_wakes: Vec::new(),
             retry_pickups: HashSet::new(),
             expire_queued: false,

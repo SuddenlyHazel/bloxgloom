@@ -459,6 +459,25 @@ fn stage_motion_batch(
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
                 deferred.push_back(request);
             }
+            Err(error) if error.kind() == ErrorKind::QuotaExceeded => {
+                if let DurableRequest::EntityTick { id } | DurableRequest::EntityWake { id } =
+                    request
+                {
+                    // A stable over-cap view cannot fit on the next barrier.
+                    // Preserve the WAL-owned due entry and retry after a
+                    // bounded logical-tick delay (or after restart); unlike
+                    // missing chunks this does not consume every tick's
+                    // worker and queue capacity indefinitely.
+                    if state.durability.oversized_entity_retry.len() < MAX_DEFERRED_DURABLE_ACTIONS
+                        || state.durability.oversized_entity_retry.contains_key(&id)
+                    {
+                        state
+                            .durability
+                            .oversized_entity_retry
+                            .insert(id, tick.get().saturating_add(32));
+                    }
+                }
+            }
             Err(error) if error.kind() == ErrorKind::InvalidData => {
                 state.durability.failed = true;
                 return Err(error);
@@ -634,6 +653,10 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
 }
 
 fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
+    state
+        .durability
+        .oversized_entity_retry
+        .retain(|_, retry| *retry > tick.get());
     // Wakes are opportunistic; an earlier barrier's wakes must not fill the
     // bounded queue ahead of durable due work on every subsequent tick.
     // Put them back on the wake lane, where they retain their ID and can be
@@ -674,6 +697,12 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
     );
     for (due_tick, id) in due {
         state.durability.entity_tick_cursor = Some((due_tick, id));
+        if let Some(retry) = state.durability.oversized_entity_retry.get(&id).copied() {
+            if tick.get() < retry {
+                continue;
+            }
+            state.durability.oversized_entity_retry.remove(&id);
+        }
         if queued_ids.insert(id) {
             state
                 .durability

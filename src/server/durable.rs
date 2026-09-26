@@ -85,6 +85,9 @@ pub(super) struct Durability {
     /// In-memory round-robin cursor; resets on restart, while entity due
     /// times remain WAL-owned on each record.
     pub(super) entity_tick_cursor: Option<(u64, EntityId)>,
+    /// Transient retry deadlines for views rejected at their fixed capture
+    /// bound. The persisted due entry remains authoritative across restart.
+    pub(super) oversized_entity_retry: BTreeMap<EntityId, u64>,
     /// Committed wake destinations waiting for the interaction/commit
     /// barrier. Transient scheduling state: dropping entries only delays the
     /// destination's own durable work, which stays on its persisted schedule.
