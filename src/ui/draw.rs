@@ -40,7 +40,7 @@ impl UiBuilder<'_> {
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
             UiScreen::Admin => self.draw_admin(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
-            UiScreen::Settings => self.draw_settings(frame, layout),
+            UiScreen::Settings | UiScreen::Graphics => self.draw_settings(frame, layout),
         }
         if let Some(debug) = frame.debug {
             self.draw_debug(debug);

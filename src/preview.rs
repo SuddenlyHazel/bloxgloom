@@ -81,6 +81,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
+            (UiScreen::Graphics, "graphics"),
         ] {
             outputs.push(PreviewOutput {
                 path: directory.join(format!("{name}-{suffix}.png")),
@@ -98,6 +99,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
+        (UiScreen::Graphics, "graphics"),
     ] {
         outputs.push(PreviewOutput {
             path: directory.join(format!("{name}-640x360-scale2.png")),
@@ -851,6 +853,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             scale,
             fullscreen: false,
             bounced_gi: false,
+            ..UiSettings::default()
         },
         hovered: match screen {
             UiScreen::Playing => None,
@@ -858,6 +861,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             UiScreen::Admin => Some(UiControl::AdminItem(0)),
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
+            UiScreen::Graphics => Some(UiControl::Increase(SettingId::Exposure)),
         },
     }
 }

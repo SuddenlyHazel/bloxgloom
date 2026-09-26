@@ -1,7 +1,7 @@
 @group(0) @binding(0) var scene: texture_2d<f32>;
 @group(0) @binding(1) var bloom: texture_2d<f32>;
 @group(0) @binding(2) var linear_sampler: sampler;
-// exposure, bloom strength, explicit sRGB encoding for non-sRGB targets, padding
+// exposure, bloom strength, explicit sRGB encoding for non-sRGB targets, effects enabled
 @group(0) @binding(3) var<uniform> settings: vec4<f32>;
 
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -54,8 +54,11 @@ fn tone_map(value: vec3<f32>) -> vec3<f32> {
 }
 @fragment fn composite(input: Vertex) -> @location(0) vec4<f32> {
     var hdr = textureSample(scene, linear_sampler, input.uv).rgb;
-    if settings.y > 0.0 { hdr += textureSample(bloom, linear_sampler, input.uv).rgb * settings.y; }
-    var color = tone_map(max(hdr * settings.x, vec3<f32>(0.0)));
+    var color = max(hdr, vec3<f32>(0.0));
+    if settings.w > 0.0 {
+        if settings.y > 0.0 { hdr += textureSample(bloom, linear_sampler, input.uv).rgb * settings.y; }
+        color = tone_map(max(hdr * settings.x, vec3<f32>(0.0)));
+    }
     if settings.z > 0.0 {
         color = select(1.055 * pow(color, vec3<f32>(1.0 / 2.4)) - 0.055, color * 12.92, color <= vec3<f32>(0.0031308));
     }

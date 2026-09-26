@@ -178,6 +178,41 @@ fn settings_layout_has_adjusters_and_fullscreen_toggle() {
 }
 
 #[test]
+fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
+    for (width, height, scale) in [
+        (640, 360, 1.0),
+        (640, 360, 2.0),
+        (1280, 720, 1.0),
+        (1280, 720, 2.0),
+    ] {
+        let layout = UiLayout::new(width, height, scale, UiScreen::Graphics);
+        let mut controls = vec![UiControl::ToggleSettingsPage, UiControl::Back];
+        for setting in [
+            SettingId::PostProcessing,
+            SettingId::Exposure,
+            SettingId::Bloom,
+            SettingId::BloomStrength,
+        ] {
+            controls.extend([UiControl::Decrease(setting), UiControl::Increase(setting)]);
+        }
+        for control in controls {
+            let rect = layout.rect(control).unwrap();
+            assert!(
+                rect.x >= 0.0
+                    && rect.y >= 0.0
+                    && rect.x + rect.width <= width as f32
+                    && rect.y + rect.height <= height as f32
+            );
+            assert_eq!(
+                layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(control)
+            );
+        }
+        assert!(layout.rect(UiControl::ToggleFullscreen).is_none());
+    }
+}
+
+#[test]
 fn compact_controls_hit_test_at_their_visible_centers() {
     let inventory = UiLayout::new(640, 360, 1.0, UiScreen::Inventory);
     let card = inventory.rect(UiControl::InventorySlot(10)).unwrap();
@@ -222,6 +257,7 @@ fn large_ui_scale_fits_small_windows_without_losing_controls() {
             UiScreen::Admin,
             UiScreen::Pause,
             UiScreen::Settings,
+            UiScreen::Graphics,
         ] {
             let layout = UiLayout::new(width, height, 2.0, screen);
             for hit in &layout.hits {
@@ -259,6 +295,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Inventory,
             UiScreen::Pause,
             UiScreen::Settings,
+            UiScreen::Graphics,
         ] {
             let frame = UiFrame {
                 screen,

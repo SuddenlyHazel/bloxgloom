@@ -21,6 +21,8 @@ fn config_round_trips_through_explicit_path() {
         fullscreen: true,
         bounced_gi: true,
         exposure: 1.25,
+        post_processing: false,
+        bloom_enabled: false,
         bloom_strength: 0.0,
         selected_slot: 7,
         debug_hud: true,

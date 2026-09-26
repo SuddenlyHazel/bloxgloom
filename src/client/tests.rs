@@ -2,6 +2,45 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-graphics-{}-{unique}",
+        std::process::id()
+    ));
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        path.clone(),
+    );
+    app.change_setting(SettingId::Exposure, true);
+    app.change_setting(SettingId::BloomStrength, true);
+    let exposure = app.config.exposure;
+    let strength = app.config.bloom_strength;
+    assert!(exposure > 1.0 && strength > 0.12);
+    app.change_setting(SettingId::Bloom, false);
+    app.change_setting(SettingId::PostProcessing, false);
+    assert!(!app.config.bloom_enabled && !app.config.post_processing);
+    assert_eq!(app.config.exposure, exposure);
+    assert_eq!(app.config.bloom_strength, strength);
+    app.screen = UiScreen::Graphics;
+    assert!(
+        app.focus_order()
+            .contains(&UiControl::Increase(SettingId::Exposure))
+    );
+    app.config_writer.finish();
+    assert_eq!(Config::load(&path), app.config);
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        app.pending_mesh.is_empty(),
+        "post controls must not remesh terrain"
+    );
+}
+
+#[test]
 fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
     use crate::world::{AIR, GLOWSTONE, STONE};
 
@@ -160,6 +199,7 @@ fn escape_and_inventory_transitions_preserve_menu_flow() {
     assert_eq!(escape_screen(UiScreen::Playing), UiScreen::Pause);
     assert_eq!(escape_screen(UiScreen::Pause), UiScreen::Playing);
     assert_eq!(escape_screen(UiScreen::Settings), UiScreen::Pause);
+    assert_eq!(escape_screen(UiScreen::Graphics), UiScreen::Settings);
     assert_eq!(escape_screen(UiScreen::Inventory), UiScreen::Playing);
     assert_eq!(inventory_screen(UiScreen::Playing), UiScreen::Inventory);
     assert_eq!(inventory_screen(UiScreen::Inventory), UiScreen::Playing);

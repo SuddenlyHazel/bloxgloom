@@ -23,6 +23,7 @@ pub(crate) struct PostProcess {
     sampler: wgpu::Sampler,
     output_srgb: bool,
     exposure: f32,
+    enabled: bool,
     bloom_strength: f32,
 }
 
@@ -78,7 +79,7 @@ impl PostProcess {
                 1.0f32,
                 0.12,
                 if output.is_srgb() { 0.0 } else { 1.0 },
-                0.0,
+                1.0,
             ]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -132,6 +133,7 @@ impl PostProcess {
             sampler,
             output_srgb: output.is_srgb(),
             exposure: 1.0,
+            enabled: true,
             bloom_strength: 0.12,
             composite_group: targets.composite_group,
         }
@@ -152,11 +154,21 @@ impl PostProcess {
         self.composite_group = targets.composite_group;
     }
 
-    pub fn configure(&mut self, queue: &wgpu::Queue, exposure: f32, bloom_strength: f32) {
-        if self.exposure == exposure && self.bloom_strength == bloom_strength {
+    pub fn configure(
+        &mut self,
+        queue: &wgpu::Queue,
+        enabled: bool,
+        exposure: f32,
+        bloom_strength: f32,
+    ) {
+        if self.enabled == enabled
+            && self.exposure == exposure
+            && self.bloom_strength == bloom_strength
+        {
             return;
         }
         self.exposure = exposure;
+        self.enabled = enabled;
         self.bloom_strength = bloom_strength;
         queue.write_buffer(
             &self.settings,
@@ -165,7 +177,7 @@ impl PostProcess {
                 exposure,
                 bloom_strength,
                 if self.output_srgb { 0.0 } else { 1.0 },
-                0.0,
+                if enabled { 1.0 } else { 0.0 },
             ]),
         );
     }
@@ -192,7 +204,7 @@ impl PostProcess {
             pass.set_bind_group(0, group, &[]);
             pass.draw(0..3, 0..1);
         };
-        if self.bloom_strength > 0.0 {
+        if self.enabled && self.bloom_strength > 0.0 {
             draw(
                 "bloom extract",
                 &self.extract,

@@ -16,7 +16,9 @@ Blocks, legal block states, items, entity types, and texture layers have namespa
 
 The world renders into a linear `RGBA16Float` scene buffer, followed by quarter-resolution soft-threshold bloom and neutral, fixed-exposure tone mapping to the display. Glowstone and the sun retain HDR highlights; the HUD and selection outline are drawn afterward. Exposure does not adapt when entering caves. This is an internal HDR pipeline with SDR output, so no HDR monitor is required.
 
-Two optional config-file settings control the look (restart after editing): `exposure=1.0` (range `0.25`–`4.0`) and `bloom_strength=0.12` (range `0`–`1`). Set `bloom_strength=0` to skip bloom passes. On macOS the file is `~/Library/Application Support/Bloxgloom/config`; Linux uses `$XDG_CONFIG_HOME/bloxgloom/config` or `~/.config/bloxgloom/config`, and Windows uses `%APPDATA%/Bloxgloom/config`. Existing configs use the defaults until these keys are saved or added. Image previews and the headless benchmark use the same post-processing pipeline at its default settings.
+Open **Escape → Settings → Graphics** to adjust exposure and bloom strength live. **Post Effects: Off** bypasses tone mapping, exposure, and bloom; **Bloom: Off** disables just bloom. Toggles preserve the adjustment values for re-enabling, and all changes save automatically. Mouse controls and Tab/arrow-key navigation both work.
+
+The corresponding config keys are `post_processing=true`, `bloom_enabled=true`, `exposure=1.0` (range `0.25`–`4.0`), and `bloom_strength=0.12` (range `0`–`1`). Zero bloom strength also skips bloom passes. On macOS the file is `~/Library/Application Support/Bloxgloom/config`; Linux uses `$XDG_CONFIG_HOME/bloxgloom/config` or `~/.config/bloxgloom/config`, and Windows uses `%APPDATA%/Bloxgloom/config`. Restart after manual file edits. Existing configs use the defaults for missing keys. Image previews and the headless benchmark use the same post-processing pipeline at its default settings.
 
 ## Run locally
 

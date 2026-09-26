@@ -175,7 +175,10 @@ impl ApplicationHandler for ClientApp {
                                 return;
                             }
                             KeyCode::ArrowLeft | KeyCode::ArrowRight
-                                if self.screen == UiScreen::Settings =>
+                                if matches!(
+                                    self.screen,
+                                    UiScreen::Settings | UiScreen::Graphics
+                                ) =>
                             {
                                 if let Some(
                                     UiControl::Decrease(setting) | UiControl::Increase(setting),

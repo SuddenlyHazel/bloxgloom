@@ -39,15 +39,18 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                 let view = output.create_view(&Default::default());
                 let mut pixels = Vec::new();
                 // Exercise bloom on -> off with the same resources, so stale bloom cannot survive.
-                for (level, bloom) in [
-                    (0.0, 0.12),
-                    (0.5, 0.0),
-                    (2.0, 0.12),
-                    (2.0, 0.0),
-                    (4.0, 0.0),
-                    (0.0, 0.0),
+                for (level, bloom, enabled, exposure) in [
+                    (0.0, 0.12, true, 1.0),
+                    (0.5, 0.0, true, 1.0),
+                    (2.0, 0.12, true, 1.0),
+                    (2.0, 0.0, true, 1.0),
+                    (4.0, 0.0, true, 1.0),
+                    (0.0, 0.0, true, 1.0),
+                    (0.5, 1.0, false, 4.0),
+                    (0.0, 1.0, false, 4.0),
+                    (0.5, 0.0, true, 1.0),
                 ] {
-                    post.configure(&queue, 1.0, bloom);
+                    post.configure(&queue, enabled, exposure, bloom);
                     let readback = device.create_buffer(&wgpu::BufferDescriptor {
                         label: Some("post test readback"),
                         size: 256,
@@ -109,6 +112,15 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                 }
                 assert_eq!(pixels[0], 0, "bloom must not add a brightness floor");
                 assert_eq!(pixels[5], 0, "disabled bloom must not retain old light");
+                assert!(
+                    (187..=189).contains(&pixels[6]),
+                    "master off must bypass exposure and tone mapping"
+                );
+                assert_eq!(pixels[7], 0, "master off must bypass stale bloom");
+                assert_eq!(
+                    pixels[8], pixels[1],
+                    "re-enabling must restore tone mapping"
+                );
                 assert!(
                     (175..=185).contains(&pixels[1]),
                     "mid-gray must be encoded to sRGB exactly once"

@@ -27,6 +27,8 @@ pub struct Config {
     pub fullscreen: bool,
     pub bounced_gi: bool,
     pub exposure: f32,
+    pub post_processing: bool,
+    pub bloom_enabled: bool,
     pub bloom_strength: f32,
     pub selected_slot: usize,
     pub debug_hud: bool,
@@ -43,6 +45,8 @@ impl Default for Config {
             fullscreen: false,
             bounced_gi: false,
             exposure: 1.0,
+            post_processing: true,
+            bloom_enabled: true,
             bloom_strength: 0.12,
             selected_slot: 1,
             debug_hud: false,
@@ -150,6 +154,8 @@ impl Config {
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
             exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
+            post_processing: self.post_processing,
+            bloom_enabled: self.bloom_enabled,
             bloom_strength: clamp_finite(self.bloom_strength, 0.0, 1.0, 0.12),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
@@ -159,7 +165,7 @@ impl Config {
 
     fn serialize(&self) -> String {
         format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
@@ -171,6 +177,8 @@ impl Config {
             self.profile,
             self.exposure,
             self.bloom_strength,
+            self.post_processing,
+            self.bloom_enabled,
         )
     }
 }
@@ -190,6 +198,16 @@ fn parse_config(contents: &str) -> Config {
         let key = key.trim();
         let value = value.trim();
         match key {
+            "post_processing" => {
+                if let Ok(enabled) = value.parse::<bool>() {
+                    config.post_processing = enabled;
+                }
+            }
+            "bloom_enabled" => {
+                if let Ok(enabled) = value.parse::<bool>() {
+                    config.bloom_enabled = enabled;
+                }
+            }
             "exposure" => config.exposure = parse_clamped_float(value, 0.25, 4.0, 1.0),
             "bloom_strength" => config.bloom_strength = parse_clamped_float(value, 0.0, 1.0, 0.12),
             "version" => version = value.parse::<u32>().ok(),

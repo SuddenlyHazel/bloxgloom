@@ -147,7 +147,11 @@ impl UiBuilder<'_> {
         self.panel(panel);
         let compact = panel.height < 500.0 * self.scale;
         self.text(
-            "SETTINGS",
+            if frame.screen == UiScreen::Graphics {
+                "GRAPHICS"
+            } else {
+                "SETTINGS"
+            },
             panel.x + 30.0 * self.scale,
             panel.y + (if compact { 14.0 } else { 28.0 }) * self.scale,
             if compact { 1.0 } else { 1.3 },
@@ -156,7 +160,11 @@ impl UiBuilder<'_> {
         );
         if !compact {
             self.text(
-                "LOCAL CLIENT OPTIONS",
+                if frame.screen == UiScreen::Graphics {
+                    "TONE MAPPING / EXPOSURE / BLOOM"
+                } else {
+                    "LOCAL CLIENT OPTIONS"
+                },
                 panel.x + 30.0 * self.scale,
                 panel.y + 62.0 * self.scale,
                 0.72,
@@ -164,7 +172,19 @@ impl UiBuilder<'_> {
                 36,
             );
         }
-        let rows = [
+        if let Some(rect) = layout.rect(UiControl::ToggleSettingsPage) {
+            self.button(
+                rect,
+                if frame.screen == UiScreen::Graphics {
+                    "GENERAL"
+                } else {
+                    "GRAPHICS"
+                },
+                frame.hovered == Some(UiControl::ToggleSettingsPage),
+                true,
+            );
+        }
+        let general_rows = [
             (
                 SettingId::Sensitivity,
                 "MOUSE SENSITIVITY",
@@ -200,6 +220,43 @@ impl UiBuilder<'_> {
                 .to_string(),
             ),
         ];
+        let graphics_rows = [
+            (
+                SettingId::PostProcessing,
+                "POST EFFECTS",
+                if frame.settings.post_processing {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string(),
+            ),
+            (
+                SettingId::Exposure,
+                "EXPOSURE",
+                format!("{:.2}X", frame.settings.exposure),
+            ),
+            (
+                SettingId::Bloom,
+                "BLOOM",
+                if frame.settings.bloom_enabled {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .to_string(),
+            ),
+            (
+                SettingId::BloomStrength,
+                "BLOOM STRENGTH",
+                format!("{:.0}%", frame.settings.bloom_strength * 100.0),
+            ),
+        ];
+        let rows: &[_] = if frame.screen == UiScreen::Graphics {
+            &graphics_rows
+        } else {
+            &general_rows
+        };
         let top = panel.y + (if compact { 74.0 } else { 116.0 }) * self.scale;
         let row_height = if compact {
             36.0 * self.scale
@@ -258,6 +315,16 @@ impl UiBuilder<'_> {
                     true,
                 );
             }
+        }
+        if frame.screen == UiScreen::Graphics {
+            self.text(
+                "POST OFF BYPASSES EXPOSURE + BLOOM",
+                panel.x + 20.0 * self.scale,
+                top + 4.0 * row_height + 6.0 * self.scale,
+                if compact { 0.55 } else { 0.65 },
+                MUTED,
+                40,
+            );
         }
         if let Some(rect) = layout.rect(UiControl::ToggleFullscreen) {
             let label = if frame.settings.fullscreen {

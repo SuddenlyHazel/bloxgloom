@@ -9,6 +9,7 @@ pub enum UiScreen {
     Admin,
     Pause,
     Settings,
+    Graphics,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -18,6 +19,10 @@ pub enum SettingId {
     ViewDistance,
     UiScale,
     Lighting,
+    PostProcessing,
+    Exposure,
+    Bloom,
+    BloomStrength,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -31,6 +36,7 @@ pub enum UiControl {
     OpenAdmin,
     Resume,
     OpenSettings,
+    ToggleSettingsPage,
     Exit,
     Back,
     Decrease(SettingId),
@@ -47,6 +53,10 @@ pub struct UiSettings {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
+    pub post_processing: bool,
+    pub exposure: f32,
+    pub bloom_enabled: bool,
+    pub bloom_strength: f32,
 }
 
 impl Default for UiSettings {
@@ -58,6 +68,10 @@ impl Default for UiSettings {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
+            post_processing: true,
+            exposure: 1.0,
+            bloom_enabled: true,
+            bloom_strength: 0.12,
         }
     }
 }

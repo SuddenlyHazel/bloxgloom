@@ -36,7 +36,7 @@ impl UiLayout {
             UiScreen::Inventory => layout.add_inventory(),
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
-            UiScreen::Settings => layout.add_settings(),
+            UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
         }
         layout
     }
@@ -202,6 +202,15 @@ impl UiLayout {
     fn add_settings(&mut self) {
         let panel = self.settings_panel();
         let compact = panel.height < 500.0 * self.scale;
+        self.push(
+            UiControl::ToggleSettingsPage,
+            UiRect {
+                x: panel.x + panel.width - 154.0 * self.scale,
+                y: panel.y + (if compact { 12.0 } else { 24.0 }) * self.scale,
+                width: 130.0 * self.scale,
+                height: 30.0 * self.scale,
+            },
+        );
         let row_height = if compact {
             36.0 * self.scale
         } else {
@@ -216,16 +225,23 @@ impl UiLayout {
         } else {
             (106.0 * self.scale).clamp(72.0, 128.0)
         };
-        for (index, setting) in [
-            SettingId::Sensitivity,
-            SettingId::FieldOfView,
-            SettingId::ViewDistance,
-            SettingId::UiScale,
-            SettingId::Lighting,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        let settings: &[SettingId] = if self.screen == UiScreen::Graphics {
+            &[
+                SettingId::PostProcessing,
+                SettingId::Exposure,
+                SettingId::Bloom,
+                SettingId::BloomStrength,
+            ]
+        } else {
+            &[
+                SettingId::Sensitivity,
+                SettingId::FieldOfView,
+                SettingId::ViewDistance,
+                SettingId::UiScale,
+                SettingId::Lighting,
+            ]
+        };
+        for (index, &setting) in settings.iter().enumerate() {
             let y = top + index as f32 * row_height;
             self.push(
                 UiControl::Decrease(setting),
@@ -246,19 +262,21 @@ impl UiLayout {
                 },
             );
         }
-        self.push(
-            UiControl::ToggleFullscreen,
-            UiRect {
-                x: panel.x + panel.width * if compact { 0.45 } else { 0.22 },
-                y: panel.y + panel.height - (if compact { 46.0 } else { 104.0 }) * self.scale,
-                width: panel.width * if compact { 0.52 } else { 0.56 },
-                height: if compact {
-                    32.0 * self.scale
-                } else {
-                    (48.0 * self.scale).clamp(36.0, 56.0)
+        if self.screen == UiScreen::Settings {
+            self.push(
+                UiControl::ToggleFullscreen,
+                UiRect {
+                    x: panel.x + panel.width * if compact { 0.45 } else { 0.22 },
+                    y: panel.y + panel.height - (if compact { 46.0 } else { 104.0 }) * self.scale,
+                    width: panel.width * if compact { 0.52 } else { 0.56 },
+                    height: if compact {
+                        32.0 * self.scale
+                    } else {
+                        (48.0 * self.scale).clamp(36.0, 56.0)
+                    },
                 },
-            },
-        );
+            );
+        }
         self.push(
             UiControl::Back,
             UiRect {

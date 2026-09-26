@@ -102,6 +102,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         UiScreen::Playing => UiScreen::Pause,
         UiScreen::Inventory | UiScreen::Admin | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
+        UiScreen::Graphics => UiScreen::Settings,
     }
 }
 
@@ -456,6 +457,15 @@ impl ClientApp {
     fn change_setting(&mut self, setting: SettingId, increase: bool) {
         let sign = if increase { 1.0 } else { -1.0 };
         match setting {
+            SettingId::PostProcessing => self.config.post_processing = !self.config.post_processing,
+            SettingId::Bloom => self.config.bloom_enabled = !self.config.bloom_enabled,
+            SettingId::Exposure => {
+                self.config.exposure = (self.config.exposure + sign * 0.05).clamp(0.25, 4.0)
+            }
+            SettingId::BloomStrength => {
+                self.config.bloom_strength =
+                    (self.config.bloom_strength + sign * 0.02).clamp(0.0, 1.0)
+            }
             SettingId::Sensitivity => {
                 self.config.sensitivity =
                     (self.config.sensitivity + sign * 0.00025).clamp(0.0002, 0.01);
@@ -505,6 +515,13 @@ impl ClientApp {
             UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
+            UiControl::ToggleSettingsPage => {
+                self.set_screen(if self.screen == UiScreen::Graphics {
+                    UiScreen::Settings
+                } else {
+                    UiScreen::Graphics
+                })
+            }
             UiControl::OpenAdmin if self.admin_enabled => self.set_screen(UiScreen::Admin),
             UiControl::OpenAdmin => {}
             UiControl::AdminItem(index) if self.screen == UiScreen::Admin => {
@@ -521,7 +538,11 @@ impl ClientApp {
             UiControl::AdminRun if self.screen == UiScreen::Admin => self.admin_run(),
             UiControl::AdminPrev | UiControl::AdminNext | UiControl::AdminRun => {}
             UiControl::Exit => event_loop.exit(),
-            UiControl::Back => self.set_screen(UiScreen::Pause),
+            UiControl::Back => self.set_screen(if self.screen == UiScreen::Graphics {
+                UiScreen::Settings
+            } else {
+                UiScreen::Pause
+            }),
             UiControl::Decrease(setting) => self.change_setting(setting, false),
             UiControl::Increase(setting) => self.change_setting(setting, true),
             UiControl::ToggleFullscreen => {
@@ -555,6 +576,7 @@ impl ClientApp {
                 controls
             }
             UiScreen::Settings => vec![
+                UiControl::ToggleSettingsPage,
                 UiControl::Decrease(SettingId::Sensitivity),
                 UiControl::Increase(SettingId::Sensitivity),
                 UiControl::Decrease(SettingId::FieldOfView),
@@ -566,6 +588,18 @@ impl ClientApp {
                 UiControl::Decrease(SettingId::Lighting),
                 UiControl::Increase(SettingId::Lighting),
                 UiControl::ToggleFullscreen,
+                UiControl::Back,
+            ],
+            UiScreen::Graphics => vec![
+                UiControl::ToggleSettingsPage,
+                UiControl::Decrease(SettingId::PostProcessing),
+                UiControl::Increase(SettingId::PostProcessing),
+                UiControl::Decrease(SettingId::Exposure),
+                UiControl::Increase(SettingId::Exposure),
+                UiControl::Decrease(SettingId::Bloom),
+                UiControl::Increase(SettingId::Bloom),
+                UiControl::Decrease(SettingId::BloomStrength),
+                UiControl::Increase(SettingId::BloomStrength),
                 UiControl::Back,
             ],
         }
@@ -1162,6 +1196,10 @@ impl ClientApp {
                 latency_ms: None,
             }),
             settings: UiSettings {
+                post_processing: self.config.post_processing,
+                exposure: self.config.exposure,
+                bloom_enabled: self.config.bloom_enabled,
+                bloom_strength: self.config.bloom_strength,
                 sensitivity: self.config.sensitivity,
                 fov_degrees: self.config.fov_degrees,
                 view_distance: self.effective_view_distance,
@@ -1183,7 +1221,15 @@ impl ClientApp {
         if let Some(renderer) = &mut self.renderer {
             renderer.set_drops(&visual_drops);
             renderer.set_avatars(&visual_avatars);
-            renderer.configure_post(self.config.exposure, self.config.bloom_strength);
+            renderer.configure_post(
+                self.config.post_processing,
+                self.config.exposure,
+                if self.config.bloom_enabled {
+                    self.config.bloom_strength
+                } else {
+                    0.0
+                },
+            );
             match renderer.render(camera, &ui) {
                 Ok(stats) => {
                     self.last_visible_chunks = stats.visible_chunks;

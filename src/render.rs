@@ -267,8 +267,9 @@ impl Renderer {
         self.post.resize(&self.device, size.width, size.height);
     }
 
-    pub fn configure_post(&mut self, exposure: f32, bloom_strength: f32) {
-        self.post.configure(&self.queue, exposure, bloom_strength);
+    pub fn configure_post(&mut self, enabled: bool, exposure: f32, bloom_strength: f32) {
+        self.post
+            .configure(&self.queue, enabled, exposure, bloom_strength);
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
