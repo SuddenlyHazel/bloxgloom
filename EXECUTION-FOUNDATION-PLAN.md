@@ -165,6 +165,15 @@ Execute as two sequential tasks with parent review of each:
 - [x] **5A — Publication:** immutable committed effects, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
 - [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. In progress under the same user authorization.
 
+Checkpoint progress (`d36a944`):
+
+- [x] Stream entity checkpoints from the fenced worker-owned mirror and journal bases from the ordered latest-values map, avoiding whole-generation output allocation and rotation-time population sorting.
+- [x] Ordinary dirty-key dispatch uses a bounded 16-key circular selection; writer capacity is checked before snapshot copying. Serialization turns process at most 16 bounded entries, with 64 KiB write/checksum pieces.
+- [x] Preserve atomic file publication and WAL generation coverage; exclusive startup recovery discards unpublished regular entity-checkpoint temporaries before validating published state and replaying WAL. Formats remain unchanged.
+- [ ] Finish review verification: parent inspected implementation and independently passed **44 checkpoint-filtered tests**. A concurrent rotation-filtered run passed 11/12 but hit the previously intermittent landed-drop rotation completion assertion. Coder is investigating and replacing the timing-dependent wait with explicit completion synchronization if the production path is sound; slice remains open.
+
+Coder reported **586 full-suite tests passed** before this follow-up. Checkpoint commands still take O(population) total work on dedicated workers, with bounded serialization turns rather than interleaved executor jobs; rotation can hold admission closed for multiple ticks. Startup recovery remains population-sized, ordinary per-key values remain schema/transaction-bounded whole values, and parked fire's private complete-map checkpoint remains outside the streaming guarantee.
+
 Publication progress:
 
 - [x] Bounded chunk snapshot worker preparation and matching-publication shared messages/encoded bytes (`e9cddc1`). Existing codec workers encode shared frames once; per-client outbound accounting remains independent. Parent inspected the implementation and independently ran all eight snapshot regressions: **8 passed**.
