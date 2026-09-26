@@ -83,6 +83,7 @@ pub(super) type RecoveredDurability = (
 );
 
 pub(super) struct Durability {
+    pub(super) recovered_tick: u64,
     catalog: Arc<crate::content::Catalog>,
     pub(super) writer: JournalWriter,
     pub(super) next_id: u128,

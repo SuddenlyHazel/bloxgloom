@@ -233,6 +233,7 @@ impl Journal {
         }
 
         for (index, transaction) in candidates.into_iter().enumerate() {
+            self.max_tick = self.max_tick.max(transaction.tick);
             let sequence = first_sequence + index as u64;
             let record_index = self.records.len();
             self.known.insert(

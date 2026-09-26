@@ -26,6 +26,11 @@ During an AI pause, support rechecks remain due within ten ticks (plus admission
 and execution latency), with terrain-edit hints providing faster interruption.
 Repeated early hints cannot add airborne physics steps.
 
+Startup resumes the shared clock from the greatest synced journal transaction
+tick, rather than fire activity. Journal compaction retains this watermark as
+internal base metadata, without introducing a shared gameplay conflict key.
+This keeps persisted movement and AI deadlines on the same timeline after restart.
+
 ## Navigation
 
 `src/server/entities/navigation.rs` implements deterministic cardinal A* with an

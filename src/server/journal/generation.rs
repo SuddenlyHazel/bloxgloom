@@ -51,14 +51,21 @@ impl Journal {
             ));
         }
 
-        let generation = match switch(
+        // Carry clock metadata through the existing streamed/checksummed base
+        // without cloning its world-sized value map or adding a conflict key to
+        // gameplay transactions. Hide it again before exposing latest values.
+        self.latest
+            .insert(super::clock_key(), self.max_tick.to_le_bytes().to_vec());
+        let switched = switch(
             &self.path,
             self.manifest.as_ref(),
             expected_sequence,
             self.next_transaction_id,
             &self.latest,
             self.drop_owner_set_closed,
-        ) {
+        );
+        self.latest.remove(&super::clock_key());
+        let generation = match switched {
             Ok(switched) => switched,
             Err(error) => {
                 // A failed directory sync may leave the new manifest visible.

@@ -37,6 +37,11 @@ const MAX_KEY_BYTES: usize = 4096;
 const MAX_CHANGES: usize = 65_535;
 const MAX_QUEUE_CAPACITY: usize = 256;
 const MAX_BATCH_RECORDS: usize = 128;
+// Internal base-generation metadata, never a gameplay transaction key.
+const CLOCK_DOMAIN: &str = "bloxgloom:journal_clock";
+fn clock_key() -> StateKey {
+    StateKey::new(CLOCK_DOMAIN, Vec::new())
+}
 /// Hard fail-closed bound for one append-only WAL tail.
 pub const MAX_JOURNAL_BYTES: u64 = 256 * 1024 * 1024;
 /// Advisory threshold at which the server should start its checkpoint-gated
@@ -182,6 +187,7 @@ pub struct Journal {
     base_anchor: HashMap<StateKey, Vec<u8>>,
     drop_owner_set_closed: bool,
     next_transaction_id: u128,
+    max_tick: u64,
     records: Vec<Transaction>,
     known: HashMap<u128, KnownRecord>,
     // Ordered at mutation time so rotation can stream without collecting and
@@ -194,6 +200,12 @@ pub struct Journal {
 }
 
 impl Journal {
+    /// Greatest tick of any synced transaction, including the compacted base.
+    /// Scheduling must resume from the shared timeline, not a feature's clock.
+    pub fn max_tick(&self) -> u64 {
+        self.max_tick
+    }
+
     /// Unique transactions in current-tail log order. A rotated base has
     /// already materialized all state at its cut, so only its tail is returned.
     /// Exact duplicate IDs are represented once; conflicts fail `open`.

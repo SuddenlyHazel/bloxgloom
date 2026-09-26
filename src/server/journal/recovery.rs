@@ -68,6 +68,20 @@ impl Journal {
         };
         let mut next_transaction_id = next_id_watermark;
         let mut latest: std::collections::BTreeMap<_, _> = initial_latest.into_iter().collect();
+        let mut base_anchor = base_anchor;
+        let mut max_tick = match latest.remove(&super::clock_key()) {
+            Some(bytes) => u64::from_le_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| invalid_data("invalid journal clock metadata"))?,
+            ),
+            None => 0,
+        };
+        base_anchor.remove(&super::clock_key());
+        if latest.keys().any(|key| key.domain == super::CLOCK_DOMAIN) {
+            return Err(invalid_data("invalid journal clock key"));
+        }
 
         let length = file.metadata()?.len();
         if length > MAX_JOURNAL_BYTES {
@@ -122,6 +136,7 @@ impl Journal {
             }
 
             let transaction = decode_transaction(&payload)?;
+            max_tick = max_tick.max(transaction.tick);
             physical_records = physical_records
                 .checked_add(1)
                 .ok_or_else(|| invalid_data("journal sequence exhausted"))?;
@@ -191,6 +206,7 @@ impl Journal {
             base_anchor,
             drop_owner_set_closed,
             next_transaction_id,
+            max_tick,
             records,
             known,
             latest,

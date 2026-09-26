@@ -228,9 +228,11 @@ pub(super) fn open(
         MAX_PENDING_DURABLE_ACTIONS,
     )?;
     let next_id = journal.next_id()?;
+    let recovered_tick = journal.max_tick();
     let writer = journal.into_writer(128, Duration::from_millis(3))?;
     Ok((
         Durability {
+            recovered_tick,
             shared_reads: HashMap::new(),
             entity_publication_frontier: (
                 recovered_entities.entities.durable_sequence(),

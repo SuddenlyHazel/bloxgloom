@@ -53,7 +53,7 @@ pub(super) fn run_simulation_ticks(
     mut state: State,
     input: Receiver<SimulationInput>,
 ) -> io::Result<()> {
-    let mut clock = FixedStepClock::after(TickId::new(state.fire_last_tick));
+    let mut clock = FixedStepClock::after(TickId::new(state.recovered_tick));
     let mut commands = CommandQueue::new(INPUT_CAPACITY);
     let mut last_clock = Instant::now();
     let mut next_control_sequence = 0u64;

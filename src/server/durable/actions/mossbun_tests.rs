@@ -86,7 +86,9 @@ fn mossbun_authorized_spawn_worker_steps_and_restart_preserve_identity() {
     assert_eq!(state.clients[&1].inventory, Inventory::default());
     state.clients.clear();
     // Run the production indexed due lane and worker dispatch with no clients.
-    for tick in [8, 12] {
+    // A long-lived world with no fire activity must resume this timeline,
+    // rather than waiting another 800 seconds to reach the saved deadline.
+    for tick in [40_008, 40_012] {
         crate::server::durable::queue_interaction_actions(&mut state, TickId::new(tick));
         crate::server::durable::process_durable_actions(
             &mut state,
@@ -111,9 +113,9 @@ fn mossbun_authorized_spawn_worker_steps_and_restart_preserve_identity() {
             .cycle,
         1
     );
-    assert_eq!(after.next_tick, Some(13));
+    assert_eq!(after.next_tick, Some(40_013));
     drop(state);
-    let recovered = server_state(23, path.clone()).unwrap();
+    let mut recovered = server_state(23, path.clone()).unwrap();
     let restored = recovered.entities.snapshot(id).unwrap();
     assert_eq!(restored.location, after.location);
     assert_eq!(restored.revision, after.revision);
@@ -122,6 +124,31 @@ fn mossbun_authorized_spawn_worker_steps_and_restart_preserve_identity() {
     assert_eq!(
         restored.private_payload.downcast_ref::<Mossbun>(),
         after.private_payload.downcast_ref::<Mossbun>()
+    );
+    assert_eq!(recovered.recovered_tick, 40_012);
+    // Make the persisted terrain resident before measuring scheduler progress;
+    // asynchronous chunk I/O is independent of the restart clock regression.
+    for x in -1..=1 {
+        for y in 4..=6 {
+            for z in -1..=1 {
+                recovered
+                    .world
+                    .get_chunk(crate::world::ChunkKey { x, y, z })
+                    .unwrap();
+            }
+        }
+    }
+    let resumed_tick = recovered.recovered_tick;
+    // Exercise the production phases, including next-tick admission, on the
+    // startup clock baseline rather than manually jumping to the entity due time.
+    for tick in resumed_tick + 1..=resumed_tick + 4 {
+        crate::server::runtime::tick_once(&mut recovered, TickId::new(tick), Instant::now())
+            .unwrap();
+    }
+    assert_ne!(
+        recovered.entities.snapshot(id).unwrap().location,
+        after.location,
+        "recovered Mossbun must move promptly on the resumed simulation clock"
     );
     drop(recovered);
     fs::remove_dir_all(path).unwrap();

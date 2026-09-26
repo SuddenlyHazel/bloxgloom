@@ -168,7 +168,7 @@ struct State {
     pending_block_changes: Vec<CellCoord>,
     durability: Durability,
     fire: FireRuntime,
-    fire_last_tick: u64,
+    recovered_tick: u64,
     phase_plan: PhasePlan,
     system_runtime: SystemRuntime,
     loader: ChunkLoader,
@@ -476,7 +476,7 @@ fn server_state_with_startup(
             entity_types,
             owner_configs,
         )?;
-    let fire_last_tick = recovered_fire.last_tick();
+    let recovered_tick = durability.recovered_tick.max(recovered_fire.last_tick());
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
@@ -520,7 +520,7 @@ fn server_state_with_startup(
         pending_block_changes: Vec::new(),
         durability,
         fire,
-        fire_last_tick,
+        recovered_tick,
         phase_plan,
         system_runtime,
         loader,

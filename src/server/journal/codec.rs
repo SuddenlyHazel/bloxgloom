@@ -20,6 +20,9 @@ pub(super) fn validate_transaction(
     let mut total = 2usize + 16 + 8 + 4;
     for change in &transaction.changes {
         validate_key(&change.key)?;
+        if change.key.domain == super::CLOCK_DOMAIN {
+            return Err(invalid_input("journal clock metadata is reserved"));
+        }
         if change.before == change.after {
             return Err(invalid_input(
                 "journal change has identical before and after values",
