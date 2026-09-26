@@ -13,7 +13,8 @@ The execution contract we are working toward:
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.
 - **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.
-- **Pending:** slices 1–5 and the independent extension crate below.
+- **In progress:** slice 1; initial implementation landed, with direct-review corrections underway for bounded owner selection and fair retry admission.
+- **Pending:** slices 2–5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -38,7 +39,15 @@ The parent performed the focused review directly. Necessary corrections remain p
 
 ## 1. Scheduling and progress under capacity pressure
 
-**Status: pending.**
+**Status: in progress — review corrections underway.**
+
+- [x] Explicit neighbour-read declarations are wired into live entity capture; drop and kiln planners skip unused neighbour views (`2c35bb6`).
+- [x] Active/due owner selection and entity wake/due admission changes are wired into production dispatch (`87a2ac6`).
+- [x] Oversized entity views receive bounded transient retry backoff while persisted due entries remain intact (`355a709`). This is local rejection/backoff, not guaranteed progress for a permanently oversized neighbour-dependent policy.
+- [ ] Bound owner selection work itself; the initial implementation collects all eligible owners before applying the job limit.
+- [ ] Prevent a queue full of unavailable entity ticks from indefinitely excluding ready due work.
+- [ ] Resolve the transient first-wake cursor exception and verify restart/fairness semantics.
+- [ ] Finish direct review of corrections and verification. Coder reported 530 tests passing for the initial implementation; that result does not establish the missing progress guarantees above.
 
 **Problem:** bounded execution protects memory and prevents global failure, but does not always guarantee local progress. Dense neighbour views can prevent drop motion; wake-prioritized work can compete with normal scheduling.
 
