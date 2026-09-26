@@ -5,6 +5,69 @@ use crate::server::entities::{EntityId, EntityLocation};
 
 const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 
+#[test]
+fn terrain_edit_interrupts_idle_mossbun_on_the_next_tick_across_a_seam() {
+    use crate::server::entities::{EntityPayload, EntitySpawn, mossbun::Mossbun};
+    let save = TestSave::new("idle-mossbun-support-wake");
+    let mut state = state_for(&save, 7);
+    let y = crate::world::MAX_GENERATED_HEIGHT + 32;
+    let rest = [16.05, y as f32, 0.5];
+    reside_neighbourhood(&mut state, rest);
+    for x in [15, 16] {
+        edit(&mut state, (x, y - 1, 0), crate::world::STONE, 1);
+        receive(&mut state, true);
+    }
+    let mut spawn = empty_action();
+    spawn.entities = Some(
+        state
+            .entities
+            .prepare_spawn(EntitySpawn::Mobile {
+                entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
+                position: rest,
+                payload: EntityPayload::new(Mossbun::default()),
+                spawn_tick: 1,
+            })
+            .unwrap(),
+    );
+    let id = spawn.entities.as_ref().unwrap().entity_id();
+    stage(&mut state, &spawn, 1);
+    receive(&mut state, true);
+    let mut idle = empty_action();
+    idle.entities = Some(
+        state
+            .entities
+            .prepare_update(
+                id,
+                state.entities.snapshot(id).unwrap().revision,
+                crate::server::entities::EntityPatch {
+                    next_tick: Some(Some(100)),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+    );
+    stage(&mut state, &idle, 2);
+    receive(&mut state, true);
+    // Process harmless placement hints first: they must not advance idle AI.
+    tick_once(&mut state, TickId::new(2), Instant::now()).unwrap();
+    tick_once(&mut state, TickId::new(3), Instant::now()).unwrap();
+    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(100));
+    for x in [15, 16] {
+        edit(&mut state, (x, y - 1, 0), AIR, 4);
+        receive(&mut state, true);
+    }
+    tick_once(&mut state, TickId::new(4), Instant::now()).unwrap();
+    assert_eq!(
+        position(&state, id),
+        rest,
+        "wake cannot cascade in its producing tick"
+    );
+    tick_once(&mut state, TickId::new(5), Instant::now()).unwrap();
+    assert_eq!(position(&state, id), [rest[0], rest[1] - 0.25, rest[2]]);
+    assert_eq!(state.entities.snapshot(id).unwrap().next_tick, Some(9));
+    assert!(!state.durability.failed);
+}
+
 fn empty_action() -> CommitAction {
     CommitAction {
         client_id: None,

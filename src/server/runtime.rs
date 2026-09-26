@@ -492,13 +492,12 @@ fn commit_block_effects(state: &mut State, tick: TickId) -> io::Result<()> {
     )
     .map_err(|error| io::Error::other(format!("block effect routing: {error:?}")))?;
     debug_assert_eq!(batch.commit_phase(), Phase::InteractionCommit);
-    // These are latency hints only. Durable suspended records independently
-    // retain recheck eligibility, including across the edit/notification crash
-    // window and chunk seams. Bound traversal as well as retained hints; never
-    // collect all drops in every affected owner before taking a prefix.
+    // Suspended policies and terrain-reactive scheduled policies get latency
+    // hints. Their recheck index or persisted deadline remains the fallback
+    // across the edit/notification crash window. Bound traversal as well as
+    // retained hints; never collect the entire affected entity population.
     for owner in batch.owners().iter().take(16) {
-        for id in crate::server::drops::sleeping_drop_ids_in_chunk(&state.entities, owner.owner, 16)
-        {
+        for id in state.entities.terrain_wake_ids(owner.owner, 16) {
             state.durability.hint_entity_wake(id);
         }
     }

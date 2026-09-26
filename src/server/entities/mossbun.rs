@@ -83,6 +83,10 @@ pub(in crate::server) fn register(
 
 struct Wander;
 impl EntityTickPolicy for Wander {
+    fn wakes_on_terrain_change(&self) -> bool {
+        true
+    }
+
     fn read_radius_chunks(&self) -> u8 {
         1
     }
@@ -107,15 +111,18 @@ impl EntityTickPolicy for Wander {
             wakes: Vec::new(),
             transfer: None,
         };
-        // An early wake is only a hint, not an extra physics/AI step.
-        if snapshot.next_tick.is_some_and(|due| due > tick) {
-            return Ok(plan);
-        }
         let EntityLocation::Mobile { position } = snapshot.location else {
             return Err(EntityError::InvalidLocation);
         };
         if !terrain::valid_position(position) {
             return Err(EntityError::InvalidLocation);
+        }
+        // A harmless early hint must not advance AI, but loss of support
+        // interrupts idle immediately rather than waiting for the AI deadline.
+        let clear = terrain::clear(view, position)?;
+        let grounded = terrain::grounded(view, position)?;
+        if snapshot.next_tick.is_some_and(|due| due > tick) && (!clear || grounded) {
+            return Ok(plan);
         }
         let mut bun = *snapshot
             .private_payload
@@ -124,10 +131,10 @@ impl EntityTickPolicy for Wander {
         let mut next = position;
         let mut delay = STEP_TICKS;
         // Never tunnel out of a newly placed block; wait for it to be removed.
-        if !terrain::clear(view, position)? {
+        if !clear {
             bun.steps = 0;
             delay = 40;
-        } else if !terrain::grounded(view, position)? {
+        } else if !grounded {
             // Bounded settling gravity: at most 1/4 block, snapping to the top
             // of a solid voxel rather than accumulating sub-voxel penetration.
             next[1] -= 0.25;

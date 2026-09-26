@@ -487,8 +487,15 @@ pub(in crate::server) fn commit_tick_plan(
     if !descriptor.tick_policy().validates(plan.next_tick) {
         return Err(corrupt("entity tick planner returned an invalid due time"));
     }
+    // A dependency wake may interrupt a future AI deadline (e.g. support
+    // removal during idle). Its replacement must be after this tick, but
+    // need not be after the old deadline. Ordinary due steps still advance it.
     if let (Some(previous), Some(next)) = (snapshot.next_tick, plan.next_tick)
-        && next <= previous
+        && (if woken {
+            next <= current_tick
+        } else {
+            next <= previous
+        })
     {
         return Err(corrupt("entity tick planner returned an invalid due time"));
     }

@@ -101,6 +101,12 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
 /// read set; reads outside them fail closed and must surface as
 /// `EntityError::ViewOutOfRange`.
 pub trait EntityTickPolicy: Send + Sync + 'static {
+    /// Recheck terrain dependencies even while a future due tick is pending.
+    /// The planner must avoid advancing ordinary behavior on harmless hints.
+    fn wakes_on_terrain_change(&self) -> bool {
+        false
+    }
+
     fn plan(
         &self,
         snapshot: &EntitySnapshot,
@@ -182,6 +188,12 @@ pub struct EntityTypeDescriptor {
 }
 
 impl EntityTypeDescriptor {
+    pub fn wakes_on_terrain_change(&self) -> bool {
+        self.tick_planner
+            .as_ref()
+            .is_some_and(|planner| planner.wakes_on_terrain_change())
+    }
+
     pub fn validate_location(
         &self,
         location: &super::types::EntityLocation,

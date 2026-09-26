@@ -272,6 +272,29 @@ pub struct EntityStore {
 }
 
 impl EntityStore {
+    /// Bounded terrain hints. Scheduled policies opt in; suspended policies
+    /// also retain their independent circular recheck eligibility.
+    pub(in crate::server) fn terrain_wake_ids(
+        &self,
+        chunk: ChunkKey,
+        maximum: usize,
+    ) -> Vec<EntityId> {
+        self.indexes
+            .chunks
+            .get(&chunk)
+            .into_iter()
+            .flat_map(|page| page.entity_ids.iter())
+            .take(maximum)
+            .filter_map(|id| {
+                let record = self.records.get(id)?;
+                let descriptor = self.types.descriptor(record.entity_type).ok()?;
+                (descriptor.has_tick_planner()
+                    && (record.next_tick.is_none() || descriptor.wakes_on_terrain_change()))
+                .then_some(*id)
+            })
+            .collect()
+    }
+
     /// Suspended tick policies remain eligible for bounded support/dependency
     /// rechecks, even if every notification was lost (including on restart).
     pub(in crate::server) fn suspended_tick_after(

@@ -96,9 +96,10 @@ fn airborne_count_tracks_schedule_not_records() {
     assert_eq!(store.len(), 1);
     // The settled drop still owns its chunk for wake routing.
     let chunk = crate::world::world_to_chunk(0, 0, 0).0;
-    assert_eq!(sleeping_drop_ids_in_chunk(&store, chunk, 16), vec![id]);
+    assert_eq!(store.terrain_wake_ids(chunk, 16), vec![id]);
     assert!(
-        sleeping_drop_ids_in_chunk(&store, crate::world::ChunkKey { x: 9, y: 9, z: 9 }, 16)
+        store
+            .terrain_wake_ids(crate::world::ChunkKey { x: 9, y: 9, z: 9 }, 16)
             .is_empty()
     );
 }

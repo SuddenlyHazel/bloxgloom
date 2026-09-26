@@ -2,6 +2,65 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn actor_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join("unused-actor-relight-config"),
+    );
+    let position = Vec3::new(0.5, 80.5, 0.5);
+    let key = crate::world::world_to_chunk(0, 80, 0).0;
+    let lit = LightSample {
+        sky: 15,
+        glow: 0,
+        bounce: [3, 4, 5],
+    };
+    app.chunks.insert(
+        key,
+        Arc::new(Chunk::from_blocks(
+            key,
+            1,
+            vec![crate::world::AIR; crate::world::CHUNK_VOLUME],
+        )),
+    );
+    app.light_samples.insert(
+        key,
+        (1, vec![lit; crate::world::CHUNK_VOLUME].into_boxed_slice()),
+    );
+    app.lighting_revisions.insert(key, 1);
+    app.next_lighting_revision = 2;
+    assert_eq!(app.actor_light_at(position), lit);
+    // A terrain edit invalidates the field while a worker prepares its replacement.
+    app.queue_edited_chunk_relight(key);
+    assert_eq!(
+        app.actor_light_at(position),
+        lit,
+        "pending light is not a black frame"
+    );
+    assert_eq!(
+        app.light_at(position),
+        LightSample::default(),
+        "strict drop sampling is unchanged"
+    );
+    let revision = app.lighting_revisions[&key];
+    app.light_samples.insert(
+        key,
+        (
+            revision,
+            vec![LightSample::default(); crate::world::CHUNK_VOLUME].into_boxed_slice(),
+        ),
+    );
+    assert_eq!(
+        app.actor_light_at(position),
+        LightSample::default(),
+        "completed dark caves must stay dark"
+    );
+    app.light_samples.remove(&key);
+    assert_eq!(app.actor_light_at(position), LightSample::default());
+    app.config_writer.finish();
+}
+
+#[test]
 fn moving_objects_sample_current_local_light_across_negative_chunk_seams() {
     let mut app = ClientApp::new(
         Network::disconnected_for_test(),

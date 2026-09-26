@@ -1067,6 +1067,17 @@ impl ClientApp {
     }
 
     fn light_at(&self, position: Vec3) -> LightSample {
+        self.sample_light(position, false)
+    }
+
+    /// Actors use the last completed field while relighting, just as terrain
+    /// keeps its displayed mesh until replacement. A pending revision is not
+    /// darkness. Completed dark samples still replace old illumination.
+    fn actor_light_at(&self, position: Vec3) -> LightSample {
+        self.sample_light(position, true)
+    }
+
+    fn sample_light(&self, position: Vec3, displayed: bool) -> LightSample {
         let (key, local) = crate::world::world_to_chunk(
             position.x.floor() as i32,
             position.y.floor() as i32,
@@ -1075,7 +1086,7 @@ impl ClientApp {
         let Some((revision, samples)) = self.light_samples.get(&key) else {
             return LightSample::default();
         };
-        if self.lighting_revisions.get(&key) != Some(revision) {
+        if !displayed && self.lighting_revisions.get(&key) != Some(revision) {
             return LightSample::default();
         }
         Chunk::index(local)
@@ -1222,7 +1233,7 @@ impl ClientApp {
                 crate::render::AvatarModel::Player => 1.45,
                 crate::render::AvatarModel::Mossbun => 0.5,
             };
-            let sample = self.light_at(avatar.position + Vec3::Y * height);
+            let sample = self.actor_light_at(avatar.position + Vec3::Y * height);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
         }
