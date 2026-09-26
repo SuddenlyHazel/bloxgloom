@@ -44,10 +44,12 @@ The parent performed the focused review directly. Necessary corrections remain p
 - [x] Explicit neighbour-read declarations are wired into live entity capture; drop and kiln planners skip unused neighbour views (`2c35bb6`).
 - [x] Active/due owner selection and entity wake/due admission changes are wired into production dispatch (`87a2ac6`).
 - [x] Oversized entity views receive bounded transient retry backoff while persisted due entries remain intact (`355a709`). This is local rejection/backoff, not guaranteed progress for a permanently oversized neighbour-dependent policy.
-- [ ] Bound owner selection work itself; the initial implementation collects all eligible owners before applying the job limit.
-- [ ] Prevent a queue full of unavailable entity ticks from indefinitely excluding ready due work.
-- [ ] Resolve the transient first-wake cursor exception and verify restart/fairness semantics.
-- [ ] Finish direct review of corrections and verification. Coder reported 530 tests passing for the initial implementation; that result does not establish the missing progress guarantees above.
+- [x] Replace population-sized owner selection with bounded indexed traversal; successor/empty-owner checks and durable wake inspection also use bounded lookups (`c634b78`, `ca1bdb1`).
+- [x] Rotate unavailable entity ticks out of admission while preserving persisted due eligibility. A production-path regression covers 256 distinct blocked entities followed by ready work (`c241155`).
+- [x] Remove the transient first-wake cursor exception. The restart test preserves wake-delivery/no-duplicate assertions and explicitly changes the ordinary rotation expectation (`c634b78`).
+- [ ] Correct due-index feeding: it currently admits only one new due owner per wave even when the configured job budget allows more.
+- [ ] Complete the handler-to-schedule path: ordinary registered owner writes still set `due_tick: None`, so handlers cannot express their next deadline through that result path. Selecting pre-scheduled cells does not establish recurring due-driven execution.
+- [ ] Finish direct review of final corrections. Coder reported 533 tests passing for the latest implementation; the parent inspected the correction diffs, but the remaining due-scheduling gaps are not covered by that result.
 
 **Problem:** bounded execution protects memory and prevents global failure, but does not always guarantee local progress. Dense neighbour views can prevent drop motion; wake-prioritized work can compete with normal scheduling.
 
