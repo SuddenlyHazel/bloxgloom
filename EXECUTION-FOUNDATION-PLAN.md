@@ -17,7 +17,8 @@ The execution contract we are working toward:
 - **Done:** slice 2 and direct review of bounded suspended-entity rechecks (`f05f2c5`).
 - **Done:** slice 3 and direct review of entity conflict/publication separation (`2ca8e12`).
 - **Done:** slice 4 and direct review of shared commit admission and ordered barriers (`273a70d`).
-- **Pending:** slice 5 and the independent extension crate below.
+- **In progress:** slice 5A, off-thread publication; slice 5B, bounded checkpoint work, is authorized to follow after review.
+- **Pending:** independent extension crate below.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -156,7 +157,12 @@ The next implementation task is slice 5. Scope publication and checkpoint work a
 
 ## 5. Off-thread publication and bounded checkpoint work
 
-**Status: pending.**
+**Status: authorized; publication implementation in progress.**
+
+Execute as two sequential tasks with parent review of each:
+
+- [ ] **5A — Publication:** immutable committed inputs/logs, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
+- [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. Begin after reviewing publication under the same user authorization.
 
 **Problem:** expensive work can still accumulate after simulation has finished.
 
