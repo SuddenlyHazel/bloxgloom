@@ -5,7 +5,7 @@ use super::model::{
     OUTPUT_SLOT_INDEX, fuel_ticks,
 };
 use crate::content::{Catalog, KILN_ITEM};
-use crate::inventory::{HOTBAR_SLOTS, Inventory, STACK_LIMIT, Stack};
+use crate::inventory::{Inventory, SLOTS, STACK_LIMIT, Stack};
 use crate::server::entities::{
     CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan, EntityInteractionPolicy,
     EntityLocation, EntitySnapshot, EntityTickPlan, EntityTickPolicy, EntityView,
@@ -62,6 +62,18 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
             .private_payload
             .downcast_ref::<KilnPayload>()
             .ok_or(EntityError::InvalidPayload)?;
+        let request = if request.len() == 22 && request[0] == 2 {
+            let id = u64::from_le_bytes(request[6..14].try_into().unwrap());
+            let revision = u64::from_le_bytes(request[14..22].try_into().unwrap());
+            if id != snapshot.id.get() || revision != snapshot.revision {
+                return Err(EntityError::InvalidPayload);
+            }
+            &request[..6]
+        } else if request.len() == 6 && request[0] == 1 {
+            request
+        } else {
+            return Err(EntityError::InvalidPayload);
+        };
         let mut next_inventory = inventory.clone();
         let next_payload =
             plan_interaction_payload(payload, request, &mut next_inventory, catalog)?;
@@ -129,14 +141,14 @@ fn plan_interaction_payload(
     inventory: &mut Inventory,
     catalog: &Catalog,
 ) -> Result<KilnPayload, EntityError> {
-    if request.len() != 6 || request[0] != 1 {
+    if request.len() != 6 || !matches!(request[0], 1 | 2) {
         return Err(EntityError::InvalidPayload);
     }
     let operation = request[1];
     let kiln_slot = KilnSlot::decode(request[2]).ok_or(EntityError::InvalidPayload)?;
     let inventory_slot = usize::from(request[3]);
     let count = u16::from_le_bytes([request[4], request[5]]);
-    if inventory_slot >= HOTBAR_SLOTS || count == 0 || count > STACK_LIMIT {
+    if inventory_slot >= SLOTS || count == 0 || count > STACK_LIMIT {
         return Err(EntityError::InvalidPayload);
     }
     match operation {

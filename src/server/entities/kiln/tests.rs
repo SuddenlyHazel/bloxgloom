@@ -47,11 +47,16 @@ fn compiled_states_cover_both_halves_facings_and_lit_emission() {
                 assert_eq!(definition.properties.len(), 3);
                 assert_eq!(definition.emission, if lit { 12 } else { 0 });
                 assert_eq!(definition.block_type, KILN_BLOCK_TYPE);
-                if lit {
-                    assert_eq!(definition.textures.side, TextureId(8));
-                } else {
-                    assert_eq!(definition.textures.side, TextureId(3));
-                }
+                assert_eq!(
+                    definition.textures.side,
+                    TextureId(if half == KilnHalf::Upper {
+                        20
+                    } else if lit {
+                        22
+                    } else {
+                        21
+                    })
+                );
             }
         }
     }
@@ -128,16 +133,33 @@ fn footprint_and_break_plans_cover_positive_and_negative_chunk_seams() {
 }
 
 #[test]
-fn codec_keeps_inventory_fuel_and_exact_progress_private() {
+fn codec_projects_workstation_contents_and_recipe_progress_without_components() {
     let catalog = catalog_with_test_output();
     let codec = KilnPayloadCodec {
         catalog: catalog.clone(),
+        recipes: Arc::new(
+            KilnRecipeBook::new(
+                [KilnRecipe {
+                    input: ItemId(4),
+                    output: Stack::new(ItemId(257), 1),
+                    cook_ticks: 20,
+                }],
+                &catalog,
+            )
+            .unwrap(),
+        ),
     };
     let mut payload = KilnPayload::new(KilnFacing::South);
     payload.slots[INPUT_SLOT_INDEX] = Some(Stack::new(ItemId(4), 4));
     payload.progress_item = Some(ItemId(4));
     payload.slots[FUEL_SLOT_INDEX] = Some(Stack::new(ItemId(9), 2));
     payload.slots[OUTPUT_SLOT_INDEX] = Some(Stack::new(ItemId(257), 3));
+    payload.slots[OUTPUT_SLOT_INDEX]
+        .as_mut()
+        .unwrap()
+        .components = Some(Arc::new(
+        crate::inventory::ComponentPayload::new(1, vec![0xab; 8]).unwrap(),
+    ));
     payload.fuel_remaining = 80;
     payload.lit = true;
     payload.cook_progress = 19;
@@ -148,10 +170,120 @@ fn codec_keeps_inventory_fuel_and_exact_progress_private() {
     let decoded = codec.decode(&private).unwrap();
     assert_eq!(decoded.downcast_ref::<KilnPayload>(), Some(&payload));
     let public = codec.public_view(&decoded).unwrap();
-    assert_eq!(public, [2, 1, (19 * 255 / KILN_MAX_COOK_TICKS) as u8]);
-    assert!(!public.windows(2).any(|window| window == [4, 0]));
-    assert!(!public.windows(2).any(|window| window == [9, 0]));
-    assert!(!public.windows(2).any(|window| window == [1, 1]));
+    let summary = crate::protocol::kiln::KilnView::decode(&public).unwrap();
+    assert_eq!(public.len(), 24);
+    assert_eq!(summary.progress, (19 * 255 / 20) as u8);
+    assert_eq!(summary.slots[0], payload.slots[0]);
+    assert_eq!(summary.slots[2], Some(Stack::new(ItemId(257), 3)));
+    assert_eq!(summary.fuel, 80);
+}
+
+#[test]
+fn workstation_moves_backpack_stacks_atomically_and_rejects_stale_identity() {
+    use crate::server::entities::{EntityInteractionPolicy, EntityView};
+    let catalog = Arc::new(Catalog::builtins());
+    let mut store = EntityStore::new(registry(&catalog));
+    let transaction = store
+        .prepare_spawn(
+            KilnPayload::new(KilnFacing::North)
+                .spawn(CellCoord::new(0, 80, 0), 1, &catalog)
+                .unwrap(),
+        )
+        .unwrap();
+    let id = transaction.entity_id();
+    store.apply_committed(transaction).unwrap();
+    let snapshot = store.snapshot(id).unwrap();
+    let mut inventory = crate::inventory::Inventory::default();
+    inventory.slots[35] = Some(Stack::new(crate::items::STICK, 128));
+    let view = crate::server::voxel_view::VoxelView::from_chunks(Vec::<crate::world::Chunk>::new())
+        .unwrap();
+    let neighbours = EntityView::assemble(Vec::new(), id);
+    let mut request = vec![2, 0, 0, 35, 128, 0];
+    request.extend(id.get().to_le_bytes());
+    request.extend(snapshot.revision.to_le_bytes());
+    let result = KilnInteractionPolicy
+        .plan(
+            &snapshot,
+            &request,
+            &inventory,
+            &catalog,
+            &view,
+            &neighbours,
+        )
+        .unwrap();
+    assert_eq!(result.inventory.slots[35], None);
+    assert_eq!(
+        result
+            .payload
+            .downcast_ref::<KilnPayload>()
+            .unwrap()
+            .slot(KilnSlot::Fuel)
+            .unwrap()
+            .count,
+        128
+    );
+    assert_eq!(
+        inventory.slots[35].as_ref().unwrap().count,
+        128,
+        "planning cannot mutate live inventory"
+    );
+    let mut loaded = snapshot.clone();
+    loaded.private_payload = result.payload;
+    loaded.revision += 1;
+    assert!(
+        KilnInteractionPolicy
+            .plan(&loaded, &request, &inventory, &catalog, &view, &neighbours)
+            .is_err()
+    );
+    request[1] = 1;
+    request[4] = 127;
+    request[14..22].copy_from_slice(&loaded.revision.to_le_bytes());
+    let taken = KilnInteractionPolicy
+        .plan(
+            &loaded,
+            &request,
+            &result.inventory,
+            &catalog,
+            &view,
+            &neighbours,
+        )
+        .unwrap();
+    assert_eq!(taken.inventory.slots[35].as_ref().unwrap().count, 127);
+    assert_eq!(
+        taken
+            .payload
+            .downcast_ref::<KilnPayload>()
+            .unwrap()
+            .slot(KilnSlot::Fuel)
+            .unwrap()
+            .count,
+        1
+    );
+    request[6..14].copy_from_slice(&(id.get() + 1).to_le_bytes());
+    assert!(
+        KilnInteractionPolicy
+            .plan(
+                &loaded,
+                &request,
+                &result.inventory,
+                &catalog,
+                &view,
+                &neighbours
+            )
+            .is_err()
+    );
+    assert!(
+        KilnInteractionPolicy
+            .plan(
+                &loaded,
+                &request[..6],
+                &result.inventory,
+                &catalog,
+                &view,
+                &neighbours
+            )
+            .is_err()
+    );
 }
 
 #[test]

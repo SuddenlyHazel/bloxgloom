@@ -34,6 +34,7 @@ impl UiLayout {
         match screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => layout.add_inventory(),
+            UiScreen::Kiln => layout.add_kiln(),
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
@@ -108,6 +109,52 @@ impl UiLayout {
                 },
             );
         }
+    }
+
+    fn add_kiln(&mut self) {
+        let panel = self.kiln_panel();
+        let gap = 6.0 * self.scale;
+        let size = ((panel.width - 32.0 * self.scale - gap * 8.0) / 9.0)
+            .min((panel.height - 180.0 * self.scale) / 4.0 - gap)
+            .max(12.0);
+        let x = panel.x + (panel.width - size * 9.0 - gap * 8.0) * 0.5;
+        for index in 0..36u8 {
+            let (row, col) = if index < 9 {
+                (3, index)
+            } else {
+                ((index - 9) / 9, (index - 9) % 9)
+            };
+            self.push(
+                UiControl::InventorySlot(index),
+                UiRect {
+                    x: x + f32::from(col) * (size + gap),
+                    y: panel.y + 142.0 * self.scale + f32::from(row) * (size + gap),
+                    width: size,
+                    height: size,
+                },
+            );
+        }
+        for (slot, col) in [(0, 1), (1, 3), (2, 7)] {
+            self.push(
+                UiControl::KilnSlot(slot),
+                UiRect {
+                    x: x + col as f32 * (size + gap),
+                    y: panel.y + 64.0 * self.scale,
+                    width: size.min(50.0 * self.scale),
+                    height: size.min(50.0 * self.scale),
+                },
+            );
+        }
+    }
+
+    pub(super) fn kiln_panel(&self) -> UiRect {
+        centered_panel(
+            self.width,
+            self.height,
+            720.0 * self.scale,
+            540.0 * self.scale,
+            12.0 * self.scale,
+        )
     }
 
     fn add_pause(&mut self) {

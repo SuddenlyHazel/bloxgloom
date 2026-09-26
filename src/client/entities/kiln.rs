@@ -92,6 +92,9 @@ fn request_bytes(operation: u8, kiln_slot: u8, hotbar_slot: u8) -> Vec<u8> {
     vec![1, operation, kiln_slot, hotbar_slot, 1, 0]
 }
 
-fn no_avatar(_: &crate::protocol::PublicEntity) -> Result<Option<crate::render::VisualAvatar>, ()> {
+fn no_avatar(
+    entity: &crate::protocol::PublicEntity,
+) -> Result<Option<crate::render::VisualAvatar>, ()> {
+    crate::protocol::kiln::KilnView::decode(&entity.payload).ok_or(())?;
     Ok(None)
 }

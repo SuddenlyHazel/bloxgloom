@@ -10,6 +10,7 @@ use super::{
     types::{SettingId, UiControl, UiDebug, UiFrame, UiRect, UiScreen},
 };
 
+mod kiln;
 mod screens;
 
 pub(super) const MAX_UI_VERTICES: usize = 32_768;
@@ -38,6 +39,7 @@ impl UiBuilder<'_> {
         match frame.screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
+            UiScreen::Kiln => self.draw_kiln(frame, layout, catalog),
             UiScreen::Admin => self.draw_admin(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
             UiScreen::Settings | UiScreen::Graphics => self.draw_settings(frame, layout),

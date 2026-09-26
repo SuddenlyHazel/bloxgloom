@@ -16,7 +16,7 @@ use crate::content::{
 use crate::server::entities::EntitySnapshot;
 use codec::KilnPayloadCodec;
 #[cfg(test)]
-use model::{FUEL_SLOT_INDEX, INPUT_SLOT_INDEX, KILN_MAX_COOK_TICKS, OUTPUT_SLOT_INDEX};
+use model::{FUEL_SLOT_INDEX, INPUT_SLOT_INDEX, OUTPUT_SLOT_INDEX};
 use model::{KILN_MAX_PAYLOAD_BYTES, KILN_TICK_INTERVAL};
 use model::{KilnFacing as Facing, KilnHalf as Half};
 pub(in crate::server) use model::{KilnFacing, KilnHalf, KilnPayload, KilnRecipeBook};
@@ -108,6 +108,7 @@ pub(in crate::server) fn register_entity_type_with_recipes(
         max_payload_bytes: KILN_MAX_PAYLOAD_BYTES,
         codec: Arc::new(KilnPayloadCodec {
             catalog: Arc::clone(&catalog),
+            recipes: Arc::clone(&recipes),
         }),
     })?;
     builder.register_interaction_policy(KILN_ENTITY_TYPE, Arc::new(KilnInteractionPolicy))?;

@@ -482,6 +482,16 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         Some(recovered_states[1])
     );
 
+    let resume_tick = recovered.recovered_tick;
+    for tick in resume_tick + 1..=resume_tick + 25 {
+        crate::server::runtime::tick_once(&mut recovered, TickId::new(tick), Instant::now())
+            .unwrap();
+    }
+    let resumed = recovered.entities.snapshot(entity_id).unwrap();
+    assert!(
+        kiln_payload(&resumed).unwrap().fuel_remaining() < recovered_payload.fuel_remaining(),
+        "kiln pulses must resume on the recovered shared clock"
+    );
     let inventory = recovered.inventory_store.load(profile).unwrap();
     let peer = add_test_client(
         &mut recovered,
@@ -492,11 +502,29 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         ],
         inventory,
     );
+    let mut collect = vec![2, 1, 2, 27, 1, 0];
+    collect.extend(entity_id.get().to_le_bytes());
+    collect.extend(resumed.revision.to_le_bytes());
+    let request = ClientMessage::EntityInteract {
+        action_id: action_id(4),
+        target: [upper.x, upper.y, upper.z],
+        payload: collect,
+    };
+    settle_live_action(&mut recovered, resume_tick + 26, request.clone());
+    settle_live_action(&mut recovered, resume_tick + 27, request);
+    assert_eq!(
+        recovered.clients[&1].inventory.slots[27],
+        Some(crate::inventory::Stack::new(
+            ItemId(crate::world::STONE.0),
+            1
+        )),
+        "collection retry cannot duplicate output"
+    );
     settle_live_action(
         &mut recovered,
-        100,
+        resume_tick + 28,
         ClientMessage::Edit {
-            action_id: action_id(4),
+            action_id: action_id(5),
             x: upper.x,
             y: upper.y,
             z: upper.z,
@@ -529,17 +557,19 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
             .unwrap()
         })
         .collect();
-    assert_eq!(stacks.len(), 2);
-    assert_eq!(stacks.iter().map(|stack| stack.count).sum::<u16>(), 2);
+    assert_eq!(stacks.len(), 1);
+    assert_eq!(stacks.iter().map(|stack| stack.count).sum::<u16>(), 1);
     assert!(
         stacks
             .iter()
             .any(|stack| stack.item == crate::content::KILN_ITEM)
     );
-    assert!(
-        stacks
-            .iter()
-            .any(|stack| stack.item == ItemId(crate::world::STONE.0))
+    assert_eq!(
+        recovered.clients[&1].inventory.slots[27]
+            .as_ref()
+            .unwrap()
+            .count,
+        1
     );
 
     drop(peer);

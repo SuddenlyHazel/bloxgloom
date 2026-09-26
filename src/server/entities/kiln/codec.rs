@@ -3,7 +3,7 @@
 use super::super::codec::{Decoder, Encoder};
 use super::super::registry::{EntityCodecError, EntityPayloadCodec};
 use super::super::types::EntityPayload;
-use super::model::{KILN_MAX_COOK_TICKS, KILN_MAX_PAYLOAD_BYTES, KilnFacing, KilnPayload};
+use super::model::{KILN_MAX_PAYLOAD_BYTES, KilnFacing, KilnPayload, KilnRecipeBook};
 use crate::content::Catalog;
 use crate::inventory::{ComponentPayload, MAX_COMPONENT_BYTES, Stack};
 use crate::items::ItemId;
@@ -13,6 +13,7 @@ const KILN_PAYLOAD_VERSION: u8 = 1;
 
 pub(super) struct KilnPayloadCodec {
     pub(super) catalog: Arc<Catalog>,
+    pub(super) recipes: Arc<KilnRecipeBook>,
 }
 
 impl EntityPayloadCodec for KilnPayloadCodec {
@@ -78,13 +79,20 @@ impl EntityPayloadCodec for KilnPayloadCodec {
         payload
             .validate(&self.catalog)
             .map_err(|_| EntityCodecError::InvalidData)?;
-        let progress = (u32::from(payload.cook_progress) * u32::from(u8::MAX)
-            / u32::from(KILN_MAX_COOK_TICKS)) as u8;
-        Ok(vec![
-            payload.facing.encoded(),
-            u8::from(payload.lit),
+        let duration = payload.slots[1]
+            .as_ref()
+            .and_then(|input| self.recipes.recipe(input))
+            .map_or(1, |recipe| recipe.cook_ticks);
+        let progress =
+            (u32::from(payload.cook_progress) * 255 / u32::from(duration)).min(255) as u8;
+        Ok(crate::protocol::kiln::KilnView {
+            facing: payload.facing.encoded(),
+            lit: payload.lit,
             progress,
-        ])
+            fuel: payload.fuel_remaining,
+            slots: payload.slots.clone(),
+        }
+        .encode())
     }
 }
 

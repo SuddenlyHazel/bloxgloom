@@ -79,6 +79,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         for (screen, name) in [
             (UiScreen::Playing, "playing"),
             (UiScreen::Inventory, "inventory"),
+            (UiScreen::Kiln, "kiln"),
             (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
@@ -97,6 +98,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     for (screen, name) in [
         (UiScreen::Playing, "playing"),
         (UiScreen::Inventory, "inventory"),
+        (UiScreen::Kiln, "kiln"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
@@ -211,6 +213,21 @@ pub fn render_mossbun_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     ))
 }
 
+pub fn render_kiln_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Kilns,
+    ))
+}
+
 pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, phase) in [
@@ -281,6 +298,7 @@ enum DropPhase {
 
 #[derive(Clone, Copy)]
 enum PreviewScene {
+    Kilns,
     Surface,
     Vegetation,
     Drops(DropPhase),
@@ -349,6 +367,7 @@ async fn render_previews(
             (target + Vec3::new(9.0, 5.0, 11.0), target)
         }
         PreviewScene::Drops(_)
+        | PreviewScene::Kilns
         | PreviewScene::Avatars
         | PreviewScene::Mossbuns
         | PreviewScene::MossbunMotion(_) => {
@@ -402,7 +421,7 @@ async fn render_previews(
     }
     if matches!(
         scene,
-        PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
+        PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_) | PreviewScene::Kilns
     ) {
         // A small display lawn makes feet and the player scale reference
         // inspectable instead of burying them in generated slopes/foliage.
@@ -418,6 +437,22 @@ async fn render_previews(
                     };
                     set_preview_block(&mut chunks, x, y, z, block);
                 }
+            }
+        }
+    }
+    if matches!(scene, PreviewScene::Kilns) {
+        for (dx, lit) in [(-2, false), (1, true)] {
+            for half in 0..=1 {
+                let state = crate::content::BlockStateId(
+                    crate::content::KILN_DEFAULT_STATE.0 + half * 2 + u32::from(lit),
+                );
+                set_preview_block(
+                    &mut chunks,
+                    target_xz.0 + dx,
+                    target_height + 1 + half as i32,
+                    target_xz.1,
+                    state,
+                );
             }
         }
     }
@@ -971,6 +1006,18 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
+        kiln: (screen == UiScreen::Kiln).then(|| crate::protocol::kiln::KilnView {
+            facing: 0,
+            lit: true,
+            progress: 170,
+            fuel: 64,
+            slots: [
+                Some(Stack::new(crate::items::STICK, 12)),
+                Some(Stack::new(crate::items::ItemId(crate::world::GRAVEL.0), 24)),
+                Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 8)),
+            ],
+        }),
+        kiln_source: None,
         admin_enabled: true,
         admin_page: 0,
         admin_input: "give bloxgloom:stone 128",
@@ -987,6 +1034,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
+            UiScreen::Kiln => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing => None,
             UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
             UiScreen::Admin => Some(UiControl::AdminItem(0)),
@@ -1003,6 +1051,8 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
         selected_slot: 4,
         inventory: sample_inventory(),
         inventory_source: None,
+        kiln: None,
+        kiln_source: None,
         admin_enabled: false,
         admin_page: 0,
         admin_input: "",

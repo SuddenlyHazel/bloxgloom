@@ -1,5 +1,7 @@
 use super::registry::EntityAdapter;
 use super::*;
+#[path = "kiln_tests.rs"]
+mod kiln_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
 use crate::content::{Catalog, EntityTypeId};

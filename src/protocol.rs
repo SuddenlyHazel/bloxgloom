@@ -6,6 +6,7 @@ use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, PaletteView, PalettedBlocks};
 use std::io::{self, Read, Write};
 
 mod entities;
+pub(crate) mod kiln;
 pub use entities::{
     BlockCellChange, EntitySnapshotPage, PublicEntity, PublicEntityChange, PublicEntityLocation,
     WorldCommitPart, WorldSnapshotStart, snapshot_checksum,

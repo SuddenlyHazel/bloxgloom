@@ -57,6 +57,15 @@ pub(super) enum Assembly {
 }
 
 impl Replicas {
+    pub(super) fn kiln_at(&self, target: [i32; 3]) -> Option<&PublicEntity> {
+        let key = crate::world::world_to_chunk(target[0], target[1], target[2]).0;
+        self.entities.get(&key)?.values().find(|entity| {
+            entity.entity_type == crate::content::KILN_ENTITY_TYPE &&
+            matches!(entity.location, crate::protocol::PublicEntityLocation::Anchored { anchor, .. }
+                if target[0] == anchor[0] && target[2] == anchor[2]
+                && (target[1] == anchor[1] || anchor[1].checked_add(1) == Some(target[1])))
+        })
+    }
     pub(super) fn accept(
         &mut self,
         message: ServerMessage,

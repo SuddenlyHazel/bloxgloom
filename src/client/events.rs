@@ -212,14 +212,23 @@ impl ApplicationHandler for ClientApp {
             } => {
                 if self.screen != UiScreen::Playing {
                     if button == MouseButton::Left
-                        || (button == MouseButton::Right && self.screen == UiScreen::Inventory)
+                        || (button == MouseButton::Right
+                            && matches!(self.screen, UiScreen::Inventory | UiScreen::Kiln))
                     {
                         let control = self
                             .ui_layout
                             .as_ref()
                             .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
                         if let Some(control) = control {
-                            if let UiControl::InventorySlot(slot) = control {
+                            if self.screen == UiScreen::Kiln
+                                && let UiControl::KilnSlot(slot) = control
+                            {
+                                self.kiln_click(slot, button == MouseButton::Right);
+                            } else if self.screen == UiScreen::Kiln
+                                && let UiControl::InventorySlot(slot) = control
+                            {
+                                self.kiln_inventory_click(slot, button == MouseButton::Right);
+                            } else if let UiControl::InventorySlot(slot) = control {
                                 self.inventory_click(slot, button == MouseButton::Right);
                             } else if button == MouseButton::Left {
                                 self.activate_control(event_loop, control);
@@ -230,7 +239,9 @@ impl ApplicationHandler for ClientApp {
                     self.set_grab(true);
                 } else if button == MouseButton::Left {
                     self.edit_aimed_block(false);
-                } else if button == MouseButton::Right {
+                } else if button == MouseButton::Right
+                    && (self.shift_down || !self.open_aimed_kiln())
+                {
                     self.edit_aimed_block(true);
                 }
             }

@@ -750,11 +750,15 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
         let views = store.public_views_for_chunk(chunk);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, id);
-        assert_eq!(views[0].payload.len(), 3);
-        assert_eq!(views[0].payload[0], 1);
-        assert_eq!(views[0].payload[1], 0);
-        assert_eq!(views[0].payload[2], 0);
-        assert!(!views[0].payload.windows(2).any(|window| window == [4, 0]));
+        assert_eq!(views[0].payload.len(), 24);
+        let public = crate::protocol::kiln::KilnView::decode(&views[0].payload).unwrap();
+        assert_eq!(public.facing, 1);
+        assert!(!public.lit);
+        assert_eq!(public.progress, 0);
+        assert_eq!(
+            public.slots[1],
+            Some(crate::inventory::Stack::new(crate::items::ItemId(4), 13))
+        );
     }
     assert_eq!(
         store

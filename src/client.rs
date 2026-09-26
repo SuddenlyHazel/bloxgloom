@@ -100,7 +100,9 @@ fn edit_for_hit_with_catalog(
 fn escape_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Pause,
-        UiScreen::Inventory | UiScreen::Admin | UiScreen::Pause => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Kiln | UiScreen::Admin | UiScreen::Pause => {
+            UiScreen::Playing
+        }
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
     }
@@ -109,7 +111,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
 fn inventory_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Inventory,
-        UiScreen::Inventory => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Kiln => UiScreen::Playing,
         other => other,
     }
 }
@@ -236,6 +238,7 @@ impl ActionTracker {
 pub(crate) mod actors;
 mod admin;
 mod entities;
+mod kiln;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
@@ -255,6 +258,8 @@ struct ClientApp {
     inventory: Inventory,
     drop_animator: DropAnimator,
     actor_animator: actors::ActorAnimator,
+    kiln_target: Option<([i32; 3], u64)>,
+    kiln_source: Option<u8>,
     drops_revision: u64,
     inventory_source: Option<u8>,
     network: Network,
@@ -318,6 +323,8 @@ impl ClientApp {
             inventory: Inventory::default(),
             drop_animator: DropAnimator::new(now),
             actor_animator: actors::ActorAnimator::default(),
+            kiln_target: None,
+            kiln_source: None,
             drops_revision: 0,
             inventory_source: None,
             network,
@@ -388,6 +395,10 @@ impl ClientApp {
         self.keys = Keys::default();
         self.focused_control = None;
         self.inventory_source = None;
+        self.kiln_source = None;
+        if screen != UiScreen::Kiln {
+            self.kiln_target = None;
+        }
         self.set_grab(screen == UiScreen::Playing);
         self.refresh_layout();
         if screen == UiScreen::Playing && !self.grabbed {
@@ -517,6 +528,13 @@ impl ClientApp {
             UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
                 self.inventory_click(slot, false)
             }
+            UiControl::InventorySlot(slot) if self.screen == UiScreen::Kiln => {
+                self.kiln_inventory_click(slot, false)
+            }
+            UiControl::KilnSlot(slot) if self.screen == UiScreen::Kiln => {
+                self.kiln_click(slot, false)
+            }
+            UiControl::KilnSlot(_) => {}
             UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
@@ -561,6 +579,10 @@ impl ClientApp {
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
             UiScreen::Playing => Vec::new(),
+            UiScreen::Kiln => (0..3)
+                .map(UiControl::KilnSlot)
+                .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
+                .collect(),
             UiScreen::Inventory => (0..crate::inventory::SLOTS as u8)
                 .map(UiControl::InventorySlot)
                 .collect(),
@@ -1166,6 +1188,7 @@ impl ClientApp {
         let dt = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.poll_work();
+        self.validate_kiln_screen();
         self.move_player(dt);
         let camera = self.camera();
         if self.status.as_ref().is_some_and(|(_, until)| now > *until) {
@@ -1186,6 +1209,8 @@ impl ClientApp {
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),
             inventory_source: self.inventory_source,
+            kiln: self.kiln_view(),
+            kiln_source: self.kiln_source,
             admin_enabled: self.admin_enabled,
             admin_page: self.admin_page,
             admin_input: &self.admin_input,

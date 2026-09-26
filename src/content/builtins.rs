@@ -3,7 +3,7 @@ use super::*;
 impl Catalog {
     pub fn builtins() -> Self {
         let mut catalog = Self::new();
-        const PNGS: [(&str, &[u8], bool, bool, bool); 20] = [
+        const PNGS: [(&str, &[u8], bool, bool, bool); 23] = [
             (
                 "grass_top",
                 include_bytes!("../../assets/textures/blocks/grass_top.png"),
@@ -144,6 +144,27 @@ impl Catalog {
                 false,
                 true,
             ),
+            (
+                "kiln_brick",
+                include_bytes!("../../assets/textures/blocks/kiln_brick.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "kiln_vent",
+                include_bytes!("../../assets/textures/blocks/kiln_vent.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "kiln_lit",
+                include_bytes!("../../assets/textures/blocks/kiln_lit.png"),
+                false,
+                false,
+                false,
+            ),
         ];
         for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS {
             // Embedded assets are exercised by the renderer's material tests; avoid decoding
@@ -282,9 +303,9 @@ impl Catalog {
                 name: "KILN".into(),
                 swatch: [0.52, 0.48, 0.43, 1.0],
                 textures: BlockTextures {
-                    top: TextureId(3),
-                    side: TextureId(3),
-                    bottom: TextureId(3),
+                    top: TextureId(20),
+                    side: TextureId(21),
+                    bottom: TextureId(20),
                 },
                 solid: true,
                 opaque: true,
@@ -338,18 +359,16 @@ impl Catalog {
                     let offset =
                         ((facing_index * 2 + usize::from(half == "upper")) * 2) + usize::from(lit);
                     let id = BlockStateId(KILN_DEFAULT_STATE.0 + offset as u32);
-                    let textures = if lit {
-                        BlockTextures {
-                            top: TextureId(3),
-                            side: TextureId(8),
-                            bottom: TextureId(3),
-                        }
-                    } else {
-                        BlockTextures {
-                            top: TextureId(3),
-                            side: TextureId(3),
-                            bottom: TextureId(3),
-                        }
+                    let textures = BlockTextures {
+                        top: TextureId(20),
+                        side: TextureId(if half == "upper" {
+                            20
+                        } else if lit {
+                            22
+                        } else {
+                            21
+                        }),
+                        bottom: TextureId(20),
                     };
                     catalog
                         .register_state_with_emission(
@@ -389,7 +408,7 @@ impl Catalog {
                 key: "bloxgloom:kiln".into(),
                 name: "KILN".into(),
                 swatch: [0.52, 0.48, 0.43, 1.0],
-                texture: TextureId(3),
+                texture: TextureId(21),
                 placeable: Some(KILN_DEFAULT_STATE),
                 sprite: false,
             })

@@ -192,7 +192,12 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         &mips[0][(material::TEXTURE_SIZE * material::TEXTURE_SIZE * 3 * 4) as usize..][..3]
     );
     let layer_bytes = (material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize;
-    for layer in 12..material::texture_layers() as usize {
+    for (layer, _) in crate::content::catalog()
+        .textures()
+        .iter()
+        .enumerate()
+        .filter(|(_, texture)| texture.alpha_cutout)
+    {
         let mut alpha = mips[0][layer * layer_bytes..(layer + 1) * layer_bytes]
             .chunks_exact(4)
             .map(|pixel| pixel[3]);
@@ -280,7 +285,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
         .unwrap();
     assert_eq!(
         material::material_layer_for(&catalog, BlockStateId::new(16), 0, 1),
-        20
+        layer.0
     );
     assert_eq!(
         catalog.item(ItemId::new(131)).unwrap().placeable,
@@ -288,7 +293,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
     );
     assert_eq!(
         material::item_material_layer_for(&catalog, ItemId::new(131), 1, 1),
-        20
+        layer.0
     );
     assert_eq!(
         material::item_material_layer_for(&catalog, ItemId::new(16), 1, 1),
@@ -296,7 +301,8 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
     );
     assert_eq!(
         material::material_tiles_for(&catalog).len(),
-        (21 * material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4) as usize
+        (catalog.textures().len() as u32 * material::TEXTURE_SIZE * material::TEXTURE_SIZE * 4)
+            as usize
     );
 }
 

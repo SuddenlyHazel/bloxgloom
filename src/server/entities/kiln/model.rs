@@ -122,7 +122,7 @@ impl KilnHalf {
 }
 
 /// Private WAL-owned inventory/progress. Public projections are assembled by
-/// the codec and intentionally omit all slot contents and fuel quantities.
+/// the codec; public slot summaries omit arbitrary item component payloads.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::server) struct KilnPayload {
     pub(super) facing: KilnFacing,

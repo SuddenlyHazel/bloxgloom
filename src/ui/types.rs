@@ -6,6 +6,7 @@ pub enum UiScreen {
     #[default]
     Playing,
     Inventory,
+    Kiln,
     Admin,
     Pause,
     Settings,
@@ -29,6 +30,7 @@ pub enum SettingId {
 pub enum UiControl {
     HotbarSlot(u8),
     InventorySlot(u8),
+    KilnSlot(u8),
     AdminItem(u8),
     AdminPrev,
     AdminNext,
@@ -93,6 +95,8 @@ pub struct UiFrame<'a> {
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
     pub inventory_source: Option<u8>,
+    pub kiln: Option<crate::protocol::kiln::KilnView>,
+    pub kiln_source: Option<u8>,
     pub admin_enabled: bool,
     pub admin_page: usize,
     pub admin_input: &'a str,
@@ -110,6 +114,8 @@ impl Default for UiFrame<'_> {
             selected_slot: 0,
             inventory: std::array::from_fn(|_| None),
             inventory_source: None,
+            kiln: None,
+            kiln_source: None,
             admin_enabled: false,
             admin_page: 0,
             admin_input: "",

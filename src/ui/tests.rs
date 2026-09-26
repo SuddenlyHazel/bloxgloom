@@ -7,6 +7,25 @@ use super::{
 };
 
 #[test]
+fn kiln_controls_fit_and_hit_test_on_compact_and_large_screens() {
+    for (width, height, scale) in [(640, 360, 1.0), (1280, 720, 1.0), (640, 360, 1.5)] {
+        let layout = UiLayout::new(width, height, scale, UiScreen::Kiln);
+        for control in (0..3)
+            .map(UiControl::KilnSlot)
+            .chain((0..36).map(UiControl::InventorySlot))
+        {
+            let rect = layout.rect(control).unwrap();
+            assert!(rect.x >= 0.0 && rect.y >= 0.0);
+            assert!(rect.x + rect.width <= width as f32 && rect.y + rect.height <= height as f32);
+            assert_eq!(
+                layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(control)
+            );
+        }
+    }
+}
+
+#[test]
 fn admin_catalog_controls_fit_compact_and_desktop_panels() {
     for (width, height, scale) in [(1280, 720, 1.0), (640, 360, 1.0), (640, 360, 2.0)] {
         let layout = UiLayout::new(width, height, scale, UiScreen::Admin);
@@ -302,6 +321,8 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 selected_slot: 8,
                 inventory: std::array::from_fn(|_| None),
                 inventory_source: None,
+                kiln: None,
+                kiln_source: None,
                 admin_enabled: true,
                 admin_page: 0,
                 admin_input: "give bloxgloom:stone 128",
