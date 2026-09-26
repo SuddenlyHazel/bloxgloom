@@ -42,11 +42,11 @@ E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select 
 
 Blocks are now finite: the server owns inventory, drops, pickup, and placement. Breaking a block pops its drop upward; resting drops hover and spin, then fly toward the player when picked up. A full inventory leaves drops in the world. Inventory and world drops persist in the server save directory; drops expire after ten minutes. Each OS user has a persistent local profile ID for their inventory and saved position; simultaneous connections with that same profile are rejected. Exiting the local game saves the last authoritative position, and restarting restores it unless that position has become obstructed. Movement remains server-authoritative with block collision; gravity and other survival systems are not implemented yet. The inventory/drop protocol is versioned; older clients must be rebuilt.
 
-The server targets a 50 Hz fixed-step simulation even with no clients connected. A coordinator owns authoritative state and orders durable actions; movement and fire jobs use worker pools over authoritative terrain views. Drops and the two-cell kiln use registered entity policies, whose planning currently runs on the coordinator. Disk writes run on workers, but commit barriers can wait for their receipts. See the execution diagrams below for the distinction between implemented parallelism and pending work.
+The server targets a 50 Hz fixed-step simulation even with no clients connected. A coordinator owns authoritative state; movement, fire, registered entity tick policies (including drops and kiln ticks), and owner handlers run on workers. Publication workers prepare interest, snapshots and committed updates. Disk writes run on workers, but simulation and publication barriers can wait for results or durable receipts. See the execution diagrams below for the distinction between implemented parallelism and pending work.
 
 ## Current execution architecture
 
-These diagrams describe the current Rust execution paths. **Solid arrows are implemented paths. Dashed arrows and nodes labelled `PENDING` are planned work, not active execution.** A registered entity policy is not automatically a worker job: `EntityTickPolicy` and the registered owner-system executor are separate paths.
+These diagrams describe the current Rust execution paths. **Solid arrows are implemented paths. Dashed arrows and nodes labelled `PENDING` are planned work, not active execution.** Entity tick policies and registered owner handlers use separate worker dispatchers but share durable admission and ordered receipt handling. The reviewed implementation record and remaining work are in [EXECUTION-FOUNDATION-PLAN.md](EXECUTION-FOUNDATION-PLAN.md).
 
 ### Server threads and workers
 
@@ -60,26 +60,30 @@ flowchart TB
     Movement -->|"results at barrier"| Coordinator
     Coordinator --> Fire["Fire: private source, encode and apply worker pools"]
     Fire -->|"prepared results"| Coordinator
+    Coordinator -->|"bounded immutable captures"| EntityWorkers["Entity tick workers: drop physics, kiln ticks, registered policies"]
+    EntityWorkers -->|"ordered plans at barrier"| Coordinator
     Coordinator --> Owners["Registered owner handlers: parallel worker jobs"]
     Owners --> Logs["Owner-write construction: scoped worker threads"]
     Logs -->|"validated results"| Coordinator
     Coordinator <-->|"chunk requests and results"| Loader["Chunk loading and terrain generation: 2 workers"]
     Coordinator -->|"transactions"| WAL["Journal worker: append and fsync"]
     WAL -->|"durable receipts"| Coordinator
-    Coordinator --> Checkpoints["Checkpoint write workers + entity checkpoint mirror worker"]
-    Coordinator --> Serial["Serial: drop and kiln planning, actions, routing, interest and publication"]
+    Coordinator --> Checkpoints["Checkpoint write workers + fenced entity mirror serialization"]
+    Coordinator -->|"immutable committed effects and shared page captures"| PublishWorkers["Publication workers: interest, drop visibility, snapshots and delta projection"]
+    PublishWorkers -->|"prepared frames at barrier"| Coordinator
+    Coordinator -->|"validated outbound frames"| Reactor
+    Coordinator --> Serial["Serial: authorization, actions, captures, validation, apply, pins and queue admission"]
 
-    Serial -.-> EntityWorkers["PENDING: entity-policy / drop-physics worker dispatch"]
-    Serial -.-> PublishWorkers["PENDING: off-thread interest projection and shared encoded chunk pages"]
     Fire -.-> SharedFire["PENDING / DEFERRED: fire cutover to generic owner infrastructure"]
     classDef pending fill:#fff4cc,stroke:#946200,stroke-dasharray:5 5,color:#222;
-    class EntityWorkers,PublishWorkers,SharedFire pending;
+    class SharedFire pending;
 ```
 
 - **Player movement and fire computation are parallel today.** Fire retains its own scheduler, mailboxes and checkpoint machinery; its generic-path migration is deferred.
-- **Registered owner handlers run on workers**, with revisioned snapshots and coordinator-controlled commits. This path is available to startup-registered systems; it does not implicitly execute every registered entity type.
-- **Drop physics, kiln ticks and entity interactions are planned serially.** Drops now share entity identity, storage and recovery, but this consolidation did not move their tick planners onto worker threads.
-- Input authorization, block edits, inventory actions, pickups, transfer planning, effect routing and interest projection remain coordinator work. Shared mutable world state is not handed to workers.
+- **Entity tick policies and registered owner handlers run on workers**, with immutable inputs and ordered result collection. The coordinator constructs and validates their transactions; entity interactions remain coordinator-planned.
+- **Publication preparation runs on workers:** nearest-interest traversal, drop visibility, snapshot checksums, and committed block/entity/player projection. Matching frames share prepared content and encoded bytes through the existing codec workers; sharing is batch-local.
+- Input authorization, block edits, inventory actions, pickups, trusted transfer construction, effect routing and authoritative apply remain coordinator work. The coordinator also captures bounded inputs, manages subscriptions/pins, validates publication results and admits outbound frames.
+- **Worker dispatch does not make the tick loop nonblocking.** Simulation and publication use explicit barriers; socket I/O continues independently.
 
 ### Tick and durable commit paths
 
@@ -91,34 +95,61 @@ flowchart TB
     Interaction --> Publish["Publish"]
     Publish --> Next["Next fixed-step tick"]
 
-    Durable --> EntityPlan["Coordinator: entity tick / interaction planning"]
-    EntityPlan --> Motion["Eligible motion: bounded batch, up to 256 candidates"]
-    Motion --> Journal["Main server.wal: one record per logical transaction"]
-    Journal --> Receipt["Confirmed receipt"]
-    Receipt --> Apply["Coordinator: apply authoritative changes"]
+    Durable --> EntityPlan["Entity tick workers: immutable inputs to plans"]
+    EntityPlan --> Motion["Coordinator: validate and batch eligible motion, up to 256 candidates"]
+    Motion --> Admission["Shared admission: exact read/write dependencies, bounded pending queue"]
+    Actions["Coordinator-planned actions and interactions"] --> Admission
+    OwnerJobs["Owner workers: replacements, effects and next deadlines"] --> Admission
+    Admission -->|"assign entity publication order on acceptance"| Journal["Main server.wal: atomic transactions, append and fsync"]
+    Journal --> Receipt["One ordered receipt queue: later receipts cannot overtake"]
+    Receipt --> Apply["Coordinator: confirmed apply, release reservations, emit effects"]
     Apply --> Publish
-
-    OwnerJobs["Registered owner worker results"] --> Stage["Coordinator: validate, arbitrate full key sets, stage waves"]
-    Stage --> Journal
-    Receipt --> OwnerBarrier["Owner phase barrier: poll / drain staged waves, apply confirmed results"]
-    OwnerBarrier --> Publish
-    Apply --> Wake["Wake notifications: destination work no earlier than next tick"]
-    OwnerBarrier --> Wake
-    Wake --> Next
-
-    Next -.-> Sparse["PENDING: complete active/due-driven owner scheduling"]
-    classDef pending fill:#fff4cc,stroke:#946200,stroke-dasharray:5 5,color:#222;
-    class Sparse pending;
+    Receipt --> Barriers["Explicit barriers: motion tick boundary and last owner admission in each phase"]
+    Barriers --> Next
+    Apply --> Wake["Wake hints: eligible no earlier than next tick"]
+    Wake --> Schedule["Bounded admission: active/due owners, due entities, hints and suspended rechecks"]
+    Next --> Schedule
+    Schedule --> EntityPlan
+    Schedule --> OwnerJobs
 ```
 
 The five tick phases run in order. The commit branches above show shared mechanisms, not additional threads or a claim that every system runs in every phase.
 
-- Owner waves can be submitted before earlier receipts are polled, but **the phase barrier drains before advancing**. This is overlapping submission, not a fully nonblocking tick loop.
+- Entity actions and owner waves share admission, a **256 pending-commit bound**, and ordered receipt/apply handling. An owner phase barrier completes through its last accepted admission, including earlier work from other producers. Ordinary non-motion actions and fire can remain pending across ticks.
 - A tick that stages a motion batch drains staged receipts before completing its durable phase. This removes ordinary receipt-poll timing from admitted drop steps, at the cost of waiting for the journal. Terrain availability, admission limits and rotation can still defer work.
 - Built-in durable actions remain coordinator-ordered. Atomic pickup and cross-entity transfers put all affected state into one transaction; a receipt gates visibility.
-- Owner cells, pending owner wakes and rotation cursors use domains in the same journal. Recovery and journal rotation preserve them. Pending owner wakes for absent destinations are durable; entity wake attempts also have a separate transient queue.
-- Effect consumers schedule work rather than directly modifying world or inventory state. Scheduled work must remain correct without an accelerating notification.
-- Persisted round-robin cursors currently drive normal owner-system selection. The complete active/due-driven scheduling path remains pending.
+- **Conflict identity is separate from publication order.** Independent entity updates can coexist in flight, including within one owner chunk. Entity records, terrain, membership pages, anchored cells and queried absence retain their real dependencies. Shared readers coexist; writers remain fenced until those readers apply. Shared page changes and ID allocation can still serialize.
+- Owner handlers choose `Active` or a future `AtTick` deadline. Bounded indexed selection uses circular fairness; state, deadlines, owner wake flags and rotation cursors persist through the same journal. Exact transient ready-set order is not preserved across restart.
+- Suspended tickable entities remain in a derived recheck index rebuilt on recovery. Bounded circular rechecks discover changed support even if every entity wake hint is lost. Supported sleeping drops reaffirm without motion or WAL writes. Recheck latency depends on population and admission opportunities.
+- Effect consumers schedule work rather than directly modifying world or inventory state. Entity hints are coalesced and capped at 256; durable owner flags retain absent-destination work. Neither determines item ownership.
+
+### Publication and checkpoint boundaries
+
+```mermaid
+flowchart TB
+    Apply["Confirmed coordinator apply"] --> Effects["Ordered immutable committed effects"]
+    Effects --> Projection["Bounded publication workers: group, filter and prepare client frames"]
+    Pages["Immutable subscription captures, mobile pages and resident chunk handles"] --> Projection
+    Projection --> Validate["Coordinator barrier: validate session/revisions, update subscriptions, enqueue"]
+    Validate --> Codec["Existing codec workers: encode matching shared messages once"]
+    Codec --> Socket["Reactor: shared byte buffers, independent per-client budgets"]
+
+    Apply --> Mirror["FIFO entity checkpoint mirror worker"]
+    Rotation["Rotation boundary: close admission and drain accepted receipts"] --> Fence["Constant-size mirror fence request"]
+    Fence --> Mirror
+    Mirror --> BGEN["Stream fenced entity checkpoint, fsync and atomic rename"]
+    Apply --> Dirty["Bounded dirty values: select at most 16 keys per dispatch"]
+    Dirty --> Files["Checkpoint workers: per-key file writes"]
+    BGEN --> Coverage["Verify checkpoint coverage and drain dirty files"]
+    Files --> Coverage
+    Coverage --> Base["Journal worker: stream ordered base, durably switch manifest"]
+    Base --> Resume["Release fence and reopen admission"]
+```
+
+- Publication uses batches of at most **16 worker jobs**, with one committed effect fully projected before the next. Stale outputs cannot advance subscriptions. Oversized transaction projection triggers complete resnapshots; impossible snapshots or failed per-client delivery disconnect the affected session rather than truncate updates or stop other clients.
+- Snapshot and effect projection still wait at synchronous barriers. Bounded selected public-view capture, authoritative bookkeeping and queue admission remain on the coordinator; there is no cross-tick publication cache.
+- Entity checkpoints stream from the existing worker-owned mirror; journal bases stream from an ordered latest-values map. There is no whole-generation output buffer or coordinator entity-store clone. Serialization turns process at most **16 schema-bounded entries**, stopping after reaching 64 KiB; one entry may exceed that target. Individual output/checksum pieces are at most 64 KiB.
+- **Total checkpoint work is still proportional to saved state.** Dedicated workers finish each command through bounded turns; these are not interleaved executor jobs. Rotation can hold admission closed across multiple ticks, and filesystem operations have no fixed latency guarantee. Startup recovery remains population-sized; ordinary per-key snapshots are whole schema-bounded values. Fire's private complete-map checkpoint remains outside this streaming guarantee.
 
 ### Client execution and remaining extension work
 
@@ -141,9 +172,9 @@ flowchart TB
 
 Client presentation never decides item ownership. Server snapshots and explicit pickup events control authoritative state; drop hover, spin and pickup flight are visual effects. Worker mesh/light results carry revisions so stale results can be discarded.
 
-Other pending foundation work includes a usable policy for dense neighbour views (capacity currently rejects local planning), completing worker-based entity execution, and exercising the registration interfaces with a real independent extension crate. Public mod loading and scripting remain future work.
+The next foundation task is the independent extension crate, completing any missing startup registration hooks through a real consumer. Texture paging remains a separate rendering task. Known limits include local rejection/backoff for permanently oversized neighbour-dependent views and atomic owner-wave deferral delaying other owners in that wave. Drop and kiln policies skip unused neighbour capture, so ordinary dense drops no longer hit that neighbour-view limit. Public mod loading and scripting remain future work.
 
-Code entry points: [`src/server/runtime.rs`](src/server/runtime.rs), [`src/server/runtime/systems.rs`](src/server/runtime/systems.rs), [`src/server/durable/coordinator.rs`](src/server/durable/coordinator.rs), [`src/server/durable/actions/entity.rs`](src/server/durable/actions/entity.rs), [`src/server/net/reactor.rs`](src/server/net/reactor.rs), and [`src/client/workers.rs`](src/client/workers.rs).
+Code entry points: [`src/server/runtime.rs`](src/server/runtime.rs), [`src/server/runtime/systems.rs`](src/server/runtime/systems.rs), [`src/server/durable/admission.rs`](src/server/durable/admission.rs), [`src/server/durable/receipt.rs`](src/server/durable/receipt.rs), [`src/server/durable/entity_dispatch.rs`](src/server/durable/entity_dispatch.rs), [`src/server/durable/publication/dispatch.rs`](src/server/durable/publication/dispatch.rs), [`src/server/streaming.rs`](src/server/streaming.rs), [`src/server/entity_checkpoint/worker.rs`](src/server/entity_checkpoint/worker.rs), and [`src/client/workers.rs`](src/client/workers.rs).
 
 ## Development and previews
 
