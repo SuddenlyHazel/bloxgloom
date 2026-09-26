@@ -3,6 +3,7 @@ use crate::content::Catalog;
 use crate::items::{ItemId, SAPLING, SEEDS, STICK};
 use crate::world::{self, BlockId};
 
+#[cfg(test)]
 pub(super) fn harvest(
     block: BlockId,
     position: [i32; 3],

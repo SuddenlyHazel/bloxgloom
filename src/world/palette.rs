@@ -102,10 +102,6 @@ impl PalettedBlocks {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     pub fn unique_states(&self) -> usize {
         match self {
             Self::Uniform { .. } => 1,
@@ -154,6 +150,7 @@ impl PalettedBlocks {
         (0..self.len()).map(|index| self.get_ref(index).expect("index below len"))
     }
 
+    #[cfg(test)]
     pub fn to_vec(&self) -> Vec<BlockId> {
         self.iter().copied().collect()
     }

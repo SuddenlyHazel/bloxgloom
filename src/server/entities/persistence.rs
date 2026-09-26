@@ -339,18 +339,6 @@ pub fn decode_motion_value(
     })
 }
 
-pub fn decode_record_value(
-    expected_id: EntityId,
-    bytes: &[u8],
-    types: &EntityTypeRegistry,
-) -> Result<EntityRecord, EntityError> {
-    let record = decode_record_value_bytes(bytes, types)?;
-    if record.id != expected_id {
-        return Err(EntityError::CorruptCheckpoint);
-    }
-    Ok(record)
-}
-
 pub fn decode_durable_record_value(
     expected_id: EntityId,
     bytes: &[u8],

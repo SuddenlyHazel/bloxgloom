@@ -61,6 +61,10 @@ impl VoxelView {
         Self::build(chunks, Arc::new(crate::content::catalog().clone()), true)
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can validate snapshots against their frozen catalog."
+    )]
     pub fn from_chunks_in<I, C>(chunks: I, catalog: Arc<Catalog>) -> Result<Self, SnapshotError>
     where
         I: IntoIterator<Item = C>,
@@ -72,6 +76,7 @@ impl VoxelView {
     /// Fast path for chunks obtained only from `World::cached_arc_chunk`.
     /// `World` validated/generated their voxels at load or edit time, so a
     /// per-tick scan of all 4,096 blocks in every view would duplicate work.
+    #[cfg(test)]
     pub(super) fn from_resident_chunks<I>(chunks: I) -> Result<Self, SnapshotError>
     where
         I: IntoIterator<Item = Arc<Chunk>>,
@@ -205,6 +210,7 @@ pub fn resolve_player_movement(
 
 /// Tests the existing player hitbox: 0.6 block wide and 1.7 blocks tall, with
 /// samples at the feet, torso, and head. Missing samples are explicit errors.
+#[cfg(test)]
 pub fn player_collides(view: &VoxelView, feet: [f32; 3]) -> Result<bool, MissingChunk> {
     crate::physics::player_collides(feet, |x, y, z| {
         Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)

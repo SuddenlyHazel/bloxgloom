@@ -38,6 +38,10 @@ const OWNER_CELL_VERSION: u16 = 1;
 /// Fail-closed codec failure, mirroring `EntityCodecError`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::server) enum OwnerCodecError {
+    #[allow(
+        dead_code,
+        reason = "Extension codecs report malformed typed payloads with this error."
+    )]
     InvalidData,
     UnsupportedVersion,
 }

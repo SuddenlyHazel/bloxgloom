@@ -178,6 +178,10 @@ impl EntityTypeDescriptor {
         self.id
     }
 
+    #[allow(
+        dead_code,
+        reason = "Frozen type metadata is available to startup extensions."
+    )]
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -198,6 +202,10 @@ impl EntityTypeDescriptor {
         self.tick_policy
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect the frozen type's declared payload bound."
+    )]
     pub const fn max_payload_bytes(&self) -> usize {
         self.max_payload_bytes
     }
@@ -502,6 +510,10 @@ impl EntityTypeRegistry {
             .ok_or(EntityError::UnknownRequiredType(id))
     }
 
+    #[allow(
+        dead_code,
+        reason = "Startup extensions can inspect the frozen entity vocabulary."
+    )]
     pub fn descriptors(&self) -> impl Iterator<Item = &EntityTypeDescriptor> {
         self.descriptors.values()
     }

@@ -64,6 +64,7 @@ impl CheckpointWriter {
     }
 
     /// One worker keeps small fixtures deterministic.
+    #[cfg(test)]
     pub(super) fn new(capacity: usize) -> Self {
         Self::new_with_workers(capacity, 1)
     }

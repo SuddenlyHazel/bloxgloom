@@ -13,10 +13,18 @@ use std::sync::Arc;
 pub(in crate::server) struct OwnerData(Arc<dyn Any + Send + Sync>);
 
 impl OwnerData {
+    #[allow(
+        dead_code,
+        reason = "Owner extensions construct typed seed, codec, and patch values."
+    )]
     pub fn new<T: Any + Send + Sync>(value: T) -> Self {
         Self(Arc::new(value))
     }
 
+    #[allow(
+        dead_code,
+        reason = "Owner extensions read their typed values in codecs and handlers."
+    )]
     pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
         self.0.downcast_ref()
     }

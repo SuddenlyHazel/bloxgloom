@@ -87,6 +87,7 @@ pub(in crate::server) struct OwnerWrite {
 }
 
 impl OwnerWrite {
+    #[cfg(test)]
     pub fn new(owner: OwnerKey, read_revision: u64, value: OwnerData) -> Self {
         Self {
             owner,
@@ -96,6 +97,7 @@ impl OwnerWrite {
         }
     }
 
+    #[cfg(test)]
     pub fn scheduled(mut self, due_tick: Option<u64>) -> Self {
         self.due_tick = due_tick;
         self
@@ -427,10 +429,12 @@ impl DurableOwnerStore {
             .map(|cell| (cell.revision, cell.value.clone()))
     }
 
+    #[cfg(test)]
     pub fn cell_count(&self) -> usize {
         self.cells.len()
     }
 
+    #[cfg(test)]
     pub fn active_len(&self) -> usize {
         self.active.len()
     }
@@ -783,6 +787,7 @@ impl DurableOwnerStore {
     /// Takes up to `limit` active owners in stable order. Driving work from
     /// this set keeps scheduling proportional to active owners, not total
     /// owners.
+    #[cfg(test)]
     pub fn take_active(&mut self, limit: usize) -> Vec<(SystemId, OwnerKey)> {
         let count = limit.min(self.active.len());
         let selected: Vec<_> = self.active.iter().take(count).cloned().collect();
@@ -795,6 +800,7 @@ impl DurableOwnerStore {
     /// Bounded cursor over owners due at or before `through_tick`, mirroring
     /// `due_tick_entries`: entries after `after` come first, then a wrap
     /// prefix, never more than `maximum`.
+    #[cfg(test)]
     pub fn due_entries(
         &self,
         through_tick: u64,

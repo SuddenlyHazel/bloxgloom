@@ -7,10 +7,11 @@ use super::spatial::{
     EntityIndexes, decode_cell_key, decode_chunk_key, encode_cell_key, encode_cell_owner,
     encode_chunk_key, validate_location_owner, validate_ownership_mode,
 };
+#[cfg(test)]
+use super::types::EntityMotionSnapshot;
 use super::types::{
-    AnchorUpdate, CellCoord, EntityError, EntityId, EntityLocation, EntityMotionSnapshot,
-    EntityOwner, EntityOwnership, EntityPayload, EntityPublicView, TRANSIENT_ENTITY_ID_BIT,
-    position_to_cell,
+    AnchorUpdate, CellCoord, EntityError, EntityId, EntityLocation, EntityOwner, EntityOwnership,
+    EntityPayload, EntityPublicView, TRANSIENT_ENTITY_ID_BIT, position_to_cell,
 };
 use crate::content::{BlockStateId, EntityTypeId};
 use crate::server::journal::{Change, StateKey};
@@ -116,6 +117,10 @@ pub struct EntitySnapshot {
     pub entity_type: EntityTypeId,
     pub revision: u64,
     pub motion_revision: u64,
+    #[allow(
+        dead_code,
+        reason = "Entity policy extensions may inspect the authoritative owner."
+    )]
     pub owner: EntityOwner,
     pub location: EntityLocation,
     pub private_payload: EntityPayload,
@@ -205,6 +210,7 @@ impl PreparedEntityTransaction {
             .chain(self.additional_read_keys.iter())
     }
 
+    #[cfg(test)]
     pub fn entity_id(&self) -> EntityId {
         self.entity_ids()[0]
     }
@@ -330,10 +336,12 @@ impl EntityStore {
         self.mobile_pages.page(key)
     }
 
+    #[cfg(test)]
     pub fn public_view(&self, id: EntityId) -> Option<EntityPublicView> {
         self.records.get(&id).map(EntityRecord::public_view)
     }
 
+    #[cfg(test)]
     pub fn public_views_for_chunk(&self, chunk: ChunkKey) -> Vec<EntityPublicView> {
         self.indexes
             .chunks
@@ -404,6 +412,7 @@ impl EntityStore {
         self.indexes.mobile_query(min, max)
     }
 
+    #[cfg(test)]
     pub fn owner(&self, id: EntityId) -> Option<EntityOwner> {
         self.records.get(&id).map(|record| record.owner)
     }
@@ -412,6 +421,7 @@ impl EntityStore {
         self.indexes.anchored_cells.get(&cell).copied()
     }
 
+    #[cfg(test)]
     pub fn mobile_motion_snapshot(&self, id: EntityId) -> Option<EntityMotionSnapshot> {
         let record = self.records.get(&id)?;
         let EntityLocation::Mobile { position } = record.location else {
@@ -424,9 +434,10 @@ impl EntityStore {
         })
     }
 
-    /// Applies a checkpoint-owned same-chunk mobile movement. Cross-chunk
-    /// movement must be represented by `prepare_transfer`, which fences this
-    /// entity until the WAL receipt commits or the caller cancels it.
+    /// Builds checkpoint-only motion fixtures. Live movement uses prepared
+    /// durable patches; legacy recovery/fence tests still need exact motion
+    /// revision changes without a WAL record.
+    #[cfg(test)]
     pub fn update_mobile_motion(
         &mut self,
         id: EntityId,
@@ -477,6 +488,7 @@ impl EntityStore {
         })
     }
 
+    #[cfg(test)]
     pub fn prepare_spawn(
         &self,
         spawn: EntitySpawn,
@@ -1402,6 +1414,7 @@ impl EntityStore {
         }
     }
 
+    #[cfg(test)]
     pub fn ids_for_chunk(&self, chunk: ChunkKey) -> Vec<EntityId> {
         self.indexes
             .chunks

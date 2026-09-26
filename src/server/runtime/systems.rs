@@ -35,6 +35,7 @@ use super::owner_durable::{DurableOwnerStore, OwnerDurableError};
 use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
 use super::owner_wake::PendingWakeStore;
+#[cfg(test)]
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
@@ -144,6 +145,7 @@ pub(in crate::server) struct SystemRuntime {
 }
 
 impl SystemRuntime {
+    #[cfg(test)]
     pub fn new(workers: usize) -> io::Result<Self> {
         Self::with_durable_store(
             workers,
@@ -198,6 +200,7 @@ impl SystemRuntime {
     }
 
     /// Installs owner state before its first scheduled tick.
+    #[cfg(test)]
     pub fn insert_owner<T: Any + Send + Sync>(
         &mut self,
         system: SystemId,
@@ -347,6 +350,7 @@ impl SystemRuntime {
         self.durable_wakes.len()
     }
 
+    #[cfg(test)]
     pub fn owner_value<T: Any + Clone + Send + Sync>(
         &self,
         system: &SystemId,
@@ -357,12 +361,14 @@ impl SystemRuntime {
         Some((revision, value))
     }
 
+    #[cfg(test)]
     pub fn worker_count(&self) -> usize {
         self.worker_count
     }
 
     /// Delivery-shed switch for tests. Live routing never sets this; dropped
     /// effects must leave producer commits untouched while no consumer runs.
+    #[cfg(test)]
     pub(in crate::server) fn set_drop_registered_effects(&mut self, drop: bool) {
         self.drop_registered_effects = drop;
     }

@@ -1,9 +1,9 @@
 //! Worker-owned mirror replay and atomic BGEN publication.
 
 use super::{CheckpointReceipt, CheckpointWork, Command, Event, Shared};
-use crate::server::entities::{
-    EntityCheckpointStore, EntityMotionSnapshot, EntityStore, write_checkpoint,
-};
+#[cfg(test)]
+use crate::server::entities::EntityMotionSnapshot;
+use crate::server::entities::{EntityCheckpointStore, EntityStore, write_checkpoint};
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
@@ -56,6 +56,7 @@ fn run_loop(
                                 return Err("entity mirror durable sequence did not advance".into());
                             }
                         }
+                        #[cfg(test)]
                         Event::Motion(snapshot) => apply_motion(mirror, snapshot)?,
                     }
                     Ok(())
@@ -112,6 +113,7 @@ fn run_loop(
     Ok(())
 }
 
+#[cfg(test)]
 fn apply_motion(mirror: &mut EntityStore, snapshot: EntityMotionSnapshot) -> Result<(), String> {
     let previous = snapshot
         .revision

@@ -15,14 +15,14 @@ pub(super) const FIXED_STEP: Duration = Duration::from_millis(20);
 
 /// The first emitted tick is 1; tick 0 represents the state before simulation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct TickId(u64);
+pub(crate) struct TickId(u64);
 
 impl TickId {
-    pub(super) const fn new(value: u64) -> Self {
+    pub(crate) const fn new(value: u64) -> Self {
         Self(value)
     }
 
-    pub(super) const fn get(self) -> u64 {
+    pub(crate) const fn get(self) -> u64 {
         self.0
     }
 }
@@ -54,7 +54,7 @@ impl OrderKey {
 /// Ordered authoritative tick stages. Keep this order aligned with the server
 /// simulation design; each phase sees writes committed at the prior barrier.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) enum Phase {
+pub(crate) enum Phase {
     InputAuthorization,
     DurableActions,
     Simulation,
@@ -99,6 +99,7 @@ pub(super) struct FixedStepClock {
 }
 
 impl FixedStepClock {
+    #[cfg(test)]
     pub(super) const fn new() -> Self {
         Self::after(TickId::new(0))
     }

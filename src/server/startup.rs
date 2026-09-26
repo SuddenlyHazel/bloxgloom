@@ -70,6 +70,10 @@ impl ServerStartup {
         }
     }
 
+    #[allow(
+        dead_code,
+        reason = "Trusted startup extensions register entity implementations here."
+    )]
     pub(crate) fn register_entity_type(&mut self, registration: StartupEntityType) {
         self.entity_types.push(registration);
     }
@@ -78,6 +82,10 @@ impl ServerStartup {
     /// Kept separate from [`StartupEntityType`] so existing registrations are
     /// untouched: a passive store needs no schedule to be a transfer
     /// endpoint, and ticking types opt in independently of their planner.
+    #[allow(
+        dead_code,
+        reason = "Trusted startup extensions opt entity types into transfers here."
+    )]
     pub(crate) fn register_entity_transfer_policy(
         &mut self,
         key: String,
@@ -86,6 +94,10 @@ impl ServerStartup {
         self.transfer_policies.push((key, policy));
     }
 
+    #[allow(
+        dead_code,
+        reason = "Trusted startup extensions register executable owner systems here."
+    )]
     pub(crate) fn register_system<H: SystemHandler>(
         &mut self,
         descriptor: SystemDescriptor,
@@ -94,6 +106,10 @@ impl ServerStartup {
         self.systems.push((descriptor, Arc::new(handler)));
     }
 
+    #[allow(
+        dead_code,
+        reason = "Trusted startup extensions seed journaled owner state here."
+    )]
     pub(crate) fn seed_owner<T: Any + Send + Sync>(
         &mut self,
         system: SystemId,
@@ -107,6 +123,10 @@ impl ServerStartup {
     /// live system's codec before replaying the first owner key, so a
     /// registered system without one is a startup error, not a silent
     /// transient fallback.
+    #[allow(
+        dead_code,
+        reason = "Startup owner extensions must install their codecs before recovery."
+    )]
     pub(in crate::server) fn register_owner_codec(
         &mut self,
         system: SystemId,

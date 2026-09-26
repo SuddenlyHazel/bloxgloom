@@ -27,16 +27,9 @@ pub enum OwnerKey {
 }
 
 impl OwnerKey {
+    #[cfg(test)]
     pub const fn chunk(key: ChunkKey) -> Self {
         Self::Chunk(key)
-    }
-
-    pub const fn entity(id: u64) -> Self {
-        Self::Entity(id)
-    }
-
-    pub const fn profile(id: u128) -> Self {
-        Self::Profile(id)
     }
 
     pub const fn as_chunk(self) -> Option<ChunkKey> {
@@ -121,6 +114,10 @@ impl OwnerSnapshot {
         self.value.downcast_ref()
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extension handlers may retain an immutable typed snapshot Arc."
+    )]
     pub fn shared_value<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
         Arc::clone(&self.value).downcast().ok()
     }
@@ -198,6 +195,10 @@ impl OwnerJob {
         self.key.owner
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extension handlers may inspect all declared owner read dependencies."
+    )]
     pub fn snapshots(&self) -> &[OwnerSnapshot] {
         &self.snapshots
     }
@@ -265,10 +266,6 @@ impl OwnerPatch {
 
     pub const fn key(&self) -> JobKey {
         self.key
-    }
-
-    pub fn system(&self) -> &SystemId {
-        &self.system
     }
 
     pub const fn owner(&self) -> OwnerKey {
@@ -456,9 +453,10 @@ pub enum OwnerWaveError {
 /// job outcomes, read revisions, payload checks, and aggregate budgets pass.
 #[derive(Debug)]
 pub struct ValidatedOwnerWave {
-    batch: BatchId,
     patches: Vec<OwnerPatch>,
+    #[cfg(test)]
     effect_deliveries: usize,
+    #[cfg(test)]
     patch_bytes: usize,
 }
 
@@ -638,25 +636,24 @@ impl ValidatedOwnerWave {
         }
 
         Ok(Self {
-            batch: expected_batch,
             patches,
+            #[cfg(test)]
             effect_deliveries: deliveries,
+            #[cfg(test)]
             patch_bytes,
         })
-    }
-
-    pub const fn batch(&self) -> BatchId {
-        self.batch
     }
 
     pub fn patches(&self) -> &[OwnerPatch] {
         &self.patches
     }
 
+    #[cfg(test)]
     pub const fn effect_deliveries(&self) -> usize {
         self.effect_deliveries
     }
 
+    #[cfg(test)]
     pub const fn patch_bytes(&self) -> usize {
         self.patch_bytes
     }

@@ -47,21 +47,26 @@ pub const YELLOW_FLOWER: BlockId = crate::content::BlockStateId(12);
 pub const BLUE_FLOWER: BlockId = crate::content::BlockStateId(13);
 pub const FERN: BlockId = crate::content::BlockStateId(14);
 pub const TALL_GRASS: BlockId = crate::content::BlockStateId(15);
+#[cfg(test)]
 pub const WOOD_X: BlockId = crate::content::BlockStateId(256);
+#[cfg(test)]
 pub const WOOD_Z: BlockId = crate::content::BlockStateId(257);
 pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
 
 #[inline]
+#[cfg(test)]
 pub fn is_plant(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::PLANT != 0
 }
 
 #[inline]
+#[cfg(test)]
 pub fn is_cutout(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::CUTOUT != 0
 }
 
 #[inline]
+#[cfg(test)]
 pub fn is_opaque(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::OPAQUE != 0
 }
@@ -72,6 +77,7 @@ pub fn is_solid(block: BlockId) -> bool {
 }
 
 #[inline]
+#[cfg(test)]
 pub fn is_replaceable(block: BlockId) -> bool {
     crate::content::block_flags(block) & crate::content::REPLACEABLE != 0
 }

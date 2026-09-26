@@ -112,10 +112,6 @@ impl InventoryStore {
     }
 
     /// Decodes and validates exact BGIN v2 bytes.
-    pub fn decode_snapshot(bytes: &[u8]) -> io::Result<Inventory> {
-        Self::decode_snapshot_with_catalog(bytes, crate::content::catalog())
-    }
-
     pub fn decode_snapshot_with_catalog(
         bytes: &[u8],
         catalog: &crate::content::Catalog,

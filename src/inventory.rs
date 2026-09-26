@@ -1,6 +1,6 @@
 //! Server-owned item stacks. Slot moves are atomic, bounded, and never create items.
 
-use crate::items::{ItemId, valid_item};
+use crate::items::ItemId;
 use std::sync::Arc;
 
 mod store;
@@ -59,10 +59,6 @@ impl Stack {
             count,
             components: Some(components),
         })
-    }
-
-    pub fn valid(&self) -> bool {
-        valid_item(self.item) && (1..=STACK_LIMIT).contains(&self.count) && self.valid_components()
     }
 
     pub fn valid_in(&self, catalog: &crate::content::Catalog) -> bool {

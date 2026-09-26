@@ -8,8 +8,7 @@
 use super::checkpoint::{CheckpointReceipt, CheckpointSubmitError, CheckpointWriter};
 use super::effects::CellCoord;
 use super::entities::{
-    EntityCheckpointStore, EntityCommit, EntityId, EntityStore, EntityTypeRegistry,
-    PreparedEntityBatch,
+    EntityCommit, EntityId, EntityStore, EntityTypeRegistry, PreparedEntityBatch,
 };
 use super::entity_checkpoint::{CheckpointTicket, EntityCheckpointMirror, MirrorPermit};
 use super::fire::{FireCheckpointStore, FireRecovered, FireSeed, FireTransaction};
@@ -128,7 +127,8 @@ pub(super) struct Durability {
     pub(super) next_checkpoint_revision: u64,
     pub(super) receipt_store: receipts::ReceiptStore,
     pub(super) fire_store: FireCheckpointStore,
-    pub(super) entity_store: EntityCheckpointStore,
+    #[cfg(test)]
+    pub(super) entity_store: super::entities::EntityCheckpointStore,
     pub(super) entity_mirror: EntityCheckpointMirror,
     pub(super) entity_checkpoint_ticket: Option<CheckpointTicket>,
     pub(super) receipt_ledgers: HashMap<u128, receipts::ReceiptLedger>,

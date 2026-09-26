@@ -53,6 +53,7 @@ pub struct Hit {
 /// owns the boundary. At simultaneous edge or corner crossings all tied axes
 /// advance together, so cells touched only at a seam are not treated as hits.
 /// An unavailable sample (`None`) ends the query just like an unloaded chunk.
+#[cfg(test)]
 pub fn raycast(
     origin: Vec3,
     direction: Vec3,

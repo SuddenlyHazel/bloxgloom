@@ -43,6 +43,10 @@ impl EffectKindId {
         Ok(Self(value))
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extension-facing identity accessor, parallel to SystemId::as_str."
+    )]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -175,6 +179,10 @@ pub struct EffectConsumerScratch {
 }
 
 impl EffectConsumerScratch {
+    #[allow(
+        dead_code,
+        reason = "Extensions inspecting batched consumer output need its kind identity."
+    )]
     pub fn kind(&self) -> &EffectKindId {
         &self.kind
     }
@@ -200,10 +208,18 @@ pub struct EffectConsumerBatch {
 }
 
 impl EffectConsumerBatch {
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect all typed outputs of a batched consumer."
+    )]
     pub fn outputs(&self) -> &[EffectConsumerScratch] {
         &self.outputs
     }
 
+    #[allow(
+        dead_code,
+        reason = "Typed consumer output access remains available to registered extensions."
+    )]
     pub fn output<T: Any>(&self, kind: &EffectKindId) -> Option<&T> {
         self.outputs
             .iter()
@@ -437,22 +453,39 @@ pub struct EffectKindRegistryFrozen {
 }
 
 impl EffectKindRegistryFrozen {
+    #[cfg(test)]
     pub fn kind_count(&self) -> usize {
         self.kinds.len()
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect frozen effect schema declarations."
+    )]
     pub fn schema_version(&self, id: &EffectKindId) -> Option<u16> {
         self.kinds.get(id).map(|kind| kind.schema_version())
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect frozen effect payload bounds."
+    )]
     pub fn max_payload_bytes(&self, id: &EffectKindId) -> Option<usize> {
         self.kinds.get(id).map(|kind| kind.max_payload_bytes())
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect frozen effect fan-out bounds."
+    )]
     pub fn max_destinations(&self, id: &EffectKindId) -> Option<usize> {
         self.kinds.get(id).map(|kind| kind.max_destinations())
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions can inspect the frozen effect vocabulary."
+    )]
     pub fn registered_kinds(&self) -> impl Iterator<Item = &EffectKindId> {
         self.kinds.keys()
     }
@@ -462,24 +495,6 @@ impl EffectKindRegistryFrozen {
             .get(id)
             .cloned()
             .ok_or_else(|| RegisteredEffectError::UnknownKind { id: id.clone() })
-    }
-
-    fn intent<P: Any + Send + Sync>(
-        &self,
-        key: RegisteredEffectOrderKey,
-        id: &EffectKindId,
-        payload: P,
-    ) -> Result<RegisteredEffectIntent, RegisteredEffectError> {
-        let kind = self.get(id)?;
-        let payload: Arc<dyn Any + Send + Sync> = Arc::new(payload);
-        let payload_bytes = kind.validate_payload(payload.as_ref())?;
-        Ok(RegisteredEffectIntent {
-            key,
-            kind_id: id.clone(),
-            kind,
-            payload,
-            payload_bytes,
-        })
     }
 
     /// Type-erased admission for intents whose concrete payload type is only
@@ -626,14 +641,20 @@ pub struct RegisteredEffectIntent {
 }
 
 impl RegisteredEffectIntent {
+    #[cfg(test)]
     pub fn key(&self) -> &RegisteredEffectOrderKey {
         &self.key
     }
 
+    #[allow(
+        dead_code,
+        reason = "Extensions inspecting routed intents need their registered kind."
+    )]
     pub fn kind_id(&self) -> &EffectKindId {
         &self.kind_id
     }
 
+    #[cfg(test)]
     pub fn payload_bytes(&self) -> usize {
         self.payload_bytes
     }
@@ -674,6 +695,10 @@ pub struct RoutedEffectIntent {
 }
 
 impl RoutedEffectIntent {
+    #[allow(
+        dead_code,
+        reason = "Extension routing inspection exposes the authoritative destination."
+    )]
     pub const fn destination(&self) -> OwnerKey {
         self.destination
     }
@@ -748,6 +773,7 @@ impl RoutedOwnerEffects {
 #[derive(Clone, Debug)]
 pub struct RoutedEffectBatch {
     owners: Vec<RoutedOwnerEffects>,
+    #[cfg(test)]
     deliveries: usize,
 }
 
@@ -756,6 +782,7 @@ impl RoutedEffectBatch {
         &self.owners
     }
 
+    #[cfg(test)]
     pub const fn delivery_count(&self) -> usize {
         self.deliveries
     }
@@ -867,7 +894,8 @@ pub fn route_registered_effects(
     });
     let mut groups = Vec::new();
     let mut previous = None;
-    let mut deliveries = 0usize;
+    #[cfg(test)]
+    let deliveries = routed.len();
     for (owner, effect) in routed {
         if previous == Some((owner, effect.intent.key.clone())) {
             return Err(RouteRegisteredError::DuplicateOrderKey { owner });
@@ -884,7 +912,6 @@ pub fn route_registered_effects(
         }
         let owner_effects = groups.last_mut().expect("owner group was just created");
         owner_effects.effects.push(effect);
-        deliveries += 1;
         if owner_effects.effects.len() > limits.per_destination {
             return Err(RouteRegisteredError::OwnerOverflow {
                 owner,
@@ -895,6 +922,7 @@ pub fn route_registered_effects(
 
     Ok(RoutedEffectBatch {
         owners: groups,
+        #[cfg(test)]
         deliveries,
     })
 }

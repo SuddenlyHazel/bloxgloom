@@ -1,5 +1,5 @@
 use super::*;
-use crate::content::{ItemDef, KILN_ITEM, KILN_STATE_COUNT, TextureId};
+use crate::content::{EntityTypeId, ItemDef, KILN_ITEM, KILN_STATE_COUNT, TextureId};
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
 use crate::server::drops::register_entity_type as register_drop_type;

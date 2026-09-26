@@ -1,13 +1,13 @@
 //! Bounded off-tick mirror for entity aggregate checkpoints.
 //!
 //! The live store remains authoritative. Callers reserve mirror capacity
-//! before accepting a durable entity transaction or checkpoint-only motion,
+//! before accepting a durable entity transaction,
 //! then submit the corresponding event only after the live state changes.
 //! A FIFO fence writes BGEN from an independently decoded worker-owned store.
 
-use super::entities::{
-    EntityCheckpointStore, EntityMotionSnapshot, EntityStore, PreparedEntityBatch,
-};
+#[cfg(test)]
+use super::entities::EntityMotionSnapshot;
+use super::entities::{EntityCheckpointStore, EntityStore, PreparedEntityBatch};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
@@ -56,6 +56,9 @@ impl CheckpointWork {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PermitKind {
     Durable,
+    // Legacy checkpoint-only motion is retained solely as a mirror fence fixture.
+    // Live player/drop motion now travels in receipted durable batches.
+    #[cfg(test)]
     Motion,
 }
 
@@ -218,6 +221,7 @@ enum Command {
 
 enum Event {
     Durable(PreparedEntityBatch),
+    #[cfg(test)]
     Motion(EntityMotionSnapshot),
 }
 
@@ -282,6 +286,7 @@ impl EntityCheckpointMirror {
         self.try_reserve(PermitKind::Durable)
     }
 
+    #[cfg(test)]
     pub(in crate::server) fn try_reserve_motion(&mut self) -> io::Result<Option<MirrorPermit>> {
         self.try_reserve(PermitKind::Motion)
     }
@@ -308,6 +313,7 @@ impl EntityCheckpointMirror {
         self.submit(permit, PermitKind::Durable, Event::Durable(batch))
     }
 
+    #[cfg(test)]
     pub(in crate::server) fn submit_motion(
         &mut self,
         permit: MirrorPermit,

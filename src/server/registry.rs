@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::io;
 use std::ops::Deref;
+#[cfg(test)]
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -395,16 +396,10 @@ impl ExecutableSystem {
         self.driver
     }
 
+    #[cfg(test)]
     pub fn handler(&self) -> Option<&dyn SystemHandler> {
         match &self.handler {
             RegisteredHandler::Executable(handler) => Some(handler.as_ref()),
-            RegisteredHandler::CoordinatorAdapter => None,
-        }
-    }
-
-    pub fn shared_handler(&self) -> Option<Arc<dyn SystemHandler>> {
-        match &self.handler {
-            RegisteredHandler::Executable(handler) => Some(Arc::clone(handler)),
             RegisteredHandler::CoordinatorAdapter => None,
         }
     }
@@ -507,11 +502,14 @@ impl SystemRegistry {
         Self::default()
     }
 
+    // Metadata-only fixtures exercise missing-handler and legacy-adapter validation.
+    #[cfg(test)]
     pub fn register(&mut self, descriptor: SystemDescriptor) -> Result<(), RegistryError> {
         self.insert(descriptor, None, None)
     }
 
     /// Registers an executable handler with its descriptor.
+    #[cfg(test)]
     pub fn register_handler<H: SystemHandler>(
         &mut self,
         descriptor: SystemDescriptor,
@@ -582,10 +580,9 @@ impl SystemRegistry {
         self.freeze_inner(BTreeSet::new())
     }
 
-    /// Transitional schedule for systems whose real implementation still
-    /// runs through an explicit coordinator adapter. Only listed metadata-only
-    /// systems may be frozen this way; their `prepare` entrypoint rejects,
-    /// keeping this state distinct from executable registration.
+    /// Legacy metadata-only fixture entrypoint. Live adapters register their
+    /// trusted driver explicitly with `register_coordinator_adapter`.
+    #[cfg(test)]
     pub fn freeze_legacy(
         self,
         coordinator_adapters: impl IntoIterator<Item = SystemId>,
@@ -611,8 +608,10 @@ impl SystemRegistry {
         for ordered_waves in ordered_phases {
             let phase_index = phases.len();
             let mut systems = Vec::new();
+            #[cfg(test)]
             let mut wave_ranges = Vec::with_capacity(ordered_waves.len());
             for (wave_index, wave) in ordered_waves.into_iter().enumerate() {
+                #[cfg(test)]
                 let start = systems.len();
                 for id in wave {
                     let system_index = systems.len();
@@ -632,10 +631,12 @@ impl SystemRegistry {
                     });
                     system_indexes.insert(id, (phase_index, system_index));
                 }
+                #[cfg(test)]
                 wave_ranges.push(start..systems.len());
             }
             phases.push(PhaseSchedule {
                 systems,
+                #[cfg(test)]
                 wave_ranges,
             });
         }
@@ -904,20 +905,18 @@ pub struct PhasePlan {
 #[derive(Clone, Debug)]
 struct PhaseSchedule {
     systems: Vec<ExecutableSystem>,
+    #[cfg(test)]
     wave_ranges: Vec<Range<usize>>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub struct SystemWave<'a> {
-    index: u16,
     systems: &'a [ExecutableSystem],
 }
 
+#[cfg(test)]
 impl<'a> SystemWave<'a> {
-    pub const fn index(self) -> u16 {
-        self.index
-    }
-
     pub const fn systems(self) -> &'a [ExecutableSystem] {
         self.systems
     }
@@ -930,31 +929,17 @@ impl PhasePlan {
 
     /// Dependency waves are stable and contain only systems that can run
     /// concurrently under the frozen access declarations.
+    #[cfg(test)]
     pub fn waves(&self, phase: Phase) -> impl Iterator<Item = SystemWave<'_>> {
         let schedule = &self.phases[phase_index(phase)];
-        schedule
-            .wave_ranges
-            .iter()
-            .enumerate()
-            .map(move |(index, range)| SystemWave {
-                index: u16::try_from(index).expect("registry caps system count"),
-                systems: &schedule.systems[range.clone()],
-            })
+        schedule.wave_ranges.iter().map(move |range| SystemWave {
+            systems: &schedule.systems[range.clone()],
+        })
     }
 
     pub fn system(&self, id: &SystemId) -> Option<&ExecutableSystem> {
         let (phase, index) = self.system_indexes.get(id).copied()?;
         self.phases.get(phase)?.systems.get(index)
-    }
-
-    pub fn handler(&self, id: &SystemId) -> Option<&dyn SystemHandler> {
-        self.system(id).and_then(ExecutableSystem::handler)
-    }
-
-    pub fn prepare(&self, id: &SystemId, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
-        self.system(id)
-            .ok_or_else(|| SystemHandlerError::Rejected(format!("unregistered system {id:?}")))?
-            .prepare(job)
     }
 
     pub fn owner_wave_limits(&self, id: &SystemId) -> Option<OwnerWaveLimits> {

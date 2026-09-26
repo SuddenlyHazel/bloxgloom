@@ -280,7 +280,6 @@ pub enum EntityError {
     UnknownType(EntityTypeId),
     DuplicateType(EntityTypeId),
     MissingTypeRegistration(EntityTypeId),
-    TypeDefinitionMismatch(EntityTypeId),
     InvalidType,
     InvalidLocation,
     WrongOwnership,

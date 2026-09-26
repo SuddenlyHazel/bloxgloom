@@ -134,10 +134,6 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>) -> Result<Self, RendererError> {
-        Self::new_with_catalog(window, Arc::new(Catalog::builtins())).await
-    }
-
     pub async fn new_with_catalog(
         window: Arc<Window>,
         catalog: Arc<Catalog>,

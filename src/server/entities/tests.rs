@@ -448,7 +448,7 @@ fn spawn_batch_uses_one_allocator_and_coalesces_spatial_page_changes() {
 
 #[test]
 fn spawn_batch_rejects_oversized_wal_before_reserving_ids() {
-    let mut store = EntityStore::new(fixture_registry());
+    let store = EntityStore::new(fixture_registry());
     let payload = vec![7; 1_024];
     let spawns = (0..1_024)
         .map(|index| EntitySpawn::Mobile {

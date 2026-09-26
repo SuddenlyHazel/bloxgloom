@@ -47,6 +47,7 @@ impl KilnFacing {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::server) fn from_player_yaw(yaw: f32) -> Result<Self, EntityError> {
         if !yaw.is_finite() {
             return Err(EntityError::InvalidLocation);
@@ -144,22 +145,22 @@ impl KilnPayload {
         }
     }
 
-    pub(in crate::server) const fn facing(&self) -> KilnFacing {
-        self.facing
-    }
-
+    #[cfg(test)]
     pub(in crate::server) const fn is_lit(&self) -> bool {
         self.lit
     }
 
+    #[cfg(test)]
     pub(in crate::server) const fn fuel_remaining(&self) -> u16 {
         self.fuel_remaining
     }
 
+    #[cfg(test)]
     pub(in crate::server) const fn cook_progress(&self) -> u16 {
         self.cook_progress
     }
 
+    #[cfg(test)]
     pub(in crate::server) fn slot(&self, slot: KilnSlot) -> Option<&Stack> {
         self.slots.get(slot.index()).and_then(Option::as_ref)
     }

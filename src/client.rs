@@ -31,6 +31,7 @@ use drops::DropAnimator;
 mod movement;
 use movement::predict_player_movement;
 
+#[cfg(test)]
 fn edit_for_hit(
     hit: Hit,
     place: bool,

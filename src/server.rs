@@ -351,6 +351,7 @@ pub(crate) fn run_server_with_startup(
     serve_listener(listener, Box::new(state))
 }
 
+#[cfg(test)]
 pub fn start_local_server(seed: u64, save_dir: PathBuf) -> io::Result<(SocketAddr, LocalServer)> {
     start_local_server_for_profile(seed, save_dir, None)
 }

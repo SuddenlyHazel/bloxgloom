@@ -272,6 +272,7 @@ pub(super) fn open(
             next_checkpoint_revision: 1,
             receipt_store,
             fire_store,
+            #[cfg(test)]
             entity_store: recovered_entities.checkpoint_store,
             entity_mirror,
             entity_checkpoint_ticket: None,

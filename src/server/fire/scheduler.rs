@@ -290,7 +290,6 @@ pub(in crate::server) struct FireWave {
 pub(in crate::server) struct FireLoadMetrics {
     pub(in crate::server) frontier_cells: usize,
     pub(in crate::server) pending_ignitions: usize,
-    pub(in crate::server) inflight_owners: usize,
     pub(in crate::server) admitted_transactions: u64,
     pub(in crate::server) deferred_transactions: u64,
     pub(in crate::server) conflict_deferred_transactions: u64,
@@ -349,7 +348,6 @@ impl FireRuntime {
         FireLoadMetrics {
             frontier_cells: self.frontiers.values().map(|frontier| frontier.len()).sum(),
             pending_ignitions: self.pending.values().map(|mailbox| mailbox.len()).sum(),
-            inflight_owners: self.inflight_frontiers.len(),
             ..self.admission
         }
     }

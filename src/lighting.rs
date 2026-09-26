@@ -29,6 +29,7 @@ impl LightField {
     /// The one-chunk halo is wider than the 15-step propagation range. Chunks
     /// not yet streamed use the deterministic baseline until their snapshot
     /// arrives, at which point the client re-lights affected neighbors.
+    #[cfg(test)]
     pub fn build(key: ChunkKey, known: &HashMap<ChunkKey, Arc<Chunk>>, seed: u64) -> Self {
         Self::build_with_catalog(key, known, seed, content::catalog())
     }

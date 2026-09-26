@@ -42,6 +42,7 @@ pub struct Storage {
 }
 
 impl Storage {
+    #[cfg(test)]
     pub fn new(root: impl AsRef<Path>, seed: u64) -> io::Result<Self> {
         Self::with_catalog(root, seed, Arc::new(crate::content::catalog().clone()))
     }

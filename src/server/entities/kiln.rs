@@ -11,23 +11,21 @@ mod planning;
 use super::registry::{EntityTypeRegistration, EntityTypeRegistryBuilder};
 use super::types::{CellCoord, EntityError};
 use crate::content::{
-    BlockStateId, Catalog, EntityTypeId, KILN_BLOCK_TYPE, KILN_DEFAULT_STATE, KILN_ENTITY_TYPE,
+    BlockStateId, Catalog, KILN_BLOCK_TYPE, KILN_DEFAULT_STATE, KILN_ENTITY_TYPE,
 };
 use crate::server::entities::EntitySnapshot;
 use codec::KilnPayloadCodec;
-use model::{
-    FUEL_SLOT_INDEX, INPUT_SLOT_INDEX, KILN_MAX_COOK_TICKS, KILN_MAX_PAYLOAD_BYTES,
-    KILN_TICK_INTERVAL, OUTPUT_SLOT_INDEX,
-};
+#[cfg(test)]
+use model::{FUEL_SLOT_INDEX, INPUT_SLOT_INDEX, KILN_MAX_COOK_TICKS, OUTPUT_SLOT_INDEX};
+use model::{KILN_MAX_PAYLOAD_BYTES, KILN_TICK_INTERVAL};
 use model::{KilnFacing as Facing, KilnHalf as Half};
-pub(in crate::server) use model::{
-    KilnFacing, KilnHalf, KilnPayload, KilnRecipe, KilnRecipeBook, KilnSlot,
-};
-pub(in crate::server) use planning::{
-    KilnBreakPlan, KilnInsertPlan, KilnTakePlan, KilnTickPlan, plan_break, plan_insert, plan_take,
-    plan_tick,
-};
+pub(in crate::server) use model::{KilnFacing, KilnHalf, KilnPayload, KilnRecipeBook};
+#[cfg(test)]
+pub(in crate::server) use model::{KilnRecipe, KilnSlot};
+pub(in crate::server) use planning::plan_break;
 use planning::{KilnInteractionPolicy, KilnTickPlanner};
+#[cfg(test)]
+pub(in crate::server) use planning::{plan_insert, plan_take, plan_tick};
 use std::sync::Arc;
 
 /// Resolve a canonical state from the compiled `facing/half/lit` lattice.
@@ -77,10 +75,6 @@ pub(in crate::server) fn kiln_footprint(anchor: CellCoord) -> Result<Vec<CellCoo
     let mut footprint = vec![anchor, upper];
     footprint.sort_unstable();
     Ok(footprint)
-}
-
-pub(in crate::server) const fn kiln_entity_type_id() -> EntityTypeId {
-    KILN_ENTITY_TYPE
 }
 
 pub(in crate::server) fn kiln_payload(snapshot: &EntitySnapshot) -> Option<&KilnPayload> {

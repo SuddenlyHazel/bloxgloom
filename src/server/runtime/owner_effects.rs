@@ -41,6 +41,10 @@ pub(in crate::server) struct EmittedOwnerEffect {
 }
 
 impl EmittedOwnerEffect {
+    #[allow(
+        dead_code,
+        reason = "Registered owner handlers construct typed wake emissions."
+    )]
     pub(in crate::server) fn new<P: Any + Send + Sync>(kind: EffectKindId, payload: P) -> Self {
         Self {
             kind,
@@ -63,6 +67,10 @@ pub(in crate::server) struct OwnerEffectPatch {
 }
 
 impl OwnerEffectPatch {
+    #[allow(
+        dead_code,
+        reason = "Registered owner handlers return state plus wake emissions."
+    )]
     pub(in crate::server) fn new(state: OwnerData, effects: Vec<EmittedOwnerEffect>) -> Self {
         Self { state, effects }
     }

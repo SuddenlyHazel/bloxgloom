@@ -26,6 +26,7 @@ pub const MAX_ASSIGNED_ID: u32 = 1_048_576;
 pub const KILN_BLOCK_TYPE: BlockTypeId = BlockTypeId(256);
 pub const KILN_DEFAULT_STATE: BlockStateId = BlockStateId(512);
 pub const KILN_ITEM: ItemId = ItemId(256);
+#[cfg(test)]
 pub const KILN_STATE_COUNT: u32 = 16;
 pub const KILN_ENTITY_TYPE: EntityTypeId = EntityTypeId(3);
 pub const KILN_SCHEMA_VERSION: u16 = 1;

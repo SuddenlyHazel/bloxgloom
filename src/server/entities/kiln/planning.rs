@@ -7,9 +7,8 @@ use super::model::{
 use crate::content::{Catalog, KILN_ITEM};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, STACK_LIMIT, Stack};
 use crate::server::entities::{
-    AnchorUpdate, CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan,
-    EntityInteractionPolicy, EntityLocation, EntityPatch, EntityPayload, EntitySnapshot,
-    EntityTickPlan, EntityTickPolicy, EntityView,
+    CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan, EntityInteractionPolicy,
+    EntityLocation, EntitySnapshot, EntityTickPlan, EntityTickPolicy, EntityView,
 };
 use crate::server::voxel_view::VoxelView;
 use std::sync::Arc;
@@ -232,16 +231,6 @@ fn block_state_changes(
     ];
     changes.sort_by_key(|change| change.cell);
     Ok(changes)
-}
-
-impl KilnTickPlan {
-    pub(in crate::server) fn entity_patch(self) -> EntityPatch {
-        EntityPatch {
-            payload: self.payload.map(KilnPayload::into_entity_payload),
-            next_tick: Some(Some(self.next_tick)),
-            position: None,
-        }
-    }
 }
 
 /// Transfer exact stack remainders into one kiln inventory slot. Output is

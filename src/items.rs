@@ -9,16 +9,19 @@ pub const SAPLING: ItemId = ItemId(129);
 pub const STICK: ItemId = ItemId(130);
 
 #[inline]
+#[cfg(test)]
 pub fn valid_item(item: ItemId) -> bool {
     valid_item_in(item, crate::content::catalog())
 }
 
 #[inline]
+#[cfg(test)]
 pub fn valid_item_in(item: ItemId, catalog: &crate::content::Catalog) -> bool {
     catalog.item(item).is_some()
 }
 
 #[inline]
+#[cfg(test)]
 pub fn placeable_block(item: ItemId) -> Option<BlockId> {
     placeable_block_in(item, crate::content::catalog())
 }

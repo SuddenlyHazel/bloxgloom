@@ -400,6 +400,7 @@ pub fn write_client_with_catalog(
     frame(writer, &out)
 }
 
+#[cfg(test)]
 pub fn write_server(writer: impl Write, message: &ServerMessage) -> io::Result<()> {
     write_server_with_catalog(writer, message, crate::content::catalog())
 }
@@ -761,6 +762,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
+#[cfg(test)]
 pub fn read_client(reader: impl Read) -> io::Result<ClientMessage> {
     read_client_with_catalog(reader, crate::content::catalog())
 }

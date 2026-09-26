@@ -69,6 +69,7 @@ impl FireCheckpointStore {
     /// Empty after-values unlink the exact old key rather than leaving a
     /// tombstone that might be mistaken for live work after rotation. The
     /// physical checkpoint is a complete-map aggregate, replaced atomically.
+    #[cfg(test)]
     pub(in crate::server) fn write(&self, key: &StateKey, value: &[u8]) -> io::Result<()> {
         self.write_batch(&[(key.clone(), value.to_vec())])
     }
