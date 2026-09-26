@@ -65,14 +65,105 @@ fn poll_checkpoint(
     mirror: &EntityCheckpointMirror,
     ticket: &mut CheckpointTicket,
 ) -> CheckpointReceipt {
-    for _ in 0..5_000 {
-        match mirror.poll_checkpoint(ticket) {
-            Ok(Some(receipt)) => return receipt,
-            Ok(None) => std::thread::sleep(Duration::from_millis(1)),
-            Err(error) => panic!("entity mirror checkpoint failed: {error}"),
-        }
-    }
-    panic!("entity mirror checkpoint did not finish");
+    let receipt = ticket
+        .receiver
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    ticket.receipt = Some(receipt);
+    assert_eq!(mirror.poll_checkpoint(ticket).unwrap(), Some(receipt));
+    receipt
+}
+
+#[test]
+fn multi_turn_checkpoint_holds_generation_fence_without_a_live_capture() {
+    let (mut live, types, checkpoint, old_mirror, _save) = fixture(8);
+    drop(old_mirror);
+    let (reached_tx, reached) = mpsc::sync_channel(1);
+    let (resume, resume_rx) = mpsc::sync_channel(1);
+    let work = CheckpointWork {
+        entries: 1,
+        first_turn: Some((reached_tx, resume_rx)),
+    };
+    let mut mirror = EntityCheckpointMirror::start_with_work(
+        EntityStore::new(types.clone()),
+        checkpoint.clone(),
+        8,
+        work,
+    )
+    .unwrap();
+    let id = spawn_player(&mut live, &mut mirror);
+    let expected = encode_checkpoint(&live).unwrap();
+    let mut ticket = mirror.try_begin_checkpoint().unwrap().unwrap();
+    assert_eq!(reached.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
+    // The first turn is only the header. No published file or live-store
+    // traversal is required to capture the checkpoint; the worker borrows its
+    // own frozen mirror across all following record/index turns.
+    assert!(!_save.0.join("entities/entities.bin").exists());
+    assert!(mirror.poll_checkpoint(&mut ticket).unwrap().is_none());
+    assert!(mirror.try_reserve_durable().unwrap().is_none());
+    assert!(mirror.try_reserve_motion().unwrap().is_none());
+    assert_eq!(mirror.metrics().outstanding, 1);
+    resume.send(()).unwrap();
+    let receipt = poll_checkpoint(&mirror, &mut ticket);
+    assert_eq!(receipt.durable_sequence, live.durable_sequence());
+    assert_eq!(checkpoint.read().unwrap().unwrap(), expected);
+    mirror.finish_checkpoint_fence(ticket).unwrap();
+
+    // The next admitted change belongs to the next generation, not a mixture
+    // of the preceding header/records/pages. Its mirror event is not lost.
+    let mut permit = mirror.try_reserve_motion().unwrap().unwrap();
+    live.update_mobile_motion(id, 1, [15.75, 96.5, 0.5])
+        .unwrap();
+    permit.mark_authoritative_change().unwrap();
+    mirror
+        .submit_motion(permit, live.mobile_motion_snapshot(id).unwrap())
+        .unwrap();
+    assert_eq!(checkpoint.read().unwrap().unwrap(), expected);
+    let mut next = mirror.try_begin_checkpoint().unwrap().unwrap();
+    poll_checkpoint(&mirror, &mut next);
+    assert_eq!(
+        checkpoint.read().unwrap().unwrap(),
+        encode_checkpoint(&live).unwrap()
+    );
+    mirror.finish_checkpoint_fence(next).unwrap();
+}
+
+#[test]
+fn interrupted_stream_does_not_publish_and_worker_failure_releases_credit() {
+    let (live, types, checkpoint, old_mirror, save) = fixture(2);
+    drop(old_mirror);
+    let previous = encode_checkpoint(&live).unwrap();
+    checkpoint.write(&previous).unwrap();
+    let (reached_tx, reached) = mpsc::sync_channel(1);
+    let (resume, resume_rx) = mpsc::sync_channel(1);
+    let mut mirror = EntityCheckpointMirror::start_with_work(
+        EntityStore::new(types),
+        checkpoint.clone(),
+        2,
+        CheckpointWork {
+            entries: 1,
+            first_turn: Some((reached_tx, resume_rx)),
+        },
+    )
+    .unwrap();
+    let ticket = mirror.try_begin_checkpoint().unwrap().unwrap();
+    assert_eq!(reached.recv_timeout(Duration::from_secs(5)).unwrap(), 1);
+    drop(resume); // deterministic serialization failure, not a timeout
+    assert!(
+        ticket
+            .receiver
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .is_err()
+    );
+    mirror.sender.take();
+    mirror.worker.take().unwrap().join().unwrap();
+    assert!(mirror.check_health().is_err());
+    assert_eq!(mirror.metrics().outstanding, 0);
+    assert!(mirror.try_reserve_durable().is_err());
+    assert_eq!(checkpoint.read().unwrap().unwrap(), previous);
+    assert!(!save.0.join("entities/.entities.bin.tmp").exists());
 }
 
 fn spawn_player(live: &mut EntityStore, mirror: &mut EntityCheckpointMirror) -> EntityId {

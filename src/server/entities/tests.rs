@@ -830,6 +830,41 @@ fn checkpoint_round_trip_rebuilds_indexes_and_rejects_corruption_or_unknown_type
 }
 
 #[test]
+fn streamed_checkpoint_matches_complete_records_pages_cells_and_schedule() {
+    let catalog = Catalog::builtins();
+    let types = fixture_registry();
+    let mut store = EntityStore::new(types.clone());
+    for x in [-16.0, 0.0, 16.0] {
+        store
+            .apply_committed(spawn_drop(&store, [x, 0.5, 16.0]))
+            .unwrap();
+    }
+    let kiln = store
+        .prepare_spawn(
+            KilnPayload::new(KilnFacing::North)
+                .spawn(CellCoord::new(-1, 15, -1), 2, &catalog)
+                .unwrap(),
+        )
+        .unwrap();
+    store.apply_committed(kiln).unwrap();
+    let mut bytes = Vec::new();
+    let mut turns = 0;
+    write_checkpoint(&store, &mut bytes, 1, |count| {
+        assert_eq!(count, 1);
+        turns += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        turns,
+        1 + store.len() + store.chunk_pages().len() + store.indexes().anchored_cells.len()
+    );
+    assert_eq!(bytes, encode_checkpoint(&store).unwrap());
+    let recovered = decode_checkpoint(&bytes, types).unwrap();
+    assert_eq!(encode_checkpoint(&recovered).unwrap(), bytes);
+}
+
+#[test]
 fn wal_overlay_rebuilds_sparse_indexes_and_is_idempotent() {
     let types = fixture_registry();
     let source = EntityStore::new(types.clone());

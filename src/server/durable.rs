@@ -119,7 +119,10 @@ pub(super) struct Durability {
     pub(super) publish_queue: Vec<PublishEffects>,
     pub(super) next_publish_commit_id: u64,
     pub(super) checkpoint_writer: CheckpointWriter,
-    pub(super) dirty_checkpoints: HashMap<StateKey, DirtyCheckpoint>,
+    pub(super) dirty_checkpoints: BTreeMap<StateKey, DirtyCheckpoint>,
+    /// Transient round-robin traversal; restart reconstructs dirty state from
+    /// WAL and starts at the first key. No persistence ordering depends on it.
+    pub(super) checkpoint_cursor: Option<StateKey>,
     pub(super) checkpoint_inflight: HashMap<StateKey, u64>,
     pub(super) fire_checkpoint_batch: Option<FireCheckpointBatch>,
     pub(super) next_checkpoint_revision: u64,
@@ -496,6 +499,9 @@ impl Durability {
         };
         if dirty.retry_after > Instant::now() {
             return Ok(false);
+        }
+        if self.checkpoint_writer.is_full() {
+            return Err(CheckpointSubmitError::Full);
         }
         let revision = dirty.revision;
         let snapshot = dirty.snapshot.clone();

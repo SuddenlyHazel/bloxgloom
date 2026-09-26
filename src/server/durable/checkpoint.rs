@@ -83,7 +83,7 @@ pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
 }
 
 pub(super) fn submit_dirty_checkpoints(state: &mut State) {
-    let keys: Vec<_> = state.durability.dirty_checkpoints.keys().cloned().collect();
+    let keys = checkpoint_keys_turn(&mut state.durability, 16);
     submit_fire_checkpoint_batch(state);
     for key in keys {
         match key.domain.as_str() {
@@ -134,14 +134,50 @@ pub(super) fn submit_dirty_checkpoints(state: &mut State) {
     }
 }
 
+/// Bound traversal and capture, including blocked/retrying keys. Advance past
+/// those keys so a full queue or an unavailable file cannot monopolize scans.
+/// One wrap per dispatch, no collecting the population before truncation.
+fn checkpoint_keys_turn(durability: &mut Durability, quota: usize) -> Vec<StateKey> {
+    use std::ops::Bound::{Excluded, Unbounded};
+    let mut keys = Vec::with_capacity(quota);
+    if let Some(cursor) = &durability.checkpoint_cursor {
+        keys.extend(
+            durability
+                .dirty_checkpoints
+                .range((Excluded(cursor), Unbounded))
+                .take(quota)
+                .map(|(key, _)| key.clone()),
+        );
+        if keys.len() < quota {
+            keys.extend(
+                durability
+                    .dirty_checkpoints
+                    .range(..=cursor.clone())
+                    .take(quota - keys.len())
+                    .map(|(key, _)| key.clone()),
+            );
+        }
+    } else {
+        keys.extend(durability.dirty_checkpoints.keys().take(quota).cloned());
+    }
+    durability.checkpoint_cursor = keys.last().cloned();
+    keys
+}
+
 fn submit_fire_checkpoint_batch(state: &mut State) {
-    if state.durability.fire_checkpoint_batch.is_some() {
+    if state.durability.fire_checkpoint_batch.is_some()
+        || state.durability.checkpoint_writer.is_full()
+    {
         return;
     }
     let now = Instant::now();
     let mut snapshots = Vec::new();
     let mut covered = Vec::new();
-    for (key, dirty) in &state.durability.dirty_checkpoints {
+    // Fire retains its private complete-map checkpoint protocol. Do not scan
+    // unrelated ordinary dirty keys to discover that no fire work exists.
+    let start = StateKey::new("bloxgloom:fire_cursor", Vec::new());
+    let end = StateKey::new("bloxgloom:fire_pending\0", Vec::new());
+    for (key, dirty) in state.durability.dirty_checkpoints.range(start..end) {
         if !is_fire_checkpoint_key(key) || dirty.retry_after > now {
             continue;
         }
@@ -197,3 +233,7 @@ fn decode_chunk_checkpoint_key(bytes: &[u8]) -> Option<ChunkKey> {
 fn decode_inventory_checkpoint_key(bytes: &[u8]) -> Option<u128> {
     (bytes.len() == 16).then(|| u128::from_le_bytes(bytes.try_into().unwrap()))
 }
+
+#[cfg(test)]
+#[path = "checkpoint/tests.rs"]
+mod tests;

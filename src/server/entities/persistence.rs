@@ -19,6 +19,9 @@ use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+mod stream;
+pub(in crate::server) use stream::write_checkpoint;
+
 const CHECKPOINT_MAGIC: &[u8; 4] = b"BGEN";
 const CHECKPOINT_VERSION: u16 = 3;
 const MIN_SUPPORTED_CHECKPOINT_VERSION: u16 = 2;

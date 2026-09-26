@@ -32,6 +32,10 @@ impl Encoder {
         self.bytes.len()
     }
 
+    pub(super) fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+
     pub fn u8(&mut self, value: u8) {
         self.bytes.push(value);
     }

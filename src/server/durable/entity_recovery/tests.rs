@@ -170,6 +170,35 @@ fn lagging_checkpoint_replays_later_wal_transfer() {
 }
 
 #[test]
+fn unpublished_partial_stream_is_discarded_and_committed_suffix_replayed() {
+    let dir = TestDir::new();
+    let (types, mut live) = fixture();
+    let spawn = spawn(&live);
+    let id = spawn.entity_id();
+    dir.append(1, &spawn);
+    live.apply_committed(spawn).unwrap();
+    let checkpoint = EntityCheckpointStore::new(&dir.0).unwrap();
+    checkpoint
+        .write(&encode_checkpoint(&live).unwrap())
+        .unwrap();
+    let transfer = live
+        .prepare_transfer(id, 1, [17.0, 1.0, 1.0], Default::default())
+        .unwrap();
+    dir.append(2, &transfer);
+    live.apply_committed(transfer).unwrap();
+    let expected = encode_checkpoint(&live).unwrap();
+    // A crash during a later serialization turn cannot select this partial
+    // generation or trim the WAL. Production startup discards only the temp.
+    fs::write(dir.0.join("entities/.entities.bin.tmp"), &expected[..50]).unwrap();
+    assert!(checkpoint.read().is_err()); // runtime access still fails closed
+    let recovered = dir.recover(types.clone()).unwrap();
+    assert_eq!(encode_checkpoint(&recovered.entities).unwrap(), expected);
+    recovered.publish_replay().unwrap();
+    assert!(dir.recover(types).unwrap().replay.is_none());
+    assert!(!dir.0.join("entities/.entities.bin.tmp").exists());
+}
+
+#[test]
 fn same_revision_conflicting_checkpoint_motion_fails_closed() {
     let dir = TestDir::new();
     let (types, mut live) = fixture();

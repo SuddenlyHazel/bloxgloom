@@ -184,7 +184,9 @@ pub struct Journal {
     next_transaction_id: u128,
     records: Vec<Transaction>,
     known: HashMap<u128, KnownRecord>,
-    latest: HashMap<StateKey, Vec<u8>>,
+    // Ordered at mutation time so rotation can stream without collecting and
+    // sorting the lifetime key population on the WAL worker.
+    latest: BTreeMap<StateKey, Vec<u8>>,
     history: HashMap<StateKey, Vec<(usize, usize)>>,
     physical_records: u64,
     log_bytes: u64,

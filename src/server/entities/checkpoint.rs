@@ -17,8 +17,9 @@ const TEMPORARY_NAME: &str = ".entities.bin.tmp";
 /// Bounded, atomic file access for the entity checkpoint.
 ///
 /// `root` is the world save directory. A crash-left temporary file is treated
-/// as an ambiguous checkpoint publication and causes reads/writes to fail
-/// closed; recovery must not guess whether the old or new frontier won.
+/// as unpublished output. Runtime reads/writes fail closed in its presence;
+/// exclusive startup recovery may discard it before validating the published
+/// file and replaying the still-retained WAL.
 #[derive(Clone, Debug)]
 pub(in crate::server) struct EntityCheckpointStore {
     directory: PathBuf,
@@ -60,9 +61,35 @@ impl EntityCheckpointStore {
         Ok(Some(bytes))
     }
 
+    /// Startup only, before a mirror worker exists. Rename is the publication
+    /// boundary: a remaining temporary cannot cover any WAL trimming. Never
+    /// follow/remove a nonregular path, and do not ignore directory sync errors.
+    pub(in crate::server) fn recover_unpublished(&self) -> io::Result<()> {
+        match fs::symlink_metadata(&self.temporary) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                fs::remove_file(&self.temporary)?;
+                File::open(&self.directory)?.sync_all()
+            }
+            Ok(_) => Err(invalid_data(
+                "entity checkpoint temporary is not a regular file",
+            )),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Atomically publish a fully encoded BGEN checkpoint.
     pub(in crate::server) fn write(&self, bytes: &[u8]) -> io::Result<()> {
         validate_frame(bytes)?;
+        self.write_stream(|file| file.write_all(bytes))
+    }
+
+    /// The caller is the schema encoder on the fenced mirror worker. Only a
+    /// fully finished frame may be renamed; partial output is never published.
+    pub(in crate::server) fn write_stream(
+        &self,
+        encode: impl FnOnce(&mut File) -> io::Result<()>,
+    ) -> io::Result<()> {
         self.reject_interrupted_temporary()?;
 
         let mut created_temporary = false;
@@ -73,7 +100,7 @@ impl EntityCheckpointStore {
                 .create_new(true)
                 .open(&self.temporary)?;
             created_temporary = true;
-            file.write_all(bytes)?;
+            encode(&mut file)?;
             file.sync_all()?;
             drop(file);
             fs::rename(&self.temporary, &self.checkpoint)?;

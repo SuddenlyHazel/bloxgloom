@@ -99,6 +99,7 @@ fn rotation_switch_is_ordered_nonblocking_and_preserves_state_and_id_watermarks(
 #[test]
 fn restart_selects_old_or_new_generation_at_each_rotation_crash_boundary() {
     let points = [
+        rotation::CrashPoint::BasePartial,
         rotation::CrashPoint::BaseTempSynced,
         rotation::CrashPoint::TailTempSynced,
         rotation::CrashPoint::BaseInstalled,

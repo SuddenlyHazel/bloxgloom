@@ -2,7 +2,7 @@
 
 use super::rotation;
 use super::{Journal, RotationReceipt, StateKey};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::Path;
 
@@ -38,7 +38,7 @@ impl Journal {
             Option<&rotation::Manifest>,
             u64,
             u128,
-            &HashMap<StateKey, Vec<u8>>,
+            &BTreeMap<StateKey, Vec<u8>>,
             bool,
         ) -> io::Result<rotation::SwitchedGeneration>,
     ) -> io::Result<RotationReceipt> {

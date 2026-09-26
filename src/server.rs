@@ -4,6 +4,7 @@
 mod block_actions;
 mod builtins;
 mod checkpoint;
+mod checkpoint_stream;
 mod chunk_loader;
 mod drops;
 mod durable;

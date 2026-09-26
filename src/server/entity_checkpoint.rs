@@ -21,6 +21,38 @@ mod tests;
 
 const MAX_MIRROR_ADMISSIONS: usize = 256;
 
+struct CheckpointWork {
+    entries: usize,
+    #[cfg(test)]
+    first_turn: Option<(SyncSender<usize>, Receiver<()>)>,
+}
+
+impl Default for CheckpointWork {
+    fn default() -> Self {
+        Self {
+            entries: super::checkpoint_stream::TURN_ENTRIES,
+            #[cfg(test)]
+            first_turn: None,
+        }
+    }
+}
+
+impl CheckpointWork {
+    fn after_turn(&mut self, _count: usize) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some((reached, resume)) = self.first_turn.take() {
+            reached
+                .send(_count)
+                .map_err(|_| io::Error::other("checkpoint test observer closed"))?;
+            resume
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .map_err(|_| io::Error::other("checkpoint test resume missing"))?;
+        }
+        std::thread::yield_now();
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PermitKind {
     Durable,
@@ -190,6 +222,20 @@ impl EntityCheckpointMirror {
         checkpoint_store: EntityCheckpointStore,
         capacity: usize,
     ) -> io::Result<Self> {
+        Self::start_with_work(
+            baseline,
+            checkpoint_store,
+            capacity,
+            CheckpointWork::default(),
+        )
+    }
+
+    fn start_with_work(
+        baseline: EntityStore,
+        checkpoint_store: EntityCheckpointStore,
+        capacity: usize,
+        work: CheckpointWork,
+    ) -> io::Result<Self> {
         if !(1..=MAX_MIRROR_ADMISSIONS).contains(&capacity) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -201,7 +247,9 @@ impl EntityCheckpointMirror {
         let worker_shared = Arc::clone(&shared);
         let worker = thread::Builder::new()
             .name("entity-checkpoint".to_owned())
-            .spawn(move || worker::run(receiver, worker_shared, baseline, checkpoint_store))?;
+            .spawn(move || {
+                worker::run(receiver, worker_shared, baseline, checkpoint_store, work)
+            })?;
         Ok(Self {
             sender: Some(sender),
             worker: Some(worker),

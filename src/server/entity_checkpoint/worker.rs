@@ -1,8 +1,8 @@
 //! Worker-owned mirror replay and atomic BGEN publication.
 
-use super::{CheckpointReceipt, Command, Event, Shared};
+use super::{CheckpointReceipt, CheckpointWork, Command, Event, Shared};
 use crate::server::entities::{
-    EntityCheckpointStore, EntityMotionSnapshot, EntityStore, encode_checkpoint,
+    EntityCheckpointStore, EntityMotionSnapshot, EntityStore, write_checkpoint,
 };
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -15,9 +15,10 @@ pub(super) fn run(
     shared: Arc<Shared>,
     mut mirror: EntityStore,
     checkpoint_store: EntityCheckpointStore,
+    mut work: CheckpointWork,
 ) {
     let result = catch_unwind(AssertUnwindSafe(|| {
-        run_loop(receiver, &shared, &mut mirror, &checkpoint_store)
+        run_loop(receiver, &shared, &mut mirror, &checkpoint_store, &mut work)
     }));
     match result {
         Ok(Ok(())) => {}
@@ -31,6 +32,7 @@ fn run_loop(
     shared: &Shared,
     mirror: &mut EntityStore,
     checkpoint_store: &EntityCheckpointStore,
+    work: &mut CheckpointWork,
 ) -> Result<(), String> {
     let mut applied_sequence = 0u64;
     while let Ok(command) = receiver.recv() {
@@ -74,9 +76,14 @@ fn run_loop(
                             "entity checkpoint fence missed an event",
                         ));
                     }
-                    let bytes = encode_checkpoint(mirror)
-                        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-                    checkpoint_store.write(&bytes)?;
+                    checkpoint_store.write_stream(|file| {
+                        write_checkpoint(mirror, file, work.entries, |count| {
+                            // This dedicated worker has no competing accepted
+                            // work while fenced. Yield between bounded turns;
+                            // never admit events into the captured generation.
+                            work.after_turn(count)
+                        })
+                    })?;
                     Ok(CheckpointReceipt {
                         event_sequence: applied_sequence,
                         durable_sequence: mirror.durable_sequence(),

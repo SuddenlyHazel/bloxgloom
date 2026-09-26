@@ -40,6 +40,7 @@ pub(super) fn prepare(
     types: Arc<EntityTypeRegistry>,
 ) -> io::Result<PreparedEntityRecovery> {
     let checkpoint_store = EntityCheckpointStore::new(root)?;
+    checkpoint_store.recover_unpublished()?;
     let checkpoint = checkpoint_store.read()?;
     let mut entities = match checkpoint.as_deref() {
         Some(bytes) => decode_checkpoint(bytes, types).map_err(invalid_entity)?,

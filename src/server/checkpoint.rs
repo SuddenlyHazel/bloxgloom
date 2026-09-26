@@ -58,6 +58,11 @@ pub(super) struct CheckpointWriter {
 }
 
 impl CheckpointWriter {
+    /// Advisory capture credit; try_submit still owns the atomic reservation.
+    pub(super) fn is_full(&self) -> bool {
+        self.outstanding.load(Ordering::Acquire) >= self.capacity
+    }
+
     /// One worker keeps small fixtures deterministic.
     pub(super) fn new(capacity: usize) -> Self {
         Self::new_with_workers(capacity, 1)

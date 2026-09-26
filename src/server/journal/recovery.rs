@@ -67,7 +67,7 @@ impl Journal {
             (file, HashMap::new(), HashMap::new(), 0, false, 0, 1)
         };
         let mut next_transaction_id = next_id_watermark;
-        let mut latest = initial_latest;
+        let mut latest: std::collections::BTreeMap<_, _> = initial_latest.into_iter().collect();
 
         let length = file.metadata()?.len();
         if length > MAX_JOURNAL_BYTES {

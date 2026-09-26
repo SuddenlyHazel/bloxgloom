@@ -1,7 +1,7 @@
 //! Immutable compacted bases and the atomic manifest that selects a generation.
 
 use super::{Reader, StateKey, crc32, invalid_data, invalid_data_owned, sync_parent, validate_key};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -47,6 +47,7 @@ pub(super) struct SwitchedGeneration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg(test)]
 pub(super) enum CrashPoint {
+    BasePartial,
     BaseTempSynced,
     BaseInstalled,
     TailTempSynced,
@@ -229,7 +230,7 @@ pub(super) fn rotate(
     old_manifest: Option<&Manifest>,
     cut_sequence: u64,
     next_transaction_id: u128,
-    values: &HashMap<StateKey, Vec<u8>>,
+    values: &BTreeMap<StateKey, Vec<u8>>,
     drop_owner_set_closed: bool,
 ) -> io::Result<SwitchedGeneration> {
     rotate_inner(
@@ -250,7 +251,7 @@ pub(super) fn rotate_crashing_at(
     old_manifest: Option<&Manifest>,
     cut_sequence: u64,
     next_transaction_id: u128,
-    values: &HashMap<StateKey, Vec<u8>>,
+    values: &BTreeMap<StateKey, Vec<u8>>,
     drop_owner_set_closed: bool,
     crash_at: CrashPoint,
 ) -> io::Result<SwitchedGeneration> {
@@ -270,7 +271,7 @@ fn rotate_inner(
     old_manifest: Option<&Manifest>,
     cut_sequence: u64,
     next_transaction_id: u128,
-    values: &HashMap<StateKey, Vec<u8>>,
+    values: &BTreeMap<StateKey, Vec<u8>>,
     drop_owner_set_closed: bool,
     #[cfg(test)] crash_at: Option<CrashPoint>,
 ) -> io::Result<SwitchedGeneration> {
@@ -305,14 +306,20 @@ fn rotate_inner(
         base_name,
         tail_name,
     };
-    let base_bytes = encode_base(&manifest, values, drop_owner_set_closed)?;
     let base_final = base_path(wal_path, &manifest)?;
     let tail_final = tail_path(wal_path, &manifest)?;
     let manifest_final = manifest_path(wal_path)?;
 
     let (base_temp, base_file) = create_temp(&base_final)?;
     let mut base_file = base_file;
-    base_file.write_all(&base_bytes)?;
+    write_base(
+        &mut base_file,
+        &manifest,
+        values,
+        drop_owner_set_closed,
+        #[cfg(test)]
+        crash_at,
+    )?;
     base_file.sync_all()?;
     drop(base_file);
     #[cfg(test)]
@@ -377,13 +384,13 @@ pub(super) fn cleanup_old_files(wal_path: &Path, files: &[PathBuf]) {
     }
 }
 
-fn encode_base(
+fn write_base(
+    output: &mut impl Write,
     manifest: &Manifest,
-    values: &HashMap<StateKey, Vec<u8>>,
+    values: &BTreeMap<StateKey, Vec<u8>>,
     drop_owner_set_closed: bool,
-) -> io::Result<Vec<u8>> {
-    let mut entries = values.iter().collect::<Vec<_>>();
-    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    #[cfg(test)] crash_at: Option<CrashPoint>,
+) -> io::Result<()> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(BASE_MAGIC);
     bytes.extend_from_slice(&BASE_FORMAT_VERSION.to_le_bytes());
@@ -392,24 +399,37 @@ fn encode_base(
     bytes.extend_from_slice(&manifest.next_transaction_id.to_le_bytes());
     bytes.push(u8::from(drop_owner_set_closed));
     bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
-    for (key, value) in entries {
+    let header = bytes;
+    let entries = values.iter().map(|(key, value)| {
         validate_key(key)?;
         if value.len() > super::MAX_RECORD_BYTES {
             return Err(invalid_data("journal base value exceeds size limit"));
         }
+        // One schema-bounded value, never a whole-generation buffer. The
+        // live ordered latest map is frozen by the WAL rotation barrier.
+        let mut bytes = Vec::with_capacity(9 + key.domain.len() + key.bytes.len() + value.len());
         bytes.push(key.domain.len() as u8);
         bytes.extend_from_slice(key.domain.as_bytes());
         bytes.extend_from_slice(&(key.bytes.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&key.bytes);
         bytes.extend_from_slice(value);
-        if bytes.len() as u64 > BASE_MAX_BYTES - 4 {
-            return Err(invalid_data("journal generation base exceeds size limit"));
-        }
-    }
-    let checksum = crc32(&bytes);
-    bytes.extend_from_slice(&checksum.to_le_bytes());
-    Ok(bytes)
+        Ok(bytes)
+    });
+    crate::server::checkpoint_stream::write_frame(
+        output,
+        BASE_MAX_BYTES as usize,
+        std::iter::once(Ok(header)).chain(entries),
+        crate::server::checkpoint_stream::TURN_ENTRIES,
+        |_| {
+            #[cfg(test)]
+            crash(crash_at, CrashPoint::BasePartial)?;
+            // The WAL worker is deliberately unavailable for append until
+            // this generation is durably selected. Admission is already shut.
+            std::thread::yield_now();
+            Ok(())
+        },
+    )
 }
 
 fn encode_manifest(manifest: &Manifest) -> io::Result<Vec<u8>> {
