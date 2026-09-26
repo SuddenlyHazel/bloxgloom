@@ -1,7 +1,7 @@
 ---
 description: Implements one scoped code change per task prompt, then reports
 mode: all
-model: openrouter/meta/muse-spark-1.3-contributor
+model: openai/gpt-6-sol
 permissions:
   - action: edit
     resource: "docs/**"
