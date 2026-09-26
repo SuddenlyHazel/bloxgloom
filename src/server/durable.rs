@@ -37,6 +37,7 @@ pub(super) mod actions;
 mod checkpoint;
 #[path = "durable/coordinator.rs"]
 pub(super) mod coordinator;
+mod entity_dispatch;
 #[path = "durable/entity_recovery.rs"]
 mod entity_recovery;
 #[path = "durable/fire.rs"]

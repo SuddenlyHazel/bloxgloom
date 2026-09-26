@@ -13,9 +13,9 @@ use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
     AnchorUpdate, CellCoord, EntityBlockStateChange, EntityId, EntityItemTransfer, EntityLocation,
-    EntityPatch, EntityPayload, EntitySnapshot, EntityView, MAX_PLAN_NEIGHBOUR_BYTES,
-    MAX_PLAN_NEIGHBOURS, PreparedEntityTransaction, canonical_wakes, interact_producer,
-    position_to_cell, route_wakes, tick_producer,
+    EntityPatch, EntityPayload, EntitySnapshot, EntityTickPlan, EntityView,
+    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, PreparedEntityTransaction, canonical_wakes,
+    interact_producer, position_to_cell, route_wakes, tick_producer,
 };
 use crate::server::registry::SystemId;
 use crate::server::simulation::TickId;
@@ -327,6 +327,64 @@ pub(in crate::server) fn plan_entity_tick(
     current_tick: u64,
     woken: bool,
 ) -> io::Result<Option<CommitAction>> {
+    let Some(input) = capture_tick_input(state, id, current_tick, woken)? else {
+        return Ok(None);
+    };
+    let plan = input
+        .plan()
+        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    commit_tick_plan(state, input, plan)
+}
+
+/// Only owned, immutable policy inputs cross the worker boundary.
+pub(in crate::server) struct TickInput {
+    pub snapshot: EntitySnapshot,
+    pub descriptor: crate::server::entities::EntityTypeDescriptor,
+    pub catalog: std::sync::Arc<crate::content::Catalog>,
+    pub view: VoxelView,
+    pub neighbours: EntityView,
+    pub current_tick: u64,
+    pub woken: bool,
+    pub entity_revision: u64,
+}
+
+pub(in crate::server) struct TickWorkerResult {
+    pub input: TickInput,
+    pub plan: EntityTickPlan,
+}
+
+impl TickInput {
+    pub fn plan(&self) -> Result<EntityTickPlan, crate::server::entities::EntityError> {
+        self.descriptor.plan_tick(
+            &self.snapshot,
+            self.current_tick,
+            &self.catalog,
+            &self.view,
+            &self.neighbours,
+        )
+    }
+
+    pub fn is_current(&self, state: &State) -> bool {
+        state.entities.revision() == self.entity_revision
+            && state
+                .entities
+                .snapshot(self.snapshot.id)
+                .is_some_and(|snapshot| {
+                    snapshot.revision == self.snapshot.revision
+                        && snapshot.motion_revision == self.snapshot.motion_revision
+                })
+            && self
+                .view
+                .revisions_match(|key| state.world.cached_version(key))
+    }
+}
+
+pub(in crate::server) fn capture_tick_input(
+    state: &mut State,
+    id: EntityId,
+    current_tick: u64,
+    woken: bool,
+) -> io::Result<Option<TickInput>> {
     let Some(snapshot) = state.entities.snapshot(id) else {
         return Ok(None);
     };
@@ -337,7 +395,8 @@ pub(in crate::server) fn plan_entity_tick(
         .entities
         .types()
         .descriptor(snapshot.entity_type)
-        .map_err(io::Error::other)?;
+        .map_err(io::Error::other)?
+        .clone();
     if !descriptor.has_tick_planner() {
         return Err(corrupt("due entity type has no tick planner"));
     }
@@ -349,14 +408,39 @@ pub(in crate::server) fn plan_entity_tick(
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
     let neighbours =
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?;
-    let descriptor = state
-        .entities
-        .types()
-        .descriptor(snapshot.entity_type)
-        .map_err(io::Error::other)?;
-    let plan = descriptor
-        .plan_tick(&snapshot, current_tick, &catalog, &view, &neighbours)
-        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    Ok(Some(TickInput {
+        snapshot,
+        descriptor,
+        catalog,
+        view,
+        neighbours,
+        current_tick,
+        woken,
+        entity_revision: state.entities.revision(),
+    }))
+}
+
+pub(in crate::server) fn commit_tick_plan(
+    state: &mut State,
+    input: TickInput,
+    plan: EntityTickPlan,
+) -> io::Result<Option<CommitAction>> {
+    if !input.is_current(state) {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "entity tick snapshot became stale",
+        ));
+    }
+    let TickInput {
+        snapshot,
+        descriptor,
+        catalog,
+        neighbours,
+        current_tick,
+        woken,
+        ..
+    } = input;
+    let id = snapshot.id;
     // A woken planner with nothing to do reaffirms its persisted schedule
     // instead of advancing it. Without this the attempt would either stage a
     // no-op commit (`NoChanges`) or churn the schedule on every stray wake;

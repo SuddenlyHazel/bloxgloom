@@ -110,7 +110,7 @@ pub(in crate::server) fn process_durable_actions(
     // tick-start state and applied before the tick ends, so the trajectory
     // never depends on receipt timing. Commands, pickups, and expiry keep
     // their queue order behind it in the loop below.
-    let motion_staged = stage_motion_batch(state, tick, &mut deferred)?;
+    let (motion_staged, mut preplanned) = stage_motion_batch(state, tick, &mut deferred)?;
     while attempts > 0 {
         attempts -= 1;
         let Some(request) = state.durability.queued.pop_front() else {
@@ -184,7 +184,17 @@ pub(in crate::server) fn process_durable_actions(
             }
             continue;
         }
-        let plan = match plan_durable_request(state, &request, tick) {
+        let planned = if matches!(
+            request,
+            DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. }
+        ) {
+            preplanned
+                .pop_front()
+                .expect("requeued entity plan has a result")
+        } else {
+            plan_durable_request(state, &request, tick)
+        };
+        let plan = match planned {
             Ok(Some(plan)) => PlannedAction::Commit(Box::new(plan)),
             Ok(None) => PlannedAction::NoChange,
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -410,7 +420,11 @@ fn stage_motion_batch(
     state: &mut State,
     tick: TickId,
     deferred: &mut std::collections::VecDeque<DurableRequest>,
-) -> io::Result<bool> {
+) -> io::Result<(
+    bool,
+    std::collections::VecDeque<io::Result<Option<CommitAction>>>,
+)> {
+    let mut preplanned = std::collections::VecDeque::new();
     let mut motion: Vec<DurableRequest> = Vec::new();
     let mut rest: Vec<DurableRequest> = Vec::new();
     for request in state.durability.queued.drain(..) {
@@ -423,22 +437,23 @@ fn stage_motion_batch(
     }
     state.durability.queued.extend(rest);
     if motion.is_empty() {
-        return Ok(false);
+        return Ok((false, preplanned));
     }
     let mut candidates: Vec<(DurableRequest, CommitAction)> = Vec::new();
     let mut front: Vec<DurableRequest> = Vec::new();
-    for request in motion {
-        match plan_durable_request(state, &request, tick) {
+    for (request, result) in super::entity_dispatch::plan_motion(state, tick, motion) {
+        match result {
             Ok(Some(action))
                 if batchable_motion(&action) && candidates.len() < MAX_MOTION_BATCH =>
             {
                 candidates.push((request, action));
             }
-            Ok(Some(_)) => {
+            Ok(Some(action)) => {
                 // Footprint edits, transfers, and spawns keep the
                 // single-record path: requeue ahead of the untouched rest so
                 // the loop below plans them from the same tick-start state.
                 front.push(request);
+                preplanned.push_back(Ok(Some(action)));
             }
             Ok(None) => {}
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -455,7 +470,7 @@ fn stage_motion_batch(
         state.durability.queued.push_front(request);
     }
     if candidates.is_empty() {
-        return Ok(false);
+        return Ok((false, preplanned));
     }
     // Combine the tick's motion into one atomic record with one global
     // revision bump: per-entity records would serialize on that key and
@@ -481,12 +496,13 @@ fn stage_motion_batch(
                 continue;
             }
             Err(_) => {
-                for (request, _) in candidates.into_iter().rev() {
+                for (request, action) in candidates.into_iter().rev() {
                     state.durability.queued.push_front(request);
+                    preplanned.push_front(Ok(Some(action)));
                 }
                 // The singles loop below stages each in queue order through
                 // the ordinary path; the motion drain below stays off.
-                return Ok(false);
+                return Ok((false, preplanned));
             }
         }
     };
@@ -541,14 +557,14 @@ fn stage_motion_batch(
             for (request, _) in candidates {
                 deferred.push_back(request);
             }
-            return Ok(false);
+            return Ok((false, preplanned));
         }
     };
     match state
         .durability
         .try_stage(tick, &batch_action, entity_permit)
     {
-        Ok(true) => Ok(true),
+        Ok(true) => Ok((true, preplanned)),
         Ok(false) => Err(io::Error::other("empty motion batch")),
         Err(StageError::Conflict | StageError::Full) => {
             if let Some(entities) = &batch_action.entities {
@@ -557,13 +573,13 @@ fn stage_motion_batch(
             for (request, _) in candidates {
                 deferred.push_back(request);
             }
-            Ok(false)
+            Ok((false, preplanned))
         }
         Err(error) => {
             if let Some(entities) = &batch_action.entities {
                 state.entities.cancel_prepared(entities);
             }
-            fatal_stage_error(state, error).map(|()| false)
+            fatal_stage_error(state, error).map(|()| (false, preplanned))
         }
     }
 }

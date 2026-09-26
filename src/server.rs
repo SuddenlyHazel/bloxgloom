@@ -171,6 +171,9 @@ struct State {
     system_runtime: SystemRuntime,
     loader: ChunkLoader,
     movement_executor: PhaseExecutor<MovementBatch, ()>,
+    entity_tick_executor:
+        PhaseExecutor<durable::actions::entity::TickWorkerResult, entities::EntityError>,
+    entity_tick_dispatch_batch: Option<(simulation::TickId, u16)>,
     metrics: MetricsRecorder,
     /// Optional bounded, nonblocking trace for the production-TCP soak.
     /// The live server leaves this absent; the benchmark must drain it.
@@ -483,6 +486,12 @@ fn server_state_with_startup(
     let movement_executor =
         PhaseExecutor::new(worker_count, admission_limit * 2, admission_limit * 2)
             .map_err(|error| io::Error::other(format!("movement worker pool: {error:?}")))?;
+    let entity_tick_executor = PhaseExecutor::new(
+        worker_count,
+        durable::MAX_PENDING_DURABLE_ACTIONS,
+        durable::MAX_PENDING_DURABLE_ACTIONS,
+    )
+    .map_err(|error| io::Error::other(format!("entity tick worker pool: {error:?}")))?;
     let mut system_runtime =
         SystemRuntime::with_durable_store(worker_count, owner_store, wake_store, cursors)?;
     startup.install_owners(&mut system_runtime, &mut durability)?;
@@ -511,6 +520,8 @@ fn server_state_with_startup(
         system_runtime,
         loader,
         movement_executor,
+        entity_tick_executor,
+        entity_tick_dispatch_batch: None,
         metrics: MetricsRecorder::new(),
         tick_observer: None,
         stream_cursor: 0,
