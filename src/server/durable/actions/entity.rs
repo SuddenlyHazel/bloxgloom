@@ -228,10 +228,14 @@ pub(in crate::server) fn plan_interact(
     // while no entity borrow is live; the descriptor is re-resolved below
     // over unchanged entity state.
     let read_radius = descriptor.interaction_read_radius();
+    let reads_neighbours = descriptor.interaction_reads_neighbours();
     let catalog = state.world.catalog_arc();
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
-    let neighbours =
-        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?;
+    let neighbours = if reads_neighbours {
+        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
+    } else {
+        EntityView::assemble(Vec::new(), snapshot.id)
+    };
     let descriptor = state
         .entities
         .types()
@@ -406,8 +410,11 @@ pub(in crate::server) fn capture_tick_input(
     let read_radius = descriptor.tick_read_radius();
     let catalog = state.world.catalog_arc();
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
-    let neighbours =
-        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?;
+    let neighbours = if descriptor.tick_reads_neighbours() {
+        capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
+    } else {
+        EntityView::assemble(Vec::new(), snapshot.id)
+    };
     Ok(Some(TickInput {
         snapshot,
         descriptor,

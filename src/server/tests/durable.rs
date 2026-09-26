@@ -3,6 +3,89 @@ use super::*;
 const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 
 #[test]
+fn dense_drop_page_advances_through_production_dispatch() {
+    let save = TestSave::new("dense-drop-physics");
+    let mut state = state_for(&save, 7);
+    let y = crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0;
+    reside_neighbourhood(&mut state, [0.5, y, 0.5]);
+    for z in 0..8 {
+        for x in 0..8 {
+            spawn_drop(
+                &mut state,
+                1,
+                [0.5 + 2.0 * x as f32, y, 0.5 + 2.0 * z as f32],
+                STONE_ITEM,
+                1,
+                Duration::ZERO,
+            );
+        }
+    }
+    spawn_drop(
+        &mut state,
+        1,
+        [1.5, y + 2.0, 1.5],
+        STONE_ITEM,
+        1,
+        Duration::ZERO,
+    );
+    let ids = state.entities.due_entities(2, 128);
+    assert_eq!(ids.len(), 65);
+    let input =
+        crate::server::durable::actions::entity::capture_tick_input(&mut state, ids[0], 2, false)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        input.neighbours.len(),
+        0,
+        "physics declares no entity reads"
+    );
+    for id in &ids {
+        state
+            .durability
+            .queued
+            .push_back(DurableRequest::EntityTick { id: *id });
+    }
+    for _ in 0..2_000 {
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+            .unwrap();
+        if ids
+            .iter()
+            .all(|id| state.entities.snapshot(*id).unwrap().motion_revision > 0)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        ids.iter()
+            .all(|id| state.entities.snapshot(*id).unwrap().motion_revision > 0)
+    );
+}
+
+#[test]
+fn queued_wakes_cannot_fill_the_due_entity_lane() {
+    let save = TestSave::new("wake-pressure-due-drop");
+    let mut state = state_for(&save, 7);
+    let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
+    reside_neighbourhood(&mut state, position);
+    spawn_drop(&mut state, 1, position, STONE_ITEM, 1, Duration::ZERO);
+    let id = state.entities.due_entities(2, 1)[0];
+    for _ in 0..crate::server::durable::MAX_DEFERRED_DURABLE_ACTIONS {
+        state
+            .durability
+            .queued
+            .push_back(DurableRequest::EntityWake { id });
+    }
+    crate::server::durable::queue_interaction_actions(&mut state, TickId::new(2));
+    assert!(state.durability.queued.iter().any(
+        |request| matches!(request, DurableRequest::EntityTick { id: queued } if *queued == id)
+    ));
+    crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+        .unwrap();
+    assert!(state.entities.snapshot(id).unwrap().motion_revision > 0);
+}
+
+#[test]
 fn stale_entity_worker_capture_does_not_prepare_or_apply_and_remains_retryable() {
     let save = TestSave::new("stale-entity-worker-capture");
     let mut state = state_for(&save, 7);

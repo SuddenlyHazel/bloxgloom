@@ -46,6 +46,10 @@ pub(super) struct KilnTickPlanner {
 }
 
 impl EntityInteractionPolicy for KilnInteractionPolicy {
+    fn reads_neighbours(&self) -> bool {
+        false
+    }
+
     fn plan(
         &self,
         snapshot: &EntitySnapshot,
@@ -73,6 +77,10 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
 }
 
 impl EntityTickPolicy for KilnTickPlanner {
+    fn reads_neighbours(&self) -> bool {
+        false
+    }
+
     fn plan(
         &self,
         snapshot: &EntitySnapshot,

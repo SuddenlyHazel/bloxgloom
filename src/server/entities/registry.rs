@@ -83,6 +83,11 @@ pub trait EntityInteractionPolicy: Send + Sync + 'static {
     fn read_radius_chunks(&self) -> u8 {
         0
     }
+
+    /// Whether the planner needs the complete public neighbour set.
+    fn reads_neighbours(&self) -> bool {
+        true
+    }
 }
 
 /// Trusted deterministic planner for one due tick. The coordinator validates
@@ -107,6 +112,11 @@ pub trait EntityTickPolicy: Send + Sync + 'static {
     /// validated at registration time.
     fn read_radius_chunks(&self) -> u8 {
         0
+    }
+
+    /// Whether the planner needs the complete public neighbour set.
+    fn reads_neighbours(&self) -> bool {
+        true
     }
 }
 
@@ -155,6 +165,8 @@ pub struct EntityTypeDescriptor {
     interaction_read_radius: u8,
     tick_planner: Option<Arc<dyn EntityTickPolicy>>,
     tick_read_radius: u8,
+    interaction_reads_neighbours: bool,
+    tick_reads_neighbours: bool,
     transfer_policy: Option<Arc<dyn EntityTransferPolicy>>,
 }
 
@@ -211,6 +223,14 @@ impl EntityTypeDescriptor {
     /// Declared chunk read radius captured for tick planning.
     pub const fn tick_read_radius(&self) -> u8 {
         self.tick_read_radius
+    }
+
+    pub const fn interaction_reads_neighbours(&self) -> bool {
+        self.interaction_reads_neighbours
+    }
+
+    pub const fn tick_reads_neighbours(&self) -> bool {
+        self.tick_reads_neighbours
     }
 
     pub fn plan_interaction(
@@ -372,6 +392,8 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             interaction_read_radius: 0,
             tick_planner: None,
             tick_read_radius: 0,
+            interaction_reads_neighbours: false,
+            tick_reads_neighbours: false,
             transfer_policy: None,
         };
         self.descriptors.insert(registration.id, descriptor);
@@ -394,6 +416,7 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             return Err(EntityError::InvalidType);
         }
         descriptor.interaction_read_radius = policy.read_radius_chunks();
+        descriptor.interaction_reads_neighbours = policy.reads_neighbours();
         descriptor.interaction_policy = Some(policy);
         Ok(())
     }
@@ -417,6 +440,7 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             return Err(EntityError::InvalidType);
         }
         descriptor.tick_read_radius = planner.read_radius_chunks();
+        descriptor.tick_reads_neighbours = planner.reads_neighbours();
         descriptor.tick_planner = Some(planner);
         Ok(())
     }

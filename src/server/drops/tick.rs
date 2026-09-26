@@ -19,6 +19,10 @@ use crate::world::{ChunkKey, world_to_chunk};
 pub(in crate::server) struct DropTickPlanner;
 
 impl EntityTickPolicy for DropTickPlanner {
+    fn reads_neighbours(&self) -> bool {
+        false
+    }
+
     fn plan(
         &self,
         snapshot: &EntitySnapshot,
