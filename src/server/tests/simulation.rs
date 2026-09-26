@@ -63,17 +63,54 @@ fn landed_drop_checkpoint_drains_and_does_not_stall_rotation() {
     assert_eq!(drop_active_len(&state), 0);
     assert!(state.durability.pending.is_empty());
     assert!(state.durability.dirty_checkpoints.is_empty());
+    assert!(state.durability.checkpoint_inflight.is_empty());
 
+    let completed_rotations = state.durability.completed_rotations;
     state.durability.rotation_requested = true;
-    for _ in 0..200 {
+    run_empty_tick(&mut state, &mut tick);
+    if state.durability.rotation_requested {
+        // No accepted transactions or dirty files remain. The first tick
+        // must therefore enqueue the entity fence, not defer on other work.
+        // Await the actual fsync receipt instead of running an arbitrary
+        // number of ticks while a filesystem worker races the test thread.
+        state
+            .durability
+            .entity_checkpoint_ticket
+            .as_mut()
+            .expect("drained landed-drop state must enqueue its entity checkpoint")
+            .wait_for_worker(Duration::from_secs(5))
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{error}; mirror={:?}",
+                    state.durability.entity_mirror.metrics()
+                )
+            });
         run_empty_tick(&mut state, &mut tick);
-        if !state.durability.rotation_requested {
-            break;
+        if state.durability.rotation_requested {
+            let receiver = state
+                .durability
+                .rotation_receipt
+                .take()
+                .expect("completed checkpoint coverage must enqueue WAL rotation");
+            let receipt = receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("WAL generation switch must return its completion receipt");
+            // Relay the real result back to the normal production poll, which
+            // checks its cut sequence, releases the fence, and clears rotation.
+            let (sender, receiver) = mpsc::channel();
+            sender.send(receipt).unwrap();
+            state.durability.rotation_receipt = Some(receiver);
+            run_empty_tick(&mut state, &mut tick);
         }
-        std::thread::sleep(Duration::from_millis(1));
     }
     assert!(!state.durability.rotation_requested);
     assert!(state.durability.rotation_receipt.is_none());
+    assert!(state.durability.entity_checkpoint_ticket.is_none());
+    assert!(!state.durability.entity_mirror.metrics().fenced);
+    assert_eq!(
+        state.durability.completed_rotations,
+        completed_rotations + 1
+    );
 
     let session = join(&mut state, &mut tick, 3003);
     let output = command_and_wait(

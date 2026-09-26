@@ -113,6 +113,23 @@ pub(in crate::server) struct CheckpointTicket {
     receipt: Option<CheckpointReceipt>,
 }
 
+#[cfg(test)]
+impl CheckpointTicket {
+    /// Synchronize a fixture with the real worker without finishing its fence.
+    /// The next production poll still validates the ticket and receipt frontier.
+    pub(in crate::server) fn wait_for_worker(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> io::Result<()> {
+        if self.receipt.is_none() {
+            self.receipt = Some(self.receiver.recv_timeout(timeout).map_err(|error| {
+                io::Error::other(format!("entity checkpoint completion unavailable: {error}"))
+            })??);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in crate::server) struct MirrorMetrics {
     pub capacity: usize,

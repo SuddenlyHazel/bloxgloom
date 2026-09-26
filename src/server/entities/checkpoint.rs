@@ -110,7 +110,8 @@ impl EntityCheckpointStore {
 
         if result.is_err() && created_temporary && !renamed {
             // A failed in-process write is known to be ours and can be cleaned
-            // safely. A process-crash leftover is instead rejected on startup.
+            // safely. Exclusive startup recovery also discards a regular
+            // process-crash leftover before validating the published file.
             let _ = fs::remove_file(&self.temporary);
             let _ = File::open(&self.directory).and_then(|directory| directory.sync_all());
         }
