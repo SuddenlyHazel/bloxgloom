@@ -194,6 +194,22 @@ pub fn render_avatar_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     ))
 }
 
+/// Production actor shader, with two mossbuns and a player for scale.
+pub fn render_mossbun_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Mossbuns,
+    ))
+}
+
 pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, phase) in [
@@ -249,6 +265,7 @@ enum PreviewScene {
     Vegetation,
     Drops(DropPhase),
     Avatars,
+    Mossbuns,
     Cave { lamp: bool, bounced: bool },
     NaturalCavern,
 }
@@ -310,13 +327,15 @@ async fn render_previews(
             );
             (target + Vec3::new(9.0, 5.0, 11.0), target)
         }
-        PreviewScene::Drops(_) | PreviewScene::Avatars => {
+        PreviewScene::Drops(_) | PreviewScene::Avatars | PreviewScene::Mossbuns => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
                 target_height as f32 + 1.0,
                 target_xz.1 as f32 + 0.5,
             );
-            let offset = if matches!(scene, PreviewScene::Avatars) {
+            let offset = if matches!(scene, PreviewScene::Mossbuns) {
+                Vec3::new(2.8, 1.7, 4.1)
+            } else if matches!(scene, PreviewScene::Avatars) {
                 Vec3::new(5.5, 3.1, 7.0)
             } else {
                 Vec3::new(4.0, 2.6, 5.0)
@@ -351,6 +370,24 @@ async fn render_previews(
                     z: center_chunk.1 + z,
                 };
                 chunks.insert(key, Arc::new(world::generate_chunk(key, SEED)));
+            }
+        }
+    }
+    if matches!(scene, PreviewScene::Mossbuns) {
+        // A small display lawn makes feet and the player scale reference
+        // inspectable instead of burying them in generated slopes/foliage.
+        for x in target_xz.0 - 4..=target_xz.0 + 5 {
+            for z in target_xz.1 - 2..=target_xz.1 + 5 {
+                for y in target_height - 2..=target_height + 4 {
+                    let block = if y > target_height {
+                        world::AIR
+                    } else if y == target_height {
+                        world::GRASS
+                    } else {
+                        world::DIRT
+                    };
+                    set_preview_block(&mut chunks, x, y, z, block);
+                }
             }
         }
     }
@@ -563,12 +600,18 @@ async fn render_previews(
     } else {
         None
     };
-    if matches!(scene, PreviewScene::Avatars) {
+    if matches!(scene, PreviewScene::Avatars | PreviewScene::Mossbuns) {
         avatar_renderer.set(
             &queue,
             &[
                 render::VisualAvatar {
                     id: 1,
+                    model: if matches!(scene, PreviewScene::Mossbuns) {
+                        render::AvatarModel::Mossbun
+                    } else {
+                        render::AvatarModel::Player
+                    },
+                    pose: [0.0, 0.0],
                     position: Vec3::new(
                         target_xz.0 as f32 - 1.25,
                         target_height as f32 + 1.0,
@@ -580,6 +623,16 @@ async fn render_previews(
                 },
                 render::VisualAvatar {
                     id: 2,
+                    model: if matches!(scene, PreviewScene::Mossbuns) {
+                        render::AvatarModel::Mossbun
+                    } else {
+                        render::AvatarModel::Player
+                    },
+                    pose: if matches!(scene, PreviewScene::Mossbuns) {
+                        [std::f32::consts::FRAC_PI_2, 0.8]
+                    } else {
+                        [0.0; 2]
+                    },
                     position: Vec3::new(
                         target_xz.0 as f32 + 0.5,
                         target_height as f32 + 1.0,
@@ -591,6 +644,8 @@ async fn render_previews(
                 },
                 render::VisualAvatar {
                     id: 3,
+                    model: render::AvatarModel::Player,
+                    pose: [0.0; 2],
                     position: Vec3::new(
                         target_xz.0 as f32 + 2.25,
                         target_height as f32 + 1.0,

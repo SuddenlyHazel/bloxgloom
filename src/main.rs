@@ -197,6 +197,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_drop_animation_previews(std::path::Path::new(&directory))?;
             println!("wrote drop animation previews to {directory}");
         }
+        Some("mossbun-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "mossbun-preview.png".to_string());
+            if args.next().is_some() {
+                return Err("usage: mossbun-preview [output.png]".into());
+            }
+            preview::render_mossbun_preview(std::path::Path::new(&path))?;
+        }
         Some("avatar-preview") => {
             let path = args
                 .next()

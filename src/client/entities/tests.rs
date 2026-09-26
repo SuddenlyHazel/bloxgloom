@@ -1,5 +1,7 @@
 use super::registry::EntityAdapter;
 use super::*;
+#[path = "mossbun_tests.rs"]
+mod mossbun_tests;
 use crate::content::{Catalog, EntityTypeId};
 use crate::protocol::{
     BlockCellChange, ClientMessage, EntitySnapshotPage, PublicEntityLocation, WorldCommitPart,
@@ -94,7 +96,12 @@ fn accept(
     catalog: &Catalog,
     chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
 ) -> Assembly {
-    replicas.accept(message, catalog, chunks, &EntityClientRegistry::builtins())
+    replicas.accept(
+        message,
+        catalog,
+        chunks,
+        &EntityClientRegistry::builtins(catalog),
+    )
 }
 
 fn kiln_hit() -> crate::raycast::Hit {
@@ -112,7 +119,7 @@ fn kiln_hit() -> crate::raycast::Hit {
 fn kiln_registry_path_emits_byte_identical_requests() {
     let catalog = Catalog::builtins();
     let hit = kiln_hit();
-    let registry = EntityClientRegistry::builtins();
+    let registry = EntityClientRegistry::builtins(&Catalog::builtins());
     assert!(registry.handles(hit, &catalog));
     // Every kiln command pinned: legacy spelling and registry path must agree
     // byte-for-byte, preserving the replication contract.
@@ -186,6 +193,8 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
         return Err(());
     }
     Ok(Some(crate::render::VisualAvatar {
+        model: crate::render::AvatarModel::Player,
+        pose: [0.0; 2],
         id: entity.id,
         position: glam::Vec3::from_array(*position),
         cosmetics: [0xA5, 0x5A, 0, 0],
@@ -215,7 +224,7 @@ fn probe_interact(
 }
 
 fn probe_registry() -> EntityClientRegistry {
-    let mut registry = EntityClientRegistry::builtins();
+    let mut registry = EntityClientRegistry::builtins(&Catalog::builtins());
     registry.register(EntityAdapter {
         entity_type: PROBE_TYPE,
         project_avatar: probe_avatar,
@@ -287,7 +296,7 @@ fn test_only_type_presents_and_interacts_by_registration_only() {
 #[test]
 fn unknown_entity_type_degrades_safely() {
     let catalog = Catalog::builtins();
-    let registry = EntityClientRegistry::builtins();
+    let registry = EntityClientRegistry::builtins(&Catalog::builtins());
     // Unknown types are stored by the assembler but draw nothing and panic
     // nowhere. (The wire decoder rejects unregistered types before assembly,
     // so the projection layer only ever has to skip them.)
@@ -318,7 +327,7 @@ fn unknown_entity_type_degrades_safely() {
 fn presentation_never_influences_inventory_ownership() {
     use crate::inventory::Inventory;
     let catalog = Catalog::builtins();
-    let registry = EntityClientRegistry::builtins();
+    let registry = EntityClientRegistry::builtins(&Catalog::builtins());
     let mut entities = BTreeMap::new();
     entities.insert(1, player(1, 1));
     entities.insert(

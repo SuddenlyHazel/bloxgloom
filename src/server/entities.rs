@@ -7,6 +7,7 @@ mod checkpoint;
 mod codec;
 mod kiln;
 mod mobile_pages;
+pub(in crate::server) mod mossbun;
 mod persistence;
 mod player;
 pub(in crate::server) use mobile_pages::MobilePage;

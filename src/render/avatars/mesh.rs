@@ -38,7 +38,7 @@ pub(super) fn build() -> AvatarMesh {
     mesh
 }
 
-fn emit_cuboid(mesh: &mut AvatarMesh, min: [f32; 3], max: [f32; 3], part: u32) {
+pub(super) fn emit_cuboid(mesh: &mut AvatarMesh, min: [f32; 3], max: [f32; 3], part: u32) {
     for axis in 0..3 {
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;

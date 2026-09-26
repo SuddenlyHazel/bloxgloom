@@ -28,7 +28,7 @@ use crate::world::ChunkKey;
 use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
-pub(crate) use avatars::{AvatarRenderer, MAX_AVATARS, VisualAvatar};
+pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar};
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 #[cfg(test)]

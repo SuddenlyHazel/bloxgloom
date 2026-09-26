@@ -1725,6 +1725,7 @@ impl EntityStore {
         }
         validate_ownership_mode(&record.location, descriptor.ownership())?;
         validate_location_owner(&record.location, record.owner)?;
+        descriptor.validate_location(&record.location)?;
         if descriptor.encode_payload(&record.payload)?.len() != record.payload_size
             || descriptor.public_view(&record.payload)? != record.public_view
         {
@@ -2003,6 +2004,7 @@ fn validate_record_with_types(
     }
     validate_ownership_mode(&record.location, descriptor.ownership())?;
     validate_location_owner(&record.location, record.owner)?;
+    descriptor.validate_location(&record.location)?;
     if descriptor.encode_payload(&record.payload)?.len() != record.payload_size
         || descriptor.public_view(&record.payload)? != record.public_view
     {

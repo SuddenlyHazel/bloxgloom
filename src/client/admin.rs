@@ -10,12 +10,19 @@ use crate::protocol::ClientMessage;
 enum Command {
     Help,
     Give(ItemId, u16),
+    SpawnMossbun,
 }
 
 fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
     let mut parts = input.trim().trim_start_matches('/').split_whitespace();
     match parts.next() {
         Some("help") if parts.next().is_none() => Ok(Command::Help),
+        Some("spawn")
+            if matches!(parts.next(), Some("mossbun" | "bloxgloom:mossbun"))
+                && parts.next().is_none() =>
+        {
+            Ok(Command::SpawnMossbun)
+        }
         Some("give") => {
             let key = parts.next().ok_or("Usage: give <item-key> [1..128]")?;
             let count = parts
@@ -36,7 +43,7 @@ fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
             }
             Ok(Command::Give(item, count))
         }
-        _ => Err("Commands: give <item-key> [count], help"),
+        _ => Err("Commands: give <item-key> [count], spawn mossbun, help"),
     }
 }
 
@@ -68,11 +75,20 @@ impl ClientApp {
     pub(super) fn admin_run(&mut self) {
         match parse(&self.admin_input, &self.catalog) {
             Ok(Command::Help) => {
-                self.show_status("give namespace:item [1..128]  /  click an item to grant 128")
+                self.show_status("give namespace:item [1..128] / spawn mossbun (one nearby)")
             }
             Ok(Command::Give(item, count)) => {
                 self.admin_grant(item, count);
                 self.admin_input.clear();
+            }
+            Ok(Command::SpawnMossbun) => {
+                let Some(action_id) = self.allocate_action_id() else {
+                    self.show_status("Action session pending or busy");
+                    return;
+                };
+                self.queue_command(ClientMessage::AdminSpawnMossbun { action_id });
+                self.admin_input.clear();
+                self.show_status("Mossbun spawn submitted; needs nearby clear ground");
             }
             Err(message) => self.show_status(message),
         }
@@ -95,5 +111,21 @@ mod tests {
         assert_eq!(count, 12);
         assert!(parse(&format!("give {key} 129"), &catalog).is_err());
         assert!(parse("give madeup:block", &catalog).is_err());
+    }
+
+    #[test]
+    fn mossbun_spawn_is_one_explicit_creature_not_an_inventory_item() {
+        let catalog = Catalog::builtins();
+        assert!(matches!(
+            parse("/spawn mossbun", &catalog),
+            Ok(Command::SpawnMossbun)
+        ));
+        assert!(matches!(
+            parse("spawn bloxgloom:mossbun", &catalog),
+            Ok(Command::SpawnMossbun)
+        ));
+        assert!(parse("spawn mossbun 100", &catalog).is_err());
+        assert!(parse("spawn madeup", &catalog).is_err());
+        assert!(parse("give mossbun", &catalog).is_err());
     }
 }

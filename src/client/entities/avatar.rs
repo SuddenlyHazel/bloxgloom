@@ -29,6 +29,8 @@ fn project_avatar(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     };
     let cosmetics: [u8; 4] = entity.payload.as_slice().try_into().map_err(|_| ())?;
     Ok(Some(VisualAvatar {
+        model: crate::render::AvatarModel::Player,
+        pose: [0.0; 2],
         id: entity.id,
         position: glam::Vec3::from_array(*position),
         cosmetics,

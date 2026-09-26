@@ -27,6 +27,7 @@ pub(in crate::server) fn handle_live_message(
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
+        | ClientMessage::AdminSpawnMossbun { action_id }
         | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     };
@@ -823,6 +824,7 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
+        | ClientMessage::AdminSpawnMossbun { action_id }
         | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }

@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 mod avatar;
 pub(super) mod kiln;
+mod mossbun;
 mod registry;
 pub(in crate::client) use registry::{EntityClientRegistry, EntityVerb};
 

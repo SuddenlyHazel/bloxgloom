@@ -1,6 +1,23 @@
 use super::*;
 
 #[test]
+fn mossbun_spawn_wire_has_only_an_authenticated_action_identity() {
+    let message = ClientMessage::AdminSpawnMossbun {
+        action_id: (1u128 << 64) | 1,
+    };
+    let mut wire = Vec::new();
+    write_client(&mut wire, &message).unwrap();
+    assert_eq!(read_client(wire.as_slice()).unwrap(), message);
+    assert!(
+        write_client(
+            &mut Vec::new(),
+            &ClientMessage::AdminSpawnMossbun { action_id: 0 }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn admin_grant_wire_round_trips_and_rejects_invalid_counts() {
     let item = crate::items::STICK;
     let message = ClientMessage::AdminGive {

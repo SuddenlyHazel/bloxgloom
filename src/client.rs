@@ -177,6 +177,7 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
+        | ClientMessage::AdminSpawnMossbun { action_id }
         | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }
@@ -309,6 +310,7 @@ impl ClientApp {
         let catalog = Arc::clone(&network.catalog);
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
+        let entity_registry = EntityClientRegistry::builtins(&catalog);
         Self {
             catalog,
             inventory: Inventory::default(),
@@ -325,7 +327,7 @@ impl ClientApp {
             ui_layout: None,
             chunks: HashMap::new(),
             replicas: Replicas::default(),
-            entity_registry: EntityClientRegistry::builtins(),
+            entity_registry,
             pending_mesh: HashMap::new(),
             urgent_mesh: std::collections::HashSet::new(),
             lighting_revisions: HashMap::new(),
@@ -1216,7 +1218,11 @@ impl ClientApp {
             .replicas
             .visual_avatars(self.position, self.owned_entity_id);
         for avatar in &mut visual_avatars {
-            let sample = self.light_at(avatar.position + Vec3::Y * 1.45);
+            let height = match avatar.model {
+                crate::render::AvatarModel::Player => 1.45,
+                crate::render::AvatarModel::Mossbun => 0.5,
+            };
+            let sample = self.light_at(avatar.position + Vec3::Y * height);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
         }

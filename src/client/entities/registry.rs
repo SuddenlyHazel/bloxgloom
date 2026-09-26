@@ -60,9 +60,12 @@ impl EntityClientRegistry {
 
     /// Builtin player + kiln presentation. New types register alongside these
     /// at startup without touching the assembler or event dispatch.
-    pub(in crate::client) fn builtins() -> Self {
+    pub(in crate::client) fn builtins(catalog: &Catalog) -> Self {
         let mut registry = Self::new();
         registry.register(super::avatar::player_adapter());
+        if let Some(id) = catalog.entity_type_id_by_key("bloxgloom:mossbun") {
+            registry.register(super::mossbun::adapter(id));
+        }
         registry.register(super::kiln::kiln_adapter());
         registry
     }

@@ -32,6 +32,7 @@ pub(in crate::server) fn plan_durable_request(
                 | ClientMessage::InventoryMove { action_id, .. }
                 | ClientMessage::DropStack { action_id, .. }
                 | ClientMessage::AdminGive { action_id, .. }
+                | ClientMessage::AdminSpawnMossbun { action_id }
                 | ClientMessage::EntityInteract { action_id, .. } => *action_id,
                 _ => {
                     return Err(io::Error::new(
@@ -75,6 +76,10 @@ pub(in crate::server) fn plan_durable_request(
                 entities: None,
             };
             match message {
+                ClientMessage::AdminSpawnMossbun { .. } => {
+                    action.entities =
+                        Some(admin::plan_mossbun(state, profile, position, tick.get())?);
+                }
                 ClientMessage::AdminGive { item, count, .. } => {
                     let Some(next) = admin::plan_grant(
                         state.admin_profile,

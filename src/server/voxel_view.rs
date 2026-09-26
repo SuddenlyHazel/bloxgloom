@@ -181,6 +181,10 @@ impl VoxelView {
     pub fn contains_chunk(&self, key: ChunkKey) -> bool {
         self.chunks.contains_key(&key)
     }
+
+    pub fn is_solid(&self, x: i32, y: i32, z: i32) -> Result<bool, MissingChunk> {
+        Ok(self.catalog.block_flags(self.block(x, y, z)?) & crate::content::SOLID != 0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

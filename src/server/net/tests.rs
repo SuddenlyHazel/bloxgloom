@@ -523,7 +523,15 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
         std::process::id()
     ));
     std::fs::create_dir(&save).unwrap();
-    let state = Box::new(crate::server::server_state(7, save.clone()).unwrap());
+    let mut state = Box::new(crate::server::server_state(7, save.clone()).unwrap());
+    state.admin_profile = Some(0xA11CE);
+    // A known supported nearby spawn spot, independent of generated foliage.
+    let bun_y = state.spawn_anchor[1] as i32;
+    state
+        .world
+        .edit(2, bun_y - 1, 0, crate::world::STONE)
+        .unwrap();
+    state.world.edit(2, bun_y, 0, crate::world::AIR).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let (stop_tx, stop_rx) = mpsc::sync_channel(1);
@@ -668,26 +676,79 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
             accepted,
             "production reactor did not return a durable result"
         );
+        let spawn_action = u128::from(epoch) << 64 | 2;
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::AdminSpawnMossbun {
+                action_id: spawn_action,
+            },
+        )
+        .unwrap();
+        let mut bun_id = None;
+        let mut spawned = false;
+        for _ in 0..512 {
+            match protocol::read_server(&mut peer).unwrap() {
+                ServerMessage::WorldCommitPart(part) => {
+                    for change in part.entities {
+                        if let protocol::PublicEntityChange::Upsert(entity) = change
+                            && entity.entity_type == crate::content::MOSSBUN_ENTITY_TYPE
+                        {
+                            assert_eq!(entity.payload.len(), 2);
+                            bun_id = Some(entity.id);
+                        }
+                    }
+                }
+                ServerMessage::EntitySnapshotPage(page) => {
+                    for entity in page.entities {
+                        if entity.entity_type == crate::content::MOSSBUN_ENTITY_TYPE {
+                            bun_id = Some(entity.id);
+                        }
+                    }
+                }
+                ServerMessage::ActionResult {
+                    action_id,
+                    accepted,
+                    reason,
+                } if action_id == spawn_action => {
+                    assert!(accepted, "live mossbun spawn rejected: {reason}");
+                    spawned = true;
+                    if bun_id.is_some() {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            if spawned && bun_id.is_some() {
+                break;
+            }
+        }
+        assert!(spawned, "live mossbun spawn received no acknowledgement");
+        let bun_id = bun_id.expect("spawned mossbun was not replicated");
         protocol::write_client(
             &mut peer,
             &ClientMessage::ActionAck {
                 epoch,
-                through_seq: 1,
+                through_seq: 2,
             },
         )
         .unwrap();
         let _ = peer.shutdown(Shutdown::Both);
-        block
+        (block, bun_id)
     }));
 
     let _ = stop_tx.send(());
     let server_result = server.join().expect("production server thread panicked");
-    let block = match result {
-        Ok(block) => block,
+    let (block, bun_id) = match result {
+        Ok(result) => result,
         Err(payload) => std::panic::resume_unwind(payload),
     };
     server_result.unwrap();
     let mut restarted = crate::server::server_state(7, save.clone()).unwrap();
+    let bun = restarted
+        .entities
+        .snapshot(crate::server::entities::EntityId::new(bun_id).unwrap())
+        .unwrap();
+    assert_eq!(bun.entity_type, crate::content::MOSSBUN_ENTITY_TYPE);
     assert_eq!(
         restarted
             .world

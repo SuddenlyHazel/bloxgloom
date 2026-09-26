@@ -1,4 +1,6 @@
 use super::*;
+#[path = "mossbun_tests.rs"]
+mod mossbun_tests;
 use crate::items::{ItemId, STICK};
 use crate::server::entities::{CellCoord, KilnSlot, kiln_block_states, kiln_payload};
 use crate::server::movement::MovementState;

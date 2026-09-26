@@ -48,6 +48,8 @@ Click the window to capture the mouse. Use WASD to fly horizontally, Space and S
 
 E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select a source slot, then left-click a destination to move its whole stack; right-click the destination to move half. Matching stacks merge up to 128 blocks; moving a full stack onto a different block swaps them. Escape opens the pause menu, where you can resume, change settings, or exit. F3 toggles the debug HUD. The local game also has an admin menu on F4 or the pause menu: click a catalog item to grant a stack of 128, or type `give namespace:item [count]` and press Enter. `help` lists available commands. These grants are authorized and persisted by the local server; dedicated multiplayer servers do not grant admin access by default.
 
+**Meet the Mossbun:** stand on an open patch of ground, open the local admin menu with **F4**, type `spawn mossbun`, and press **Enter**. Close the menu to watch your mint-colored, rosy-cheeked little companion wander and pause. Each command spawns one nearby on clear supported ground (at most 16 Mossbuns in the destination chunk; crowded entity pages also reject spawning). They persist across saves/restarts, wander even without connected players, avoid cliffs and solid blocks, and settle if their floor is removed. They do not jump, climb steps, fight, consume items, or spawn naturally. `spawn bloxgloom:mossbun` is equivalent.
+
 Blocks are now finite: the server owns inventory, drops, pickup, and placement. Breaking a block pops its drop upward; resting drops hover and spin, then fly toward the player when picked up. A full inventory leaves drops in the world. Inventory and world drops persist in the server save directory; drops expire after ten minutes. Each OS user has a persistent local profile ID for their inventory and saved position; simultaneous connections with that same profile are rejected. Exiting the local game saves the last authoritative position, and restarting restores it unless that position has become obstructed. Movement remains server-authoritative with block collision; gravity and other survival systems are not implemented yet. The inventory/drop protocol is versioned; older clients must be rebuilt.
 
 The server targets a 50 Hz fixed-step simulation even with no clients connected. A coordinator owns authoritative state; movement, fire, registered entity tick policies (including drops and kiln ticks), and owner handlers run on workers. Publication workers prepare interest, snapshots and committed updates. Disk writes run on workers, but simulation and publication barriers can wait for results or durable receipts. See the execution diagrams below for the distinction between implemented parallelism and pending work.
@@ -197,6 +199,8 @@ Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave, 
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 
 Run `cargo run -- drop-preview drops.png` to render a few textured world drops through the production GPU pipeline without opening a game window.
+
+Run `cargo run -- mossbun-preview mossbuns.png` to inspect two Mossbuns and a player scale reference through the production actor meshes and shader, without opening a window.
 
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 

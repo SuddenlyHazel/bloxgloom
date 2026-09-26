@@ -1,7 +1,8 @@
-//! One static humanoid mesh, drawn with a bounded per-player instance buffer.
+//! Shared static actor meshes, drawn with one bounded instance buffer.
 //! Cosmetics and lighting are public presentation state; no profile/inventory data.
 
 mod mesh;
+mod mossbun;
 
 use super::{DEPTH_FORMAT, shader::with_world_sun};
 use bytemuck::{Pod, Zeroable};
@@ -10,8 +11,17 @@ use wgpu::util::DeviceExt;
 
 pub(crate) const MAX_AVATARS: usize = 512;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AvatarModel {
+    Player,
+    Mossbun,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualAvatar {
+    pub model: AvatarModel,
+    /// Yaw and cosmetic stride. Never used for authoritative movement.
+    pub pose: [f32; 2],
     pub id: u64,
     pub position: Vec3,
     pub cosmetics: [u8; 4],
@@ -28,6 +38,7 @@ struct AvatarInstance {
     cosmetics: [u8; 4],
     light_levels: [u8; 4],
     bounce: [u8; 4],
+    pose: [f32; 2],
 }
 
 pub(crate) struct AvatarRenderer {
@@ -36,8 +47,9 @@ pub(crate) struct AvatarRenderer {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     instances: wgpu::Buffer,
-    index_count: u32,
-    instance_count: u32,
+    player_indices: u32,
+    total_indices: u32,
+    counts: [u32; 2],
 }
 
 impl AvatarRenderer {
@@ -87,6 +99,7 @@ impl AvatarRenderer {
             4 => Uint8x4,
             5 => Uint8x4,
             6 => Uint8x4,
+            7 => Float32x2,
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced public avatars"),
@@ -133,7 +146,9 @@ impl AvatarRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let mesh = mesh::build();
+        let mut mesh = mesh::build();
+        let player_indices = mesh.indices.len() as u32;
+        mossbun::append(&mut mesh);
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shared avatar vertices"),
             contents: bytemuck::cast_slice(&mesh.vertices),
@@ -156,32 +171,43 @@ impl AvatarRenderer {
             vertices,
             indices,
             instances,
-            index_count: mesh.indices.len() as u32,
-            instance_count: 0,
+            player_indices,
+            total_indices: mesh.indices.len() as u32,
+            counts: [0; 2],
         }
     }
 
     /// Caller supplies nearest first. The bounded instance buffer never grows
     /// with world/entity population or modded entity count.
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
-        let instances: Vec<_> = avatars
-            .iter()
-            .take(MAX_AVATARS)
-            .map(|avatar| AvatarInstance {
-                origin: avatar.position.to_array(),
-                cosmetics: avatar.cosmetics,
-                light_levels: avatar.light_levels,
-                bounce: avatar.bounce,
-            })
-            .collect();
+        let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
+        for (index, model) in [AvatarModel::Player, AvatarModel::Mossbun]
+            .into_iter()
+            .enumerate()
+        {
+            let start = instances.len();
+            instances.extend(
+                avatars
+                    .iter()
+                    .take(MAX_AVATARS)
+                    .filter(|a| a.model == model)
+                    .map(|avatar| AvatarInstance {
+                        origin: avatar.position.to_array(),
+                        cosmetics: avatar.cosmetics,
+                        light_levels: avatar.light_levels,
+                        bounce: avatar.bounce,
+                        pose: avatar.pose,
+                    }),
+            );
+            self.counts[index] = (instances.len() - start) as u32;
+        }
         if !instances.is_empty() {
             queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&instances));
         }
-        self.instance_count = instances.len() as u32;
     }
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
-        if self.instance_count == 0 {
+        if self.counts == [0; 2] {
             return 0;
         }
         pass.set_pipeline(&self.pipeline);
@@ -189,7 +215,18 @@ impl AvatarRenderer {
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-        pass.draw_indexed(0..self.index_count, 0, 0..self.instance_count);
-        self.index_count as usize / 3 * self.instance_count as usize
+        let [players, buns] = self.counts;
+        if players > 0 {
+            pass.draw_indexed(0..self.player_indices, 0, 0..players);
+        }
+        if buns > 0 {
+            pass.draw_indexed(
+                self.player_indices..self.total_indices,
+                0,
+                players..players + buns,
+            );
+        }
+        (self.player_indices * players + (self.total_indices - self.player_indices) * buns) as usize
+            / 3
     }
 }

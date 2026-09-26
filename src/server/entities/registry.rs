@@ -134,6 +134,14 @@ pub enum EntityCodecError {
 /// Payloads stay decoded in the live store; codecs serialize only for WAL and
 /// checkpoint values or the bounded public view.
 pub trait EntityPayloadCodec: Send + Sync + 'static {
+    /// Optional type-specific spatial bounds, checked for preparation and recovery.
+    fn validate_location(
+        &self,
+        _location: &super::types::EntityLocation,
+    ) -> Result<(), EntityError> {
+        Ok(())
+    }
+
     fn decode(&self, payload: &[u8]) -> Result<EntityPayload, EntityCodecError>;
 
     fn encode(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityCodecError>;
@@ -174,6 +182,13 @@ pub struct EntityTypeDescriptor {
 }
 
 impl EntityTypeDescriptor {
+    pub fn validate_location(
+        &self,
+        location: &super::types::EntityLocation,
+    ) -> Result<(), EntityError> {
+        self.codec.validate_location(location)
+    }
+
     pub const fn id(&self) -> EntityTypeId {
         self.id
     }

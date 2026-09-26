@@ -13,6 +13,7 @@ fn registry(catalog: &Arc<Catalog>) -> Arc<EntityTypeRegistry> {
     let mut builder = super::super::registry::EntityTypeRegistryBuilder::new(catalog);
     register_drop_type(&mut builder, catalog.clone()).unwrap();
     register_player_entity_type(&mut builder).unwrap();
+    crate::server::entities::mossbun::register(&mut builder, catalog).unwrap();
     register_entity_type(&mut builder, catalog.clone()).unwrap();
     Arc::new(builder.freeze().unwrap())
 }

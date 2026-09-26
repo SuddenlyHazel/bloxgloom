@@ -109,6 +109,7 @@ pub(in crate::server) fn encode_action_receipt_with_catalog(
             value.extend(item.0.to_le_bytes());
             value.extend(count.to_le_bytes());
         }
+        ClientMessage::AdminSpawnMossbun { .. } => value.push(5),
         ClientMessage::EntityInteract {
             target, payload, ..
         } => {
@@ -146,6 +147,7 @@ pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
     catalog: &crate::content::Catalog,
 ) -> bool {
     match value {
+        [2, 5] => true,
         [2, 0, ..] if value.len() == 19 => {
             let block = BlockId::new(u32::from_le_bytes(value[14..18].try_into().unwrap()));
             catalog.state(block).is_some() && usize::from(value[18]) < SLOTS

@@ -31,6 +31,9 @@ pub const KILN_STATE_COUNT: u32 = 16;
 pub const KILN_ENTITY_TYPE: EntityTypeId = EntityTypeId(3);
 pub const KILN_SCHEMA_VERSION: u16 = 1;
 pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0001;
+pub const MOSSBUN_ENTITY_TYPE: EntityTypeId = EntityTypeId(4);
+pub const MOSSBUN_SCHEMA_VERSION: u16 = 1;
+pub const MOSSBUN_SCHEMA_FINGERPRINT: u64 = 0x4d4f_5353_4255_0001;
 
 pub(crate) const SOLID: u8 = 1;
 pub(crate) const OPAQUE: u8 = 2;

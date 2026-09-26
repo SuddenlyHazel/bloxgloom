@@ -9,6 +9,7 @@ struct VertexInput {
     @location(4) cosmetics: vec4<u32>,
     @location(5) light_levels: vec4<u32>,
     @location(6) bounce: vec4<u32>,
+    @location(7) pose: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -37,17 +38,28 @@ const PANTS = array<vec3<f32>, 6>(
 
 @vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let world = input.local + input.origin;
+    var local = input.local;
+    if input.part == 10u { local.y += max(0.0, input.pose.y) * 0.045; }
+    if input.part == 11u { local.y += max(0.0, -input.pose.y) * 0.045; }
+    let c = cos(input.pose.x);
+    let s = sin(input.pose.x);
+    let world = vec3<f32>(local.x * c + local.z * s, local.y, local.z * c - local.x * s) + input.origin;
+    let normal = vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s);
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
     var albedo = SKINS[input.cosmetics.x % 6u];
     if input.part == 1u { albedo = SHIRTS[input.cosmetics.y % 8u]; }
     if input.part == 2u { albedo = PANTS[input.cosmetics.z % 6u]; }
     if input.part == 3u { albedo = mix(PANTS[input.cosmetics.z % 6u], vec3<f32>(0.10, 0.08, 0.07), 0.65); }
     if input.part == 4u { albedo = vec3<f32>(0.025, 0.035, 0.045); }
+    if input.part == 5u { albedo = vec3<f32>(0.49, 0.77, 0.58); }
+    if input.part == 6u || input.part >= 10u { albedo = vec3<f32>(0.96, 0.88, 0.68); }
+    if input.part == 7u { albedo = vec3<f32>(0.93, 0.49, 0.51); }
+    if input.part == 8u { albedo = vec3<f32>(0.025, 0.045, 0.05); }
+    if input.part == 9u { albedo = vec3<f32>(1.0, 0.97, 0.86); }
     let sky = f32(input.light_levels.x) / 15.0;
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3<f32>(f32(input.bounce.x), f32(input.bounce.y), f32(input.bounce.z)) / 255.0;
-    let sun = max(dot(input.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
+    let sun = max(dot(normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
     let light = vec3<f32>(0.012, 0.015, 0.022)
         + sky * (vec3<f32>(0.31, 0.40, 0.53) + sun * vec3<f32>(0.77, 0.66, 0.47))
         + glow * glow * vec3<f32>(1.0, 0.57, 0.23)

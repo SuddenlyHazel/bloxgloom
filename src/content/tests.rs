@@ -84,7 +84,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
         .unwrap();
     catalog
         .register_entity_type(EntityTypeDef {
-            id: EntityTypeId(4),
+            id: EntityTypeId(5),
             key: "test:low".into(),
             schema_version: 1,
             schema_fingerprint: 13,

@@ -65,6 +65,10 @@ pub enum ClientMessage {
         item: ItemId,
         count: u16,
     },
+    /// One creature near the authenticated administrator; no client position.
+    AdminSpawnMossbun {
+        action_id: u128,
+    },
     /// Opaque, bounded command for the entity anchored at a touched world cell.
     /// The server resolves type, reach, and private inventory authority.
     EntityInteract {
@@ -370,6 +374,13 @@ pub fn write_client_with_catalog(
             out.extend(action_id.to_le_bytes());
             out.extend(item.0.to_le_bytes());
             out.extend(count.to_le_bytes());
+        }
+        ClientMessage::AdminSpawnMossbun { action_id } => {
+            if !valid_action_id(*action_id) {
+                return Err(invalid("invalid spawn action"));
+            }
+            out.push(13);
+            out.extend(action_id.to_le_bytes());
         }
         ClientMessage::ContentReady { fingerprint } => {
             out.push(9);
@@ -884,6 +895,13 @@ pub fn read_client_with_catalog(
                 item,
                 count,
             }
+        }
+        13 => {
+            let action_id = c.u128()?;
+            if !valid_action_id(action_id) {
+                return Err(invalid("invalid spawn action"));
+            }
+            ClientMessage::AdminSpawnMossbun { action_id }
         }
         _ => return Err(invalid("unknown client message")),
     };

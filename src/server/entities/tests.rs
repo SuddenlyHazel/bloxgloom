@@ -113,6 +113,7 @@ fn fixture_registry() -> Arc<EntityTypeRegistry> {
             .unwrap();
     }
     register_kiln_entity_type(&mut builder, catalog.clone()).unwrap();
+    mossbun::register(&mut builder, &catalog).unwrap();
     Arc::new(builder.freeze().unwrap())
 }
 
@@ -908,7 +909,7 @@ fn a_frozen_type_registry_requires_every_catalogued_type_and_valid_anchor_schema
         Err(EntityError::MissingTypeRegistration(PLAYER_TYPE))
     ));
 
-    const TEST_ANCHORED_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(4);
+    const TEST_ANCHORED_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(5);
     catalog
         .register_entity_type(EntityTypeDef {
             id: TEST_ANCHORED_TYPE,
