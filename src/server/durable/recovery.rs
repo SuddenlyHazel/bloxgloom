@@ -38,14 +38,7 @@ pub(super) fn open(
     inventory_store: &InventoryStore,
     entity_types: Arc<EntityTypeRegistry>,
     owner_configs: Vec<OwnerSystemConfig>,
-) -> io::Result<(
-    Durability,
-    FireRecovered,
-    EntityStore,
-    DurableOwnerStore,
-    PendingWakeStore,
-    BTreeMap<SystemId, OwnerKey>,
-)> {
+) -> io::Result<RecoveredDurability> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
     let recovered_entities =

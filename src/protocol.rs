@@ -99,6 +99,10 @@ pub struct DroppedItem {
 }
 
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
+)]
 pub enum ServerMessage {
     Welcome {
         id: u64,

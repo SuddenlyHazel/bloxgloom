@@ -45,6 +45,10 @@ pub(in crate::server) struct TcpSoakReport {
     pub reasons: Vec<String>,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Pure reporting combines independently captured inputs without introducing another report configuration type."
+)]
 pub(super) fn summarize(
     clients: usize,
     scene: TcpScene,

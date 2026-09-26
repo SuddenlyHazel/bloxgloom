@@ -73,6 +73,15 @@ pub(super) const MAX_DIRTY_CHECKPOINT_BYTES: usize = 128 * 1024 * 1024;
 const CHECKPOINT_QUEUE_CAPACITY: usize = 16;
 const CHECKPOINT_WORKERS: usize = 4;
 
+pub(super) type RecoveredDurability = (
+    Durability,
+    FireRecovered,
+    EntityStore,
+    DurableOwnerStore,
+    PendingWakeStore,
+    BTreeMap<SystemId, OwnerKey>,
+);
+
 pub(super) struct Durability {
     catalog: Arc<crate::content::Catalog>,
     pub(super) writer: JournalWriter,
@@ -181,6 +190,10 @@ pub(super) struct PendingCommit {
     pub(super) entity_permit: Option<MirrorPermit>,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Pending commits are admission-bounded; preserve inline transaction ownership without adding per-action allocation."
+)]
 pub(super) enum PendingPayload {
     Action(CommitAction),
     Fire(FireTransaction),
@@ -358,14 +371,7 @@ impl Durability {
         inventory_store: &InventoryStore,
         entity_types: Arc<EntityTypeRegistry>,
         owner_configs: Vec<OwnerSystemConfig>,
-    ) -> io::Result<(
-        Self,
-        FireRecovered,
-        EntityStore,
-        DurableOwnerStore,
-        PendingWakeStore,
-        BTreeMap<SystemId, OwnerKey>,
-    )> {
+    ) -> io::Result<RecoveredDurability> {
         recovery::open(root, world, inventory_store, entity_types, owner_configs)
     }
 

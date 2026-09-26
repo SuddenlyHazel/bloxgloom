@@ -624,7 +624,7 @@ pub(super) fn item_color(item: ItemId) -> [f32; 4] {
     item_color_for(item, crate::content::catalog())
 }
 
-pub(super) fn item_name_for<'a>(item: ItemId, catalog: &'a Catalog) -> &'a str {
+pub(super) fn item_name_for(item: ItemId, catalog: &Catalog) -> &str {
     catalog
         .item(item)
         .map_or("UNKNOWN", |definition| definition.name.as_ref())

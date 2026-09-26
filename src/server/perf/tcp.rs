@@ -255,13 +255,13 @@ fn drive(
         if current > observed {
             for tick in observed.max(first.saturating_sub(1)) + 1..=current {
                 let offset = tick - first;
-                if offset % 5 == 0 {
+                if offset.is_multiple_of(5) {
                     for (index, client) in clients.iter_mut().enumerate() {
                         let [dx, dy, dz] = movement(scene, actions, offset, index);
                         client.send_move(dx, dy, dz)?;
                     }
                 }
-                if actions && offset > 0 && offset % 100 == 0 {
+                if actions && offset > 0 && offset.is_multiple_of(100) {
                     let index = (offset / 100) as usize % clients.len().min(16);
                     clients[index].drop_one()?;
                 }
@@ -286,7 +286,7 @@ fn drive(
 fn movement(scene: TcpScene, measured: bool, offset: u64, index: usize) -> [f32; 3] {
     if measured || matches!(scene, TcpScene::Clustered) {
         return [
-            if (offset / 5 + index as u64) % 2 == 0 {
+            if (offset / 5 + index as u64).is_multiple_of(2) {
                 0.05
             } else {
                 -0.05

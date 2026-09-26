@@ -846,9 +846,6 @@ impl DurableOwnerStore {
             }
         }
         entries
-            .into_iter()
-            .map(|(tick, system, owner)| (tick, system, owner))
-            .collect()
     }
 }
 

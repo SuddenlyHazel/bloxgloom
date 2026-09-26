@@ -130,6 +130,10 @@ impl Connection {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Explicit borrowed reactor services keep connection polling independent of reactor ownership."
+    )]
     pub(super) fn poll(
         &mut self,
         now: Instant,
@@ -232,13 +236,10 @@ impl Connection {
         match self.phase {
             Phase::ReadyToLoadInventory => {
                 let profile = self.profile.expect("Hello establishes a profile");
-                match workers.request(profile) {
-                    Ok(receiver) => {
-                        self.inventory_receiver = Some(receiver);
-                        self.phase = Phase::LoadingInventory;
-                        progress = true;
-                    }
-                    Err(()) => {}
+                if let Ok(receiver) = workers.request(profile) {
+                    self.inventory_receiver = Some(receiver);
+                    self.phase = Phase::LoadingInventory;
+                    progress = true;
                 }
             }
             Phase::LoadingInventory => {

@@ -16,6 +16,12 @@ const MOBILE_BUCKET_SIZE: f32 = 16.0;
 const MAX_BUCKETS_PER_QUERY: usize = 4_096;
 const MAX_QUERY_CANDIDATES: usize = 65_536;
 
+/// Exact before/after bytes for affected chunk pages and anchored cells.
+pub type EntityIndexChanges = (
+    Vec<(ChunkKey, Vec<u8>, Vec<u8>)>,
+    Vec<(CellCoord, Vec<u8>, Vec<u8>)>,
+);
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Bucket(i32, i32, i32);
 
@@ -165,13 +171,7 @@ impl EntityIndexes {
         &self,
         before: Option<&EntityRecord>,
         after: Option<&EntityRecord>,
-    ) -> Result<
-        (
-            Vec<(ChunkKey, Vec<u8>, Vec<u8>)>,
-            Vec<(CellCoord, Vec<u8>, Vec<u8>)>,
-        ),
-        EntityError,
-    > {
+    ) -> Result<EntityIndexChanges, EntityError> {
         if before.map(|record| record.id) != after.map(|record| record.id)
             && before.is_some()
             && after.is_some()

@@ -314,10 +314,8 @@ impl Renderer {
         {
             return Ok(());
         }
-        if !self.pending.contains_key(&mesh.key) {
-            if self.pending.len() >= MAX_PENDING_MESHES {
-                return Err(mesh);
-            }
+        if !self.pending.contains_key(&mesh.key) && self.pending.len() >= MAX_PENDING_MESHES {
+            return Err(mesh);
         }
         order_pending_mesh(
             &mut self.pending_order,

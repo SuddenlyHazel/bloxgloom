@@ -170,10 +170,10 @@ impl Shared {
     }
 
     fn fail(&self, reason: impl Into<String>) {
-        if let Ok(mut failure) = self.failure.lock() {
-            if failure.is_none() {
-                *failure = Some(reason.into());
-            }
+        if let Ok(mut failure) = self.failure.lock()
+            && failure.is_none()
+        {
+            *failure = Some(reason.into());
         }
         self.failed.store(true, Ordering::Release);
     }
@@ -208,6 +208,10 @@ impl Shared {
     }
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "The mirror channel is admission-bounded; keep admitted events inline without another allocation."
+)]
 enum Command {
     Event {
         sequence: u64,
@@ -219,6 +223,13 @@ enum Command {
     },
 }
 
+#[cfg_attr(
+    test,
+    allow(
+        clippy::large_enum_variant,
+        reason = "Only fixtures add the smaller legacy motion variant; live events are durable batches."
+    )
+)]
 enum Event {
     Durable(PreparedEntityBatch),
     #[cfg(test)]

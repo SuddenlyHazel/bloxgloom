@@ -213,11 +213,9 @@ fn serve_listener_inner(
         }
         let pass_started = Instant::now();
 
-        let mut ready = std::collections::HashMap::with_capacity(events.len());
+        let mut ready = std::collections::HashMap::<_, Readiness>::with_capacity(events.len());
         for event in events.iter() {
-            let entry = ready
-                .entry(event.key)
-                .or_insert_with(|| Readiness::default());
+            let entry = ready.entry(event.key).or_default();
             entry.readable |= event.readable;
             entry.writable |= event.writable;
             entry.error |= event.is_err() == Some(true);

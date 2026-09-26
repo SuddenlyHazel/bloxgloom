@@ -238,40 +238,35 @@ pub(in crate::server) fn process_durable_actions(
                         }
                     }
                 };
-                if let Some((profile, _, payload)) = command_receipt {
-                    if action.receipt_transition.is_none() {
-                        if action.receipt_value.as_deref() != Some(payload.as_slice()) {
-                            cancel_prepared_entities(state, &action);
-                            return Err(io::Error::other(
-                                "planned action payload differs from admitted command",
-                            ));
-                        }
-                        let accepted = action.inventory.is_some()
-                            || !action.world_edits.is_empty()
-                            || action.entities.is_some();
-                        let reason = if accepted {
-                            String::new()
-                        } else {
-                            "action made no change".into()
-                        };
-                        if let Err(error) = set_action_result(
-                            state,
-                            &mut action,
-                            profile,
-                            payload,
-                            accepted,
-                            reason,
-                        ) {
-                            cancel_prepared_entities(state, &action);
-                            return Err(error);
-                        }
+                if let Some((profile, _, payload)) = command_receipt
+                    && action.receipt_transition.is_none()
+                {
+                    if action.receipt_value.as_deref() != Some(payload.as_slice()) {
+                        cancel_prepared_entities(state, &action);
+                        return Err(io::Error::other(
+                            "planned action payload differs from admitted command",
+                        ));
+                    }
+                    let accepted = action.inventory.is_some()
+                        || !action.world_edits.is_empty()
+                        || action.entities.is_some();
+                    let reason = if accepted {
+                        String::new()
+                    } else {
+                        "action made no change".into()
+                    };
+                    if let Err(error) =
+                        set_action_result(state, &mut action, profile, payload, accepted, reason)
+                    {
+                        cancel_prepared_entities(state, &action);
+                        return Err(error);
                     }
                 }
-                if let Some(entities) = &action.entities {
-                    if let Err(error) = state.entities.validate_prepared(entities) {
-                        cancel_prepared_entities(state, &action);
-                        return Err(io::Error::new(ErrorKind::InvalidData, error));
-                    }
+                if let Some(entities) = &action.entities
+                    && let Err(error) = state.entities.validate_prepared(entities)
+                {
+                    cancel_prepared_entities(state, &action);
+                    return Err(io::Error::new(ErrorKind::InvalidData, error));
                 }
                 let entity_permit = if action.entities.is_some() {
                     match state.durability.entity_mirror.try_reserve_durable() {

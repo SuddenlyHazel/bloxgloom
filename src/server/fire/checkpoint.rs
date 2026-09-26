@@ -19,10 +19,12 @@ mod aggregate;
 const MAX_FIRE_VALUE_BYTES: usize = 128 * 1024;
 const MAX_FIRE_FILE_BYTES: usize = MAX_FIRE_VALUE_BYTES + 96;
 
+type CheckpointValues = BTreeMap<StateKey, Vec<u8>>;
+
 #[derive(Clone)]
 pub(in crate::server) struct FireCheckpointStore {
     root: PathBuf,
-    values: Arc<Mutex<Option<BTreeMap<StateKey, Vec<u8>>>>>,
+    values: Arc<Mutex<Option<CheckpointValues>>>,
 }
 
 impl FireCheckpointStore {

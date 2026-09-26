@@ -298,6 +298,10 @@ impl OwnerPatch {
         self.payload.downcast_ref()
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "A failed downcast returns the original owned patch intact without allocating an error wrapper."
+    )]
     pub fn into_payload<T: Any + Send>(self) -> Result<T, Self> {
         let Self {
             system,
@@ -461,6 +465,10 @@ pub struct ValidatedOwnerWave {
 }
 
 impl ValidatedOwnerWave {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Keep batch identity, budgets, and each independent validation dependency explicit at the barrier."
+    )]
     pub fn validate<E: fmt::Debug>(
         expected_system: &SystemId,
         expected_jobs: &[JobKey],
