@@ -435,6 +435,7 @@ pub(in crate::server) fn commit_tick_plan(
         snapshot,
         descriptor,
         catalog,
+        view,
         neighbours,
         current_tick,
         woken,
@@ -482,7 +483,7 @@ pub(in crate::server) fn commit_tick_plan(
     } else if plan.anchor_update.is_some() {
         return Err(corrupt("mobile entity planner returned an anchor update"));
     }
-    let (world_edits, changed_cells, read_chunks, write_coords) =
+    let (world_edits, changed_cells, _read_chunks, write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
     let wakes = plan_wakes(
         state,
@@ -565,8 +566,11 @@ pub(in crate::server) fn commit_tick_plan(
             .prepare_update(id, snapshot.revision, patch)
             .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?
     };
-    for chunk in read_chunks {
-        entities.add_read_key(super::super::chunk_state_key(chunk));
+    // The footprint preimages cover only block changes. Physics and other
+    // tick policies may read terrain without writing any blocks; keep their
+    // whole captured terrain set fenced until the WAL receipt is applied.
+    for (chunk, _) in view.revisions() {
+        entities.add_read_key(super::super::chunk_state_key(*chunk));
     }
     let deltas = prepared_deltas(&write_coords, &world_edits);
     Ok(Some(CommitAction {

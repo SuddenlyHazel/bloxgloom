@@ -44,6 +44,167 @@ fn stale_entity_worker_capture_does_not_prepare_or_apply_and_remains_retryable()
     assert!(state.durability.pending.is_empty());
 }
 
+#[test]
+fn outstanding_terrain_edit_defers_drop_motion_until_replanned_single_and_batched() {
+    use crate::server::durable::actions::entity::plan_entity_tick;
+
+    for count in [1, 2] {
+        let save = TestSave::new("terrain-fenced-drop-motion");
+        let mut state = state_for(&save, 7);
+        let y = crate::world::MAX_GENERATED_HEIGHT + 20;
+        let positions = [[0.5, y as f32, 0.5], [2.5, y as f32, 0.5]];
+        reside_neighbourhood(&mut state, positions[0]);
+        for position in positions.iter().take(count) {
+            spawn_drop(&mut state, 1, *position, STONE_ITEM, 1, Duration::ZERO);
+        }
+        let ids: Vec<_> = positions
+            .iter()
+            .take(count)
+            .map(|position| {
+                crate::server::entities::EntityId::new(
+                    drop_nearby(&state, *position)
+                        .into_iter()
+                        .find(|drop| drop.position == *position)
+                        .expect("spawned drop exists at its position")
+                        .id,
+                )
+                .unwrap()
+            })
+            .collect();
+        let before: Vec<_> = ids
+            .iter()
+            .map(|id| state.entities.snapshot(*id).unwrap())
+            .collect();
+        let cell = (0, y - 1, 0);
+        assert_eq!(
+            state.world.cached_block(cell.0, cell.1, cell.2),
+            Some(crate::world::AIR)
+        );
+        let edits = state
+            .world
+            .prepare_edits(&[(cell.0, cell.1, cell.2, crate::world::STONE)])
+            .unwrap();
+        let terrain = crate::server::durable::CommitAction {
+            client_id: None,
+            profile: None,
+            action_id: None,
+            receipt_value: None,
+            receipt_transition: None,
+            inventory_before: None,
+            inventory: None,
+            world_edits: edits,
+            deltas: Vec::new(),
+            changed_cells: Vec::new(),
+            pickups: Vec::new(),
+            fire_seed: None,
+            entities: None,
+            entity_wakes: Vec::new(),
+        };
+        assert!(
+            state
+                .durability
+                .try_stage(TickId::new(2), &terrain, None)
+                .unwrap()
+        );
+        let terrain_key = crate::server::durable::chunk_state_key(
+            crate::world::world_to_chunk(cell.0, cell.1, cell.2).0,
+        );
+        assert!(state.durability.reserved.contains(&terrain_key));
+
+        // Hold the receipt at the coordinator boundary even if the writer has
+        // finished: the edit is reserved but has not changed resident terrain.
+        let (sender, withheld) = mpsc::channel();
+        let real_receipt = std::mem::replace(&mut state.durability.pending[0].receiver, withheld);
+        for id in &ids {
+            let action = plan_entity_tick(&mut state, *id, 2, false)
+                .unwrap()
+                .expect("drop is due over the original air");
+            assert!(
+                action
+                    .entities
+                    .as_ref()
+                    .unwrap()
+                    .read_keys()
+                    .any(|key| key == &terrain_key)
+            );
+        }
+        for id in &ids {
+            state
+                .durability
+                .queued
+                .push_back(DurableRequest::EntityTick { id: *id });
+        }
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+            .unwrap();
+        assert_eq!(
+            state.durability.pending.len(),
+            1,
+            "no partial motion may stage"
+        );
+        assert_eq!(state.durability.queued.len(), count, "all steps must retry");
+        for (id, original) in ids.iter().zip(&before) {
+            assert_eq!(
+                state.entities.snapshot(*id).unwrap().motion_revision,
+                original.motion_revision
+            );
+        }
+
+        // Now admit the real terrain receipt; a fresh tick must plan against
+        // stone, not apply the stale air-based positions held above.
+        drop(sender);
+        state.durability.pending[0].receiver = real_receipt;
+        drain_durable(&mut state, 2);
+        assert_eq!(
+            state.world.cached_block(cell.0, cell.1, cell.2),
+            Some(crate::world::STONE)
+        );
+        let expected: Vec<_> = ids
+            .iter()
+            .map(|id| {
+                plan_entity_tick(&mut state, *id, 2, false)
+                    .unwrap()
+                    .unwrap()
+                    .entities
+                    .unwrap()
+            })
+            .collect();
+        if count == 2 {
+            let batch = state.entities.combine_prepared(expected).unwrap();
+            assert!(
+                batch.read_keys().any(|key| key == &terrain_key),
+                "batch keeps terrain reads"
+            );
+        }
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+            .unwrap();
+        assert!(state.durability.pending.is_empty());
+        assert!(state.durability.queued.is_empty());
+        assert!(
+            state.entities.snapshot(ids[0]).unwrap().motion_revision > before[0].motion_revision
+        );
+        // The edited block catches the first drop; without replanning it
+        // would have fallen through the new top on its stale air trajectory.
+        let crate::server::entities::EntityLocation::Mobile { position: first } =
+            state.entities.snapshot(ids[0]).unwrap().location
+        else {
+            panic!("drop remains mobile");
+        };
+        assert!(first[1] > positions[0][1]);
+        if count == 2 {
+            assert!(
+                state.entities.snapshot(ids[1]).unwrap().motion_revision
+                    > before[1].motion_revision
+            );
+            let crate::server::entities::EntityLocation::Mobile { position: second } =
+                state.entities.snapshot(ids[1]).unwrap().location
+            else {
+                panic!("drop remains mobile");
+            };
+            assert!(second[1] < positions[1][1]);
+        }
+    }
+}
+
 fn action_id(state: &State, profile: u128, seq: u64) -> u128 {
     (u128::from(state.durability.receipt_ledger(profile).current_epoch()) << 64) | u128::from(seq)
 }
