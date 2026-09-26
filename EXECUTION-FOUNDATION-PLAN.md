@@ -8,19 +8,37 @@ The execution contract we are working toward:
 
 > The coordinator selects work and owns state. Workers compute from immutable snapshots. Transactions commit atomically. Publication exposes only confirmed state. Capacity pressure delays work without silently losing it.
 
-## First: review the current worker slice
+## Status as of 2026-09-26
 
-Before assigning more implementation work, verify:
+- **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
+- **Done:** direct review of the worker slice, including its production call path.
+- **In progress:** review correction for captured terrain dependencies during transaction admission. The worker slice remains open until this correction is verified.
+- **Pending:** slices 1–5 and the independent extension crate below.
+- **Parked:** fire spread and its migration.
 
-- The live drop/entity tick path actually invokes workers.
-- Completion order does not change plan or commit order.
-- Physics cadence and atomic pickup/transfer behaviour survive.
-- Missing terrain, stale results and capacity pressure preserve retry eligibility.
-- No alternate commit path was introduced.
+## First: review the current worker slice — review done, correction in progress
 
-Use a focused reviewer pass because this change crosses scheduling, physics and durability. Necessary corrections belong to the current slice.
+Completed implementation and review evidence:
+
+- [x] The live drop/entity tick path invokes bounded workers through `stage_motion_batch` → `entity_dispatch::plan_motion` → `PhaseExecutor`.
+- [x] Workers receive owned immutable inputs; transaction construction and authoritative application remain on the coordinator.
+- [x] Worker results are restored to request order before transaction construction. A two-entity synthetic test compares one and multiple workers with an ordering gate.
+- [x] Existing motion batching and receipt draining are retained; no alternate authoritative commit path was introduced.
+- [x] Focused tests cover stale-capture rejection/retry and worker-panic retry.
+- [x] Full test suite passed: **525 passed, 0 failed**. Formatting check passed. Existing behavioural assertions were retained.
+
+Remaining correction and verification:
+
+- [ ] Preserve captured terrain read dependencies through transaction admission and motion batching. Review found that snapshot revisions are checked before transaction construction, but chunk read keys appear to cover block changes rather than every terrain chunk supplied to a planner. An outstanding conflicting terrain edit must defer dependent work for replanning.
+- [ ] Add and pass a regression covering an outstanding terrain edit and a dependent entity tick, including successful retry against updated terrain.
+
+Verification limits: the new synthetic ordering test covers one step, not the broader multi-tick drop/item/publication equivalence requested for the slice. Full capacity/fairness guarantees remain slice 1 work. Strict Clippy failed with warnings including unchanged code; a clean lint result has not been established.
+
+The parent performed the focused review directly. Necessary corrections remain part of this worker slice.
 
 ## 1. Scheduling and progress under capacity pressure
+
+**Status: pending.**
 
 **Problem:** bounded execution protects memory and prevents global failure, but does not always guarantee local progress. Dense neighbour views can prevent drop motion; wake-prioritized work can compete with normal scheduling.
 
@@ -37,6 +55,8 @@ This is the recommended next implementation task after reviewing the current wor
 
 ## 2. Reliable wake and sleep semantics
 
+**Status: pending.**
+
 **Problem:** saying effects are optional is insufficient if a sleeping entity has no other reason to run again.
 
 ### Scope
@@ -52,6 +72,8 @@ This may be small after slice 1, but it has a distinct behavioural claim.
 
 ## 3. Separate conflict revisions from publication ordering
 
+**Status: pending.**
+
 **Problem:** the global entity revision key makes independent entity mutations conflict. Motion batching addresses one symptom, but the underlying transaction model still limits independence.
 
 ### Scope
@@ -66,6 +88,8 @@ This may be small after slice 1, but it has a distinct behavioural claim.
 This is the most delicate slice. Use a coder followed by a targeted reviewer pass for conflict detection and recovery.
 
 ## 4. Consolidate commit orchestration and make barriers explicit
+
+**Status: pending.**
 
 **Problem:** entity actions, motion batches and owner waves currently have different stage, wait and apply arrangements.
 
@@ -84,6 +108,8 @@ Some consolidation may naturally land during slice 3. This task should cover onl
 
 ## 5. Off-thread publication and bounded checkpoint work
 
+**Status: pending.**
+
 **Problem:** expensive work can still accumulate after simulation has finished.
 
 ### Scope
@@ -99,6 +125,8 @@ Some consolidation may naturally land during slice 3. This task should cover onl
 If publication and checkpointing touch substantially different paths, execute them as two scoped tasks rather than forcing one large diff.
 
 ## Then: build a real extension
+
+**Status: pending.**
 
 Complete missing startup registration hooks while building the independent extension crate, rather than designing every possible hook in advance.
 
