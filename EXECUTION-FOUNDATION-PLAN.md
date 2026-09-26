@@ -17,7 +17,8 @@ The execution contract we are working toward:
 - **Done:** slice 2 and direct review of bounded suspended-entity rechecks (`f05f2c5`).
 - **Done:** slice 3 and direct review of entity conflict/publication separation (`2ca8e12`).
 - **Done:** slice 4 and direct review of shared commit admission and ordered barriers (`273a70d`).
-- **In progress:** slice 5A, off-thread publication; slice 5B, bounded checkpoint work, is authorized to follow after review.
+- **Done:** slice 5A, off-thread publication, reviewed with synchronous bounded worker barriers.
+- **In progress:** slice 5B, bounded checkpoint work.
 - **Pending:** independent extension crate below.
 - **Parked:** fire spread and its migration.
 
@@ -157,18 +158,21 @@ The next implementation task is slice 5. Scope publication and checkpoint work a
 
 ## 5. Off-thread publication and bounded checkpoint work
 
-**Status: authorized; publication implementation in progress.**
+**Status: publication done and reviewed; checkpoint implementation in progress.**
 
 Execute as two sequential tasks with parent review of each:
 
-- [ ] **5A — Publication:** immutable committed inputs/logs, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
-- [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. Begin after reviewing publication under the same user authorization.
+- [x] **5A — Publication:** immutable committed effects, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
+- [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. In progress under the same user authorization.
 
 Publication progress:
 
 - [x] Bounded chunk snapshot worker preparation and matching-publication shared messages/encoded bytes (`e9cddc1`). Existing codec workers encode shared frames once; per-client outbound accounting remains independent. Parent inspected the implementation and independently ran all eight snapshot regressions: **8 passed**.
-- [ ] Move remaining interest/subscription preparation, drop visibility, and committed player/entity delta grouping/projection off the coordinator with bounded immutable inputs. Implementation continues; snapshot preparation alone does not complete 5A.
-- [ ] Verify local handling of oversized snapshot captures and worker-batch cleanup after recoverable capture/submission failure, alongside mixed snapshot/delta/disconnect ordering.
+- [x] Move remaining interest/subscription preparation, drop visibility, and committed player/entity delta grouping/projection onto workers (`8905b3d`). Subscription captures share immutable maps; incrementally maintained mobile pages avoid coordinator population cloning. The existing confirmed-effects queue supplies immutable ordered inputs; no additional retained cross-tick log was introduced.
+- [x] Localize oversized snapshot failures and close accepted worker batches after capture/submission failure (`443771d`). Oversized snapshots disconnect affected sessions; oversized transaction expansion triggers complete subscription resnapshots without truncating transaction pieces. Reliable replies retain order.
+- [x] Parent reviewed the continuation and independently ran **7 publication tests and 11 snapshot/streaming tests**, all passing. Coder reported **579 full-suite tests passed**, real nonblocking TCP snapshot/edit/restart coverage passed, formatting/diff checks passed; strict Clippy remains blocked by baseline diagnostics.
+
+5A limits: publication uses synchronous bounded worker barriers, including per-effect fanout, not asynchronous cross-tick streaming. Sharing is batch-local. The coordinator still creates confirmed effects, maintains derived pages, captures bounded snapshot views/page handles, sorts client IDs, validates outputs, manages subscriptions/pins/sessions, and enqueues frames. Selected anchored footprints are still cloned during bounded snapshot capture. Conservative global expansion overflow resyncs all subscribed clients. No wire/save format changes. Complete checkpoint work is assessed separately in 5B.
 
 For the snapshot unit, coder reported **570 full-suite tests passed**, strengthened real nonblocking TCP snapshot/delta/result ordering coverage, and passing formatting/diff checks. Strict Clippy remains blocked by existing warnings. A headless preview was inspected, but no release gameplay window was observed. Snapshot sharing is within matching publication groups, and the coordinator waits at a bounded publication barrier; this is not cross-tick asynchronous publication.
 
