@@ -2,6 +2,48 @@ use super::*;
 
 const STONE_ITEM: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 
+#[test]
+fn stale_entity_worker_capture_does_not_prepare_or_apply_and_remains_retryable() {
+    let save = TestSave::new("stale-entity-worker-capture");
+    let mut state = state_for(&save, 7);
+    let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
+    reside_neighbourhood(&mut state, position);
+    spawn_drop(&mut state, 1, position, STONE_ITEM, 1, Duration::ZERO);
+    let id = state.entities.due_entities(2, 1)[0];
+    let input =
+        crate::server::durable::actions::entity::capture_tick_input(&mut state, id, 2, false)
+            .unwrap()
+            .unwrap();
+    let plan = input.plan().unwrap();
+    let before = state.entities.snapshot(id).unwrap();
+    // An unrelated entity commit invalidates the captured neighbour view's
+    // global entity revision even when the target's own record is untouched.
+    spawn_drop(
+        &mut state,
+        1,
+        [1.5, position[1], 0.5],
+        STONE_ITEM,
+        1,
+        Duration::ZERO,
+    );
+    let error = crate::server::durable::actions::entity::commit_tick_plan(&mut state, input, plan)
+        .err()
+        .expect("stale capture cannot construct a transaction");
+    assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+    assert_eq!(
+        state.entities.snapshot(id).unwrap().revision,
+        before.revision
+    );
+    state
+        .durability
+        .queued
+        .push_back(DurableRequest::EntityTick { id });
+    crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+        .unwrap();
+    assert!(state.entities.snapshot(id).unwrap().motion_revision > before.motion_revision);
+    assert!(state.durability.pending.is_empty());
+}
+
 fn action_id(state: &State, profile: u128, seq: u64) -> u128 {
     (u128::from(state.durability.receipt_ledger(profile).current_epoch()) << 64) | u128::from(seq)
 }

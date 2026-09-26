@@ -1,5 +1,169 @@
 use super::*;
 
+#[test]
+fn entity_tick_policy_runs_on_workers_in_durable_coordinator_order() {
+    use crate::server::entities::{
+        EntityError, EntityPayload, EntitySnapshot, EntitySpawn, EntityTickPlan, EntityTickPolicy,
+        EntityView,
+    };
+    use crate::server::voxel_view::VoxelView;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Condvar, Mutex};
+
+    struct Probe {
+        coordinator: std::thread::ThreadId,
+        seen: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+        reverse: bool,
+        gate: Arc<(Mutex<bool>, Condvar)>,
+        panic_once: Arc<AtomicBool>,
+    }
+    impl EntityTickPolicy for Probe {
+        fn plan(
+            &self,
+            snapshot: &EntitySnapshot,
+            _tick: u64,
+            _catalog: &crate::content::Catalog,
+            _view: &VoxelView,
+            _neighbours: &EntityView,
+        ) -> Result<EntityTickPlan, EntityError> {
+            let worker = std::thread::current().id();
+            assert_ne!(
+                worker, self.coordinator,
+                "production tick dispatch ran policy on coordinator"
+            );
+            let x = match snapshot.location {
+                crate::server::entities::EntityLocation::Mobile { position } => position[0],
+                _ => unreachable!(),
+            };
+            if self.reverse {
+                let (lock, cv) = &*self.gate;
+                if x < 1.0 {
+                    let mut done = lock.lock().unwrap();
+                    while !*done {
+                        done = cv.wait(done).unwrap();
+                    }
+                } else {
+                    *lock.lock().unwrap() = true;
+                    cv.notify_all();
+                }
+            }
+            self.seen.lock().unwrap().push(worker);
+            if x < 1.0 && self.panic_once.swap(false, Ordering::SeqCst) {
+                panic!("test-only entity worker failure");
+            }
+            Ok(EntityTickPlan {
+                payload: None,
+                next_tick: snapshot.next_tick.map(|due| due + 1),
+                anchor_update: None,
+                position: Some([x + 0.125, 80.0, 0.5]),
+                block_states: Vec::new(),
+                wakes: Vec::new(),
+                transfer: None,
+            })
+        }
+    }
+
+    fn run(workers: usize, fail_once: bool) -> (Vec<(u64, u64, [f32; 3])>, usize) {
+        let save = TestSave::new("entity-worker-dispatch");
+        let entity_type = crate::content::EntityTypeId(70_051);
+        let mut catalog = crate::content::Catalog::builtins();
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id: entity_type,
+                key: "test:worker_entity".into(),
+                schema_version: 1,
+                schema_fingerprint: 0x70051,
+            })
+            .unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let mut startup = ServerStartup::new(Arc::new(catalog));
+        startup.register_entity_type(crate::server::startup::StartupEntityType {
+            key: "test:worker_entity".into(),
+            ownership: crate::server::entities::EntityOwnership::Mobile,
+            tick_policy: crate::server::entities::TickPolicy::EveryTick,
+            max_payload_bytes: 1,
+            codec: Arc::new(StartupProbeCodec),
+            interaction_policy: None,
+            tick_planner: Some(Arc::new(Probe {
+                coordinator: std::thread::current().id(),
+                seen: Arc::clone(&seen),
+                reverse: workers > 1 && !fail_once,
+                gate: Arc::new((Mutex::new(false), Condvar::new())),
+                panic_once: Arc::new(AtomicBool::new(fail_once)),
+            })),
+        });
+        let mut state =
+            server_state_with_startup(7, save.path().to_path_buf(), 1, startup).unwrap();
+        state.entity_tick_executor =
+            crate::server::parallel::PhaseExecutor::new(workers, 256, 256).unwrap();
+        let mut ids = Vec::new();
+        for x in [0.5, 1.5] {
+            let batch = state
+                .entities
+                .prepare_spawn(EntitySpawn::Mobile {
+                    entity_type,
+                    position: [x, 80.0, 0.5],
+                    payload: EntityPayload::new(7u8),
+                    spawn_tick: 1,
+                })
+                .unwrap();
+            ids.push(batch.entity_id());
+            stage_tamper_batch(&mut state, batch, 1);
+        }
+        for id in &ids {
+            state
+                .durability
+                .queued
+                .push_back(crate::server::durable::DurableRequest::EntityTick { id: *id });
+        }
+        let original = state.entities.snapshot(ids[0]).unwrap();
+        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+            .unwrap();
+        if fail_once {
+            assert_eq!(
+                state.entities.snapshot(ids[0]).unwrap().motion_revision,
+                original.motion_revision,
+                "failed worker cannot apply a partial entity step"
+            );
+            assert!(state.durability.queued.iter().any(|request|
+                matches!(request, crate::server::durable::DurableRequest::EntityTick { id } if *id == ids[0])));
+            crate::server::durable::process_durable_actions(
+                &mut state,
+                TickId::new(2),
+                Instant::now(),
+            )
+            .unwrap();
+        }
+        assert!(
+            state.durability.pending.is_empty(),
+            "motion receipt must apply in the same tick"
+        );
+        let snapshots = ids
+            .iter()
+            .map(|id| {
+                let snapshot = state.entities.snapshot(*id).unwrap();
+                let crate::server::entities::EntityLocation::Mobile { position } =
+                    snapshot.location
+                else {
+                    unreachable!()
+                };
+                (snapshot.revision, snapshot.motion_revision, position)
+            })
+            .collect();
+        let count = seen.lock().unwrap().len();
+        (snapshots, count)
+    }
+    let single = run(1, false);
+    let parallel = run(2, false);
+    assert_eq!(single, parallel);
+    assert_eq!(parallel.1, 2);
+    assert_eq!(parallel.0[0].2[0], 0.625);
+    assert_eq!(parallel.0[1].2[0], 1.625);
+    let retried = run(2, true);
+    assert_eq!(retried.0, parallel.0);
+    assert_eq!(retried.1, 3);
+}
+
 struct StartupProbeCodec;
 
 impl crate::server::entities::EntityPayloadCodec for StartupProbeCodec {
