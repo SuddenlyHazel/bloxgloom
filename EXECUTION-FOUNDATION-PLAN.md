@@ -18,7 +18,7 @@ The execution contract we are working toward:
 - **Done:** slice 3 and direct review of entity conflict/publication separation (`2ca8e12`).
 - **Done:** slice 4 and direct review of shared commit admission and ordered barriers (`273a70d`).
 - **Done:** slice 5A, off-thread publication, reviewed with synchronous bounded worker barriers.
-- **In progress:** slice 5B, bounded checkpoint work.
+- **Done:** slice 5B, streaming checkpoints and bounded capture, reviewed with the parked-fire and rotation-latency limits below.
 - **Pending:** independent extension crate below.
 - **Parked:** fire spread and its migration.
 
@@ -158,21 +158,21 @@ The next implementation task is slice 5. Scope publication and checkpoint work a
 
 ## 5. Off-thread publication and bounded checkpoint work
 
-**Status: publication done and reviewed; checkpoint implementation in progress.**
+**Status: done — publication and checkpoint implementations reviewed, with explicit limits below.**
 
 Execute as two sequential tasks with parent review of each:
 
 - [x] **5A — Publication:** immutable committed effects, worker interest/projection and replication preparation, shared encoded chunk pages, bounded backpressure and stale-result/session ordering.
-- [ ] **5B — Checkpoints:** audit and bound the complete capture/serialization path, retaining ordered mirror/recovery correctness. In progress under the same user authorization.
+- [x] **5B — Checkpoints:** audit and bound the shared capture/serialization path, retaining ordered mirror/recovery correctness. Parked fire's private checkpoint path remains outside the streaming guarantee.
 
 Checkpoint progress (`d36a944`):
 
 - [x] Stream entity checkpoints from the fenced worker-owned mirror and journal bases from the ordered latest-values map, avoiding whole-generation output allocation and rotation-time population sorting.
 - [x] Ordinary dirty-key dispatch uses a bounded 16-key circular selection; writer capacity is checked before snapshot copying. Serialization turns process at most 16 bounded entries, with 64 KiB write/checksum pieces.
 - [x] Preserve atomic file publication and WAL generation coverage; exclusive startup recovery discards unpublished regular entity-checkpoint temporaries before validating published state and replaying WAL. Formats remain unchanged.
-- [ ] Finish review verification: parent inspected implementation and independently passed **44 checkpoint-filtered tests**. A concurrent rotation-filtered run passed 11/12 but hit the previously intermittent landed-drop rotation completion assertion. Coder is investigating and replacing the timing-dependent wait with explicit completion synchronization if the production path is sound; slice remains open.
+- [x] Finish review verification: parent inspected implementation and independently passed **44 checkpoint-filtered tests**. A concurrent rotation run hit the previously intermittent landed-drop completion assertion. Correction `9323b8e` replaces its rotation sleep/poll loop with bounded waits on actual entity-checkpoint and WAL-rotation receipts, retaining production validation and strengthening fence/completion assertions. Parent inspected the correction and independently reran the affected test: **passed**. No production stall was found; the historical blocking phase was not reproduced or established.
 
-Coder reported **586 full-suite tests passed** before this follow-up. Checkpoint commands still take O(population) total work on dedicated workers, with bounded serialization turns rather than interleaved executor jobs; rotation can hold admission closed for multiple ticks. Startup recovery remains population-sized, ordinary per-key values remain schema/transaction-bounded whole values, and parked fire's private complete-map checkpoint remains outside the streaming guarantee.
+After the correction, coder reported **586 full-suite tests passed**, concurrent focused runs of **44 checkpoint and 12 rotation tests passed**, and formatting/diff checks passed. Strict Clippy remains blocked by existing diagnostics. Checkpoint commands still take O(population) total work on dedicated workers, with bounded serialization turns rather than interleaved executor jobs; rotation can hold admission closed for multiple ticks. Startup recovery remains population-sized, ordinary per-key values remain schema/transaction-bounded whole values, and parked fire's private complete-map checkpoint remains outside the streaming guarantee.
 
 Publication progress:
 
@@ -202,6 +202,8 @@ If publication and checkpointing touch substantially different paths, execute th
 ## Then: build a real extension
 
 **Status: pending.**
+
+Slices 1–5 are reviewed. This is the next task, subject to the user's go-ahead; texture paging remains separately scoped and fire stays parked.
 
 Complete missing startup registration hooks while building the independent extension crate, rather than designing every possible hook in advance.
 
