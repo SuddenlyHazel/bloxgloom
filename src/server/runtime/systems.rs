@@ -15,8 +15,8 @@ use super::super::effects::{EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH};
 use super::super::journal::{Change, CommitReceipt, StateKey, SubmitError, Transaction};
 use super::super::parallel::{
     BatchId, JobKey, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY, MAX_PHASE_WORKERS,
-    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerSnapshot, OwnerWaveError, OwnerWaveLimits,
-    PhaseExecutor, ValidatedOwnerWave,
+    OwnerData, OwnerJob, OwnerKey, OwnerPatch, OwnerSchedule, OwnerSnapshot, OwnerWaveError,
+    OwnerWaveLimits, PhaseExecutor, ValidatedOwnerWave,
 };
 use super::super::registry::{ExecutableSystem, SystemHandlerError, SystemId};
 use super::super::simulation::TickId;
@@ -547,7 +547,7 @@ impl SystemRuntime {
         }
         let next_cursor = if let Some(last) = last_ordinary {
             self.durable.successor(&id, last)
-        } else if ordinary_cursor.is_some() {
+        } else if self.next_owner.contains_key(&id) || ordinary_cursor.is_some() {
             self.next_owner.get(&id).copied().or(ordinary_cursor)
         } else {
             self.durable.successor(
@@ -655,6 +655,9 @@ impl SystemRuntime {
             |owner| self.durable.revision(&id, owner),
             |patch| Ok(OwnerEffectPatch::emitted_count(patch)),
             |patch| {
+                if matches!(patch.schedule(), OwnerSchedule::AtTick(due) if due <= tick.get()) {
+                    return Err("owner deadline must be after the producing tick".into());
+                }
                 if patch.usage().writes != 1 {
                     return Err("one owner replacement must declare exactly one write".into());
                 }

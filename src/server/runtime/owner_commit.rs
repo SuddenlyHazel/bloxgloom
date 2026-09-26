@@ -25,7 +25,7 @@
 //! coordinator batch. This module covers owner slices only.
 
 use super::super::journal::{Change, StateKey};
-use super::super::parallel::{OwnerKey, OwnerPatch};
+use super::super::parallel::{OwnerKey, OwnerPatch, OwnerSchedule};
 use super::super::registry::SystemId;
 use super::super::simulation::TickId;
 use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
@@ -170,7 +170,16 @@ pub(in crate::server) fn build_owner_writes_parallel(
                 patch.owner()
             )));
         };
-        inputs.push((patch.owner(), patch.revisions().to_vec(), replacement));
+        let due_tick = match patch.schedule() {
+            OwnerSchedule::Active => None,
+            OwnerSchedule::AtTick(tick) => Some(tick),
+        };
+        inputs.push((
+            patch.owner(),
+            patch.revisions().to_vec(),
+            replacement,
+            due_tick,
+        ));
     }
     let chunks = worker_chunks.max(1).min(inputs.len());
     let chunk_len = inputs.len().div_ceil(chunks);
@@ -181,7 +190,7 @@ pub(in crate::server) fn build_owner_writes_parallel(
         for input_chunk in inputs.chunks(chunk_len) {
             handles.push(scope.spawn(move || {
                 let mut writes = Vec::with_capacity(input_chunk.len());
-                for (owner, revisions, value) in input_chunk {
+                for (owner, revisions, value, due_tick) in input_chunk {
                     writes.push(OwnerWrite {
                         owner: *owner,
                         reads: revisions
@@ -189,7 +198,7 @@ pub(in crate::server) fn build_owner_writes_parallel(
                             .map(|stamp| (stamp.owner, stamp.revision))
                             .collect(),
                         value: value.clone(),
-                        due_tick: None,
+                        due_tick: *due_tick,
                     });
                 }
                 writes

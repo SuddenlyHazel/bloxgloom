@@ -238,6 +238,50 @@ fn runnable_capture_feeds_one_due_owner_per_one_job_wave() {
         vec![chunk(1)]
     );
     assert_eq!(store.ready_due.len(), 2);
+    assert_eq!(store.schedule_by_system.len(), 126);
+    assert_eq!(
+        store.runnable_from(&id, 5, Some(chunk(2)), 4),
+        vec![chunk(2), chunk(3), chunk(4), chunk(5)]
+    );
+    assert_eq!(
+        store.ready_due.len(),
+        6,
+        "feed/capture is bounded by the job allowance"
+    );
+    assert_eq!(store.schedule_by_system.len(), 122);
+    assert_eq!(
+        store.schedule.len(),
+        128,
+        "feeding never consumes persisted eligibility"
+    );
+}
+
+#[test]
+fn fed_deadlines_are_not_duplicated_and_replay_clears_stale_readiness() {
+    let mut store = counter_store();
+    let id = system("test:counters");
+    store.insert(&id, chunk(0), OwnerData::new(0u64)).unwrap();
+    let prepared = store
+        .prepare(
+            &id,
+            vec![OwnerWrite::new(chunk(0), 0, OwnerData::new(1u64)).scheduled(Some(5))],
+        )
+        .unwrap();
+    store.commit(prepared, receipt()).unwrap();
+    assert_eq!(store.runnable_from(&id, 5, None, 8), vec![chunk(0)]);
+    assert!(store.schedule_by_system.is_empty());
+    // A deferral leaves one ready entry, not an endless feed loop or lost work.
+    assert_eq!(store.runnable_from(&id, 5, None, 8), vec![chunk(0)]);
+    let prepared = store
+        .prepare(
+            &id,
+            vec![OwnerWrite::new(chunk(0), 1, OwnerData::new(2u64)).scheduled(Some(10))],
+        )
+        .unwrap();
+    store.apply_replayed(prepared.changes()).unwrap();
+    assert!(store.ready_due.is_empty());
+    assert!(store.runnable_from(&id, 9, None, 8).is_empty());
+    assert_eq!(store.runnable_from(&id, 10, None, 8), vec![chunk(0)]);
 }
 
 #[test]

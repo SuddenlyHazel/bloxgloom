@@ -132,10 +132,13 @@ pub(in crate::server) struct DurableOwnerStore {
     active: BTreeSet<(SystemId, OwnerKey)>,
     /// Sparse due-tick index, updated at commit time only.
     schedule: BTreeMap<(u64, SystemId, OwnerKey), ()>,
-    /// Per-system due ordering feeds a bounded owner-key-ready index.
+    /// Deadlines not yet fed into ready_due. Feeding removes an entry here,
+    /// not from the authoritative schedule. A rejected wave remains ready.
     schedule_by_system: BTreeSet<(SystemId, u64, OwnerKey)>,
+    /// Transient eligibility index, bounded by the capped cell population.
+    /// Recovery rebuilds unfed deadlines instead; exact feed order is not
+    /// durable, but persisted deadlines and the ordinary rotation are.
     ready_due: BTreeSet<(SystemId, OwnerKey)>,
-    due_feed_cursor: BTreeMap<SystemId, (u64, OwnerKey)>,
 }
 
 impl std::fmt::Debug for DurableOwnerStore {
@@ -178,7 +181,6 @@ impl DurableOwnerStore {
             schedule: BTreeMap::new(),
             schedule_by_system: BTreeSet::new(),
             ready_due: BTreeSet::new(),
-            due_feed_cursor: BTreeMap::new(),
         })
     }
 
@@ -341,26 +343,19 @@ impl DurableOwnerStore {
         if limit == 0 {
             return Vec::new();
         }
-        // Feed at most one job budget per wave. The feed cursor wraps over
-        // persisted deadlines; every due owner eventually reaches ready_due
-        // without constructing a population-sized temporary set.
-        let start = self.due_feed_cursor.get(system).copied();
+        // Traverse/capture at most one job budget, never repeatedly feeding an
+        // already-ready entry. New schedules enter this index only on commit.
         let lower = (system.clone(), 0, FIRST_OWNER);
         let upper = (system.clone(), through_tick, OwnerKey::Profile(u128::MAX));
-        let next = start
-            .filter(|(due, _)| *due <= through_tick)
-            .and_then(|(due, owner)| {
-                self.schedule_by_system
-                    .range((
-                        std::ops::Bound::Excluded((system.clone(), due, owner)),
-                        std::ops::Bound::Included(upper.clone()),
-                    ))
-                    .next()
-                    .cloned()
-            })
-            .or_else(|| self.schedule_by_system.range(lower..=upper).next().cloned());
-        if let Some((_, due, owner)) = next {
-            self.due_feed_cursor.insert(system.clone(), (due, owner));
+        let feed: Vec<_> = self
+            .schedule_by_system
+            .range(lower..=upper)
+            .take(limit)
+            .cloned()
+            .collect();
+        for entry in feed {
+            let owner = entry.2;
+            self.schedule_by_system.remove(&entry);
             self.ready_due.insert((system.clone(), owner));
         }
         let from = cursor.unwrap_or(FIRST_OWNER);
@@ -388,19 +383,22 @@ impl DurableOwnerStore {
                     .map(|(_, owner)| *owner)
                     .take(limit),
             );
-        let mut active = active.take(limit);
-        let mut due = due.take(limit);
+        let mut active = active.take(limit).peekable();
+        let mut due = due.take(limit).peekable();
         let mut selected = Vec::with_capacity(limit);
+        // Merge in the *same* circular order as the persisted cursor. Lane
+        // alternation with a shared cursor lets a recurring high-key deadline
+        // reset the active lane to its lowest key forever.
+        let rank = |owner: OwnerKey| (owner < from, owner);
         while selected.len() < limit {
-            let next = if through_tick % 2 == (selected.len() as u64) % 2 {
-                due.next().or_else(|| active.next())
-            } else {
-                active.next().or_else(|| due.next())
+            let next = match (active.peek(), due.peek()) {
+                (Some(a), Some(d)) if rank(*a) <= rank(*d) => active.next(),
+                (_, Some(_)) => due.next(),
+                _ => active.next(),
             };
             let Some(owner) = next else { break };
-            if !selected.contains(&owner) {
-                selected.push(owner);
-            }
+            // Active and scheduled indexes are disjoint by construction.
+            selected.push(owner);
         }
         selected
     }

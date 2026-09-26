@@ -21,6 +21,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+#[path = "scheduling_tests.rs"]
+mod scheduling;
+
 /// Little-endian u64 owner codec for test harnesses that drive
 /// `SystemRuntime` directly. Production systems register their codec through
 /// `ServerStartup::register_owner_codec`.

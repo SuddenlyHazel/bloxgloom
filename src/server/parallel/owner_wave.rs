@@ -223,6 +223,21 @@ pub struct PatchUsage {
     pub estimated_bytes: usize,
 }
 
+/// Eligibility after this replacement commits. Wakes may run an owner sooner;
+/// the handler then explicitly chooses its next schedule again. This is not a
+/// sleep policy: every owner remains active or has a persisted deadline.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OwnerSchedule {
+    /// Remain eligible on every ordinary rotation (the legacy default).
+    #[default]
+    Active,
+    /// Become ordinarily eligible at this absolute logical tick. Registered
+    /// dispatch rejects deadlines not strictly after the producing job's tick.
+    // Extension-facing policy; built-in adapters do not emit owner patches.
+    #[allow(dead_code)]
+    AtTick(u64),
+}
+
 /// Scratch output from one handler. Its patch value is type-erased only at the
 /// registry boundary; runtime code downcasts it to the system's typed patch.
 pub struct OwnerPatch {
@@ -231,6 +246,7 @@ pub struct OwnerPatch {
     owner: OwnerKey,
     revisions: Vec<OwnerRevision>,
     usage: PatchUsage,
+    schedule: OwnerSchedule,
     payload: Box<dyn Any + Send>,
 }
 
@@ -242,6 +258,7 @@ impl OwnerPatch {
             owner: job.key.owner,
             revisions: job.revisions(),
             usage,
+            schedule: OwnerSchedule::Active,
             payload: Box::new(payload),
         }
     }
@@ -266,6 +283,20 @@ impl OwnerPatch {
         self.usage
     }
 
+    /// Schedule is part of the same validated, receipted replacement as state,
+    /// for both plain OwnerData and effect-bearing payloads.
+    // Registration API exercised through live dispatch by scheduling tests;
+    // built-in adapters do not currently produce scheduled owner patches.
+    #[allow(dead_code)]
+    pub fn with_schedule(mut self, schedule: OwnerSchedule) -> Self {
+        self.schedule = schedule;
+        self
+    }
+
+    pub const fn schedule(&self) -> OwnerSchedule {
+        self.schedule
+    }
+
     pub fn payload<T: Any>(&self) -> Option<&T> {
         self.payload.downcast_ref()
     }
@@ -277,6 +308,7 @@ impl OwnerPatch {
             owner,
             revisions,
             usage,
+            schedule,
             payload,
         } = self;
         match payload.downcast::<T>() {
@@ -287,6 +319,7 @@ impl OwnerPatch {
                 owner,
                 revisions,
                 usage,
+                schedule,
                 payload,
             }),
         }
@@ -302,6 +335,7 @@ impl fmt::Debug for OwnerPatch {
             .field("owner", &self.owner)
             .field("revisions", &self.revisions)
             .field("usage", &self.usage)
+            .field("schedule", &self.schedule)
             .finish_non_exhaustive()
     }
 }
