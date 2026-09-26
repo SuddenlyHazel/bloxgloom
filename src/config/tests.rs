@@ -20,6 +20,8 @@ fn config_round_trips_through_explicit_path() {
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
+        exposure: 1.25,
+        bloom_strength: 0.0,
         selected_slot: 7,
         debug_hud: true,
         profile: 0x1234,
@@ -66,12 +68,16 @@ fn saving_sanitizes_public_values() {
         fov_degrees: -1.0,
         view_distance: 0,
         scale: 9.0,
+        exposure: f32::NAN,
+        bloom_strength: -1.0,
         selected_slot: usize::MAX,
         ..Config::default()
     };
 
     config.save(&path).unwrap();
     let loaded = Config::load(&path);
+    assert_eq!(loaded.exposure, 1.0);
+    assert_eq!(loaded.bloom_strength, 0.0);
     assert_eq!(loaded.sensitivity, Config::default().sensitivity);
     assert_eq!(loaded.fov_degrees, MIN_FOV);
     assert_eq!(loaded.view_distance, MIN_VIEW_DISTANCE);

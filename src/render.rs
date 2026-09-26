@@ -5,6 +5,7 @@ mod drops;
 mod material;
 mod mesh;
 mod pipeline;
+pub(crate) mod post;
 mod shader;
 mod sky;
 mod target;
@@ -107,6 +108,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     depth: wgpu::TextureView,
+    post: post::PostProcess,
     sky_pipeline: wgpu::RenderPipeline,
     sky_buffer: wgpu::Buffer,
     sky_group: wgpu::BindGroup,
@@ -184,10 +186,11 @@ impl Renderer {
         };
         surface.configure(&device, &config);
         let depth = create_depth(&device, config.width, config.height);
-        let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, format);
+        let post = post::PostProcess::new(&device, config.width, config.height, format);
+        let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
-            create_voxel_pipeline_with_catalog(&device, &queue, format, &catalog);
-        let avatars = avatars::AvatarRenderer::new(&device, format, &camera_buffer);
+            create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog);
+        let avatars = avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));
@@ -224,6 +227,7 @@ impl Renderer {
             queue,
             config,
             depth,
+            post,
             sky_pipeline,
             sky_buffer,
             sky_group,
@@ -260,6 +264,11 @@ impl Renderer {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth = create_depth(&self.device, size.width, size.height);
+        self.post.resize(&self.device, size.width, size.height);
+    }
+
+    pub fn configure_post(&mut self, exposure: f32, bloom_strength: f32) {
+        self.post.configure(&self.queue, exposure, bloom_strength);
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
@@ -478,7 +487,7 @@ impl Renderer {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.post.scene,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(SKY_COLOR),
@@ -543,6 +552,7 @@ impl Renderer {
                 stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
         }
+        self.post.encode(&mut encoder, &view);
         if ui_frame.target.is_some() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("target block outline"),

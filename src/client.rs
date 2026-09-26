@@ -1183,6 +1183,7 @@ impl ClientApp {
         if let Some(renderer) = &mut self.renderer {
             renderer.set_drops(&visual_drops);
             renderer.set_avatars(&visual_avatars);
+            renderer.configure_post(self.config.exposure, self.config.bloom_strength);
             match renderer.render(camera, &ui) {
                 Ok(stats) => {
                     self.last_visible_chunks = stats.visible_chunks;

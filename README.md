@@ -12,6 +12,12 @@ The current default save directory is `world-v6/`. Incompatible older worlds are
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. This is groundwork for future mod loading, not a mod-file format or scripting API yet.
 
+### HDR presentation
+
+The world renders into a linear `RGBA16Float` scene buffer, followed by quarter-resolution soft-threshold bloom and neutral, fixed-exposure tone mapping to the display. Glowstone and the sun retain HDR highlights; the HUD and selection outline are drawn afterward. Exposure does not adapt when entering caves. This is an internal HDR pipeline with SDR output, so no HDR monitor is required.
+
+Two optional config-file settings control the look (restart after editing): `exposure=1.0` (range `0.25`–`4.0`) and `bloom_strength=0.12` (range `0`–`1`). Set `bloom_strength=0` to skip bloom passes. On macOS the file is `~/Library/Application Support/Bloxgloom/config`; Linux uses `$XDG_CONFIG_HOME/bloxgloom/config` or `~/.config/bloxgloom/config`, and Windows uses `%APPDATA%/Bloxgloom/config`. Existing configs use the defaults until these keys are saved or added. Image previews and the headless benchmark use the same post-processing pipeline at its default settings.
+
 ## Run locally
 
 With a recent Rust toolchain, run a local game with one command:

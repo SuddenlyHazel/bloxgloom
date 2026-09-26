@@ -268,10 +268,12 @@ async fn render_previews(
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
-    let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
+    let (sky_pipeline, sky_buffer, sky_group) =
+        render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
-        render::create_voxel_pipeline(&device, &queue, FORMAT);
-    let mut avatar_renderer = render::AvatarRenderer::new(&device, FORMAT, &camera_buffer);
+        render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let mut avatar_renderer =
+        render::AvatarRenderer::new(&device, render::post::HDR_FORMAT, &camera_buffer);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -658,6 +660,7 @@ async fn render_previews(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
+        let post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("preview commands"),
         });
@@ -665,7 +668,7 @@ async fn render_previews(
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview world"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
+                    view: &post.scene,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -720,6 +723,7 @@ async fn render_previews(
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
         }
+        post.encode(&mut encoder, &color_view);
         if has_target {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview target outline"),

@@ -26,6 +26,8 @@ pub struct Config {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
+    pub exposure: f32,
+    pub bloom_strength: f32,
     pub selected_slot: usize,
     pub debug_hud: bool,
     pub profile: u128,
@@ -40,6 +42,8 @@ impl Default for Config {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
+            exposure: 1.0,
+            bloom_strength: 0.12,
             selected_slot: 1,
             debug_hud: false,
             profile: 0,
@@ -145,6 +149,8 @@ impl Config {
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
+            exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
+            bloom_strength: clamp_finite(self.bloom_strength, 0.0, 1.0, 0.12),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
             profile: self.profile,
@@ -153,7 +159,7 @@ impl Config {
 
     fn serialize(&self) -> String {
         format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
@@ -163,6 +169,8 @@ impl Config {
             self.selected_slot,
             self.debug_hud,
             self.profile,
+            self.exposure,
+            self.bloom_strength,
         )
     }
 }
@@ -182,6 +190,8 @@ fn parse_config(contents: &str) -> Config {
         let key = key.trim();
         let value = value.trim();
         match key {
+            "exposure" => config.exposure = parse_clamped_float(value, 0.25, 4.0, 1.0),
+            "bloom_strength" => config.bloom_strength = parse_clamped_float(value, 0.0, 1.0, 0.12),
             "version" => version = value.parse::<u32>().ok(),
             "sensitivity" => {
                 config.sensitivity =

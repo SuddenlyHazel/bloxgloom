@@ -148,7 +148,7 @@ fn sky_noise(p: vec2<f32>) -> f32 {
     let glow = smoothstep(0.88, 0.997, alignment);
     let disc = smoothstep(0.9990, 0.99955, alignment);
     color = mix(color, vec3<f32>(1.0, 0.82, 0.55), glow * 0.28);
-    color = mix(color, vec3<f32>(1.0, 0.92, 0.72), disc);
+    color = mix(color, vec3<f32>(5.0, 4.4, 3.2), disc);
     return vec4<f32>(color, 1.0);
 }
 "#;

@@ -139,9 +139,11 @@ pub(super) async fn run_perf_benchmark_async(
         .map(|mesh| mesh.cutout_indices.len())
         .sum::<usize>();
 
-    let (sky_pipeline, sky_buffer, sky_group) = render::create_sky_pipeline(&device, FORMAT);
+    let post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
+    let (sky_pipeline, sky_buffer, sky_group) =
+        render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
-        render::create_voxel_pipeline(&device, &queue, FORMAT);
+        render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -345,7 +347,7 @@ pub(super) async fn run_perf_benchmark_async(
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
+                    view: &post.scene,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -401,6 +403,7 @@ pub(super) async fn run_perf_benchmark_async(
                 }
             }
         }
+        post.encode(&mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("target block outline"),

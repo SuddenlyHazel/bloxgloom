@@ -256,7 +256,7 @@ struct VertexOutput {
 fn shade(input: VertexOutput, albedo: vec3<f32>) -> vec4<f32> {
     let fog = smoothstep(38.0, 135.0, input.distance);
     let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
-    let emission = select(vec3<f32>(0.0), albedo * 0.70, input.layer == GLOWSTONE_LAYER);
+    let emission = select(vec3<f32>(0.0), albedo * 3.5, input.layer == GLOWSTONE_LAYER);
     return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
