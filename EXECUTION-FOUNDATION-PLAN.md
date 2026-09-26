@@ -14,7 +14,8 @@ The execution contract we are working toward:
 - **Done:** direct review of the worker slice, including its production call path.
 - **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.
 - **Done:** slice 1 and direct review of its scheduling corrections, with the capacity and atomic-wave limitations documented below.
-- **Pending:** slices 2–5 and the independent extension crate below.
+- **Done:** slice 2 and direct review of bounded suspended-entity rechecks (`f05f2c5`).
+- **Pending:** slices 3–5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -64,11 +65,20 @@ Limits retained: genuinely oversized neighbour-dependent views are locally rejec
 
 **Result:** a dense but valid region continues simulating, and an oversized or unavailable job does not repeatedly obstruct unrelated work.
 
-This slice is complete. The next implementation task is slice 2, subject to the user's go-ahead.
+This slice is complete.
 
 ## 2. Reliable wake and sleep semantics
 
-**Status: pending.**
+**Status: done — reviewed, with bounded recheck semantics.**
+
+- [x] Traced the crash window between durable terrain edits and transient entity notifications. Suspended records now populate a derived index rebuilt from persisted entities, so lost hints do not erase eligibility (`f05f2c5`).
+- [x] Wired a bounded circular recheck lane into production interaction-barrier admission and existing worker/transaction dispatch. A fixed upper ID per pass prevents new sleepers from indefinitely delaying wraparound; scarce admission opportunities rotate among due work, hints, and sleepers.
+- [x] Bounded and coalesced entity hints to 256; terrain hint discovery examines at most 16 owners × 16 entity references. Hints accelerate work rather than determine authoritative ownership or required eligibility.
+- [x] Sleeping drops explicitly recheck their supporting layer. Unchanged support reaffirms without motion or WAL writes; missing support resumes existing fixed-step physics. This prevents periodic checks from making enclosed resting drops climb through the active sweep's inclusive starting layer.
+- [x] Parent reviewed the implementation and independently ran all seven new sleep integration regressions: **7 passed**. Coverage includes real support harvest, lost notifications, durable edit before apply/restart, unavailable terrain and a chunk seam, full/scarce admission, duplicate hints, expiry/deletion, and new sleepers during a pass.
+- [x] Coder reported **547 full-suite tests passed**, formatting and diff checks passed. Existing assertions were preserved; the prior query test gained the bounded-query argument. Strict Clippy remains blocked by existing warnings.
+
+No save/wire format or world-version change. Recheck latency scales with sleeping population and admission opportunities; progress requires eventual capacity and satisfiable terrain capture. Cursors reset on restart while eligibility is reconstructed. Permanently oversized views, perpetual non-entity queue saturation, and endlessly repeated restarts are outside the progress guarantee. Suspension now means exclusion from ordinary due ticks, not exclusion from bounded re-evaluation. Fire and owner wake persistence remain unchanged.
 
 **Problem:** saying effects are optional is insufficient if a sleeping entity has no other reason to run again.
 
@@ -82,6 +92,8 @@ This slice is complete. The next implementation task is slice 2, subject to the 
 **Result:** a settled drop cannot remain suspended forever because a wake was lost or deferred.
 
 This may be small after slice 1, but it has a distinct behavioural claim.
+
+The next implementation task is slice 3, subject to the user's go-ahead.
 
 ## 3. Separate conflict revisions from publication ordering
 
