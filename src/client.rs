@@ -1064,12 +1064,11 @@ impl ClientApp {
         self.chunks.get(&key)?.block(local)
     }
 
-    fn avatar_light(&self, feet: Vec3) -> LightSample {
-        let head = feet + Vec3::Y * 1.45;
+    fn light_at(&self, position: Vec3) -> LightSample {
         let (key, local) = crate::world::world_to_chunk(
-            head.x.floor() as i32,
-            head.y.floor() as i32,
-            head.z.floor() as i32,
+            position.x.floor() as i32,
+            position.y.floor() as i32,
+            position.z.floor() as i32,
         );
         let Some((revision, samples)) = self.light_samples.get(&key) else {
             return LightSample::default();
@@ -1209,12 +1208,15 @@ impl ClientApp {
             },
             hovered: self.focused_control,
         };
-        let visual_drops = self.drop_animator.visuals(now, self.position);
+        let mut visual_drops = self.drop_animator.visuals(now, self.position);
+        for drop in &mut visual_drops {
+            drop.light = self.light_at(drop.center);
+        }
         let mut visual_avatars = self
             .replicas
             .visual_avatars(self.position, self.owned_entity_id);
         for avatar in &mut visual_avatars {
-            let sample = self.avatar_light(avatar.position);
+            let sample = self.light_at(avatar.position + Vec3::Y * 1.45);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
         }

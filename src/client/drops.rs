@@ -103,6 +103,7 @@ impl DropAnimator {
                     + Vec3::Y * (0.32 * (std::f32::consts::PI * t).sin()),
                 angle: flight.start.angle + t * 5.0,
                 scale: flight.start.scale * (1.0 - eased).max(0.03),
+                light: Default::default(),
             });
         }
         result
@@ -121,6 +122,7 @@ fn live_visual(item: &DroppedItem, age: f32) -> VisualDrop {
         center: Vec3::from_array(item.position) + Vec3::Y * lift,
         angle: age * 2.1 + phase,
         scale: 0.76 + 0.24 * ease,
+        light: Default::default(),
     }
 }
 

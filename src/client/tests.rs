@@ -2,6 +2,46 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
+fn moving_objects_sample_current_local_light_across_negative_chunk_seams() {
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join("unused-light-sampling-config"),
+    );
+    let position = Vec3::new(-0.1, 8.2, 0.5);
+    let (key, local) = crate::world::world_to_chunk(-1, 8, 0);
+    let lit = LightSample {
+        sky: 0,
+        glow: 13,
+        bounce: [7, 9, 11],
+    };
+    let mut samples = vec![LightSample::default(); crate::world::CHUNK_VOLUME].into_boxed_slice();
+    samples[Chunk::index(local).unwrap()] = lit;
+    app.light_samples.insert(key, (1, samples));
+    app.lighting_revisions.insert(key, 1);
+    assert_eq!(app.light_at(position), lit);
+    assert_eq!(
+        app.light_at(Vec3::new(0.1, 8.2, 0.5)),
+        LightSample::default()
+    );
+    app.lighting_revisions.insert(key, 2);
+    assert_eq!(
+        app.light_at(position),
+        LightSample::default(),
+        "invalidated lamp light must not linger on drops"
+    );
+    app.light_samples.insert(
+        key,
+        (
+            2,
+            vec![LightSample::default(); crate::world::CHUNK_VOLUME].into_boxed_slice(),
+        ),
+    );
+    assert_eq!(app.light_at(position), LightSample::default());
+    app.config_writer.finish();
+}
+
+#[test]
 fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

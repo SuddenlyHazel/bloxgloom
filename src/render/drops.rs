@@ -2,6 +2,7 @@
 use super::{VERTEX_FLOATS, material::face_uv};
 use crate::content::{self, Catalog};
 use crate::items::ItemId;
+use crate::lighting::LightSample;
 use glam::Vec3;
 
 pub(super) const MAX_ITEMS: usize = 512;
@@ -23,6 +24,20 @@ pub(crate) struct VisualDrop {
     pub center: Vec3,
     pub angle: f32,
     pub scale: f32,
+    pub light: LightSample,
+}
+
+impl VisualDrop {
+    fn light_attributes(&self) -> [f32; 3] {
+        let bounce = u32::from(self.light.bounce[0])
+            | (u32::from(self.light.bounce[1]) << 8)
+            | (u32::from(self.light.bounce[2]) << 16);
+        [
+            f32::from(self.light.sky) / 15.0,
+            f32::from(self.light.glow) / 15.0,
+            bounce as f32,
+        ]
+    }
 }
 
 fn is_sprite_item(item: ItemId, catalog: &Catalog) -> bool {
@@ -90,10 +105,8 @@ pub(crate) fn mesh_with_catalog(items: &[VisualDrop], catalog: &Catalog) -> Drop
                         texture_v,
                         super::material::item_material_layer_for(catalog, item.item, axis, side)
                             as f32,
-                        0.72,
-                        0.0,
-                        0.0,
                     ]);
+                    vertices.extend(item.light_attributes());
                 }
                 if side > 0 {
                     indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -144,8 +157,9 @@ fn emit_cutout_drop(
             let position =
                 item.center + Vec3::new(x * cos + z * sin, height * item.scale, -x * sin + z * cos);
             vertices.extend_from_slice(&[
-                position.x, position.y, position.z, 0.0, 1.0, 0.0, u, v, layer, 0.72, 0.0, 0.0,
+                position.x, position.y, position.z, 0.0, 1.0, 0.0, u, v, layer,
             ]);
+            vertices.extend(item.light_attributes());
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -158,12 +172,50 @@ mod tests {
     use crate::world::GRASS;
 
     #[test]
+    fn block_and_sprite_drops_carry_sky_glow_and_bounce_without_fixed_lighting() {
+        for item in [ItemId::new(GRASS.get()), SEEDS] {
+            for light in [
+                LightSample::default(),
+                LightSample {
+                    sky: 3,
+                    glow: 12,
+                    bounce: [17, 29, 43],
+                },
+            ] {
+                let mesh = mesh(&[VisualDrop {
+                    item,
+                    center: Vec3::ZERO,
+                    angle: 0.4,
+                    scale: 1.0,
+                    light,
+                }]);
+                let vertices = if item == SEEDS {
+                    mesh.cutout_vertices
+                } else {
+                    mesh.opaque_vertices
+                };
+                assert!(!vertices.is_empty());
+                for vertex in vertices.chunks_exact(VERTEX_FLOATS) {
+                    assert_eq!(vertex[9], f32::from(light.sky) / 15.0);
+                    assert_eq!(vertex[10], f32::from(light.glow) / 15.0);
+                    let bounce = vertex[11] as u32;
+                    assert_eq!(
+                        [bounce as u8, (bounce >> 8) as u8, (bounce >> 16) as u8],
+                        light.bounce
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rotated_drop_stays_bounded_and_uses_all_six_faces() {
         let drop = VisualDrop {
             item: ItemId::new(2),
             center: Vec3::new(10.0, 5.0, -2.0),
             angle: 0.7,
             scale: 1.0,
+            light: LightSample::default(),
         };
         let mesh = mesh(&[drop]);
         assert_eq!(mesh.opaque_vertices.len(), 24 * VERTEX_FLOATS);
@@ -181,6 +233,7 @@ mod tests {
             center: Vec3::ZERO,
             angle: 0.0,
             scale: 1.0,
+            light: LightSample::default(),
         }])
         .opaque_vertices;
         for face in [0, 1, 4, 5] {
@@ -200,6 +253,7 @@ mod tests {
             center: Vec3::new(4.0, 2.0, -1.0),
             angle: 0.35,
             scale: 1.0,
+            light: LightSample::default(),
         }]);
         assert!(mesh.opaque_indices.is_empty());
         assert_eq!(mesh.cutout_vertices.len(), 8 * VERTEX_FLOATS);
@@ -218,6 +272,7 @@ mod tests {
             center: Vec3::ZERO,
             angle: 0.0,
             scale: 1.0,
+            light: LightSample::default(),
         }]);
         assert!(mesh.opaque_indices.is_empty());
         assert_eq!(mesh.cutout_indices.len(), 12);

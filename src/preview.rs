@@ -470,11 +470,23 @@ async fn render_previews(
         }
     }
 
-    let drop_gpu_mesh = if let PreviewScene::Drops(phase) = scene {
+    let drop_gpu_mesh = if matches!(scene, PreviewScene::Drops(_) | PreviewScene::Cave { .. }) {
+        let phase = if let PreviewScene::Drops(phase) = scene {
+            phase
+        } else {
+            DropPhase::Hover
+        };
         let items: Vec<_> = [
             crate::items::ItemId::new(world::RED_FLOWER.get()),
             crate::items::ItemId::new(world::STONE.get()),
-            crate::items::ItemId::new(world::GLOWSTONE.get()),
+            crate::items::ItemId::new(
+                if matches!(scene, PreviewScene::Cave { .. }) {
+                    world::DIRT
+                } else {
+                    world::GLOWSTONE
+                }
+                .get(),
+            ),
             SEEDS,
         ]
         .into_iter()
@@ -483,11 +495,15 @@ async fn render_previews(
             id: index as u64 + 1,
             item,
             count: 1,
-            position: [
-                target_xz.0 as f32 + index as f32 - 0.5,
-                target_height as f32 + 1.2 + index as f32 * 0.2,
-                target_xz.1 as f32 + 0.5,
-            ],
+            position: if matches!(scene, PreviewScene::Cave { .. }) {
+                [32.5, 10.0, 13.5 + index as f32 * 2.0]
+            } else {
+                [
+                    target_xz.0 as f32 + index as f32 - 0.5,
+                    target_height as f32 + 1.2 + index as f32 * 0.2,
+                    target_xz.1 as f32 + 0.5,
+                ]
+            },
             age_ms: if matches!(phase, DropPhase::Pop) {
                 0
             } else {
@@ -506,7 +522,21 @@ async fn render_previews(
                 now + std::time::Duration::from_millis(180)
             }
         };
-        let visuals = animator.visuals(moment, camera_position - Vec3::Y * 1.6);
+        let mut visuals = animator.visuals(moment, camera_position - Vec3::Y * 1.6);
+        let mut fields = HashMap::new();
+        for visual in &mut visuals {
+            let p = visual.center.floor().as_ivec3();
+            let (key, local) = world::world_to_chunk(p.x, p.y, p.z);
+            let field = fields.entry(key).or_insert_with(|| {
+                LightField::build_with_bounce(
+                    key,
+                    &chunks,
+                    SEED,
+                    matches!(scene, PreviewScene::Cave { bounced: true, .. }),
+                )
+            });
+            visual.light = field.face(local, 1, 0);
+        }
         let meshes = render::mesh_dropped_items(&visuals);
         let upload = |vertices: &[f32], indices: &[u32]| {
             if indices.is_empty() {

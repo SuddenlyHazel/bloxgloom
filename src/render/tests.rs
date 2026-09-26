@@ -325,6 +325,7 @@ fn remapped_connection_catalog_drives_foliage_meshes_and_drop_art() {
         &[VisualDrop {
             item,
             center: Vec3::new(4.0, 5.0, 6.0),
+            light: Default::default(),
             angle: 0.3,
             scale: 1.0,
         }],
