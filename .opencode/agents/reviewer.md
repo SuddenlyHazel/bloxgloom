@@ -1,7 +1,7 @@
 ---
 description: Verifies a coder diff in the tree, issues follow-ups, writes handoff statement
 mode: all
-model: openrouter/xiaomi/mimo-v2.6-pro
+model: openai/gpt-6-sol
 permissions:
   - action: edit
     resource: "*"
