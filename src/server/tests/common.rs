@@ -292,13 +292,13 @@ fn stage_entity_batch(
 
 /// Polls WAL receipts until every staged transaction has applied. Ticks commit
 /// their server-scheduled motion synchronously, so a plain `tick_once` loop
-/// already advances the full trajectory: draining here only covers tails the
-/// tick leaves async (fire waves, rotation) and is a no-op once motion is
-/// the only staged work.
-pub(super) fn drain_durable(state: &mut State, tick: u64) {
+/// already advances the full trajectory; this helper only waits out tails
+/// the tick leaves async (fire waves, rotation, manually staged batches).
+/// It never plans or stages new work: draining must not advance the
+/// trajectory, or receipt timing would leak back in through the helper.
+pub(super) fn drain_durable(state: &mut State, _tick: u64) {
     for _ in 0..2_000 {
-        crate::server::durable::process_durable_actions(state, TickId::new(tick), Instant::now())
-            .unwrap();
+        crate::server::durable::poll_journal_receipts(state).unwrap();
         if state.durability.pending.is_empty() {
             break;
         }

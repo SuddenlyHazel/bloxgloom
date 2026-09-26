@@ -31,7 +31,7 @@ fn failed_apply(state: &mut State, error: io::Error) -> io::Error {
     ))
 }
 
-pub(super) fn poll_journal_receipts(state: &mut State) -> io::Result<()> {
+pub(in crate::server) fn poll_journal_receipts(state: &mut State) -> io::Result<()> {
     let pending = std::mem::take(&mut state.durability.pending);
     let mut remaining = pending.into_iter();
     let mut ready_fire = Vec::<ReadyFire>::new();

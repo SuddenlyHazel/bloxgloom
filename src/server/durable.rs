@@ -58,6 +58,8 @@ pub(super) use coordinator::{
 };
 pub(super) use publication::publish_committed;
 #[cfg(test)]
+pub(super) use receipt::poll_journal_receipts;
+#[cfg(test)]
 pub(super) use state::encode_action_receipt;
 pub(super) use state::{action_changes, chunk_state_key, inventory_state_key, is_checkpoint_key};
 

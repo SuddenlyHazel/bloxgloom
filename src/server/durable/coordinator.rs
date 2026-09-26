@@ -103,12 +103,14 @@ pub(in crate::server) fn process_durable_actions(
         .queued
         .len()
         .min(MAX_PENDING_DURABLE_ACTIONS);
-    // Receipts staged before this tick (a command fenced by an earlier
-    // test, a fire wave from a later phase) are not ours: only the suffix
-    // staged below can trigger the synchronous motion commit.
-    let staged_base = state.durability.pending.len();
     let mut deferred = std::collections::VecDeque::new();
     let mut blocked_profiles = HashSet::new();
+    // The tick's motion commits first, as one WAL record (see
+    // `stage_motion_batch`): every step due in this tick is computed from
+    // tick-start state and applied before the tick ends, so the trajectory
+    // never depends on receipt timing. Commands, pickups, and expiry keep
+    // their queue order behind it in the loop below.
+    let motion_staged = stage_motion_batch(state, tick, &mut deferred)?;
     while attempts > 0 {
         attempts -= 1;
         let Some(request) = state.durability.queued.pop_front() else {
@@ -330,13 +332,13 @@ pub(in crate::server) fn process_durable_actions(
         }
     }
     state.durability.queued.append(&mut deferred);
-    if staged_server_entity_work(state, staged_base) {
-        // Motion is a pure function of the tick: every record staged above
-        // is committed and applied before this tick ends, so the next tick
+    if motion_staged {
+        // Motion is a pure function of the tick: the batch staged above is
+        // committed and applied before this tick ends, so the next tick
         // plans from applied state. Receipt (fsync) latency stretches this
-        // tick's wall time but can never change the trajectory. Commands,
-        // pickups, and fire keep their async receipt path when no motion
-        // staged alongside them, so their reservation fencing is unchanged.
+        // tick's wall time but can never change the trajectory. Ticks with
+        // no motion keep their async receipt path, so command and pickup
+        // reservation fencing is unchanged.
         drain_staged_receipts(state)?;
     }
     submit_dirty_checkpoints(state);
@@ -351,23 +353,214 @@ fn fail_if_durability_failed(state: &State) -> io::Result<()> {
     }
 }
 
-/// True when this tick staged server-scheduled entity work (motion, expiry):
-/// an entity batch carrying no client, profile, action, receipt, or
-/// inventory. Those records are the tick's motion commit; everything else
-/// (commands, pickups, grants, acks, fire) keeps its existing receipt path.
-fn staged_server_entity_work(state: &State, base: usize) -> bool {
-    state.durability.pending.get(base..).is_some_and(|staged| {
-        staged.iter().any(|commit| {
-            matches!(&commit.payload, PendingPayload::Action(action)
-            if action.entities.is_some()
-                && action.client_id.is_none()
-                && action.profile.is_none()
-                && action.action_id.is_none()
-                && action.receipt_value.is_none()
-                && action.receipt_transition.is_none()
-                && action.inventory.is_none())
-        })
-    })
+/// Maximum entity motions combined into one tick's motion record. The queue
+/// itself never holds more, and a full budget of single-entity steps stays
+/// far under the entity transaction change and byte caps, so one record
+/// always suffices; anything beyond waits for the next tick instead of
+/// piling into this one.
+const MAX_MOTION_BATCH: usize = MAX_PENDING_DURABLE_ACTIONS;
+
+/// Pure single-entity server work batches into the tick's motion record:
+/// one entity touched, no blocks, no inventory, no receipts, no seeds.
+/// Footprint edits, item transfers, and spawns keep the single-record path.
+fn batchable_motion(action: &CommitAction) -> bool {
+    action
+        .entities
+        .as_ref()
+        .is_some_and(|entities| entities.entity_ids().len() == 1)
+        && action.world_edits.is_empty()
+        && action.deltas.is_empty()
+        && action.changed_cells.is_empty()
+        && action.pickups.is_empty()
+        && action.inventory_before.is_none()
+        && action.inventory.is_none()
+        && action.receipt_value.is_none()
+        && action.receipt_transition.is_none()
+        && action.client_id.is_none()
+        && action.profile.is_none()
+        && action.action_id.is_none()
+        && action.fire_seed.is_none()
+}
+
+/// Capacity outcomes from batch combination: the deterministic tail sheds
+/// and defers instead of truncating. Anything else is a plan the store
+/// rejects, which falls back to single records.
+fn is_entity_size_error(error: &crate::server::entities::EntityError) -> bool {
+    matches!(
+        error,
+        crate::server::entities::EntityError::TooManyTransactionChanges
+            | crate::server::entities::EntityError::TransactionTooLarge
+            | crate::server::entities::EntityError::TooManyEntities
+    )
+}
+
+/// Plans this tick's due entity motion and stages the pure single-entity
+/// steps as one WAL record. Returns whether a motion record staged (the
+/// caller then applies it before the tick ends).
+///
+/// Every queued tick/wake attempt is planned from tick-start state in queue
+/// order. Steps that only move one entity without touching blocks batch;
+/// anything else (footprint edits, item transfers, spawns) is returned to
+/// the queue front for the ordinary single-record path below, so those
+/// plans keep their exact current behaviour. Unavailable work defers in
+/// queue order, rejected work drops, and genuine corruption still stops the
+/// coordinator — the same classes as the single path, applied per entity so
+/// one bad plan never blocks the rest of the tick's motion.
+fn stage_motion_batch(
+    state: &mut State,
+    tick: TickId,
+    deferred: &mut std::collections::VecDeque<DurableRequest>,
+) -> io::Result<bool> {
+    let mut motion: Vec<DurableRequest> = Vec::new();
+    let mut rest: Vec<DurableRequest> = Vec::new();
+    for request in state.durability.queued.drain(..) {
+        match request {
+            DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. } => {
+                motion.push(request);
+            }
+            request => rest.push(request),
+        }
+    }
+    state.durability.queued.extend(rest);
+    if motion.is_empty() {
+        return Ok(false);
+    }
+    let mut candidates: Vec<(DurableRequest, CommitAction)> = Vec::new();
+    let mut front: Vec<DurableRequest> = Vec::new();
+    for request in motion {
+        match plan_durable_request(state, &request, tick) {
+            Ok(Some(action)) if batchable_motion(&action) && candidates.len() < MAX_MOTION_BATCH => {
+                candidates.push((request, action));
+            }
+            Ok(Some(_)) => {
+                // Footprint edits, transfers, and spawns keep the
+                // single-record path: requeue ahead of the untouched rest so
+                // the loop below plans them from the same tick-start state.
+                front.push(request);
+            }
+            Ok(None) => {}
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                deferred.push_back(request);
+            }
+            Err(error) if error.kind() == ErrorKind::InvalidData => {
+                state.durability.failed = true;
+                return Err(error);
+            }
+            Err(_) => {}
+        }
+    }
+    for request in front.into_iter().rev() {
+        state.durability.queued.push_front(request);
+    }
+    if candidates.is_empty() {
+        return Ok(false);
+    }
+    // Combine the tick's motion into one atomic record with one global
+    // revision bump: per-entity records would serialize on that key and
+    // resolve the tick's motion one receipt at a time. An oversized batch
+    // sheds its deterministic tail (which defers like any other overflow)
+    // instead of truncating; anything else falls back to single records so
+    // a combination the store rejects behaves exactly as it does today.
+    let mut prefix = candidates.len();
+    let batch = loop {
+        let transactions: Vec<_> = candidates[..prefix]
+            .iter()
+            .map(|(_, action)| {
+                action
+                    .entities
+                    .clone()
+                    .expect("batched motion always stages entities")
+            })
+            .collect();
+        match state.entities.combine_prepared(transactions) {
+            Ok(batch) => break batch,
+            Err(error) if is_entity_size_error(&error) && prefix > 1 => {
+                prefix /= 2;
+                continue;
+            }
+            Err(_) => {
+                for (request, _) in candidates.into_iter().rev() {
+                    state.durability.queued.push_front(request);
+                }
+                // The singles loop below stages each in queue order through
+                // the ordinary path; the motion drain below stays off.
+                return Ok(false);
+            }
+        }
+    };
+    let overflow: Vec<DurableRequest> = candidates
+        .drain(prefix..)
+        .map(|(request, _)| request)
+        .collect();
+    for request in overflow {
+        deferred.push_back(request);
+    }
+    let mut wakes: Vec<_> = candidates
+        .iter()
+        .flat_map(|(_, action)| action.entity_wakes.iter().copied())
+        .collect();
+    wakes.sort();
+    wakes.dedup();
+    let entities = Some(batch);
+    let batch_action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entities,
+        entity_wakes: wakes,
+    };
+    if let Err(error) = state.entities.validate_prepared(
+        batch_action
+            .entities
+            .as_ref()
+            .expect("batched motion always stages entities"),
+    ) {
+        for (request, _) in candidates.into_iter().rev() {
+            state.durability.queued.push_front(request);
+        }
+        return Err(io::Error::new(ErrorKind::InvalidData, error));
+    }
+    let entity_permit = match state.durability.entity_mirror.try_reserve_durable() {
+        Err(error) => {
+            state.durability.failed = true;
+            return Err(error);
+        }
+        Ok(Some(permit)) => Some(permit),
+        Ok(None) => {
+            for (request, _) in candidates {
+                deferred.push_back(request);
+            }
+            return Ok(false);
+        }
+    };
+    match state.durability.try_stage(tick, &batch_action, entity_permit) {
+        Ok(true) => Ok(true),
+        Ok(false) => Err(io::Error::other("empty motion batch")),
+        Err(StageError::Conflict | StageError::Full) => {
+            if let Some(entities) = &batch_action.entities {
+                state.entities.cancel_prepared(entities);
+            }
+            for (request, _) in candidates {
+                deferred.push_back(request);
+            }
+            Ok(false)
+        }
+        Err(error) => {
+            if let Some(entities) = &batch_action.entities {
+                state.entities.cancel_prepared(entities);
+            }
+            return fatal_stage_error(state, error).map(|()| false);
+        }
+    }
 }
 
 fn cancel_prepared_entities(state: &mut State, action: &CommitAction) {
