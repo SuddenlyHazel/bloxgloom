@@ -148,6 +148,7 @@ pub struct EntityIndexes {
     pub anchored_cells: BTreeMap<CellCoord, EntityId>,
     pub schedule: BTreeMap<u64, BTreeSet<EntityId>>,
     tick_schedule: BTreeSet<(u64, EntityId)>,
+    suspended_ticks: BTreeSet<EntityId>,
     tick_types: BTreeSet<EntityTypeId>,
     mobile: MobileSpatialIndex,
 }
@@ -316,6 +317,8 @@ impl EntityIndexes {
             if self.tick_types.contains(&record.entity_type) {
                 self.tick_schedule.insert((next_tick, record.id));
             }
+        } else if self.tick_types.contains(&record.entity_type) {
+            self.suspended_ticks.insert(record.id);
         }
         Ok(())
     }
@@ -357,7 +360,30 @@ impl EntityIndexes {
         if let Some(next_tick) = record.next_tick {
             self.tick_schedule.remove(&(next_tick, record.id));
         }
+        self.suspended_ticks.remove(&record.id);
         Ok(())
+    }
+
+    /// One circular recheck candidate and this pass's fixed upper ID. New
+    /// spawns cannot extend a pass forever and starve earlier IDs. Unavailable
+    /// candidates advance the cursor too; deletion needs no cursor repair.
+    pub fn suspended_tick_after(
+        &self,
+        after: Option<(EntityId, EntityId)>,
+    ) -> Option<(EntityId, EntityId)> {
+        use std::ops::Bound::{Excluded, Included};
+        if let Some((id, through)) = after
+            && let Some(next) = self
+                .suspended_ticks
+                .range((Excluded(id), Included(through)))
+                .next()
+        {
+            return Some((*next, through));
+        }
+        Some((
+            *self.suspended_ticks.first()?,
+            *self.suspended_ticks.last()?,
+        ))
     }
 
     /// Read a bounded due slice after `after`, wrapping to the first due key
@@ -421,6 +447,7 @@ impl EntityIndexes {
             || rebuilt.anchored_cells != self.anchored_cells
             || rebuilt.schedule != self.schedule
             || rebuilt.tick_schedule != self.tick_schedule
+            || rebuilt.suspended_ticks != self.suspended_ticks
             || rebuilt.tick_types != self.tick_types
             || rebuilt.mobile != self.mobile
         {

@@ -95,7 +95,9 @@ pub(super) fn apply_committed_action(
     // in-memory scheduling state; nothing here enters the WAL.
     if !action.entity_wakes.is_empty() {
         let wakes = std::mem::take(&mut action.entity_wakes);
-        state.durability.pending_wakes.extend(wakes);
+        for id in wakes {
+            state.durability.hint_entity_wake(id);
+        }
     }
     if let Some(seed) = action.fire_seed.take() {
         for change in seed.changes() {

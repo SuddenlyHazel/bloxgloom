@@ -482,25 +482,16 @@ fn commit_block_effects(state: &mut State, tick: TickId) -> io::Result<()> {
     )
     .map_err(|error| io::Error::other(format!("block effect routing: {error:?}")))?;
     debug_assert_eq!(batch.commit_phase(), Phase::InteractionCommit);
-    // Block edits wake sleeping drops through durable wakes on the shared
-    // path: each affected chunk owner resumes its suspended drops as
-    // transient tick attempts, delivered no earlier than the next tick.
-    // Already-scheduled drops need nothing; a woken drop that finds its
-    // support reaffirms without staging a WAL record.
-    let mut woken: Vec<crate::server::entities::EntityId> = Vec::new();
-    for owner in batch.owners() {
-        for routed in &owner.effects {
-            if matches!(routed.effect, Effect::BlockChanged { .. }) {
-                woken.extend(crate::server::drops::sleeping_drop_ids_in_chunk(
-                    &state.entities,
-                    owner.owner,
-                ));
-            }
+    // These are latency hints only. Durable suspended records independently
+    // retain recheck eligibility, including across the edit/notification crash
+    // window and chunk seams. Bound traversal as well as retained hints; never
+    // collect all drops in every affected owner before taking a prefix.
+    for owner in batch.owners().iter().take(16) {
+        for id in crate::server::drops::sleeping_drop_ids_in_chunk(&state.entities, owner.owner, 16)
+        {
+            state.durability.hint_entity_wake(id);
         }
     }
-    woken.sort();
-    woken.dedup();
-    state.durability.pending_wakes.extend(woken);
     state.pending_block_changes.clear();
     Ok(())
 }

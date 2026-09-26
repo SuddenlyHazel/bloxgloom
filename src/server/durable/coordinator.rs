@@ -648,11 +648,10 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
             .queued
             .push_back(DurableRequest::Pickup { id });
     }
-    queue_due_entity_ticks(state, tick);
-    queue_woken_entity_ticks(state);
+    queue_entity_ticks(state, tick);
 }
 
-fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
+fn queue_entity_ticks(state: &mut State, tick: TickId) {
     state
         .durability
         .oversized_entity_retry
@@ -660,28 +659,62 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
     // The WAL-owned due index, not this queue, retains entity tick work.
     // Transiently blocked ticks must vacate the bounded admission lane each
     // barrier so a full set of unavailable chunks cannot permanently hide
-    // ready due entries beyond the cursor. Wakes have no persisted due entry:
-    // return those to their transient lane instead of dropping them.
+    // ready entries beyond either cursor. Hints return to their bounded lane;
+    // durable due/suspended indexes are the source of retry eligibility.
+    let mut returned_wakes = Vec::new();
     state.durability.queued.retain(|request| match request {
         DurableRequest::EntityWake { id } => {
-            state.durability.pending_wakes.push(*id);
+            returned_wakes.push(*id);
             false
         }
         DurableRequest::EntityTick { .. } => false,
         _ => true,
     });
+    for id in returned_wakes {
+        state.durability.hint_entity_wake(id);
+    }
     let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
-    // Leave a turn for transient wakes as well. A permanently blocked due
-    // population must not hide wake attempts forever; at one free slot the
-    // two lanes alternate by logical tick.
-    let wake_slot = usize::from(
-        !state.durability.pending_wakes.is_empty()
-            && (available > 1 || (available == 1 && tick.get().is_multiple_of(2))),
-    );
-    let scan_limit = available
-        .saturating_sub(wake_slot)
-        .min(MAX_PENDING_DURABLE_ACTIONS);
+    // Reserve one bounded examination for each nonempty lane. Ordinary dues
+    // get the remaining budget; scarce slots rotate by admission opportunity,
+    // not tick parity. Sustained hints cannot hide sleeping or ordinary work.
+    // Sleep checks examine at most one indexed record per barrier, or one per
+    // three opportunities with a single free slot. Cursors reset on restart,
+    // but membership does not. No population scan or per-entity retry queue.
+    let sleeper = state
+        .entities
+        .suspended_tick_after(state.durability.entity_sleep_cursor);
+    let active = [
+        true,
+        !state.durability.pending_wakes.is_empty(),
+        sleeper.is_some(),
+    ];
+    let mut slots = [0usize; 3];
+    let mut remaining = available;
+    let start = state.durability.entity_admission_turn;
+    for offset in 0..3 {
+        let lane = (start + offset) % 3;
+        if remaining > 0 && active[lane] {
+            slots[lane] = 1;
+            remaining -= 1;
+            state.durability.entity_admission_turn = (lane + 1) % 3;
+        }
+    }
+    slots[0] += remaining;
+    if slots[2] != 0 {
+        let (id, _) = sleeper.expect("reserved suspended candidate");
+        state.durability.entity_sleep_cursor = sleeper;
+        if !state.durability.oversized_entity_retry.contains_key(&id)
+            && !state.durability.pending.iter().any(|pending| {
+                matches!(&pending.payload, PendingPayload::Action(action)
+                    if action.entities.as_ref().is_some_and(|entities| entities.entity_ids().contains(&id)))
+            })
+        {
+            state.durability.queued.push_back(DurableRequest::EntityWake { id });
+        }
+    }
+    let scan_limit = slots[0].min(MAX_PENDING_DURABLE_ACTIONS);
     if scan_limit == 0 {
+        queue_woken_entity_ticks(state);
         return;
     }
     let mut queued_ids: HashSet<_> = state
@@ -720,14 +753,16 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
                 .push_back(DurableRequest::EntityTick { id });
         }
     }
+    queue_woken_entity_ticks(state);
 }
 
 /// Releases committed wakes as transient tick attempts. This runs at the
 /// interaction/commit barrier, after the durable phase planned and staged
 /// the producer: a wake committed during tick N is queued here and planned
 /// no earlier than tick N+1, so delivery never cascades within a tick.
-/// Already-scheduled entities collapse duplicate wakes (timing only), and
-/// overflow waits for the next barrier instead of dropping or erroring.
+/// Already-scheduled entities collapse duplicates. Retained hints wait for
+/// capacity; overflow at hint insertion is harmless because the persisted
+/// due/suspended records, not these hints, retain necessary work eligibility.
 fn queue_woken_entity_ticks(state: &mut State) {
     if state.durability.pending_wakes.is_empty() {
         return;

@@ -38,6 +38,28 @@ impl EntityTickPolicy for DropTickPlanner {
             .private_payload
             .downcast_ref::<DropEntityPayload>()
             .ok_or(EntityError::InvalidPayload)?;
+        // Suspension was committed at an integer block top + DROP_RADIUS.
+        // Check that supporting layer, not the active sweep's inclusive start
+        // layer: a drop spawned inside a column must not climb one voxel on
+        // each harmless recheck. Only absent support resumes active physics.
+        if snapshot.next_tick.is_none() {
+            let support = position[1].floor() - 1.0;
+            match first_solid_top(view, catalog, position, support, support, &mut Vec::new())? {
+                TerrainCheck::Missing => return Err(EntityError::ViewOutOfRange),
+                TerrainCheck::Hit(_) => {
+                    return Ok(EntityTickPlan {
+                        payload: None,
+                        next_tick: None,
+                        anchor_update: None,
+                        position: None,
+                        block_states: Vec::new(),
+                        wakes: Vec::new(),
+                        transfer: None,
+                    });
+                }
+                TerrainCheck::Clear => {}
+            }
+        }
         // Fixed-step integration, matching the historic coordinator step:
         // every scheduled tick advances exactly one step, so the trajectory
         // is a pure function of the staged state, never of scheduling order.

@@ -85,12 +85,18 @@ pub(super) struct Durability {
     /// In-memory round-robin cursor; resets on restart, while entity due
     /// times remain WAL-owned on each record.
     pub(super) entity_tick_cursor: Option<(u64, EntityId)>,
+    /// Circular suspended-record rechecks. Resets to the first live record on
+    /// restart; eligibility itself is reconstructed by the entity indexes.
+    pub(super) entity_sleep_cursor: Option<(EntityId, EntityId)>,
+    /// Rotates scarce admission turns independently of tick parity, so even
+    /// intermittent free capacity cannot repeatedly select the same lane.
+    pub(super) entity_admission_turn: usize,
     /// Transient retry deadlines for views rejected at their fixed capture
     /// bound. The persisted due entry remains authoritative across restart.
     pub(super) oversized_entity_retry: BTreeMap<EntityId, u64>,
     /// Committed wake destinations waiting for the interaction/commit
     /// barrier. Transient scheduling state: dropping entries only delays the
-    /// destination's own durable work, which stays on its persisted schedule.
+    /// destination's own durable work, discoverable in the due/suspended index.
     pub(super) pending_wakes: Vec<EntityId>,
     pub(super) retry_pickups: HashSet<u64>,
     pub(super) expire_queued: bool,
@@ -120,6 +126,19 @@ pub(super) struct Durability {
     pub(super) force_rotation_at_sequence: Option<u64>,
     pub(super) completed_rotations: u64,
     pub(super) failed: bool,
+}
+
+impl Durability {
+    /// Best-effort latency hint, never the source of entity work eligibility.
+    /// The due/suspended indexes reconstruct necessary work after overflow,
+    /// rejection, unload, or restart. Coalescing also bounds blocked retries.
+    pub(super) fn hint_entity_wake(&mut self, id: EntityId) {
+        if self.pending_wakes.len() < MAX_DEFERRED_DURABLE_ACTIONS
+            && !self.pending_wakes.contains(&id)
+        {
+            self.pending_wakes.push(id);
+        }
+    }
 }
 
 pub(super) struct DirtyCheckpoint {

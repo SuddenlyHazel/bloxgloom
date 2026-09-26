@@ -254,6 +254,15 @@ pub struct EntityStore {
 }
 
 impl EntityStore {
+    /// Suspended tick policies remain eligible for bounded support/dependency
+    /// rechecks, even if every notification was lost (including on restart).
+    pub(in crate::server) fn suspended_tick_after(
+        &self,
+        after: Option<(EntityId, EntityId)>,
+    ) -> Option<(EntityId, EntityId)> {
+        self.indexes.suspended_tick_after(after)
+    }
+
     pub fn new(types: Arc<EntityTypeRegistry>) -> Self {
         let indexes = EntityIndexes::with_tick_types(types.tickable_types());
         Self {

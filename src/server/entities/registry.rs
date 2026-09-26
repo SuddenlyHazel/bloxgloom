@@ -30,9 +30,9 @@ pub struct EntityInteractionPlan {
     pub block_states: Vec<EntityBlockStateChange>,
     /// Notification-only wake requests for neighbour entities. Each ID is
     /// routed through the registered `bloxgloom:wake_entity` effect kind and
-    /// delivered as a transient tick attempt: the destination runs its own
-    /// durable work sooner, or not at all when the wake is dropped. Wakes
-    /// never carry state and never authorize a write on their own.
+    /// delivered as a bounded transient tick attempt: the destination runs
+    /// its own durable work sooner. Lost hints cannot erase due or suspended
+    /// recheck eligibility. Wakes carry no state and authorize no writes.
     pub wakes: Vec<EntityId>,
 }
 
@@ -40,8 +40,11 @@ pub struct EntityInteractionPlan {
 pub struct EntityTickPlan {
     pub payload: Option<EntityPayload>,
     /// `Some(tick)` schedules the next due tick; `None` suspends the entity
-    /// until a wake re-schedules it. Suspension keeps the sparse due schedule
-    /// sparse: settled mobile entities cost no queue slots and no WAL.
+    /// from ordinary due ticks. Suspended tick policies are re-evaluated by a
+    /// bounded circular lane (or earlier by wake hints), so state dependencies
+    /// cannot require lossless notification delivery. Unchanged sleeping
+    /// entities reaffirm without WAL writes. Rechecks do not catch up missed
+    /// physics steps; any resumed work runs through the normal commit path.
     pub next_tick: Option<u64>,
     pub anchor_update: Option<super::types::AnchorUpdate>,
     /// Same-owner mobile position change. A cross-chunk move is staged by

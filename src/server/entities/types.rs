@@ -140,9 +140,9 @@ impl TickPolicy {
 
     pub fn validates(self, next_tick: Option<u64>) -> bool {
         match (self, next_tick) {
-            // `None` suspends the schedule until a wake resumes it. Every
-            // cadence allows suspension: a settled mobile entity must be able
-            // to leave the sparse due schedule instead of ticking forever.
+            // `None` leaves the ordinary due schedule. Registered tick
+            // planners remain eligible for bounded rechecks and wake hints;
+            // suspension must not depend on lossless notification delivery.
             (Self::Never, None) => true,
             (Self::EveryTick | Self::Interval(_), _) => true,
             _ => false,

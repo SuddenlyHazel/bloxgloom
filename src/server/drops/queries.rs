@@ -140,15 +140,19 @@ pub(in crate::server) fn has_expired(store: &EntityStore, now_ms: u64) -> bool {
     })
 }
 
-/// Sleeping (suspended-schedule) drops owned by one chunk. Block edits wake
-/// these through durable wakes; already-scheduled drops need nothing.
+/// Bounded block-edit latency hints, not authoritative wake eligibility.
+/// The circular suspended index eventually covers entities beyond this prefix.
 pub(in crate::server) fn sleeping_drop_ids_in_chunk(
     store: &EntityStore,
     chunk: ChunkKey,
+    maximum: usize,
 ) -> Vec<EntityId> {
     store
-        .ids_for_chunk(chunk)
+        .chunk_pages()
+        .get(&chunk)
         .into_iter()
+        .flat_map(|page| page.entity_ids.iter().copied())
+        .take(maximum)
         .filter(|id| {
             store.snapshot(*id).is_some_and(|snapshot| {
                 snapshot.entity_type == DROP_ENTITY_TYPE && snapshot.next_tick.is_none()
