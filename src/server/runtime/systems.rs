@@ -81,6 +81,7 @@ impl std::fmt::Debug for StagedOwnerCommit {
 pub(in crate::server) struct PreparedRegisteredWave {
     id: SystemId,
     next_cursor: OwnerKey,
+    wake_only: Option<OwnerKey>,
     durables: OwnerWaveDurables,
 }
 
@@ -112,6 +113,7 @@ pub(in crate::server) struct PendingRegisteredWave {
     staged: StagedOwnerCommit,
     system: SystemId,
     next_cursor: OwnerKey,
+    wake_only: Option<OwnerKey>,
 }
 
 impl PendingRegisteredWave {
@@ -153,6 +155,9 @@ pub(in crate::server) struct SystemRuntime {
     /// journal with a receipt in hand. There is no second store.
     durable: DurableOwnerStore,
     next_owner: BTreeMap<SystemId, OwnerKey>,
+    /// One wake-only cursor jump preserves first-delivery priority; later
+    /// wake-only waves leave the ordinary rotation where it was.
+    wake_cursor_advanced: BTreeSet<SystemId>,
     unvalidated_owners: BTreeSet<SystemId>,
     /// Destinations woken by routed effects, served from each system's normal
     /// job budget next tick. In-memory only: losing them costs latency, never
@@ -202,6 +207,7 @@ impl SystemRuntime {
             worker_count: workers,
             durable,
             next_owner: cursors,
+            wake_cursor_advanced: BTreeSet::new(),
             unvalidated_owners: BTreeSet::new(),
             pending_wakes: BTreeMap::new(),
             durable_wakes,
@@ -450,6 +456,21 @@ impl SystemRuntime {
         }
 
         let id = system.id().clone();
+        let ordinary = self.durable.runnable_from(
+            &id,
+            tick.get(),
+            self.next_owner.get(&id).copied(),
+            system.max_jobs_per_tick(),
+        );
+        // Reserve a slot for ordinary runnable work even when wakes arrive
+        // every tick. For a one-job system that slot is the whole wave.
+        let wake_budget = if !ordinary.is_empty() && system.max_jobs_per_tick() == 1 {
+            usize::from(tick.get() % 3 != 1)
+        } else {
+            system
+                .max_jobs_per_tick()
+                .saturating_sub(usize::from(!ordinary.is_empty()))
+        };
         // Woken destinations take precedence within the normal job budget
         // next tick; leftovers stay staged. Owners that no longer exist are
         // dropped here: a missing destination only costs latency.
@@ -460,8 +481,8 @@ impl SystemRuntime {
             .into_iter()
             .filter(|owner| self.durable.revision(&id, *owner).is_some())
             .collect();
-        if selected.len() > system.max_jobs_per_tick() {
-            let leftover: Vec<OwnerKey> = selected.split_off(system.max_jobs_per_tick());
+        if selected.len() > wake_budget {
+            let leftover: Vec<OwnerKey> = selected.split_off(wake_budget);
             self.pending_wakes
                 .entry(id.clone())
                 .or_default()
@@ -473,9 +494,9 @@ impl SystemRuntime {
         // owners stay held. Served flags clear in this wave's record (built
         // at commit time below), so a served flag is never served twice.
         let mut durable_served: Vec<(SystemId, OwnerKey)> = Vec::new();
-        if selected.len() < system.max_jobs_per_tick() {
+        if selected.len() < wake_budget {
             for (owner, _) in self.durable_wakes.flagged_for(&id) {
-                if selected.len() >= system.max_jobs_per_tick() {
+                if selected.len() >= wake_budget {
                     break;
                 }
                 if self.durable.revision(&id, owner).is_none() {
@@ -505,31 +526,42 @@ impl SystemRuntime {
             return Ok(None);
         }
 
-        // The round-robin rotation fills whatever the woken set leaves of
-        // this tick's job budget. Woken owners that also appear in the
-        // rotation prefix run once; the cursor resumes after the last owner
-        // served either way.
+        // Due and active owners use the persisted rotation cursor. Wake
+        // selection never jumps that cursor past unserved ordinary work.
+        let ordinary_cursor = ordinary.first().copied();
+        let mut last_ordinary = None;
         if selected.len() < system.max_jobs_per_tick() {
-            for owner in self.durable.owners_from(
-                &id,
-                self.next_owner.get(&id).copied(),
-                system.max_jobs_per_tick(),
-            ) {
+            for owner in ordinary {
                 if selected.len() >= system.max_jobs_per_tick() {
                     break;
                 }
+                last_ordinary = Some(owner);
                 if seen.insert(owner) {
                     selected.push(owner);
                 }
             }
         }
-        let next_cursor = self
-            .durable
-            .successor(
+        if selected.is_empty() {
+            return Ok(None);
+        }
+        let wake_only = (last_ordinary.is_none() && ordinary_cursor.is_some())
+            .then(|| *selected.last().expect("non-empty wake selection"));
+        let next_cursor = if let Some(last) = last_ordinary {
+            self.durable.successor(&id, last)
+        } else if ordinary_cursor.is_some() {
+            let wake = *selected.last().expect("non-empty wake selection");
+            if self.wake_cursor_advanced.contains(&id) {
+                self.next_owner.get(&id).copied().or(ordinary_cursor)
+            } else {
+                self.durable.successor(&id, wake)
+            }
+        } else {
+            self.durable.successor(
                 &id,
                 *selected.last().expect("selected owners are non-empty"),
             )
-            .expect("non-empty owner store has a successor");
+        }
+        .expect("non-empty owner store has a successor");
         // The rotation cursor persists in this wave's own record, so fairness
         // does not reset on restart. Staging mutates nothing: the live cursor
         // advances only after the receipt, and the staged before-value chains
@@ -728,6 +760,7 @@ impl SystemRuntime {
         Ok(Some(PreparedRegisteredWave {
             id,
             next_cursor,
+            wake_only,
             durables: OwnerWaveDurables::new(
                 prepared,
                 tick,
@@ -811,6 +844,7 @@ impl SystemRuntime {
         let PreparedRegisteredWave {
             id,
             next_cursor,
+            wake_only,
             durables,
         } = prepared;
         let staged = self.stage_owner_wave(durables, durability)?;
@@ -818,6 +852,7 @@ impl SystemRuntime {
             staged,
             system: id,
             next_cursor,
+            wake_only,
         }))
     }
 
@@ -843,10 +878,14 @@ impl SystemRuntime {
                     staged,
                     system,
                     next_cursor,
+                    wake_only,
                 } = wave;
                 match self.poll_staged_owner_wave(staged, durability)? {
                     OwnerCommitPoll::Applied(count) => {
                         self.next_owner.insert(system.clone(), next_cursor);
+                        if wake_only.is_some() {
+                            self.wake_cursor_advanced.insert(system.clone());
+                        }
                         applied.push((system, count));
                         progressed = true;
                     }
@@ -854,6 +893,7 @@ impl SystemRuntime {
                         staged,
                         system,
                         next_cursor,
+                        wake_only,
                     }),
                 }
             }

@@ -634,6 +634,18 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
 }
 
 fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
+    // Wakes are opportunistic; an earlier barrier's wakes must not fill the
+    // bounded queue ahead of durable due work on every subsequent tick.
+    // Put them back on the wake lane, where they retain their ID and can be
+    // admitted into any remaining space below.
+    state.durability.queued.retain(|request| {
+        if let DurableRequest::EntityWake { id } = request {
+            state.durability.pending_wakes.push(*id);
+            false
+        } else {
+            true
+        }
+    });
     let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
     let scan_limit = available.min(MAX_PENDING_DURABLE_ACTIONS);
     if scan_limit == 0 {

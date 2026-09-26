@@ -230,7 +230,9 @@ impl DurableOwnerStore {
             {
                 return Err(invalid_data("duplicate owner state key"));
             }
-            store.active.insert((system.clone(), owner));
+            if due_tick.is_none() {
+                store.active.insert((system.clone(), owner));
+            }
             if let Some(due) = due_tick {
                 store.schedule.insert((due, system, owner), ());
             }
@@ -310,40 +312,41 @@ impl DurableOwnerStore {
             .collect()
     }
 
-    /// Bounded round-robin prefix over one system's owners, mirroring the
-    /// retired transient store: a removed cursor key resumes at its
-    /// successor, wrapping visits low keys only after high keys.
-    pub fn owners_from(
+    /// Ordinary runnable owners: unscheduled active cells and scheduled cells
+    /// whose persisted deadline has arrived. Rotate over eligible keys rather
+    /// than all stored cells so sleeping owners do not consume the job budget.
+    pub fn runnable_from(
         &self,
         system: &SystemId,
+        through_tick: u64,
         cursor: Option<OwnerKey>,
         limit: usize,
     ) -> Vec<OwnerKey> {
-        let owners = self.owners_of(system);
-        let count = limit.min(owners.len());
-        let mut selected = Vec::with_capacity(count);
-        if count == 0 {
-            return selected;
+        if limit == 0 {
+            return Vec::new();
         }
-        if let Some(cursor) = cursor {
-            selected.extend(
-                owners
-                    .iter()
-                    .copied()
-                    .filter(|owner| *owner >= cursor)
-                    .take(count),
-            );
-            selected.extend(
-                owners
-                    .iter()
-                    .copied()
-                    .filter(|owner| *owner < cursor)
-                    .take(count - selected.len()),
-            );
-        } else {
-            selected.extend(owners.iter().copied().take(count));
-        }
-        selected
+        let mut eligible: BTreeSet<OwnerKey> = self
+            .active
+            .iter()
+            .filter(|(id, _)| id == system)
+            .map(|(_, owner)| *owner)
+            .collect();
+        eligible.extend(
+            self.schedule
+                .iter()
+                .take_while(|((due, _, _), _)| *due <= through_tick)
+                .filter(|((_, id, _), _)| id == system)
+                .map(|((_, _, owner), _)| *owner),
+        );
+        let Some(start) = cursor.or_else(|| eligible.first().copied()) else {
+            return Vec::new();
+        };
+        eligible
+            .range(start..)
+            .chain(eligible.range(..start))
+            .copied()
+            .take(limit)
+            .collect()
     }
 
     pub fn successor(&self, system: &SystemId, owner: OwnerKey) -> Option<OwnerKey> {
@@ -609,7 +612,11 @@ impl DurableOwnerStore {
             cell.value = staged.write.value.clone();
             cell.encoded = staged.encoded;
             cell.due_tick = staged.write.due_tick;
-            self.active.insert(key.clone());
+            if staged.write.due_tick.is_none() {
+                self.active.insert(key.clone());
+            } else {
+                self.active.remove(&key);
+            }
             if let Some(due) = staged.write.due_tick {
                 self.schedule.insert((due, key.0, key.1), ());
             }
@@ -690,7 +697,11 @@ impl DurableOwnerStore {
                     due_tick,
                 },
             );
-            self.active.insert(key.clone());
+            if due_tick.is_none() {
+                self.active.insert(key.clone());
+            } else {
+                self.active.remove(&key);
+            }
             if let Some(due) = due_tick {
                 self.schedule.insert((due, key.0, key.1), ());
             }

@@ -320,6 +320,98 @@ fn tick_nudge(harness: &mut NudgeHarness, tick: u64) -> std::io::Result<()> {
     )
 }
 
+#[test]
+fn registered_wave_uses_due_index_and_rotates_over_ready_owners() {
+    let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
+    let runs = Arc::new(Mutex::new(Vec::new()));
+    let mut harness = nudge_harness(
+        1,
+        1,
+        8,
+        4,
+        false,
+        [0, 0, 0],
+        PatchUsage::default(),
+        saturating_emitter(owners[0], owners[2], Arc::clone(&runs), 100),
+    );
+    let scheduled = harness
+        .state
+        .system_runtime
+        .prepare_owner_wave(
+            &harness.system,
+            vec![OwnerWrite::new(owners[0], 0, OwnerData::new(0u64)).scheduled(Some(10))],
+        )
+        .unwrap();
+    harness
+        .state
+        .system_runtime
+        .apply_replayed_owner_changes(scheduled.changes())
+        .unwrap();
+    for tick in 1..=4 {
+        tick_nudge(&mut harness, tick).unwrap();
+    }
+    assert_eq!(
+        *runs.lock().unwrap(),
+        vec![owners[1], owners[2], owners[1], owners[2]]
+    );
+    for tick in 5..=12 {
+        tick_nudge(&mut harness, tick).unwrap();
+    }
+    assert!(
+        runs.lock().unwrap().contains(&owners[0]),
+        "due owner must rejoin the rotation"
+    );
+}
+
+#[test]
+fn recurring_wakes_leave_bounded_turns_for_ordinary_owners() {
+    let owners = [chunk_owner(0), chunk_owner(1), chunk_owner(2)];
+    let runs = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&runs);
+    let mut harness = nudge_harness(
+        1,
+        1,
+        8,
+        4,
+        false,
+        [0, 0, 0],
+        PatchUsage::default(),
+        move |job: &OwnerJob| {
+            recorded.lock().unwrap().push(job.owner());
+            let value = *job
+                .snapshot(job.owner())
+                .and_then(|snapshot| snapshot.value::<OwnerData>())
+                .and_then(|data| data.get::<u64>())
+                .ok_or_else(|| SystemHandlerError::Rejected("missing owner".into()))?;
+            Ok(OwnerPatch::new(
+                job,
+                OwnerEffectPatch::new(
+                    OwnerData::new(value + 1),
+                    vec![EmittedOwnerEffect::new(
+                        EffectKindId::new("test:nudge").unwrap(),
+                        Nudge {
+                            to: owners[2],
+                            amount: 1,
+                        },
+                    )],
+                ),
+                PatchUsage {
+                    writes: 1,
+                    effects: 1,
+                    estimated_bytes: 8,
+                },
+            ))
+        },
+    );
+    for tick in 1..=12 {
+        tick_nudge(&mut harness, tick).unwrap();
+    }
+    let served = runs.lock().unwrap();
+    assert!(served.contains(&owners[0]) && served.contains(&owners[1]));
+    assert!(served.contains(&owners[2]));
+    assert_eq!(served.len(), 12);
+}
+
 fn nudge_values(harness: &NudgeHarness) -> [u64; 3] {
     harness.owners.map(|owner| {
         harness

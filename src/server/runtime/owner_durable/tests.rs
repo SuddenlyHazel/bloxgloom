@@ -317,7 +317,9 @@ fn committed_waves_mark_active_and_update_the_due_index() {
         )
         .unwrap();
     store.commit(prepared, receipt()).unwrap();
-    assert_eq!(store.active_len(), 1);
+    // A scheduled replacement leaves the active lane and becomes eligible
+    // through its persisted deadline instead.
+    assert_eq!(store.active_len(), 0);
     assert_eq!(
         store.due_entries(5, None, 8),
         vec![(5, id.clone(), chunk(0))]
