@@ -2,7 +2,7 @@ use super::*;
 use crate::raycast::Face;
 
 #[test]
-fn actor_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
+fn moving_object_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
     let mut app = ClientApp::new(
         Network::disconnected_for_test(),
         Config::default(),
@@ -29,19 +29,24 @@ fn actor_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
     );
     app.lighting_revisions.insert(key, 1);
     app.next_lighting_revision = 2;
-    assert_eq!(app.actor_light_at(position), lit);
+    assert_eq!(app.light_at(position), lit);
     // A terrain edit invalidates the field while a worker prepares its replacement.
     app.queue_edited_chunk_relight(key);
     assert_eq!(
-        app.actor_light_at(position),
+        app.light_at(position),
         lit,
         "pending light is not a black frame"
     );
-    assert_eq!(
-        app.light_at(position),
-        LightSample::default(),
-        "strict drop sampling is unchanged"
+    // Streaming a neighboring chunk as the camera moves also invalidates this
+    // field. Repeated invalidation must not black out a stationary drop.
+    app.queue_relight(
+        crate::world::ChunkKey {
+            x: key.x + 1,
+            ..key
+        },
+        true,
     );
+    assert_eq!(app.light_at(position), lit);
     let revision = app.lighting_revisions[&key];
     app.light_samples.insert(
         key,
@@ -51,12 +56,12 @@ fn actor_lighting_keeps_completed_field_during_relight_then_accepts_darkness() {
         ),
     );
     assert_eq!(
-        app.actor_light_at(position),
+        app.light_at(position),
         LightSample::default(),
         "completed dark caves must stay dark"
     );
     app.light_samples.remove(&key);
-    assert_eq!(app.actor_light_at(position), LightSample::default());
+    assert_eq!(app.light_at(position), LightSample::default());
     app.config_writer.finish();
 }
 
@@ -86,8 +91,8 @@ fn moving_objects_sample_current_local_light_across_negative_chunk_seams() {
     app.lighting_revisions.insert(key, 2);
     assert_eq!(
         app.light_at(position),
-        LightSample::default(),
-        "invalidated lamp light must not linger on drops"
+        lit,
+        "keep displayed illumination until the replacement field arrives"
     );
     app.light_samples.insert(
         key,
