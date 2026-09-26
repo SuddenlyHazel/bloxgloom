@@ -108,6 +108,18 @@ fn apply_confirmed(
         PendingPayload::Action(action) => {
             flush_ready_fire(state, ready_fire)?;
             super::publication::apply_committed_action(state, action, commit.entity_permit)?;
+            for key in commit.shared_read_keys {
+                let readers = state
+                    .durability
+                    .shared_reads
+                    .get_mut(&key)
+                    .expect("pending shared read reservation");
+                *readers -= 1;
+                if *readers == 0 {
+                    state.durability.shared_reads.remove(&key);
+                    state.durability.reserved.remove(&key);
+                }
+            }
             for key in commit.keys {
                 state.durability.reserved.remove(&key);
             }

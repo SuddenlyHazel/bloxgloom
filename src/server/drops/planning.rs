@@ -218,10 +218,22 @@ fn plan_stack_spawns_inner(
         }
         transactions.push(batch);
     }
-    store
-        .combine_prepared(transactions)
-        .map_err(plan_error)
-        .map(Some)
+    let mut transaction = store.combine_prepared(transactions).map_err(plan_error)?;
+    // Keep merge ordering and negative spatial reads stable through pending
+    // commits. Same-owner motion can enter the radius without changing page
+    // membership, hence the per-member motion/record dependencies too.
+    for (position, stack, _) in spawns {
+        if stack.count != 0 {
+            transaction
+                .add_dependencies(
+                    store
+                        .capture_mobile_dependencies(*position, 1.0)
+                        .map_err(plan_error)?,
+                )
+                .map_err(plan_error)?;
+        }
+    }
+    Ok(Some(transaction))
 }
 
 struct PlannedNew {

@@ -38,7 +38,7 @@ pub(super) fn apply_committed_action(
     if let Some(entities) = &action.entities {
         state
             .entities
-            .validate_prepared(entities)
+            .validate_committed(entities)
             .map_err(io::Error::other)?;
     }
     // Owner cells, durable wake flags, and rotation cursors piggybacked

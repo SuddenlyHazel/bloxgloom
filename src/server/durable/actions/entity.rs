@@ -12,10 +12,10 @@ use crate::server::State;
 use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
-    AnchorUpdate, CellCoord, EntityBlockStateChange, EntityId, EntityItemTransfer, EntityLocation,
-    EntityPatch, EntityPayload, EntitySnapshot, EntityTickPlan, EntityView,
-    MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, PreparedEntityTransaction, canonical_wakes,
-    interact_producer, position_to_cell, route_wakes, tick_producer,
+    AnchorUpdate, CellCoord, EntityBlockStateChange, EntityDependencies, EntityId,
+    EntityItemTransfer, EntityLocation, EntityPatch, EntityPayload, EntitySnapshot, EntityTickPlan,
+    EntityView, MAX_PLAN_NEIGHBOUR_BYTES, MAX_PLAN_NEIGHBOURS, PreparedEntityTransaction,
+    canonical_wakes, interact_producer, position_to_cell, route_wakes, tick_producer,
 };
 use crate::server::registry::SystemId;
 use crate::server::simulation::TickId;
@@ -126,7 +126,7 @@ pub(super) fn capture_view_for_plan(
 /// keeps every other entity progressing. Genuine state corruption keeps the
 /// coordinator-fatal `InvalidData` outcome; capacity must never take it.
 pub(super) fn capture_entity_view_for_plan(
-    state: &mut State,
+    state: &State,
     location: &EntityLocation,
     radius_chunks: u8,
     exclude: EntityId,
@@ -267,7 +267,7 @@ pub(in crate::server) fn plan_interact(
             "entity policy returned an invalid inventory transition",
         ));
     }
-    let (world_edits, changed_cells, read_chunks, write_coords) =
+    let (world_edits, changed_cells, _read_chunks, write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
     let wakes = plan_wakes(
         state,
@@ -289,8 +289,13 @@ pub(in crate::server) fn plan_interact(
             },
         )
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
-    for chunk in read_chunks {
-        entities.add_read_key(super::super::chunk_state_key(chunk));
+    for (chunk, _) in view.revisions() {
+        entities.add_read_key(super::super::chunk_state_key(*chunk));
+    }
+    if reads_neighbours {
+        entities
+            .add_dependencies(capture_dependencies(state, &view)?)
+            .map_err(|error| io::Error::new(ErrorKind::QuotaExceeded, error))?;
     }
     let deltas = prepared_deltas(&write_coords, &world_edits);
     Ok(CommitAction {
@@ -349,7 +354,7 @@ pub(in crate::server) struct TickInput {
     pub neighbours: EntityView,
     pub current_tick: u64,
     pub woken: bool,
-    pub entity_revision: u64,
+    pub dependencies: EntityDependencies,
 }
 
 pub(in crate::server) struct TickWorkerResult {
@@ -369,7 +374,14 @@ impl TickInput {
     }
 
     pub fn is_current(&self, state: &State) -> bool {
-        state.entities.revision() == self.entity_revision
+        self.dependencies.is_current(&state.entities)
+            // Session players are not WAL participants. Validate their captured
+            // public state (including absence) at the coordinator planning
+            // boundary; subsequent movement may occur after this decision.
+            && (!self.descriptor.tick_reads_neighbours()
+                || capture_entity_view_for_plan(state, &self.snapshot.location,
+                    self.descriptor.tick_read_radius(), self.snapshot.id)
+                    .is_ok_and(|current| current.iter().eq(self.neighbours.iter())))
             && state
                 .entities
                 .snapshot(self.snapshot.id)
@@ -415,6 +427,11 @@ pub(in crate::server) fn capture_tick_input(
     } else {
         EntityView::assemble(Vec::new(), snapshot.id)
     };
+    let dependencies = if descriptor.tick_reads_neighbours() {
+        capture_dependencies(state, &view)?
+    } else {
+        EntityDependencies::default()
+    };
     Ok(Some(TickInput {
         snapshot,
         descriptor,
@@ -423,7 +440,7 @@ pub(in crate::server) fn capture_tick_input(
         neighbours,
         current_tick,
         woken,
-        entity_revision: state.entities.revision(),
+        dependencies,
     }))
 }
 
@@ -446,6 +463,7 @@ pub(in crate::server) fn commit_tick_plan(
         neighbours,
         current_tick,
         woken,
+        dependencies,
         ..
     } = input;
     let id = snapshot.id;
@@ -533,8 +551,8 @@ pub(in crate::server) fn commit_tick_plan(
             Err(crate::server::entities::EntityError::TransferRequired) => state
                 .entities
                 .prepare_transfer(id, snapshot.revision, position, patch)
-                .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?,
-            Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, error)),
+                .map_err(tick_preparation_error)?,
+            Err(error) => return Err(tick_preparation_error(error)),
         }
     } else if let Some(transfer) = &plan.transfer {
         // The recipient pulls on its own schedule: its tick plan carries its
@@ -566,18 +584,22 @@ pub(in crate::server) fn commit_tick_plan(
         state
             .entities
             .prepare_anchor_update(id, snapshot.revision, anchor_update, patch)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?
+            .map_err(tick_preparation_error)?
     } else {
         state
             .entities
             .prepare_update(id, snapshot.revision, patch)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?
+            .map_err(tick_preparation_error)?
     };
     // The footprint preimages cover only block changes. Physics and other
     // tick policies may read terrain without writing any blocks; keep their
     // whole captured terrain set fenced until the WAL receipt is applied.
     for (chunk, _) in view.revisions() {
         entities.add_read_key(super::super::chunk_state_key(*chunk));
+    }
+    if let Err(error) = entities.add_dependencies(dependencies) {
+        state.entities.cancel_prepared(&entities);
+        return Err(io::Error::new(ErrorKind::QuotaExceeded, error));
     }
     let deltas = prepared_deltas(&write_coords, &world_edits);
     Ok(Some(CommitAction {
@@ -799,6 +821,27 @@ fn validate_footprint_plan(
         read_chunks.into_iter().collect(),
         write_coords,
     ))
+}
+
+fn capture_dependencies(state: &State, view: &VoxelView) -> io::Result<EntityDependencies> {
+    state
+        .entities
+        .capture_dependencies(
+            view.revisions().iter().map(|(chunk, _)| *chunk),
+            MAX_PLAN_NEIGHBOURS + 1, // the policy view excludes its own record
+        )
+        .map_err(|error| io::Error::new(ErrorKind::QuotaExceeded, error))
+}
+
+fn tick_preparation_error(error: crate::server::entities::EntityError) -> io::Error {
+    use crate::server::entities::EntityError;
+    let kind = match error {
+        EntityError::MotionFenced
+        | EntityError::StaleRevision { .. }
+        | EntityError::StaleMotionRevision { .. } => ErrorKind::WouldBlock,
+        _ => ErrorKind::InvalidData,
+    };
+    io::Error::new(kind, error)
 }
 
 pub(super) fn corrupt(reason: &'static str) -> io::Error {

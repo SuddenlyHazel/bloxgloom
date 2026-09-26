@@ -101,6 +101,7 @@ impl Durability {
             .zip(checkpoints_per_record)
         {
             self.pending.push(PendingCommit {
+                shared_read_keys: Vec::new(),
                 receiver,
                 submitted_at: Instant::now(),
                 keys,

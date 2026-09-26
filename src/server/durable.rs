@@ -81,6 +81,12 @@ pub(super) struct Durability {
     pub(super) inventory_revisions: HashMap<u128, u64>,
     pub(super) pending: Vec<PendingCommit>,
     pub(super) reserved: HashSet<StateKey>,
+    /// Shared read reservations are included in `reserved`, so all existing
+    /// write admission paths (including owner waves) still fence them.
+    shared_reads: HashMap<StateKey, usize>,
+    /// Last admitted entity publication watermark, including unapplied WAL
+    /// records. This is ordering metadata, never speculative world state.
+    entity_publication_frontier: (u64, u64),
     pub(super) queued: VecDeque<DurableRequest>,
     /// In-memory round-robin cursor; resets on restart, while entity due
     /// times remain WAL-owned on each record.
@@ -156,6 +162,7 @@ pub(super) struct PendingCommit {
     pub(super) receiver: Receiver<io::Result<CommitReceipt>>,
     pub(super) submitted_at: Instant,
     pub(super) keys: Vec<StateKey>,
+    shared_read_keys: Vec<StateKey>,
     checkpoint_sizes: HashMap<StateKey, usize>,
     pub(super) payload: PendingPayload,
     pub(super) entity_permit: Option<MirrorPermit>,
@@ -362,19 +369,41 @@ impl Durability {
                 "entity WAL admission requires one mirror reservation",
             )));
         }
-        let changes = action_changes(action, &self.catalog).map_err(StageError::Invalid)?;
-        let read_keys = action
+        let mut action = action.clone();
+        if let Some(entities) = &mut action.entities {
+            entities
+                .assign_publication(self.entity_publication_frontier)
+                .map_err(|error| StageError::Invalid(io::Error::other(error)))?;
+        }
+        let changes = action_changes(&action, &self.catalog).map_err(StageError::Invalid)?;
+        let mut read_keys: Vec<_> = action
             .entities
             .as_ref()
             .map(|entities| entities.read_keys().cloned().collect())
             .unwrap_or_default();
-        self.try_stage_changes(
+        // Generic block edits also read anchored occupancy, including absence.
+        // This protects them against pending footprint changes even if no
+        // entity mutation belongs to this action.
+        read_keys.extend(action.changed_cells.iter().map(|cell| {
+            super::entities::cell_state_key(super::entities::CellCoord::new(cell.x, cell.y, cell.z))
+        }));
+        let frontier = action
+            .entities
+            .as_ref()
+            .map(|entities| entities.publication_frontier())
+            .transpose()
+            .map_err(|error| StageError::Invalid(io::Error::other(error)))?;
+        let staged = self.try_stage_changes(
             tick,
             changes,
             read_keys,
-            PendingPayload::Action(action.clone()),
+            PendingPayload::Action(action),
             entity_permit,
-        )
+        )?;
+        if staged && let Some(frontier) = frontier {
+            self.entity_publication_frontier = frontier;
+        }
+        Ok(staged)
     }
 
     fn try_stage_changes(
@@ -399,16 +428,25 @@ impl Durability {
         }
         let mut keys = BTreeSet::new();
         for change in &changes {
+            // Finalized above into one ordered preimage chain, not reserved
+            // as an entity conflict identity. All actual state keys remain.
+            if change.key.domain == super::entities::ENTITY_REVISION_DOMAIN {
+                continue;
+            }
             if self.reserved.contains(&change.key) {
                 return Err(StageError::Conflict);
             }
             keys.insert(change.key.clone());
         }
+        let mut shared_read_keys = BTreeSet::new();
         for key in read_keys {
-            if self.reserved.contains(&key) {
+            if keys.contains(&key) {
+                continue;
+            }
+            if self.reserved.contains(&key) && !self.shared_reads.contains_key(&key) {
                 return Err(StageError::Conflict);
             }
-            keys.insert(key);
+            shared_read_keys.insert(key);
         }
         let mut projected_checkpoint_keys: HashSet<StateKey> =
             self.dirty_checkpoints.keys().cloned().collect();
@@ -465,11 +503,16 @@ impl Durability {
             }
         }
         self.reserved.extend(keys.iter().cloned());
+        for key in &shared_read_keys {
+            *self.shared_reads.entry(key.clone()).or_default() += 1;
+            self.reserved.insert(key.clone());
+        }
         self.next_id = next_id;
         self.pending.push(PendingCommit {
             receiver,
             submitted_at: Instant::now(),
             keys: keys.into_iter().collect(),
+            shared_read_keys: shared_read_keys.into_iter().collect(),
             checkpoint_sizes,
             payload,
             entity_permit,

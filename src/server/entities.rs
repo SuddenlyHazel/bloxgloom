@@ -36,9 +36,10 @@ pub(super) use registry::{
 };
 pub(super) use store::{
     ENTITY_ALLOCATOR_DOMAIN, ENTITY_CELL_DOMAIN, ENTITY_CHUNK_DOMAIN, ENTITY_MOTION_DOMAIN,
-    ENTITY_RECORD_DOMAIN, ENTITY_REVISION_DOMAIN, EntityCommit, EntityDelta, EntityPatch,
-    EntitySnapshot, EntitySpawn, EntityStore, MAX_ENTITY_SPAWN_BATCH, MAX_ENTITY_TRANSACTION_BYTES,
-    MAX_ENTITY_TRANSACTION_CHANGES, PreparedEntityBatch, PreparedEntityTransaction,
+    ENTITY_RECORD_DOMAIN, ENTITY_REVISION_DOMAIN, EntityCommit, EntityDelta, EntityDependencies,
+    EntityPatch, EntitySnapshot, EntitySpawn, EntityStore, MAX_ENTITY_SPAWN_BATCH,
+    MAX_ENTITY_TRANSACTION_BYTES, MAX_ENTITY_TRANSACTION_CHANGES, PreparedEntityBatch,
+    PreparedEntityTransaction, cell_state_key,
 };
 pub(super) use transfer::{EntityItemTransfer, EntityTransferPolicy};
 pub(super) use types::{

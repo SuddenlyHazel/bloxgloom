@@ -90,16 +90,13 @@ fn stale_entity_worker_capture_does_not_prepare_or_apply_and_remains_retryable()
             .unwrap();
     let plan = input.plan().unwrap();
     let before = state.entities.snapshot(id).unwrap();
-    // An unrelated entity commit invalidates the captured neighbour view's
-    // global entity revision even when the target's own record is untouched.
-    spawn_drop(
-        &mut state,
-        1,
-        [1.5, position[1], 0.5],
-        STONE_ITEM,
-        1,
-        Duration::ZERO,
-    );
+    // Physics declares no neighbour reads. Change an actual captured terrain
+    // dependency, not an unrelated entity's publication watermark.
+    let edit = state
+        .world
+        .prepare_edits(&[(0, position[1] as i32 - 1, 0, crate::world::STONE)])
+        .unwrap();
+    state.world.apply_prepared_edits(edit).unwrap();
     let error = crate::server::durable::actions::entity::commit_tick_plan(&mut state, input, plan)
         .err()
         .expect("stale capture cannot construct a transaction");

@@ -18,6 +18,12 @@ use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+#[path = "dependencies.rs"]
+mod dependencies;
+pub use dependencies::EntityDependencies;
+#[path = "publication_sequence.rs"]
+mod publication_sequence;
+
 pub const ENTITY_RECORD_DOMAIN: &str = "bloxgloom:entity";
 pub const ENTITY_MOTION_DOMAIN: &str = "bloxgloom:entity_motion";
 pub const ENTITY_ALLOCATOR_DOMAIN: &str = "bloxgloom:entity_allocator";
@@ -180,9 +186,13 @@ pub struct PreparedEntityTransaction {
     operation: Operation,
     changes: Vec<Change>,
     additional_read_keys: Vec<StateKey>,
+    dependencies: EntityDependencies,
 }
 
 impl PreparedEntityTransaction {
+    /// Entity/index preimages plus a provisional publication transition.
+    /// Production must finalize publication through durable admission before
+    /// writing these bytes to the WAL; it is not a conflict dependency.
     pub fn changes(&self) -> &[Change] {
         &self.changes
     }
@@ -190,6 +200,7 @@ impl PreparedEntityTransaction {
     pub fn read_keys(&self) -> impl Iterator<Item = &StateKey> {
         self.changes
             .iter()
+            .filter(|change| change.key.domain != ENTITY_REVISION_DOMAIN)
             .map(|change| &change.key)
             .chain(self.additional_read_keys.iter())
     }
@@ -236,7 +247,7 @@ impl PreparedEntityTransaction {
     }
 }
 
-/// A set of entity changes prepared against one store revision and committed
+/// A set of entity changes prepared against exact entity/index preimages and committed
 /// atomically with one coalesced full-key WAL change set.
 pub type PreparedEntityBatch = PreparedEntityTransaction;
 
@@ -602,6 +613,7 @@ impl EntityStore {
             },
             changes,
             additional_read_keys: Vec::new(),
+            dependencies: EntityDependencies::default(),
         };
         self.validate_prepared(&transaction)?;
         Ok(transaction)
@@ -624,10 +636,18 @@ impl EntityStore {
         let mut operations = Vec::new();
         let mut related_changes = BTreeMap::new();
         let mut additional_read_keys = BTreeSet::new();
+        let mut dependencies = EntityDependencies::default();
         for transaction in transactions {
             self.validate_prepared(&transaction)?;
+            dependencies.merge(transaction.dependencies)?;
             additional_read_keys.extend(transaction.additional_read_keys);
+            if additional_read_keys.len() > MAX_ENTITY_TRANSACTION_CHANGES {
+                return Err(EntityError::TooManyTransactionChanges);
+            }
             collect_operations(transaction.operation, &mut operations);
+            if operations.len() > MAX_ENTITY_TRANSACTION_CHANGES {
+                return Err(EntityError::TooManyTransactionChanges);
+            }
             for change in transaction.changes {
                 if is_entity_state_domain(&change.key.domain) {
                     continue;
@@ -637,6 +657,9 @@ impl EntityStore {
                 }
                 if related_changes.insert(change.key.clone(), change).is_some() {
                     return Err(EntityError::ConflictingTransactionKey);
+                }
+                if related_changes.len() > MAX_ENTITY_TRANSACTION_CHANGES {
+                    return Err(EntityError::TooManyTransactionChanges);
                 }
             }
         }
@@ -773,6 +796,7 @@ impl EntityStore {
             operation: Operation::Batch { operations },
             changes,
             additional_read_keys: additional_read_keys.into_iter().collect(),
+            dependencies,
         };
         self.validate_prepared(&batch)?;
         Ok(batch)
@@ -1029,33 +1053,21 @@ impl EntityStore {
         })
     }
 
-    /// Checks every entity-owned WAL precondition before a transaction is
-    /// submitted. The runtime repeats this check after receipt before applying.
+    /// Checks entity/index conflict preconditions, independent of the ordered
+    /// publication watermark finalized by durable admission.
     pub fn validate_prepared(
         &self,
         transaction: &PreparedEntityTransaction,
     ) -> Result<(), EntityError> {
         self.ensure_revision_room()?;
-        let revision_changes: Vec<_> = transaction
-            .changes
-            .iter()
-            .filter(|change| change.key.domain == ENTITY_REVISION_DOMAIN)
-            .collect();
-        if revision_changes.len() != 1
-            || revision_changes[0].key.bytes.len() != 0
-            || revision_changes[0].after
-                != encode_revision_value(
-                    self.durable_sequence
-                        .checked_add(1)
-                        .ok_or(EntityError::RevisionExhausted)?,
-                    self.revision
-                        .checked_add(1)
-                        .ok_or(EntityError::RevisionExhausted)?,
-                )?
-        {
+        transaction.publication_frontier()?;
+        if !transaction.dependencies.is_current(self) {
             return Err(EntityError::InvalidTransaction);
         }
         for change in &transaction.changes {
+            if change.key.domain == ENTITY_REVISION_DOMAIN {
+                continue;
+            }
             let Some(current) = self.value_for_key(&change.key)? else {
                 continue;
             };
@@ -1176,13 +1188,23 @@ impl EntityStore {
         Ok(())
     }
 
+    /// Validate both conflict state and the finalized publication chain before
+    /// any participant in a confirmed multi-subsystem transaction is applied.
+    pub fn validate_committed(
+        &self,
+        transaction: &PreparedEntityTransaction,
+    ) -> Result<(), EntityError> {
+        self.validate_prepared(transaction)?;
+        transaction.validate_publication(self)
+    }
+
     /// Applies an already synced WAL transaction. Internal inconsistency is
     /// returned to the runtime, which must stop before publication.
     pub fn apply_committed(
         &mut self,
         transaction: PreparedEntityTransaction,
     ) -> Result<EntityCommit, EntityError> {
-        self.validate_prepared(&transaction)?;
+        self.validate_committed(&transaction)?;
         let registry_revision = self
             .revision
             .checked_add(1)
@@ -1617,6 +1639,7 @@ impl EntityStore {
             operation,
             changes,
             additional_read_keys: Vec::new(),
+            dependencies: EntityDependencies::default(),
         })
     }
 
@@ -2078,6 +2101,6 @@ fn chunk_state_key(chunk: ChunkKey) -> StateKey {
     StateKey::new(ENTITY_CHUNK_DOMAIN, encode_chunk_key(chunk))
 }
 
-fn cell_state_key(cell: CellCoord) -> StateKey {
+pub(in crate::server) fn cell_state_key(cell: CellCoord) -> StateKey {
     StateKey::new(ENTITY_CELL_DOMAIN, encode_cell_key(cell))
 }

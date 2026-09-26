@@ -226,9 +226,21 @@ pub(in crate::server) fn plan_durable_request(
             }
             // Removing the drops and crediting the inventory is one WAL
             // record: a crash lands on both halves or neither.
-            let Some(entities) = crate::server::drops::plan_take(&state.entities, &takes)? else {
+            let Some(mut entities) = crate::server::drops::plan_take(&state.entities, &takes)?
+            else {
                 return Ok(None);
             };
+            entities
+                .add_dependencies(
+                    state
+                        .entities
+                        .capture_mobile_dependencies(
+                            position,
+                            crate::server::drops::PICKUP_RANGE_SQ.sqrt(),
+                        )
+                        .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?,
+                )
+                .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?;
             Ok(Some(CommitAction {
                 client_id: Some(*id),
                 profile: Some(profile),

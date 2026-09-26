@@ -1242,7 +1242,7 @@ fn entity_planner_branches_on_neighbor_and_replans_identically() {
     let snapshot = state.entities.snapshot(id).unwrap();
     let view = entity::capture_view_for_plan(&mut state, &snapshot.location, 1).unwrap();
     let neighbours =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, id).unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 1, id).unwrap();
     let catalog = state.world.catalog_arc();
     let descriptor = state.entities.types().descriptor(watcher_type).unwrap();
     let first = descriptor
@@ -1507,8 +1507,7 @@ fn entity_planner_reads_neighbour_public_view() {
 
     let snapshot = state.entities.snapshot(watcher_id).unwrap();
     let neighbours =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
-            .unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 1, watcher_id).unwrap();
     // Sorted by ID across chunk pages, deduplicated across the two pages
     // mate D touches, self excluded, far mate outside the set absent.
     assert_eq!(neighbours.len(), 3);
@@ -1531,8 +1530,8 @@ fn entity_planner_reads_neighbour_public_view() {
         );
     }
     // Deterministic ordering across repeated captures.
-    let again = entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
-        .unwrap();
+    let again =
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 1, watcher_id).unwrap();
     assert_eq!(again.iter().map(|view| view.id).collect::<Vec<_>>(), ids);
 
     // The plan branches on the lowest-ID mate's public last byte. A leaked
@@ -1690,8 +1689,7 @@ fn entity_planner_unavailable_neighbour_defers() {
         .unwrap();
     let snapshot = state.entities.snapshot(watcher_id).unwrap();
     let neighbours =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 1, watcher_id)
-            .unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 1, watcher_id).unwrap();
     assert!(neighbours.iter().any(|view| view.id == roamer_id));
 
     drop(state);
@@ -1984,20 +1982,36 @@ fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
         })
         .unwrap();
     let watcher_id = spawn.entity_id();
-    state.entities.apply_committed(spawn).unwrap();
+    // Initialize through WAL admission too: direct store-only setup leaves
+    // both the publication frontier and the checkpoint mirror behind.
+    let spawn_action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        inventory_before: None,
+        inventory: None,
+        world_edits: Vec::new(),
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: Some(spawn),
+    };
+    settle_commit_action(&mut state, &spawn_action, 1);
     // The neighbour's chunk is never preloaded, so the declared read set
     // misses on the first planning pass and the work must defer.
-    let spawn = state
-        .entities
-        .prepare_spawn(EntitySpawn::Mobile {
+    let roamer_id = stage_entity_spawn(
+        &mut state,
+        EntitySpawn::Mobile {
             entity_type: roamer_type,
             position: [20.5, y as f32, 0.5],
             payload: EntityPayload::new(3u8),
             spawn_tick: 1,
-        })
-        .unwrap();
-    let roamer_id = spawn.entity_id();
-    state.entities.apply_committed(spawn).unwrap();
+        },
+    );
 
     // The due tick enters through the coordinator's own queueing.
     super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
@@ -3958,8 +3972,7 @@ fn entity_planner_observes_player_public_projection_only() {
 
     let snapshot = state.entities.snapshot(watcher_id).unwrap();
     let neighbours =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 0, watcher_id)
-            .unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 0, watcher_id).unwrap();
     // WAL-owned entities sort before transient player IDs; the planner itself
     // is excluded.
     let ids: Vec<_> = neighbours.iter().map(|view| view.id).collect();
@@ -3992,8 +4005,8 @@ fn entity_planner_observes_player_public_projection_only() {
     );
 
     // Deterministic ordering across repeated captures.
-    let again = entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 0, watcher_id)
-        .unwrap();
+    let again =
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 0, watcher_id).unwrap();
     assert_eq!(again.iter().map(|view| view.id).collect::<Vec<_>>(), ids);
 
     // The plan branches on the player's public flags byte. A leaked private
@@ -4122,8 +4135,7 @@ fn entity_and_player_views_merge_with_deterministic_order() {
 
     // Baseline with no players present: exactly the entity-only view.
     let baseline =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 0, watcher_id)
-            .unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 0, watcher_id).unwrap();
     assert_eq!(
         baseline.iter().map(|view| view.id).collect::<Vec<_>>(),
         vec![mate_a, mate_b]
@@ -4139,8 +4151,7 @@ fn entity_and_player_views_merge_with_deterministic_order() {
         .unwrap();
 
     let merged =
-        entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 0, watcher_id)
-            .unwrap();
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 0, watcher_id).unwrap();
     let merged_ids: Vec<_> = merged.iter().map(|view| view.id).collect();
     // One bounded view, sorted by entity ID however the stores contributed,
     // planner excluded, byte budget counting both stores' public bytes.
@@ -4150,8 +4161,8 @@ fn entity_and_player_views_merge_with_deterministic_order() {
     assert_eq!(merged_ids, sorted);
     assert_eq!(merged.len(), 4);
     assert_eq!(merged.bytes(), 1 + 1 + 4 + 4);
-    let again = entity::capture_entity_view_for_plan(&mut state, &snapshot.location, 0, watcher_id)
-        .unwrap();
+    let again =
+        entity::capture_entity_view_for_plan(&state, &snapshot.location, 0, watcher_id).unwrap();
     assert_eq!(
         again.iter().map(|view| view.id).collect::<Vec<_>>(),
         merged_ids
@@ -4325,3 +4336,6 @@ fn player_crowd_counts_toward_neighbour_bound_and_defers_per_entity() {
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
+
+#[path = "conflict_tests.rs"]
+mod conflict_tests;

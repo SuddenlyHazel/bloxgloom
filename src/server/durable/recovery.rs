@@ -238,6 +238,11 @@ pub(super) fn open(
     let writer = journal.into_writer(128, Duration::from_millis(3))?;
     Ok((
         Durability {
+            shared_reads: HashMap::new(),
+            entity_publication_frontier: (
+                recovered_entities.entities.durable_sequence(),
+                recovered_entities.entities.durable_global_revision(),
+            ),
             catalog: world.catalog_arc(),
             writer,
             next_id,

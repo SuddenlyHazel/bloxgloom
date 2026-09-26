@@ -491,9 +491,10 @@ fn stage_motion_batch(
     if candidates.is_empty() {
         return Ok((false, preplanned));
     }
-    // Combine the tick's motion into one atomic record with one global
-    // revision bump: per-entity records would serialize on that key and
-    // resolve the tick's motion one receipt at a time. An oversized batch
+    // Keep the deterministic same-tick motion wave as one atomic record and
+    // drain it before tick completion. Independent admission no longer needs
+    // this batch to avoid a global conflict, but its cadence is unchanged.
+    // An oversized batch
     // sheds its deterministic tail (which defers like any other overflow)
     // instead of truncating; anything else falls back to single records so
     // a combination the store rejects behaves exactly as it does today.
