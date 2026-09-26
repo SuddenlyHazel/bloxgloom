@@ -283,6 +283,10 @@ impl Mesher {
                     if !current() {
                         continue;
                     }
+                    super::trace::event(format_args!(
+                        "start {:?} rev={} bounced={}",
+                        job.chunk.key, job.revision, job.bounced_gi
+                    ));
                     let light = if job.bounced_gi {
                         LightField::build_with_bounce_and_catalog(
                             job.chunk.key,
@@ -322,6 +326,10 @@ impl Mesher {
                     if !current() {
                         continue;
                     }
+                    super::trace::event(format_args!(
+                        "ready {:?} rev={}",
+                        job.chunk.key, job.revision
+                    ));
                     if results_tx
                         .send(MesherResult {
                             mesh,

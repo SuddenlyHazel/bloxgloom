@@ -1,37 +1,19 @@
 //! Real-listener placement probe: distinguish durable/network latency from
 //! lighting/mesh CPU work for the same scene with an idle and burning kiln.
 use super::*;
+use crate::client::ReplicationProbe;
 use crate::inventory::{Inventory, Stack};
 use crate::items::{ItemId, STICK};
-use crate::world::{AIR, Chunk, ChunkKey, STONE};
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::world::{AIR, STONE};
 use std::time::Instant;
 
-fn observe(message: &ServerMessage, chunks: &mut HashMap<ChunkKey, Arc<Chunk>>) {
-    match message {
-        ServerMessage::WorldSnapshotStart(start) => {
-            chunks.insert(start.chunk.key, Arc::new(start.chunk.clone()));
-        }
-        ServerMessage::WorldCommitPart(part) => {
-            if let Some(chunk) = chunks.get_mut(&part.key) {
-                let chunk = Arc::make_mut(chunk);
-                for change in &part.blocks {
-                    chunk.blocks.set(
-                        Chunk::index(change.local.map(usize::from)).unwrap(),
-                        change.block,
-                    );
-                }
-                chunk.version = part.block_to;
-            }
-        }
-        _ => {}
-    }
+fn observe(message: &ServerMessage, chunks: &mut ReplicationProbe) {
+    chunks.accept(message.clone());
 }
 
 fn action(
     peer: &mut TcpStream,
-    chunks: &mut HashMap<ChunkKey, Arc<Chunk>>,
+    chunks: &mut ReplicationProbe,
     message: ClientMessage,
     id: u128,
 ) -> Duration {
@@ -104,7 +86,7 @@ fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
         )
         .unwrap();
         complete_content_handshake(&mut peer);
-        let mut chunks = HashMap::new();
+        let mut chunks = ReplicationProbe::new();
         let near = crate::world::world_to_chunk(1, 80, 3).0;
         let far = crate::world::world_to_chunk(-1, 80, 3).0;
         let mut epoch = None;
@@ -164,6 +146,16 @@ fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
             for (name, x, key) in [("same-chunk", 1, near), ("adjacent-chunk", -1, far)] {
                 for place in [true, false, true, false] {
                     let id = next_id();
+                    protocol::write_client(
+                        &mut peer,
+                        &ClientMessage::Move {
+                            seq: id as u64,
+                            dx: if place { 0.1 } else { -0.1 },
+                            dy: 0.0,
+                            dz: 0.0,
+                        },
+                    )
+                    .unwrap();
                     let ack = action(
                         &mut peer,
                         &mut chunks,
@@ -178,10 +170,11 @@ fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
                         id,
                     );
                     let light_start = Instant::now();
-                    let light = crate::lighting::LightField::build_with_catalog(
+                    let light = crate::lighting::LightField::build_with_bounce_and_catalog(
                         key,
                         &chunks,
                         7,
+                        true,
                         crate::content::catalog(),
                     );
                     let lighting = light_start.elapsed();

@@ -408,6 +408,14 @@ impl Replicas {
                 .or_else(|| self.entity_revisions.get(&part.key).copied());
             if block_version != part.block_from || current_entity_version != Some(part.entity_from)
             {
+                super::trace::event(format_args!(
+                    "revision mismatch {:?}: blocks {block_version}/{} entities {:?}/{} commit {}",
+                    part.key,
+                    part.block_from,
+                    current_entity_version,
+                    part.entity_from,
+                    part.commit_id
+                ));
                 return Err(keys);
             }
             if !part.blocks.is_empty() {
@@ -429,9 +437,12 @@ impl Replicas {
                 match change {
                     PublicEntityChange::Upsert(entity) => {
                         if let Some(old) = entities.get(&entity.id)
-                            && (entity.revision < old.revision
-                                || (entity.revision == old.revision && entity != old))
+                            && !valid_successor(old, entity)
                         {
+                            super::trace::event(format_args!(
+                                "entity mismatch {:?}: old={old:?} new={entity:?}",
+                                part.key
+                            ));
                             return Err(keys);
                         }
                         entities.insert(entity.id, entity.clone());
@@ -533,6 +544,33 @@ impl Replicas {
         }
         self.avatar_ids_by_chunk.insert(key, ids);
     }
+}
+
+/// Mobile position has its own revision domain. A motion-only publication is
+/// valid without a payload revision bump; equal revisions still forbid changing
+/// identity, payload, or anchored state.
+fn valid_successor(old: &PublicEntity, new: &PublicEntity) -> bool {
+    if new.entity_type != old.entity_type
+        || new.revision < old.revision
+        || new.motion_revision < old.motion_revision
+    {
+        return false;
+    }
+    if new.revision != old.revision {
+        return true;
+    }
+    if new.motion_revision == old.motion_revision {
+        return new == old;
+    }
+    new.payload == old.payload
+        && matches!(
+            old.location,
+            crate::protocol::PublicEntityLocation::Mobile { .. }
+        )
+        && matches!(
+            new.location,
+            crate::protocol::PublicEntityLocation::Mobile { .. }
+        )
 }
 
 #[cfg(test)]

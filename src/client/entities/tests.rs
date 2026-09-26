@@ -556,6 +556,89 @@ fn block_and_entity_changes_wait_for_whole_cross_chunk_commit() {
 }
 
 #[test]
+fn motion_only_upserts_install_without_resync_but_conflicts_do_not() {
+    let catalog = Catalog::builtins();
+    let mut replicas = Replicas::default();
+    let mut chunks = HashMap::new();
+    let original = player(12, 1);
+    let (start, pages) = snapshot(key(0), 1, 1, vec![vec![original.clone()]], &catalog);
+    accept(
+        &mut replicas,
+        ServerMessage::WorldSnapshotStart(start),
+        &catalog,
+        &mut chunks,
+    );
+    for page in pages {
+        accept(
+            &mut replicas,
+            ServerMessage::EntitySnapshotPage(page),
+            &catalog,
+            &mut chunks,
+        );
+    }
+    let mut moved = original;
+    moved.motion_revision = 2;
+    moved.location = PublicEntityLocation::Mobile {
+        position: [1.5, 2.0, 0.5],
+    };
+    let part = WorldCommitPart {
+        commit_id: 1,
+        part_index: 0,
+        part_count: 1,
+        key: key(0),
+        epoch: 1,
+        block_from: 0,
+        block_to: 0,
+        entity_from: 1,
+        entity_to: 2,
+        blocks: vec![],
+        entities: vec![PublicEntityChange::Upsert(moved.clone())],
+    };
+    assert!(matches!(
+        accept(
+            &mut replicas,
+            ServerMessage::WorldCommitPart(part.clone()),
+            &catalog,
+            &mut chunks
+        ),
+        Assembly::Waiting
+    ));
+    assert_eq!(replicas.entities_in(key(0)).unwrap()[&12], moved);
+    for case in 0..3 {
+        let mut invalid = moved.clone();
+        match case {
+            0 => invalid.motion_revision = 1,
+            1 => {
+                invalid.location = PublicEntityLocation::Mobile {
+                    position: [2.5, 2.0, 0.5],
+                }
+            }
+            _ => {
+                invalid.motion_revision = 3;
+                invalid.payload[0] ^= 1;
+            }
+        }
+        let invalid_part = WorldCommitPart {
+            commit_id: 2 + case,
+            entity_from: 2,
+            entity_to: 3,
+            entities: vec![PublicEntityChange::Upsert(invalid)],
+            ..part.clone()
+        };
+        assert!(matches!(
+            accept(
+                &mut replicas,
+                ServerMessage::WorldCommitPart(invalid_part),
+                &catalog,
+                &mut chunks
+            ),
+            Assembly::Resync(_)
+        ));
+        assert_eq!(replicas.entities_in(key(0)).unwrap()[&12], moved);
+    }
+}
+
+#[test]
 fn checksum_conflict_and_revision_gap_request_resync_without_partial_install() {
     let catalog = Catalog::builtins();
     let mut replicas = Replicas::default();

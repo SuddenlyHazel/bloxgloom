@@ -1,6 +1,45 @@
 use super::*;
 use crate::raycast::Face;
 
+pub(crate) struct ReplicationProbe {
+    replicas: Replicas,
+    registry: EntityClientRegistry,
+    catalog: Arc<crate::content::Catalog>,
+    pub(crate) chunks: HashMap<ChunkKey, Arc<Chunk>>,
+}
+impl std::ops::Deref for ReplicationProbe {
+    type Target = HashMap<ChunkKey, Arc<Chunk>>;
+    fn deref(&self) -> &Self::Target {
+        &self.chunks
+    }
+}
+
+impl ReplicationProbe {
+    pub(crate) fn new() -> Self {
+        Self {
+            replicas: Replicas::default(),
+            registry: EntityClientRegistry::builtins(crate::content::catalog()),
+            catalog: Arc::new(crate::content::catalog().clone()),
+            chunks: HashMap::new(),
+        }
+    }
+    pub(crate) fn accept(&mut self, message: ServerMessage) {
+        if matches!(
+            message,
+            ServerMessage::WorldSnapshotStart(_)
+                | ServerMessage::EntitySnapshotPage(_)
+                | ServerMessage::WorldCommitPart(_)
+        ) {
+            let result =
+                self.replicas
+                    .accept(message, &self.catalog, &mut self.chunks, &self.registry);
+            if let Assembly::Resync(keys) = result {
+                panic!("valid server stream required resync: {keys:?}");
+            }
+        }
+    }
+}
+
 #[test]
 fn latest_edit_mesh_survives_a_superseded_kiln_relight_backlog() {
     let mut app = ClientApp::new(

@@ -81,3 +81,29 @@ The terrain-only `perf 300 6` check retained 17,292,744 mesh bytes and 88,026
 visible triangles. Compared with the previous recorded Kiln run, setup was
 1723.9 → 1699.8 ms, steady CPU median 0.321 → 0.313 ms, and GPU median
 0.293 → 0.282 ms. That benchmark does not exercise this client work queue.
+
+### Live-trace follow-up: motion updates incorrectly forced resync
+
+The user's next live reproduction still showed delay. Its trace exposed repeated
+chunk resync requests roughly every 33–50 ms, despite prompt placement receipts
+(one observed placement was acknowledged in 20 ms). A stronger real-listener
+test, feeding movement and Kiln updates through the actual client replica
+assembler, reproduced rejection of a valid player update: entity revision 1
+stayed at 1 while motion revision advanced from 1 to 2.
+
+The client had compared the whole entity for equality whenever the general
+revision was unchanged, overlooking the independent motion revision. It now
+accepts newer mobile positions with unchanged general revision and payload,
+while rejecting regressing revisions and conflicting equal-revision data.
+Resync replaces entire chunk snapshots and invalidates dependent lighting, so
+this rejection loop can delay block display without stalling rendering.
+
+The strengthened loopback regression now runs movement, idle/burning Kilns,
+placement, the production replica assembler, and bounced lighting. Additional
+client tests protect stale-motion and conflicting-payload rejection. All 630
+tests, formatting, and strict Clippy pass. A new live confirmation is still
+needed to establish that this resolves the user's full symptom.
+
+`BLOXGLOOM_TRACE_EDITS=1 cargo run --release` enables timestamped client edit,
+resync, worker, and upload diagnostics for that confirmation. It is off by
+default and does not change scheduling or rendering rules.

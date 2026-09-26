@@ -31,6 +31,9 @@ const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 pub(crate) mod drops;
 use drops::DropAnimator;
 mod movement;
+#[cfg(test)]
+pub(crate) use tests::ReplicationProbe;
+pub(crate) mod trace;
 use movement::predict_player_movement;
 
 #[cfg(test)]
@@ -666,6 +669,15 @@ impl ClientApp {
     }
 
     fn queue_command(&mut self, message: ClientMessage) {
+        if let ClientMessage::Edit {
+            action_id, x, y, z, ..
+        } = &message
+        {
+            trace::event(format_args!(
+                "send {action_id} cell=({x},{y},{z}) chunk={:?}",
+                crate::world::world_to_chunk(*x, *y, *z).0
+            ));
+        }
         if let ClientMessage::Resync { key } = &message
             && self.pending_commands.iter().any(|pending| matches!(pending, ClientMessage::Resync { key: pending_key } if pending_key == key))
         {
@@ -714,6 +726,7 @@ impl ClientApp {
     }
 
     fn queue_edited_chunk_relight(&mut self, key: ChunkKey) {
+        trace::event(format_args!("relight {key:?}"));
         self.queue_relight(key, true);
         // The light footprint belongs to the edit too: rebuilding only its
         // own chunk urgently leaves neighbouring faces lit by an old lamp.
@@ -809,6 +822,7 @@ impl ClientApp {
                         }
                     }
                     Assembly::Resync(keys) => {
+                        trace::event(format_args!("resync {keys:?}"));
                         for key in keys {
                             self.queue_command(ClientMessage::Resync { key });
                         }
@@ -846,6 +860,7 @@ impl ClientApp {
                 accepted,
                 reason,
             } => {
+                trace::event(format_args!("ack {action_id} accepted={accepted}"));
                 if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
                 }
@@ -1024,6 +1039,11 @@ impl ClientApp {
                 revision,
                 bounced_gi: self.config.bounced_gi,
             };
+            trace::event(format_args!(
+                "submit {:?} rev={revision} urgent={}",
+                key,
+                self.urgent_mesh.contains(&key)
+            ));
             let sender = if self.urgent_mesh.contains(&key) {
                 &self.mesher.urgent_jobs
             } else {

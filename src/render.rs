@@ -371,6 +371,10 @@ impl Renderer {
                 break;
             }
             let mesh = self.pending.remove(&key).unwrap();
+            crate::client::trace::event(format_args!(
+                "upload {key:?} rev={}",
+                mesh.lighting_revision
+            ));
             self.pending_order.pop_front();
             if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 self.meshes.remove(&key);
