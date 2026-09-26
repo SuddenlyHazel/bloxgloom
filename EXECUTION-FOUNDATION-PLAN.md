@@ -16,7 +16,8 @@ The execution contract we are working toward:
 - **Done:** slice 1 and direct review of its scheduling corrections, with the capacity and atomic-wave limitations documented below.
 - **Done:** slice 2 and direct review of bounded suspended-entity rechecks (`f05f2c5`).
 - **Done:** slice 3 and direct review of entity conflict/publication separation (`2ca8e12`).
-- **Pending:** slices 4–5 and the independent extension crate below.
+- **Done:** slice 4 and direct review of shared commit admission and ordered barriers (`273a70d`).
+- **Pending:** slice 5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
 ## First: review the current worker slice — done
@@ -122,11 +123,19 @@ No encoding or world-version change. Spatial dependencies remain conservative at
 
 This is the most delicate slice. Use a coder followed by a targeted reviewer pass for conflict detection and recovery.
 
-The parent performed this review directly. The next implementation task is slice 4, subject to the user's go-ahead.
+The parent performed this review directly. This slice is complete.
 
 ## 4. Consolidate commit orchestration and make barriers explicit
 
-**Status: pending.**
+**Status: done — reviewed, with specialized payload application retained.**
+
+- [x] Entity actions and registered owner waves share durable admission, the 256 pending-commit bound, reservation accounting, and one ordered pending receipt queue (`273a70d`). Owner reads now take shared reservations, including captured owners not replaced by the wave.
+- [x] One receipt/apply gate handles nonblocking polling and explicit `Through(admission_id)` / `AllStaged` barriers. Confirmed application releases reservations through a shared helper. Losing an owner admission handle no longer loses its accepted payload/receipt.
+- [x] Owner phase barriers complete through their last accepted admission, including earlier entity/fire work. Motion retains its existing same-tick barrier. Ordinary non-motion actions and fire can still remain pending across ticks; all consumers see confirmed state only.
+- [x] Rejected admission consumes no ID and withdraws staged wake capacity. Receipt failures preserve the confirmed prefix and quarantine the failed pending record/suffix behind fatal gating. Owner wake hints and cursor advancement publish after confirmation, with same-tick wake fences.
+- [x] Parent reviewed production admission, receipt handling, owner apply and phase integration, then independently ran the lifecycle-filtered tests: **7 passed** (six new lifecycle regressions plus an existing entity lifecycle test). Coder reported **561 full-suite tests passed**, a separate production nonblocking TCP join/edit/restart test passed, and formatting/diff checks passed. Strict Clippy remains blocked by existing warnings.
+
+No save/wire format or world-version change. Fire retains specialized batch admission and contiguous apply; startup owner seeding remains synchronous bootstrap work. Atomic owner-wave deferral remains, without per-owner isolation. Feature planners/apply, checkpoint work, and client projection remain specialized. Existing fixtures were mechanically adapted to the shared barrier, replacing the former sleep/retry helper; behavioral assertions were preserved.
 
 **Problem:** entity actions, motion batches and owner waves currently have different stage, wait and apply arrangements.
 
@@ -142,6 +151,8 @@ The recommended contract for now is that a durable boundary may delay completion
 **Result:** new systems reuse the commit lifecycle instead of adding special-purpose drain loops.
 
 Some consolidation may naturally land during slice 3. This task should cover only what remains.
+
+The next implementation task is slice 5. Scope publication and checkpoint work as separate tasks if their paths are substantially different, and obtain the user's go-ahead first.
 
 ## 5. Off-thread publication and bounded checkpoint work
 
