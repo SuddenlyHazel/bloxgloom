@@ -657,20 +657,30 @@ fn queue_due_entity_ticks(state: &mut State, tick: TickId) {
         .durability
         .oversized_entity_retry
         .retain(|_, retry| *retry > tick.get());
-    // Wakes are opportunistic; an earlier barrier's wakes must not fill the
-    // bounded queue ahead of durable due work on every subsequent tick.
-    // Put them back on the wake lane, where they retain their ID and can be
-    // admitted into any remaining space below.
-    state.durability.queued.retain(|request| {
-        if let DurableRequest::EntityWake { id } = request {
+    // The WAL-owned due index, not this queue, retains entity tick work.
+    // Transiently blocked ticks must vacate the bounded admission lane each
+    // barrier so a full set of unavailable chunks cannot permanently hide
+    // ready due entries beyond the cursor. Wakes have no persisted due entry:
+    // return those to their transient lane instead of dropping them.
+    state.durability.queued.retain(|request| match request {
+        DurableRequest::EntityWake { id } => {
             state.durability.pending_wakes.push(*id);
             false
-        } else {
-            true
         }
+        DurableRequest::EntityTick { .. } => false,
+        _ => true,
     });
     let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
-    let scan_limit = available.min(MAX_PENDING_DURABLE_ACTIONS);
+    // Leave a turn for transient wakes as well. A permanently blocked due
+    // population must not hide wake attempts forever; at one free slot the
+    // two lanes alternate by logical tick.
+    let wake_slot = usize::from(
+        !state.durability.pending_wakes.is_empty()
+            && (available > 1 || (available == 1 && tick.get().is_multiple_of(2))),
+    );
+    let scan_limit = available
+        .saturating_sub(wake_slot)
+        .min(MAX_PENDING_DURABLE_ACTIONS);
     if scan_limit == 0 {
         return;
     }

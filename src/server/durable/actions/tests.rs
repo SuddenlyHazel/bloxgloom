@@ -730,6 +730,110 @@ impl crate::server::entities::EntityInteractionPolicy for CounterInteract {
 
 struct CounterTick;
 
+#[test]
+fn full_queue_of_distinct_unavailable_ticks_rotates_to_ready_due_work() {
+    use crate::server::entities::{EntityOwnership, EntityPayload, EntitySpawn, TickPolicy};
+    use crate::server::startup::StartupEntityType;
+    use std::sync::Arc;
+
+    let path = temp_save_dir("full-unavailable-entity-lane");
+    let blocked_type = crate::content::EntityTypeId(70_031);
+    let ready_type = crate::content::EntityTypeId(70_032);
+    let mut catalog = crate::content::Catalog::builtins();
+    for (id, key) in [
+        (blocked_type, "test:unavailable"),
+        (ready_type, "test:ready"),
+    ] {
+        catalog
+            .register_entity_type(crate::content::EntityTypeDef {
+                id,
+                key: key.into(),
+                schema_version: 1,
+                schema_fingerprint: 0x7478_0001,
+            })
+            .unwrap();
+    }
+    let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
+    for (key, _) in [
+        ("test:unavailable", blocked_type),
+        ("test:ready", ready_type),
+    ] {
+        startup.register_entity_type(StartupEntityType {
+            key: key.into(),
+            ownership: EntityOwnership::Mobile,
+            tick_policy: TickPolicy::Interval(5),
+            max_payload_bytes: 1,
+            codec: Arc::new(CounterCodec),
+            interaction_policy: None,
+            tick_planner: Some(Arc::new(CounterTick)),
+        });
+    }
+    let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
+    state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
+    let mut spawns: Vec<_> = (0..super::super::MAX_DEFERRED_DURABLE_ACTIONS)
+        .map(|index| EntitySpawn::Mobile {
+            entity_type: blocked_type,
+            position: [1_000.5 + index as f32 * 0.001, 80.0, 0.5],
+            payload: EntityPayload::new(7u8),
+            spawn_tick: 1,
+        })
+        .collect();
+    spawns.push(EntitySpawn::Mobile {
+        entity_type: ready_type,
+        position: [0.5, 80.0, 0.5],
+        payload: EntityPayload::new(7u8),
+        spawn_tick: 1,
+    });
+    let ids = stage_entity_spawn_batch(&mut state, spawns);
+    let healthy = *ids.last().unwrap();
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
+    assert_eq!(
+        state.durability.queued.len(),
+        super::super::MAX_DEFERRED_DURABLE_ACTIONS
+    );
+    assert!(
+        !state
+            .durability
+            .queued
+            .iter()
+            .any(|request| matches!(request,
+        DurableRequest::EntityTick { id } if *id == healthy))
+    );
+    super::super::coordinator::process_durable_actions(&mut state, TickId::new(6), Instant::now())
+        .unwrap();
+    assert_eq!(
+        state.durability.queued.len(),
+        super::super::MAX_DEFERRED_DURABLE_ACTIONS
+    );
+    super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(7));
+    assert!(
+        state
+            .durability
+            .queued
+            .iter()
+            .any(|request| matches!(request,
+        DurableRequest::EntityTick { id } if *id == healthy))
+    );
+    super::super::coordinator::process_durable_actions(&mut state, TickId::new(7), Instant::now())
+        .unwrap();
+    assert_eq!(
+        state
+            .entities
+            .snapshot(healthy)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<u8>(),
+        Some(&8)
+    );
+    assert!(
+        ids[..256]
+            .iter()
+            .all(|id| state.entities.snapshot(*id).unwrap().revision == 1)
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
 impl crate::server::entities::EntityTickPolicy for CounterTick {
     fn plan(
         &self,

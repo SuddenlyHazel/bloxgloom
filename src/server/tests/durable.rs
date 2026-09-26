@@ -45,17 +45,8 @@ fn dense_drop_page_advances_through_production_dispatch() {
             .queued
             .push_back(DurableRequest::EntityTick { id: *id });
     }
-    for _ in 0..2_000 {
-        crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
-            .unwrap();
-        if ids
-            .iter()
-            .all(|id| state.entities.snapshot(*id).unwrap().motion_revision > 0)
-        {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    crate::server::durable::process_durable_actions(&mut state, TickId::new(2), Instant::now())
+        .unwrap();
     assert!(
         ids.iter()
             .all(|id| state.entities.snapshot(*id).unwrap().motion_revision > 0)
