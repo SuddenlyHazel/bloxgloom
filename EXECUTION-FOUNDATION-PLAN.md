@@ -12,11 +12,11 @@ The execution contract we are working toward:
 
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.
-- **In progress:** review correction for captured terrain dependencies during transaction admission. The worker slice remains open until this correction is verified.
+- **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.
 - **Pending:** slices 1–5 and the independent extension crate below.
 - **Parked:** fire spread and its migration.
 
-## First: review the current worker slice — review done, correction in progress
+## First: review the current worker slice — done
 
 Completed implementation and review evidence:
 
@@ -25,12 +25,12 @@ Completed implementation and review evidence:
 - [x] Worker results are restored to request order before transaction construction. A two-entity synthetic test compares one and multiple workers with an ordering gate.
 - [x] Existing motion batching and receipt draining are retained; no alternate authoritative commit path was introduced.
 - [x] Focused tests cover stale-capture rejection/retry and worker-panic retry.
-- [x] Full test suite passed: **525 passed, 0 failed**. Formatting check passed. Existing behavioural assertions were retained.
+- [x] Full test suite passed after the correction: **526 passed, 0 failed** (coder verification). Formatting check passed. Existing behavioural assertions were retained.
 
-Remaining correction and verification:
+Completed correction and verification:
 
-- [ ] Preserve captured terrain read dependencies through transaction admission and motion batching. Review found that snapshot revisions are checked before transaction construction, but chunk read keys appear to cover block changes rather than every terrain chunk supplied to a planner. An outstanding conflicting terrain edit must defer dependent work for replanning.
-- [ ] Add and pass a regression covering an outstanding terrain edit and a dependent entity tick, including successful retry against updated terrain.
+- [x] Preserve every captured terrain chunk as a transaction read dependency through admission and motion batching. Outstanding conflicting terrain edits defer dependent work for replanning. The parent inspected the correction and regression diff.
+- [x] Add and pass a regression that holds a real terrain-edit receipt, exercises the durable coordinator with one and two due drops, verifies no stale or partial motion stages, then checks successful retry against updated terrain and preservation of read keys through batch combination.
 
 Verification limits: the new synthetic ordering test covers one step, not the broader multi-tick drop/item/publication equivalence requested for the slice. Full capacity/fairness guarantees remain slice 1 work. Strict Clippy failed with warnings including unchanged code; a clean lint result has not been established.
 
