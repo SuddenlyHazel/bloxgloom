@@ -818,16 +818,13 @@ fn drops_conserve_items_across_chunk_transfer_settle_and_restart() {
 
 #[test]
 fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
+    type DropKey = (u64, crate::items::ItemId, u16, [f32; 3]);
+    type DropRest = (u64, u16, [f32; 3]);
     // Phase 1 runs inside the synchronously resided spawn column, so no
     // chunk-loader wall time can intervene: any per-tick difference here is
     // receipt timing, not terrain streaming. Phase 2 settles with loader
     // sleeps and compares only the final rest.
-    fn run(
-        drained: bool,
-    ) -> (
-        Vec<(u64, crate::items::ItemId, u16, [f32; 3])>,
-        (u64, u16, [f32; 3]),
-    ) {
+    fn run(drained: bool) -> (Vec<DropKey>, DropRest) {
         let save = TestSave::new("drop-timing-proof");
         let mut state = state_for(&save, 7);
         let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
@@ -886,9 +883,10 @@ fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
 
 #[test]
 fn staggered_drop_merge_resolves_identically_under_receipt_timing() {
+    type DropKey = (u64, u16, [f32; 3]);
     // Same two phases as the single-drop proof: a tick-exact resident
     // window holding the staggered merge, then settling to compare rest.
-    fn run(drained: bool) -> (Vec<Vec<(u64, u16, [f32; 3])>>, Vec<(u64, u16, [f32; 3])>) {
+    fn run(drained: bool) -> (Vec<Vec<DropKey>>, Vec<DropKey>) {
         let save = TestSave::new("drop-merge-timing");
         let mut state = state_for(&save, 7);
         let top = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];

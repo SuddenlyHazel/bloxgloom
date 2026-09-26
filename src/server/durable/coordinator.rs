@@ -563,7 +563,7 @@ fn stage_motion_batch(
             if let Some(entities) = &batch_action.entities {
                 state.entities.cancel_prepared(entities);
             }
-            return fatal_stage_error(state, error).map(|()| false);
+            fatal_stage_error(state, error).map(|()| false)
         }
     }
 }

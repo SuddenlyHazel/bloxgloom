@@ -106,14 +106,8 @@ fn apply_confirmed(
             Ok(())
         }
         PendingPayload::Action(action) => {
-            if let Err(error) = flush_ready_fire(state, ready_fire) {
-                return Err(error);
-            }
-            if let Err(error) =
-                super::publication::apply_committed_action(state, action, commit.entity_permit)
-            {
-                return Err(error);
-            }
+            flush_ready_fire(state, ready_fire)?;
+            super::publication::apply_committed_action(state, action, commit.entity_permit)?;
             for key in commit.keys {
                 state.durability.reserved.remove(&key);
             }
