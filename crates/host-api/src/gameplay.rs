@@ -5,6 +5,9 @@
 //! are added here as the corresponding host transaction participants are unified.
 use std::collections::BTreeMap;
 
+mod handlers;
+pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
+
 pub type Cell = [i32; 3];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

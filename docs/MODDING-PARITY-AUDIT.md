@@ -2,6 +2,18 @@
 
 ## Baseline and verdict
 
+### Approved unified gameplay implementation
+
+`MODDING-IMPLEMENTATION-PROPOSAL.md` is approved and is the active execution
+record, including Luau/mlua and fire migration. Phase 1 now has a shared staged
+terrain/drop context and startup-registered removal decision handlers. Normal
+breaks, replacement/support-loss harvest and anchored placement's displaced plants
+use it. Built-in harvest policy uses only the public host API. A registered
+handler can read neighbouring terrain and stage extra edits plus drops in the
+same command transaction, with recorded dependencies and restart recovery.
+Inventory/entity services, complete lifecycle routing and later phases remain
+in progress; this is not a declaration of full parity.
+
 ### Integration follow-up
 
 Post-integration gameplay follow-ups are tracked in the root plan's **Completed

@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    gameplay_handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     content: crate::content::declarations::Declarations,
@@ -21,6 +22,15 @@ pub(crate) struct Registration {
     systems: Vec<bloxgloom_host_api::system::System>,
 }
 impl Registrar for Registration {
+    fn gameplay_handler(
+        &mut self,
+        handler: bloxgloom_host_api::gameplay::HandlerRegistration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        handler.validate()?;
+        self.gameplay_handlers.push(handler);
+        Ok(())
+    }
     fn item_icon(
         &mut self,
         icon: bloxgloom_host_api::icon::ItemIcon,
@@ -164,6 +174,7 @@ impl Registrar for Registration {
 impl Registration {
     fn room(&self) -> Result<(), RegistrationError> {
         if self.content.len()
+            + self.gameplay_handlers.len()
             + self.cubes.len()
             + self.definitions.len()
             + self.screens.len()
@@ -236,6 +247,12 @@ impl Registration {
         Registry::resolve(&candidate, &registration.definitions)?;
         for action in &registration.actions {
             candidate.register_action(action.clone())?;
+        }
+        registration
+            .gameplay_handlers
+            .sort_by(|a, b| a.key.cmp(&b.key));
+        for handler in &registration.gameplay_handlers {
+            candidate.register_gameplay_handler(handler.clone())?;
         }
         candidate
             .validate()

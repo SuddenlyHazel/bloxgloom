@@ -7,6 +7,8 @@ mod anchored_tests;
 mod chest_tests;
 #[path = "extension_tests.rs"]
 mod extension_tests;
+#[path = "gameplay_tests.rs"]
+mod gameplay_tests;
 #[path = "hopper_tests.rs"]
 mod hopper_tests;
 #[path = "machine_tests.rs"]

@@ -16,6 +16,7 @@ mod gameplay;
 mod interest;
 mod journal;
 mod lifecycle;
+#[cfg(test)]
 mod loot;
 mod metrics;
 mod movement;

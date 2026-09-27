@@ -77,6 +77,21 @@ pub(super) struct BlockCommitBuilder<'a> {
 }
 
 impl BlockCommitBuilder<'_> {
+    pub(super) fn plan_removals(
+        &mut self,
+        edits: &[super::gameplay::Edit],
+        removals: &[super::gameplay::Removal],
+        seed: u64,
+    ) -> io::Result<super::gameplay::WorldPlan> {
+        super::gameplay::plan_removals(
+            self.world,
+            &mut self.terrain_reads,
+            &mut self.requested_chunks,
+            edits,
+            removals,
+            seed,
+        )
+    }
     /// Reads one cell, recording its chunk for the coordinator to request
     /// when it is not resident. Mirrors `actions::cached_block_or_request`:
     /// a miss defers the edit with `WouldBlock` after the load is queued.

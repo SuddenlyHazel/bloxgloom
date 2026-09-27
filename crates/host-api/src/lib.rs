@@ -36,6 +36,14 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn gameplay_handler(
+        &mut self,
+        _handler: gameplay::HandlerRegistration,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "gameplay handlers unsupported by this registrar".into(),
+        ))
+    }
     fn item_icon(&mut self, _icon: icon::ItemIcon) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "item icons unsupported by this registrar".into(),

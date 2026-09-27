@@ -2,6 +2,23 @@
 //! scripts and native gameplay receive the same world operations.
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error};
 
+pub(crate) struct Harvest;
+impl bloxgloom_host_api::gameplay::Handler for Harvest {
+    fn handle(
+        &self,
+        context: &mut Context<'_>,
+        event: &bloxgloom_host_api::gameplay::Event,
+    ) -> Result<(), Error> {
+        let bloxgloom_host_api::gameplay::Event::BlockRemoved {
+            cell,
+            previous,
+            random,
+            ..
+        } = event;
+        harvest(context, previous, *cell, *random)
+    }
+}
+
 pub(crate) fn harvest(
     context: &mut Context<'_>,
     block: &Block,

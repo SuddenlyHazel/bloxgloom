@@ -14,6 +14,7 @@ pub(crate) mod composition;
 pub(crate) mod creatures;
 pub(crate) mod declarations;
 mod extensions;
+mod gameplay;
 mod icons;
 mod ids;
 mod inventories;
@@ -205,6 +206,14 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    gameplay_dispatch: HashMap<
+        bloxgloom_host_api::gameplay::EventKind,
+        HashMap<String, std::sync::Arc<bloxgloom_host_api::gameplay::HandlerRegistration>>,
+    >,
+    gameplay_handlers: std::collections::BTreeMap<
+        u32,
+        std::sync::Arc<bloxgloom_host_api::gameplay::HandlerRegistration>,
+    >,
     item_icons: HashMap<String, std::sync::Arc<bloxgloom_host_api::icon::ItemIcon>>,
     owner_systems:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
@@ -231,6 +240,7 @@ pub struct Catalog {
     state_keys: HashSet<String>,
     state_by_key: HashMap<String, BlockStateId>,
     item_keys: HashSet<String>,
+    item_by_key: HashMap<String, ItemId>,
     entity_keys: HashSet<String>,
     texture_keys: HashSet<String>,
     state_counts: HashMap<BlockTypeId, usize>,
@@ -243,6 +253,8 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            gameplay_handlers: Default::default(),
+            gameplay_dispatch: Default::default(),
             item_icons: HashMap::new(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
@@ -267,6 +279,7 @@ impl Catalog {
             state_keys: HashSet::new(),
             state_by_key: HashMap::new(),
             item_keys: HashSet::new(),
+            item_by_key: HashMap::new(),
             entity_keys: HashSet::new(),
             texture_keys: HashSet::new(),
             state_counts: HashMap::new(),
@@ -495,6 +508,8 @@ impl Catalog {
             self.items.resize_with(id + 1, || None);
         }
         self.item_keys.insert(definition.key.to_string());
+        self.item_by_key
+            .insert(definition.key.to_string(), definition.id);
         self.item_count += 1;
         self.items[id] = Some(definition);
         Ok(())
@@ -615,6 +630,10 @@ impl Catalog {
         self.items.iter().flatten()
     }
 
+    pub(crate) fn item_by_key(&self, key: &str) -> Option<ItemId> {
+        self.item_by_key.get(key).copied()
+    }
+
     #[inline]
     pub fn entity_type(&self, id: EntityTypeId) -> Option<&EntityTypeDef> {
         self.entities.get(id.0 as usize)?.as_ref()
@@ -674,6 +693,14 @@ impl Catalog {
     /// Stable save identities, including schema and compiled behavior in each fingerprint.
     pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         let mut entries = self.composition.identities();
+        for (id, handler) in &self.gameplay_handlers {
+            entries.push((
+                b'G',
+                *id,
+                handler.key.as_str(),
+                self.definition_fingerprint(b'G', *id),
+            ));
+        }
         for (id, system) in &self.owner_systems {
             entries.push((
                 b'Y',
@@ -730,6 +757,7 @@ impl Catalog {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut add = |bytes: &[u8]| hash_bytes(&mut hash, bytes);
         match kind {
+            b'G' => add(&self.gameplay_handlers[&id].fingerprint_bytes()),
             b'Y' => add(&self.owner_systems[&id].fingerprint_bytes()),
             b'B' => {
                 let block = self.block_type(BlockTypeId(id)).unwrap();

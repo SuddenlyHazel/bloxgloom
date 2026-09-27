@@ -427,23 +427,32 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 1 — initial public staged terrain/drop context implemented;
-  remaining shared inventory/entity operations and general handler dispatch are
-  still in progress.
+- **Active phase:** 1 — public staged terrain/drop context and registered removal
+  decisions implemented; shared inventory/entity operations remain in progress.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
-- **Implementation:** `2674f88` records approval. The first code increment adds
+- **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
   failure on ignored errors/budget exhaustion. Ordinary and anchored terrain
   preparation use its host adapter. Harvest policy now lives in `src/gameplay.rs`
-  and uses only public host contracts; its adapter still has a captured target
-  rather than general world access. This is not completion of phase 1.
-- **Latest verification:** 704 workspace tests passed (698 engine, 6 host API),
-  all-feature/all-target strict Clippy passed. No performance benchmark run.
-- **Next concrete step:** replace the remaining harvest-only capture with the
-  general world planning context and register gameplay handlers through startup;
-  add shared inventory/entity participants to the same transaction boundary.
+  and uses only public host contracts.
+- **Second increment:** registered removal decision owners (break, replacement,
+  support loss) now receive the general staged world context. Built-in harvest is
+  the fallback; exact target owners replace it explicitly. Handler-added terrain
+  edits and drops join the existing command WAL transaction, with unavailable
+  reads requesting real chunks, dependencies captured, and player/anchor checks
+  preserved. Startup validates ownership; handler version/target metadata is part
+  of the content manifest and survives remapping. Dispatch uses a frozen index.
+  Anchored placement uses this path for displaced plants. Anchored destruction,
+  cascade semantics and broader lifecycle unification remain phase-1 work.
+- **Latest verification:** initial 704-test workspace run; then 64 durable-action
+  regressions, 18 content regressions, and 2 focused gameplay tests passed for the
+  registered-handler increment. The gameplay tests cover unavailable neighbour
+  reads, seam edits plus drops, duplicate receipts, restart, conflicting handler
+  ownership and manifest mismatch. Strict workspace Clippy passed. No benchmark.
+- **Next concrete step:** add shared inventory/entity participants to the same
+  transaction boundary and migrate the remaining removal/lifecycle paths.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

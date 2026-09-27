@@ -595,6 +595,15 @@ impl Catalog {
         catalog.builtin_item_icons();
         catalog.builtin_machines();
         catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: "bloxgloom:harvest".into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::BlockRemoved,
+                target: None,
+                handler: std::sync::Arc::new(crate::gameplay::Harvest),
+            })
+            .expect("builtin harvest handler");
+        catalog
     }
 }
 

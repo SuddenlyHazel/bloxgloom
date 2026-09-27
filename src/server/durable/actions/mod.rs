@@ -1,13 +1,11 @@
 //! Planning for durable gameplay commands and their exact WAL participants.
 
 use super::*;
-use crate::items::ItemId;
 use crate::server::block_actions;
 use crate::server::streaming::request_chunk;
-use crate::server::{
-    AIR, BEDROCK_Y, EDIT_REACH, State, block_intersects_player, loot, world_to_chunk,
-};
+use crate::server::{AIR, BEDROCK_Y, EDIT_REACH, State, block_intersects_player, world_to_chunk};
 use crate::world::BlockId;
+use bloxgloom_host_api::gameplay::RemovalCause;
 
 mod admin;
 pub(in crate::server) mod anchored;
@@ -446,22 +444,18 @@ fn plan_block_edit(
             removed_plants.push((previous, [x, y, z]));
         }
         ensure_no_unhandled_anchor(state, &coords)?;
-        let prepared =
-            crate::server::gameplay::prepare_edits(&mut state.world, &mut terrain_reads, &coords)?;
+        let removals = removed_plants
+            .into_iter()
+            .map(|(id, at)| (id, at, RemovalCause::Replacement))
+            .collect::<Vec<_>>();
+        let plan = plan_gameplay_removals(state, &mut terrain_reads, &coords, &removals)?;
+        let coords = plan.edits;
+        let prepared = plan.prepared;
         let deltas = prepared_deltas(&coords, &prepared);
-        let mut drop_spawns = Vec::new();
-        for (plant, at) in removed_plants {
-            let version = prepared
-                .iter()
-                .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
-                .map(|edit| edit.new_version)
-                .unwrap_or(0);
-            push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed)?;
-        }
         let entities = crate::server::drops::plan_spawns(
             &state.entities,
             &catalog,
-            &drop_spawns,
+            &plan.drops,
             tick.get(),
             crate::server::drops::unix_ms(),
         )?;
@@ -486,7 +480,10 @@ fn plan_block_edit(
             inventory: Some(updated),
             world_edits: prepared,
             deltas,
-            changed_cells: vec![CellCoord::new(x, y, z)],
+            changed_cells: coords
+                .into_iter()
+                .map(|(x, y, z, _)| CellCoord::new(x, y, z))
+                .collect(),
             pickups: Vec::new(),
             fire_seed,
             entities,
@@ -517,35 +514,20 @@ fn plan_block_edit(
         }
     }
     ensure_no_unhandled_anchor(state, &coords)?;
-    let prepared =
-        crate::server::gameplay::prepare_edits(&mut state.world, &mut terrain_reads, &coords)?;
+    let mut removals = vec![(previous, [x, y, z], RemovalCause::Break)];
+    removals.extend(
+        removed_plants
+            .into_iter()
+            .map(|(id, at)| (id, at, RemovalCause::SupportLoss)),
+    );
+    let plan = plan_gameplay_removals(state, &mut terrain_reads, &coords, &removals)?;
+    let coords = plan.edits;
+    let prepared = plan.prepared;
     let deltas = prepared_deltas(&coords, &prepared);
-    let mut drop_spawns = Vec::new();
-    let base_version = prepared
-        .iter()
-        .find(|edit| edit.key == world_to_chunk(x, y, z).0)
-        .map(|edit| edit.new_version)
-        .unwrap_or(0);
-    push_harvest_spawns(
-        &mut drop_spawns,
-        &catalog,
-        previous,
-        [x, y, z],
-        base_version,
-        state.seed,
-    )?;
-    for (plant, at) in removed_plants {
-        let version = prepared
-            .iter()
-            .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
-            .map(|edit| edit.new_version)
-            .unwrap_or(0);
-        push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed)?;
-    }
     let entities = crate::server::drops::plan_spawns(
         &state.entities,
         &catalog,
-        &drop_spawns,
+        &plan.drops,
         tick.get(),
         crate::server::drops::unix_ms(),
     )?;
@@ -569,6 +551,42 @@ fn plan_block_edit(
         entity_wakes: Vec::new(),
         entities,
     })
+}
+
+fn plan_gameplay_removals(
+    state: &mut State,
+    reads: &mut TerrainReads,
+    edits: &[crate::server::gameplay::Edit],
+    removals: &[crate::server::gameplay::Removal],
+) -> io::Result<crate::server::gameplay::WorldPlan> {
+    let mut requested = Vec::new();
+    let result = crate::server::gameplay::plan_removals(
+        &mut state.world,
+        reads,
+        &mut requested,
+        edits,
+        removals,
+        state.seed,
+    );
+    for key in requested {
+        let _ = request_chunk(state, key);
+    }
+    let plan = result?;
+    ensure_no_unhandled_anchor(state, &plan.edits)?;
+    for &(x, y, z, block) in &plan.edits {
+        if state.world.catalog().block_flags(block) & crate::content::SOLID != 0
+            && state
+                .clients
+                .values()
+                .any(|client| block_intersects_player([x, y, z], client.position()))
+        {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "gameplay block overlaps a player",
+            ));
+        }
+    }
+    Ok(plan)
 }
 
 /// A failed resident read is not authoritative air. Ask the bounded chunk
@@ -659,18 +677,4 @@ fn prepared_deltas(
             })
         })
         .collect()
-}
-
-fn push_harvest_spawns(
-    output: &mut Vec<([f32; 3], ItemId, u16, Duration)>,
-    catalog: &crate::content::Catalog,
-    block: BlockId,
-    position: [i32; 3],
-    version: u64,
-    seed: u64,
-) -> io::Result<()> {
-    output.extend(loot::harvest_with_catalog(
-        catalog, block, position, version, seed,
-    )?);
-    Ok(())
 }

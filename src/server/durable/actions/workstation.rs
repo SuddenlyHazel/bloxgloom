@@ -2,11 +2,11 @@
 //! visible here; all participants enter one WAL record through `CommitAction`.
 
 use super::entity::corrupt;
-use super::{BlockEditCommand, prepared_deltas, push_harvest_spawns};
+use super::{BlockEditCommand, prepared_deltas};
 use crate::content::{PLANT, REPLACEABLE, SOLID};
 use crate::inventory::{HOTBAR_SLOTS, InventoryStore, Stack};
 use crate::server::block_actions::{BlockActionContext, BlockCommitBuilder};
-use crate::server::durable::{BlockDelta, CommitAction};
+use crate::server::durable::CommitAction;
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::CellCoord;
 use crate::server::simulation::TickId;
@@ -120,26 +120,50 @@ pub(super) fn place(
             ));
         }
     }
-    let world_edits = builder.prepare_edits(&coords)?;
-    let deltas = prepared_deltas(&coords, &world_edits);
-    let mut drop_spawns = Vec::new();
-    for (plant, at) in displaced_plants {
-        let version = version_at(&deltas, at).unwrap_or(0);
-        push_harvest_spawns(
-            &mut drop_spawns,
-            &catalog,
-            plant,
-            at,
-            version,
-            context.seed(),
-        )?;
+    let removals = displaced_plants
+        .into_iter()
+        .map(|(id, at)| {
+            (
+                id,
+                at,
+                bloxgloom_host_api::gameplay::RemovalCause::Replacement,
+            )
+        })
+        .collect::<Vec<_>>();
+    let plan = builder.plan_removals(&coords, &removals, context.seed())?;
+    for &(x, y, z, block) in &plan.edits {
+        if context
+            .entities()
+            .anchored_at(CellCoord::new(x, y, z))
+            .is_some()
+            || (catalog.block_flags(block) & SOLID != 0
+                && context
+                    .clients()
+                    .values()
+                    .any(|client| block_intersects_player([x, y, z], client.position())))
+        {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "gameplay edit conflicts with an anchor or player",
+            ));
+        }
     }
+    // The creation footprint is a lifecycle invariant, not author-owned bytes.
+    if coords.iter().any(|edit| !plan.edits.contains(edit)) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "gameplay handler changed the new anchored footprint",
+        ));
+    }
+    let coords = plan.edits;
+    let world_edits = plan.prepared;
+    let deltas = prepared_deltas(&coords, &world_edits);
     // The kiln spawn rides in the same atomic batch as its displaced-plant
     // drops: one WAL record, so the kiln and its loot never split.
     let entities = crate::server::drops::plan_spawns_with_extra(
         context.entities(),
         &catalog,
-        &drop_spawns,
+        &plan.drops,
         vec![spawn],
         tick.get(),
         crate::server::drops::unix_ms(),
@@ -258,12 +282,4 @@ pub(super) fn remove(
         entity_wakes: Vec::new(),
         entities: Some(entities),
     })
-}
-
-fn version_at(deltas: &[BlockDelta], at: [i32; 3]) -> Option<u64> {
-    let (key, _) = crate::world::world_to_chunk(at[0], at[1], at[2]);
-    deltas
-        .iter()
-        .find(|delta| delta.key == key)
-        .map(|delta| delta.version)
 }

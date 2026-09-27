@@ -217,6 +217,15 @@ impl ContentManifest {
         }
 
         let mut resolved = Catalog::new();
+        resolved.gameplay_dispatch = local.gameplay_dispatch.clone();
+        for entry in self.entries.iter().filter(|entry| entry.kind == b'G') {
+            let handler = local
+                .gameplay_handlers
+                .values()
+                .find(|h| h.key == entry.key)
+                .ok_or_else(|| invalid("missing gameplay handler"))?;
+            resolved.gameplay_handlers.insert(entry.id, handler.clone());
+        }
         for entry in self.entries.iter().filter(|entry| entry.kind == b'Y') {
             let system = local
                 .owner_systems()
@@ -344,7 +353,7 @@ impl ContentManifest {
         for entry in &self.entries {
             if !matches!(
                 entry.kind,
-                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y'
+                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G'
             ) || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }
