@@ -40,8 +40,11 @@ fire frontier/propagation and cross-chunk delivery policy remain native-only;
 owner-local world-system, drop and player parity remain open.
 World drops are now available as extract-only single-slot entity inventories
 to public gameplay handlers. This shares exact-stack conservation, delay/expiry
-gating and WAL transactions with other inventories, but does not migrate
-automatic pickup selection, merging, motion or expiration policy.
+  gating and WAL transactions with other inventories. Automatic pickup now
+  dispatches a registered decision owner over host-eligible, bounded candidates:
+  the built-in transfers exact stacks, and the host requires matching player
+  credit before publishing a confirmed pickup. Candidate selection/delay/radius,
+  merging, motion, expiration and client presentation policy are still native.
 
 ### Integration follow-up
 

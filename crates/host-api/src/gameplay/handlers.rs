@@ -9,6 +9,7 @@ pub enum EventKind {
     ActionRequested,
     EntityTick,
     NeighborChanged,
+    PickupRequested,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +63,13 @@ pub enum Event {
         previous: Block,
         current: Block,
     },
+    /// Candidates have already passed the server's distance, age and delay
+    /// checks. The handler can inspect their extract-only inventory slots and
+    /// transfer exact stacks into the player's inventory in this transaction.
+    PickupRequested {
+        position: [f32; 3],
+        drops: Vec<(u64, u16)>,
+    },
 }
 
 /// Pure/retryable gameplay decision. Staged operations are committed together
@@ -112,6 +120,7 @@ impl HandlerRegistration {
             EventKind::ActionRequested => 2,
             EventKind::EntityTick => 3,
             EventKind::NeighborChanged => 4,
+            EventKind::PickupRequested => 5,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

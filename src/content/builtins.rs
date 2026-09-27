@@ -613,6 +613,15 @@ impl Catalog {
             })
             .expect("builtin plant support handler");
         catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: "bloxgloom:pickup".into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::PickupRequested,
+                target: None,
+                handler: std::sync::Arc::new(crate::gameplay::Pickup),
+            })
+            .expect("builtin pickup decision");
+        catalog
     }
 }
 

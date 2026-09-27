@@ -6,6 +6,51 @@ use std::sync::Arc;
 struct HarvestExtension;
 struct UseExtension;
 struct ObservingExtension(std::sync::mpsc::Sender<Committed>);
+struct NoPickupExtension;
+struct RejectPickup;
+struct UncreditedPickupExtension;
+struct UncreditedPickup;
+impl Handler for RejectPickup {
+    fn handle(&self, _: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        if !matches!(event, Event::PickupRequested { .. }) {
+            return Err(Error::Invalid("expected pickup decision".into()));
+        }
+        Ok(())
+    }
+}
+impl Extension for NoPickupExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        UseExtension.register(registrar)?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:no_pickup".into(),
+            version: 1,
+            event: EventKind::PickupRequested,
+            target: Some("bloxgloom:drop".into()),
+            handler: Arc::new(RejectPickup),
+        })
+    }
+}
+impl Handler for UncreditedPickup {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::PickupRequested { drops, .. } = event else {
+            return Err(Error::Invalid("expected pickup decision".into()));
+        };
+        context.take(InventoryId::Entity(drops[0].0), 0, 1)?;
+        Ok(())
+    }
+}
+impl Extension for UncreditedPickupExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        UseExtension.register(registrar)?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:uncredited_pickup".into(),
+            version: 1,
+            event: EventKind::PickupRequested,
+            target: Some("bloxgloom:drop".into()),
+            handler: Arc::new(UncreditedPickup),
+        })
+    }
+}
 struct UseObserver(std::sync::mpsc::Sender<Committed>);
 impl Observer for UseObserver {
     fn on_commit(&self, event: &Committed) {
@@ -838,6 +883,121 @@ fn world_drop_is_exact_extraction_inventory_with_atomic_player_credit() {
             .iter()
             .all(|item| item.item != STICK)
     );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn registered_pickup_owner_can_decline_without_consuming_an_eligible_drop() {
+    let path = temp_save_dir("gameplay-pickup-owner");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&NoPickupExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(16, y, 0, AIR).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 2));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let request = Request {
+        key: "test:use_stick".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![2],
+    };
+    settle_live_action(
+        &mut state,
+        11,
+        ClientMessage::EntityInteract {
+            action_id: epoch | 1,
+            target: [i32::MAX, y, 0],
+            payload: request.encode().unwrap(),
+        },
+    );
+    assert!(
+        plan_durable_request(
+            &mut state,
+            &DurableRequest::Pickup { id: 1 },
+            TickId::new(12)
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        1
+    );
+    assert!(
+        crate::server::drops::nearby(&state.entities, [15.0, y as f32, 1.0])
+            .iter()
+            .any(|item| item.item == STICK && item.count == 1)
+    );
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn automatic_pickup_rejects_uncredited_take_before_wal_admission() {
+    let path = temp_save_dir("gameplay-pickup-credit");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UncreditedPickupExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(16, y, 0, AIR).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 2));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let request = Request {
+        key: "test:use_stick".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![2],
+    };
+    settle_live_action(
+        &mut state,
+        11,
+        ClientMessage::EntityInteract {
+            action_id: epoch | 1,
+            target: [i32::MAX, y, 0],
+            payload: request.encode().unwrap(),
+        },
+    );
+    let before = crate::server::drops::nearby(&state.entities, [15.0, y as f32, 1.0]);
+    assert_eq!(
+        plan_durable_request(
+            &mut state,
+            &DurableRequest::Pickup { id: 1 },
+            TickId::new(12)
+        )
+        .err()
+        .unwrap()
+        .kind(),
+        ErrorKind::PermissionDenied
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        1
+    );
+    let after = crate::server::drops::nearby(&state.entities, [15.0, y as f32, 1.0]);
+    assert_eq!(after.len(), before.len());
+    assert!(
+        before.iter().zip(after).all(
+            |(a, b)| (a.id, a.item, a.count, a.position) == (b.id, b.item, b.count, b.position)
+        )
+    );
+    drop(peer);
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }

@@ -240,6 +240,7 @@ pub(super) struct WorldPlan {
     pub prepared: Vec<PreparedEdit>,
     pub drops: Vec<Spawn>,
     pub inventory: Option<crate::inventory::Inventory>,
+    pub drop_takes: Vec<(u64, u16)>,
 }
 
 /// Invoke decision owners with one shared overlay. Every terrain/drop effect is
@@ -269,7 +270,9 @@ pub(super) fn plan_removals(
             Event::ActionRequested {
                 cell: Some(cell), ..
             } => origins.push(*cell),
-            Event::ActionRequested { position, .. } | Event::EntityTick { position, .. } => {
+            Event::ActionRequested { position, .. }
+            | Event::EntityTick { position, .. }
+            | Event::PickupRequested { position, .. } => {
                 let cell = super::entities::position_to_cell(*position).map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid event position")
                 })?;
@@ -370,6 +373,7 @@ pub(super) fn plan_removals(
                     .key;
                 (EventKind::EntityTick, key.as_ref())
             }
+            Event::PickupRequested { .. } => (EventKind::PickupRequested, "bloxgloom:drop"),
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -409,6 +413,7 @@ pub(super) fn plan_removals(
         None
     };
     let mut entity_updates = Vec::new();
+    let mut drop_takes = Vec::new();
     for (owner, slots) in plan.inventories {
         let bloxgloom_host_api::gameplay::InventoryId::Entity(id) = owner else {
             return Err(io::Error::new(
@@ -416,6 +421,23 @@ pub(super) fn plan_removals(
                 "uncaptured gameplay inventory output",
             ));
         };
+        let entity_id = super::entities::EntityId::new(id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid drop owner"))?;
+        if participants
+            .entities
+            .snapshot(entity_id)
+            .is_some_and(|snapshot| snapshot.entity_type == super::drops::DROP_ENTITY_TYPE)
+        {
+            let before = super::drops::stack(participants.entities, entity_id)
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "drop stack vanished"))?;
+            let remaining = slots
+                .first()
+                .and_then(Option::as_ref)
+                .map_or(0, |stack| stack.count);
+            if remaining < before.count {
+                drop_takes.push((id, before.count - remaining));
+            }
+        }
         if let Some(update) =
             entity_inventory::prepare(&catalog, reads, participants.entities, id, slots)
                 .map_err(error)?
@@ -493,7 +515,9 @@ pub(super) fn plan_removals(
             Event::ActionRequested {
                 cell: Some(cell), ..
             } => *cell,
-            Event::ActionRequested { position, .. } | Event::EntityTick { position, .. } => {
+            Event::ActionRequested { position, .. }
+            | Event::EntityTick { position, .. }
+            | Event::PickupRequested { position, .. } => {
                 let at = super::entities::position_to_cell(*position).map_err(|_| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid event position")
                 })?;
@@ -607,6 +631,7 @@ pub(super) fn plan_removals(
         prepared,
         drops,
         inventory,
+        drop_takes,
     })
 }
 

@@ -12,6 +12,7 @@ pub(in crate::server) mod anchored;
 pub(in crate::server) mod entity;
 mod gameplay_action;
 pub(in crate::server) mod gameplay_fire;
+mod gameplay_pickup;
 pub(in crate::server) mod gameplay_tick;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;
@@ -204,82 +205,7 @@ pub(in crate::server) fn plan_durable_request(
             }
             Ok(Some(action))
         }
-        DurableRequest::Pickup { id } => {
-            let Some(client) = state.clients.get(id) else {
-                return Ok(None);
-            };
-            if state.durability.profile_reserved(client.profile) {
-                return Err(io::Error::new(
-                    ErrorKind::WouldBlock,
-                    "profile has a pending durable action",
-                ));
-            }
-            let profile = client.profile;
-            let original = client.inventory.clone();
-            let position = client.position();
-            let mut updated = original.clone();
-            let catalog = state.world.catalog_arc();
-            let mut taken = Vec::new();
-            let mut takes = Vec::new();
-            for item in crate::server::drops::pickup_candidates(&state.entities, position) {
-                let Some(id) = crate::server::entities::EntityId::new(item.id) else {
-                    continue;
-                };
-                let Some(mut stack) = crate::server::drops::stack(&state.entities, id) else {
-                    continue;
-                };
-                stack.count = item.count;
-                let remaining = updated.insert_stack(&stack, &catalog);
-                if remaining != item.count {
-                    let amount = item.count - remaining;
-                    takes.push((id, amount));
-                    taken.push(DroppedItem {
-                        count: amount,
-                        ..item
-                    });
-                }
-            }
-            if taken.is_empty() {
-                return Ok(None);
-            }
-            // Removing the drops and crediting the inventory is one WAL
-            // record: a crash lands on both halves or neither.
-            let Some(mut entities) = crate::server::drops::plan_take(&state.entities, &takes)?
-            else {
-                return Ok(None);
-            };
-            entities
-                .add_dependencies(
-                    state
-                        .entities
-                        .capture_mobile_dependencies(
-                            position,
-                            crate::server::drops::PICKUP_RANGE_SQ.sqrt(),
-                        )
-                        .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?,
-                )
-                .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?;
-            Ok(Some(CommitAction {
-                client_id: Some(*id),
-                profile: Some(profile),
-                action_id: None,
-                receipt_value: None,
-                receipt_transition: None,
-                terrain_reads: Default::default(),
-                inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
-                    &original,
-                    state.world.catalog(),
-                )?),
-                inventory: Some(updated),
-                world_edits: Vec::new(),
-                deltas: Vec::new(),
-                changed_cells: Vec::new(),
-                pickups: taken,
-                fire_seed: None,
-                entity_wakes: Vec::new(),
-                entities: Some(entities),
-            }))
-        }
+        DurableRequest::Pickup { id } => gameplay_pickup::plan(state, *id, tick.get()),
         DurableRequest::Expire => {
             let Some(entities) = crate::server::drops::plan_expired(
                 &state.entities,

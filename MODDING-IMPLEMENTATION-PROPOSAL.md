@@ -588,8 +588,22 @@ This section exists so compaction or a new session does not restart the design.
   inventories read by a gameplay handler must be within eight cells of its
   authoritative edit/event origins. A focused use action exercises a consumed
   item becoming a drop then returning to inventory, duplicate receipts and
-  recovery. Built-in automatic pickup/merging/motion/expiry still use their
-  native planners; their policy and presentation migration remains open.
+  recovery. Built-in merging/motion/expiry still use their native planners;
+  their policy and presentation migration remains open.
+- **Phase 2 automatic-pickup increment:** server-eligible drop candidates now
+  enter a registered `PickupRequested` decision. The default owner transfers
+  exact stacks through the shared drop and player inventory overlay in one WAL
+  transaction; an exact `bloxgloom:drop` owner may replace or decline it. The
+  host rejects a take of an ineligible candidate and requires every reported
+  pickup's item/component quantity to be credited to the player, so pickup
+  flight cannot present an uncredited removal. Each attempt processes at most
+  32 candidates from the existing 256-ID spatial query, rotating its starting
+  point by logical tick so low-ID uncollectable stacks do not starve later
+  ones. Selection range, delay and expiration remain host-owned for now.
+  Focused pickup checks (18) passed, including decline/uncredited overrides,
+  a partial-stack remainder and recovery; strict all-feature workspace Clippy
+  and format checks passed. Drop motion, merging, expiration, policy authoring
+  and client presentation services are still open.
 - **Next concrete step:** expose general owner-local scheduled world reads/effects
   and reusable durable cross-owner intent, then move fire propagation/delivery
   decisions off the native-only policy. Migrate remaining drops, player rules,

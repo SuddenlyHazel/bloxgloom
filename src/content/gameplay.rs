@@ -22,6 +22,9 @@ impl Catalog {
                     action.operation != bloxgloom_host_api::actions::Operation::Gameplay
                 }),
                 EventKind::EntityTick => self.gameplay_entity(target).is_none(),
+                // Automatic pickup currently selects the stock world-drop
+                // inventory, not an arbitrary nearby entity type.
+                EventKind::PickupRequested => target != "bloxgloom:drop",
             })
             || (matches!(
                 handler.event,

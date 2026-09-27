@@ -1,6 +1,57 @@
 //! Built-in gameplay policy. Keep this module on the public host boundary so
 //! scripts and native gameplay receive the same world operations.
-use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error};
+use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, InventoryId};
+
+pub(crate) struct Pickup;
+impl bloxgloom_host_api::gameplay::Handler for Pickup {
+    fn handle(
+        &self,
+        context: &mut Context<'_>,
+        event: &bloxgloom_host_api::gameplay::Event,
+    ) -> Result<(), Error> {
+        let bloxgloom_host_api::gameplay::Event::PickupRequested { drops, .. } = event else {
+            return Ok(());
+        };
+        let Some(player) = context.player() else {
+            return Err(Error::Invalid("pickup needs a player".into()));
+        };
+        for &(id, count) in drops {
+            let source = InventoryId::Entity(id);
+            let Some(slot) = context.inventory(source)?.into_iter().next() else {
+                continue;
+            };
+            let Some(stack) = slot.stack else {
+                continue;
+            };
+            if !slot.extract {
+                continue;
+            }
+            let mut remaining = count.min(stack.count);
+            for (index, destination) in context.inventory(player)?.into_iter().enumerate() {
+                if remaining == 0 {
+                    break;
+                }
+                if !destination.insert {
+                    continue;
+                }
+                let capacity = match destination.stack {
+                    Some(other)
+                        if other.item == stack.item && other.components == stack.components =>
+                    {
+                        128 - other.count
+                    }
+                    None => 128,
+                    _ => 0,
+                };
+                let amount = remaining.min(capacity);
+                if amount != 0 && context.transfer(source, 0, player, index, amount)? {
+                    remaining -= amount;
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 pub(crate) struct Harvest;
 pub(crate) struct PlantSupport;

@@ -941,6 +941,44 @@ fn stacking_pickup_and_restart_conserve_every_item() {
 }
 
 #[test]
+fn pickup_leaves_the_exact_uncredited_remainder_after_restart() {
+    let save = TestSave::new("partial-pickup-conservation");
+    let profile = 1554;
+    let mut inventory = Inventory::default();
+    for slot in &mut inventory.slots {
+        *slot = Some(crate::inventory::Stack::new(STONE_ITEM, 128));
+    }
+    inventory.slots[0].as_mut().unwrap().count = 127;
+    save_inventory(&save, profile, &inventory);
+    let mut state = state_for(&save, 7);
+    let mut tick = 1;
+    let session = join(&mut state, &mut tick, profile);
+    let position = session.joined.position;
+    spawn_drop(&mut state, tick, position, STONE_ITEM, 5, Duration::ZERO);
+    wait_for_inventory(&mut state, &mut tick, session.id, |inventory| {
+        inventory.slots[0]
+            .as_ref()
+            .is_some_and(|stack| stack.count == 128)
+    });
+    let dropped = drop_nearby(&state, position);
+    assert_eq!(dropped.len(), 1);
+    assert_eq!(dropped[0].count, 4);
+    drop(session);
+    drop(state);
+    let restarted = state_for(&save, 7);
+    assert_eq!(
+        restarted.inventory_store.load(profile).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        128
+    );
+    let dropped = drop_nearby(&restarted, position);
+    assert_eq!(dropped.len(), 1);
+    assert_eq!(dropped[0].count, 4);
+}
+
+#[test]
 fn presentation_timing_cannot_create_or_remove_drops() {
     let save = TestSave::new("presentation-isolation");
     let profile = 1553;
