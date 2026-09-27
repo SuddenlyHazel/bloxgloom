@@ -50,6 +50,7 @@ struct WorldSnapshot<'a> {
     entities: Option<&'a super::entities::EntityStore>,
     tick: u64,
     seed: u64,
+    origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
     fn tick(&self) -> u64 {
@@ -134,6 +135,28 @@ impl Snapshot for WorldSnapshot<'_> {
     ) -> Result<Vec<bloxgloom_host_api::gameplay::Slot>, Error> {
         if let bloxgloom_host_api::gameplay::InventoryId::Entity(id) = owner {
             let store = self.entities.ok_or(Error::InventoryUnavailable(owner))?;
+            let entity_id =
+                super::entities::EntityId::new(id).ok_or(Error::InventoryUnavailable(owner))?;
+            let snapshot = store
+                .snapshot(entity_id)
+                .ok_or(Error::InventoryUnavailable(owner))?;
+            let cell = match snapshot.location {
+                super::entities::EntityLocation::Anchored { anchor, .. } => {
+                    [anchor.x, anchor.y, anchor.z]
+                }
+                super::entities::EntityLocation::Mobile { position } => {
+                    let cell = super::entities::position_to_cell(position)
+                        .map_err(|_| Error::Invalid("invalid entity inventory position".into()))?;
+                    [cell.x, cell.y, cell.z]
+                }
+            };
+            if !self.origins.iter().any(|origin| {
+                (0..3).all(|axis| (i64::from(cell[axis]) - i64::from(origin[axis])).abs() <= 8)
+            }) {
+                return Err(Error::Invalid(
+                    "entity inventory outside interaction radius".into(),
+                ));
+            }
             return entity_inventory::capture(self.world.catalog(), self.reads, store, id);
         }
         let Some((profile, value)) = self.actor else {
@@ -237,6 +260,24 @@ pub(super) fn plan_removals(
         action,
     } = input;
     let actor = participants.actor;
+    let mut origins = edits
+        .iter()
+        .map(|&(x, y, z, _)| [x, y, z])
+        .collect::<Vec<_>>();
+    if let Some(event) = &action {
+        match event {
+            Event::ActionRequested {
+                cell: Some(cell), ..
+            } => origins.push(*cell),
+            Event::ActionRequested { position, .. } | Event::EntityTick { position, .. } => {
+                let cell = super::entities::position_to_cell(*position).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid event position")
+                })?;
+                origins.push([cell.x, cell.y, cell.z]);
+            }
+            _ => {}
+        }
+    }
     let catalog = world.catalog_arc();
     // Preparation is invisible. Its per-chunk version is stable random input
     // for existing harvest behavior; an expanded overlay is prepared below.
@@ -250,6 +291,7 @@ pub(super) fn plan_removals(
         entities: Some(participants.entities),
         tick,
         seed,
+        origins,
     };
     let mut context = Context::new(&mut snapshot, 4096);
     let mut placements = Vec::new();

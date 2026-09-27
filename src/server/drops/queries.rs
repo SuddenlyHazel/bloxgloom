@@ -196,6 +196,17 @@ pub(in crate::server) fn stack(store: &EntityStore, id: EntityId) -> Option<Stac
     live_drop(store, id).map(|drop| drop.payload.stack)
 }
 
+/// The same server-clock eligibility used by ordinary pickup. Inspecting a
+/// drop is allowed earlier; extraction through the shared inventory service is
+/// not, so scripts cannot silently bypass its pickup delay or expiration.
+pub(in crate::server) fn extractable(store: &EntityStore, id: EntityId) -> bool {
+    let Some(drop) = live_drop(store, id) else {
+        return false;
+    };
+    let age = u128::from(unix_ms().saturating_sub(drop.payload.created_unix_ms));
+    age >= drop.payload.pickup_delay.as_millis() && age < LIFETIME.as_millis()
+}
+
 /// Airborne drops are exactly the scheduled ones: settled drops suspend off
 /// the sparse due schedule, so this counts queue membership, not records.
 pub(in crate::server) fn airborne_count(store: &EntityStore) -> usize {

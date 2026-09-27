@@ -48,7 +48,7 @@ fn spawn_direct(
 fn pickup_delay_gates_candidates_but_not_visibility() {
     let (mut store, _catalog) = test_store();
     let born_ms = super::super::unix_ms();
-    spawn_direct(
+    let delayed = spawn_direct(
         &mut store,
         [0.0, 0.0, 0.0],
         1,
@@ -58,6 +58,8 @@ fn pickup_delay_gates_candidates_but_not_visibility() {
     let gated = spawn_direct(&mut store, [0.5, 0.0, 0.0], 1, born_ms, Duration::ZERO);
     // Wall clock has just passed both births, so only the delay gates.
     let candidates = pickup_candidates(&store, [0.0, 0.0, 0.0]);
+    assert!(!extractable(&store, delayed));
+    assert!(extractable(&store, gated));
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].id, gated.get());
     assert_eq!(nearby(&store, [0.0, 0.0, 0.0]).len(), 2);

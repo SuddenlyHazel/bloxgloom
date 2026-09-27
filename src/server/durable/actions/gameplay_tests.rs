@@ -23,6 +23,34 @@ impl Extension for ObservingExtension {
     }
 }
 struct UseStick;
+struct CollectDrop;
+impl Handler for CollectDrop {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::ActionRequested { position, .. } = event else {
+            return Err(Error::Invalid("expected collect action".into()));
+        };
+        let actor = context
+            .player()
+            .ok_or_else(|| Error::Invalid("actor missing".into()))?;
+        let drop = context
+            .nearby_entities(*position, 3.0)?
+            .into_iter()
+            .find(|entity| entity.entity_type == "bloxgloom:drop")
+            .ok_or_else(|| Error::Invalid("drop missing".into()))?;
+        let owner = InventoryId::Entity(drop.id);
+        let stack = context.inventory(owner)?[0]
+            .stack
+            .clone()
+            .ok_or_else(|| Error::Invalid("empty drop".into()))?;
+        let Some(taken) = context.take(owner, 0, stack.count)? else {
+            return Err(Error::Invalid("drop pickup delay is active".into()));
+        };
+        if !context.give(actor, taken)? {
+            return Err(Error::Invalid("actor inventory full".into()));
+        }
+        Ok(())
+    }
+}
 struct TickMarker;
 impl Handler for TickMarker {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
@@ -93,7 +121,7 @@ impl Handler for UseStick {
         if action != "test:use_stick"
             || cell.is_some()
             || entity.is_some()
-            || !matches!(arguments.as_slice(), [] | [1])
+            || !matches!(arguments.as_slice(), [] | [1] | [2])
         {
             return Err(Error::Invalid("invalid item use target".into()));
         }
@@ -112,7 +140,11 @@ impl Handler for UseStick {
             return Err(Error::Invalid("use target obstructed".into()));
         }
         context.set_block(cell, "bloxgloom:sand")?;
-        context.spawn_stack(position.map(|n| n + 0.5), used, 250)?;
+        context.spawn_stack(
+            position.map(|n| n + 0.5),
+            used,
+            if arguments == &[2] { 0 } else { 250 },
+        )?;
         if arguments == &[1] {
             context.spawn_drop(
                 [position[0] + 100.0, position[1], position[2]],
@@ -170,6 +202,21 @@ impl Extension for UseExtension {
             event: EventKind::EntityTick,
             target: Some("test:marker".into()),
             handler: Arc::new(TickMarker),
+        })?;
+        registrar.action(Action {
+            key: "test:collect_drop".into(),
+            version: 1,
+            label: "COLLECT".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:collect_drop".into(),
+            version: 1,
+            event: EventKind::ActionRequested,
+            target: Some("test:collect_drop".into()),
+            handler: Arc::new(CollectDrop),
         })
     }
 }
@@ -724,6 +771,73 @@ fn semantic_use_neighbor_support_and_harvest_share_one_receipt() {
     let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
     assert_eq!(state.world.get_block(16, y, 0).unwrap(), AIR);
     assert_eq!(state.world.get_block(16, y + 1, 0).unwrap(), AIR);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn world_drop_is_exact_extraction_inventory_with_atomic_player_credit() {
+    let path = temp_save_dir("gameplay-drop-inventory");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(16, y, 0, AIR).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 2));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let send = |number: u128, key: &str, revision: u64, arguments: Vec<u8>| {
+        let request = Request {
+            key: key.into(),
+            version: 1,
+            slot: 0,
+            inventory_revision: revision,
+            entity: 0,
+            entity_revision: 0,
+            arguments,
+        };
+        ClientMessage::EntityInteract {
+            action_id: epoch | number,
+            target: [i32::MAX, y, 0],
+            payload: request.encode().unwrap(),
+        }
+    };
+    settle_live_action(&mut state, 11, send(1, "test:use_stick", 0, vec![2]));
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        1
+    );
+    let command = send(2, "test:collect_drop", 1, vec![]);
+    settle_live_action(&mut state, 12, command.clone());
+    settle_live_action(&mut state, 13, command);
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        2
+    );
+    let nearby = crate::server::drops::nearby(&state.entities, [15.0, y as f32, 1.0]);
+    assert!(nearby.iter().all(|item| item.item != STICK));
+    drop(peer);
+    drop(state);
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(
+        state.inventory_store.load(17).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        2
+    );
+    assert!(
+        crate::server::drops::nearby(&state.entities, [15.0, y as f32, 1.0])
+            .iter()
+            .all(|item| item.item != STICK)
+    );
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }

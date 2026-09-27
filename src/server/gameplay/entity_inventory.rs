@@ -15,6 +15,13 @@ pub(super) fn capture(
         .entities(store.capture_entity_dependency(id))
         .map_err(|_| Error::BudgetExceeded)?;
     let snapshot = store.snapshot(id).ok_or_else(unavailable)?;
+    if snapshot.entity_type == crate::server::drops::DROP_ENTITY_TYPE {
+        let stack = crate::server::drops::stack(store, id).ok_or_else(unavailable)?;
+        let mut slots = super::inventory::slots(catalog, &[Some(stack)])?;
+        slots[0].insert = false;
+        slots[0].extract = crate::server::drops::extractable(store, id);
+        return Ok(slots);
+    }
     let descriptor = store
         .types()
         .descriptor(snapshot.entity_type)
@@ -71,6 +78,39 @@ pub(super) fn prepare(
     after: Vec<Option<Stack>>,
 ) -> Result<Option<PreparedEntityTransaction>, Error> {
     let before = capture(catalog, reads, store, raw)?;
+    let id = EntityId::new(raw).ok_or(Error::InventoryUnavailable(InventoryId::Entity(raw)))?;
+    if store
+        .snapshot(id)
+        .is_some_and(|snapshot| snapshot.entity_type == crate::server::drops::DROP_ENTITY_TYPE)
+    {
+        if after.len() != 1 {
+            return Err(Error::Invalid("world drop has exactly one slot".into()));
+        }
+        let Some(original) = &before[0].stack else {
+            return Err(Error::Host("drop stack vanished".into()));
+        };
+        let remaining = match &after[0] {
+            Some(stack)
+                if stack.item == original.item
+                    && stack.components == original.components
+                    && stack.count <= original.count =>
+            {
+                stack.count
+            }
+            None => 0,
+            _ => {
+                return Err(Error::Invalid(
+                    "world drop cannot create or replace items".into(),
+                ));
+            }
+        };
+        let removed = original.count - remaining;
+        if removed == 0 {
+            return Ok(None);
+        }
+        return crate::server::drops::plan_take(store, &[(id, removed)])
+            .map_err(|error| Error::Invalid(error.to_string()));
+    }
     if before.len() != after.len() {
         return Err(Error::Invalid("entity inventory shape changed".into()));
     }

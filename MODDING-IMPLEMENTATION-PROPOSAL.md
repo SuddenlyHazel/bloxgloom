@@ -579,6 +579,17 @@ This section exists so compaction or a new session does not restart the design.
   still use the native registered worker policy and its durable bounded mailbox;
   the behavioral owner/scheduler is **not** yet a public authoring service. The
   burn-and-restart and two-anchored-footprint tests exercise the combined path.
+- **Phase 2 world-drop inventory increment:** existing world drops now expose a
+  single extract-only `InventoryId::Entity(drop_id)` slot through the same shared
+  exact-component `take`/`give`/`transfer` operations as storage and players.
+  Depletion plans the ordinary drop update/despawn in the same WAL receipt as the
+  player inventory credit; no new drop allocator or save format was added.
+  Pickup delay and lifetime still gate extraction on the server, and all entity
+  inventories read by a gameplay handler must be within eight cells of its
+  authoritative edit/event origins. A focused use action exercises a consumed
+  item becoming a drop then returning to inventory, duplicate receipts and
+  recovery. Built-in automatic pickup/merging/motion/expiry still use their
+  native planners; their policy and presentation migration remains open.
 - **Next concrete step:** expose general owner-local scheduled world reads/effects
   and reusable durable cross-owner intent, then move fire propagation/delivery
   decisions off the native-only policy. Migrate remaining drops, player rules,
