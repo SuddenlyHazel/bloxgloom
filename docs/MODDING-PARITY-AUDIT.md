@@ -4,6 +4,14 @@
 
 ### Integration follow-up
 
+Post-integration gameplay follow-ups are tracked in the root plan's **Current
+task: player-response path hardening** section. `ecb07ee` fixes reproduced entity
+reservation starvation; `36e177b` prioritizes direct edit meshes and separates
+mobile own-state use from movement-frame CAS (anchored/inventory fences remain
+strict). These verified local fixes do not certify end-to-end responsiveness.
+The user has approved a focused fairness/latency hardening pass with personal
+implementation/review and no subagents; it is currently in progress.
+
 The baseline findings below are retained as the audit record. The integrating
 branch has since addressed these items; final combined verification is tracked
 in the root plan:
