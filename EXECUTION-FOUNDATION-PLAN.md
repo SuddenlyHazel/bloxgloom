@@ -2,6 +2,11 @@
 
 ## Goal
 
+Next architecture proposal: [built-in/mod capability parity](docs/MODDING-SURFACE-PROPOSAL.md).
+It defines the complete host surface needed for future mod-created gameplay,
+including lifecycle, client interaction/presentation, and an external-boundary
+proof. It is a proposal; the implementation slices below retain their historical status.
+
 Finish the execution foundation before adding more infrastructure. The slices below are complete; the user chose a real gameplay feature as the first consumer instead of the originally proposed independent extension crate. Fire spread and its migration remain parked.
 
 The execution contract we are working toward:
