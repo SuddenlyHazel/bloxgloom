@@ -1,14 +1,18 @@
 //! Shared fixed-slot storage codecs, interactions, and automation ports.
+#[cfg(test)]
 pub(super) mod codec;
 pub(super) mod policy;
 #[cfg(test)]
 mod tests;
 use super::*;
-use crate::content::{BlockStateId, Catalog, EntityTypeId};
+use crate::content::Catalog;
+#[cfg(test)]
+use crate::content::{BlockStateId, EntityTypeId};
 use crate::inventory::{Inventory, STACK_LIMIT, Stack};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(in crate::server) struct StoragePayload<const N: usize> {
     pub slots: [Option<Stack>; N],
 }
@@ -16,11 +20,13 @@ pub(in crate::server) struct StoragePayload<const N: usize> {
 pub(in crate::server) trait Slots: Clone + Send + Sync + 'static {
     fn slots_mut(&mut self) -> &mut [Option<Stack>];
 }
+#[cfg(test)]
 impl<const N: usize> Slots for StoragePayload<N> {
     fn slots_mut(&mut self) -> &mut [Option<Stack>] {
         &mut self.slots
     }
 }
+#[cfg(test)]
 impl<const N: usize> Default for StoragePayload<N> {
     fn default() -> Self {
         Self {
@@ -29,6 +35,7 @@ impl<const N: usize> Default for StoragePayload<N> {
     }
 }
 
+#[cfg(test)]
 pub(super) fn register<const N: usize>(
     builder: &mut EntityTypeRegistryBuilder<'_>,
     catalog: &Arc<Catalog>,

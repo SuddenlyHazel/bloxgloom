@@ -28,9 +28,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = std::env::args().skip(1);
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v12-fixture"
+        "world-v13-fixture"
     } else {
-        "world-v12"
+        "world-v13"
     };
     match args.next().as_deref() {
         None => {

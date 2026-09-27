@@ -78,8 +78,23 @@ pub(in crate::server) fn kiln_footprint(anchor: CellCoord) -> Result<Vec<CellCoo
     Ok(footprint)
 }
 
-pub(in crate::server) fn kiln_payload(snapshot: &EntitySnapshot) -> Option<&KilnPayload> {
-    snapshot.private_payload.downcast_ref::<KilnPayload>()
+pub(in crate::server) fn kiln_payload(
+    snapshot: &EntitySnapshot,
+) -> Option<std::borrow::Cow<'_, KilnPayload>> {
+    if let Some(p) = snapshot.private_payload.downcast_ref::<KilnPayload>() {
+        return Some(std::borrow::Cow::Borrowed(p));
+    }
+    let p = snapshot
+        .private_payload
+        .downcast_ref::<super::machine::MachinePayload>()?;
+    Some(std::borrow::Cow::Owned(KilnPayload {
+        facing: KilnFacing::decode(p.variant).ok()?,
+        lit: p.fuel > 0,
+        fuel_remaining: p.fuel,
+        cook_progress: p.progress,
+        progress_item: p.progress_item,
+        slots: p.slots.clone().try_into().ok()?,
+    }))
 }
 
 /// Register the catalogued anchored kiln type using the shared frozen catalog.

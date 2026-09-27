@@ -13,8 +13,24 @@ pub(crate) struct Registration {
     pub definitions: Vec<StorageBlockEntity>,
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
     mobiles: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    machines: Vec<bloxgloom_host_api::machine::Machine>,
 }
 impl Registrar for Registration {
+    fn machine(
+        &mut self,
+        m: bloxgloom_host_api::machine::Machine,
+    ) -> Result<(), RegistrationError> {
+        m.validate()?;
+        if self
+            .machines
+            .iter()
+            .any(|old| old.entity == m.entity || old.block == m.block)
+        {
+            return Err(RegistrationError("duplicate machine".into()));
+        }
+        self.machines.push(m);
+        Ok(())
+    }
     fn mobile_entity(
         &mut self,
         entity: bloxgloom_host_api::entity::MobileEntity,
@@ -77,8 +93,15 @@ impl Registration {
         for definition in &registration.definitions {
             candidate.extension_storage(definition)?;
         }
+        for machine in &registration.machines {
+            candidate.register_machine_identity(machine)?;
+        }
         for screen in &registration.screens {
             candidate.register_inventory_screen(screen.clone())?;
+        }
+        for machine in &registration.machines {
+            let id = candidate.entity_type_id_by_key(&machine.entity).unwrap();
+            candidate.bind_machine(id, Arc::new(machine.clone()))?;
         }
         Registry::resolve(&candidate, &registration.definitions)?;
         candidate

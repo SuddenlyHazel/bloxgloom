@@ -73,11 +73,19 @@ pub(super) fn take(slot: &mut Option<Stack>, count: u16) -> Option<Stack> {
 /// batch the receiver's trusted plan assembles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntityItemTransfer {
+    pub route: Option<PortRoute>,
     pub source: EntityId,
     /// When true, `source` names the destination and the ticking entity sends.
     pub push: bool,
     pub item: ItemId,
     pub count: u16,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PortRoute {
+    pub source: u8,
+    pub destination: u8,
+    pub from: [i32; 3],
+    pub to: [i32; 3],
 }
 
 impl EntityItemTransfer {
@@ -98,6 +106,16 @@ impl EntityItemTransfer {
 /// Pure per-type item exchange used only through the trusted transfer plan.
 /// Implementations must be deterministic functions of their inputs.
 pub trait EntityTransferPolicy: Send + Sync + 'static {
+    fn ports(&self) -> Vec<String> {
+        vec![]
+    }
+    fn port(
+        &self,
+        _index: u8,
+        _face: [i32; 3],
+    ) -> Option<std::sync::Arc<dyn EntityTransferPolicy>> {
+        None
+    }
     /// Automation discovery uses only the registered public projection.
     fn offers(&self, _public: &[u8]) -> Vec<Stack> {
         Vec::new()

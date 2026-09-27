@@ -3,72 +3,17 @@
 
 use super::entity::corrupt;
 use super::{BlockEditCommand, prepared_deltas, push_harvest_spawns};
-use crate::content::{
-    HOPPER_ENTITY_TYPE, HOPPER_ITEM, HOPPER_STATE, KILN_ITEM, PLANT, REPLACEABLE, SOLID,
-};
+use crate::content::{PLANT, REPLACEABLE, SOLID};
 use crate::inventory::{HOTBAR_SLOTS, InventoryStore, Stack};
 use crate::server::block_actions::{BlockActionContext, BlockCommitBuilder};
 use crate::server::durable::{BlockDelta, CommitAction};
 use crate::server::effects::CellCoord as EffectCell;
-use crate::server::entities::hopper::HopperPayload;
-use crate::server::entities::{
-    CellCoord, KilnFacing, KilnPayload, kiln_block_states, kiln_footprint, kiln_payload,
-    plan_break as plan_kiln_break,
-};
+use crate::server::entities::CellCoord;
 use crate::server::simulation::TickId;
 use crate::server::{AIR, block_intersects_player};
 use crate::world::BlockId;
 use std::io::{self, ErrorKind};
 use std::time::Duration;
-
-pub(in crate::server) fn plan_place(
-    context: &BlockActionContext,
-    builder: &mut BlockCommitBuilder,
-    tick: TickId,
-    command: BlockEditCommand,
-    previous: BlockId,
-) -> io::Result<CommitAction> {
-    let catalog = context.catalog();
-    let hopper = command.block == HOPPER_STATE;
-    let item = if hopper { HOPPER_ITEM } else { KILN_ITEM };
-    let facing = if hopper {
-        KilnFacing::North
-    } else {
-        KilnFacing::from_place_state(&catalog, command.block)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
-    };
-    let anchor = CellCoord::new(command.x, command.y, command.z);
-    let footprint = if hopper {
-        vec![anchor]
-    } else {
-        kiln_footprint(anchor).map_err(io::Error::other)?
-    };
-    let payload = KilnPayload::new(facing);
-    let states = if hopper {
-        [HOPPER_STATE; 2]
-    } else {
-        kiln_block_states(&catalog, &payload).map_err(io::Error::other)?
-    };
-    let spawn = if hopper {
-        HopperPayload::default().spawn(anchor, tick.get())
-    } else {
-        payload
-            .spawn(anchor, tick.get(), &catalog)
-            .map_err(io::Error::other)?
-    };
-    let cells = footprint
-        .into_iter()
-        .map(|cell| (cell, if cell == anchor { states[0] } else { states[1] }))
-        .collect();
-    place(
-        context,
-        builder,
-        tick,
-        command,
-        previous,
-        Placement { item, cells, spawn },
-    )
-}
 
 pub(super) struct Placement {
     pub item: crate::items::ItemId,
@@ -214,66 +159,6 @@ pub(super) fn place(
         entity_wakes: Vec::new(),
         entities: Some(entities),
     })
-}
-
-pub(in crate::server) fn plan_break(
-    context: &BlockActionContext,
-    builder: &mut BlockCommitBuilder,
-    tick: TickId,
-    command: BlockEditCommand,
-    _previous: BlockId,
-) -> io::Result<CommitAction> {
-    let catalog = context.catalog();
-    let broken = CellCoord::new(command.x, command.y, command.z);
-    let id = context
-        .entities()
-        .anchored_at(broken)
-        .ok_or_else(|| corrupt("workstation block has no anchored entity"))?;
-    let snapshot = context
-        .entities()
-        .snapshot(id)
-        .ok_or_else(|| corrupt("workstation footprint references a missing entity"))?;
-    if snapshot.entity_type != crate::content::KILN_ENTITY_TYPE
-        && snapshot.entity_type != HOPPER_ENTITY_TYPE
-    {
-        return Err(corrupt(
-            "workstation footprint references a different entity type",
-        ));
-    }
-    let anchor = snapshot
-        .anchor()
-        .ok_or_else(|| corrupt("workstation entity is not anchored"))?;
-    let (removed_cells, drops, states) = if snapshot.entity_type == HOPPER_ENTITY_TYPE {
-        let payload = snapshot
-            .private_payload
-            .downcast_ref::<HopperPayload>()
-            .ok_or_else(|| corrupt("invalid hopper payload"))?;
-        let mut drops = vec![Stack::new(HOPPER_ITEM, 1)];
-        drops.extend(payload.slots.iter().flatten().cloned());
-        (vec![anchor], drops, [HOPPER_STATE; 2])
-    } else {
-        let payload =
-            kiln_payload(&snapshot).ok_or_else(|| corrupt("kiln entity payload type mismatch"))?;
-        let planned = plan_kiln_break(anchor, broken, payload, &catalog)
-            .map_err(|error| io::Error::new(ErrorKind::InvalidData, error))?;
-        let states = kiln_block_states(&catalog, payload).map_err(io::Error::other)?;
-        (planned.removed_cells, planned.drops, states)
-    };
-    let cells = removed_cells
-        .into_iter()
-        .map(|cell| (cell, if cell == anchor { states[0] } else { states[1] }))
-        .collect();
-    remove(
-        context,
-        builder,
-        tick,
-        command,
-        Removal {
-            snapshot,
-            cells,
-            drops,
-        },
-    )
 }
 
 pub(super) struct Removal {

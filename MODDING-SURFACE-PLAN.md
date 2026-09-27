@@ -5,6 +5,17 @@ slices below; the remaining internal interfaces are not yet a supported mod API.
 
 ## Implementation status
 
+- **Registered machine slice implemented:** public scheduled behavior, bounded
+  private bytes, registered footprints, item filters, recipes/fuels, named/sided
+  automation ports, and host-owned inventory/process projections. Production Kiln
+  and Hopper use the generic adapter; their older implementations are test-only
+  regression references. The independent Crusher fixture exercises manual input,
+  automated feed/extraction, processing, restart, and refunds over the real listener.
+  Current default save: **`world-v13`**. See [registered machines](docs/REGISTERED-MACHINES.md)
+  for supported contracts and remaining general anchored-lifecycle gaps.
+  **659 workspace/all-feature tests passed**, with clean formatting and strict Clippy;
+  the release shared-inventory preview was inspected.
+
 - **Dynamic entity slice implemented:** public private-state codecs, bounded
   projections, immutable behavior/sensing contexts, host locomotion/navigation,
   scheduling, atomic spawn/self-removal effects, targeting, cuboid models, and
@@ -12,7 +23,7 @@ slices below; the remaining internal interfaces are not yet a supported mod API.
   compiled Copperling fixture spawns, patrols, pauses on interaction, and recovers
   through the real listener/client paths. **655 tests passed**, strict Clippy and
   formatting passed, and release previews were inspected. Current default save:
-  **`world-v12`**. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
+   at that slice was **`world-v12`**. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
 
 - **Registered inventory slice implemented:** shared inventory-view schema,
   descriptor-based opening/layout/slot access/status widgets, independent bounded
@@ -26,9 +37,9 @@ slices below; the remaining internal interfaces are not yet a supported mod API.
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
   **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
-- Passive storage, generic inventory screens, and mobile creature behavior are
-  now exposed. Arbitrary block/anchored lifecycle callbacks, named/sided ports,
-  recipe/process registration, and custom UI composition remain open. The broader
+- Passive storage, generic inventory screens, mobile creature behavior, and
+  inventory machines are now exposed. Arbitrary block/anchored lifecycle callbacks
+  and custom UI composition remain open. The broader
   parity inventory and the remaining slices below are not marked complete.
 
 ## Goal and completion rule
@@ -73,10 +84,11 @@ Those pieces are not yet a complete external contract. For example:
 
 - `server/block_actions.rs` has hook registration, but its context and results
   expose internal server/client/store/commit types.
-- `server/durable/actions/workstation.rs` still selects built-in payloads and
-  lifecycle behavior by type.
+- `server/durable/actions/workstation.rs` now assembles shared placement/removal
+  transactions; machine registrations supply payloads, cells, and refunds.
 - Inventory views and storage encoding are now generic and independent of the
-  player backpack. Machine recipe/filter behavior still needs public registration.
+  player backpack. Machine recipes, filters, and automation are now registered;
+  arbitrary component-aware process predicates remain a future capability.
 - Mobile entity targeting, cuboid models, and the existing procedural creature
   animation capabilities are now registered. Broader asset/material definitions,
   player presentation parity, and arbitrary custom UI remain open surfaces.

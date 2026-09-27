@@ -1,7 +1,9 @@
 # Registered inventory views and screens
 
-Current follow-up: [dynamic entities](DYNAMIC-ENTITIES.md) adds Copperling to the
-fixture package and advances default saves to `world-v12` / `world-v12-fixture`.
+Current follow-up: [registered machines](REGISTERED-MACHINES.md) adds Crusher,
+public recipe/filter/port registration, and the generic Kiln/Hopper adapter.
+Default saves are now `world-v13` / `world-v13-fixture`; the implementation notes
+below describe the inventory slice before that machine migration.
 Version-11 references below describe this inventory slice's original format change.
 
 This slice completes the first end-to-end extension container: registration,
@@ -90,7 +92,7 @@ cargo run --release --features lifecycle-fixture
 ```
 
 This installs the same fixture package into both peers and uses the separate
-default `world-v12-fixture/`. In F4 enter `give fixture:tall_store 1`, place it,
+default `world-v13-fixture/`. In F4 enter `give fixture:tall_store 1`, place it,
 and right-click either block. Select a source and destination to transfer; right
 click the destination for one item, or left click for as much as fits. E/Escape
 closes the screen. Restart to reopen the stored contents.
@@ -128,5 +130,5 @@ One `perf 300 6` check versus the last recorded Chest baseline: scene setup
 88,026. These single terrain runs exclude open inventory screens and live
 automation; they are not evidence of an inventory performance improvement.
 
-General entity behavior callbacks, named/sided automation ports, and arbitrary
-custom UI composition remain later surfaces in the root modding plan.
+Mobile behavior callbacks and named/sided machine automation have since shipped
+in the linked follow-ups. Arbitrary custom UI composition remains open.

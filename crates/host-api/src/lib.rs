@@ -5,6 +5,7 @@ use std::fmt;
 pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
+pub mod machine;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
 pub use lifecycle::{FootprintCell, StorageBlockEntity};
 
@@ -29,6 +30,11 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn machine(&mut self, _machine: machine::Machine) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "machines unsupported by this registrar".into(),
+        ))
+    }
     fn mobile_entity(&mut self, _entity: entity::MobileEntity) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "mobile entities unsupported by this registrar".into(),

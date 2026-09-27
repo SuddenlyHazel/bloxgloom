@@ -7,9 +7,12 @@ mod checkpoint;
 pub(in crate::server) mod chest;
 mod codec;
 pub(in crate::server) mod container;
+#[cfg(test)]
 pub(in crate::server) mod hopper;
+#[cfg(test)]
 mod kiln;
 mod locomotion;
+pub(in crate::server) mod machine;
 pub(in crate::server) mod mobile;
 mod mobile_pages;
 #[cfg(test)]
@@ -30,8 +33,9 @@ pub(super) mod wake;
 mod tests;
 
 pub(super) use checkpoint::EntityCheckpointStore;
+#[cfg(test)]
 pub(super) use kiln::{
-    KilnFacing, KilnPayload, kiln_block_states, kiln_footprint, kiln_payload, plan_break,
+    KilnFacing, KilnPayload, kiln_block_states, kiln_footprint, kiln_payload,
     register_entity_type as register_kiln_entity_type,
 };
 #[cfg(test)]

@@ -13,6 +13,7 @@ pub(in crate::server::entities) struct Port<P> {
     payload: std::marker::PhantomData<P>,
 }
 impl<P> Port<P> {
+    #[cfg(test)]
     pub fn new() -> Self {
         Self {
             screen: None,
@@ -33,6 +34,17 @@ impl<P> Port<P> {
     }
 }
 impl<P: Slots> EntityTransferPolicy for Port<P> {
+    fn ports(&self) -> Vec<String> {
+        vec!["storage".into()]
+    }
+    fn port(&self, index: u8, face: [i32; 3]) -> Option<Arc<dyn EntityTransferPolicy>> {
+        (index == 0 && bloxgloom_host_api::machine::FACES.contains(&face)).then(|| {
+            Arc::new(Self {
+                screen: self.screen.clone(),
+                payload: std::marker::PhantomData,
+            }) as Arc<dyn EntityTransferPolicy>
+        })
+    }
     fn offers(&self, public: &[u8]) -> Vec<Stack> {
         public_slots(public).map_or_else(Vec::new, |slots| {
             slots

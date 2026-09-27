@@ -39,6 +39,7 @@ impl EntityTickPolicy for Planner {
                 one.count = 1;
                 if neighbours.accepts(destination, &one, catalog) {
                     transfer = Some(EntityItemTransfer {
+                        route: None,
                         source: destination.id,
                         push: true,
                         item: one.item,
@@ -57,6 +58,7 @@ impl EntityTickPolicy for Planner {
                         .is_some()
                     {
                         transfer = Some(EntityItemTransfer {
+                            route: None,
                             source: source.id,
                             push: false,
                             item: stack.item,

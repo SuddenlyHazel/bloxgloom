@@ -11,6 +11,7 @@ use crate::world::BlockId;
 
 mod admin;
 pub(in crate::server) mod entity;
+pub(in crate::server) mod machine;
 mod mobile_lifecycle;
 pub(in crate::server) mod storage_lifecycle;
 #[cfg(test)]

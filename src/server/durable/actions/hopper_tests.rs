@@ -1,7 +1,7 @@
 use super::*;
 use crate::content::{HOPPER_ITEM, HOPPER_STATE, KILN_DEFAULT_STATE, KILN_ITEM};
 use crate::inventory::Stack;
-use crate::server::entities::hopper::HopperPayload;
+use crate::server::entities::machine::MachinePayload as HopperPayload;
 
 fn pulse(state: &mut State, tick: &mut u64, count: u64) {
     for _ in 0..count {
@@ -194,7 +194,17 @@ fn hopper_push_is_atomic_conflict_checked_and_resumes_after_full_destination() {
         state.world.edit(0, y, 0, HOPPER_STATE).unwrap();
         let transaction = state
             .entities
-            .prepare_spawn(HopperPayload { slots }.spawn(CellCoord::new(0, y, 0), 0))
+            .prepare_spawn(crate::server::entities::EntitySpawn::Anchored {
+                entity_type: crate::content::HOPPER_ENTITY_TYPE,
+                anchor: CellCoord::new(0, y, 0),
+                anchor_state: HOPPER_STATE,
+                footprint: vec![CellCoord::new(0, y, 0)],
+                payload: EntityPayload::new(HopperPayload {
+                    slots: slots.to_vec(),
+                    ..HopperPayload::empty(3, 0)
+                }),
+                spawn_tick: 0,
+            })
             .unwrap();
         ids.push(transaction.entity_id());
         state.entities.apply_committed(transaction).unwrap();

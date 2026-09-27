@@ -807,6 +807,33 @@ fn plan_transfer_batch(
             "transfer source type cannot exchange items",
         )
     })?;
+    let (source_exchange, receiver_exchange) = if let Some(route) = transfer.route {
+        let from = CellCoord::new(route.from[0], route.from[1], route.from[2]);
+        let to = CellCoord::new(route.to[0], route.to[1], route.to[2]);
+        let face = std::array::from_fn(|i| route.to[i].saturating_sub(route.from[i]));
+        let touches = |s: &EntitySnapshot, c| matches!(&s.location,EntityLocation::Anchored {footprint,..} if footprint.contains(&c));
+        if !bloxgloom_host_api::machine::FACES.contains(&face)
+            || !touches(source_snapshot, from)
+            || !touches(snapshot, to)
+        {
+            return Err(permission("invalid automation face"));
+        }
+        (
+            source_exchange
+                .port(route.source, face)
+                .ok_or_else(|| permission("source port unavailable"))?,
+            receiver_exchange
+                .port(route.destination, face.map(|v| -v))
+                .ok_or_else(|| permission("destination port unavailable"))?,
+        )
+    } else {
+        if catalog.machine(source_snapshot.entity_type).is_some()
+            || catalog.machine(snapshot.entity_type).is_some()
+        {
+            return Err(permission("machine transfer requires explicit ports"));
+        }
+        (source_exchange.clone(), receiver_exchange.clone())
+    };
     let (sender_after, taken) = source_exchange
         .withdraw(source_base, transfer.item, transfer.count, catalog)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?

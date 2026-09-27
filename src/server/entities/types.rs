@@ -251,12 +251,27 @@ impl EntityView {
         }
     }
 
+    #[cfg(test)]
     pub fn offers(&self, entity: &EntityPublicView) -> Vec<crate::inventory::Stack> {
         self.inventories
             .get(&entity.id)
             .map_or_else(Vec::new, |p| p.offers(&entity.payload))
     }
+    pub fn ports(&self, id: EntityId) -> Vec<String> {
+        self.inventories
+            .get(&id)
+            .map_or_else(Vec::new, |p| p.ports())
+    }
+    pub fn port(
+        &self,
+        id: EntityId,
+        index: u8,
+        face: [i32; 3],
+    ) -> Option<std::sync::Arc<dyn super::transfer::EntityTransferPolicy>> {
+        self.inventories.get(&id)?.port(index, face)
+    }
 
+    #[cfg(test)]
     pub fn accepts(
         &self,
         entity: &EntityPublicView,

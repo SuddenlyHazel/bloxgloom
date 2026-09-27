@@ -1,5 +1,9 @@
 # Public dynamic-entity surface
 
+The later [machine slice](REGISTERED-MACHINES.md) advances current default saves
+to `world-v13` / `world-v13-fixture`. Version-12 references below describe this
+creature slice's original format change.
+
 The public `bloxgloom-host-api::entity` module exposes the current ground-creature
 capabilities. Mossbun consumes the same declarations, behavior hooks, movement
 services, and presentation contract as the independent Copperling fixture.

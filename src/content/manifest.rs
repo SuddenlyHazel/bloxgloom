@@ -283,6 +283,14 @@ impl ContentManifest {
                 .register_inventory_screen((**screen).clone())
                 .map_err(|_| invalid("invalid mapped inventory screen"))?;
         }
+        for (_, machine) in local.machines() {
+            let id = resolved
+                .entity_type_id_by_key(&machine.entity)
+                .ok_or_else(|| invalid("missing machine identity"))?;
+            resolved
+                .bind_machine(id, machine.clone())
+                .map_err(|_| invalid("invalid machine binding"))?;
+        }
         if Self::from_catalog(&resolved) != *self {
             return Err(invalid("mapped catalog does not match content manifest"));
         }

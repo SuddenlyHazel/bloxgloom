@@ -3,6 +3,7 @@ use crate::inventory::STACK_LIMIT;
 
 fn transfer_to(id: u64) -> EntityItemTransfer {
     EntityItemTransfer {
+        route: None,
         source: EntityId::new(id).unwrap(),
         push: false,
         item: crate::items::ItemId(7),
@@ -23,6 +24,7 @@ fn transfer_intent_rejects_self_pull_and_bad_counts() {
     let receiver = EntityId::new(2).unwrap();
     assert_eq!(
         EntityItemTransfer {
+            route: None,
             source: receiver,
             push: false,
             item: crate::items::ItemId(7),
@@ -34,6 +36,7 @@ fn transfer_intent_rejects_self_pull_and_bad_counts() {
     for count in [0, STACK_LIMIT + 1, u16::MAX] {
         assert_eq!(
             EntityItemTransfer {
+                route: None,
                 source: EntityId::new(1).unwrap(),
                 push: false,
                 item: crate::items::ItemId(7),

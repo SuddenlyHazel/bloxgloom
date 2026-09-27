@@ -92,15 +92,15 @@ impl ServerStartup {
         super::lifecycle::Registry,
     )> {
         use super::block_actions::{BlockActionHooks, BlockActionRegistryBuilder};
-        use super::durable::actions::{storage_lifecycle, workstation};
+        use super::durable::actions::{machine, storage_lifecycle};
         let mut actions = BlockActionRegistryBuilder::new(catalog);
-        for block in [
-            crate::content::KILN_BLOCK_TYPE,
-            crate::content::HOPPER_BLOCK_TYPE,
-        ] {
+        for (_, m) in catalog.machines() {
+            let block = catalog
+                .block_by_key(&m.block)
+                .ok_or_else(|| io::Error::other("machine block missing"))?;
             actions.register(
                 block,
-                BlockActionHooks::new(workstation::plan_place, workstation::plan_break),
+                BlockActionHooks::new(machine::place, machine::remove),
             )?;
         }
         let lifecycles = self.lifecycles(catalog)?;
@@ -238,13 +238,14 @@ impl ServerStartup {
         for (id, _) in catalog.mobile_entities() {
             super::entities::mobile::register(&mut types, &catalog, id).map_err(entity_error)?;
         }
-        super::entities::hopper::register(&mut types, &catalog).map_err(io::Error::other)?;
+        for (id, _) in catalog.machines() {
+            super::entities::machine::register(&mut types, catalog.clone(), id)
+                .map_err(entity_error)?;
+        }
         for definition in self.lifecycles(&catalog)?.entries.values() {
             super::entities::container::register(&mut types, &catalog, definition)
                 .map_err(io::Error::other)?;
         }
-        super::entities::register_kiln_entity_type(&mut types, Arc::clone(&catalog))
-            .map_err(entity_error)?;
         for registration in &self.entity_types {
             let id = catalog
                 .entity_type_id_by_key(&registration.key)

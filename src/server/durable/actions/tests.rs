@@ -5,6 +5,8 @@ mod chest_tests;
 mod extension_tests;
 #[path = "hopper_tests.rs"]
 mod hopper_tests;
+#[path = "machine_tests.rs"]
+mod machine_tests;
 #[path = "mobile_tests.rs"]
 mod mobile_tests;
 #[path = "mossbun_tests.rs"]
@@ -449,7 +451,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         ))
     );
     assert!(payload.is_lit());
-    let lit_states = kiln_block_states(state.world.catalog(), payload).unwrap();
+    let lit_states = kiln_block_states(state.world.catalog(), &payload).unwrap();
     assert_eq!(
         state.world.cached_block(anchor.x, anchor.y, anchor.z),
         Some(lit_states[0])
@@ -480,7 +482,8 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
             1
         ))
     );
-    let recovered_states = kiln_block_states(recovered.world.catalog(), recovered_payload).unwrap();
+    let recovered_states =
+        kiln_block_states(recovered.world.catalog(), &recovered_payload).unwrap();
     assert_eq!(
         recovered.world.cached_block(anchor.x, anchor.y, anchor.z),
         Some(recovered_states[0])
@@ -3210,6 +3213,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
                 block_states: Vec::new(),
                 wakes: Vec::new(),
                 transfer: Some(EntityItemTransfer {
+                    route: None,
                     push: false,
                     source,
                     item: self.item,
@@ -3234,6 +3238,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
             .unwrap_or(0);
         let transfer =
             (own.count < self.target && source_count >= self.count).then(|| EntityItemTransfer {
+                route: None,
                 push: false,
                 source: peer.expect("source has stock, so a peer is visible").id,
                 item: self.item,

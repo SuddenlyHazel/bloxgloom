@@ -12,19 +12,6 @@ use std::sync::Arc;
 
 pub(in crate::server) type HopperPayload = super::storage::StoragePayload<3>;
 
-impl HopperPayload {
-    pub fn spawn(&self, anchor: CellCoord, tick: u64) -> EntitySpawn {
-        EntitySpawn::Anchored {
-            entity_type: HOPPER_ENTITY_TYPE,
-            anchor,
-            anchor_state: HOPPER_STATE,
-            footprint: vec![anchor],
-            payload: EntityPayload::new(self.clone()),
-            spawn_tick: tick,
-        }
-    }
-}
-
 pub(in crate::server) fn register(
     builder: &mut EntityTypeRegistryBuilder<'_>,
     catalog: &Arc<Catalog>,

@@ -12,6 +12,7 @@ pub(crate) mod creatures;
 mod extensions;
 mod ids;
 mod inventories;
+pub(crate) mod machines;
 mod manifest;
 mod mobile;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
@@ -33,8 +34,8 @@ pub const KILN_ITEM: ItemId = ItemId(256);
 #[cfg(test)]
 pub const KILN_STATE_COUNT: u32 = 16;
 pub const KILN_ENTITY_TYPE: EntityTypeId = EntityTypeId(3);
-pub const KILN_SCHEMA_VERSION: u16 = 3;
-pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0003;
+pub const KILN_SCHEMA_VERSION: u16 = 4;
+pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0004;
 pub const MOSSBUN_ENTITY_TYPE: EntityTypeId = EntityTypeId(4);
 pub const MOSSBUN_SCHEMA_VERSION: u16 = 2;
 pub const MOSSBUN_SCHEMA_FINGERPRINT: u64 = 0x4d4f_5353_4255_0002;
@@ -196,6 +197,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
     inventory_screens: Vec<Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>>,
@@ -222,6 +224,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            machines: Vec::new(),
             mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
             inventory_screens: Vec::new(),
@@ -732,6 +735,9 @@ impl Catalog {
                 add(entity.key.as_bytes());
                 add(&entity.schema_version.to_le_bytes());
                 add(&entity.schema_fingerprint.to_le_bytes());
+                if let Some(machine) = self.machine(entity.id) {
+                    add(&machine.fingerprint_bytes());
+                }
                 if let Some(mobile) = self.mobile_entity(entity.id) {
                     add(&mobile.fingerprint_bytes());
                 }
