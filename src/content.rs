@@ -22,6 +22,7 @@ mod inventories;
 pub(crate) mod machines;
 mod manifest;
 mod mobile;
+mod observers;
 mod owner_systems;
 mod public;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
@@ -217,6 +218,10 @@ pub struct Catalog {
         u32,
         std::sync::Arc<bloxgloom_host_api::gameplay::HandlerRegistration>,
     >,
+    gameplay_observers: std::collections::BTreeMap<
+        u32,
+        std::sync::Arc<bloxgloom_host_api::gameplay::ObserverRegistration>,
+    >,
     item_icons: HashMap<String, std::sync::Arc<bloxgloom_host_api::icon::ItemIcon>>,
     owner_systems:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
@@ -258,6 +263,7 @@ impl Catalog {
         Self {
             gameplay_entities: Default::default(),
             gameplay_handlers: Default::default(),
+            gameplay_observers: Default::default(),
             gameplay_dispatch: Default::default(),
             item_icons: HashMap::new(),
             owner_systems: Default::default(),
@@ -705,6 +711,14 @@ impl Catalog {
                 self.definition_fingerprint(b'G', *id),
             ));
         }
+        for (id, observer) in &self.gameplay_observers {
+            entries.push((
+                b'O',
+                *id,
+                observer.key.as_str(),
+                self.definition_fingerprint(b'O', *id),
+            ));
+        }
         for (id, system) in &self.owner_systems {
             entries.push((
                 b'Y',
@@ -762,6 +776,7 @@ impl Catalog {
         let mut add = |bytes: &[u8]| hash_bytes(&mut hash, bytes);
         match kind {
             b'G' => add(&self.gameplay_handlers[&id].fingerprint_bytes()),
+            b'O' => add(&self.gameplay_observers[&id].version.to_le_bytes()),
             b'Y' => add(&self.owner_systems[&id].fingerprint_bytes()),
             b'B' => {
                 let block = self.block_type(BlockTypeId(id)).unwrap();

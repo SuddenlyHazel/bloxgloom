@@ -27,6 +27,10 @@ does not yet expose arbitrary author-defined action argument schemas.
 General entity due handlers now run on the persisted entity clock, with owned
 state/next due time and shared world/drop effects in one durable transaction.
 This does not yet replace general owner-local world systems or built-in fire.
+Read-only committed observers now see public projections off the coordinator.
+Their advisory delivery is bounded, lossy and not replayed; authoritative
+follow-up must use durable decisions/scheduling. Fire and owner-wave commits
+are not yet projected through this observation lane.
 
 ### Integration follow-up
 

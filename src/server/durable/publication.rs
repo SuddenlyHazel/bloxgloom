@@ -193,6 +193,13 @@ pub(super) fn apply_committed_action(
             ));
         }
     }
+    state.notifications.enqueue(
+        state.world.catalog(),
+        &action.deltas,
+        entity_commit.as_ref(),
+        action.profile,
+        action.inventory.as_ref(),
+    );
     state.durability.publish_queue.push(PublishEffects {
         client_id: action.client_id,
         profile: action.profile,

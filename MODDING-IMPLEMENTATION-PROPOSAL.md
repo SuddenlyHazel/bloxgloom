@@ -428,9 +428,10 @@ This section exists so compaction or a new session does not restart the design.
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
 - **Active phase:** 2 — removal, placement, registered semantic use and general
-  entity due callbacks share one transaction overlay. Committed notifications,
-  support/world/drop/player behavior and fire migration remain. No Luau, client
-  packages or authored UI is implemented yet.
+  entity due callbacks share one transaction overlay. Advisory committed
+  observers are available. Durable notifications, support/world/drop/player
+  behavior and fire migration remain. No Luau, client packages or authored UI
+  is implemented yet.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -541,9 +542,22 @@ This section exists so compaction or a new session does not restart the design.
   on the server coordinator for now rather than the existing immutable entity
   worker jobs; a worker-owned Lua VM and bounded callback execution are still
   required before downloaded scripts can run safely. This is not a general
-  cross-owner durable scheduler or after-commit notification facility yet.
-- **Next concrete step:** add after-commit notifications and general owner-local
-  scheduled world work, then migrate support/world/drop behavior and fire.
+  cross-owner durable scheduler; post-commit advisory observation is separate.
+- **Phase 2 advisory-observer increment:** startup-frozen, versioned observer
+  declarations receive public committed block/entity projections and an optional
+  player inventory revision, only after WAL receipt and application. A bounded
+  32-event/256-KiB delivery lane runs callbacks off the server coordinator;
+  overflow, oversized groups and observer panics cannot reject or stall an
+  authoritative commit. Delivery is advisory: it may be dropped under pressure,
+  and recovery deliberately does not replay it. It is not a replacement for
+  durable scheduled intent or the client's authoritative replication stream.
+  The focused test checks one combined item-use commit, no duplicate callback
+  for a duplicate receipt, no callback on restart and a manifest mismatch for
+  an observer's version. Native callbacks must remain bounded; Luau delivery
+  and panic/time limits remain later runtime work.
+- **Next concrete step:** add general owner-local scheduled world work, then
+  migrate support/world/drop behavior and built-in fire, preserving durable
+  intent rather than treating advisory observations as guaranteed delivery.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

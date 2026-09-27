@@ -5,6 +5,23 @@ use std::sync::Arc;
 
 struct HarvestExtension;
 struct UseExtension;
+struct ObservingExtension(std::sync::mpsc::Sender<Committed>);
+struct UseObserver(std::sync::mpsc::Sender<Committed>);
+impl Observer for UseObserver {
+    fn on_commit(&self, event: &Committed) {
+        let _ = self.0.send(event.clone());
+    }
+}
+impl Extension for ObservingExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        UseExtension.register(registrar)?;
+        registrar.gameplay_observer(ObserverRegistration {
+            key: "test:observe".into(),
+            version: 1,
+            observer: Arc::new(UseObserver(self.0.clone())),
+        })
+    }
+}
 struct UseStick;
 struct TickMarker;
 impl Handler for TickMarker {
@@ -579,6 +596,77 @@ fn scheduled_general_entity_commits_world_state_and_next_due_atomically() {
             .map(|drop| drop.count)
             .sum::<u16>(),
         1
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn committed_observers_see_public_results_only_after_receipt_without_replay() {
+    let path = temp_save_dir("gameplay-committed-observer");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&ObservingExtension(sender.clone()))
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    let mut manifest = crate::content::ContentManifest::from_catalog(state.world.catalog());
+    manifest
+        .entries
+        .iter_mut()
+        .find(|entry| entry.kind == b'O' && entry.key == "test:observe")
+        .unwrap()
+        .schema_fingerprint ^= 1;
+    assert!(manifest.resolve_catalog(state.world.catalog()).is_err());
+    state.world.edit(16, y, 0, AIR).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 1));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let request = Request {
+        key: "test:use_stick".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    let command = ClientMessage::EntityInteract {
+        action_id: epoch | 1,
+        target: [i32::MAX, y, 0],
+        payload: request.encode().unwrap(),
+    };
+    assert!(receiver.try_recv().is_err());
+    settle_live_action(&mut state, 11, command.clone());
+    let observed = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(observed.inventory, Some((17, 1)));
+    assert!(
+        observed
+            .blocks
+            .iter()
+            .any(|block| block.cell == [16, y, 0] && block.state == "bloxgloom:sand")
+    );
+    assert!(observed.entities.iter().any(|change| matches!(change, CommittedEntity::Spawned(entity) if entity.entity_type == "test:marker" && entity.data == [1])));
+    assert!(observed.entities.iter().any(|change| matches!(change, CommittedEntity::Spawned(entity) if entity.entity_type == "bloxgloom:drop")));
+    settle_live_action(&mut state, 12, command);
+    assert!(
+        receiver.try_recv().is_err(),
+        "duplicate receipt must not redeliver a commit"
+    );
+    drop(peer);
+    drop(state);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&ObservingExtension(sender))
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(state.world.get_block(16, y, 0).unwrap(), crate::world::SAND);
+    assert!(
+        receiver.try_recv().is_err(),
+        "advisory notifications are not replayed on restart"
     );
     drop(state);
     fs::remove_dir_all(path).unwrap();

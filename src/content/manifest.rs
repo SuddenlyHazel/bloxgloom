@@ -217,6 +217,16 @@ impl ContentManifest {
         }
 
         let mut resolved = Catalog::new();
+        for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
+            let observer = local
+                .gameplay_observers
+                .values()
+                .find(|o| o.key == entry.key)
+                .ok_or_else(|| invalid("missing gameplay observer"))?;
+            resolved
+                .gameplay_observers
+                .insert(entry.id, observer.clone());
+        }
         resolved.gameplay_dispatch = local.gameplay_dispatch.clone();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'G') {
             let handler = local
@@ -354,7 +364,7 @@ impl ContentManifest {
         for entry in &self.entries {
             if !matches!(
                 entry.kind,
-                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G'
+                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G' | b'O'
             ) || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }

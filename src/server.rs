@@ -21,6 +21,7 @@ mod loot;
 mod metrics;
 mod movement;
 mod net;
+mod notifications;
 mod outbound;
 mod parallel;
 mod perf;
@@ -145,6 +146,7 @@ impl Client {
 }
 
 struct State {
+    notifications: notifications::Lane,
     admission_limit: usize,
     world: World,
     inventory_store: InventoryStore,
@@ -471,6 +473,7 @@ fn server_state_with_startup(
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let position_store = PositionStore::new(&save_dir)?;
     let catalog = world.catalog_arc();
+    let notifications = notifications::Lane::new(&catalog)?;
     let entity_types = startup.entity_types_for(catalog.clone())?;
     let effect_kinds = Arc::new(startup.effect_kinds()?);
     let (block_actions, lifecycles) = startup.block_actions_for(&catalog)?;
@@ -509,6 +512,7 @@ fn server_state_with_startup(
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     Ok(State {
+        notifications,
         admission_limit,
         world,
         inventory_store,

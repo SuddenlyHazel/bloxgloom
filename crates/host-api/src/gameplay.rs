@@ -9,10 +9,14 @@ mod definition;
 mod entities;
 mod handlers;
 mod inventory;
+mod observations;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
 pub use inventory::{Components, InventoryId, Slot, Stack};
+pub use observations::{
+    Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
+};
 
 pub type Cell = [i32; 3];
 
