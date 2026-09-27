@@ -17,9 +17,9 @@ registered removal decisions while preserving footprint refunds without duplicat
 cube loot. The Phase 1 gameplay transaction context is complete; Phase 2 events,
 scheduled world behavior, drop policies, player rules and fire migration, plus
 later Luau/package/presentation phases, remain open. This is not full parity.
-Phase 2 has begun with registered placement decisions, ordered after removals
-over the same staged world view; committed notifications and scheduling remain
-open.
+Phase 2 includes registered placement decisions ordered after removals over
+the same staged world view. General entity scheduling and advisory commit
+observations are implemented below; durable notifications remain open.
 Registered semantic use actions can now compose ordinary item, entity, drop and
 world operations through that plan. Existing built-in recipes and specialized
 entity requests have not yet been migrated, and the client discovery surface
@@ -84,9 +84,10 @@ component schemas and prevents incompatible component-preserving output from
 consuming input/fuel. Combined tests and previews are recorded in the root plan.
 
 These close the content, composition, inventory-selector, anchored lifecycle and
-bounded action/UI findings. General harvest/loot, world reads/effects, generation,
-player policy/commands/bindings and world-drop policies remain planned blockers;
-fire behavior migration remains deferred.
+bounded action/UI findings in that integration. Subsequent shared gameplay work
+above covers general harvest and semantic use. World-system reads/effects,
+generation, player policy/commands/bindings and world-drop policies remain
+blockers; fire migration is approved and still unfinished, not deferred.
 
 Audited baseline: **`0d3eebf616eb7bf2c5a942cc6e199b210168666e`**, on
 `modding/audit`. This is a source/call-path audit, not a new runtime test report.
@@ -106,8 +107,8 @@ action/UI/item, and public owner/system work is **not present in this baseline**
 Every affected finding needs an integration review against the merged code.
 The root plan is maintained separately. In particular, completing its currently
 “In progress” rows must not imply completion of planned world generation,
-player rules/commands/bindings, or world-drop parity. **Deferred fire remains a
-full-parity blocker** until explicitly authorized and migrated.
+player rules/commands/bindings, or world-drop parity. **Fire migration is now
+authorized but remains a full-parity blocker** until implemented.
 
 Proof labels used below:
 
