@@ -4,12 +4,14 @@
 use super::entity::corrupt;
 use super::{BlockEditCommand, prepared_deltas, push_harvest_spawns};
 use crate::content::{
-    HOPPER_ENTITY_TYPE, HOPPER_ITEM, HOPPER_STATE, KILN_ITEM, PLANT, REPLACEABLE, SOLID,
+    CHEST_ENTITY_TYPE, CHEST_ITEM, CHEST_STATE, HOPPER_ENTITY_TYPE, HOPPER_ITEM, HOPPER_STATE,
+    KILN_ITEM, PLANT, REPLACEABLE, SOLID,
 };
 use crate::inventory::{HOTBAR_SLOTS, InventoryStore, Stack};
 use crate::server::block_actions::{BlockActionContext, BlockCommitBuilder};
 use crate::server::durable::{BlockDelta, CommitAction};
 use crate::server::effects::CellCoord as EffectCell;
+use crate::server::entities::chest::ChestPayload;
 use crate::server::entities::hopper::HopperPayload;
 use crate::server::entities::{
     CellCoord, KilnFacing, KilnPayload, kiln_block_states, kiln_footprint, kiln_payload,
@@ -30,8 +32,15 @@ pub(in crate::server) fn plan_place(
 ) -> io::Result<CommitAction> {
     let catalog = context.catalog();
     let hopper = command.block == HOPPER_STATE;
-    let item = if hopper { HOPPER_ITEM } else { KILN_ITEM };
-    let facing = if hopper {
+    let chest = command.block == CHEST_STATE;
+    let item = if chest {
+        CHEST_ITEM
+    } else if hopper {
+        HOPPER_ITEM
+    } else {
+        KILN_ITEM
+    };
+    let facing = if hopper || chest {
         KilnFacing::North
     } else {
         KilnFacing::from_place_state(&catalog, command.block)
@@ -41,7 +50,7 @@ pub(in crate::server) fn plan_place(
         let client = context.client(command.id).ok_or_else(|| {
             io::Error::new(
                 ErrorKind::NotConnected,
-                "kiln placement client disconnected",
+                "workstation placement client disconnected",
             )
         })?;
         client.inventory.clone()
@@ -56,22 +65,27 @@ pub(in crate::server) fn plan_place(
                 && stack.components.is_none()
         })
         .ok_or_else(|| {
-            io::Error::new(ErrorKind::PermissionDenied, "selected kiln item mismatch")
+            io::Error::new(
+                ErrorKind::PermissionDenied,
+                "selected workstation item mismatch",
+            )
         })?;
     if selected.count == 0 {
         return Err(io::Error::new(
             ErrorKind::PermissionDenied,
-            "selected kiln stack empty",
+            "selected workstation stack empty",
         ));
     }
     let anchor = CellCoord::new(command.x, command.y, command.z);
-    let footprint = if hopper {
+    let footprint = if hopper || chest {
         vec![anchor]
     } else {
         kiln_footprint(anchor).map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
     };
     let payload = KilnPayload::new(facing);
-    let states = if hopper {
+    let states = if chest {
+        [CHEST_STATE; 2]
+    } else if hopper {
         [HOPPER_STATE; 2]
     } else {
         kiln_block_states(&catalog, &payload).map_err(io::Error::other)?
@@ -86,7 +100,7 @@ pub(in crate::server) fn plan_place(
                 cell.x,
                 cell.y,
                 cell.z,
-                "kiln upper chunk is not resident",
+                "workstation footprint chunk is not resident",
             )?
         };
         if catalog.block_flags(before) & REPLACEABLE == 0
@@ -94,7 +108,7 @@ pub(in crate::server) fn plan_place(
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
-                "kiln footprint cannot be replaced",
+                "workstation footprint cannot be replaced",
             ));
         }
         if catalog.block_flags(states[0]) & SOLID != 0
@@ -105,7 +119,7 @@ pub(in crate::server) fn plan_place(
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
-                "kiln footprint overlaps a player",
+                "workstation footprint overlaps a player",
             ));
         }
         let block = if *cell == anchor {
@@ -118,7 +132,9 @@ pub(in crate::server) fn plan_place(
             displaced_plants.push((before, [cell.x, cell.y, cell.z]));
         }
     }
-    let kiln_spawn = if hopper {
+    let kiln_spawn = if chest {
+        ChestPayload::default().spawn(anchor, tick.get())
+    } else if hopper {
         HopperPayload::default().spawn(anchor, tick.get())
     } else {
         payload
@@ -129,7 +145,7 @@ pub(in crate::server) fn plan_place(
     if !inventory.consume(command.slot, item) {
         return Err(io::Error::new(
             ErrorKind::PermissionDenied,
-            "selected kiln stack empty",
+            "selected workstation stack empty",
         ));
     }
     let world_edits = builder.prepare_edits(&coords)?;
@@ -156,7 +172,7 @@ pub(in crate::server) fn plan_place(
         tick.get(),
         crate::server::drops::unix_ms(),
     )?
-    .ok_or_else(|| io::Error::other("kiln placement planned no work"))?;
+    .ok_or_else(|| io::Error::other("workstation placement planned no work"))?;
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),
@@ -193,20 +209,31 @@ pub(in crate::server) fn plan_break(
     let id = context
         .entities()
         .anchored_at(broken)
-        .ok_or_else(|| corrupt("kiln block has no anchored entity"))?;
+        .ok_or_else(|| corrupt("workstation block has no anchored entity"))?;
     let snapshot = context
         .entities()
         .snapshot(id)
-        .ok_or_else(|| corrupt("kiln footprint references a missing entity"))?;
+        .ok_or_else(|| corrupt("workstation footprint references a missing entity"))?;
     if snapshot.entity_type != crate::content::KILN_ENTITY_TYPE
         && snapshot.entity_type != HOPPER_ENTITY_TYPE
+        && snapshot.entity_type != CHEST_ENTITY_TYPE
     {
-        return Err(corrupt("kiln footprint references a different entity type"));
+        return Err(corrupt(
+            "workstation footprint references a different entity type",
+        ));
     }
     let anchor = snapshot
         .anchor()
-        .ok_or_else(|| corrupt("kiln entity is not anchored"))?;
-    let (removed_cells, drops, states) = if snapshot.entity_type == HOPPER_ENTITY_TYPE {
+        .ok_or_else(|| corrupt("workstation entity is not anchored"))?;
+    let (removed_cells, drops, states) = if snapshot.entity_type == CHEST_ENTITY_TYPE {
+        let payload = snapshot
+            .private_payload
+            .downcast_ref::<ChestPayload>()
+            .ok_or_else(|| corrupt("invalid chest payload"))?;
+        let mut drops = vec![Stack::new(CHEST_ITEM, 1)];
+        drops.extend(payload.slots.iter().flatten().cloned());
+        (vec![anchor], drops, [CHEST_STATE; 2])
+    } else if snapshot.entity_type == HOPPER_ENTITY_TYPE {
         let payload = snapshot
             .private_payload
             .downcast_ref::<HopperPayload>()
@@ -225,13 +252,13 @@ pub(in crate::server) fn plan_break(
     let mut coords = Vec::with_capacity(removed_cells.len());
     for cell in &removed_cells {
         if context.entities().anchored_at(*cell) != Some(id) {
-            return Err(corrupt("kiln footprint index is incomplete"));
+            return Err(corrupt("workstation footprint index is incomplete"));
         }
         let actual = builder.cached_block_or_request(
             cell.x,
             cell.y,
             cell.z,
-            "kiln footprint chunk is not resident",
+            "workstation footprint chunk is not resident",
         )?;
         let expected = if *cell == anchor {
             states[0]
@@ -239,7 +266,9 @@ pub(in crate::server) fn plan_break(
             states[1]
         };
         if actual != expected {
-            return Err(corrupt("kiln block state differs from anchored entity"));
+            return Err(corrupt(
+                "workstation block state differs from anchored entity",
+            ));
         }
         coords.push((cell.x, cell.y, cell.z, AIR));
     }

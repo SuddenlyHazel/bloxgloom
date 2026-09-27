@@ -26,6 +26,45 @@ fn kiln_controls_fit_and_hit_test_on_compact_and_large_screens() {
 }
 
 #[test]
+fn chest_slots_and_backpack_are_distinct_and_usable_at_small_and_large_sizes() {
+    for (width, height, scale) in [
+        (640, 360, 1.0),
+        (640, 360, 1.8),
+        (1280, 720, 1.0),
+        (1280, 720, 1.8),
+    ] {
+        let layout = UiLayout::new(width, height, scale, UiScreen::Chest);
+        let mut rects = Vec::new();
+        for control in (0..27)
+            .map(UiControl::KilnSlot)
+            .chain((0..36).map(UiControl::InventorySlot))
+        {
+            let rect = layout.rect(control).unwrap();
+            assert!(
+                rect.x >= 0.0
+                    && rect.y >= 0.0
+                    && rect.x + rect.width <= width as f32
+                    && rect.y + rect.height <= height as f32
+            );
+            assert_eq!(
+                layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(control)
+            );
+            for old in &rects {
+                let old: &super::types::UiRect = old;
+                assert!(
+                    rect.x >= old.x + old.width
+                        || old.x >= rect.x + rect.width
+                        || rect.y >= old.y + old.height
+                        || old.y >= rect.y + rect.height
+                );
+            }
+            rects.push(rect);
+        }
+    }
+}
+
+#[test]
 fn admin_catalog_controls_fit_compact_and_desktop_panels() {
     for (width, height, scale) in [(1280, 720, 1.0), (640, 360, 1.0), (640, 360, 2.0)] {
         let layout = UiLayout::new(width, height, scale, UiScreen::Admin);

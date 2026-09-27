@@ -7,6 +7,7 @@ pub enum UiScreen {
     Playing,
     Inventory,
     Kiln,
+    Chest,
     Admin,
     Pause,
     Settings,

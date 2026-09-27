@@ -4,6 +4,7 @@
 //! live here so feature modules can share one ownership and revision contract.
 
 mod checkpoint;
+pub(in crate::server) mod chest;
 mod codec;
 pub(in crate::server) mod hopper;
 mod kiln;
@@ -13,6 +14,7 @@ pub(in crate::server) mod mossbun;
 mod navigation;
 mod persistence;
 mod player;
+mod storage;
 pub(in crate::server) use mobile_pages::MobilePage;
 mod registry;
 mod spatial;

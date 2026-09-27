@@ -3,7 +3,7 @@ use super::*;
 impl Catalog {
     pub fn builtins() -> Self {
         let mut catalog = Self::new();
-        const PNGS: [(&str, &[u8], bool, bool, bool); 25] = [
+        const PNGS: [(&str, &[u8], bool, bool, bool); 27] = [
             (
                 "grass_top",
                 include_bytes!("../../assets/textures/blocks/grass_top.png"),
@@ -175,6 +175,20 @@ impl Catalog {
             (
                 "hopper_top",
                 include_bytes!("../../assets/textures/blocks/hopper_top.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "chest_side",
+                include_bytes!("../../assets/textures/blocks/chest_side.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "chest_top",
+                include_bytes!("../../assets/textures/blocks/chest_top.png"),
                 false,
                 false,
                 false,
@@ -532,6 +546,40 @@ impl Catalog {
                 schema_fingerprint: 0x484f_5050_4552_0001,
             })
             .expect("unique hopper entity");
+        let mut chest = catalog.block_type(HOPPER_BLOCK_TYPE).unwrap().clone();
+        chest.id = CHEST_BLOCK_TYPE;
+        chest.key = "bloxgloom:chest".into();
+        chest.name = "CHEST".into();
+        chest.swatch = [0.55, 0.33, 0.14, 1.0];
+        chest.reflectance = [140, 90, 45];
+        chest.textures = BlockTextures {
+            top: TextureId(26),
+            side: TextureId(25),
+            bottom: TextureId(26),
+        };
+        catalog.register_block(chest).expect("unique chest block");
+        catalog
+            .register_state(CHEST_STATE, CHEST_BLOCK_TYPE, vec![], None)
+            .expect("unique chest state");
+        catalog
+            .register_item(ItemDef {
+                id: CHEST_ITEM,
+                key: "bloxgloom:chest".into(),
+                name: "CHEST".into(),
+                swatch: [0.55, 0.33, 0.14, 1.0],
+                texture: TextureId(25),
+                placeable: Some(CHEST_STATE),
+                sprite: false,
+            })
+            .expect("unique chest item");
+        catalog
+            .register_entity_type(EntityTypeDef {
+                id: CHEST_ENTITY_TYPE,
+                key: "bloxgloom:chest".into(),
+                schema_version: 1,
+                schema_fingerprint: 0x4348_4553_5400_0001,
+            })
+            .expect("unique chest entity");
         catalog
     }
 }

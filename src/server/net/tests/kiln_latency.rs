@@ -41,15 +41,20 @@ fn action(
 
 #[test]
 fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
-    placement_probe(false);
+    placement_probe(false, false);
 }
 
 #[test]
 fn running_hopper_feeds_kiln_while_player_moves_and_places_over_real_tcp() {
-    placement_probe(true);
+    placement_probe(true, false);
 }
 
-fn placement_probe(with_hopper: bool) {
+#[test]
+fn chest_collects_hopper_output_while_moving_and_building_over_real_tcp() {
+    placement_probe(true, true);
+}
+
+fn placement_probe(with_hopper: bool, with_chest: bool) {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -65,7 +70,16 @@ fn placement_probe(with_hopper: bool) {
             for y in 79..=82 {
                 state
                     .world
-                    .edit(x, y, z, if y == 79 { STONE } else { AIR })
+                    .edit(
+                        x,
+                        y,
+                        z,
+                        if y == 79 && !(with_chest && x == 0 && z == 1) {
+                            STONE
+                        } else {
+                            AIR
+                        },
+                    )
                     .unwrap();
             }
         }
@@ -75,7 +89,8 @@ fn placement_probe(with_hopper: bool) {
     inventory.slots[1] = Some(Stack::new(STICK, 1));
     inventory.slots[2] = Some(Stack::new(ItemId(crate::world::GRAVEL.0), 128));
     inventory.slots[3] = Some(Stack::new(ItemId(STONE.0), 128));
-    inventory.slots[4] = Some(Stack::new(crate::content::HOPPER_ITEM, 1));
+    inventory.slots[4] = Some(Stack::new(crate::content::HOPPER_ITEM, 2));
+    inventory.slots[5] = Some(Stack::new(crate::content::CHEST_ITEM, 1));
     state.inventory_store.save(0xFACE, &inventory).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -130,6 +145,27 @@ fn placement_probe(with_hopper: bool) {
         );
         for burning in [false, true] {
             if burning {
+                if with_chest {
+                    for (y, block, slot) in [
+                        (78, crate::content::CHEST_STATE, 5),
+                        (79, crate::content::HOPPER_STATE, 4),
+                    ] {
+                        let id = next_id();
+                        action(
+                            &mut peer,
+                            &mut chunks,
+                            ClientMessage::Edit {
+                                action_id: id,
+                                x: 0,
+                                y,
+                                z: 1,
+                                block,
+                                slot,
+                            },
+                            id,
+                        );
+                    }
+                }
                 if with_hopper {
                     let id = next_id();
                     action(
@@ -227,6 +263,31 @@ fn placement_probe(with_hopper: bool) {
                         Some(if place { STONE } else { AIR })
                     );
                 }
+            }
+        }
+        if with_chest {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let chest = chunks.workstation([0, 78, 1]);
+                let view =
+                    crate::protocol::workstation::WorkstationView::decode(&chest.payload).unwrap();
+                assert_eq!(
+                    view.kind,
+                    crate::protocol::workstation::WorkstationKind::Chest
+                );
+                if view
+                    .slots
+                    .iter()
+                    .flatten()
+                    .any(|s| s.item == ItemId(STONE.0))
+                {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "finished stone did not reach chest"
+                );
+                observe(&protocol::read_server(&mut peer).unwrap(), &mut chunks);
             }
         }
         let _ = peer.shutdown(Shutdown::Both);

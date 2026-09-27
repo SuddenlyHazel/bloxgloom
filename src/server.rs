@@ -473,6 +473,13 @@ fn server_state_with_startup(
             durable::actions::workstation::plan_break,
         ),
     )?;
+    block_actions.register(
+        crate::content::CHEST_BLOCK_TYPE,
+        BlockActionHooks::new(
+            durable::actions::workstation::plan_place,
+            durable::actions::workstation::plan_break,
+        ),
+    )?;
     let block_actions = block_actions.freeze();
     let owner_configs = startup.owner_configs()?;
     let (mut durability, recovered_fire, entities, owner_store, wake_store, cursors) =

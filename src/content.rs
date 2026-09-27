@@ -38,6 +38,10 @@ pub const HOPPER_BLOCK_TYPE: BlockTypeId = BlockTypeId(300);
 pub const HOPPER_STATE: BlockStateId = BlockStateId(600);
 pub const HOPPER_ITEM: ItemId = ItemId(300);
 pub const HOPPER_ENTITY_TYPE: EntityTypeId = EntityTypeId(5);
+pub const CHEST_BLOCK_TYPE: BlockTypeId = BlockTypeId(301);
+pub const CHEST_STATE: BlockStateId = BlockStateId(601);
+pub const CHEST_ITEM: ItemId = ItemId(301);
+pub const CHEST_ENTITY_TYPE: EntityTypeId = EntityTypeId(6);
 
 pub(crate) const SOLID: u8 = 1;
 pub(crate) const OPAQUE: u8 = 2;

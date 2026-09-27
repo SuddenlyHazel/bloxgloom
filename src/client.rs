@@ -103,9 +103,11 @@ fn edit_for_hit_with_catalog(
 fn escape_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Pause,
-        UiScreen::Inventory | UiScreen::Kiln | UiScreen::Admin | UiScreen::Pause => {
-            UiScreen::Playing
-        }
+        UiScreen::Inventory
+        | UiScreen::Kiln
+        | UiScreen::Chest
+        | UiScreen::Admin
+        | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
     }
@@ -114,7 +116,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
 fn inventory_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Inventory,
-        UiScreen::Inventory | UiScreen::Kiln => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Kiln | UiScreen::Chest => UiScreen::Playing,
         other => other,
     }
 }
@@ -399,7 +401,7 @@ impl ClientApp {
         self.focused_control = None;
         self.inventory_source = None;
         self.kiln_source = None;
-        if screen != UiScreen::Kiln {
+        if !matches!(screen, UiScreen::Kiln | UiScreen::Chest) {
             self.kiln_target = None;
         }
         self.set_grab(screen == UiScreen::Playing);
@@ -531,10 +533,14 @@ impl ClientApp {
             UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
                 self.inventory_click(slot, false)
             }
-            UiControl::InventorySlot(slot) if self.screen == UiScreen::Kiln => {
+            UiControl::InventorySlot(slot)
+                if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) =>
+            {
                 self.kiln_inventory_click(slot, false)
             }
-            UiControl::KilnSlot(slot) if self.screen == UiScreen::Kiln => {
+            UiControl::KilnSlot(slot)
+                if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) =>
+            {
                 self.kiln_click(slot, false)
             }
             UiControl::KilnSlot(_) => {}
@@ -582,7 +588,11 @@ impl ClientApp {
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
             UiScreen::Playing => Vec::new(),
-            UiScreen::Kiln => (0..3)
+            UiScreen::Kiln | UiScreen::Chest => (0..if self.screen == UiScreen::Chest {
+                27
+            } else {
+                3
+            })
                 .map(UiControl::KilnSlot)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),

@@ -84,7 +84,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
         .unwrap();
     catalog
         .register_entity_type(EntityTypeDef {
-            id: EntityTypeId(6),
+            id: EntityTypeId(7),
             key: "test:low".into(),
             schema_version: 1,
             schema_fingerprint: 13,
@@ -99,7 +99,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
 #[test]
 fn builtin_catalog_preserves_default_state_and_item_ids() {
     let catalog = Catalog::builtins();
-    assert_eq!(catalog.textures().len(), 25);
+    assert_eq!(catalog.textures().len(), 27);
     for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
         let state = BlockStateId(id);
         assert!(catalog.block(state).is_some());
@@ -158,7 +158,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             alpha_cutout: false,
         })
         .unwrap();
-    assert_eq!(layer, TextureId(25));
+    assert_eq!(layer, TextureId(27));
     let marble = BlockDef {
         id: BlockTypeId(16),
         key: "example:marble".into(),

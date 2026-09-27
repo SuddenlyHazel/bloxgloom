@@ -80,6 +80,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Playing, "playing"),
             (UiScreen::Inventory, "inventory"),
             (UiScreen::Kiln, "kiln"),
+            (UiScreen::Chest, "chest"),
             (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
@@ -99,6 +100,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Playing, "playing"),
         (UiScreen::Inventory, "inventory"),
         (UiScreen::Kiln, "kiln"),
+        (UiScreen::Chest, "chest"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
@@ -248,6 +250,27 @@ pub fn render_hopper_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Hoppers))
 }
 
+pub fn render_chest_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    std::fs::create_dir_all(directory)?;
+    let outputs = [
+        ("chain.png", 1280, 720, 1.0, UiScreen::Playing),
+        ("chest-ui.png", 1280, 720, 1.0, UiScreen::Chest),
+        ("chest-compact.png", 640, 360, 1.0, UiScreen::Chest),
+        ("chest-large-ui.png", 1280, 720, 1.8, UiScreen::Chest),
+    ]
+    .into_iter()
+    .map(|(name, width, height, scale, screen)| PreviewOutput {
+        path: directory.join(name),
+        width,
+        height,
+        scale,
+        screen,
+        orientation: None,
+    })
+    .collect();
+    pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Chests))
+}
+
 pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, phase) in [
@@ -318,6 +341,7 @@ enum DropPhase {
 
 #[derive(Clone, Copy)]
 enum PreviewScene {
+    Chests,
     Kilns,
     Hoppers,
     Surface,
@@ -390,6 +414,7 @@ async fn render_previews(
         PreviewScene::Drops(_)
         | PreviewScene::Kilns
         | PreviewScene::Hoppers
+        | PreviewScene::Chests
         | PreviewScene::Avatars
         | PreviewScene::Mossbuns
         | PreviewScene::MossbunMotion(_) => {
@@ -403,7 +428,7 @@ async fn render_previews(
                 PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
             ) {
                 Vec3::new(2.8, 1.7, 4.1)
-            } else if matches!(scene, PreviewScene::Hoppers) {
+            } else if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) {
                 Vec3::new(5.0, 3.8, 7.0)
             } else if matches!(scene, PreviewScene::Avatars) {
                 Vec3::new(5.5, 3.1, 7.0)
@@ -449,6 +474,7 @@ async fn render_previews(
             | PreviewScene::MossbunMotion(_)
             | PreviewScene::Kilns
             | PreviewScene::Hoppers
+            | PreviewScene::Chests
     ) {
         // A small display lawn makes feet and the player scale reference
         // inspectable instead of burying them in generated slopes/foliage.
@@ -465,6 +491,21 @@ async fn render_previews(
                     set_preview_block(&mut chunks, x, y, z, block);
                 }
             }
+        }
+    }
+    if matches!(scene, PreviewScene::Chests) {
+        for (dy, block) in [
+            (1, crate::content::CHEST_STATE),
+            (2, crate::content::HOPPER_STATE),
+            (3, crate::content::CHEST_STATE),
+        ] {
+            set_preview_block(
+                &mut chunks,
+                target_xz.0,
+                target_height + dy,
+                target_xz.1,
+                block,
+            );
         }
     }
     if matches!(scene, PreviewScene::Hoppers) {
@@ -870,7 +911,7 @@ async fn render_previews(
         if matches!(scene, PreviewScene::Hoppers)
             && let Some(view) = &mut ui_frame.kiln
         {
-            view.hopper = true;
+            view.kind = crate::protocol::workstation::WorkstationKind::Hopper;
         }
         ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         let bytes_per_row = output.width * 4;
@@ -1060,17 +1101,35 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
-        kiln: (screen == UiScreen::Kiln).then(|| crate::protocol::workstation::WorkstationView {
-            hopper: false,
-            facing: 0,
-            lit: true,
-            progress: 170,
-            fuel: 64,
-            slots: [
-                Some(Stack::new(crate::items::STICK, 12)),
-                Some(Stack::new(crate::items::ItemId(crate::world::GRAVEL.0), 24)),
-                Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 8)),
-            ],
+        kiln: matches!(screen, UiScreen::Kiln | UiScreen::Chest).then(|| {
+            crate::protocol::workstation::WorkstationView {
+                kind: if screen == UiScreen::Chest {
+                    crate::protocol::workstation::WorkstationKind::Chest
+                } else {
+                    crate::protocol::workstation::WorkstationKind::Kiln
+                },
+                facing: 0,
+                lit: true,
+                progress: 170,
+                fuel: 64,
+                slots: if screen == UiScreen::Chest {
+                    (0..27)
+                        .map(|i| {
+                            if i % 3 == 0 {
+                                Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 128))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![
+                        Some(Stack::new(crate::items::STICK, 12)),
+                        Some(Stack::new(crate::items::ItemId(crate::world::GRAVEL.0), 24)),
+                        Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 8)),
+                    ]
+                },
+            }
         }),
         kiln_source: None,
         admin_enabled: true,
@@ -1089,7 +1148,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
-            UiScreen::Kiln => Some(UiControl::KilnSlot(1)),
+            UiScreen::Kiln | UiScreen::Chest => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing => None,
             UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
             UiScreen::Admin => Some(UiControl::AdminItem(0)),

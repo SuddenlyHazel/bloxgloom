@@ -35,6 +35,7 @@ impl UiLayout {
             UiScreen::Playing => {}
             UiScreen::Inventory => layout.add_inventory(),
             UiScreen::Kiln => layout.add_kiln(),
+            UiScreen::Chest => layout.add_chest(),
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
@@ -104,6 +105,44 @@ impl UiLayout {
                     y: y0
                         + row as f32 * (size + gap)
                         + if row == 3 { 9.0 * self.scale } else { 0.0 },
+                    width: size,
+                    height: size,
+                },
+            );
+        }
+    }
+
+    fn add_chest(&mut self) {
+        let panel = self.kiln_panel();
+        let gap = 4.0 * self.scale;
+        let size = ((panel.width - 36.0 * self.scale - gap * 8.0) / 9.0)
+            .min((panel.height - 108.0 * self.scale - gap * 5.0) / 7.0)
+            .max(8.0);
+        let x = panel.x + (panel.width - size * 9.0 - gap * 8.0) * 0.5;
+        let top = panel.y + 40.0 * self.scale;
+        for slot in 0..27u8 {
+            self.push(
+                UiControl::KilnSlot(slot),
+                UiRect {
+                    x: x + f32::from(slot % 9) * (size + gap),
+                    y: top + f32::from(slot / 9) * (size + gap),
+                    width: size,
+                    height: size,
+                },
+            );
+        }
+        let top = top + 3.0 * (size + gap) + 24.0 * self.scale;
+        for slot in 0..36u8 {
+            let (row, col) = if slot < 9 {
+                (3, slot)
+            } else {
+                ((slot - 9) / 9, (slot - 9) % 9)
+            };
+            self.push(
+                UiControl::InventorySlot(slot),
+                UiRect {
+                    x: x + f32::from(col) * (size + gap),
+                    y: top + f32::from(row) * (size + gap),
                     width: size,
                     height: size,
                 },

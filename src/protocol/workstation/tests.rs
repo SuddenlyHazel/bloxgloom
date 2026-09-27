@@ -1,12 +1,28 @@
 use super::*;
 
 #[test]
+fn chest_summary_requires_exactly_27_bounded_slots() {
+    let view = WorkstationView {
+        kind: WorkstationKind::Chest,
+        slots: vec![Some(Stack::new(crate::items::STICK, 128)); 27],
+        ..Default::default()
+    };
+    let bytes = view.encode();
+    assert_eq!(bytes.len(), 168);
+    assert_eq!(WorkstationView::decode(&bytes), Some(view));
+    assert!(WorkstationView::decode(&bytes[..24]).is_none());
+    let mut invalid = bytes;
+    invalid[166..168].copy_from_slice(&129u16.to_le_bytes());
+    assert!(WorkstationView::decode(&invalid).is_none());
+}
+
+#[test]
 fn workstation_summary_is_bounded_and_rejects_impossible_slots() {
     let view = WorkstationView {
         lit: true,
         fuel: 40,
         progress: 127,
-        slots: [Some(Stack::new(crate::items::STICK, 128)), None, None],
+        slots: vec![Some(Stack::new(crate::items::STICK, 128)), None, None],
         ..Default::default()
     };
     let bytes = view.encode();

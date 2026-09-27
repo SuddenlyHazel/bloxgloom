@@ -36,7 +36,7 @@ version.
   inventory ownership path was added.
 
 New content uses stable block/item ID 300, state ID 600, entity ID 5, and entity
-schema 1. The expanded catalog changes the default test save to `world-v9`.
+schema 1. Hopper initially used `world-v9`; Chest content now makes the default `world-v10`.
 No old-save conversion is provided.
 
 ## Verification

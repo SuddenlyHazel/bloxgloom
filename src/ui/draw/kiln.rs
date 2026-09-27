@@ -1,4 +1,5 @@
 use super::*;
+use crate::protocol::workstation::WorkstationKind;
 
 impl UiBuilder<'_> {
     pub(super) fn draw_kiln(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
@@ -6,7 +7,11 @@ impl UiBuilder<'_> {
         let panel = layout.kiln_panel();
         self.panel(panel);
         self.text(
-            if frame.kiln.as_ref().is_some_and(|v| v.hopper) {
+            if frame
+                .kiln
+                .as_ref()
+                .is_some_and(|v| v.kind == WorkstationKind::Hopper)
+            {
                 "HOPPER"
             } else {
                 "KILN"
@@ -22,7 +27,7 @@ impl UiBuilder<'_> {
         };
         let state = if kiln.lit { "BURNING" } else { "UNLIT" };
         self.text(
-            &if kiln.hopper {
+            &if kiln.kind == WorkstationKind::Hopper {
                 "FLOW: DOWN  /  3 X 128 CAPACITY".to_owned()
             } else {
                 format!("{state}  /  FUEL {:.1}S", f32::from(kiln.fuel) * 0.4)
@@ -38,7 +43,7 @@ impl UiBuilder<'_> {
                 continue;
             };
             self.text(
-                if kiln.hopper {
+                if kiln.kind == WorkstationKind::Hopper {
                     ["SLOT 1", "SLOT 2", "SLOT 3"][slot as usize]
                 } else {
                     ["FUEL", "INPUT", "OUTPUT"][slot as usize]
@@ -75,7 +80,7 @@ impl UiBuilder<'_> {
                 );
             }
         }
-        if !kiln.hopper
+        if kiln.kind == WorkstationKind::Kiln
             && let (Some(input), Some(output)) = (
                 layout.rect(UiControl::KilnSlot(1)),
                 layout.rect(UiControl::KilnSlot(2)),
@@ -99,7 +104,7 @@ impl UiBuilder<'_> {
             );
         }
         self.text(
-            if kiln.hopper {
+            if kiln.kind == WorkstationKind::Hopper {
                 "PULLS FROM ABOVE  /  FEEDS BELOW  /  ONE PER PULSE"
             } else {
                 "GRAVEL > STONE  /  FUEL: WOOD, STICKS, SAPLINGS"

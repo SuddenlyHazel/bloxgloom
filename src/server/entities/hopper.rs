@@ -1,18 +1,16 @@
 //! Three-slot gravity-fed inventory machine. Automation uses registered ports.
-mod codec;
+#[cfg(test)]
+use super::storage::codec;
 mod policy;
 #[cfg(test)]
 mod tests;
-use super::transfer::{put, take};
 use super::*;
 use crate::content::{Catalog, HOPPER_ENTITY_TYPE, HOPPER_STATE};
-use crate::inventory::{Inventory, STACK_LIMIT, Stack};
+#[cfg(test)]
+use crate::inventory::{Inventory, Stack};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(in crate::server) struct HopperPayload {
-    pub slots: [Option<Stack>; 3],
-}
+pub(in crate::server) type HopperPayload = super::storage::StoragePayload<3>;
 
 impl HopperPayload {
     pub fn spawn(&self, anchor: CellCoord, tick: u64) -> EntitySpawn {
@@ -31,16 +29,13 @@ pub(in crate::server) fn register(
     builder: &mut EntityTypeRegistryBuilder<'_>,
     catalog: &Arc<Catalog>,
 ) -> Result<(), EntityError> {
-    builder.register(EntityTypeRegistration {
-        id: HOPPER_ENTITY_TYPE,
-        ownership: EntityOwnership::anchored(vec![HOPPER_STATE], 1),
-        tick_policy: TickPolicy::Interval(20),
-        max_payload_bytes: 4096,
-        codec: Arc::new(codec::Codec {
-            catalog: catalog.clone(),
-        }),
-    })?;
-    builder.register_transfer_policy(HOPPER_ENTITY_TYPE, Arc::new(policy::Port))?;
-    builder.register_interaction_policy(HOPPER_ENTITY_TYPE, Arc::new(policy::Planner))?;
+    super::storage::register::<3>(
+        builder,
+        catalog,
+        HOPPER_ENTITY_TYPE,
+        HOPPER_STATE,
+        crate::protocol::workstation::WorkstationKind::Hopper,
+        TickPolicy::Interval(20),
+    )?;
     builder.register_tick_planner(HOPPER_ENTITY_TYPE, Arc::new(policy::Planner))
 }

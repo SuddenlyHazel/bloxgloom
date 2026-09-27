@@ -16,6 +16,7 @@ fn registry(catalog: &Arc<Catalog>) -> Arc<EntityTypeRegistry> {
     crate::server::entities::mossbun::register(&mut builder, catalog).unwrap();
     register_entity_type(&mut builder, catalog.clone()).unwrap();
     crate::server::entities::hopper::register(&mut builder, catalog).unwrap();
+    crate::server::entities::chest::register(&mut builder, catalog).unwrap();
     Arc::new(builder.freeze().unwrap())
 }
 

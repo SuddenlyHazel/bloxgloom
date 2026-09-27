@@ -4,8 +4,9 @@ use crate::items::ItemId;
 #[test]
 fn hopper_codec_preserves_components_and_rejects_hidden_slots() {
     let catalog = Arc::new(Catalog::builtins());
-    let codec = codec::Codec {
+    let codec = codec::Codec::<3> {
         catalog: catalog.clone(),
+        kind: crate::protocol::workstation::WorkstationKind::Hopper,
     };
     let item = ItemId(crate::world::STONE.0);
     let stack = Stack::with_components(item, 128, 1, vec![1, 2, 3]).unwrap();
@@ -19,7 +20,10 @@ fn hopper_codec_preserves_components_and_rejects_hidden_slots() {
         &codec.public_view(&decoded).unwrap(),
     )
     .unwrap();
-    assert!(public.hopper);
+    assert_eq!(
+        public.kind,
+        crate::protocol::workstation::WorkstationKind::Hopper
+    );
     assert_eq!(public.slots[1], Some(Stack::new(item, 128)));
     let mut invalid = Inventory::default();
     invalid.slots[35] = Some(stack);
@@ -47,12 +51,12 @@ fn inventory_port_keeps_exact_components_and_refuses_overflow() {
         ],
     });
     assert!(
-        policy::Port
+        policy::Port::<3>
             .deposit(&payload, &Stack::new(item, 1), &catalog)
             .unwrap()
             .is_none()
     );
-    let (after, taken) = policy::Port
+    let (after, taken) = policy::Port::<3>
         .withdraw(&payload, item, 1, &catalog)
         .unwrap()
         .unwrap();
@@ -65,12 +69,12 @@ fn inventory_port_keeps_exact_components_and_refuses_overflow() {
         127
     );
     assert!(
-        policy::Port
+        policy::Port::<3>
             .deposit(&after, &Stack::new(item, 1), &catalog)
             .unwrap()
             .is_none()
     );
-    let restored = policy::Port
+    let restored = policy::Port::<3>
         .deposit(&after, &taken, &catalog)
         .unwrap()
         .unwrap();

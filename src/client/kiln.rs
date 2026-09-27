@@ -9,6 +9,7 @@ impl ClientApp {
         };
         if !entities::kiln::is_kiln_hit(hit, &self.catalog)
             && hit.block_id != crate::content::HOPPER_STATE
+            && hit.block_id != crate::content::CHEST_STATE
         {
             return false;
         }
@@ -17,7 +18,11 @@ impl ClientApp {
             return true;
         };
         let id = entity.id;
-        self.set_screen(UiScreen::Kiln);
+        self.set_screen(if entity.entity_type == crate::content::CHEST_ENTITY_TYPE {
+            UiScreen::Chest
+        } else {
+            UiScreen::Kiln
+        });
         self.kiln_target = Some((hit.block, id));
         true
     }
@@ -34,7 +39,7 @@ impl ClientApp {
     }
 
     pub(super) fn validate_kiln_screen(&mut self) {
-        if self.screen != UiScreen::Kiln {
+        if !matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) {
             return;
         }
         let valid = self.kiln_target.is_some_and(|(cell, _)| {
@@ -51,11 +56,18 @@ impl ClientApp {
     }
 
     pub(super) fn kiln_click(&mut self, slot: u8, one: bool) {
-        if slot >= 3 {
+        if self
+            .kiln_view()
+            .is_none_or(|v| usize::from(slot) >= v.slots.len())
+        {
             return;
         }
         if let Some(inventory) = self.inventory_source {
-            if slot == 2 && self.kiln_view().is_some_and(|v| !v.hopper) {
+            if slot == 2
+                && self
+                    .kiln_view()
+                    .is_some_and(|v| v.kind == crate::protocol::workstation::WorkstationKind::Kiln)
+            {
                 self.show_status("Output is collection only");
                 return;
             }

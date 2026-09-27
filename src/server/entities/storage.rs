@@ -1,0 +1,51 @@
+//! Shared fixed-slot storage codecs, interactions, and automation ports.
+pub(super) mod codec;
+pub(super) mod policy;
+#[cfg(test)]
+mod tests;
+use super::*;
+use crate::content::{BlockStateId, Catalog, EntityTypeId};
+use crate::inventory::{Inventory, STACK_LIMIT, Stack};
+use crate::protocol::workstation::WorkstationKind;
+use std::sync::Arc;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::server) struct StoragePayload<const N: usize> {
+    pub slots: [Option<Stack>; N],
+}
+impl<const N: usize> Default for StoragePayload<N> {
+    fn default() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+pub(super) fn register<const N: usize>(
+    builder: &mut EntityTypeRegistryBuilder<'_>,
+    catalog: &Arc<Catalog>,
+    entity_type: EntityTypeId,
+    state: BlockStateId,
+    kind: WorkstationKind,
+    tick: TickPolicy,
+) -> Result<(), EntityError> {
+    if N == 0
+        || N > crate::inventory::SLOTS
+        || N != kind.slot_count()
+        || kind == WorkstationKind::Kiln
+    {
+        return Err(EntityError::InvalidType);
+    }
+    builder.register(EntityTypeRegistration {
+        id: entity_type,
+        ownership: EntityOwnership::anchored(vec![state], 1),
+        tick_policy: tick,
+        max_payload_bytes: N * 1100 + 128,
+        codec: Arc::new(codec::Codec::<N> {
+            catalog: catalog.clone(),
+            kind,
+        }),
+    })?;
+    builder.register_transfer_policy(entity_type, Arc::new(policy::Port::<N>))?;
+    builder.register_interaction_policy(entity_type, Arc::new(policy::Interaction::<N>))
+}
