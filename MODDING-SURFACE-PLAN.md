@@ -2,6 +2,8 @@
 
 Status: implementation in progress. The public crate exposes the completed
 slices below; the remaining internal interfaces are not yet a supported mod API.
+Last implementation milestone: `faefe1e` (registered machines). This document
+tracks host capability parity; an installable mod loader is a separate milestone.
 
 ## Implementation status
 
@@ -22,7 +24,7 @@ slices below; the remaining internal interfaces are not yet a supported mod API.
   procedural animation declarations. Mossbun uses these contracts. The separately
   compiled Copperling fixture spawns, patrols, pauses on interaction, and recovers
   through the real listener/client paths. **655 tests passed**, strict Clippy and
-  formatting passed, and release previews were inspected. Current default save:
+   formatting passed, and release previews were inspected. The default save
    at that slice was **`world-v12`**. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
 
 - **Registered inventory slice implemented:** shared inventory-view schema,
@@ -42,6 +44,47 @@ slices below; the remaining internal interfaces are not yet a supported mod API.
   and custom UI composition remain open. The broader
   parity inventory and the remaining slices below are not marked complete.
 
+## Remaining work and next sequence
+
+The foundation is established: authoritative simulation, worker scheduling,
+atomic transactions, persistence, and committed replication are reusable. The
+remaining work primarily exposes capabilities, migrates built-ins, and proves
+external access. Completing a creature or inventory-machine slice does not mark
+the entire entity or block-entity category complete.
+
+| Workstream | Already available | Work remaining | Rough size |
+| --- | --- | --- | --- |
+| Content and assets | Namespaced identities, limited cube-block registration, registered creature cuboids/animation, catalog compatibility checks | Public block states, item definitions/components, textures/materials, collision/selection geometry, lighting properties, tags, and references matching built-in capabilities; finish dependency/composition validation | Large |
+| General blocks and anchored entities | Passive storage and scheduled inventory machines; registered footprints; one-item placement/refund and contents recovery | Custom initialization/codecs/projections, configurable costs/refunds, use/neighbor/support callbacks, and invalidation across all edit paths | Medium–large |
+| Items, loot, and interactions | Registered single-input machine recipes/fuels and slot filters; inventory requests; creature own-state interactions | Item-use hooks, harvest/drop rules, component-aware operations, exact automation slot/stack selectors, and registered action discovery/dispatch | Large |
+| World systems | Internal persistent owner/system scheduling and transaction machinery | Public bounded read/effect/wake contracts and built-in growth/support/fire migration; fire remains parked pending explicit authorization | Large |
+| World generation | Existing internal terrain and vegetation generation | Public deterministic contributions, ordering, bounded output, and seam ownership; built-in consumers and external proof | Medium–large |
+| Player and presentation | Ground-creature movement/appearance and shared inventory screens | Audit/expose player movement/spawn/rule hooks, commands/bindings, world-drop gameplay/presentation, remaining block/item visuals, and supported UI composition | Medium–large |
+| Final parity audit and external proof | TallStore, Copperling, and Crusher compile separately and exercise production paths | External item action and world/system contribution; complete the built-in call-path audit and close every privileged gameplay path | Medium |
+
+Recommended next sequence:
+
+1. Content/block registration and general anchored lifecycle.
+2. Item-use, harvest/loot, interaction actions, and remaining inventory selectors.
+3. World-system contracts and built-in migrations, with fire explicitly scheduled.
+4. World-generation contributions and player/presentation hooks.
+5. Final cross-category external proof and parity audit.
+
+Planning estimate: roughly **5–7 substantial implementation slices** remain,
+depending on how these workstreams are grouped. “About halfway through the host
+surface” is a rough effort estimate, not measured completion or a delivery date.
+World/player call-path audits may uncover additional gaps. The capability
+checklist and completion rules below determine completion, not that estimate.
+
+### Separate loader/runtime milestone
+
+Full host parity means external content can reproduce existing built-in gameplay
+through supported contracts. User-installable mods additionally require choosing
+a runtime/language and implementing its adapter, package/dependency handling,
+discovery/loading, and appropriate isolation. The current Rust development fixture
+proves API accessibility; it does not provide a dynamic loader. Runtime selection,
+distribution, and hot reload are not counted as completed host-surface work.
+
 ## Goal and completion rule
 
 **If a gameplay feature exists in the game, an extension must be able to create
@@ -59,7 +102,7 @@ it cannot bypass authoritative collision or commit unjournaled inventory edits.
 New engine capabilities must ship with an extension surface and a built-in
 consumer, rather than accumulating private exceptions.
 
-## Decisions to make now
+## Adopted direction
 
 1. Adopt capability parity as an architecture requirement.
 2. Build a runtime-neutral host contract; choose scripting, WASM, native modules,
@@ -68,8 +111,8 @@ consumer, rather than accumulating private exceptions.
    second, more powerful built-in path.
 4. Validate the public boundary with a small separately compiled Rust extension
    fixture. This proves visibility and capability access, not a native-plugin ABI
-   commitment. The previously deferred extension-crate proof becomes a final
-   integration step in this proposal.
+   commitment. This proof already exists for containers, creatures, and machines;
+   extend it to the remaining categories as their contracts are implemented.
 5. Keep the current server authority, worker model, journal, replication, and
    startup-frozen registrations. This is completion of their surfaces, not a
    replacement execution architecture.
@@ -227,7 +270,14 @@ runtime choices before choosing and testing one.
 
 ## Implementation order
 
+These are the original milestone groups, annotated with current status. The
+remaining-work sequence above identifies the next implementation slices.
+
 ### 1. Establish the boundary and parity inventory
+
+**Status: boundary implemented; exhaustive parity audit remains open.** The public
+host crate and separately compiled fixtures exist. The required capability list
+above is a target, not evidence that every built-in call path has been audited.
 
 - Trace each built-in from registration through its live execution and client
   path. Record privileged type checks and inaccessible argument/result types.
@@ -239,6 +289,12 @@ Deliverable: a concrete capability checklist with owners and public signatures,
 plus an external compile smoke test. Do not build a parallel simulation framework.
 
 ### 2. Complete the container/block-entity vertical slice
+
+**Status: container and inventory-machine paths implemented; broader anchored
+parity remains partial.** Chest, Kiln, and Hopper use registered production paths.
+TallStore and Crusher provide external proofs. Exact automation stack selection,
+general lifecycle callbacks/costs, and custom anchored projections remain open;
+named/sided ports and basic recipe/fuel registration are already implemented.
 
 - Implement registered lifecycle planning and independent container persistence.
 - Add inventory/view/action/screen descriptors and generic client routing.
@@ -252,6 +308,11 @@ machine can be registered without edits to shared dispatch, protocol, or UI.
 
 ### 3. Complete dynamic entities and presentation
 
+**Status: ground-creature path implemented; drops/player/presentation audit remains
+open.** Mossbun uses the public contract and Copperling proves external access.
+World-drop policies, player hooks, and broader presentation are not covered by
+that completed creature slice.
+
 - Expose spawn/despawn, sensing, schedules, motion/navigation services, entity
   targeting, and registered presentation resources.
 - Move Mossbun and world-drop gameplay/presentation policies onto the public
@@ -263,7 +324,10 @@ interaction using the same authority, movement, persistence, and rendering paths
 
 ### 4. Close remaining gameplay and world surfaces
 
-- Expose item use, harvest/loot, recipe/fuel registration, commands/actions,
+**Status: mostly remaining.** Machine recipe/fuel registration is implemented;
+general item, player, world-system, and world-generation surfaces remain open.
+
+- Expose item use, harvest/loot, component-aware recipe/fuel predicates, commands/actions,
   world-generation contributions, and supported player-rule hooks.
 - Finish the public surface for registered owner/system handlers and effects.
 - Audit existing growth, support, and fire paths for built-in-only access. Fire
@@ -274,6 +338,10 @@ Deliverable: every capability in the inventory is demonstrated by a built-in
 using the host contract, or explicitly recorded as an unresolved blocker.
 
 ### 5. Prove integration outside engine internals
+
+**Status: ongoing, with three categories proven.** The fixture already contains
+TallStore, Copperling, and Crusher. Add an item action and a world/system
+contribution, then finish the cross-category parity audit.
 
 Use one small separately compiled extension package with a registration entry
 point containing representative content: a container, processing block entity,
