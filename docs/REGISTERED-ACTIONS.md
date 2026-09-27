@@ -21,8 +21,13 @@ participate in content-map/handshake compatibility via the player contract.
   declared footprint cells. `AnchoredBlockEntity::interaction` automatically
   registers its default use action (empty means no default use control).
 * `Entity(key)` offers a fixed request to a registered anchored/mobile own-state policy.
-  The host validates entity identity, durable revision, current target cell, reach,
-  subscription and visibility. The policy still owns its versioned private bytes.
+  Anchored requests require the exact advertised revision and target cell. Mobile
+  own-state use resolves the stable entity identity against its current position
+  and state: an older movement-frame revision is allowed (zero/future revisions
+  are rejected). The host validates current reach, subscription and visibility,
+  and fences the newly captured authoritative revision through commit. This lets
+  a click reach a continuously moving creature without accepting a replacement
+  entity or bypassing the actor-inventory fence. The policy still owns its bytes.
 
 Block-bound actions take discovery precedence over entity-type actions on an
 anchor; item-bound actions similarly precede empty-space actions. Each discovery

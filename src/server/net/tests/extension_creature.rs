@@ -136,11 +136,27 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
                 until(&mut peer, &mut client, &catalog, |c| {
                     c.entity(entity_type).unwrap().location != first.location
                 });
+                let entity = client.entity(entity_type).unwrap();
+                let mut future = client.interact(&entity);
+                if let ClientMessage::EntityInteract { payload, .. } = &mut future {
+                    let mut request =
+                        bloxgloom_host_api::actions::Request::decode(payload).unwrap();
+                    request.entity_revision = u64::MAX;
+                    *payload = request.encode().unwrap();
+                }
+                assert!(!send(&mut peer, &mut client, &catalog, &future));
                 let mut accepted = false;
                 for _ in 0..8 {
                     let entity = client.entity(entity_type).unwrap();
                     let request = client.interact(&entity);
+                    // Real clicks arrive after animation/movement has advanced.
+                    // Keep this exact request while replicas advance, then send
+                    // it; a movement revision must not make own-state use inert.
+                    until(&mut peer, &mut client, &catalog, |c| {
+                        c.entity(entity_type).unwrap().revision >= entity.revision + 3
+                    });
                     if send(&mut peer, &mut client, &catalog, &request) {
+                        assert_eq!(client.status(), Some("Interaction applied"));
                         assert!(send(&mut peer, &mut client, &catalog, &request));
                         accepted = true;
                         break;

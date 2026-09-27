@@ -153,9 +153,29 @@ pub(super) fn plan(
                 .entities
                 .snapshot(id)
                 .ok_or_else(|| denied("action entity gone"))?;
-            if snapshot.revision != request.entity_revision {
+            // Mobile use is an intent against this stable identity's current
+            // own-state, not a compare-and-swap on an old movement frame. The
+            // planner still captures and fences the current authoritative
+            // revision. Anchored/container requests retain exact client fences.
+            let mobile_use = matches!(action.operation, Operation::EntityRequest(_))
+                && matches!(action.target, Target::Entity(_))
+                && catalog.mobile_entity(snapshot.entity_type).is_some();
+            if request.entity_revision == 0
+                || request.entity_revision > snapshot.revision
+                || (!mobile_use && snapshot.revision != request.entity_revision)
+            {
                 return Err(denied("stale action entity"));
             }
+            let target = if mobile_use {
+                let crate::server::entities::EntityLocation::Mobile { position } =
+                    snapshot.location
+                else {
+                    return Err(denied("mobile action location mismatch"));
+                };
+                position.map(|v| v.floor() as i32)
+            } else {
+                target
+            };
             let kind = catalog
                 .entity_type(snapshot.entity_type)
                 .ok_or_else(|| denied("unknown entity type"))?;

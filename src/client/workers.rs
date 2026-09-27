@@ -217,6 +217,7 @@ impl ConfigWriter {
 pub(super) struct Mesher {
     pub(super) jobs: SyncSender<MesherJob>,
     pub(super) urgent_jobs: SyncSender<MesherJob>,
+    pub(super) edit_jobs: SyncSender<MesherJob>,
     pub(super) results: Receiver<MesherResult>,
     revisions: Arc<Mutex<HashMap<ChunkKey, u64>>>,
 }
@@ -252,18 +253,22 @@ impl Mesher {
     pub(super) fn new() -> Self {
         let (jobs, jobs_rx) = mpsc::sync_channel::<MesherJob>(64);
         let (urgent_jobs, urgent_rx) = mpsc::sync_channel::<MesherJob>(16);
+        let (edit_jobs, edit_rx) = mpsc::sync_channel::<MesherJob>(16);
         let (results_tx, results) = mpsc::sync_channel(64);
         let shared = Arc::new(Mutex::new(jobs_rx));
         let urgent = Arc::new(Mutex::new(urgent_rx));
+        let edits = Arc::new(Mutex::new(edit_rx));
         let revisions = Arc::new(Mutex::new(HashMap::new()));
         for _ in 0..2 {
             let jobs_rx = Arc::clone(&shared);
             let urgent_rx = Arc::clone(&urgent);
+            let edit_rx = Arc::clone(&edits);
             let results_tx = results_tx.clone();
             let revisions = Arc::clone(&revisions);
             thread::spawn(move || {
                 loop {
-                    let job = match urgent_rx.lock().unwrap().try_recv() {
+                    let edited = edit_rx.lock().unwrap().try_recv();
+                    let job = match edited.or_else(|_| urgent_rx.lock().unwrap().try_recv()) {
                         Ok(job) => job,
                         Err(mpsc::TryRecvError::Empty) => {
                             match jobs_rx
@@ -345,6 +350,7 @@ impl Mesher {
         Self {
             jobs,
             urgent_jobs,
+            edit_jobs,
             results,
             revisions,
         }

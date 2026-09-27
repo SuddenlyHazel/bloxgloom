@@ -287,6 +287,7 @@ struct ClientApp {
     entity_registry: EntityClientRegistry,
     pending_mesh: HashMap<ChunkKey, u64>,
     urgent_mesh: std::collections::HashSet<ChunkKey>,
+    edited_mesh: std::collections::HashSet<ChunkKey>,
     lighting_revisions: HashMap<ChunkKey, u64>,
     light_samples: HashMap<ChunkKey, (u64, Box<[LightSample]>)>,
     next_lighting_revision: u64,
@@ -354,6 +355,7 @@ impl ClientApp {
             entity_registry,
             pending_mesh: HashMap::new(),
             urgent_mesh: std::collections::HashSet::new(),
+            edited_mesh: std::collections::HashSet::new(),
             lighting_revisions: HashMap::new(),
             light_samples: HashMap::new(),
             next_lighting_revision: 1,
@@ -752,6 +754,7 @@ impl ClientApp {
 
     fn queue_edited_chunk_relight(&mut self, key: ChunkKey) {
         trace::event(format_args!("relight {key:?}"));
+        self.edited_mesh.insert(key);
         self.queue_relight(key, true);
         // The light footprint belongs to the edit too: rebuilding only its
         // own chunk urgently leaves neighbouring faces lit by an old lamp.
@@ -888,6 +891,16 @@ impl ClientApp {
                 trace::event(format_args!("ack {action_id} accepted={accepted}"));
                 if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
+                } else if let Some(ClientMessage::EntityInteract { payload, .. }) =
+                    self.pending_actions.get(&action_id)
+                    && let Some(request) = bloxgloom_host_api::actions::Request::decode(payload)
+                    && let Some(action) = self.catalog.action(&request.key)
+                    && matches!(
+                        action.operation,
+                        bloxgloom_host_api::actions::Operation::EntityRequest(_)
+                    )
+                {
+                    self.show_status("Interaction applied");
                 }
                 self.pending_actions.remove(&action_id);
                 self.deferred_actions.remove(&action_id);
@@ -987,6 +1000,7 @@ impl ClientApp {
         self.pending_mesh
             .retain(|key, _| self.chunks.contains_key(key));
         self.urgent_mesh.retain(|key| self.chunks.contains_key(key));
+        self.edited_mesh.retain(|key| self.chunks.contains_key(key));
         for &(key, modified) in &evicted {
             self.mesher.invalidate(key, None);
             if modified {
@@ -1034,6 +1048,7 @@ impl ClientApp {
                     break;
                 }
                 self.urgent_mesh.remove(&key);
+                self.edited_mesh.remove(&key);
             }
         }
         let Some(seed) = self.world_seed else {
@@ -1041,13 +1056,16 @@ impl ClientApp {
         };
         for _ in 0..16 {
             let Some(key) = self.pending_mesh.keys().copied().min_by_key(|key| {
-                mesh_priority(
-                    *key,
-                    center,
-                    self.urgent_mesh.contains(key),
-                    self.renderer
-                        .as_ref()
-                        .is_some_and(|renderer| renderer.has_chunk_mesh(*key)),
+                (
+                    !self.edited_mesh.contains(key),
+                    mesh_priority(
+                        *key,
+                        center,
+                        self.urgent_mesh.contains(key),
+                        self.renderer
+                            .as_ref()
+                            .is_some_and(|renderer| renderer.has_chunk_mesh(*key)),
+                    ),
                 )
             }) else {
                 break;
@@ -1069,7 +1087,9 @@ impl ClientApp {
                 key,
                 self.urgent_mesh.contains(&key)
             ));
-            let sender = if self.urgent_mesh.contains(&key) {
+            let sender = if self.edited_mesh.contains(&key) {
+                &self.mesher.edit_jobs
+            } else if self.urgent_mesh.contains(&key) {
                 &self.mesher.urgent_jobs
             } else {
                 &self.mesher.jobs

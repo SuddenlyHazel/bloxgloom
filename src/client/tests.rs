@@ -299,6 +299,11 @@ fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
             block,
         });
         assert!(app.urgent_mesh.contains(&left));
+        assert!(app.edited_mesh.contains(&left));
+        assert!(
+            !app.edited_mesh.contains(&right),
+            "lighting neighbours must not occupy the direct-edit lane"
+        );
         assert!(
             app.urgent_mesh.contains(&right),
             "the neighbour must not wait behind terrain streaming"
