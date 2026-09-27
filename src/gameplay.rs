@@ -15,7 +15,10 @@ impl bloxgloom_host_api::gameplay::Handler for Harvest {
             random,
             cause,
             ..
-        } = event;
+        } = event
+        else {
+            return Ok(());
+        };
         if *cause == bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak {
             return Ok(());
         }

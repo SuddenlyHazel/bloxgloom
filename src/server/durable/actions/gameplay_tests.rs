@@ -3,11 +3,53 @@ use bloxgloom_host_api::{Extension, Registrar, RegistrationError, gameplay::*};
 use std::sync::Arc;
 
 struct HarvestExtension;
+struct PlacementExtension;
+struct SandPlacement;
+impl Handler for SandPlacement {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::BlockPlaced {
+            cell,
+            previous,
+            placed,
+        } = event
+        else {
+            return Err(Error::Invalid("expected placement".into()));
+        };
+        if previous.block_type != "bloxgloom:air" || placed.block_type != "bloxgloom:sand" {
+            return Err(Error::Invalid("unexpected placement states".into()));
+        }
+        let next = [cell[0] + 1, cell[1], cell[2]];
+        if context.block(next)?.block_type != "bloxgloom:air" {
+            return Err(Error::Invalid("neighbour obstructed".into()));
+        }
+        context.set_block(next, "bloxgloom:sand")?;
+        if !context.give(
+            context.player().unwrap(),
+            bloxgloom_host_api::gameplay::Stack::new("bloxgloom:seeds", 2),
+        )? {
+            return Err(Error::Invalid("inventory full".into()));
+        }
+        Ok(())
+    }
+}
+impl Extension for PlacementExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:sand_placement".into(),
+            version: 1,
+            event: EventKind::BlockPlaced,
+            target: Some("bloxgloom:sand".into()),
+            handler: Arc::new(SandPlacement),
+        })
+    }
+}
 struct HarvestHandler;
 struct ChestBreak;
 impl Handler for ChestBreak {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
-        let Event::BlockRemoved { cell, cause, .. } = event;
+        let Event::BlockRemoved { cell, cause, .. } = event else {
+            return Err(Error::Invalid("expected removal".into()));
+        };
         if *cause != RemovalCause::AnchoredBreak {
             return Err(Error::Invalid("expected anchored break".into()));
         }
@@ -37,7 +79,9 @@ impl EntityState for MarkerState {
 }
 impl Handler for HarvestHandler {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
-        let Event::BlockRemoved { cell, cause, .. } = event;
+        let Event::BlockRemoved { cell, cause, .. } = event else {
+            return Err(Error::Invalid("expected removal".into()));
+        };
         assert_eq!(*cause, RemovalCause::Break);
         assert_eq!(context.block(*cell)?.block_type, "bloxgloom:air");
         let next = [cell[0] + 1, cell[1], cell[2]];
@@ -116,6 +160,68 @@ fn open(path: &std::path::Path) -> State {
             .with_extension(&HarvestExtension)
             .unwrap();
     crate::server::server_state_with_startup(23, path.to_owned(), 8, startup).unwrap()
+}
+
+#[test]
+fn placement_decision_stages_neighbour_and_reward_once_across_seam() {
+    let path = temp_save_dir("gameplay-placement");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&PlacementExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(15, y, 0, AIR).unwrap();
+    let sand_item = state
+        .world
+        .catalog()
+        .primary_block_item(crate::world::SAND)
+        .unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(sand_item, 1));
+    let peer = add_test_client(&mut state, [14.5, y as f32, -2.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let edit = ClientMessage::Edit {
+        action_id: epoch | 1,
+        x: 15,
+        y,
+        z: 0,
+        block: crate::world::SAND,
+        slot: 0,
+    };
+    let unavailable =
+        plan_durable_request(&mut state, &edit_request(edit.clone()), TickId::new(10));
+    assert_eq!(unavailable.err().unwrap().kind(), ErrorKind::WouldBlock);
+    state.world.edit(16, y, 0, AIR).unwrap();
+    settle_live_action(&mut state, 10, edit.clone());
+    settle_live_action(&mut state, 11, edit);
+    assert_eq!(state.world.cached_block(15, y, 0), Some(crate::world::SAND));
+    assert_eq!(state.world.cached_block(16, y, 0), Some(crate::world::SAND));
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().item,
+        crate::items::SEEDS
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        2
+    );
+    drop(peer);
+    drop(state);
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&PlacementExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(state.world.get_block(16, y, 0).unwrap(), crate::world::SAND);
+    assert_eq!(
+        state.inventory_store.load(17).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        2
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
 }
 
 #[test]

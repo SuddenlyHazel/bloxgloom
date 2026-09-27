@@ -208,11 +208,20 @@ pub(super) fn plan_removals(
         entities: Some(participants.entities),
     };
     let mut context = Context::new(&mut snapshot, 4096);
+    let mut placements = Vec::new();
     for &(x, y, z, state) in edits {
         let state = catalog
             .state(state)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown block state"))?;
+        let previous = context.block([x, y, z]).map_err(error)?;
         context.set_block([x, y, z], &state.key).map_err(error)?;
+        if previous.state != state.key && state.id != crate::world::AIR {
+            placements.push((
+                [x, y, z],
+                previous,
+                block(&catalog, state.id).map_err(error)?,
+            ));
+        }
     }
     for &(id, cell, cause) in removals {
         let previous = block(&catalog, id).map_err(error)?;
@@ -233,6 +242,24 @@ pub(super) fn plan_removals(
             previous,
             cause,
             random: cell_random(seed, cell, version),
+        };
+        context.dispatch(handler, &event).map_err(|e| {
+            let e = error(e);
+            io::Error::new(e.kind(), format!("{}: {e}", handler.key))
+        })?;
+    }
+    // Every original edit is staged first. Removal decisions run before
+    // placement decisions; both see the same read-your-writes overlay. Handler-
+    // emitted edits are effects, not recursively dispatched new decisions.
+    for (cell, previous, placed) in placements {
+        let Some(handler) = catalog.gameplay_handler(EventKind::BlockPlaced, &placed.block_type)
+        else {
+            continue;
+        };
+        let event = Event::BlockPlaced {
+            cell,
+            previous,
+            placed,
         };
         context.dispatch(handler, &event).map_err(|e| {
             let e = error(e);

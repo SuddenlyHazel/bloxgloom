@@ -427,9 +427,10 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 2 — general gameplay foundation landed; next unify decision
-  events and persistent scheduling, then remaining built-in world/drop/player and
-  fire behavior. Phase 1 does not claim Luau, client packages or authored UI.
+- **Active phase:** 2 — general gameplay foundation landed; removal and placement
+  decisions share one transaction overlay. Next add committed notifications and
+  persistent scheduling, then remaining built-in world/drop/player and fire
+  behavior. Phase 1 does not claim Luau, client packages or authored UI.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -507,9 +508,16 @@ This section exists so compaction or a new session does not restart the design.
   tests cover a non-archetypal entity's creation, state update and removal,
   nearby read and read-your-writes semantics, atomic chest transfer and anchored
   destruction with one refund plus registered loot. No benchmarks were run.
-- **Next concrete step:** start Phase 2 with general event/decision registration
-  across placement/use and scheduled world behavior using this same plan. Migrate
-  specialized support and fire behavior without creating another WAL lane.
+- **Phase 2 first increment:** `BlockPlaced` decisions now use the same registered
+  owner/manifest identity, handler context, dependency capture, item/entity
+  participants and WAL transaction as removals. Original edits stage first;
+  removal owners run before placement owners, both read the staged world; edits
+  emitted by a handler do not recurse into new decision handlers. A focused
+  cross-chunk placement test verifies unavailable neighbour deferral, one item
+  debit and reward despite duplicate requests, and restart recovery.
+- **Next concrete step:** add after-commit notifications and persistent scheduled
+  gameplay handlers through existing owner clock/effect machinery, then route
+  ordinary use/support/world behavior on the same contract.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

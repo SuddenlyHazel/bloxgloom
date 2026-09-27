@@ -5,6 +5,7 @@ use std::sync::Arc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EventKind {
     BlockRemoved,
+    BlockPlaced,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,6 +25,11 @@ pub enum Event {
         previous: Block,
         cause: RemovalCause,
         random: u64,
+    },
+    BlockPlaced {
+        cell: Cell,
+        previous: Block,
+        placed: Block,
     },
 }
 
@@ -71,6 +77,7 @@ impl HandlerRegistration {
         let mut bytes = self.version.to_le_bytes().to_vec();
         bytes.push(match self.event {
             EventKind::BlockRemoved => 0,
+            EventKind::BlockPlaced => 1,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

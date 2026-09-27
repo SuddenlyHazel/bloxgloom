@@ -17,6 +17,9 @@ registered removal decisions while preserving footprint refunds without duplicat
 cube loot. The Phase 1 gameplay transaction context is complete; Phase 2 events,
 scheduled world behavior, drop policies, player rules and fire migration, plus
 later Luau/package/presentation phases, remain open. This is not full parity.
+Phase 2 has begun with registered placement decisions, ordered after removals
+over the same staged world view; committed notifications and scheduling remain
+open.
 
 ### Integration follow-up
 
