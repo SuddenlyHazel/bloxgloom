@@ -51,12 +51,12 @@ fn inventory_port_keeps_exact_components_and_refuses_overflow() {
         ],
     });
     assert!(
-        policy::Port::<3>
+        policy::Port::<HopperPayload>::new()
             .deposit(&payload, &Stack::new(item, 1), &catalog)
             .unwrap()
             .is_none()
     );
-    let (after, taken) = policy::Port::<3>
+    let (after, taken) = policy::Port::<HopperPayload>::new()
         .withdraw(&payload, item, 1, &catalog)
         .unwrap()
         .unwrap();
@@ -69,12 +69,12 @@ fn inventory_port_keeps_exact_components_and_refuses_overflow() {
         127
     );
     assert!(
-        policy::Port::<3>
+        policy::Port::<HopperPayload>::new()
             .deposit(&after, &Stack::new(item, 1), &catalog)
             .unwrap()
             .is_none()
     );
-    let restored = policy::Port::<3>
+    let restored = policy::Port::<HopperPayload>::new()
         .deposit(&after, &taken, &catalog)
         .unwrap()
         .unwrap();

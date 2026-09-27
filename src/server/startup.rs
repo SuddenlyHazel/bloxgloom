@@ -41,6 +41,7 @@ pub(crate) struct StartupEntityType {
 
 pub(crate) struct ServerStartup {
     catalog: Arc<Catalog>,
+    storage: Vec<bloxgloom_host_api::StorageBlockEntity>,
     entity_types: Vec<StartupEntityType>,
     transfer_policies: Vec<(String, Arc<dyn EntityTransferPolicy>)>,
     systems: Vec<(SystemDescriptor, Arc<dyn SystemHandler>)>,
@@ -59,9 +60,66 @@ pub(in crate::server) struct StartupOwnerCodec {
 }
 
 impl ServerStartup {
+    /// The development host seam. The package receives only the public registrar.
+    #[allow(
+        dead_code,
+        reason = "Entry point for explicitly installed extension packages; no dynamic loader yet."
+    )]
+    pub(crate) fn with_extension(
+        mut self,
+        extension: &dyn bloxgloom_host_api::Extension,
+    ) -> io::Result<Self> {
+        let mut catalog = (*self.catalog).clone();
+        let registration = super::lifecycle::Registration::install(extension, &mut catalog)
+            .map_err(io::Error::other)?;
+        let mut storage = self.storage.clone();
+        storage.extend(registration.definitions);
+        super::lifecycle::Registry::resolve(&catalog, &storage).map_err(io::Error::other)?;
+        self.catalog = Arc::new(catalog);
+        self.storage = storage;
+        Ok(self)
+    }
+
+    pub(super) fn lifecycles(&self, catalog: &Catalog) -> io::Result<super::lifecycle::Registry> {
+        super::lifecycle::Registry::resolve(catalog, &self.storage).map_err(io::Error::other)
+    }
+
+    pub(super) fn block_actions_for(
+        &self,
+        catalog: &Catalog,
+    ) -> io::Result<(
+        super::block_actions::BlockActionRegistry,
+        super::lifecycle::Registry,
+    )> {
+        use super::block_actions::{BlockActionHooks, BlockActionRegistryBuilder};
+        use super::durable::actions::{storage_lifecycle, workstation};
+        let mut actions = BlockActionRegistryBuilder::new(catalog);
+        for block in [
+            crate::content::KILN_BLOCK_TYPE,
+            crate::content::HOPPER_BLOCK_TYPE,
+        ] {
+            actions.register(
+                block,
+                BlockActionHooks::new(workstation::plan_place, workstation::plan_break),
+            )?;
+        }
+        let lifecycles = self.lifecycles(catalog)?;
+        for lifecycle in lifecycles.entries.values() {
+            actions.register(
+                lifecycle.block,
+                BlockActionHooks::new(storage_lifecycle::plan_place, storage_lifecycle::plan_break),
+            )?;
+        }
+        Ok((actions.freeze(), lifecycles))
+    }
+
     pub(crate) fn new(catalog: Arc<Catalog>) -> Self {
+        let mut registration = super::lifecycle::Registration::default();
+        bloxgloom_host_api::Extension::register(&super::entities::chest::Chest, &mut registration)
+            .expect("valid builtin storage declarations");
         Self {
             catalog,
+            storage: registration.definitions,
             entity_types: Vec::new(),
             transfer_policies: Vec::new(),
             systems: Vec::new(),
@@ -176,7 +234,10 @@ impl ServerStartup {
         super::entities::register_player_entity_type(&mut types).map_err(entity_error)?;
         super::entities::mossbun::register(&mut types, &catalog).map_err(entity_error)?;
         super::entities::hopper::register(&mut types, &catalog).map_err(io::Error::other)?;
-        super::entities::chest::register(&mut types, &catalog).map_err(io::Error::other)?;
+        for definition in self.lifecycles(&catalog)?.entries.values() {
+            super::entities::container::register(&mut types, &catalog, definition)
+                .map_err(io::Error::other)?;
+        }
         super::entities::register_kiln_entity_type(&mut types, Arc::clone(&catalog))
             .map_err(entity_error)?;
         for registration in &self.entity_types {

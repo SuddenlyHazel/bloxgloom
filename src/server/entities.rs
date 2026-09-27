@@ -6,6 +6,7 @@
 mod checkpoint;
 pub(in crate::server) mod chest;
 mod codec;
+pub(in crate::server) mod container;
 pub(in crate::server) mod hopper;
 mod kiln;
 mod locomotion;

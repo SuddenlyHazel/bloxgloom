@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use crate::world::{self, BlockId};
 
 mod builtins;
+mod extensions;
 mod ids;
 mod manifest;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};

@@ -512,6 +512,8 @@ fn complete_content_handshake(peer: &mut TcpStream) {
     protocol::write_client(peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
 }
 
+#[path = "tests/extension_lifecycle.rs"]
+mod extension_lifecycle;
 #[path = "tests/kiln_latency.rs"]
 mod kiln_latency;
 

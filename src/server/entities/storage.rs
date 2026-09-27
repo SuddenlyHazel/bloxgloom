@@ -13,6 +13,15 @@ use std::sync::Arc;
 pub(in crate::server) struct StoragePayload<const N: usize> {
     pub slots: [Option<Stack>; N],
 }
+
+pub(in crate::server) trait Slots: Clone + Send + Sync + 'static {
+    fn slots_mut(&mut self) -> &mut [Option<Stack>];
+}
+impl<const N: usize> Slots for StoragePayload<N> {
+    fn slots_mut(&mut self) -> &mut [Option<Stack>] {
+        &mut self.slots
+    }
+}
 impl<const N: usize> Default for StoragePayload<N> {
     fn default() -> Self {
         Self {
@@ -46,6 +55,12 @@ pub(super) fn register<const N: usize>(
             kind,
         }),
     })?;
-    builder.register_transfer_policy(entity_type, Arc::new(policy::Port::<N>))?;
-    builder.register_interaction_policy(entity_type, Arc::new(policy::Interaction::<N>))
+    builder.register_transfer_policy(
+        entity_type,
+        Arc::new(policy::Port::<StoragePayload<N>>::new()),
+    )?;
+    builder.register_interaction_policy(
+        entity_type,
+        Arc::new(policy::Interaction::<StoragePayload<N>>::new()),
+    )
 }

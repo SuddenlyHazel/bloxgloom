@@ -11,6 +11,7 @@ use crate::world::BlockId;
 
 mod admin;
 pub(in crate::server) mod entity;
+pub(in crate::server) mod storage_lifecycle;
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

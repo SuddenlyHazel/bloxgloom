@@ -1,0 +1,7 @@
+[package]
+name = "bloxgloom-lifecycle-fixture"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bloxgloom-host-api = { path = "../../crates/host-api" }

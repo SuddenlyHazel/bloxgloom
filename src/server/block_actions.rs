@@ -32,9 +32,19 @@ pub(super) struct BlockActionContext<'a> {
     clients: &'a HashMap<u64, super::Client>,
     entities: &'a EntityStore,
     seed: u64,
+    lifecycles: &'a super::lifecycle::Registry,
 }
 
 impl BlockActionContext<'_> {
+    pub(super) fn lifecycle(
+        &self,
+        state: BlockStateId,
+    ) -> io::Result<Arc<super::lifecycle::Resolved>> {
+        self.lifecycles
+            .for_state(&self.catalog, state)
+            .cloned()
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "no registered lifecycle"))
+    }
     pub(super) fn catalog(&self) -> Arc<Catalog> {
         Arc::clone(&self.catalog)
     }
@@ -126,6 +136,7 @@ pub(super) fn invoke_hook(
         clients: &state.clients,
         entities: &state.entities,
         seed: state.seed,
+        lifecycles: &state.lifecycles,
     };
     let mut builder = BlockCommitBuilder {
         world: &mut state.world,

@@ -3,6 +3,18 @@
 Status: proposed implementation plan. This document does not introduce a mod
 loader or declare the current internal interfaces to be a supported mod API.
 
+## Implementation status
+
+- **First lifecycle slice implemented:** dependency-free public API crate,
+  declarative storage lifecycle registration, Chest migration, and a separate
+  nine-slot/two-block extension fixture. Verified production transactions,
+  restart/refund conservation, conflicts/retries, and real-listener replication;
+  **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
+- The surface currently exposes passive storage lifecycle declarations. General
+  entity behavior, arbitrary lifecycle callbacks, independent container encoding,
+  and generic client inventory screens remain subsequent work. The broader
+  parity inventory and the remaining slices below are not marked complete.
+
 ## Goal and completion rule
 
 **If a gameplay feature exists in the game, an extension must be able to create

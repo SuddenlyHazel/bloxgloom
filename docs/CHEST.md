@@ -8,12 +8,12 @@ identity/revision-checked entity requests.
 
 ## Foundation reuse
 
-Chest and Hopper now share `entities/storage/`: a const-generic fixed-slot
-payload, bounded inventory codec, exact component-preserving inventory port,
-and slot interaction policy. The Chest registers 27 slots with `TickPolicy::Never`;
-it has no custom ticking behavior or automation thread. The Hopper retains only
-its flow decisions and registers the same storage machinery for three slots.
-Its automation does not test whether a neighbor is a Chest.
+Chest and Hopper share the exact component-preserving inventory port and slot
+interaction policy in `entities/storage/`. Chest now uses the public declarative
+[storage lifecycle](HOST-LIFECYCLE.md) and a runtime-sized 27-slot payload in
+`entities/container.rs`, with `TickPolicy::Never`. Its codec preserves the original
+save and public-view bytes. Hopper retains its three-slot payload and flow
+decisions; its automation does not test whether a neighbor is a Chest.
 
 The shared transaction path still owns both ends of every transfer. Full
 destinations refuse deposits, stale revisions reject whole actions, and

@@ -165,6 +165,8 @@ dependencies = [
 name = "bloxgloom"
 version = "0.1.0"
 dependencies = [
+ "bloxgloom-host-api",
+ "bloxgloom-lifecycle-fixture",
  "bytemuck",
  "font8x8",
  "getrandom 0.3.4",
@@ -174,6 +176,17 @@ dependencies = [
  "pollster",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "bloxgloom-host-api"
+version = "0.1.0"
+
+[[package]]
+name = "bloxgloom-lifecycle-fixture"
+version = "0.1.0"
+dependencies = [
+ "bloxgloom-host-api",
 ]
 
 [[package]]

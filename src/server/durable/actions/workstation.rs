@@ -4,14 +4,12 @@
 use super::entity::corrupt;
 use super::{BlockEditCommand, prepared_deltas, push_harvest_spawns};
 use crate::content::{
-    CHEST_ENTITY_TYPE, CHEST_ITEM, CHEST_STATE, HOPPER_ENTITY_TYPE, HOPPER_ITEM, HOPPER_STATE,
-    KILN_ITEM, PLANT, REPLACEABLE, SOLID,
+    HOPPER_ENTITY_TYPE, HOPPER_ITEM, HOPPER_STATE, KILN_ITEM, PLANT, REPLACEABLE, SOLID,
 };
 use crate::inventory::{HOTBAR_SLOTS, InventoryStore, Stack};
 use crate::server::block_actions::{BlockActionContext, BlockCommitBuilder};
 use crate::server::durable::{BlockDelta, CommitAction};
 use crate::server::effects::CellCoord as EffectCell;
-use crate::server::entities::chest::ChestPayload;
 use crate::server::entities::hopper::HopperPayload;
 use crate::server::entities::{
     CellCoord, KilnFacing, KilnPayload, kiln_block_states, kiln_footprint, kiln_payload,
@@ -32,20 +30,62 @@ pub(in crate::server) fn plan_place(
 ) -> io::Result<CommitAction> {
     let catalog = context.catalog();
     let hopper = command.block == HOPPER_STATE;
-    let chest = command.block == CHEST_STATE;
-    let item = if chest {
-        CHEST_ITEM
-    } else if hopper {
-        HOPPER_ITEM
-    } else {
-        KILN_ITEM
-    };
-    let facing = if hopper || chest {
+    let item = if hopper { HOPPER_ITEM } else { KILN_ITEM };
+    let facing = if hopper {
         KilnFacing::North
     } else {
         KilnFacing::from_place_state(&catalog, command.block)
             .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
     };
+    let anchor = CellCoord::new(command.x, command.y, command.z);
+    let footprint = if hopper {
+        vec![anchor]
+    } else {
+        kiln_footprint(anchor).map_err(io::Error::other)?
+    };
+    let payload = KilnPayload::new(facing);
+    let states = if hopper {
+        [HOPPER_STATE; 2]
+    } else {
+        kiln_block_states(&catalog, &payload).map_err(io::Error::other)?
+    };
+    let spawn = if hopper {
+        HopperPayload::default().spawn(anchor, tick.get())
+    } else {
+        payload
+            .spawn(anchor, tick.get(), &catalog)
+            .map_err(io::Error::other)?
+    };
+    let cells = footprint
+        .into_iter()
+        .map(|cell| (cell, if cell == anchor { states[0] } else { states[1] }))
+        .collect();
+    place(
+        context,
+        builder,
+        tick,
+        command,
+        previous,
+        Placement { item, cells, spawn },
+    )
+}
+
+pub(super) struct Placement {
+    pub item: crate::items::ItemId,
+    pub cells: Vec<(CellCoord, BlockId)>,
+    pub spawn: crate::server::entities::EntitySpawn,
+}
+
+pub(super) fn place(
+    context: &BlockActionContext,
+    builder: &mut BlockCommitBuilder,
+    tick: TickId,
+    command: BlockEditCommand,
+    previous: BlockId,
+    plan: Placement,
+) -> io::Result<CommitAction> {
+    let catalog = context.catalog();
+    let Placement { item, cells, spawn } = plan;
     let inventory_before = {
         let client = context.client(command.id).ok_or_else(|| {
             io::Error::new(
@@ -77,22 +117,15 @@ pub(in crate::server) fn plan_place(
         ));
     }
     let anchor = CellCoord::new(command.x, command.y, command.z);
-    let footprint = if hopper || chest {
-        vec![anchor]
-    } else {
-        kiln_footprint(anchor).map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
-    };
-    let payload = KilnPayload::new(facing);
-    let states = if chest {
-        [CHEST_STATE; 2]
-    } else if hopper {
-        [HOPPER_STATE; 2]
-    } else {
-        kiln_block_states(&catalog, &payload).map_err(io::Error::other)?
-    };
-    let mut coords = Vec::with_capacity(2);
+    let mut coords = Vec::with_capacity(cells.len());
     let mut displaced_plants = Vec::new();
-    for cell in &footprint {
+    for (cell, block) in &cells {
+        if cell.y <= crate::world::BEDROCK_Y {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "footprint crosses bedrock",
+            ));
+        }
         let before = if *cell == anchor {
             previous
         } else {
@@ -111,7 +144,7 @@ pub(in crate::server) fn plan_place(
                 "workstation footprint cannot be replaced",
             ));
         }
-        if catalog.block_flags(states[0]) & SOLID != 0
+        if catalog.block_flags(*block) & SOLID != 0
             && context
                 .clients()
                 .values()
@@ -122,25 +155,11 @@ pub(in crate::server) fn plan_place(
                 "workstation footprint overlaps a player",
             ));
         }
-        let block = if *cell == anchor {
-            states[0]
-        } else {
-            states[1]
-        };
-        coords.push((cell.x, cell.y, cell.z, block));
+        coords.push((cell.x, cell.y, cell.z, *block));
         if catalog.block_flags(before) & PLANT != 0 {
             displaced_plants.push((before, [cell.x, cell.y, cell.z]));
         }
     }
-    let kiln_spawn = if chest {
-        ChestPayload::default().spawn(anchor, tick.get())
-    } else if hopper {
-        HopperPayload::default().spawn(anchor, tick.get())
-    } else {
-        payload
-            .spawn(anchor, tick.get(), &catalog)
-            .map_err(io::Error::other)?
-    };
     let mut inventory = inventory_before.clone();
     if !inventory.consume(command.slot, item) {
         return Err(io::Error::new(
@@ -168,7 +187,7 @@ pub(in crate::server) fn plan_place(
         context.entities(),
         &catalog,
         &drop_spawns,
-        vec![kiln_spawn],
+        vec![spawn],
         tick.get(),
         crate::server::drops::unix_ms(),
     )?
@@ -216,7 +235,6 @@ pub(in crate::server) fn plan_break(
         .ok_or_else(|| corrupt("workstation footprint references a missing entity"))?;
     if snapshot.entity_type != crate::content::KILN_ENTITY_TYPE
         && snapshot.entity_type != HOPPER_ENTITY_TYPE
-        && snapshot.entity_type != CHEST_ENTITY_TYPE
     {
         return Err(corrupt(
             "workstation footprint references a different entity type",
@@ -225,15 +243,7 @@ pub(in crate::server) fn plan_break(
     let anchor = snapshot
         .anchor()
         .ok_or_else(|| corrupt("workstation entity is not anchored"))?;
-    let (removed_cells, drops, states) = if snapshot.entity_type == CHEST_ENTITY_TYPE {
-        let payload = snapshot
-            .private_payload
-            .downcast_ref::<ChestPayload>()
-            .ok_or_else(|| corrupt("invalid chest payload"))?;
-        let mut drops = vec![Stack::new(CHEST_ITEM, 1)];
-        drops.extend(payload.slots.iter().flatten().cloned());
-        (vec![anchor], drops, [CHEST_STATE; 2])
-    } else if snapshot.entity_type == HOPPER_ENTITY_TYPE {
+    let (removed_cells, drops, states) = if snapshot.entity_type == HOPPER_ENTITY_TYPE {
         let payload = snapshot
             .private_payload
             .downcast_ref::<HopperPayload>()
@@ -249,8 +259,46 @@ pub(in crate::server) fn plan_break(
         let states = kiln_block_states(&catalog, payload).map_err(io::Error::other)?;
         (planned.removed_cells, planned.drops, states)
     };
-    let mut coords = Vec::with_capacity(removed_cells.len());
-    for cell in &removed_cells {
+    let cells = removed_cells
+        .into_iter()
+        .map(|cell| (cell, if cell == anchor { states[0] } else { states[1] }))
+        .collect();
+    remove(
+        context,
+        builder,
+        tick,
+        command,
+        Removal {
+            snapshot,
+            cells,
+            drops,
+        },
+    )
+}
+
+pub(super) struct Removal {
+    pub snapshot: crate::server::entities::EntitySnapshot,
+    pub cells: Vec<(CellCoord, BlockId)>,
+    pub drops: Vec<Stack>,
+}
+
+pub(super) fn remove(
+    context: &BlockActionContext,
+    builder: &mut BlockCommitBuilder,
+    tick: TickId,
+    command: BlockEditCommand,
+    plan: Removal,
+) -> io::Result<CommitAction> {
+    let catalog = context.catalog();
+    let Removal {
+        snapshot,
+        cells,
+        drops,
+    } = plan;
+    let id = snapshot.id;
+    let anchor = snapshot.anchor().ok_or_else(|| corrupt("not anchored"))?;
+    let mut coords = Vec::with_capacity(cells.len());
+    for (cell, expected) in &cells {
         if context.entities().anchored_at(*cell) != Some(id) {
             return Err(corrupt("workstation footprint index is incomplete"));
         }
@@ -260,12 +308,7 @@ pub(in crate::server) fn plan_break(
             cell.z,
             "workstation footprint chunk is not resident",
         )?;
-        let expected = if *cell == anchor {
-            states[0]
-        } else {
-            states[1]
-        };
-        if actual != expected {
+        if actual != *expected {
             return Err(corrupt(
                 "workstation block state differs from anchored entity",
             ));

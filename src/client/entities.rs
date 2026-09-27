@@ -57,6 +57,10 @@ pub(super) enum Assembly {
 }
 
 impl Replicas {
+    #[cfg(test)]
+    pub(super) fn anchored_for_test(&self, target: [i32; 3]) -> Option<&PublicEntity> {
+        self.entities.values().flat_map(|entities|entities.values()).find(|entity|matches!(entity.location,crate::protocol::PublicEntityLocation::Anchored {anchor,..} if anchor==target))
+    }
     pub(super) fn kiln_at(&self, target: [i32; 3]) -> Option<&PublicEntity> {
         let key = crate::world::world_to_chunk(target[0], target[1], target[2]).0;
         self.entities.get(&key)?.values().find(|entity| {

@@ -52,7 +52,7 @@ impl EntityTickPolicy for Planner {
             for source in neighbours.iter().filter(|e| touches(e, at(1))) {
                 for mut stack in neighbours.offers(source) {
                     stack.count = 1;
-                    if Port::<3>
+                    if Port::<HopperPayload>::new()
                         .deposit(&snapshot.private_payload, &stack, catalog)?
                         .is_some()
                     {

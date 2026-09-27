@@ -14,6 +14,7 @@ mod entity_checkpoint;
 mod fire;
 mod interest;
 mod journal;
+mod lifecycle;
 mod loot;
 mod metrics;
 mod movement;
@@ -39,7 +40,7 @@ use crate::protocol::{
     ClientMessage, DroppedItem, MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE, ServerMessage,
 };
 use crate::world::{AIR, BEDROCK_Y, ChunkKey, World, world_to_chunk};
-use block_actions::{BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder};
+use block_actions::BlockActionRegistry;
 use chunk_loader::ChunkLoader;
 use durable::{
     Durability, handle_live_message, process_durable_actions, publish_committed,
@@ -157,6 +158,7 @@ struct State {
     /// changes. It is intentionally separate from the WAL/checkpoint frontier.
     entity_public_revision: u64,
     block_actions: BlockActionRegistry,
+    lifecycles: lifecycle::Registry,
     seed: u64,
     clients: HashMap<u64, Client>,
     next_id: u64,
@@ -451,6 +453,7 @@ fn server_state_with_startup(
     // rewrite content.map before rejecting the world. Repeat after loading
     // because an existing world's manifest may resolve numeric IDs.
     let _ = startup.entity_types_for(Arc::clone(&catalog))?;
+    let _ = startup.block_actions_for(&catalog)?;
     let mut world =
         World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
@@ -458,29 +461,7 @@ fn server_state_with_startup(
     let catalog = world.catalog_arc();
     let entity_types = startup.entity_types_for(catalog.clone())?;
     let effect_kinds = Arc::new(startup.effect_kinds()?);
-    let mut block_actions = BlockActionRegistryBuilder::new(&catalog);
-    block_actions.register(
-        crate::content::KILN_BLOCK_TYPE,
-        BlockActionHooks::new(
-            durable::actions::workstation::plan_place,
-            durable::actions::workstation::plan_break,
-        ),
-    )?;
-    block_actions.register(
-        crate::content::HOPPER_BLOCK_TYPE,
-        BlockActionHooks::new(
-            durable::actions::workstation::plan_place,
-            durable::actions::workstation::plan_break,
-        ),
-    )?;
-    block_actions.register(
-        crate::content::CHEST_BLOCK_TYPE,
-        BlockActionHooks::new(
-            durable::actions::workstation::plan_place,
-            durable::actions::workstation::plan_break,
-        ),
-    )?;
-    let block_actions = block_actions.freeze();
+    let (block_actions, lifecycles) = startup.block_actions_for(&catalog)?;
     let owner_configs = startup.owner_configs()?;
     let (mut durability, recovered_fire, entities, owner_store, wake_store, cursors) =
         Durability::open(
@@ -526,6 +507,7 @@ fn server_state_with_startup(
         effect_kinds,
         entity_public_revision,
         block_actions,
+        lifecycles,
         seed,
         clients: HashMap::new(),
         next_id: 1,

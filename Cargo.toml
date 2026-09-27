@@ -3,7 +3,14 @@ name = "bloxgloom"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["crates/host-api", "extensions/lifecycle-fixture"]
+
+[dev-dependencies]
+bloxgloom-lifecycle-fixture = { path = "extensions/lifecycle-fixture" }
+
 [dependencies]
+bloxgloom-host-api = { path = "crates/host-api" }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 font8x8 = "0.3.1"
 getrandom = "0.3"

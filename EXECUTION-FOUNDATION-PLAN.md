@@ -15,6 +15,12 @@ The execution contract we are working toward:
 
 ## Status as of 2026-09-26
 
+- **Done:** first public storage-lifecycle surface and external fixture. Chest
+  uses the registered lifecycle path; a separately compiled nine-slot/two-cell
+  storage block exercises cross-chunk persistence, refunds, conflicts, retries,
+  and the real listener. **647 tests passed**. See [host lifecycle](docs/HOST-LIFECYCLE.md)
+  and the [remaining modding surface plan](MODDING-SURFACE-PLAN.md).
+
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.
 - **Done:** review correction for captured terrain dependencies during transaction admission (`e6be3ed`), including single-drop and batched-motion regression coverage. The worker slice is complete with the verification limits noted below.

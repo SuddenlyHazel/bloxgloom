@@ -42,17 +42,17 @@ fn full_chest_roundtrips_all_slots_and_refuses_overflow_without_losing_component
     let mut one = stack.clone();
     one.count = 1;
     assert!(
-        policy::Port::<27>
+        policy::Port::<StoragePayload<27>>::new()
             .deposit(&payload, &one, &catalog)
             .unwrap()
             .is_none()
     );
-    let (after, taken) = policy::Port::<27>
+    let (after, taken) = policy::Port::<StoragePayload<27>>::new()
         .withdraw(&payload, stack.item, 1, &catalog)
         .unwrap()
         .unwrap();
     assert_eq!(taken, one);
-    let restored = policy::Port::<27>
+    let restored = policy::Port::<StoragePayload<27>>::new()
         .deposit(&after, &taken, &catalog)
         .unwrap()
         .unwrap();
