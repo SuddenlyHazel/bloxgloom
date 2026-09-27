@@ -14,17 +14,19 @@ impl Adapter {
             return Err(EntityCodecError::InvalidData);
         }
         if let Some(process) = &self.definition.process {
-            let input = p.slots[process.input as usize]
-                .as_ref()
-                .filter(|s| s.components.is_none())
-                .map(|s| s.item);
+            let stack = p.slots[process.input as usize].as_ref();
+            let input = stack.map(|s| s.item);
             if (p.progress > 0 && (input.is_none() || input != p.progress_item))
                 || p.progress_item.is_some_and(|i| Some(i) != input)
                 || process.fuel.is_none() && p.fuel != 0
             {
                 return Err(EntityCodecError::InvalidData);
             }
-            if p.progress > 0 && self.recipe(input).is_none_or(|r| p.progress >= r.pulses) {
+            if p.progress > 0
+                && stack
+                    .and_then(|s| self.recipe(s))
+                    .is_none_or(|r| p.progress >= r.pulses)
+            {
                 return Err(EntityCodecError::InvalidData);
             }
             if p.fuel > process.fuels.iter().map(|f| f.pulses).max().unwrap_or(0) {
@@ -85,7 +87,13 @@ impl EntityPayloadCodec for Adapter {
             .ok_or(EntityCodecError::InvalidData)?;
         self.validate(p)?;
         let status = if self.definition.process.is_some() {
-            let duration = self.recipe(p.progress_item).map_or(1, |r| r.pulses);
+            let duration = self
+                .definition
+                .process
+                .as_ref()
+                .and_then(|process| p.slots[process.input as usize].as_ref())
+                .and_then(|s| self.recipe(s))
+                .map_or(1, |r| r.pulses);
             vec![
                 u32::from(p.fuel) * self.definition.interval * 20,
                 u32::from(p.progress) * 1000 / u32::from(duration),

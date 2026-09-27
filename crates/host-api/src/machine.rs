@@ -3,11 +3,13 @@
 //! stacks, and opaque hook data cannot override either inventory.
 use crate::{FootprintCell, RegistrationError};
 use std::sync::Arc;
+mod components;
+pub use components::{ComponentMatch, ComponentOutput, ComponentValue};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     /// Namespaced allowlist; empty accepts any registered item.
     pub items: Vec<String>,
-    /// Allow exact component-bearing stacks. Recipes never consume these.
+    /// Allow exact component-bearing stacks, including registered process inputs.
     pub components: bool,
 }
 impl Filter {
@@ -39,13 +41,16 @@ pub struct Recipe {
     pub key: String,
     pub input: String,
     pub input_count: u16,
+    pub input_components: ComponentMatch,
     pub output: String,
     pub output_count: u16,
+    pub output_components: ComponentOutput,
     pub pulses: u16,
 }
 #[derive(Clone, Debug)]
 pub struct Fuel {
     pub item: String,
+    pub components: ComponentMatch,
     pub pulses: u16,
 }
 #[derive(Clone, Debug)]
@@ -68,6 +73,36 @@ pub struct Slot<'a> {
     pub item: &'a str,
     pub count: u16,
     pub has_components: bool,
+    /// Snapshot-local equivalence class: equal keys mean equal item and exact
+    /// components (count excluded). Not a persistent ID and contains no bytes.
+    pub stack_key: u8,
+}
+#[derive(Clone, Debug, Default)]
+pub enum StackSelector {
+    #[default]
+    Any,
+    Item(String),
+    /// Match the item and full components in this machine's captured own slot.
+    /// An empty reference slot matches nothing. Neither bytes nor hashes escape.
+    SameAsSlot(u8),
+}
+#[derive(Clone, Debug)]
+pub struct TransferSelection {
+    /// Absolute source/destination inventory indices, still constrained by ports.
+    pub source_slot: Option<u8>,
+    pub destination_slot: Option<u8>,
+    pub stack: StackSelector,
+    pub count: u16,
+}
+impl Default for TransferSelection {
+    fn default() -> Self {
+        Self {
+            source_slot: None,
+            destination_slot: None,
+            stack: StackSelector::Any,
+            count: 1,
+        }
+    }
 }
 pub struct Context<'a> {
     pub tick: u64,
@@ -86,6 +121,7 @@ pub enum Work {
         own_port: String,
         peer_port: Option<String>,
         push: bool,
+        selection: TransferSelection,
     },
 }
 #[derive(Clone, Debug)]
@@ -207,7 +243,6 @@ impl Machine {
             {
                 return Err(bad());
             }
-            let mut inputs = std::collections::BTreeSet::new();
             let mut recipes = std::collections::BTreeSet::new();
             let mut fuels = std::collections::BTreeSet::new();
             if p.recipes.iter().any(|r| {
@@ -215,21 +250,56 @@ impl Machine {
                     || r.pulses > 60000
                     || !(1..=128).contains(&r.input_count)
                     || !(1..=128).contains(&r.output_count)
-                    || !inputs.insert(&r.input)
+                    || !r.input_components.valid()
+                    || !r.output_components.valid()
                     || !recipes.insert(&r.key)
-            }) || p
-                .fuels
-                .iter()
-                .any(|f| f.pulses == 0 || f.pulses > 240 || !fuels.insert(&f.item))
-            {
+            }) || p.fuels.iter().any(|f| {
+                f.pulses == 0
+                    || f.pulses > 240
+                    || !f.components.valid()
+                    || !fuels.insert((&f.item, &f.components))
+            }) {
                 return Err(bad());
+            }
+            // Disjoint predicates make progress identity independent of recipe
+            // ordering. Registration is bounded to 4096 entries, not tick work.
+            for (i, r) in p.recipes.iter().enumerate() {
+                if p.recipes[..i].iter().any(|old| {
+                    old.input == r.input && old.input_components.overlaps(&r.input_components)
+                }) {
+                    return Err(bad());
+                }
+            }
+            for (i, f) in p.fuels.iter().enumerate() {
+                if p.fuels[..i]
+                    .iter()
+                    .any(|old| old.item == f.item && old.components.overlaps(&f.components))
+                {
+                    return Err(bad());
+                }
             }
         }
         Ok(())
     }
     /// Canonical metadata identity. Behavior semantics additionally use `schema`.
     pub fn fingerprint_bytes(&self) -> Vec<u8> {
-        let mut b = vec![1, self.slots, self.read_radius, self.reads_neighbours as u8];
+        // Preserve existing machine identities when the new operations are not
+        // used. Component declarations themselves are negotiated save identity.
+        let component_aware = self.process.as_ref().is_some_and(|p| {
+            p.recipes.iter().any(|r| {
+                r.input_components != ComponentMatch::Empty
+                    || r.output_components != ComponentOutput::Empty
+            }) || p
+                .fuels
+                .iter()
+                .any(|f| f.components != ComponentMatch::Empty)
+        });
+        let mut b = vec![
+            if component_aware { 2 } else { 1 },
+            self.slots,
+            self.read_radius,
+            self.reads_neighbours as u8,
+        ];
         b.extend(self.interval.to_le_bytes());
         b.extend(self.schema.to_le_bytes());
         fn text(b: &mut Vec<u8>, s: &str) {
@@ -281,6 +351,10 @@ impl Machine {
                 text(&mut b, &r.key);
                 text(&mut b, &r.input);
                 text(&mut b, &r.output);
+                if component_aware {
+                    r.input_components.fingerprint(&mut b);
+                    r.output_components.fingerprint(&mut b);
+                }
                 for v in [r.input_count, r.output_count, r.pulses] {
                     b.extend(v.to_le_bytes());
                 }
@@ -288,6 +362,9 @@ impl Machine {
             b.extend((p.fuels.len() as u32).to_le_bytes());
             for f in &p.fuels {
                 text(&mut b, &f.item);
+                if component_aware {
+                    f.components.fingerprint(&mut b);
+                }
                 b.extend(f.pulses.to_le_bytes());
             }
         }
@@ -322,12 +399,14 @@ impl Behavior for DownwardFlow {
                     own_port: "storage".into(),
                     peer_port: None,
                     push: true,
+                    selection: TransferSelection::default(),
                 },
                 Work::Transfer {
                     offset: [0, 1, 0],
                     own_port: "storage".into(),
                     peer_port: None,
                     push: false,
+                    selection: TransferSelection::default(),
                 },
             ],
         })

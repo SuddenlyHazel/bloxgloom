@@ -29,6 +29,24 @@ use crate::content::Catalog;
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
 
+/// Snapshot-local equality identity. Assigned by exact interning during bounded
+/// host capture, never a hash or a serialization of private component bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutomationStack {
+    pub item: ItemId,
+    pub count: u16,
+    pub has_components: bool,
+    pub key: u32,
+}
+impl AutomationStack {
+    pub fn fits(self, slot: Option<Self>) -> bool {
+        slot.is_none_or(|old| {
+            old.key == self.key
+                && u32::from(old.count) + u32::from(self.count) <= u32::from(STACK_LIMIT)
+        })
+    }
+}
+
 /// Exact, component-preserving slot operations shared by inventory ports.
 pub(super) fn put(slot: &mut Option<Stack>, stack: &Stack) -> bool {
     if stack.count == 0 || stack.count > STACK_LIMIT {
@@ -84,6 +102,10 @@ pub struct EntityItemTransfer {
 pub struct PortRoute {
     pub source: u8,
     pub destination: u8,
+    /// Exact source slot selected from the captured revision's public inventory.
+    pub source_slot: u8,
+    /// Optional exact destination slot; None chooses the first exact fit.
+    pub destination_slot: Option<u8>,
     pub from: [i32; 3],
     pub to: [i32; 3],
 }
@@ -106,6 +128,27 @@ impl EntityItemTransfer {
 /// Pure per-type item exchange used only through the trusted transfer plan.
 /// Implementations must be deterministic functions of their inputs.
 pub trait EntityTransferPolicy: Send + Sync + 'static {
+    /// Restrict an already selected port to one absolute inventory slot. Port
+    /// permissions still apply; unsupported selectors fail closed.
+    fn at_slot(&self, _slot: u8) -> Option<std::sync::Arc<dyn EntityTransferPolicy>> {
+        None
+    }
+    /// Bounded source offers retain slot identity through fit testing and apply.
+    fn automation_offers(&self, _slots: &[Option<AutomationStack>]) -> Vec<(u8, AutomationStack)> {
+        vec![]
+    }
+    fn automation_accepts(
+        &self,
+        _slots: &[Option<AutomationStack>],
+        _stack: AutomationStack,
+    ) -> bool {
+        false
+    }
+    /// Host capture/commit only. Never returned to a behavior or retained in a
+    /// neighbour worker view. Registered inventories are bounded to 54 slots.
+    fn inventory_slots(&self, _payload: &EntityPayload) -> Result<Vec<Option<Stack>>, EntityError> {
+        Ok(vec![])
+    }
     fn ports(&self) -> Vec<String> {
         vec![]
     }
@@ -116,10 +159,13 @@ pub trait EntityTransferPolicy: Send + Sync + 'static {
     ) -> Option<std::sync::Arc<dyn EntityTransferPolicy>> {
         None
     }
-    /// Automation discovery uses only the registered public projection.
+    // Legacy projection-only reference planners are test fixtures. Production
+    // automation must use the exact opaque inventory capture above.
+    #[cfg(test)]
     fn offers(&self, _public: &[u8]) -> Vec<Stack> {
         Vec::new()
     }
+    #[cfg(test)]
     fn accepts(&self, _public: &[u8], _stack: &Stack, _catalog: &Catalog) -> bool {
         false
     }

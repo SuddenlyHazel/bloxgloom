@@ -8,6 +8,8 @@ use crate::{
     },
 };
 use std::sync::Arc;
+#[path = "machine_component_tests.rs"]
+mod components;
 #[test]
 fn registered_machine_ports_reject_wrong_faces_and_forged_destination_without_item_changes() {
     let path = temp_save_dir("machine-port-validation");

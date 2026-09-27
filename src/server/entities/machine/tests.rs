@@ -88,3 +88,115 @@ fn full_output_never_consumes_unstarted_fuel_or_input_and_components_survive_cod
         Some(tagged)
     );
 }
+
+#[test]
+fn component_fuels_and_present_predicates_use_exact_stacks_and_reset_replacement_progress() {
+    use api::{ComponentMatch, ComponentOutput, ComponentValue, Fuel};
+    let catalog = Arc::new(Catalog::builtins());
+    let mut definition = (**catalog.machine(KILN_ENTITY_TYPE).unwrap()).clone();
+    definition.filters[0].components = true;
+    definition.ports[0].extract.push(1);
+    let process = definition.process.as_mut().unwrap();
+    process.recipes[0].input_components = ComponentMatch::Present;
+    process.recipes[0].output_components = ComponentOutput::PreserveInput;
+    process.fuels.push(Fuel {
+        item: "bloxgloom:stick".into(),
+        pulses: 2,
+        components: ComponentMatch::Exact(ComponentValue {
+            version: 3,
+            bytes: vec![7],
+        }),
+    });
+    definition.validate().unwrap();
+    let adapter = Adapter::new(catalog.clone(), Arc::new(definition));
+    let mut p = MachinePayload::empty(3, 0);
+    let first = Stack::with_components(ItemId(GRAVEL.0), 1, 12, vec![9, 5]).unwrap();
+    p.slots[1] = Some(first.clone());
+    p.slots[0] = Some(Stack::with_components(STICK, 2, 2, vec![7]).unwrap());
+    adapter.process(&mut p).unwrap();
+    assert_eq!((p.progress, p.fuel), (0, 0));
+    assert_eq!(p.slots[0].as_ref().unwrap().count, 2);
+    p.slots[0] = Some(Stack::with_components(STICK, 2, 3, vec![7]).unwrap());
+    adapter.process(&mut p).unwrap();
+    assert_eq!((p.progress, p.fuel), (1, 1));
+    let port = EntityTransferPolicy::port(&adapter, 0, [0, 1, 0]).unwrap();
+    let (taken, exact) = port
+        .at_slot(1)
+        .unwrap()
+        .withdraw(&EntityPayload::new(p), first.item, 1, &catalog)
+        .unwrap()
+        .unwrap();
+    assert_eq!(exact, first);
+    assert_eq!(taken.downcast_ref::<MachinePayload>().unwrap().progress, 0);
+    let replacement = Stack::with_components(first.item, 1, 12, vec![9, 6]).unwrap();
+    let deposited = port
+        .deposit(&taken, &replacement, &catalog)
+        .unwrap()
+        .unwrap();
+    let mut p = deposited.downcast_ref::<MachinePayload>().unwrap().clone();
+    assert_eq!(p.progress, 0);
+    for _ in 0..3 {
+        adapter.process(&mut p).unwrap();
+    }
+    assert!(
+        p.slots[2].is_none(),
+        "replacement must earn all four pulses"
+    );
+    // Fuel is now exhausted; fresh matching fuel is required, not a free pulse.
+    assert_eq!(p.fuel, 0);
+    p.slots[0] = Some(Stack::with_components(STICK, 1, 3, vec![7]).unwrap());
+    adapter.process(&mut p).unwrap();
+    assert!(p.slots[1].is_none());
+    let output = p.slots[2].as_ref().unwrap();
+    assert_eq!(output.item, ItemId(STONE.0));
+    assert_eq!(output.components, replacement.components);
+    let encoded = adapter.encode(&EntityPayload::new(p.clone())).unwrap();
+    assert_eq!(
+        adapter
+            .decode(&encoded)
+            .unwrap()
+            .downcast_ref::<MachinePayload>(),
+        Some(&p)
+    );
+}
+
+#[test]
+fn ambiguous_or_oversized_component_operations_are_rejected_and_metadata_is_identity() {
+    use api::{ComponentMatch, ComponentOutput, ComponentValue};
+    let catalog = Catalog::builtins();
+    let mut definition = (**catalog.machine(KILN_ENTITY_TYPE).unwrap()).clone();
+    let original = definition.fingerprint_bytes();
+    let mut variant = definition.process.as_ref().unwrap().recipes[0].clone();
+    variant.key = "fixture:variant".into();
+    variant.input_components = ComponentMatch::Exact(ComponentValue {
+        version: 1,
+        bytes: vec![1],
+    });
+    variant.output_components = ComponentOutput::PreserveInput;
+    definition
+        .process
+        .as_mut()
+        .unwrap()
+        .recipes
+        .push(variant.clone());
+    definition.validate().unwrap();
+    assert_ne!(definition.fingerprint_bytes(), original);
+    let first = definition.fingerprint_bytes();
+    variant.input_components = ComponentMatch::Exact(ComponentValue {
+        version: 2,
+        bytes: vec![1],
+    });
+    definition.process.as_mut().unwrap().recipes[1] = variant.clone();
+    assert_ne!(definition.fingerprint_bytes(), first);
+    variant.key = "fixture:ambiguous".into();
+    variant.input_components = ComponentMatch::Present;
+    definition.process.as_mut().unwrap().recipes.push(variant);
+    assert!(definition.validate().is_err());
+    definition.process.as_mut().unwrap().recipes.pop();
+    definition.process.as_mut().unwrap().recipes[1].output_components =
+        ComponentOutput::Exact(ComponentValue {
+            version: 1,
+            bytes: vec![0; 1025],
+        });
+    assert!(definition.validate().is_err());
+}

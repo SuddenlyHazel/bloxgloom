@@ -109,8 +109,9 @@ pub(super) fn capture_view_for_plan(
 /// projections over the same captured keys, merging WAL-owned entities and
 /// session players into one view. The planner's own record is
 /// excluded; entries are sorted by entity ID for deterministic planning.
-/// Only public projections cross: another entity's private payload is never
-/// consulted here, and no path below reaches it. Player entries are exactly
+/// Only public projections and opaque automation equality keys cross. The host
+/// interns bounded exact inventories during capture, discarding their component
+/// bytes before worker dispatch. Player entries are exactly
 /// the public views other clients already receive for those sessions — the
 /// player store keeps no private payload, and session identity, inventory,
 /// and movement authority never enter this view.
@@ -159,7 +160,6 @@ pub(super) fn capture_entity_view_for_plan(
         collected.extend(players);
     }
     let mut view = EntityView::assemble(collected, exclude);
-    view.inventory_policies(state.entities.types());
     if view.len() > MAX_PLAN_NEIGHBOURS {
         return Err(io::Error::new(
             ErrorKind::QuotaExceeded,
@@ -172,6 +172,8 @@ pub(super) fn capture_entity_view_for_plan(
             "entity neighbour view exceeds its capture byte bound",
         ));
     }
+    view.inventory_policies(&state.entities, exclude)
+        .map_err(io::Error::other)?;
     Ok(view)
 }
 
@@ -746,16 +748,22 @@ fn plan_transfer_batch(
     // A policy can only move items it can already see. The source must be in
     // the captured neighbour view: anything else is a write the plan did not
     // declare, so the whole plan is rejected.
-    if !neighbours.iter().any(|view| view.id == transfer.source) {
+    let Some(captured_peer) = neighbours.iter().find(|view| view.id == transfer.source) else {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
             "transfer source is outside the declared neighbour view",
         ));
-    }
+    };
     let other_snapshot = state
         .entities
         .snapshot(transfer.source)
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "transfer source is unknown"))?;
+    if other_snapshot.revision != captured_peer.revision {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "transfer peer revision changed",
+        ));
+    }
     let initiator = snapshot;
     let initiator_base = receiver_base;
     let initiator_anchor = anchor_update;
@@ -818,14 +826,19 @@ fn plan_transfer_batch(
         {
             return Err(permission("invalid automation face"));
         }
-        (
-            source_exchange
-                .port(route.source, face)
-                .ok_or_else(|| permission("source port unavailable"))?,
-            receiver_exchange
-                .port(route.destination, face.map(|v| -v))
-                .ok_or_else(|| permission("destination port unavailable"))?,
-        )
+        let source = source_exchange
+            .port(route.source, face)
+            .and_then(|p| p.at_slot(route.source_slot))
+            .ok_or_else(|| permission("source port or slot unavailable"))?;
+        let mut destination = receiver_exchange
+            .port(route.destination, face.map(|v| -v))
+            .ok_or_else(|| permission("destination port unavailable"))?;
+        if let Some(slot) = route.destination_slot {
+            destination = destination
+                .at_slot(slot)
+                .ok_or_else(|| permission("destination slot unavailable"))?;
+        }
+        (source, destination)
     } else {
         if catalog.machine(source_snapshot.entity_type).is_some()
             || catalog.machine(snapshot.entity_type).is_some()
@@ -834,11 +847,31 @@ fn plan_transfer_batch(
         }
         (source_exchange.clone(), receiver_exchange.clone())
     };
+    let selected = if let Some(route) = transfer.route {
+        Some(
+            source_exchange
+                .inventory_slots(&source_snapshot.private_payload)
+                .map_err(io::Error::other)?
+                .get(route.source_slot as usize)
+                .and_then(Clone::clone)
+                .ok_or_else(|| {
+                    io::Error::new(ErrorKind::WouldBlock, "selected source slot is unavailable")
+                })?,
+        )
+    } else {
+        None
+    };
     let (sender_after, taken) = source_exchange
         .withdraw(source_base, transfer.item, transfer.count, catalog)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
         .ok_or_else(|| io::Error::new(ErrorKind::WouldBlock, "transfer source has no stock"))?;
-    if taken.item != transfer.item || taken.count != transfer.count || !taken.valid_in(catalog) {
+    if taken.item != transfer.item
+        || taken.count != transfer.count
+        || !taken.valid_in(catalog)
+        || selected.as_ref().is_some_and(|s| {
+            s.item != taken.item || s.components != taken.components || s.count < taken.count
+        })
+    {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
             "transfer source returned a mismatched take",

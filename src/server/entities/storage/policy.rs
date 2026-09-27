@@ -1,15 +1,18 @@
-use super::super::transfer::{put, take};
+use super::super::transfer::{AutomationStack, put, take};
 use super::*;
 use crate::items::ItemId;
+#[cfg(test)]
 use crate::protocol::workstation::WorkstationView;
 use crate::server::voxel_view::VoxelView;
 
+#[cfg(test)]
 fn public_slots(public: &[u8]) -> Option<Vec<Option<Stack>>> {
     WorkstationView::decode(public).map(|view| view.slots)
 }
 
 pub(in crate::server::entities) struct Port<P> {
     screen: Option<Arc<bloxgloom_host_api::InventoryScreen>>,
+    slot: Option<u8>,
     payload: std::marker::PhantomData<P>,
 }
 impl<P> Port<P> {
@@ -17,23 +20,62 @@ impl<P> Port<P> {
     pub fn new() -> Self {
         Self {
             screen: None,
+            slot: None,
             payload: std::marker::PhantomData,
         }
     }
     pub fn for_screen(screen: Arc<bloxgloom_host_api::InventoryScreen>) -> Self {
         Self {
             screen: Some(screen),
+            slot: None,
             payload: std::marker::PhantomData,
         }
     }
     fn permits(&self, slot: usize, insert: bool) -> bool {
-        self.screen.as_ref().is_none_or(|s| {
-            s.group(slot as u8)
-                .is_some_and(|g| if insert { g.insert } else { g.extract })
-        })
+        self.slot.is_none_or(|wanted| usize::from(wanted) == slot)
+            && self.screen.as_ref().is_none_or(|s| {
+                s.group(slot as u8)
+                    .is_some_and(|g| if insert { g.insert } else { g.extract })
+            })
     }
 }
 impl<P: Slots> EntityTransferPolicy for Port<P> {
+    fn at_slot(&self, slot: u8) -> Option<Arc<dyn EntityTransferPolicy>> {
+        (slot < 54 && self.slot.is_none_or(|old| old == slot)).then(|| {
+            Arc::new(Self {
+                screen: self.screen.clone(),
+                slot: Some(slot),
+                payload: std::marker::PhantomData,
+            }) as Arc<dyn EntityTransferPolicy>
+        })
+    }
+    fn automation_offers(&self, slots: &[Option<AutomationStack>]) -> Vec<(u8, AutomationStack)> {
+        slots
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(i, _)| self.permits(*i, false))
+            .filter_map(|(i, s)| Some((i as u8, s?)))
+            .collect()
+    }
+    fn automation_accepts(
+        &self,
+        slots: &[Option<AutomationStack>],
+        stack: AutomationStack,
+    ) -> bool {
+        slots
+            .iter()
+            .enumerate()
+            .any(|(i, slot)| self.permits(i, true) && stack.fits(*slot))
+    }
+    fn inventory_slots(&self, payload: &EntityPayload) -> Result<Vec<Option<Stack>>, EntityError> {
+        Ok(payload
+            .downcast_ref::<P>()
+            .ok_or(EntityError::InvalidPayload)?
+            .clone()
+            .slots_mut()
+            .to_vec())
+    }
     fn ports(&self) -> Vec<String> {
         vec!["storage".into()]
     }
@@ -41,20 +83,23 @@ impl<P: Slots> EntityTransferPolicy for Port<P> {
         (index == 0 && bloxgloom_host_api::machine::FACES.contains(&face)).then(|| {
             Arc::new(Self {
                 screen: self.screen.clone(),
+                slot: self.slot,
                 payload: std::marker::PhantomData,
             }) as Arc<dyn EntityTransferPolicy>
         })
     }
+    #[cfg(test)]
     fn offers(&self, public: &[u8]) -> Vec<Stack> {
         public_slots(public).map_or_else(Vec::new, |slots| {
             slots
                 .into_iter()
                 .enumerate()
-                .filter(|(index, _)| self.permits(*index, false))
-                .filter_map(|(_, slot)| slot)
+                .filter(|(i, _)| self.permits(*i, false))
+                .filter_map(|(_, s)| s)
                 .collect()
         })
     }
+    #[cfg(test)]
     fn accepts(&self, public: &[u8], stack: &Stack, _: &Catalog) -> bool {
         public_slots(public).is_some_and(|mut slots| {
             slots

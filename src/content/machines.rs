@@ -85,11 +85,23 @@ impl Catalog {
                     || !item(&r.output)
                     || !accepts(p.input, &r.input)
                     || !accepts(p.output, &r.output)
-            }) || p
-                .fuels
-                .iter()
-                .any(|f| !item(&f.item) || p.fuel.is_none_or(|slot| !accepts(slot, &f.item)))
-            {
+                    || (r.input_components != ComponentMatch::Empty
+                        && !m.filters[p.input as usize].components)
+                    || (match &r.output_components {
+                        ComponentOutput::Empty => false,
+                        ComponentOutput::PreserveInput => {
+                            r.input_components != ComponentMatch::Empty
+                        }
+                        ComponentOutput::Exact(_) => true,
+                    } && !m.filters[p.output as usize].components)
+            }) || p.fuels.iter().any(|f| {
+                !item(&f.item)
+                    || p.fuel.is_none_or(|slot| {
+                        !accepts(slot, &f.item)
+                            || (f.components != ComponentMatch::Empty
+                                && !m.filters[slot as usize].components)
+                    })
+            }) {
                 return Err(bad());
             }
             if screen.status[0].maximum
@@ -165,6 +177,7 @@ impl Catalog {
                 };
                 Some(Fuel {
                     item: i.key.to_string(),
+                    components: ComponentMatch::Empty,
                     pulses,
                 })
             })
@@ -209,8 +222,10 @@ impl Catalog {
                     key: "bloxgloom:smelt_gravel".into(),
                     input: "bloxgloom:gravel".into(),
                     input_count: 1,
+                    input_components: ComponentMatch::Empty,
                     output: "bloxgloom:stone".into(),
                     output_count: 1,
+                    output_components: ComponentOutput::Empty,
                     pulses: 4,
                 }],
                 fuels,

@@ -3,6 +3,7 @@ use crate::world::ChunkKey;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
+mod automation;
 
 pub const MAX_ENTITY_PAYLOAD_BYTES: usize = 64 * 1024;
 pub const MAX_ENTITY_PUBLIC_VIEW_BYTES: usize = 4 * 1024;
@@ -203,9 +204,9 @@ pub struct EntityPublicView {
 /// planner's declared read set. Entries are sorted by `EntityId` for
 /// deterministic planning order, deduplicated (anchored entities appear in
 /// every touched chunk's page), and exclude the planning entity itself,
-/// which it already holds as a snapshot. This carries only public
-/// projections: another entity's private payload can never appear here, and
-/// any path from a planner to one is a bug.
+/// which it already holds as a snapshot. This carries public projections and
+/// snapshot-local automation equality keys, not component bytes or another
+/// entity's private payload. The host drops its exact-stack interner at capture.
 #[derive(Clone)]
 pub struct EntityView {
     entries: Vec<EntityPublicView>,
@@ -213,6 +214,7 @@ pub struct EntityView {
         EntityId,
         std::sync::Arc<dyn super::transfer::EntityTransferPolicy>,
     >,
+    automation: std::collections::BTreeMap<EntityId, Vec<Option<super::transfer::AutomationStack>>>,
 }
 
 impl std::fmt::Debug for EntityView {
@@ -234,21 +236,15 @@ impl EntityView {
         Self {
             entries,
             inventories: Default::default(),
+            automation: Default::default(),
         }
     }
 
-    pub(in crate::server) fn inventory_policies(
-        &mut self,
-        registry: &super::registry::EntityTypeRegistry,
-    ) {
-        for entry in &self.entries {
-            if let Ok(descriptor) = registry.descriptor(entry.entity_type)
-                && let Some(policy) = descriptor.transfer_policy()
-            {
-                self.inventories
-                    .insert(entry.id, std::sync::Arc::clone(policy));
-            }
-        }
+    pub(in crate::server::entities) fn automation_slots(
+        &self,
+        id: EntityId,
+    ) -> Option<&[Option<super::transfer::AutomationStack>]> {
+        self.automation.get(&id).map(Vec::as_slice)
     }
 
     #[cfg(test)]

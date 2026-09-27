@@ -5,6 +5,8 @@ use bloxgloom_host_api::{
 };
 use std::sync::Arc;
 pub const KEY: &str = "fixture:crusher";
+pub const MARKED_INPUT: &[u8] = b"crusher:marked";
+pub const REFINED_INPUT: &[u8] = b"crusher:refined";
 pub fn register(r: &mut dyn Registrar) -> Result<(), RegistrationError> {
     r.cube_block(CubeBlock {
         key: KEY.into(),
@@ -62,11 +64,11 @@ pub fn register(r: &mut dyn Registrar) -> Result<(), RegistrationError> {
             },
             Filter {
                 items: vec!["bloxgloom:stone".into()],
-                components: false,
+                components: true,
             },
             Filter {
                 items: vec!["bloxgloom:gravel".into()],
-                components: false,
+                components: true,
             },
         ],
         ports: vec![
@@ -87,16 +89,50 @@ pub fn register(r: &mut dyn Registrar) -> Result<(), RegistrationError> {
             input: 1,
             output: 2,
             fuel: Some(0),
-            recipes: vec![Recipe {
-                key: "fixture:crush_stone".into(),
-                input: "bloxgloom:stone".into(),
-                input_count: 1,
-                output: "bloxgloom:gravel".into(),
-                output_count: 2,
-                pulses: 3,
-            }],
+            recipes: vec![
+                Recipe {
+                    key: "fixture:crush_stone".into(),
+                    input: "bloxgloom:stone".into(),
+                    input_count: 1,
+                    input_components: ComponentMatch::Empty,
+                    output: "bloxgloom:gravel".into(),
+                    output_count: 2,
+                    output_components: ComponentOutput::Empty,
+                    pulses: 3,
+                },
+                Recipe {
+                    key: "fixture:crush_marked_stone".into(),
+                    input: "bloxgloom:stone".into(),
+                    input_count: 1,
+                    input_components: ComponentMatch::Exact(ComponentValue {
+                        version: 1,
+                        bytes: MARKED_INPUT.to_vec(),
+                    }),
+                    output: "bloxgloom:gravel".into(),
+                    output_count: 2,
+                    output_components: ComponentOutput::PreserveInput,
+                    pulses: 3,
+                },
+                Recipe {
+                    key: "fixture:crush_refined_stone".into(),
+                    input: "bloxgloom:stone".into(),
+                    input_count: 2,
+                    input_components: ComponentMatch::Exact(ComponentValue {
+                        version: 2,
+                        bytes: REFINED_INPUT.to_vec(),
+                    }),
+                    output: "bloxgloom:gravel".into(),
+                    output_count: 1,
+                    output_components: ComponentOutput::Exact(ComponentValue {
+                        version: 1,
+                        bytes: MARKED_INPUT.to_vec(),
+                    }),
+                    pulses: 2,
+                },
+            ],
             fuels: vec![Fuel {
                 item: "bloxgloom:stick".into(),
+                components: ComponentMatch::Empty,
                 pulses: 30,
             }],
         }),

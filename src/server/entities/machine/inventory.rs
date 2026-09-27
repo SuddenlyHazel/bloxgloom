@@ -1,4 +1,4 @@
-use super::super::transfer::{put, take};
+use super::super::transfer::{AutomationStack, put, take};
 use super::*;
 use crate::{inventory::Inventory, server::voxel_view::VoxelView};
 impl Adapter {
@@ -6,15 +6,47 @@ impl Adapter {
         self.port
             .and_then(|i| self.definition.ports.get(i as usize))
             .map_or_else(Vec::new, |p| {
-                if insert {
-                    p.insert.clone()
-                } else {
-                    p.extract.clone()
-                }
+                let slots = if insert { &p.insert } else { &p.extract };
+                slots
+                    .iter()
+                    .copied()
+                    .filter(|i| self.slot.is_none_or(|wanted| wanted == *i))
+                    .collect()
             })
     }
 }
 impl EntityTransferPolicy for Adapter {
+    fn at_slot(&self, slot: u8) -> Option<Arc<dyn EntityTransferPolicy>> {
+        (slot < self.definition.slots && self.slot.is_none_or(|old| old == slot)).then(|| {
+            Arc::new(Self {
+                slot: Some(slot),
+                ..self.clone()
+            }) as Arc<dyn EntityTransferPolicy>
+        })
+    }
+    fn automation_offers(&self, slots: &[Option<AutomationStack>]) -> Vec<(u8, AutomationStack)> {
+        self.allowed(false)
+            .iter()
+            .filter_map(|i| Some((*i, *slots.get(*i as usize)?.as_ref()?)))
+            .collect()
+    }
+    fn automation_accepts(
+        &self,
+        slots: &[Option<AutomationStack>],
+        stack: AutomationStack,
+    ) -> bool {
+        self.allowed(true).iter().any(|i| {
+            self.accepts_kind(*i as usize, stack.item, stack.has_components)
+                && slots.get(*i as usize).is_some_and(|slot| stack.fits(*slot))
+        })
+    }
+    fn inventory_slots(&self, payload: &EntityPayload) -> Result<Vec<Option<Stack>>, EntityError> {
+        Ok(payload
+            .downcast_ref::<MachinePayload>()
+            .ok_or(EntityError::InvalidPayload)?
+            .slots
+            .clone())
+    }
     fn ports(&self) -> Vec<String> {
         self.definition
             .ports
@@ -34,6 +66,7 @@ impl EntityTransferPolicy for Adapter {
                 }) as Arc<dyn EntityTransferPolicy>
             })
     }
+    #[cfg(test)]
     fn offers(&self, public: &[u8]) -> Vec<Stack> {
         crate::protocol::workstation::WorkstationView::decode(public).map_or_else(Vec::new, |v| {
             self.allowed(false)
@@ -42,6 +75,7 @@ impl EntityTransferPolicy for Adapter {
                 .collect()
         })
     }
+    #[cfg(test)]
     fn accepts(&self, public: &[u8], stack: &Stack, _: &Catalog) -> bool {
         crate::protocol::workstation::WorkstationView::decode(public).is_some_and(|mut v| {
             self.allowed(true).iter().any(|i| {

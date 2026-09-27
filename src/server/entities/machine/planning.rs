@@ -1,4 +1,4 @@
-use super::super::transfer::{PortRoute, put, take};
+use super::super::transfer::{put, take};
 use super::*;
 use crate::server::voxel_view::VoxelView;
 impl Adapter {
@@ -8,13 +8,8 @@ impl Adapter {
             .process
             .as_ref()
             .ok_or(EntityError::InvalidPayload)?;
-        let input = p.slots[d.input as usize]
-            .as_ref()
-            .filter(|s| s.components.is_none());
-        let recipe = input.and_then(|s| {
-            self.recipe(Some(s.item))
-                .filter(|r| s.count >= r.input_count)
-        });
+        let input = p.slots[d.input as usize].as_ref();
+        let recipe = input.and_then(|s| self.recipe(s).filter(|r| s.count >= r.input_count));
         let Some(recipe) = recipe else {
             p.progress = 0;
             p.progress_item = None;
@@ -26,7 +21,15 @@ impl Adapter {
             p.progress_item = Some(item);
             p.progress = 0;
         }
-        let output = Stack::new(self.item(&recipe.output)?, recipe.output_count);
+        let mut output = Stack::new(self.item(&recipe.output)?, recipe.output_count);
+        output.components = match &recipe.output_components {
+            api::ComponentOutput::Empty => None,
+            api::ComponentOutput::PreserveInput => input.unwrap().components.clone(),
+            api::ComponentOutput::Exact(v) => Some(Arc::new(
+                crate::inventory::ComponentPayload::new(v.version, v.bytes.clone())
+                    .ok_or(EntityError::InvalidPayload)?,
+            )),
+        };
         let mut destination = p.slots[d.output as usize].clone();
         if !put(&mut destination, &output) {
             p.fuel = p.fuel.saturating_sub(1);
@@ -34,16 +37,13 @@ impl Adapter {
         }
         if let Some(fuel_slot) = d.fuel {
             if p.fuel == 0 {
-                let Some(fuel) = p.slots[fuel_slot as usize]
-                    .as_ref()
-                    .filter(|s| s.components.is_none())
-                else {
+                let Some(fuel) = p.slots[fuel_slot as usize].as_ref() else {
                     return Ok(());
                 };
-                let Some(value) = self.lookups.fuels.get(&fuel.item) else {
-                    return Err(EntityError::InvalidPayload);
+                let Some(value) = self.fuel(fuel) else {
+                    return Ok(());
                 };
-                p.fuel = *value;
+                p.fuel = value;
                 take(&mut p.slots[fuel_slot as usize], 1).ok_or(EntityError::InvalidPayload)?;
             }
             p.fuel = p.fuel.saturating_sub(1);
@@ -59,48 +59,6 @@ impl Adapter {
             }
         }
         Ok(())
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn transfer(
-        &self,
-        snapshot: &EntitySnapshot,
-        p: &MachinePayload,
-        neighbours: &EntityView,
-        offset: [i32; 3],
-        own_port: &str,
-        peer_port: Option<&str>,
-        push: bool,
-    ) -> Result<Option<EntityItemTransfer>, EntityError> {
-        if !api::FACES.contains(&offset) {
-            return Err(EntityError::InvalidPayload);
-        }
-        let anchor = snapshot.anchor().ok_or(EntityError::WrongOwnership)?;
-        let from = [anchor.x, anchor.y, anchor.z];
-        let to = std::array::from_fn(|i| from[i].saturating_add(offset[i]));
-        let peer_cell = CellCoord::new(to[0], to[1], to[2]);
-        let own_index = self
-            .definition
-            .ports
-            .iter()
-            .position(|p| p.name == own_port)
-            .ok_or(EntityError::InvalidPayload)? as u8;
-        let Some(own) = EntityTransferPolicy::port(self, own_index, offset) else {
-            return Ok(None);
-        };
-        let public = self
-            .public_view(&EntityPayload::new(p.clone()))
-            .map_err(|_| EntityError::InvalidPayload)?;
-        for peer in neighbours.iter().filter(|e|matches!(&e.location,EntityLocation::Anchored {footprint,..} if footprint.contains(&peer_cell))) {
-            for (peer_index,name) in neighbours.ports(peer.id).iter().enumerate() {
-                if peer_port.is_some_and(|wanted|wanted!=name) {continue;}
-                let Some(port)=neighbours.port(peer.id,peer_index as u8,offset.map(|v|-v)) else {continue;};
-                let offers=if push {own.offers(&public)}else{port.offers(&peer.payload)};
-                for mut stack in offers {stack.count=1;let fits=if push {port.accepts(&peer.payload,&stack,&self.catalog)}else{own.accepts(&public,&stack,&self.catalog)};
-                    if fits {return Ok(Some(EntityItemTransfer {source:peer.id,push,item:stack.item,count:1,route:Some(if push {PortRoute {source:own_index,destination:peer_index as u8,from,to}}else{PortRoute {source:peer_index as u8,destination:own_index,from:to,to:from}})}));}
-                }
-            }
-        }
-        Ok(None)
     }
 }
 impl EntityTickPolicy for Adapter {
@@ -126,11 +84,20 @@ impl EntityTickPolicy for Adapter {
         let slots = before
             .slots
             .iter()
-            .map(|s| {
+            .enumerate()
+            .map(|(index, s)| {
                 s.as_ref().map(|s| api::Slot {
                     item: self.catalog.item(s.item).unwrap().key.as_ref(),
                     count: s.count,
                     has_components: s.components.is_some(),
+                    stack_key: before.slots[..index]
+                        .iter()
+                        .position(|old| {
+                            old.as_ref().is_some_and(|old| {
+                                old.item == s.item && old.components == s.components
+                            })
+                        })
+                        .unwrap_or(index) as u8,
                 })
             })
             .collect::<Vec<_>>();
@@ -163,15 +130,16 @@ impl EntityTickPolicy for Adapter {
                     own_port,
                     peer_port,
                     push,
+                    selection,
                 } => {
                     transfer = self.transfer(
                         snapshot,
-                        &after,
                         neighbours,
                         offset,
                         &own_port,
                         peer_port.as_deref(),
                         push,
+                        &selection,
                     )?;
                     if transfer.is_some() {
                         break;
