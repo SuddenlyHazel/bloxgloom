@@ -2,7 +2,7 @@
 
 ## Goal
 
-Next architecture proposal: [built-in/mod capability parity](docs/MODDING-SURFACE-PROPOSAL.md).
+Next architecture proposal: [built-in/mod capability parity](MODDING-SURFACE-PLAN.md).
 It defines the complete host surface needed for future mod-created gameplay,
 including lifecycle, client interaction/presentation, and an external-boundary
 proof. It is a proposal; the implementation slices below retain their historical status.

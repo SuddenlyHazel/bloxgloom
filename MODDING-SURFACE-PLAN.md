@@ -1,4 +1,4 @@
-# Proposal: built-in/mod capability parity
+# Plan: built-in/mod capability parity
 
 Status: proposed implementation plan. This document does not introduce a mod
 loader or declare the current internal interfaces to be a supported mod API.
