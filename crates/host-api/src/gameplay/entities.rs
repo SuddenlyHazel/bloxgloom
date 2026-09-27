@@ -24,6 +24,32 @@ pub struct Entity {
 }
 
 impl Context<'_> {
+    /// Schedule or suspend an owned entity. A due callback with no explicit
+    /// reschedule suspends by default, so it cannot create a busy loop.
+    pub fn schedule_entity(&mut self, id: u64, after_ticks: Option<u32>) -> Result<bool, Error> {
+        if self.entity_state(id)?.is_none() {
+            return Ok(false);
+        }
+        if let Err(error) = self.snapshot.validate_entity_schedule(id) {
+            return self.fail(error);
+        }
+        let due = match after_ticks {
+            Some(delay) if (1..=100_000).contains(&delay) => {
+                let Some(due) = self.snapshot.tick().checked_add(u64::from(delay)) else {
+                    return self.fail(Error::Invalid("entity schedule overflow".into()));
+                };
+                Some(due)
+            }
+            Some(_) => {
+                return self.fail(Error::Invalid(
+                    "entity delay outside supported range".into(),
+                ));
+            }
+            None => None,
+        };
+        self.plan.entity_schedules.insert(id, due);
+        Ok(true)
+    }
     pub fn nearby_entities(
         &mut self,
         position: [f32; 3],
@@ -141,6 +167,7 @@ impl Context<'_> {
             return Ok(false);
         }
         self.entity_overlay.insert(id, None);
+        self.plan.entity_schedules.remove(&id);
         self.plan
             .entity_changes
             .insert(id, EntityChange::Remove { id });

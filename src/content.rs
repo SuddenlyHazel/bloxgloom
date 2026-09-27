@@ -840,6 +840,7 @@ impl Catalog {
                 add(&entity.schema_fingerprint.to_le_bytes());
                 if let Some(generic) = self.gameplay_entities.get(entity.key.as_ref()) {
                     add(&generic.max_state_bytes.to_le_bytes());
+                    add(&generic.initial_delay_ticks.unwrap_or(0).to_le_bytes());
                 }
                 if let Some(machine) = self.machine(entity.id) {
                     add(&machine.fingerprint_bytes());

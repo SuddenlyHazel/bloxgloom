@@ -427,10 +427,10 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 2 — removal, placement, and registered semantic use decisions
-  share one transaction overlay. Next add committed notifications and persistent
-  scheduling, then remaining built-in world/drop/player and fire behavior. No
-  Luau, client packages or authored UI is implemented yet.
+- **Active phase:** 2 — removal, placement, registered semantic use and general
+  entity due callbacks share one transaction overlay. Committed notifications,
+  support/world/drop/player behavior and fire migration remain. No Luau, client
+  packages or authored UI is implemented yet.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -528,9 +528,22 @@ This section exists so compaction or a new session does not restart the design.
   rejection of remote effects without partial item debit. Edits, drops and
   spawns are limited to eight cells around the original operation/actor;
   positions outside the world no longer silently saturate to valid coordinates.
-- **Next concrete step:** add after-commit notifications and persistent scheduled
-  gameplay handlers through existing owner clock/effect machinery, then route
-  ordinary use/support/world behavior on the same contract.
+- **Phase 2 scheduled-entity increment:** general entities can declare an initial
+  due tick and register a `EntityTick` decision owner, or start unscheduled and
+  schedule themselves later. `Context::tick()` supplies the logical clock and
+  `schedule_entity(id, Some(delay))` / `None` sets or suspends an owned entity's
+  persisted due time. A due callback without an explicit reschedule suspends;
+  ignored early wakes cannot consume its future due time. Scheduled callbacks
+  stage owned state, next due time, world edits and drops together using the
+  existing entity due index and WAL path. The focused restart test exercises a
+  cross-chunk unavailable read, state/edit/drop/schedule commit, restart at the
+  persisted due time and subsequent suspension. General callback planning runs
+  on the server coordinator for now rather than the existing immutable entity
+  worker jobs; a worker-owned Lua VM and bounded callback execution are still
+  required before downloaded scripts can run safely. This is not a general
+  cross-owner durable scheduler or after-commit notification facility yet.
+- **Next concrete step:** add after-commit notifications and general owner-local
+  scheduled world work, then migrate support/world/drop behavior and fire.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

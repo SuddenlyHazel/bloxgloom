@@ -11,6 +11,7 @@ mod admin;
 pub(in crate::server) mod anchored;
 pub(in crate::server) mod entity;
 mod gameplay_action;
+pub(in crate::server) mod gameplay_tick;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;
 mod mobile_lifecycle;
@@ -308,9 +309,19 @@ pub(in crate::server) fn plan_durable_request(
             }))
         }
         DurableRequest::EntityTick { id } => {
-            entity::plan_entity_tick(state, *id, tick.get(), false)
+            if gameplay_tick::is_registered(state, *id) {
+                gameplay_tick::plan(state, *id, tick.get(), false)
+            } else {
+                entity::plan_entity_tick(state, *id, tick.get(), false)
+            }
         }
-        DurableRequest::EntityWake { id } => entity::plan_entity_tick(state, *id, tick.get(), true),
+        DurableRequest::EntityWake { id } => {
+            if gameplay_tick::is_registered(state, *id) {
+                gameplay_tick::plan(state, *id, tick.get(), true)
+            } else {
+                entity::plan_entity_tick(state, *id, tick.get(), true)
+            }
+        }
     }
 }
 

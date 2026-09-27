@@ -46,8 +46,42 @@ struct WorldSnapshot<'a> {
     actor: Option<(u128, &'a crate::inventory::Inventory)>,
     inventory_read: bool,
     entities: Option<&'a super::entities::EntityStore>,
+    tick: u64,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn tick(&self) -> u64 {
+        self.tick
+    }
+    fn validate_entity_schedule(&self, raw_id: u64) -> Result<(), Error> {
+        let id = super::entities::EntityId::new(raw_id)
+            .ok_or_else(|| Error::Invalid("invalid entity ID".into()))?;
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        let snapshot = store
+            .snapshot(id)
+            .ok_or_else(|| Error::Invalid("scheduled entity gone".into()))?;
+        let definition = self
+            .world
+            .catalog()
+            .entity_type(snapshot.entity_type)
+            .ok_or_else(|| Error::Host("unknown scheduled entity type".into()))?;
+        if self
+            .world
+            .catalog()
+            .gameplay_handler(
+                bloxgloom_host_api::gameplay::EventKind::EntityTick,
+                &definition.key,
+            )
+            .is_none()
+        {
+            return Err(Error::Invalid(format!(
+                "{} has no registered tick handler",
+                definition.key
+            )));
+        }
+        Ok(())
+    }
     fn project_entity_state(&self, id: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
         let store = self
             .entities
@@ -208,6 +242,7 @@ pub(super) fn plan_removals(
         actor,
         inventory_read: false,
         entities: Some(participants.entities),
+        tick,
     };
     let mut context = Context::new(&mut snapshot, 4096);
     let mut placements = Vec::new();
@@ -268,21 +303,51 @@ pub(super) fn plan_removals(
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
-    if let Some(event @ Event::ActionRequested { action, .. }) = action.as_ref() {
-        let handler = catalog
-            .gameplay_handler(EventKind::ActionRequested, action)
-            .ok_or_else(|| {
-                io::Error::new(
+    if let Some(event) = &action {
+        let (kind, target) = match event {
+            Event::ActionRequested { action, .. } => (EventKind::ActionRequested, action.as_str()),
+            Event::EntityTick { entity, .. } => {
+                let id = super::entities::EntityId::new(*entity).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid scheduled entity")
+                })?;
+                let snapshot = participants.entities.snapshot(id).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::WouldBlock, "scheduled entity gone")
+                })?;
+                let key = &catalog
+                    .entity_type(snapshot.entity_type)
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "scheduled type gone")
+                    })?
+                    .key;
+                (EventKind::EntityTick, key.as_ref())
+            }
+            _ => {
+                return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "gameplay action handler missing",
-                )
-            })?;
+                    "invalid additional gameplay decision",
+                ));
+            }
+        };
+        let handler = catalog.gameplay_handler(kind, target).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "gameplay decision handler missing",
+            )
+        })?;
         context.dispatch(handler, event).map_err(|e| {
             let e = error(e);
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
     let mut plan = context.finish().map_err(error)?;
+    if let Some(Event::EntityTick { entity, .. }) = &action
+        && !matches!(
+            plan.entity_changes.get(entity),
+            Some(EntityChange::Remove { .. })
+        )
+    {
+        plan.entity_schedules.entry(*entity).or_insert(None);
+    }
     let inventory = if snapshot.inventory_read {
         let (profile, before) = actor.expect("inventory read requires actor capture");
         let owner = bloxgloom_host_api::gameplay::InventoryId::Player(profile);
@@ -321,6 +386,7 @@ pub(super) fn plan_removals(
                 before.revision,
                 super::entities::EntityPatch {
                     payload: Some(super::entities::EntityPayload::new(state)),
+                    next_tick: plan.entity_schedules.remove(&id.get()),
                     ..Default::default()
                 },
             ),
@@ -330,6 +396,28 @@ pub(super) fn plan_removals(
         }
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
         entity_updates.push(transaction);
+    }
+    for (raw_id, due) in plan.entity_schedules {
+        let id = super::entities::EntityId::new(raw_id).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid scheduled entity")
+        })?;
+        let before = participants
+            .entities
+            .snapshot(id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::WouldBlock, "scheduled entity gone"))?;
+        entity_updates.push(
+            participants
+                .entities
+                .prepare_update(
+                    id,
+                    before.revision,
+                    super::entities::EntityPatch {
+                        next_tick: Some(due),
+                        ..Default::default()
+                    },
+                )
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?,
+        );
     }
     let final_edits = plan
         .blocks
@@ -350,14 +438,22 @@ pub(super) fn plan_removals(
         .map(|(_, cell, _)| *cell)
         .chain(edits.iter().map(|&(x, y, z, _)| [x, y, z]))
         .collect::<Vec<_>>();
-    if let Some(Event::ActionRequested { cell, position, .. }) = &action {
-        let origin = match cell {
-            Some(cell) => *cell,
-            None => {
+    if let Some(event) = &action {
+        let origin = match event {
+            Event::ActionRequested {
+                cell: Some(cell), ..
+            } => *cell,
+            Event::ActionRequested { position, .. } | Event::EntityTick { position, .. } => {
                 let at = super::entities::position_to_cell(*position).map_err(|_| {
-                    io::Error::new(io::ErrorKind::InvalidInput, "invalid action position")
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid event position")
                 })?;
                 [at.x, at.y, at.z]
+            }
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid gameplay event",
+                ));
             }
         };
         sources.push(origin);

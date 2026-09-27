@@ -87,6 +87,9 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn tick(&self) -> u64 {
+        0
+    }
     fn project_entity_state(&self, _: u64, _: &[u8]) -> Result<Vec<u8>, Error> {
         Err(Error::Invalid(
             "entity projection unavailable in loot test snapshot".into(),

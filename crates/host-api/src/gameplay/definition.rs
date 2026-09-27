@@ -14,6 +14,9 @@ pub struct EntityDefinition {
     pub schema_version: u16,
     pub schema_fingerprint: u64,
     pub max_state_bytes: u16,
+    /// First due callback, in logical ticks after spawning. Subsequent due
+    /// times are changed transactionally by gameplay handlers.
+    pub initial_delay_ticks: Option<u32>,
     pub state: Arc<dyn EntityState>,
 }
 impl EntityDefinition {
@@ -31,6 +34,9 @@ impl EntityDefinition {
             || !valid(name)
             || self.schema_version == 0
             || !(1..=u16::MAX).contains(&self.max_state_bytes)
+            || self
+                .initial_delay_ticks
+                .is_some_and(|ticks| !(1..=100_000).contains(&ticks))
         {
             return Err(RegistrationError(
                 "invalid gameplay entity declaration".into(),

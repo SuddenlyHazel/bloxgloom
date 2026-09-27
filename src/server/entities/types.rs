@@ -96,6 +96,8 @@ impl EntityOwnership {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TickPolicy {
     Never,
+    /// No automatic first tick, but accepts host-owned explicit scheduling.
+    Manual,
     EveryTick,
     Interval(u32),
 }
@@ -103,7 +105,7 @@ pub enum TickPolicy {
 impl TickPolicy {
     pub fn first_tick(self, spawn_tick: u64) -> Result<Option<u64>, EntityError> {
         match self {
-            Self::Never => Ok(None),
+            Self::Never | Self::Manual => Ok(None),
             Self::EveryTick => spawn_tick
                 .checked_add(1)
                 .map(Some)
@@ -122,6 +124,7 @@ impl TickPolicy {
             // planners remain eligible for bounded rechecks and wake hints;
             // suspension must not depend on lossless notification delivery.
             (Self::Never, None) => true,
+            (Self::Manual, _) => true,
             (Self::EveryTick | Self::Interval(_), _) => true,
             _ => false,
         }

@@ -49,12 +49,18 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn tick(&self) -> u64;
     fn player(&self) -> Option<u128>;
     fn entity(&mut self, id: u64) -> Result<Option<Entity>, Error>;
     fn nearby_entities(&mut self, position: [f32; 3], radius: f32) -> Result<Vec<Entity>, Error>;
     fn entity_state(&mut self, id: u64, owner: &str) -> Result<Option<Vec<u8>>, Error>;
     fn project_entity_state(&self, id: u64, state: &[u8]) -> Result<Vec<u8>, Error>;
     fn validate_entity_state(&self, key: &str, owner: &str, state: &[u8]) -> Result<(), Error>;
+    fn validate_entity_schedule(&self, id: u64) -> Result<(), Error> {
+        Err(Error::Invalid(format!(
+            "entity {id} has no scheduled handler"
+        )))
+    }
     fn anchored_entity_at(&mut self, cell: Cell) -> Result<Option<u64>, Error>;
     fn block(&mut self, cell: Cell) -> Result<Block, Error>;
     fn state(&self, key: &str) -> Result<Block, Error>;
@@ -80,6 +86,7 @@ pub struct Plan {
     pub inventories: BTreeMap<InventoryId, Vec<Option<Stack>>>,
     pub entity_spawns: Vec<EntitySpawn>,
     pub entity_changes: BTreeMap<u64, EntityChange>,
+    pub entity_schedules: BTreeMap<u64, Option<u64>>,
 }
 
 pub struct Context<'a> {
@@ -94,6 +101,9 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    pub fn tick(&self) -> u64 {
+        self.snapshot.tick()
+    }
     pub fn player(&self) -> Option<InventoryId> {
         self.snapshot.player().map(InventoryId::Player)
     }

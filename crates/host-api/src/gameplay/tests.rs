@@ -4,6 +4,9 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn tick(&self) -> u64 {
+        0
+    }
     fn project_entity_state(&self, _: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
         Ok(state.to_vec())
     }
@@ -99,6 +102,9 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn tick(&self) -> u64 {
+        0
+    }
     fn project_entity_state(&self, _: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
         Ok(state.to_vec())
     }

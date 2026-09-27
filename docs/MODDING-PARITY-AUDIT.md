@@ -24,6 +24,9 @@ Registered semantic use actions can now compose ordinary item, entity, drop and
 world operations through that plan. Existing built-in recipes and specialized
 entity requests have not yet been migrated, and the client discovery surface
 does not yet expose arbitrary author-defined action argument schemas.
+General entity due handlers now run on the persisted entity clock, with owned
+state/next due time and shared world/drop effects in one durable transaction.
+This does not yet replace general owner-local world systems or built-in fire.
 
 ### Integration follow-up
 

@@ -6,6 +6,40 @@ use std::sync::Arc;
 struct HarvestExtension;
 struct UseExtension;
 struct UseStick;
+struct TickMarker;
+impl Handler for TickMarker {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::EntityTick {
+            entity,
+            position,
+            tick,
+        } = event
+        else {
+            return Err(Error::Invalid("expected due entity event".into()));
+        };
+        if *tick != context.tick() {
+            return Err(Error::Invalid("wrong logical tick".into()));
+        }
+        match context.entity_state(*entity)? {
+            Some(state) if state == [1] => {
+                assert!(context.update_entity(*entity, &[2])?);
+                assert!(context.schedule_entity(*entity, Some(3))?);
+                let cell = [
+                    position[0].floor() as i32,
+                    position[1].floor() as i32,
+                    position[2].floor() as i32 + 1,
+                ];
+                context.set_block(cell, "bloxgloom:sand")?;
+                context.spawn_drop(*position, "bloxgloom:seeds", 1, 250)
+            }
+            Some(state) if state == [2] => {
+                assert!(context.schedule_entity(*entity, None)?);
+                Ok(())
+            }
+            _ => Err(Error::Invalid("unexpected scheduled state".into())),
+        }
+    }
+}
 struct MarkUse;
 impl Handler for MarkUse {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
@@ -80,6 +114,7 @@ impl Extension for UseExtension {
             schema_version: 1,
             schema_fingerprint: 0x123456,
             max_state_bytes: 1,
+            initial_delay_ticks: Some(2),
             state: Arc::new(MarkerState),
         })?;
         registrar.action(Action {
@@ -111,6 +146,13 @@ impl Extension for UseExtension {
             event: EventKind::ActionRequested,
             target: Some("test:mark_use".into()),
             handler: Arc::new(MarkUse),
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:marker_tick".into(),
+            version: 1,
+            event: EventKind::EntityTick,
+            target: Some("test:marker".into()),
+            handler: Arc::new(TickMarker),
         })
     }
 }
@@ -247,6 +289,7 @@ impl Extension for HarvestExtension {
             schema_version: 1,
             schema_fingerprint: 0x123456,
             max_state_bytes: 1,
+            initial_delay_ticks: None,
             state: Arc::new(MarkerState),
         })?;
         registrar.gameplay_handler(HandlerRegistration {
@@ -401,6 +444,138 @@ fn semantic_item_use_composes_world_inventory_drop_entity_and_receipt() {
         crate::server::drops::nearby(&state.entities, [15.0, y as f32 + 1.0, 1.0])
             .iter()
             .filter(|drop| drop.item == STICK)
+            .map(|drop| drop.count)
+            .sum::<u16>(),
+        1
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn scheduled_general_entity_commits_world_state_and_next_due_atomically() {
+    let path = temp_save_dir("gameplay-schedule");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(16, y, 14, AIR).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 1));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 14.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let use_stick = Request {
+        key: "test:use_stick".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    settle_live_action(
+        &mut state,
+        11,
+        ClientMessage::EntityInteract {
+            action_id: epoch | 1,
+            target: [i32::MAX, y, 14],
+            payload: use_stick.encode().unwrap(),
+        },
+    );
+    let marker = state
+        .entities
+        .query_mobile_aabb([14.0, y as f32, 14.0], [16.0, y as f32 + 2.0, 16.0])
+        .unwrap()
+        .into_iter()
+        .find(|id| {
+            state.entities.public_view(*id).is_some_and(|view| {
+                view.entity_type
+                    == state
+                        .world
+                        .catalog()
+                        .entity_type_id_by_key("test:marker")
+                        .unwrap()
+            })
+        })
+        .unwrap();
+    assert_eq!(state.entities.snapshot(marker).unwrap().next_tick, Some(13));
+    assert!(
+        plan_durable_request(
+            &mut state,
+            &DurableRequest::EntityTick { id: marker },
+            TickId::new(12)
+        )
+        .unwrap()
+        .is_none()
+    );
+    let missing = plan_durable_request(
+        &mut state,
+        &DurableRequest::EntityTick { id: marker },
+        TickId::new(13),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(missing.kind(), ErrorKind::WouldBlock, "{missing}");
+    state.world.edit(15, y, 16, AIR).unwrap();
+    state
+        .durability
+        .queued
+        .push_back(DurableRequest::EntityTick { id: marker });
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(13),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() && state.durability.queued.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        state.world.cached_block(15, y, 16),
+        Some(crate::world::SAND)
+    );
+    assert_eq!(state.entities.public_view(marker).unwrap().payload, vec![2]);
+    assert_eq!(state.entities.snapshot(marker).unwrap().next_tick, Some(16));
+    drop(peer);
+    drop(state);
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(
+        state.world.get_block(15, y, 16).unwrap(),
+        crate::world::SAND
+    );
+    assert_eq!(state.entities.snapshot(marker).unwrap().next_tick, Some(16));
+    state
+        .durability
+        .queued
+        .push_back(DurableRequest::EntityTick { id: marker });
+    for _ in 0..2_000 {
+        super::super::coordinator::process_durable_actions(
+            &mut state,
+            TickId::new(16),
+            Instant::now(),
+        )
+        .unwrap();
+        if state.durability.pending.is_empty() && state.durability.queued.is_empty() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(state.entities.snapshot(marker).unwrap().next_tick, None);
+    assert!(!state.entities.due_entities(100, 8).contains(&marker));
+    let seeds = crate::server::drops::nearby(&state.entities, [15.0, y as f32 + 0.5, 15.0]);
+    assert_eq!(
+        seeds
+            .iter()
+            .filter(|drop| drop.item == crate::items::SEEDS)
             .map(|drop| drop.count)
             .sum::<u16>(),
         1

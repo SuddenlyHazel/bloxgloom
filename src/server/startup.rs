@@ -267,7 +267,9 @@ impl ServerStartup {
                 .register(EntityTypeRegistration {
                     id,
                     ownership: EntityOwnership::Mobile,
-                    tick_policy: TickPolicy::Never,
+                    tick_policy: definition
+                        .initial_delay_ticks
+                        .map_or(TickPolicy::Manual, TickPolicy::Interval),
                     max_payload_bytes: usize::from(definition.max_state_bytes),
                     codec: Arc::new(super::entities::GameplayCodec {
                         definition: Arc::clone(definition),

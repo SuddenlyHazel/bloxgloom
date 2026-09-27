@@ -43,6 +43,15 @@ pub(super) fn plan_motion(
             DurableRequest::EntityWake { id } => (*id, true),
             _ => unreachable!("only entity ticks enter motion dispatch"),
         };
+        if super::actions::gameplay_tick::is_registered(state, id) {
+            results[index] = Some(super::actions::gameplay_tick::plan(
+                state,
+                id,
+                tick.get(),
+                woken,
+            ));
+            continue;
+        }
         let input = match entity::capture_tick_input(state, id, tick.get(), woken) {
             Ok(Some(input)) => input,
             Ok(None) => {

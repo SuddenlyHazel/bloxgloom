@@ -42,6 +42,7 @@ parity for its broader category.
 | Inventory / process parity | Done | Exact slot/component-equivalence selectors, component-aware recipes/fuels/output policies, schema validation, conserving transfers and remap recovery |
 | General item use, harvest, and loot | In progress | Shared removal decisions and built-in ordinary/anchored harvest are implemented; general use and wider loot/event policies remain in Phase 2 |
 | Shared world/entity/item transaction context | Done | Registered handlers combine terrain, exact inventory operations, drops and generic durable entity spawn/update/removal with preimage capture, WAL publication and recovery; scheduling and additional events remain in Phase 2 |
+| General entity due handlers | In progress | Registered general entities can persist and update their own due time and combine due callbacks with world/entity/drop effects in one WAL record; cross-owner scheduler, notifications and worker VM remain open |
 | General interaction actions and UI composition | Done | Item/empty-space/block/entity discovery, fenced durable dispatch, bounded label/button/tooltip panels, stock-client integration and external knapping proof |
 | Persistent owner-local system slice | Done | Public codecs, bounded persistent bytes, schedules/seeds, region-clock fixture and real-listener restart; world reads/effects remain below |
 | World-system API and growth/support migration | Planned | Expose internal owner/system scheduling through public bounded read, effect, persistence, and wake contracts |

@@ -286,6 +286,21 @@ impl Registration {
                 )));
             }
         }
+        for entity in candidate.gameplay_entities() {
+            if entity.initial_delay_ticks.is_some()
+                && candidate
+                    .gameplay_handler(
+                        bloxgloom_host_api::gameplay::EventKind::EntityTick,
+                        &entity.key,
+                    )
+                    .is_none()
+            {
+                return Err(RegistrationError(format!(
+                    "{}: scheduled entity requires a tick handler",
+                    entity.key
+                )));
+            }
+        }
         candidate
             .validate()
             .map_err(|error| RegistrationError(format!("invalid composed catalog: {error:?}")))?;

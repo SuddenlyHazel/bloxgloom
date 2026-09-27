@@ -7,6 +7,7 @@ pub enum EventKind {
     BlockRemoved,
     BlockPlaced,
     ActionRequested,
+    EntityTick,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +42,11 @@ pub enum Event {
         entity: Option<u64>,
         slot: u8,
         arguments: Vec<u8>,
+    },
+    EntityTick {
+        entity: u64,
+        position: [f32; 3],
+        tick: u64,
     },
 }
 
@@ -90,6 +96,7 @@ impl HandlerRegistration {
             EventKind::BlockRemoved => 0,
             EventKind::BlockPlaced => 1,
             EventKind::ActionRequested => 2,
+            EventKind::EntityTick => 3,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

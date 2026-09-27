@@ -21,8 +21,12 @@ impl Catalog {
                 EventKind::ActionRequested => self.action(target).is_none_or(|action| {
                     action.operation != bloxgloom_host_api::actions::Operation::Gameplay
                 }),
+                EventKind::EntityTick => self.gameplay_entity(target).is_none(),
             })
-            || (handler.event == EventKind::ActionRequested && handler.target.is_none())
+            || (matches!(
+                handler.event,
+                EventKind::ActionRequested | EventKind::EntityTick
+            ) && handler.target.is_none())
         {
             return Err(RegistrationError(format!(
                 "{}: unknown gameplay target",
