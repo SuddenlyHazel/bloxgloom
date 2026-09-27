@@ -42,7 +42,21 @@ impl Catalog {
         if slot.is_some() {
             return Err(ApiError("duplicate mobile implementation".into()));
         }
+        let action = bloxgloom_host_api::actions::Action {
+            key: format!("{}/interact", entity.key),
+            version: 1,
+            label: "INTERACT".into(),
+            target: bloxgloom_host_api::actions::Target::Entity(entity.key.clone()),
+            operation: bloxgloom_host_api::actions::Operation::EntityRequest(
+                entity.interaction.clone(),
+            ),
+            panel: None,
+        };
         *slot = Some(entity);
+        if !matches!(&action.operation, bloxgloom_host_api::actions::Operation::EntityRequest(bytes) if bytes.is_empty())
+        {
+            self.register_action(action)?;
+        }
         Ok(())
     }
     pub(crate) fn mobile_entity(&self, id: EntityTypeId) -> Option<&Arc<MobileEntity>> {

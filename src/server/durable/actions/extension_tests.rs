@@ -109,6 +109,8 @@ fn open(path: &std::path::Path) -> State {
 fn resident(state: &mut State) {
     for y in [79, 80] {
         state.world.get_chunk(world_to_chunk(-1, y, -1).0).unwrap();
+        // Visibility crosses the z seam from the actor to the footprint.
+        state.world.get_chunk(world_to_chunk(-1, y, 2).0).unwrap();
     }
 }
 fn ids(state: &State) -> (BlockId, ItemId) {

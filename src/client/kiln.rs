@@ -7,7 +7,63 @@ impl ClientApp {
         let Some(hit) = self.aimed_block() else {
             return false;
         };
-        self.open_inventory_at(hit.block, hit.block_id)
+        let block = &self
+            .catalog
+            .block_type(self.catalog.state(hit.block_id).unwrap().block_type)
+            .unwrap()
+            .key;
+        let mut choices: Vec<_> = self
+            .catalog
+            .discover_actions(&bloxgloom_host_api::actions::Target::Block(
+                block.to_string(),
+            ))
+            .cloned()
+            .collect();
+        if choices.is_empty()
+            && let Some(entity) = self.replicas.action_at(hit.block, &self.catalog)
+        {
+            let key = &self.catalog.entity_type(entity.entity_type).unwrap().key;
+            choices = self
+                .catalog
+                .discover_actions(&bloxgloom_host_api::actions::Target::Entity(
+                    key.to_string(),
+                ))
+                .cloned()
+                .collect();
+        }
+        if choices.is_empty() {
+            return false;
+        }
+        if choices.len() == 1
+            && choices[0].operation == bloxgloom_host_api::actions::Operation::Inventory
+        {
+            return self.open_inventory_at(hit.block, hit.block_id);
+        }
+        let Some(entity) = self.replicas.action_at(hit.block, &self.catalog) else {
+            self.show_status("Target state is still loading");
+            return true;
+        };
+        self.action_choices = choices
+            .into_iter()
+            .map(|action| actions::ActionChoice {
+                request: bloxgloom_host_api::actions::Request {
+                    key: action.key.clone(),
+                    version: action.version,
+                    slot: self.config.selected_slot as u8,
+                    inventory_revision: self.inventory.revision,
+                    entity: entity.id,
+                    entity_revision: entity.revision,
+                    arguments: vec![],
+                },
+                action,
+                target: hit.block,
+            })
+            .collect();
+        self.active_action = (self.action_choices.len() == 1
+            && self.action_choices[0].action.panel.is_some())
+        .then_some(0);
+        self.set_screen(UiScreen::Actions);
+        true
     }
 
     pub(super) fn open_inventory_at(
@@ -15,7 +71,7 @@ impl ClientApp {
         target: [i32; 3],
         state: crate::content::BlockStateId,
     ) -> bool {
-        if self.catalog.inventory_for_state(state).is_none() {
+        if self.catalog.inventory_action(state).is_none() {
             return false;
         }
         let Some(entity) = self.replicas.kiln_at(target, &self.catalog) else {
@@ -159,10 +215,24 @@ impl ClientApp {
         let Some(entity) = self.current_kiln() else {
             return;
         };
-        let mut payload = vec![2, operation, kiln_slot, inventory_slot];
-        payload.extend(count.to_le_bytes());
-        payload.extend(entity.id.to_le_bytes());
-        payload.extend(entity.revision.to_le_bytes());
+        let screen = self.catalog.inventory_screen(entity.entity_type).unwrap();
+        let action = self
+            .catalog
+            .action(&format!("{}/inventory", screen.entity))
+            .unwrap();
+        let mut arguments = vec![operation, kiln_slot];
+        arguments.extend(count.to_le_bytes());
+        let payload = bloxgloom_host_api::actions::Request {
+            key: action.key.clone(),
+            version: action.version,
+            slot: inventory_slot,
+            inventory_revision: self.inventory.revision,
+            entity: entity.id,
+            entity_revision: entity.revision,
+            arguments,
+        }
+        .encode()
+        .unwrap();
         let Some(action_id) = self.allocate_action_id() else {
             self.show_status("Action session pending or busy");
             return;

@@ -6,6 +6,7 @@ use bloxgloom_host_api::{
 pub const KEY: &str = "fixture:tall_store";
 pub mod anchored;
 pub mod content;
+pub mod actions;
 pub mod creature;
 pub mod machine;
 pub mod system;
@@ -17,7 +18,8 @@ impl Extension for Fixture {
         r.mobile_entity(creature::definition())?;
         machine::register(r)?;
         r.owner_system(system::definition())?;
-        anchored::SignalPost.register(r)
+        anchored::SignalPost.register(r)?;
+        actions::register(r)
     }
 }
 pub struct TallStore;

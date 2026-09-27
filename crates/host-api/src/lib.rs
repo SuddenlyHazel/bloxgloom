@@ -5,6 +5,7 @@ use std::fmt;
 pub mod anchored;
 pub mod composition;
 pub mod content;
+pub mod actions;
 pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
@@ -69,6 +70,11 @@ pub trait Registrar {
     fn tag(&mut self, _definition: content::Tag) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "tags unsupported by this registrar".into(),
+        ))
+    }
+    fn action(&mut self, _action: actions::Action) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "actions unsupported by this registrar".into(),
         ))
     }
     fn machine(&mut self, _machine: machine::Machine) -> Result<(), RegistrationError> {

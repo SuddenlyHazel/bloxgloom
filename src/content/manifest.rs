@@ -318,6 +318,13 @@ impl ContentManifest {
                 .bind_machine(id, machine.clone())
                 .map_err(|_| invalid("invalid machine binding"))?;
         }
+        for action in local.actions.values() {
+            if resolved.action(&action.key).is_none() {
+                resolved
+                    .register_action((**action).clone())
+                    .map_err(|_| invalid("invalid mapped action"))?;
+            }
+        }
         if Self::from_catalog(&resolved) != *self {
             return Err(invalid("mapped catalog does not match content manifest"));
         }

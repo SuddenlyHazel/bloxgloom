@@ -82,6 +82,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Playing, "playing"),
             (UiScreen::Inventory, "inventory"),
             (UiScreen::Container, "container"),
+            (UiScreen::Actions, "actions"),
             (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
@@ -101,6 +102,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Playing, "playing"),
         (UiScreen::Inventory, "inventory"),
         (UiScreen::Container, "container"),
+        (UiScreen::Actions, "actions"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
@@ -1203,12 +1205,38 @@ fn sample_inventory() -> [Option<Stack>; SLOTS] {
     slots
 }
 
+fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
+    #[cfg(feature = "lifecycle-fixture")]
+    {
+        bloxgloom_lifecycle_fixture::actions::definition()
+            .panel
+            .unwrap()
+    }
+    #[cfg(not(feature = "lifecycle-fixture"))]
+    {
+        use bloxgloom_host_api::actions::*;
+        Panel {
+            title: "REGISTERED ACTIONS".into(),
+            widgets: vec![
+                Widget::Label("Actions are supplied by installed content.".into()),
+                Widget::Label("The server validates every request.".into()),
+                Widget::Button {
+                    action: None,
+                    label: "EXAMPLE CONTROL".into(),
+                    tooltip: "UI controls never authorize gameplay changes.".into(),
+                },
+            ],
+        }
+    }
+}
+
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
         screen,
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
+        action_panel: (screen == UiScreen::Actions).then(action_preview_panel),
         container_screen: (screen == UiScreen::Container).then(|| {
             crate::content::catalog()
                 .inventory_screen(crate::content::KILN_ENTITY_TYPE)
@@ -1242,6 +1270,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
+            UiScreen::Actions => Some(UiControl::Action(2)),
             UiScreen::Container => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing => None,
             UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
@@ -1255,6 +1284,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        action_panel: None,
         container_screen: None,
         screen: UiScreen::Settings,
         selected_slot: 4,

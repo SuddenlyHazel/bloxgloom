@@ -190,6 +190,7 @@ pub(in crate::server) fn plan_interact(
     request: &[u8],
     receipt_value: Vec<u8>,
     tick: TickId,
+    id: EntityId,
 ) -> io::Result<CommitAction> {
     let target_cell = CellCoord::new(target[0], target[1], target[2]);
     if target[1] <= crate::world::BEDROCK_Y {
@@ -211,41 +212,21 @@ pub(in crate::server) fn plan_interact(
         return Err(permission("entity interaction target is out of reach"));
     }
     let inventory_before = client.inventory.clone();
-    let mobile_request = request.first() == Some(&3);
-    let id = if mobile_request {
-        if request.len() < 18 {
-            return Err(permission("invalid mobile interaction"));
-        }
-        EntityId::new(u64::from_le_bytes(request[1..9].try_into().unwrap()))
-            .ok_or_else(|| permission("invalid mobile identity"))?
-    } else {
-        state
-            .entities
-            .anchored_at(target_cell)
-            .ok_or_else(|| permission("no anchored entity at target"))?
-    };
     let snapshot = state
         .entities
         .snapshot(id)
         .ok_or_else(|| permission("interaction entity is no longer present"))?;
-    let request = if mobile_request {
-        let EntityLocation::Mobile { position } = snapshot.location else {
-            return Err(permission("not a mobile entity"));
-        };
-        if position_to_cell(position).map_err(io::Error::other)? != target_cell
-            || snapshot.revision != u64::from_le_bytes(request[9..17].try_into().unwrap())
-            || state
-                .world
-                .catalog()
-                .mobile_entity(snapshot.entity_type)
-                .is_none()
-        {
-            return Err(permission("stale mobile interaction"));
+    let matches = match &snapshot.location {
+        EntityLocation::Mobile { position } => {
+            position_to_cell(*position).ok() == Some(target_cell)
         }
-        &request[17..]
-    } else {
-        request
+        EntityLocation::Anchored { footprint, .. } => {
+            footprint.contains(&target_cell) && state.entities.anchored_at(target_cell) == Some(id)
+        }
     };
+    if !matches {
+        return Err(permission("registered target location mismatch"));
+    }
     let descriptor = state
         .entities
         .types()
@@ -260,37 +241,8 @@ pub(in crate::server) fn plan_interact(
     let read_radius = descriptor.interaction_read_radius();
     let reads_neighbours = descriptor.interaction_reads_neighbours();
     let catalog = state.world.catalog_arc();
+    let sight_reads = interaction_sight(state, position, target, &snapshot, &catalog)?;
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
-    if mobile_request {
-        let EntityLocation::Mobile {
-            position: target_position,
-        } = snapshot.location
-        else {
-            unreachable!()
-        };
-        let body = catalog.mobile_entity(snapshot.entity_type).unwrap().body;
-        let eye = glam::Vec3::from_array(position) + glam::Vec3::Y * 1.6;
-        let center = glam::Vec3::from_array(target_position) + glam::Vec3::Y * (body.height * 0.5);
-        let delta = center - eye;
-        let mut missing = false;
-        let blocked = crate::raycast::raycast_with_catalog(
-            eye,
-            delta.normalize_or_zero(),
-            delta.length(),
-            |x, y, z| {
-                view.block(x, y, z)
-                    .map_err(|_| {
-                        missing = true;
-                    })
-                    .ok()
-            },
-            &catalog,
-        )
-        .is_some();
-        if missing || blocked {
-            return Err(permission("mobile interaction is occluded"));
-        }
-    }
     let neighbours = if reads_neighbours {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
     } else {
@@ -352,6 +304,9 @@ pub(in crate::server) fn plan_interact(
     for (chunk, _) in view.revisions() {
         entities.add_read_key(super::super::chunk_state_key(*chunk));
     }
+    for chunk in sight_reads {
+        entities.add_read_key(super::super::chunk_state_key(chunk));
+    }
     if reads_neighbours {
         entities
             .add_dependencies(capture_dependencies(state, &view)?)
@@ -381,6 +336,63 @@ pub(in crate::server) fn plan_interact(
         entities: Some(entities),
         entity_wakes: wakes,
     })
+}
+
+/// Reach bounds DDA traversal, captured keys, and load requests. Every cell read
+/// for visibility is fenced through admission and receipt apply. Missing terrain
+/// defers, never becomes transparent. Actor position is sampled at planning.
+fn interaction_sight(
+    state: &mut State,
+    actor: [f32; 3],
+    target: [i32; 3],
+    snapshot: &EntitySnapshot,
+    catalog: &crate::content::Catalog,
+) -> io::Result<BTreeSet<ChunkKey>> {
+    let eye = glam::Vec3::from_array(actor) + glam::Vec3::Y * 1.6;
+    let center = match snapshot.location {
+        EntityLocation::Mobile { position } => {
+            let body = catalog
+                .mobile_entity(snapshot.entity_type)
+                .ok_or_else(|| permission("mobile has no targeting body"))?
+                .body;
+            glam::Vec3::from_array(position) + glam::Vec3::Y * (body.height * 0.5)
+        }
+        _ => glam::Vec3::from_array(target.map(|v| v as f32 + 0.5)),
+    };
+    let delta = center - eye;
+    if !delta.is_finite() || delta.length() > crate::server::EDIT_REACH {
+        return Err(permission("target center out of reach"));
+    }
+    let mut reads = BTreeSet::new();
+    let mut missing = BTreeSet::new();
+    let hit = crate::raycast::raycast_with_catalog(
+        eye,
+        delta.normalize_or_zero(),
+        delta.length(),
+        |x, y, z| {
+            let key = crate::world::world_to_chunk(x, y, z).0;
+            reads.insert(key);
+            let block = state.world.cached_block(x, y, z);
+            if block.is_none() {
+                missing.insert(key);
+            }
+            block
+        },
+        catalog,
+    );
+    if !missing.is_empty() {
+        for key in missing {
+            let _ = request_chunk(state, key);
+        }
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "interaction sight terrain unavailable",
+        ));
+    }
+    if hit.is_some_and(|hit| {
+        !matches!(&snapshot.location, EntityLocation::Anchored { footprint, .. } if footprint.contains(&CellCoord::new(hit.block[0],hit.block[1],hit.block[2])))
+    }) { return Err(permission("interaction is occluded")); }
+    Ok(reads)
 }
 
 /// Plan one due tick through the registered type policy. All block preimages

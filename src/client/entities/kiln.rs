@@ -1,13 +1,14 @@
 //! Builtin kiln control surface for the generic entity-interaction wire.
 //!
 //! One `EntityAdapter` among others: it matches aimed kiln blocks and emits
-//! the same opaque, bounded payloads the server validates. The server resolves
-//! the touched footprint cell and owns every slot check.
+//! bounded control arguments. `ClientApp::interact_aimed_entity` resolves the
+//! registered inventory action and wraps those arguments with entity identity,
+//! entity revision and actor inventory revision before sending anything.
 //!
 //! `KilnCommand`, `is_kiln_hit`, and `interaction` are the historic per-type
 //! spellings; they delegate to the registered adapter path so the emitted
-//! request bytes stay byte-identical while production input flows through the
-//! generic registry.
+//! control argument bytes stay byte-identical. Their old unfenced wire spelling
+//! is a test reference only; the live server rejects it.
 
 use super::registry::{EntityAdapter, EntityVerb};
 use crate::content::{Catalog, KILN_BLOCK_TYPE, KILN_ENTITY_TYPE};

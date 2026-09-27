@@ -33,7 +33,16 @@ impl Catalog {
         if entry.is_some() {
             return Err(ApiError("duplicate inventory screen".into()));
         }
+        let action = bloxgloom_host_api::actions::Action {
+            key: format!("{}/inventory", screen.entity),
+            version: 1,
+            label: screen.title.clone(),
+            target: bloxgloom_host_api::actions::Target::Block(screen.block.clone()),
+            operation: bloxgloom_host_api::actions::Operation::Inventory,
+            panel: None,
+        };
         *entry = Some(Arc::new(screen));
+        self.register_action(action)?;
         Ok(())
     }
     pub(crate) fn inventory_screen(&self, entity: EntityTypeId) -> Option<&Arc<InventoryScreen>> {
@@ -47,6 +56,7 @@ impl Catalog {
             .enumerate()
             .filter_map(|(id, screen)| screen.as_ref().map(|s| (EntityTypeId(id as u32), s)))
     }
+    #[cfg(test)]
     pub(crate) fn inventory_for_state(&self, state: BlockStateId) -> Option<&Arc<InventoryScreen>> {
         let block = &self.block_type(self.state(state)?.block_type)?.key;
         self.inventory_screens

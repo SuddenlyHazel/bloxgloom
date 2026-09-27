@@ -10,6 +10,7 @@ use super::{
     types::{SettingId, UiControl, UiDebug, UiFrame, UiRect, UiScreen},
 };
 
+mod actions;
 mod container;
 mod screens;
 
@@ -40,6 +41,7 @@ impl UiBuilder<'_> {
             UiScreen::Playing => {}
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
             UiScreen::Container => self.draw_container(frame, layout, catalog),
+            UiScreen::Actions => self.draw_actions(frame, layout),
             UiScreen::Admin => self.draw_admin(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
             UiScreen::Settings | UiScreen::Graphics => self.draw_settings(frame, layout),

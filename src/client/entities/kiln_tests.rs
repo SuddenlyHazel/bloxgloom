@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn production_rf_shortcuts_emit_registered_identity_and_inventory_fences() {
+    let anchor = [0, 79, 0];
+    let upper = crate::world::world_to_chunk(0, 80, 0).0;
+    let mut app = crate::client::ClientApp::new(
+        crate::client::Network::disconnected_for_test(),
+        crate::config::Config::default(),
+        std::env::temp_dir().join("unused-registered-hotkey-config"),
+    );
+    app.accept(crate::protocol::ServerMessage::ActionSession {
+        epoch: 7,
+        next_seq: 1,
+        acked_seq: 0,
+    });
+    app.position = glam::Vec3::new(0.5, 79.0, 2.5);
+    app.yaw = -std::f32::consts::FRAC_PI_2;
+    app.pitch = 0.0;
+    app.grabbed = true;
+    app.inventory.revision = 13;
+    app.config.selected_slot = 4;
+    let entity = PublicEntity {
+        id: 91,
+        entity_type: crate::content::KILN_ENTITY_TYPE,
+        revision: 9,
+        motion_revision: 0,
+        location: PublicEntityLocation::Anchored {
+            anchor,
+            anchor_state: crate::content::KILN_DEFAULT_STATE,
+        },
+        payload: vec![],
+    };
+    app.replicas
+        .entities
+        .insert(upper, BTreeMap::from([(91, entity)]));
+    let mut blocks = vec![AIR; CHUNK_VOLUME];
+    blocks[Chunk::index([0, 0, 0]).unwrap()] = crate::content::KILN_DEFAULT_STATE;
+    app.chunks
+        .insert(upper, Arc::new(Chunk::from_blocks(upper, 1, blocks)));
+    for (verb, direction, slot) in [
+        (kiln::INSERT_INPUT, 0, 1),
+        (kiln::TAKE_OUTPUT, 1, 2),
+        (kiln::INSERT_FUEL, 0, 0),
+        (kiln::TAKE_FUEL, 1, 0),
+    ] {
+        app.interact_aimed_entity(verb);
+        let ClientMessage::EntityInteract {
+            payload, target, ..
+        } = app.pending_commands.pop_front().unwrap()
+        else {
+            panic!()
+        };
+        let request = bloxgloom_host_api::actions::Request::decode(&payload).unwrap();
+        assert_eq!(target, [0, 80, 0]);
+        assert_eq!(request.key, "bloxgloom:kiln/inventory");
+        assert_eq!(
+            (
+                request.entity,
+                request.entity_revision,
+                request.inventory_revision,
+                request.slot
+            ),
+            (91, 9, 13, 4)
+        );
+        assert_eq!(request.arguments, vec![direction, slot, 1, 0]);
+    }
+    app.config_writer.finish();
+}
+
+#[test]
 fn workstation_resolves_both_halves_and_closes_on_replacement() {
     let anchor = [0, 79, 0];
     let lower = crate::world::world_to_chunk(0, 79, 0).0;

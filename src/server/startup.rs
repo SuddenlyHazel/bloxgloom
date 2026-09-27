@@ -299,7 +299,33 @@ impl ServerStartup {
                 .register_transfer_policy(id, Arc::clone(policy))
                 .map_err(entity_error)?;
         }
-        types.freeze().map(Arc::new).map_err(entity_error)
+        let types = types.freeze().map_err(entity_error)?;
+        for action in catalog.registered_actions() {
+            use bloxgloom_host_api::actions::{Operation, Target};
+            if !matches!(
+                action.operation,
+                Operation::EntityRequest(_) | Operation::Inventory
+            ) {
+                continue;
+            }
+            let supported = types.descriptors().any(|descriptor| {
+                descriptor.has_interaction_policy() && match &action.target {
+                    Target::Entity(key) => descriptor.key() == key,
+                    Target::Block(key) => matches!(descriptor.ownership(), EntityOwnership::Anchored { compatible_anchor_states, .. } if compatible_anchor_states.iter().any(|state| catalog.state(*state).and_then(|s| catalog.block_type(s.block_type)).is_some_and(|b| b.key == *key))),
+                    _ => false,
+                }
+            });
+            if !supported {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "action {} has no registered interaction handler",
+                        action.key
+                    ),
+                ));
+            }
+        }
+        Ok(Arc::new(types))
     }
 
     /// Freezes the registered effect kinds before gameplay starts. The

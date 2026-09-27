@@ -22,6 +22,7 @@ struct UiCacheKey {
     inventory_source: Option<u8>,
     kiln: Option<crate::protocol::workstation::WorkstationView>,
     container_screen: Option<Arc<bloxgloom_host_api::InventoryScreen>>,
+    action_panel: Option<bloxgloom_host_api::actions::Panel>,
     kiln_source: Option<u8>,
     admin_enabled: bool,
     admin_page: usize,
@@ -208,6 +209,7 @@ impl UiRenderer {
             inventory_source: frame.inventory_source,
             kiln: frame.kiln.clone(),
             container_screen: frame.container_screen.clone(),
+            action_panel: frame.action_panel.clone(),
             kiln_source: frame.kiln_source,
             admin_enabled: frame.admin_enabled,
             admin_page: frame.admin_page,
@@ -221,20 +223,19 @@ impl UiRenderer {
         {
             return;
         }
-        let rebuild_layout = self
-            .cache_key
-            .as_ref()
-            .is_none_or(|old| old.container_screen != key.container_screen)
-            || self.layout.as_ref().is_none_or(|layout| {
-                layout.width != self.width
-                    || layout.height != self.height
-                    || layout.scale.to_bits() != scale.to_bits()
-                    || layout.screen != frame.screen
-            });
+        let rebuild_layout = self.cache_key.as_ref().is_none_or(|old| {
+            old.container_screen != key.container_screen || old.action_panel != key.action_panel
+        }) || self.layout.as_ref().is_none_or(|layout| {
+            layout.width != self.width
+                || layout.height != self.height
+                || layout.scale.to_bits() != scale.to_bits()
+                || layout.screen != frame.screen
+        });
         if rebuild_layout {
             self.layout = Some(
                 UiLayout::new(self.width, self.height, scale, frame.screen)
-                    .with_container(frame.container_screen.as_deref()),
+                    .with_container(frame.container_screen.as_deref())
+                    .with_actions(frame.action_panel.as_ref()),
             );
         }
         let layout = self.layout.as_ref().unwrap();

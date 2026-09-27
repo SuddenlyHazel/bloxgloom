@@ -34,7 +34,7 @@ impl UiLayout {
         match screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => layout.add_inventory(),
-            UiScreen::Container => {}
+            UiScreen::Container | UiScreen::Actions => {}
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
@@ -118,6 +118,33 @@ impl UiLayout {
             self.add_container(screen);
         }
         self
+    }
+
+    pub fn with_actions(mut self, panel: Option<&bloxgloom_host_api::actions::Panel>) -> Self {
+        if self.screen == UiScreen::Actions
+            && let Some(panel) = panel.filter(|p| p.validate().is_ok())
+        {
+            for (i, widget) in panel.widgets.iter().enumerate() {
+                if matches!(widget, bloxgloom_host_api::actions::Widget::Button { .. }) {
+                    self.push(
+                        UiControl::Action(i as u8),
+                        self.action_row(i, panel.widgets.len()),
+                    );
+                }
+            }
+        }
+        self
+    }
+    pub(super) fn action_row(&self, index: usize, count: usize) -> UiRect {
+        let panel = self.inventory_panel();
+        let pitch =
+            ((panel.height - 110.0 * self.scale) / count.max(1) as f32).min(48.0 * self.scale);
+        UiRect {
+            x: panel.x + 20.0 * self.scale,
+            y: panel.y + 55.0 * self.scale + index as f32 * pitch,
+            width: panel.width - 40.0 * self.scale,
+            height: pitch - 4.0 * self.scale,
+        }
     }
 
     fn add_container(&mut self, screen: &bloxgloom_host_api::InventoryScreen) {

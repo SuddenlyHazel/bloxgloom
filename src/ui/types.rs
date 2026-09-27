@@ -7,6 +7,7 @@ pub enum UiScreen {
     Playing,
     Inventory,
     Container,
+    Actions,
     Admin,
     Pause,
     Settings,
@@ -28,6 +29,7 @@ pub enum SettingId {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UiControl {
+    Action(u8),
     HotbarSlot(u8),
     InventorySlot(u8),
     KilnSlot(u8),
@@ -97,6 +99,7 @@ pub struct UiFrame<'a> {
     pub inventory_source: Option<u8>,
     pub kiln: Option<crate::protocol::workstation::WorkstationView>,
     pub container_screen: Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>,
+    pub action_panel: Option<bloxgloom_host_api::actions::Panel>,
     pub kiln_source: Option<u8>,
     pub admin_enabled: bool,
     pub admin_page: usize,
@@ -117,6 +120,7 @@ impl Default for UiFrame<'_> {
             inventory_source: None,
             kiln: None,
             container_screen: None,
+            action_panel: None,
             kiln_source: None,
             admin_enabled: false,
             admin_page: 0,

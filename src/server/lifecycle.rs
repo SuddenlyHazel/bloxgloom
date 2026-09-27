@@ -16,6 +16,7 @@ pub(crate) struct Registration {
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
     mobiles: Vec<bloxgloom_host_api::entity::MobileEntity>,
     machines: Vec<bloxgloom_host_api::machine::Machine>,
+    actions: Vec<bloxgloom_host_api::actions::Action>,
     systems: Vec<bloxgloom_host_api::system::System>,
 }
 impl Registrar for Registration {
@@ -65,6 +66,22 @@ impl Registrar for Registration {
     fn tag(&mut self, d: bloxgloom_host_api::content::Tag) -> Result<(), RegistrationError> {
         self.room()?;
         self.content.tag(d)
+    }
+    fn action(
+        &mut self,
+        action: bloxgloom_host_api::actions::Action,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        action.validate()?;
+        if self.actions.len() >= bloxgloom_host_api::actions::MAX_ACTIONS
+            || self.actions.iter().any(|a| a.key == action.key)
+        {
+            return Err(RegistrationError(
+                "duplicate action or action capacity exceeded".into(),
+            ));
+        }
+        self.actions.push(action);
+        Ok(())
     }
     fn machine(
         &mut self,
@@ -144,6 +161,7 @@ impl Registration {
             + self.machines.len()
             + self.anchored.len()
             + self.systems.len()
+            + self.actions.len()
             >= 4096
         {
             return Err(RegistrationError(
@@ -200,6 +218,12 @@ impl Registration {
             candidate.bind_machine(id, Arc::new(machine.clone()))?;
         }
         Registry::resolve(&candidate, &registration.definitions)?;
+        for action in &registration.actions {
+            candidate.register_action(action.clone())?;
+        }
+        candidate
+            .validate()
+            .map_err(|error| RegistrationError(format!("invalid composed catalog: {error:?}")))?;
         candidate
             .storage_lifecycles
             .extend(registration.definitions.clone());

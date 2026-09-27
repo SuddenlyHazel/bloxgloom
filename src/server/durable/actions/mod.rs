@@ -15,6 +15,7 @@ pub(in crate::server) mod entity;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;
 mod mobile_lifecycle;
+mod registered;
 pub(in crate::server) mod storage_lifecycle;
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -186,7 +187,7 @@ pub(in crate::server) fn plan_durable_request(
                     target,
                     payload,
                 } => {
-                    return entity::plan_interact(
+                    return registered::plan(
                         state,
                         *id,
                         profile,

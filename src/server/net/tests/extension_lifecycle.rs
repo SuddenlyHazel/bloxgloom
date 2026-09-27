@@ -366,12 +366,14 @@ fn external_processor_manual_and_hopper_transfers_process_restart_and_refund_ove
                     c.anchored([0, 80, 2]).is_some()
                 });
                 client.open([0, 80, 2], block);
+                until(&mut peer, &mut client, &catalog, |c| c.player_count(0) == 0);
                 let request = client.transfer(true, 3, 0, false);
                 send(&mut peer, &mut client, request, &catalog);
                 until(&mut peer, &mut client, &catalog, |c| {
                     c.view().unwrap().slots[0]
                         .as_ref()
                         .is_some_and(|s| s.count == 2)
+                        && c.player_count(3) == 0
                 });
                 let request = client.transfer(true, 2, 1, true);
                 send(&mut peer, &mut client, request.clone(), &catalog);
@@ -400,7 +402,7 @@ fn external_processor_manual_and_hopper_transfers_process_restart_and_refund_ove
                     &catalog,
                 );
                 until(&mut peer, &mut client, &catalog, |c| {
-                    c.anchored([0, 81, 2]).is_some()
+                    c.anchored([0, 81, 2]).is_some() && c.player_count(1) == 1
                 });
                 client.open([0, 81, 2], crate::content::HOPPER_STATE);
                 let request = client.transfer(true, 2, 0, false);

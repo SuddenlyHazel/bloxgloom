@@ -32,6 +32,30 @@ impl InventoryProbe {
     pub(crate) fn next_id(&mut self) -> u128 {
         self.app.allocate_action_id().unwrap()
     }
+    pub(crate) fn item_action(&mut self, slot: usize) -> ClientMessage {
+        self.app.pending_commands.clear();
+        self.app.config.selected_slot = slot;
+        assert!(self.app.open_item_actions());
+        assert_eq!(self.app.screen, UiScreen::Actions);
+        let panel = self.app.action_panel().unwrap();
+        let row = panel
+            .widgets
+            .iter()
+            .position(|w| matches!(w, bloxgloom_host_api::actions::Widget::Button { .. }))
+            .unwrap() as u8;
+        let layout = UiLayout::new(640, 360, 1.0, UiScreen::Actions).with_actions(Some(&panel));
+        let rect = layout.rect(UiControl::Action(row)).unwrap();
+        assert_eq!(
+            layout.hit_test(rect.x + 1.0, rect.y + 1.0),
+            Some(UiControl::Action(row))
+        );
+        self.app.action_control(row);
+        assert_eq!(self.app.screen, UiScreen::Playing);
+        self.app
+            .pending_commands
+            .pop_front()
+            .expect("registered control emits request")
+    }
     pub(crate) fn anchored(&self, at: [i32; 3]) -> Option<crate::protocol::PublicEntity> {
         self.app.replicas.anchored_for_test(at).cloned()
     }

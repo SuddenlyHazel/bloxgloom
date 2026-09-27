@@ -421,6 +421,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Graphics,
         ] {
             let frame = UiFrame {
+                action_panel: None,
                 container_screen: None,
                 screen,
                 selected_slot: 8,
@@ -454,6 +455,40 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 "{screen:?} at {width}x{height}: {} vertices",
                 vertices.len()
             );
+        }
+    }
+}
+#[test]
+fn registered_composition_controls_share_hit_geometry_and_stay_bounded() {
+    use bloxgloom_host_api::actions::{MAX_WIDGETS, Panel, Widget};
+    for count in [3, MAX_WIDGETS] {
+        let panel = Panel {
+            title: "FIELD KNAPPING".into(),
+            widgets: vec![
+                Widget::Button {
+                    action: None,
+                    label: "KNAP TWO GRAVEL".into(),
+                    tooltip: "Consumes 2 gravel. Requires space for 3 sticks.".into()
+                };
+                count
+            ],
+        };
+        for (width, height, scale) in [(640, 360, 1.0), (640, 360, 2.0), (1280, 720, 1.0)] {
+            let layout =
+                UiLayout::new(width, height, scale, UiScreen::Actions).with_actions(Some(&panel));
+            let mut previous = None;
+            for i in 0..count {
+                let rect = layout.rect(UiControl::Action(i as u8)).unwrap();
+                assert!(rect.height > 0.0 && rect.y + rect.height <= height as f32);
+                if let Some(bottom) = previous {
+                    assert!(rect.y >= bottom);
+                }
+                previous = Some(rect.y + rect.height);
+                assert_eq!(
+                    layout.hit_test(rect.x + 1.0, rect.y + 1.0),
+                    Some(UiControl::Action(i as u8))
+                );
+            }
         }
     }
 }

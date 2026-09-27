@@ -185,7 +185,7 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                 for mut payload in [vec![1, 0, 0, 1, 1, 0], vec![1, 0, 1, 2, 128, 0]] {
                     let id = next_id();
                     let target = if with_hopper { [0, 82, 1] } else { [0, 80, 1] };
-                    if with_hopper {
+                    {
                         let entity = chunks.workstation(target);
                         payload[0] = 2;
                         payload.extend(entity.id.to_le_bytes());

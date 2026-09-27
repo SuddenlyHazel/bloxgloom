@@ -17,6 +17,8 @@ mod mobile_tests;
 mod mossbun_tests;
 #[path = "support_reads_tests.rs"]
 mod support_reads_tests;
+#[path = "registered_tests.rs"]
+mod registered_tests;
 use crate::items::{ItemId, STICK};
 use crate::server::entities::{CellCoord, KilnSlot, kiln_block_states, kiln_payload};
 use crate::server::movement::MovementState;
@@ -327,6 +329,16 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     );
 
     let epoch = grant_action_epoch(&mut state, profile);
+    // The actor's line of sight crosses the z seam as well as the footprint's
+    // vertical seam. Pure coordinator fixtures explicitly load both read sets.
+    state
+        .world
+        .get_chunk(world_to_chunk(-1, target_y, 2).0)
+        .unwrap();
+    state
+        .world
+        .get_chunk(world_to_chunk(-1, target_y + 1, 2).0)
+        .unwrap();
     let action_id = |sequence: u64| (u128::from(epoch) << 64) | u128::from(sequence);
     settle_live_action(
         &mut state,
@@ -353,7 +365,19 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     let fuel_request = ClientMessage::EntityInteract {
         action_id: action_id(2),
         target: [anchor.x, anchor.y, anchor.z],
-        payload: vec![1, 0, 0, 1, 1, 0], // insert one stick as fuel
+        payload: {
+            let mut bytes = vec![2, 0, 0, 1, 1, 0];
+            bytes.extend(entity_id.get().to_le_bytes());
+            bytes.extend(
+                state
+                    .entities
+                    .snapshot(entity_id)
+                    .unwrap()
+                    .revision
+                    .to_le_bytes(),
+            );
+            bytes
+        }, // insert one stick as fuel, fenced to this kiln
     };
     super::super::coordinator::handle_live_message(&mut state, 1, fuel_request, TickId::new(11))
         .unwrap();
@@ -419,13 +443,26 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     }
     assert!(!state.durability.reserved.contains(&lower_key));
     assert!(!state.durability.reserved.contains(&upper_key));
+    let input_payload = {
+        let mut bytes = vec![2, 0, 1, 2, 1, 0];
+        bytes.extend(entity_id.get().to_le_bytes());
+        bytes.extend(
+            state
+                .entities
+                .snapshot(entity_id)
+                .unwrap()
+                .revision
+                .to_le_bytes(),
+        );
+        bytes
+    };
     settle_live_action(
         &mut state,
         12,
         ClientMessage::EntityInteract {
             action_id: action_id(3),
             target: [anchor.x, anchor.y, anchor.z],
-            payload: vec![1, 0, 1, 2, 1, 0], // insert one gravel input
+            payload: input_payload, // insert one gravel input
         },
     );
     assert_eq!(state.clients[&1].inventory.slots[1], None);
@@ -474,6 +511,14 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
     let mut recovered = server_state(53, path.clone()).unwrap();
     recovered.world.get_chunk(lower_chunk).unwrap();
     recovered.world.get_chunk(upper_chunk).unwrap();
+    recovered
+        .world
+        .get_chunk(world_to_chunk(-1, target_y, 2).0)
+        .unwrap();
+    recovered
+        .world
+        .get_chunk(world_to_chunk(-1, target_y + 1, 2).0)
+        .unwrap();
     let recovered_id = recovered
         .entities
         .anchored_at(anchor)
@@ -1065,6 +1110,7 @@ fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
         .map(|(_, id, _, _)| crate::content::BlockStateId(id))
         .collect();
     assert!(!compatible.is_empty());
+    registered_tests::register_probe(&mut catalog, "test:counter_anchored");
     let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
     startup.register_entity_type(StartupEntityType {
         key: "test:counter_mobile".into(),
@@ -1109,6 +1155,13 @@ fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
         Inventory::default(),
     );
 
+    // A visible interaction fixture: natural terrain beside this column can be
+    // taller than the chosen anchor and must not stand between actor and target.
+    for z in 1..=3 {
+        for y in anchor.y..=anchor.y + 2 {
+            state.world.edit(0, y, z, AIR).unwrap();
+        }
+    }
     // Mobile tick through the generic dispatcher (previously kiln-routed).
     let spawn = state
         .entities
@@ -1161,7 +1214,7 @@ fn generic_entity_path_serves_non_kiln_tick_and_interaction() {
     let request = edit_request(ClientMessage::EntityInteract {
         action_id: 9,
         target: [anchor.x, anchor.y, anchor.z],
-        payload: vec![0],
+        payload: registered_tests::probe_request("test:counter_anchored", anchored_id),
     });
     let action = plan_durable_request(&mut state, &request, TickId::new(7))
         .unwrap()
@@ -2963,6 +3016,7 @@ fn entity_interaction_wakes_route_to_next_tick_delivery() {
         .filter(|(kind, id, _, _)| *kind == b'S' && *id != 0)
         .map(|(_, id, _, _)| crate::content::BlockStateId(id))
         .collect();
+    registered_tests::register_probe(&mut catalog, "test:poke_waker");
     let mut startup = crate::server::startup::ServerStartup::new(Arc::new(catalog));
     startup.register_entity_type(StartupEntityType {
         key: "test:poke_waker".into(),
@@ -3022,13 +3076,18 @@ fn entity_interaction_wakes_route_to_next_tick_delivery() {
         Inventory::default(),
     );
     let epoch = grant_action_epoch(&mut state, 17);
+    for z in 1..=3 {
+        for y in anchor.y..=anchor.y + 2 {
+            state.world.edit(0, y, z, AIR).unwrap();
+        }
+    }
     settle_live_action(
         &mut state,
         10,
         ClientMessage::EntityInteract {
             action_id: (u128::from(epoch) << 64) | 1,
             target: [anchor.x, anchor.y, anchor.z],
-            payload: vec![0],
+            payload: registered_tests::probe_request("test:poke_waker", waker_id),
         },
     );
     assert_eq!(

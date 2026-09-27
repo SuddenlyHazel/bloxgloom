@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use crate::world::{self, BlockId};
 
 mod anchored;
+mod actions;
 mod builtins;
 pub(crate) mod composition;
 pub(crate) mod creatures;
@@ -215,6 +216,8 @@ pub struct Catalog {
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
     inventory_screens: Vec<Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>>,
+    actions: bloxgloom_host_api::actions::Registry,
+    action_outputs: std::collections::BTreeMap<String, ItemId>,
     blocks: Vec<Option<BlockDef>>,
     states: Vec<Option<StateDef>>,
     items: Vec<Option<ItemDef>>,
@@ -248,6 +251,8 @@ impl Catalog {
             mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
             inventory_screens: Vec::new(),
+            actions: Default::default(),
+            action_outputs: Default::default(),
             blocks: Vec::new(),
             states: Vec::new(),
             items: Vec::new(),
@@ -563,6 +568,9 @@ impl Catalog {
     }
 
     pub fn validate(&self) -> Result<(), RegistrationError> {
+        self.actions
+            .validate_composition()
+            .map_err(|_| RegistrationError::InvalidDefinition)?;
         if self
             .state(BlockStateId(0))
             .is_none_or(|state| state.block_type != BlockTypeId(0))
@@ -789,6 +797,13 @@ impl Catalog {
                 }
                 if let Some(screen) = self.inventory_screen(entity.id) {
                     add(&screen.fingerprint_bytes());
+                }
+                // Action keys have no numeric save identity. The player contract
+                // fingerprints the complete canonical registry at handshake/load.
+                if entity.key == "bloxgloom:player" {
+                    for action in self.actions.values() {
+                        add(&action.fingerprint_bytes());
+                    }
                 }
             }
             _ => unreachable!(),

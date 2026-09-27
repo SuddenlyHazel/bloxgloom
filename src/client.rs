@@ -107,9 +107,11 @@ fn edit_for_hit_with_catalog(
 fn escape_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Pause,
-        UiScreen::Inventory | UiScreen::Container | UiScreen::Admin | UiScreen::Pause => {
-            UiScreen::Playing
-        }
+        UiScreen::Actions
+        | UiScreen::Inventory
+        | UiScreen::Container
+        | UiScreen::Admin
+        | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
     }
@@ -242,6 +244,7 @@ impl ActionTracker {
     }
 }
 
+mod actions;
 pub(crate) mod actors;
 mod admin;
 mod entities;
@@ -267,6 +270,8 @@ struct ClientApp {
     actor_animator: actors::ActorAnimator,
     kiln_target: Option<([i32; 3], u64)>,
     kiln_source: Option<u8>,
+    action_choices: Vec<actions::ActionChoice>,
+    active_action: Option<usize>,
     drops_revision: u64,
     inventory_source: Option<u8>,
     network: Network,
@@ -332,6 +337,8 @@ impl ClientApp {
             actor_animator: actors::ActorAnimator::default(),
             kiln_target: None,
             kiln_source: None,
+            action_choices: Vec::new(),
+            active_action: None,
             drops_revision: 0,
             inventory_source: None,
             network,
@@ -406,6 +413,10 @@ impl ClientApp {
         if screen != UiScreen::Container {
             self.kiln_target = None;
         }
+        if screen != UiScreen::Actions {
+            self.action_choices.clear();
+            self.active_action = None;
+        }
         self.set_grab(screen == UiScreen::Playing);
         self.refresh_layout();
         if screen == UiScreen::Playing && !self.grabbed {
@@ -418,7 +429,8 @@ impl ClientApp {
             let size = window.inner_size();
             self.ui_layout = Some(
                 UiLayout::new(size.width, size.height, self.config.scale, self.screen)
-                    .with_container(self.container_screen().as_deref()),
+                    .with_container(self.container_screen().as_deref())
+                    .with_actions(self.action_panel().as_ref()),
             );
         }
     }
@@ -529,6 +541,7 @@ impl ClientApp {
 
     fn activate_control(&mut self, event_loop: &ActiveEventLoop, control: UiControl) {
         match control {
+            UiControl::Action(row) => self.action_control(row),
             UiControl::HotbarSlot(_) => {}
             UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
                 self.inventory_click(slot, false)
@@ -583,6 +596,16 @@ impl ClientApp {
 
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
+            UiScreen::Actions => self.action_panel().map_or_else(Vec::new, |p| {
+                p.widgets
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, w)| {
+                        matches!(w, bloxgloom_host_api::actions::Widget::Button { .. })
+                            .then_some(UiControl::Action(i as u8))
+                    })
+                    .collect()
+            }),
             UiScreen::Playing => Vec::new(),
             UiScreen::Container => (0..self.container_screen().map_or(0, |s| s.slots))
                 .map(UiControl::KilnSlot)
@@ -1156,26 +1179,41 @@ impl ClientApp {
         let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
             return false;
         };
-        let mut payload = vec![3];
-        payload.extend(entity.id.to_le_bytes());
-        payload.extend(entity.revision.to_le_bytes());
-        payload.extend(
-            &self
-                .catalog
-                .mobile_entity(entity.entity_type)
-                .unwrap()
-                .interaction,
-        );
+        let key = &self.catalog.entity_type(entity.entity_type).unwrap().key;
+        let choices: Vec<_> = self
+            .catalog
+            .discover_actions(&bloxgloom_host_api::actions::Target::Entity(
+                key.to_string(),
+            ))
+            .cloned()
+            .collect();
+        if choices.is_empty() {
+            return false;
+        }
         let target = position.map(|v| v.floor() as i32);
-        let Some(action_id) = self.allocate_action_id() else {
-            self.show_status("Action session pending or busy");
-            return true;
-        };
-        self.queue_command(ClientMessage::EntityInteract {
-            action_id,
-            target,
-            payload,
-        });
+        self.action_choices = choices
+            .into_iter()
+            .map(|action| actions::ActionChoice {
+                request: bloxgloom_host_api::actions::Request {
+                    key: action.key.clone(),
+                    version: action.version,
+                    slot: self.config.selected_slot as u8,
+                    inventory_revision: self.inventory.revision,
+                    entity: entity.id,
+                    entity_revision: entity.revision,
+                    arguments: vec![],
+                },
+                action,
+                target,
+            })
+            .collect();
+        if self.action_choices.len() == 1 && self.action_choices[0].action.panel.is_none() {
+            let choice = self.action_choices.pop().unwrap();
+            self.send_registered(choice);
+        } else {
+            self.active_action = (self.action_choices.len() == 1).then_some(0);
+            self.set_screen(UiScreen::Actions);
+        }
         true
     }
 
@@ -1231,14 +1269,42 @@ impl ClientApp {
             self.show_status("Action session pending or busy");
             return;
         };
-        if let Some(message) = self.entity_registry.interact(
+        if let Some(ClientMessage::EntityInteract {
+            target, payload, ..
+        }) = self.entity_registry.interact(
             hit,
             &self.catalog,
             action_id,
             self.config.selected_slot as u8,
             verb,
         ) {
-            self.queue_command(message);
+            // Keyboard verbs are presentation shortcuts only. They must carry
+            // exactly the same identity/revision fences as screen controls.
+            let Some(entity) = self.replicas.kiln_at(target, &self.catalog) else {
+                return;
+            };
+            let Some(action) = self.catalog.inventory_action(hit.block_id) else {
+                return;
+            };
+            let [1, direction, slot, player, low, high] = payload.as_slice() else {
+                return;
+            };
+            let payload = bloxgloom_host_api::actions::Request {
+                key: action.key.clone(),
+                version: action.version,
+                slot: *player,
+                inventory_revision: self.inventory.revision,
+                entity: entity.id,
+                entity_revision: entity.revision,
+                arguments: vec![*direction, *slot, *low, *high],
+            }
+            .encode()
+            .unwrap();
+            self.queue_command(ClientMessage::EntityInteract {
+                action_id,
+                target,
+                payload,
+            });
         }
     }
 
@@ -1270,6 +1336,7 @@ impl ClientApp {
             inventory_source: self.inventory_source,
             kiln: self.kiln_view(),
             container_screen: self.container_screen(),
+            action_panel: self.action_panel(),
             kiln_source: self.kiln_source,
             admin_enabled: self.admin_enabled,
             admin_page: self.admin_page,
