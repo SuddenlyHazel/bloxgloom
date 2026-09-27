@@ -456,13 +456,21 @@ This section exists so compaction or a new session does not restart the design.
   unavailable until their host participants are connected; the public overlay
   already supports transfers between captured inventories. No phase completion
   claim is made for that remaining host integration.
-- **Fourth increment:** public entity lookup and anchored-footprint lookup now
+- **Fourth increment (`0cc49d6`):** public entity lookup and anchored-footprint lookup now
   capture presence/absence dependencies in the shared planning read set. Entity
   identity/payload/motion reads fence exact record keys; anchored occupancy reads
   fence the exact cell, rather than blocking on unrelated creatures in its chunk.
   Coordinator admission checks freshness and committed publication rechecks it.
   Entity mutations, entity inventory adapters and generic entity definitions are
   still pending; these read operations do not expose private native payloads.
+- **Fifth increment:** registered storage and machine inventories are connected
+  to shared reads/give/take/transfer. Slot access and machine item/component
+  filters are enforced both during planning and when building entity payload
+  updates. Those updates combine with drops, terrain and actor inventory in one
+  existing entity/WAL batch. The integrated restart test now transfers part of a
+  harvest reward into a nearby chest and checks exact recovery of both sides.
+  Generic entity definitions/spawn/update/remove and non-actor player inventories
+  remain pending, as do complete removal/lifecycle routing and later phases.
 - **Latest verification:** initial 704-test workspace run; then 64 durable-action
   regressions, 18 content regressions, and 2 focused gameplay tests passed for the
   registered-handler increment. The gameplay tests cover unavailable neighbour
@@ -476,8 +484,13 @@ This section exists so compaction or a new session does not restart the design.
   test passed. The new read regression checks that an absent entity becomes stale
   on creation while unrelated mobile occupancy does not invalidate an anchored
   cell read.
-- **Next concrete step:** connect entity inventory/read/mutation participants to
-  the same transaction boundary and migrate remaining removal/lifecycle paths.
+- **Fifth-increment verification:** 3 engine gameplay tests and 3 public gameplay
+  tests passed, including player-to-chest transfer combined with seam edits and
+  drops, duplicate requests, unavailable terrain and restart. All-target/all-feature
+  workspace checks and strict Clippy passed.
+- **Next concrete step:** add generic entity definition/spawn/update/remove
+  participants and migrate remaining removal/lifecycle paths. Entity lookup and
+  registered storage/machine inventory participation are already connected.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

@@ -128,6 +128,19 @@ impl EntityItemTransfer {
 /// Pure per-type item exchange used only through the trusted transfer plan.
 /// Implementations must be deterministic functions of their inputs.
 pub trait EntityTransferPolicy: Send + Sync + 'static {
+    /// Shared gameplay inventory service. Root policies implement slot filters
+    /// and payload replacement; transaction assembly still owns publication.
+    fn inventory_accepts(&self, _slot: u8, _stack: &Stack, _catalog: &Catalog) -> bool {
+        false
+    }
+    fn replace_inventory(
+        &self,
+        _payload: &EntityPayload,
+        _slots: Vec<Option<Stack>>,
+        _catalog: &Catalog,
+    ) -> Result<EntityPayload, EntityError> {
+        Err(EntityError::InvalidPayload)
+    }
     /// Restrict an already selected port to one absolute inventory slot. Port
     /// permissions still apply; unsupported selectors fail closed.
     fn at_slot(&self, _slot: u8) -> Option<std::sync::Arc<dyn EntityTransferPolicy>> {

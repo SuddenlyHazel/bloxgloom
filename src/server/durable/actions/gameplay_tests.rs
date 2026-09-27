@@ -10,7 +10,7 @@ impl Handler for HarvestHandler {
         assert_eq!(*cause, RemovalCause::Break);
         assert_eq!(context.block(*cell)?.block_type, "bloxgloom:air");
         let next = [cell[0] + 1, cell[1], cell[2]];
-        assert!(context.entity(1)?.is_none());
+        assert!(context.entity(u64::MAX)?.is_none());
         assert!(context.anchored_entity_at(next)?.is_none());
         let player = context.player().unwrap();
         if !context.give(
@@ -21,6 +21,15 @@ impl Handler for HarvestHandler {
         }
         if context.block(next)?.block_type == "bloxgloom:air" {
             context.set_block(next, "bloxgloom:sand")?;
+        }
+        if let Some(chest) = context.anchored_entity_at([cell[0], cell[1], cell[2] + 1])? {
+            assert_eq!(
+                context.entity(chest)?.unwrap().entity_type,
+                "bloxgloom:chest"
+            );
+            if !context.transfer(player, 0, InventoryId::Entity(chest), 0, 1)? {
+                return Err(Error::Invalid("harvest chest is full".into()));
+            }
         }
         context.spawn_drop(cell.map(|n| n as f32 + 0.5), "bloxgloom:stick", 2, 500)
     }
@@ -72,7 +81,7 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     let peer = add_test_client(&mut state, [14.5, y as f32, -2.5], Inventory::default());
     let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
     let message = ClientMessage::Edit {
-        action_id: epoch | 1,
+        action_id: epoch | 2,
         x: 15,
         y,
         z: 0,
@@ -95,6 +104,25 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     );
     assert!(crate::server::drops::nearby(&state.entities, [15.5, y as f32, 0.5]).is_empty());
     state.world.edit(16, y, 0, AIR).unwrap();
+    state.world.edit(15, y, 1, AIR).unwrap();
+    state.clients.get_mut(&1).unwrap().inventory.slots[0] =
+        Some(crate::inventory::Stack::new(crate::content::CHEST_ITEM, 1));
+    settle_live_action(
+        &mut state,
+        8,
+        ClientMessage::Edit {
+            action_id: epoch | 1,
+            x: 15,
+            y,
+            z: 1,
+            block: crate::content::CHEST_STATE,
+            slot: 0,
+        },
+    );
+    let chest_id = state
+        .entities
+        .anchored_at(CellCoord::new(15, y, 1))
+        .unwrap();
     let planned = plan_durable_request(&mut state, &edit_request(message.clone()), TickId::new(10))
         .unwrap()
         .unwrap();
@@ -111,7 +139,7 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     assert!(!planned.terrain_reads.entities_current(&state.entities));
     assert_eq!(
         state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
-        3
+        2
     );
     assert_eq!(
         state.clients[&1].inventory.slots[0].as_ref().unwrap().item,
@@ -124,7 +152,14 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     let mut state = open(&path);
     assert_eq!(state.world.get_block(15, y, 0).unwrap(), AIR);
     let inventory = state.inventory_store.load(17).unwrap();
-    assert_eq!(inventory.slots[0].as_ref().unwrap().count, 3);
+    assert_eq!(inventory.slots[0].as_ref().unwrap().count, 2);
+    let chest = state.entities.snapshot(chest_id).unwrap();
+    let chest = chest
+        .private_payload
+        .downcast_ref::<crate::server::entities::container::ContainerPayload>()
+        .unwrap();
+    assert_eq!(chest.slots[0].as_ref().unwrap().count, 1);
+    assert_eq!(chest.slots[0].as_ref().unwrap().item, crate::items::SEEDS);
     assert_eq!(
         inventory.slots[0].as_ref().unwrap().item,
         crate::items::SEEDS

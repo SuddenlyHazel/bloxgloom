@@ -178,6 +178,12 @@ pub(super) fn place(
         crate::server::drops::unix_ms(),
     )?
     .ok_or_else(|| io::Error::other("workstation placement planned no work"))?;
+    let entities = crate::server::gameplay::combine_entities(
+        context.entities(),
+        Some(entities),
+        plan.entity_updates,
+    )?
+    .expect("workstation placement contains a spawn");
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),

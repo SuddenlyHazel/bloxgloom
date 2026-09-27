@@ -79,7 +79,10 @@ impl Context<'_> {
         self.load_inventory(owner)?;
         let mut slots = self.inventories[&owner].clone();
         let mut remaining = stack.count;
-        for slot in slots.iter_mut().filter(|slot| slot.insert) {
+        for (index, slot) in slots.iter_mut().enumerate().filter(|(_, slot)| slot.insert) {
+            if !self.snapshot.inventory_accepts(owner, index, &stack) {
+                continue;
+            }
             if let Some(existing) = &mut slot.stack
                 && existing.matches(&stack)
             {
@@ -88,7 +91,10 @@ impl Context<'_> {
                 remaining -= added;
             }
         }
-        for slot in slots.iter_mut().filter(|slot| slot.insert) {
+        for (index, slot) in slots.iter_mut().enumerate().filter(|(_, slot)| slot.insert) {
+            if !self.snapshot.inventory_accepts(owner, index, &stack) {
+                continue;
+            }
             if remaining != 0 && slot.stack.is_none() {
                 let mut inserted = stack.clone();
                 inserted.count = remaining;
@@ -165,6 +171,9 @@ impl Context<'_> {
         }
         if from == to && source == destination {
             return Ok(true);
+        }
+        if !self.snapshot.inventory_accepts(to, destination, stack) {
+            return Ok(false);
         }
         if destination_slot
             .stack

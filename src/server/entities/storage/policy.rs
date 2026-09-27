@@ -40,6 +40,28 @@ impl<P> Port<P> {
     }
 }
 impl<P: Slots> EntityTransferPolicy for Port<P> {
+    fn inventory_accepts(&self, slot: u8, stack: &Stack, catalog: &Catalog) -> bool {
+        self.permits(usize::from(slot), true) && stack.valid_in(catalog)
+    }
+    fn replace_inventory(
+        &self,
+        payload: &EntityPayload,
+        slots: Vec<Option<Stack>>,
+        catalog: &Catalog,
+    ) -> Result<EntityPayload, EntityError> {
+        let mut payload = payload
+            .downcast_ref::<P>()
+            .ok_or(EntityError::InvalidPayload)?
+            .clone();
+        let destination = payload.slots_mut();
+        if destination.len() != slots.len()
+            || slots.iter().flatten().any(|stack| !stack.valid_in(catalog))
+        {
+            return Err(EntityError::InvalidPayload);
+        }
+        destination.clone_from_slice(&slots);
+        Ok(EntityPayload::new(payload))
+    }
     fn at_slot(&self, slot: u8) -> Option<Arc<dyn EntityTransferPolicy>> {
         (slot < 54 && self.slot.is_none_or(|old| old == slot)).then(|| {
             Arc::new(Self {

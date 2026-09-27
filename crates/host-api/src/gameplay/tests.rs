@@ -4,6 +4,9 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn inventory_accepts(&self, _: InventoryId, _: usize, _: &Stack) -> bool {
+        true
+    }
     fn entity(&mut self, _: u64) -> Result<Option<Entity>, Error> {
         Ok(None)
     }
@@ -84,6 +87,9 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn inventory_accepts(&self, _: InventoryId, _: usize, _: &Stack) -> bool {
+        true
+    }
     fn entity(&mut self, _: u64) -> Result<Option<Entity>, Error> {
         Ok(None)
     }

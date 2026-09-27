@@ -2,8 +2,14 @@ use crate::{content::Catalog, inventory::Inventory};
 use bloxgloom_host_api::gameplay::{Components, Error, Slot, Stack};
 
 pub(super) fn capture(catalog: &Catalog, inventory: &Inventory) -> Result<Vec<Slot>, Error> {
-    inventory
-        .slots
+    slots(catalog, &inventory.slots)
+}
+
+pub(super) fn slots(
+    catalog: &Catalog,
+    slots: &[Option<crate::inventory::Stack>],
+) -> Result<Vec<Slot>, Error> {
+    slots
         .iter()
         .map(|slot| {
             let stack = slot

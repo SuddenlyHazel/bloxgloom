@@ -87,6 +87,14 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn inventory_accepts(
+        &self,
+        _: bloxgloom_host_api::gameplay::InventoryId,
+        _: usize,
+        _: &bloxgloom_host_api::gameplay::Stack,
+    ) -> bool {
+        false
+    }
     fn entity(&mut self, _: u64) -> Result<Option<bloxgloom_host_api::gameplay::Entity>, Error> {
         Err(Error::Invalid(
             "entity lookup unavailable in loot test snapshot".into(),

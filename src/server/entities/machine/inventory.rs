@@ -16,6 +16,29 @@ impl Adapter {
     }
 }
 impl EntityTransferPolicy for Adapter {
+    fn inventory_accepts(&self, slot: u8, stack: &Stack, catalog: &Catalog) -> bool {
+        usize::from(slot) < usize::from(self.definition.slots)
+            && stack.valid_in(catalog)
+            && self.accepts_slot(usize::from(slot), stack)
+    }
+    fn replace_inventory(
+        &self,
+        payload: &EntityPayload,
+        slots: Vec<Option<Stack>>,
+        catalog: &Catalog,
+    ) -> Result<EntityPayload, EntityError> {
+        let mut payload = payload
+            .downcast_ref::<MachinePayload>()
+            .ok_or(EntityError::InvalidPayload)?
+            .clone();
+        if payload.slots.len() != slots.len()
+            || slots.iter().flatten().any(|stack| !stack.valid_in(catalog))
+        {
+            return Err(EntityError::InvalidPayload);
+        }
+        payload.slots = slots;
+        Ok(EntityPayload::new(payload))
+    }
     fn at_slot(&self, slot: u8) -> Option<Arc<dyn EntityTransferPolicy>> {
         (slot < self.definition.slots && self.slot.is_none_or(|old| old == slot)).then(|| {
             Arc::new(Self {

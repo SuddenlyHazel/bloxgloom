@@ -466,6 +466,11 @@ fn plan_block_edit(
             tick.get(),
             crate::server::drops::unix_ms(),
         )?;
+        let entities = crate::server::gameplay::combine_entities(
+            &state.entities,
+            entities,
+            plan.entity_updates,
+        )?;
         let (source, local) = world_to_chunk(x, y, z);
         let cell = crate::world::Chunk::index(local)
             .and_then(|index| u16::try_from(index).ok())
@@ -544,6 +549,8 @@ fn plan_block_edit(
         tick.get(),
         crate::server::drops::unix_ms(),
     )?;
+    let entities =
+        crate::server::gameplay::combine_entities(&state.entities, entities, plan.entity_updates)?;
     Ok(CommitAction {
         client_id: Some(id),
         profile: Some(profile),

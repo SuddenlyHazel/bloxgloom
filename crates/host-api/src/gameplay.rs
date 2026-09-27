@@ -55,6 +55,7 @@ pub trait Snapshot {
     fn item_exists(&self, key: &str) -> bool;
     fn inventory(&mut self, owner: InventoryId) -> Result<Vec<Slot>, Error>;
     fn validate_stack(&self, stack: &Stack) -> Result<(), Error>;
+    fn inventory_accepts(&self, owner: InventoryId, slot: usize, stack: &Stack) -> bool;
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -5,6 +5,7 @@ use crate::world::{BlockId, ChunkKey, PreparedEdit, World};
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot};
 use std::io;
 mod entities;
+mod entity_inventory;
 pub(super) mod inventory;
 
 pub(super) struct Participants<'a> {
@@ -66,6 +67,10 @@ impl Snapshot for WorldSnapshot<'_> {
         &mut self,
         owner: bloxgloom_host_api::gameplay::InventoryId,
     ) -> Result<Vec<bloxgloom_host_api::gameplay::Slot>, Error> {
+        if let bloxgloom_host_api::gameplay::InventoryId::Entity(id) = owner {
+            let store = self.entities.ok_or(Error::InventoryUnavailable(owner))?;
+            return entity_inventory::capture(self.world.catalog(), self.reads, store, id);
+        }
         let Some((profile, value)) = self.actor else {
             return Err(Error::InventoryUnavailable(owner));
         };
@@ -77,6 +82,23 @@ impl Snapshot for WorldSnapshot<'_> {
     }
     fn validate_stack(&self, stack: &bloxgloom_host_api::gameplay::Stack) -> Result<(), Error> {
         inventory::stack(self.world.catalog(), stack).map(|_| ())
+    }
+    fn inventory_accepts(
+        &self,
+        owner: bloxgloom_host_api::gameplay::InventoryId,
+        slot: usize,
+        stack: &bloxgloom_host_api::gameplay::Stack,
+    ) -> bool {
+        match owner {
+            bloxgloom_host_api::gameplay::InventoryId::Player(profile) => self
+                .actor
+                .is_some_and(|(id, inventory)| id == profile && slot < inventory.slots.len()),
+            bloxgloom_host_api::gameplay::InventoryId::Entity(id) => {
+                self.entities.is_some_and(|store| {
+                    entity_inventory::accepts(self.world.catalog(), store, id, slot, stack)
+                })
+            }
+        }
     }
     fn block(&mut self, cell: Cell) -> Result<Block, Error> {
         let [x, y, z] = cell;
@@ -156,6 +178,7 @@ pub(super) type Spawn = ([f32; 3], crate::inventory::Stack, std::time::Duration)
 pub(super) type Removal = (BlockId, Cell, bloxgloom_host_api::gameplay::RemovalCause);
 
 pub(super) struct WorldPlan {
+    pub entity_updates: Vec<super::entities::PreparedEntityTransaction>,
     pub edits: Vec<Edit>,
     pub prepared: Vec<PreparedEdit>,
     pub drops: Vec<Spawn>,
@@ -230,11 +253,20 @@ pub(super) fn plan_removals(
     } else {
         None
     };
-    if !plan.inventories.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "uncaptured gameplay inventory output",
-        ));
+    let mut entity_updates = Vec::new();
+    for (owner, slots) in plan.inventories {
+        let bloxgloom_host_api::gameplay::InventoryId::Entity(id) = owner else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "uncaptured gameplay inventory output",
+            ));
+        };
+        if let Some(update) =
+            entity_inventory::prepare(&catalog, reads, participants.entities, id, slots)
+                .map_err(error)?
+        {
+            entity_updates.push(update);
+        }
     }
     let final_edits = plan
         .blocks
@@ -267,9 +299,25 @@ pub(super) fn plan_removals(
         })
         .collect::<io::Result<Vec<_>>>()?;
     Ok(WorldPlan {
+        entity_updates,
         edits: final_edits,
         prepared,
         drops,
         inventory,
     })
+}
+
+pub(super) fn combine_entities(
+    store: &super::entities::EntityStore,
+    initial: Option<super::entities::PreparedEntityTransaction>,
+    mut updates: Vec<super::entities::PreparedEntityTransaction>,
+) -> io::Result<Option<super::entities::PreparedEntityTransaction>> {
+    if updates.is_empty() {
+        return Ok(initial);
+    }
+    updates.extend(initial);
+    store
+        .combine_prepared(updates)
+        .map(Some)
+        .map_err(io::Error::other)
 }
