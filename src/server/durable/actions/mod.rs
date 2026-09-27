@@ -448,11 +448,18 @@ fn plan_block_edit(
             .into_iter()
             .map(|(id, at)| (id, at, RemovalCause::Replacement))
             .collect::<Vec<_>>();
-        let plan = plan_gameplay_removals(state, &mut terrain_reads, &coords, &removals)?;
+        let plan = plan_gameplay_removals(
+            state,
+            &mut terrain_reads,
+            &coords,
+            &removals,
+            (profile, &updated),
+        )?;
+        let updated = plan.inventory.unwrap_or(updated);
         let coords = plan.edits;
         let prepared = plan.prepared;
         let deltas = prepared_deltas(&coords, &prepared);
-        let entities = crate::server::drops::plan_spawns(
+        let entities = crate::server::drops::plan_stack_spawns(
             &state.entities,
             &catalog,
             &plan.drops,
@@ -520,11 +527,17 @@ fn plan_block_edit(
             .into_iter()
             .map(|(id, at)| (id, at, RemovalCause::SupportLoss)),
     );
-    let plan = plan_gameplay_removals(state, &mut terrain_reads, &coords, &removals)?;
+    let plan = plan_gameplay_removals(
+        state,
+        &mut terrain_reads,
+        &coords,
+        &removals,
+        (profile, &inventory_before),
+    )?;
     let coords = plan.edits;
     let prepared = plan.prepared;
     let deltas = prepared_deltas(&coords, &prepared);
-    let entities = crate::server::drops::plan_spawns(
+    let entities = crate::server::drops::plan_stack_spawns(
         &state.entities,
         &catalog,
         &plan.drops,
@@ -538,8 +551,12 @@ fn plan_block_edit(
         receipt_value: Some(receipt_value),
         receipt_transition: None,
         terrain_reads,
-        inventory_before: None,
-        inventory: None,
+        inventory_before: plan
+            .inventory
+            .as_ref()
+            .map(|_| InventoryStore::encode_snapshot_with_catalog(&inventory_before, &catalog))
+            .transpose()?,
+        inventory: plan.inventory,
         world_edits: prepared,
         deltas,
         changed_cells: coords
@@ -558,6 +575,7 @@ fn plan_gameplay_removals(
     reads: &mut TerrainReads,
     edits: &[crate::server::gameplay::Edit],
     removals: &[crate::server::gameplay::Removal],
+    actor: (u128, &Inventory),
 ) -> io::Result<crate::server::gameplay::WorldPlan> {
     let mut requested = Vec::new();
     let result = crate::server::gameplay::plan_removals(
@@ -567,6 +585,7 @@ fn plan_gameplay_removals(
         edits,
         removals,
         state.seed,
+        Some(actor),
     );
     for key in requested {
         let _ = request_chunk(state, key);

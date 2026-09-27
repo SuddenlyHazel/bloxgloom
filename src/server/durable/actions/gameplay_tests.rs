@@ -10,6 +10,13 @@ impl Handler for HarvestHandler {
         assert_eq!(*cause, RemovalCause::Break);
         assert_eq!(context.block(*cell)?.block_type, "bloxgloom:air");
         let next = [cell[0] + 1, cell[1], cell[2]];
+        let player = context.player().unwrap();
+        if !context.give(
+            player,
+            bloxgloom_host_api::gameplay::Stack::new("bloxgloom:seeds", 3),
+        )? {
+            return Err(Error::Invalid("harvest reward inventory full".into()));
+        }
         if context.block(next)?.block_type == "bloxgloom:air" {
             context.set_block(next, "bloxgloom:sand")?;
         }
@@ -73,6 +80,13 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     let unavailable =
         plan_durable_request(&mut state, &edit_request(message.clone()), TickId::new(10));
     assert_eq!(unavailable.err().unwrap().kind(), ErrorKind::WouldBlock);
+    assert!(
+        state.clients[&1]
+            .inventory
+            .slots
+            .iter()
+            .all(Option::is_none)
+    );
     assert_eq!(
         state.world.cached_block(15, y, 0),
         Some(crate::world::STONE)
@@ -91,12 +105,26 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     assert_eq!(state.world.cached_block(16, y, 0), Some(AIR));
     settle_live_action(&mut state, 10, message.clone());
     settle_live_action(&mut state, 11, message);
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        3
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().item,
+        crate::items::SEEDS
+    );
     assert_eq!(state.world.cached_block(15, y, 0), Some(AIR));
     assert_eq!(state.world.cached_block(16, y, 0), Some(crate::world::SAND));
     drop(peer);
     drop(state);
     let mut state = open(&path);
     assert_eq!(state.world.get_block(15, y, 0).unwrap(), AIR);
+    let inventory = state.inventory_store.load(17).unwrap();
+    assert_eq!(inventory.slots[0].as_ref().unwrap().count, 3);
+    assert_eq!(
+        inventory.slots[0].as_ref().unwrap().item,
+        crate::items::SEEDS
+    );
     assert_eq!(state.world.get_block(16, y, 0).unwrap(), crate::world::SAND);
     let drops = crate::server::drops::nearby(&state.entities, [15.5, y as f32 + 0.5, 0.5]);
     assert_eq!(drops.len(), 1);

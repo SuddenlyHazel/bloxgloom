@@ -130,7 +130,13 @@ pub(super) fn place(
             )
         })
         .collect::<Vec<_>>();
-    let plan = builder.plan_removals(&coords, &removals, context.seed())?;
+    let plan = builder.plan_removals(
+        &coords,
+        &removals,
+        context.seed(),
+        Some((command.profile, &inventory)),
+    )?;
+    let inventory = plan.inventory.unwrap_or(inventory);
     for &(x, y, z, block) in &plan.edits {
         if context
             .entities()
@@ -160,7 +166,7 @@ pub(super) fn place(
     let deltas = prepared_deltas(&coords, &world_edits);
     // The kiln spawn rides in the same atomic batch as its displaced-plant
     // drops: one WAL record, so the kiln and its loot never split.
-    let entities = crate::server::drops::plan_spawns_with_extra(
+    let entities = crate::server::drops::plan_stack_spawns_with_extra(
         context.entities(),
         &catalog,
         &plan.drops,

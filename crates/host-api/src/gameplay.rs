@@ -1,12 +1,14 @@
 //! Shared, retryable gameplay planning. The host owns dependency capture and
 //! publication; a handler only reads a snapshot and stages changes.
 //!
-//! This module starts with terrain and item creation. Inventory/entity services
-//! are added here as the corresponding host transaction participants are unified.
+//! Terrain, item creation and exact inventory operations share one overlay.
+//! Entity services are added here as host transaction participants are unified.
 use std::collections::BTreeMap;
 
 mod handlers;
+mod inventory;
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
+pub use inventory::{Components, InventoryId, Slot, Stack};
 
 pub type Cell = [i32; 3];
 
@@ -21,6 +23,7 @@ pub struct Block {
 pub enum Error {
     Unavailable(Cell),
     UnknownContent(String),
+    InventoryUnavailable(InventoryId),
     Invalid(String),
     BudgetExceeded,
     Host(String),
@@ -31,6 +34,7 @@ impl std::fmt::Display for Error {
         match self {
             Self::Unavailable(cell) => write!(f, "terrain unavailable at {cell:?}"),
             Self::UnknownContent(key) => write!(f, "unknown content: {key}"),
+            Self::InventoryUnavailable(owner) => write!(f, "inventory unavailable: {owner:?}"),
             Self::Invalid(reason) | Self::Host(reason) => f.write_str(reason),
             Self::BudgetExceeded => f.write_str("gameplay operation budget exceeded"),
         }
@@ -41,16 +45,18 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn player(&self) -> Option<u128>;
     fn block(&mut self, cell: Cell) -> Result<Block, Error>;
     fn state(&self, key: &str) -> Result<Block, Error>;
     fn item_exists(&self, key: &str) -> bool;
+    fn inventory(&mut self, owner: InventoryId) -> Result<Vec<Slot>, Error>;
+    fn validate_stack(&self, stack: &Stack) -> Result<(), Error>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DropSpawn {
     pub position: [f32; 3],
-    pub item: String,
-    pub count: u16,
+    pub stack: Stack,
     pub pickup_delay_ms: u32,
 }
 
@@ -60,21 +66,27 @@ pub struct DropSpawn {
 pub struct Plan {
     pub blocks: BTreeMap<Cell, String>,
     pub drops: Vec<DropSpawn>,
+    pub inventories: BTreeMap<InventoryId, Vec<Option<Stack>>>,
 }
 
 pub struct Context<'a> {
     snapshot: &'a mut dyn Snapshot,
     blocks: BTreeMap<Cell, Block>,
+    inventories: BTreeMap<InventoryId, Vec<Slot>>,
     plan: Plan,
     remaining: usize,
     failure: Option<Error>,
 }
 
 impl<'a> Context<'a> {
+    pub fn player(&self) -> Option<InventoryId> {
+        self.snapshot.player().map(InventoryId::Player)
+    }
     pub fn new(snapshot: &'a mut dyn Snapshot, operation_budget: usize) -> Self {
         Self {
             snapshot,
             blocks: BTreeMap::new(),
+            inventories: BTreeMap::new(),
             plan: Plan::default(),
             remaining: operation_budget,
             failure: None,
@@ -133,19 +145,27 @@ impl<'a> Context<'a> {
         count: u16,
         pickup_delay_ms: u32,
     ) -> Result<(), Error> {
+        self.spawn_stack(position, Stack::new(item, count), pickup_delay_ms)
+    }
+
+    pub fn spawn_stack(
+        &mut self,
+        position: [f32; 3],
+        stack: Stack,
+        pickup_delay_ms: u32,
+    ) -> Result<(), Error> {
         self.charge()?;
-        if !position.iter().all(|v| v.is_finite()) || !(1..=128).contains(&count) {
+        if !position.iter().all(|v| v.is_finite()) || !(1..=128).contains(&stack.count) {
             return self.fail(Error::Invalid(
                 "invalid drop position or stack count".into(),
             ));
         }
-        if !self.snapshot.item_exists(item) {
-            return self.fail(Error::UnknownContent(item.into()));
+        if let Err(error) = self.snapshot.validate_stack(&stack) {
+            return self.fail(error);
         }
         self.plan.drops.push(DropSpawn {
             position,
-            item: item.into(),
-            count,
+            stack,
             pickup_delay_ms,
         });
         Ok(())

@@ -64,12 +64,12 @@ pub(super) fn harvest_with_catalog(
         .map(|drop| {
             catalog
                 .items()
-                .find(|item| item.key == drop.item)
+                .find(|item| item.key == drop.stack.item)
                 .map(|item| {
                     (
                         drop.position,
                         item.id,
-                        drop.count,
+                        drop.stack.count,
                         Duration::from_millis(u64::from(drop.pickup_delay_ms)),
                     )
                 })
@@ -86,6 +86,18 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn player(&self) -> Option<u128> {
+        None
+    }
+    fn inventory(
+        &mut self,
+        owner: bloxgloom_host_api::gameplay::InventoryId,
+    ) -> Result<Vec<bloxgloom_host_api::gameplay::Slot>, Error> {
+        Err(Error::InventoryUnavailable(owner))
+    }
+    fn validate_stack(&self, stack: &bloxgloom_host_api::gameplay::Stack) -> Result<(), Error> {
+        super::gameplay::inventory::stack(self.catalog, stack).map(|_| ())
+    }
     fn block(&mut self, cell: Cell) -> Result<Block, Error> {
         if cell == self.position {
             Ok(self.block.clone())

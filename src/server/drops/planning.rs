@@ -72,7 +72,7 @@ pub(in crate::server) fn plan_spawns_with_extra(
         .iter()
         .map(|&(position, item, count, delay)| (position, Stack::new(item, count), delay))
         .collect();
-    plan_stack_spawns_inner(store, catalog, &stacks, extra_spawns, spawn_tick, now_ms)
+    plan_stack_spawns_with_extra(store, catalog, &stacks, extra_spawns, spawn_tick, now_ms)
 }
 
 pub(in crate::server) fn plan_stack_spawns(
@@ -82,10 +82,10 @@ pub(in crate::server) fn plan_stack_spawns(
     spawn_tick: u64,
     now_ms: u64,
 ) -> io::Result<Option<PreparedEntityBatch>> {
-    plan_stack_spawns_inner(store, catalog, spawns, Vec::new(), spawn_tick, now_ms)
+    plan_stack_spawns_with_extra(store, catalog, spawns, Vec::new(), spawn_tick, now_ms)
 }
 
-fn plan_stack_spawns_inner(
+pub(in crate::server) fn plan_stack_spawns_with_extra(
     store: &EntityStore,
     catalog: &Catalog,
     spawns: &[([f32; 3], Stack, Duration)],

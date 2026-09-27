@@ -18,7 +18,7 @@ mod tick;
 pub(super) use entity::DropEntityPayload;
 pub(super) use entity::{DROP_ENTITY_TYPE, register_entity_type};
 pub(in crate::server) use planning::{
-    plan_expired, plan_spawn_stack, plan_spawns, plan_spawns_with_extra, plan_stack_spawns,
+    plan_expired, plan_spawn_stack, plan_spawns, plan_stack_spawns, plan_stack_spawns_with_extra,
     plan_take,
 };
 #[cfg(test)]

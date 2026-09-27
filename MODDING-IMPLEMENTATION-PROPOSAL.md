@@ -427,8 +427,9 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 1 — public staged terrain/drop context and registered removal
-  decisions implemented; shared inventory/entity operations remain in progress.
+- **Active phase:** 1 — public terrain/drop/inventory overlay and registered
+  removal decisions implemented; entity participants and broader routing remain
+  in progress.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -437,7 +438,7 @@ This section exists so compaction or a new session does not restart the design.
   failure on ignored errors/budget exhaustion. Ordinary and anchored terrain
   preparation use its host adapter. Harvest policy now lives in `src/gameplay.rs`
   and uses only public host contracts.
-- **Second increment:** registered removal decision owners (break, replacement,
+- **Second increment (`cf61f82`):** registered removal decision owners (break, replacement,
   support loss) now receive the general staged world context. Built-in harvest is
   the fallback; exact target owners replace it explicitly. Handler-added terrain
   edits and drops join the existing command WAL transaction, with unavailable
@@ -446,13 +447,25 @@ This section exists so compaction or a new session does not restart the design.
   of the content manifest and survives remapping. Dispatch uses a frozen index.
   Anchored placement uses this path for displaced plants. Anchored destruction,
   cascade semantics and broader lifecycle unification remain phase-1 work.
+- **Third increment:** the shared context now exposes exact component-preserving
+  inventory reads, give/take/transfer, and component-bearing drop creation. Full
+  destination/insufficient source returns without partial changes; invalid output
+  fails the whole plan. The live removal adapter captures the acting player's
+  inventory and commits its changes with terrain/drops, including placement's
+  already-staged item debit. Other player/entity inventories are explicitly
+  unavailable until their host participants are connected; the public overlay
+  already supports transfers between captured inventories. No phase completion
+  claim is made for that remaining host integration.
 - **Latest verification:** initial 704-test workspace run; then 64 durable-action
   regressions, 18 content regressions, and 2 focused gameplay tests passed for the
   registered-handler increment. The gameplay tests cover unavailable neighbour
   reads, seam edits plus drops, duplicate receipts, restart, conflicting handler
-  ownership and manifest mismatch. Strict workspace Clippy passed. No benchmark.
-- **Next concrete step:** add shared inventory/entity participants to the same
-  transaction boundary and migrate the remaining removal/lifecycle paths.
+  ownership and manifest mismatch. The third increment passed 65 durable-action
+  tests and 3 focused public gameplay tests; the integrated seam/restart test now
+  also checks atomic inventory rewards and no mutation on unavailable terrain.
+  Strict workspace Clippy passed. No benchmark.
+- **Next concrete step:** connect entity inventory/read/mutation participants to
+  the same transaction boundary and migrate remaining removal/lifecycle paths.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

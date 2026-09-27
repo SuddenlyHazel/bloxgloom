@@ -4,6 +4,7 @@ use crate::content::Catalog;
 use crate::world::{BlockId, ChunkKey, PreparedEdit, World};
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot};
 use std::io;
+pub(super) mod inventory;
 
 pub(super) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, Error> {
     let state = catalog
@@ -35,8 +36,29 @@ struct WorldSnapshot<'a> {
     world: &'a mut World,
     reads: &'a mut TerrainReads,
     requested: &'a mut Vec<ChunkKey>,
+    actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    inventory_read: bool,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn player(&self) -> Option<u128> {
+        self.actor.map(|(profile, _)| profile)
+    }
+    fn inventory(
+        &mut self,
+        owner: bloxgloom_host_api::gameplay::InventoryId,
+    ) -> Result<Vec<bloxgloom_host_api::gameplay::Slot>, Error> {
+        let Some((profile, value)) = self.actor else {
+            return Err(Error::InventoryUnavailable(owner));
+        };
+        if owner != bloxgloom_host_api::gameplay::InventoryId::Player(profile) {
+            return Err(Error::InventoryUnavailable(owner));
+        }
+        self.inventory_read = true;
+        inventory::capture(self.world.catalog(), value)
+    }
+    fn validate_stack(&self, stack: &bloxgloom_host_api::gameplay::Stack) -> Result<(), Error> {
+        inventory::stack(self.world.catalog(), stack).map(|_| ())
+    }
     fn block(&mut self, cell: Cell) -> Result<Block, Error> {
         let [x, y, z] = cell;
         let id = self
@@ -83,6 +105,8 @@ pub(super) fn prepare_edits(
         world,
         reads,
         requested: &mut requested,
+        actor: None,
+        inventory_read: false,
     };
     let mut context = Context::new(&mut snapshot, edits.len());
     for &(x, y, z, state) in edits {
@@ -108,13 +132,14 @@ pub(super) fn prepare_edits(
 }
 
 pub(super) type Edit = (i32, i32, i32, BlockId);
-pub(super) type Spawn = ([f32; 3], crate::items::ItemId, u16, std::time::Duration);
+pub(super) type Spawn = ([f32; 3], crate::inventory::Stack, std::time::Duration);
 pub(super) type Removal = (BlockId, Cell, bloxgloom_host_api::gameplay::RemovalCause);
 
 pub(super) struct WorldPlan {
     pub edits: Vec<Edit>,
     pub prepared: Vec<PreparedEdit>,
     pub drops: Vec<Spawn>,
+    pub inventory: Option<crate::inventory::Inventory>,
 }
 
 /// Invoke decision owners with one shared overlay. Every terrain/drop effect is
@@ -126,6 +151,7 @@ pub(super) fn plan_removals(
     edits: &[Edit],
     removals: &[Removal],
     seed: u64,
+    actor: Option<(u128, &crate::inventory::Inventory)>,
 ) -> io::Result<WorldPlan> {
     use bloxgloom_host_api::gameplay::{Event, EventKind, cell_random};
     let catalog = world.catalog_arc();
@@ -136,6 +162,8 @@ pub(super) fn plan_removals(
         world,
         reads,
         requested,
+        actor,
+        inventory_read: false,
     };
     let mut context = Context::new(&mut snapshot, 4096);
     for &(x, y, z, state) in edits {
@@ -169,7 +197,23 @@ pub(super) fn plan_removals(
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
-    let plan = context.finish().map_err(error)?;
+    let mut plan = context.finish().map_err(error)?;
+    let inventory = if snapshot.inventory_read {
+        let (profile, before) = actor.expect("inventory read requires actor capture");
+        let owner = bloxgloom_host_api::gameplay::InventoryId::Player(profile);
+        Some(match plan.inventories.remove(&owner) {
+            Some(slots) => inventory::apply(&catalog, before, slots).map_err(error)?,
+            None => before.clone(),
+        })
+    } else {
+        None
+    };
+    if !plan.inventories.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "uncaptured gameplay inventory output",
+        ));
+    }
     let final_edits = plan
         .blocks
         .into_iter()
@@ -193,24 +237,17 @@ pub(super) fn plan_removals(
         .drops
         .into_iter()
         .map(|drop| {
-            catalog
-                .item_by_key(&drop.item)
-                .map(|item| {
-                    (
-                        drop.position,
-                        item,
-                        drop.count,
-                        std::time::Duration::from_millis(u64::from(drop.pickup_delay_ms)),
-                    )
-                })
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "staged item disappeared")
-                })
+            Ok((
+                drop.position,
+                inventory::stack(&catalog, &drop.stack).map_err(error)?,
+                std::time::Duration::from_millis(u64::from(drop.pickup_delay_ms)),
+            ))
         })
         .collect::<io::Result<Vec<_>>>()?;
     Ok(WorldPlan {
         edits: final_edits,
         prepared,
         drops,
+        inventory,
     })
 }
