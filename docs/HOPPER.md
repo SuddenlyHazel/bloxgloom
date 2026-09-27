@@ -26,9 +26,9 @@ version.
 - Placement and breaking use the shared anchored-workstation action path.
   Placement consumes one item; breaking refunds the Hopper and its contents in
   one durable transaction. The complete Hopper/Kiln chain survives restart.
-- The private codec reuses the bounded inventory snapshot codec, requiring the
-  33 unused slots and inventory revision to remain empty/zero. Components are
-  preserved privately. Public workstation summaries contain item IDs/counts,
+- The private codec now uses independent BGCT container snapshots, with exactly
+  three slots and no player-inventory revision or padding. Components are
+  preserved privately. Public inventory summaries contain item IDs/counts,
   not component bytes. Trusted hooks always make the final fit decision.
 - The existing workstation UI supports all 36 player inventory slots, exact
   one-item transfers, and entity ID/revision checks. Hopper slots are all
@@ -36,7 +36,7 @@ version.
   inventory ownership path was added.
 
 New content uses stable block/item ID 300, state ID 600, entity ID 5, and entity
-schema 1. Hopper initially used `world-v9`; Chest content now makes the default `world-v10`.
+schema 2. Hopper initially used `world-v9`; registered-inventory content now makes the default `world-v11`.
 No old-save conversion is provided.
 
 ## Verification

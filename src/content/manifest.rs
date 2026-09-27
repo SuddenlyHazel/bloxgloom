@@ -217,6 +217,7 @@ impl ContentManifest {
         }
 
         let mut resolved = Catalog::new();
+        resolved.storage_lifecycles = local.storage_lifecycles.clone();
         resolved.textures = local.textures.clone();
         resolved.texture_fingerprints = local.texture_fingerprints.clone();
         resolved.texture_keys = local.texture_keys.clone();
@@ -268,6 +269,11 @@ impl ContentManifest {
             resolved
                 .register_entity_type(entity)
                 .map_err(|_| invalid("invalid mapped entity type"))?;
+        }
+        for (_, screen) in local.inventory_screens() {
+            resolved
+                .register_inventory_screen((**screen).clone())
+                .map_err(|_| invalid("invalid mapped inventory screen"))?;
         }
         if Self::from_catalog(&resolved) != *self {
             return Err(invalid("mapped catalog does not match content manifest"));

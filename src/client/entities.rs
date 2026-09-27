@@ -61,13 +61,19 @@ impl Replicas {
     pub(super) fn anchored_for_test(&self, target: [i32; 3]) -> Option<&PublicEntity> {
         self.entities.values().flat_map(|entities|entities.values()).find(|entity|matches!(entity.location,crate::protocol::PublicEntityLocation::Anchored {anchor,..} if anchor==target))
     }
-    pub(super) fn kiln_at(&self, target: [i32; 3]) -> Option<&PublicEntity> {
+    pub(super) fn kiln_at(&self, target: [i32; 3], catalog: &Catalog) -> Option<&PublicEntity> {
         let key = crate::world::world_to_chunk(target[0], target[1], target[2]).0;
         self.entities.get(&key)?.values().find(|entity| {
-            matches!(entity.entity_type, crate::content::KILN_ENTITY_TYPE | crate::content::HOPPER_ENTITY_TYPE | crate::content::CHEST_ENTITY_TYPE) &&
-            matches!(entity.location, crate::protocol::PublicEntityLocation::Anchored { anchor, .. }
-                if target[0] == anchor[0] && target[2] == anchor[2]
-                && (target[1] == anchor[1] || (entity.entity_type == crate::content::KILN_ENTITY_TYPE && anchor[1].checked_add(1) == Some(target[1]))))
+            let Some(screen) = catalog.inventory_screen(entity.entity_type) else {
+                return false;
+            };
+            let crate::protocol::PublicEntityLocation::Anchored { anchor, .. } = entity.location
+            else {
+                return false;
+            };
+            screen.footprint.iter().any(|offset| {
+                (0..3).all(|axis| anchor[axis].checked_add(offset[axis]) == Some(target[axis]))
+            })
         })
     }
     pub(super) fn accept(

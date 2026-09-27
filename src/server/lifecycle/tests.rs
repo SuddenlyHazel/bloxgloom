@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn inventory_screen_metadata_survives_manifest_remapping_and_is_handshake_identity() {
+    let mut catalog = Catalog::builtins();
+    Registration::install(&bloxgloom_lifecycle_fixture::TallStore, &mut catalog).unwrap();
+    let mut manifest = crate::content::ContentManifest::from_catalog(&catalog);
+    let old = catalog
+        .entity_type_id_by_key(bloxgloom_lifecycle_fixture::KEY)
+        .unwrap();
+    let entry = manifest
+        .entries
+        .iter_mut()
+        .find(|e| e.kind == b'E' && e.key == bloxgloom_lifecycle_fixture::KEY)
+        .unwrap();
+    entry.id = 700;
+    manifest.entries.sort_by_key(|e| (e.kind, e.id));
+    let remapped = manifest.resolve_catalog(&catalog).unwrap();
+    assert_eq!(
+        remapped.inventory_screen(crate::content::EntityTypeId(700)),
+        catalog.inventory_screen(old)
+    );
+    assert_eq!(
+        remapped
+            .inventory_for_state(
+                remapped
+                    .state_by_key(bloxgloom_lifecycle_fixture::KEY)
+                    .unwrap()
+            )
+            .unwrap()
+            .title,
+        "TALL STORE"
+    );
+    let mut declarations = Registration::default();
+    bloxgloom_lifecycle_fixture::TallStore
+        .register(&mut declarations)
+        .unwrap();
+    declarations.screens[0].groups[0].insert = false;
+    let mut changed = Catalog::builtins();
+    changed.extension_cube(&declarations.cubes[0]).unwrap();
+    changed
+        .extension_storage(&declarations.definitions[0])
+        .unwrap();
+    changed
+        .register_inventory_screen(declarations.screens.remove(0))
+        .unwrap();
+    assert!(
+        manifest.resolve_catalog(&changed).is_err(),
+        "permissions are part of the negotiated contract"
+    );
+}
+
+#[test]
 fn lifecycle_collision_with_builtin_hook_is_rejected_before_world_creation() {
     struct Collision;
     impl Extension for Collision {
@@ -15,8 +65,7 @@ fn lifecycle_collision_with_builtin_hook_is_rejected_before_world_creation() {
         }
     }
     let startup = super::super::startup::ServerStartup::new(Arc::new(Catalog::builtins()))
-        .with_extension(&Collision)
-        .unwrap();
+        .with_extension(&Collision);
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -25,7 +74,7 @@ fn lifecycle_collision_with_builtin_hook_is_rejected_before_world_creation() {
         "bloxgloom-lifecycle-collision-{}-{stamp}",
         std::process::id()
     ));
-    assert!(super::super::server_state_with_startup(7, save.clone(), 8, startup).is_err());
+    assert!(startup.is_err());
     assert!(
         !save.exists(),
         "registration failure must precede save creation"

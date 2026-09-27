@@ -542,8 +542,8 @@ impl Catalog {
             .register_entity_type(EntityTypeDef {
                 id: HOPPER_ENTITY_TYPE,
                 key: "bloxgloom:hopper".into(),
-                schema_version: 1,
-                schema_fingerprint: 0x484f_5050_4552_0001,
+                schema_version: 2,
+                schema_fingerprint: 0x484f_5050_4552_0002,
             })
             .expect("unique hopper entity");
         let mut chest = catalog.block_type(HOPPER_BLOCK_TYPE).unwrap().clone();
@@ -576,10 +576,11 @@ impl Catalog {
             .register_entity_type(EntityTypeDef {
                 id: CHEST_ENTITY_TYPE,
                 key: "bloxgloom:chest".into(),
-                schema_version: 1,
-                schema_fingerprint: 0x4348_4553_5400_0001,
+                schema_version: 2,
+                schema_fingerprint: 0x4348_4553_5400_0002,
             })
             .expect("unique chest entity");
+        catalog.builtin_inventory_screens();
         catalog
     }
 }

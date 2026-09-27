@@ -79,8 +79,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         for (screen, name) in [
             (UiScreen::Playing, "playing"),
             (UiScreen::Inventory, "inventory"),
-            (UiScreen::Kiln, "kiln"),
-            (UiScreen::Chest, "chest"),
+            (UiScreen::Container, "container"),
             (UiScreen::Admin, "admin"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
@@ -99,8 +98,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     for (screen, name) in [
         (UiScreen::Playing, "playing"),
         (UiScreen::Inventory, "inventory"),
-        (UiScreen::Kiln, "kiln"),
-        (UiScreen::Chest, "chest"),
+        (UiScreen::Container, "container"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
@@ -234,8 +232,8 @@ pub fn render_hopper_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(directory)?;
     let outputs = [
         ("chain.png", 1280, 720, UiScreen::Playing),
-        ("hopper-ui.png", 1280, 720, UiScreen::Kiln),
-        ("hopper-compact.png", 640, 360, UiScreen::Kiln),
+        ("hopper-ui.png", 1280, 720, UiScreen::Container),
+        ("hopper-compact.png", 640, 360, UiScreen::Container),
     ]
     .into_iter()
     .map(|(name, width, height, screen)| PreviewOutput {
@@ -250,13 +248,41 @@ pub fn render_hopper_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Hoppers))
 }
 
+pub fn render_inventory_previews(entity: &str, directory: &Path) -> Result<(), Box<dyn Error>> {
+    let entity = crate::content::catalog()
+        .entity_type_id_by_key(entity)
+        .filter(|id| crate::content::catalog().inventory_screen(*id).is_some())
+        .ok_or("entity has no registered inventory screen")?;
+    std::fs::create_dir_all(directory)?;
+    let outputs = [
+        ("desktop.png", 1280, 720, 1.0),
+        ("compact.png", 640, 360, 1.0),
+        ("large-ui.png", 1280, 720, 1.8),
+    ]
+    .into_iter()
+    .map(|(name, width, height, scale)| PreviewOutput {
+        path: directory.join(name),
+        width,
+        height,
+        scale,
+        screen: UiScreen::Container,
+        orientation: None,
+    })
+    .collect();
+    pollster::block_on(render_previews(
+        outputs,
+        (0, 0),
+        PreviewScene::Inventory(entity),
+    ))
+}
+
 pub fn render_chest_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(directory)?;
     let outputs = [
         ("chain.png", 1280, 720, 1.0, UiScreen::Playing),
-        ("chest-ui.png", 1280, 720, 1.0, UiScreen::Chest),
-        ("chest-compact.png", 640, 360, 1.0, UiScreen::Chest),
-        ("chest-large-ui.png", 1280, 720, 1.8, UiScreen::Chest),
+        ("chest-ui.png", 1280, 720, 1.0, UiScreen::Container),
+        ("chest-compact.png", 640, 360, 1.0, UiScreen::Container),
+        ("chest-large-ui.png", 1280, 720, 1.8, UiScreen::Container),
     ]
     .into_iter()
     .map(|(name, width, height, scale, screen)| PreviewOutput {
@@ -341,6 +367,7 @@ enum DropPhase {
 
 #[derive(Clone, Copy)]
 enum PreviewScene {
+    Inventory(crate::content::EntityTypeId),
     Chests,
     Kilns,
     Hoppers,
@@ -391,7 +418,7 @@ async fn render_previews(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
-        PreviewScene::Surface => (
+        PreviewScene::Surface | PreviewScene::Inventory(_) => (
             Vec3::new(
                 camera_xz.0 as f32 + 0.5,
                 surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
@@ -908,10 +935,43 @@ async fn render_previews(
             has_target.then_some([target_xz.0, target_height, target_xz.1]),
             output.scale,
         );
-        if matches!(scene, PreviewScene::Hoppers)
-            && let Some(view) = &mut ui_frame.kiln
+        if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) && ui_frame.kiln.is_some()
         {
-            view.kind = crate::protocol::workstation::WorkstationKind::Hopper;
+            let entity = if matches!(scene, PreviewScene::Hoppers) {
+                crate::content::HOPPER_ENTITY_TYPE
+            } else {
+                crate::content::CHEST_ENTITY_TYPE
+            };
+            let screen = crate::content::catalog()
+                .inventory_screen(entity)
+                .unwrap()
+                .clone();
+            ui_frame.kiln = Some(crate::protocol::workstation::WorkstationView {
+                slots: (0..screen.slots)
+                    .map(|i| {
+                        (i % 3 == 0)
+                            .then(|| Stack::new(crate::items::ItemId(crate::world::STONE.0), 128))
+                    })
+                    .collect(),
+                status: vec![],
+            });
+            ui_frame.container_screen = Some(screen);
+        }
+        if let PreviewScene::Inventory(entity) = scene {
+            let screen = crate::content::catalog()
+                .inventory_screen(entity)
+                .unwrap()
+                .clone();
+            ui_frame.kiln = Some(crate::protocol::workstation::WorkstationView {
+                slots: (0..screen.slots)
+                    .map(|i| {
+                        (i % 3 == 0)
+                            .then(|| Stack::new(crate::items::ItemId(crate::world::STONE.0), 128))
+                    })
+                    .collect(),
+                status: screen.status.iter().map(|s| s.maximum / 2).collect(),
+            });
+            ui_frame.container_screen = Some(screen);
         }
         ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         let bytes_per_row = output.width * 4;
@@ -1101,34 +1161,20 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
-        kiln: matches!(screen, UiScreen::Kiln | UiScreen::Chest).then(|| {
+        container_screen: (screen == UiScreen::Container).then(|| {
+            crate::content::catalog()
+                .inventory_screen(crate::content::KILN_ENTITY_TYPE)
+                .unwrap()
+                .clone()
+        }),
+        kiln: (screen == UiScreen::Container).then(|| {
             crate::protocol::workstation::WorkstationView {
-                kind: if screen == UiScreen::Chest {
-                    crate::protocol::workstation::WorkstationKind::Chest
-                } else {
-                    crate::protocol::workstation::WorkstationKind::Kiln
-                },
-                facing: 0,
-                lit: true,
-                progress: 170,
-                fuel: 64,
-                slots: if screen == UiScreen::Chest {
-                    (0..27)
-                        .map(|i| {
-                            if i % 3 == 0 {
-                                Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 128))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                } else {
-                    vec![
-                        Some(Stack::new(crate::items::STICK, 12)),
-                        Some(Stack::new(crate::items::ItemId(crate::world::GRAVEL.0), 24)),
-                        Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 8)),
-                    ]
-                },
+                status: vec![25_600, 667],
+                slots: vec![
+                    Some(Stack::new(crate::items::STICK, 12)),
+                    Some(Stack::new(crate::items::ItemId(crate::world::GRAVEL.0), 24)),
+                    Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 8)),
+                ],
             }
         }),
         kiln_source: None,
@@ -1148,7 +1194,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
-            UiScreen::Kiln | UiScreen::Chest => Some(UiControl::KilnSlot(1)),
+            UiScreen::Container => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing => None,
             UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
             UiScreen::Admin => Some(UiControl::AdminItem(0)),
@@ -1161,6 +1207,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        container_screen: None,
         screen: UiScreen::Settings,
         selected_slot: 4,
         inventory: sample_inventory(),

@@ -15,20 +15,9 @@ impl std::ops::Deref for ReplicationProbe {
 }
 
 impl ReplicationProbe {
-    pub(crate) fn with_catalog(catalog: Arc<crate::content::Catalog>) -> Self {
-        Self {
-            replicas: Replicas::default(),
-            registry: EntityClientRegistry::builtins(&catalog),
-            catalog,
-            chunks: HashMap::new(),
-        }
-    }
-    pub(crate) fn anchored(&self, target: [i32; 3]) -> Option<crate::protocol::PublicEntity> {
-        self.replicas.anchored_for_test(target).cloned()
-    }
     pub(crate) fn workstation(&self, cell: [i32; 3]) -> crate::protocol::PublicEntity {
         self.replicas
-            .kiln_at(cell)
+            .kiln_at(cell, &self.catalog)
             .expect("replicated workstation")
             .clone()
     }

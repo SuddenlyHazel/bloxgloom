@@ -49,12 +49,14 @@ pub(in crate::client) struct EntityAdapter {
 /// Registration order is hit-test priority for aimed-block interactions.
 pub(in crate::client) struct EntityClientRegistry {
     adapters: Vec<EntityAdapter>,
+    inventory_catalog: Option<std::sync::Arc<Catalog>>,
 }
 
 impl EntityClientRegistry {
     pub(in crate::client) fn new() -> Self {
         Self {
             adapters: Vec::new(),
+            inventory_catalog: None,
         }
     }
 
@@ -62,13 +64,12 @@ impl EntityClientRegistry {
     /// at startup without touching the assembler or event dispatch.
     pub(in crate::client) fn builtins(catalog: &Catalog) -> Self {
         let mut registry = Self::new();
+        registry.inventory_catalog = Some(std::sync::Arc::new(catalog.clone()));
         registry.register(super::avatar::player_adapter());
         if let Some(id) = catalog.entity_type_id_by_key("bloxgloom:mossbun") {
             registry.register(super::mossbun::adapter(id));
         }
         registry.register(super::kiln::kiln_adapter());
-        registry.register(super::kiln::hopper_adapter());
-        registry.register(super::kiln::chest_adapter());
         registry
     }
 
@@ -99,6 +100,16 @@ impl EntityClientRegistry {
     ) -> Result<Vec<VisualAvatar>, ()> {
         let mut avatars = Vec::new();
         for entity in entities.values() {
+            if let Some(catalog) = &self.inventory_catalog
+                && let Some(screen) = catalog.inventory_screen(entity.entity_type)
+            {
+                let view = crate::protocol::workstation::WorkstationView::decode(&entity.payload)
+                    .ok_or(())?;
+                if !view.valid_for(screen, catalog) {
+                    return Err(());
+                }
+                continue;
+            }
             let Some(adapter) = self.adapter_for(entity.entity_type) else {
                 continue;
             };

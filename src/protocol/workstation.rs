@@ -1,103 +1,87 @@
-//! Public workstation summary. Item components stay private on the server;
-//! slot identities/counts and cooking status are visible to nearby players.
+//! Bounded registered inventory projection. Components stay server-private;
+//! layout, access roles, and status meanings come from the frozen catalog.
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
+use bloxgloom_host_api::{
+    InventoryScreen,
+    inventory::{MAX_SLOTS, MAX_STATUS_FIELDS},
+};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum WorkstationKind {
-    #[default]
-    Kiln,
-    Hopper,
-    Chest,
-}
-
-impl WorkstationKind {
-    pub fn slot_count(self) -> usize {
-        if self == Self::Chest { 27 } else { 3 }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct WorkstationView {
-    pub kind: WorkstationKind,
-    pub facing: u8,
-    pub lit: bool,
-    pub progress: u8,
-    pub fuel: u16,
     pub slots: Vec<Option<Stack>>,
+    pub status: Vec<u32>,
 }
-
 impl Default for WorkstationView {
     fn default() -> Self {
         Self {
-            kind: WorkstationKind::Kiln,
-            facing: 0,
-            lit: false,
-            progress: 0,
-            fuel: 0,
             slots: vec![None; 3],
+            status: vec![],
         }
     }
 }
-
 impl WorkstationView {
     pub fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![
-            match self.kind {
-                WorkstationKind::Kiln => 1,
-                WorkstationKind::Hopper => 2,
-                WorkstationKind::Chest => 3,
-            },
-            self.facing,
-            u8::from(self.lit),
-            self.progress,
-        ];
-        bytes.extend(self.fuel.to_le_bytes());
+        assert!(
+            !self.slots.is_empty()
+                && self.slots.len() <= MAX_SLOTS
+                && self.status.len() <= MAX_STATUS_FIELDS
+        );
+        let mut bytes = vec![1, self.slots.len() as u8, self.status.len() as u8];
         for slot in &self.slots {
             bytes.extend(slot.as_ref().map_or(0, |s| s.item.0).to_le_bytes());
             bytes.extend(slot.as_ref().map_or(0, |s| s.count).to_le_bytes());
         }
+        for value in &self.status {
+            bytes.extend(value.to_le_bytes());
+        }
         bytes
     }
-
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        let kind = match bytes.first()? {
-            1 => WorkstationKind::Kiln,
-            2 => WorkstationKind::Hopper,
-            3 => WorkstationKind::Chest,
-            _ => return None,
-        };
-        if bytes.len() != 6 + 6 * kind.slot_count() || bytes[1] > 3 || bytes[2] > 1 {
+        if bytes.len() < 3 || bytes[0] != 1 {
             return None;
         }
-        let fuel = u16::from_le_bytes(bytes[4..6].try_into().ok()?);
-        if fuel > 240 || (fuel > 0) != (bytes[2] == 1) {
+        let slots = usize::from(bytes[1]);
+        let fields = usize::from(bytes[2]);
+        if slots == 0
+            || slots > MAX_SLOTS
+            || fields > MAX_STATUS_FIELDS
+            || bytes.len() != 3 + slots * 6 + fields * 4
+        {
             return None;
         }
-        if kind != WorkstationKind::Kiln && bytes[1..6].iter().any(|byte| *byte != 0) {
-            return None;
-        }
-        let mut slots = vec![None; kind.slot_count()];
-        for (slot, value) in slots.iter_mut().zip(bytes[6..].chunks_exact(6)) {
-            let item = u32::from_le_bytes(value[..4].try_into().ok()?);
-            let count = u16::from_le_bytes(value[4..].try_into().ok()?);
-            if count > STACK_LIMIT || (item == 0) != (count == 0) {
-                return None;
-            }
-            if count > 0 {
-                *slot = Some(Stack::new(ItemId(item), count));
-            }
-        }
-        Some(Self {
-            kind,
-            facing: bytes[1],
-            lit: bytes[2] == 1,
-            progress: bytes[3],
-            fuel,
-            slots,
-        })
+        let slots_end = 3 + slots * 6;
+        let slots = bytes[3..slots_end]
+            .chunks_exact(6)
+            .map(|b| {
+                let item = u32::from_le_bytes(b[..4].try_into().ok()?);
+                let count = u16::from_le_bytes(b[4..].try_into().ok()?);
+                if count > STACK_LIMIT || (item == 0) != (count == 0) {
+                    return None;
+                }
+                Some((count > 0).then(|| Stack::new(ItemId(item), count)))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let status = bytes[slots_end..]
+            .chunks_exact(4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .collect();
+        Some(Self { slots, status })
+    }
+    pub fn valid_for(&self, screen: &InventoryScreen, catalog: &crate::content::Catalog) -> bool {
+        self.slots.len() == usize::from(screen.slots)
+            && self.status.len() == screen.status.len()
+            && self
+                .slots
+                .iter()
+                .flatten()
+                .all(|s| s.valid_in(catalog) && s.components.is_none())
+            && self
+                .status
+                .iter()
+                .zip(&screen.status)
+                .all(|(v, field)| *v <= field.maximum)
     }
 }
-
 #[cfg(test)]
 mod tests;

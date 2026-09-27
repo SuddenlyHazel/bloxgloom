@@ -34,7 +34,6 @@ pub(in crate::server) fn register(
         catalog,
         HOPPER_ENTITY_TYPE,
         HOPPER_STATE,
-        crate::protocol::workstation::WorkstationKind::Hopper,
         TickPolicy::Interval(20),
     )?;
     builder.register_tick_planner(HOPPER_ENTITY_TYPE, Arc::new(policy::Planner))

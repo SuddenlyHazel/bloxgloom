@@ -34,8 +34,7 @@ impl UiLayout {
         match screen {
             UiScreen::Playing => {}
             UiScreen::Inventory => layout.add_inventory(),
-            UiScreen::Kiln => layout.add_kiln(),
-            UiScreen::Chest => layout.add_chest(),
+            UiScreen::Container => {}
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
             UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
@@ -112,26 +111,40 @@ impl UiLayout {
         }
     }
 
-    fn add_chest(&mut self) {
+    pub fn with_container(mut self, screen: Option<&bloxgloom_host_api::InventoryScreen>) -> Self {
+        if self.screen == UiScreen::Container
+            && let Some(screen) = screen
+        {
+            self.add_container(screen);
+        }
+        self
+    }
+
+    fn add_container(&mut self, screen: &bloxgloom_host_api::InventoryScreen) {
         let panel = self.kiln_panel();
         let gap = 4.0 * self.scale;
+        let rows = f32::from(screen.slots.div_ceil(screen.columns));
+        let header = if screen.status.is_empty() { 58.0 } else { 84.0 };
         let size = ((panel.width - 36.0 * self.scale - gap * 8.0) / 9.0)
-            .min((panel.height - 108.0 * self.scale - gap * 5.0) / 7.0)
+            .min((panel.height - (header + 64.0) * self.scale - gap * (rows + 2.0)) / (rows + 4.0))
             .max(8.0);
         let x = panel.x + (panel.width - size * 9.0 - gap * 8.0) * 0.5;
-        let top = panel.y + 40.0 * self.scale;
-        for slot in 0..27u8 {
+        let top = panel.y + header * self.scale;
+        let storage_pitch = (size + gap) * 9.0 / f32::from(screen.columns);
+        let storage_x =
+            panel.x + (panel.width - size - f32::from(screen.columns - 1) * storage_pitch) * 0.5;
+        for slot in 0..screen.slots {
             self.push(
                 UiControl::KilnSlot(slot),
                 UiRect {
-                    x: x + f32::from(slot % 9) * (size + gap),
-                    y: top + f32::from(slot / 9) * (size + gap),
+                    x: storage_x + f32::from(slot % screen.columns) * storage_pitch,
+                    y: top + f32::from(slot / screen.columns) * (size + gap),
                     width: size,
                     height: size,
                 },
             );
         }
-        let top = top + 3.0 * (size + gap) + 24.0 * self.scale;
+        let top = top + rows * (size + gap) + 24.0 * self.scale;
         for slot in 0..36u8 {
             let (row, col) = if slot < 9 {
                 (3, slot)
@@ -145,42 +158,6 @@ impl UiLayout {
                     y: top + f32::from(row) * (size + gap),
                     width: size,
                     height: size,
-                },
-            );
-        }
-    }
-
-    fn add_kiln(&mut self) {
-        let panel = self.kiln_panel();
-        let gap = 6.0 * self.scale;
-        let size = ((panel.width - 32.0 * self.scale - gap * 8.0) / 9.0)
-            .min((panel.height - 180.0 * self.scale) / 4.0 - gap)
-            .max(12.0);
-        let x = panel.x + (panel.width - size * 9.0 - gap * 8.0) * 0.5;
-        for index in 0..36u8 {
-            let (row, col) = if index < 9 {
-                (3, index)
-            } else {
-                ((index - 9) / 9, (index - 9) % 9)
-            };
-            self.push(
-                UiControl::InventorySlot(index),
-                UiRect {
-                    x: x + f32::from(col) * (size + gap),
-                    y: panel.y + 142.0 * self.scale + f32::from(row) * (size + gap),
-                    width: size,
-                    height: size,
-                },
-            );
-        }
-        for (slot, col) in [(0, 1), (1, 3), (2, 7)] {
-            self.push(
-                UiControl::KilnSlot(slot),
-                UiRect {
-                    x: x + col as f32 * (size + gap),
-                    y: panel.y + 64.0 * self.scale,
-                    width: size.min(50.0 * self.scale),
-                    height: size.min(50.0 * self.scale),
                 },
             );
         }

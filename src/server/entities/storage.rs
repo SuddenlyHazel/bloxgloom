@@ -6,7 +6,6 @@ mod tests;
 use super::*;
 use crate::content::{BlockStateId, Catalog, EntityTypeId};
 use crate::inventory::{Inventory, STACK_LIMIT, Stack};
-use crate::protocol::workstation::WorkstationKind;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,29 +34,28 @@ pub(super) fn register<const N: usize>(
     catalog: &Arc<Catalog>,
     entity_type: EntityTypeId,
     state: BlockStateId,
-    kind: WorkstationKind,
     tick: TickPolicy,
 ) -> Result<(), EntityError> {
-    if N == 0
-        || N > crate::inventory::SLOTS
-        || N != kind.slot_count()
-        || kind == WorkstationKind::Kiln
-    {
+    if N == 0 || N > bloxgloom_host_api::inventory::MAX_SLOTS {
         return Err(EntityError::InvalidType);
     }
     builder.register(EntityTypeRegistration {
         id: entity_type,
         ownership: EntityOwnership::anchored(vec![state], 1),
         tick_policy: tick,
-        max_payload_bytes: N * 1100 + 128,
+        max_payload_bytes: crate::inventory::container::max_bytes(N),
         codec: Arc::new(codec::Codec::<N> {
             catalog: catalog.clone(),
-            kind,
         }),
     })?;
     builder.register_transfer_policy(
         entity_type,
-        Arc::new(policy::Port::<StoragePayload<N>>::new()),
+        Arc::new(policy::Port::<StoragePayload<N>>::for_screen(
+            catalog
+                .inventory_screen(entity_type)
+                .cloned()
+                .ok_or(EntityError::InvalidType)?,
+        )),
     )?;
     builder.register_interaction_policy(
         entity_type,

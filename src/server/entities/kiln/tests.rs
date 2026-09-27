@@ -173,11 +173,11 @@ fn codec_projects_workstation_contents_and_recipe_progress_without_components() 
     assert_eq!(decoded.downcast_ref::<KilnPayload>(), Some(&payload));
     let public = codec.public_view(&decoded).unwrap();
     let summary = crate::protocol::workstation::WorkstationView::decode(&public).unwrap();
-    assert_eq!(public.len(), 24);
-    assert_eq!(summary.progress, (19 * 255 / 20) as u8);
+    assert_eq!(public.len(), 29);
+    assert_eq!(summary.status[1], 19 * 1000 / 20);
     assert_eq!(summary.slots[0], payload.slots[0]);
     assert_eq!(summary.slots[2], Some(Stack::new(ItemId(257), 3)));
-    assert_eq!(summary.fuel, 80);
+    assert_eq!(summary.status[0], 80 * 400);
 }
 
 #[test]

@@ -117,6 +117,9 @@ impl ServerStartup {
         let mut registration = super::lifecycle::Registration::default();
         bloxgloom_host_api::Extension::register(&super::entities::chest::Chest, &mut registration)
             .expect("valid builtin storage declarations");
+        registration
+            .definitions
+            .extend(catalog.storage_lifecycles.clone());
         Self {
             catalog,
             storage: registration.definitions,

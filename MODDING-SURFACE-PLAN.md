@@ -5,14 +5,22 @@ loader or declare the current internal interfaces to be a supported mod API.
 
 ## Implementation status
 
+- **Registered inventory slice implemented:** shared inventory-view schema,
+  descriptor-based opening/layout/slot access/status widgets, independent bounded
+  container snapshots, and a fully usable external fixture through the real client
+  and listener. Chest, Hopper, and Kiln use the same screen contracts. Default save
+  is `world-v11`. **652 tests passed**, with clean formatting and strict Clippy;
+  see [registered inventories](docs/REGISTERED-INVENTORIES.md).
+
 - **First lifecycle slice implemented:** dependency-free public API crate,
   declarative storage lifecycle registration, Chest migration, and a separate
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
   **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
 - The surface currently exposes passive storage lifecycle declarations. General
-  entity behavior, arbitrary lifecycle callbacks, independent container encoding,
-  and generic client inventory screens remain subsequent work. The broader
+  entity behavior and arbitrary lifecycle callbacks remain subsequent work.
+  Independent container encoding and generic inventory screens are now complete.
+  Named/sided ports and custom UI composition remain open. The broader
   parity inventory and the remaining slices below are not marked complete.
 
 ## Goal and completion rule

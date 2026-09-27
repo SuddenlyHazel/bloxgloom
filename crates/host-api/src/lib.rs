@@ -2,7 +2,9 @@
 //! entities. This is not a mod loader or a stable native ABI.
 use std::fmt;
 
+pub mod inventory;
 pub mod lifecycle;
+pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
 pub use lifecycle::{FootprintCell, StorageBlockEntity};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -26,6 +28,7 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn inventory_screen(&mut self, screen: InventoryScreen) -> Result<(), RegistrationError>;
     fn cube_block(&mut self, block: CubeBlock) -> Result<(), RegistrationError>;
     fn storage_block_entity(&mut self, entity: StorageBlockEntity)
     -> Result<(), RegistrationError>;

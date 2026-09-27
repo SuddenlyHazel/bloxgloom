@@ -10,6 +10,7 @@ use crate::world::{self, BlockId};
 mod builtins;
 mod extensions;
 mod ids;
+mod inventories;
 mod manifest;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
@@ -30,8 +31,8 @@ pub const KILN_ITEM: ItemId = ItemId(256);
 #[cfg(test)]
 pub const KILN_STATE_COUNT: u32 = 16;
 pub const KILN_ENTITY_TYPE: EntityTypeId = EntityTypeId(3);
-pub const KILN_SCHEMA_VERSION: u16 = 2;
-pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0002;
+pub const KILN_SCHEMA_VERSION: u16 = 3;
+pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0003;
 pub const MOSSBUN_ENTITY_TYPE: EntityTypeId = EntityTypeId(4);
 pub const MOSSBUN_SCHEMA_VERSION: u16 = 2;
 pub const MOSSBUN_SCHEMA_FINGERPRINT: u64 = 0x4d4f_5353_4255_0002;
@@ -193,6 +194,8 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
+    inventory_screens: Vec<Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>>,
     blocks: Vec<Option<BlockDef>>,
     states: Vec<Option<StateDef>>,
     items: Vec<Option<ItemDef>>,
@@ -216,6 +219,8 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            storage_lifecycles: Vec::new(),
+            inventory_screens: Vec::new(),
             blocks: Vec::new(),
             states: Vec::new(),
             items: Vec::new(),
@@ -723,6 +728,9 @@ impl Catalog {
                 add(entity.key.as_bytes());
                 add(&entity.schema_version.to_le_bytes());
                 add(&entity.schema_fingerprint.to_le_bytes());
+                if let Some(screen) = self.inventory_screen(entity.id) {
+                    add(&screen.fingerprint_bytes());
+                }
             }
             _ => unreachable!(),
         }

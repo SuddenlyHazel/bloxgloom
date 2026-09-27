@@ -7,7 +7,6 @@ fn full_chest_roundtrips_all_slots_and_refuses_overflow_without_losing_component
     let catalog = Arc::new(Catalog::builtins());
     let codec = codec::Codec::<27> {
         catalog: catalog.clone(),
-        kind: WorkstationKind::Chest,
     };
     let stack = Stack::with_components(
         ItemId(crate::world::STONE.0),
@@ -31,7 +30,7 @@ fn full_chest_roundtrips_all_slots_and_refuses_overflow_without_losing_component
     )
     .unwrap();
     assert_eq!(public.slots.len(), 27);
-    assert_eq!(public.kind, WorkstationKind::Chest);
+    assert!(public.status.is_empty());
     assert!(
         public
             .slots
@@ -61,9 +60,6 @@ fn full_chest_roundtrips_all_slots_and_refuses_overflow_without_losing_component
         payload.downcast_ref::<StoragePayload<27>>()
     );
     // The shared codec still rejects a 27-slot payload as a three-slot Hopper.
-    let hopper = codec::Codec::<3> {
-        catalog,
-        kind: WorkstationKind::Hopper,
-    };
+    let hopper = codec::Codec::<3> { catalog };
     assert!(hopper.decode(&bytes).is_err());
 }

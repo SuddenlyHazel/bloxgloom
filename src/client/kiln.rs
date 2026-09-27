@@ -7,39 +7,50 @@ impl ClientApp {
         let Some(hit) = self.aimed_block() else {
             return false;
         };
-        if !entities::kiln::is_kiln_hit(hit, &self.catalog)
-            && hit.block_id != crate::content::HOPPER_STATE
-            && hit.block_id != crate::content::CHEST_STATE
-        {
+        self.open_inventory_at(hit.block, hit.block_id)
+    }
+
+    pub(super) fn open_inventory_at(
+        &mut self,
+        target: [i32; 3],
+        state: crate::content::BlockStateId,
+    ) -> bool {
+        if self.catalog.inventory_for_state(state).is_none() {
             return false;
         }
-        let Some(entity) = self.replicas.kiln_at(hit.block) else {
+        let Some(entity) = self.replicas.kiln_at(target, &self.catalog) else {
             self.show_status("Workstation state is still loading");
             return true;
         };
         let id = entity.id;
-        self.set_screen(if entity.entity_type == crate::content::CHEST_ENTITY_TYPE {
-            UiScreen::Chest
-        } else {
-            UiScreen::Kiln
-        });
-        self.kiln_target = Some((hit.block, id));
+        self.kiln_target = Some((target, id));
+        self.set_screen(UiScreen::Container);
         true
     }
 
     fn current_kiln(&self) -> Option<&crate::protocol::PublicEntity> {
         let (target, id) = self.kiln_target?;
         self.replicas
-            .kiln_at(target)
+            .kiln_at(target, &self.catalog)
             .filter(|entity| entity.id == id)
     }
 
     pub(super) fn kiln_view(&self) -> Option<WorkstationView> {
-        WorkstationView::decode(&self.current_kiln()?.payload)
+        let entity = self.current_kiln()?;
+        let screen = self.catalog.inventory_screen(entity.entity_type)?;
+        WorkstationView::decode(&entity.payload).filter(|v| v.valid_for(screen, &self.catalog))
+    }
+
+    pub(super) fn container_screen(
+        &self,
+    ) -> Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>> {
+        self.catalog
+            .inventory_screen(self.current_kiln()?.entity_type)
+            .cloned()
     }
 
     pub(super) fn validate_kiln_screen(&mut self) {
-        if !matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) {
+        if self.screen != UiScreen::Container {
             return;
         }
         let valid = self.kiln_target.is_some_and(|(cell, _)| {
@@ -47,7 +58,7 @@ impl ClientApp {
                 .position
                 .distance(Vec3::from_array(cell.map(|v| v as f32 + 0.5)))
                 < 8.0
-        }) && self.current_kiln().is_some()
+        }) && self.kiln_view().is_some()
             && !self.disconnected;
         if !valid {
             self.set_screen(UiScreen::Playing);
@@ -63,12 +74,11 @@ impl ClientApp {
             return;
         }
         if let Some(inventory) = self.inventory_source {
-            if slot == 2
-                && self
-                    .kiln_view()
-                    .is_some_and(|v| v.kind == crate::protocol::workstation::WorkstationKind::Kiln)
+            if self
+                .container_screen()
+                .is_none_or(|s| s.group(slot).is_none_or(|g| !g.insert))
             {
-                self.show_status("Output is collection only");
+                self.show_status("Slot does not accept items");
                 return;
             }
             let count = self.inventory.slots[inventory as usize]
@@ -89,6 +99,13 @@ impl ClientApp {
                 },
             );
         } else {
+            if self
+                .container_screen()
+                .is_none_or(|s| s.group(slot).is_none_or(|g| !g.extract))
+            {
+                self.show_status("Slot is deposit only");
+                return;
+            }
             self.kiln_source = if self.kiln_source == Some(slot) {
                 None
             } else {
@@ -104,7 +121,12 @@ impl ClientApp {
         if let Some(source) = self.kiln_source {
             let count = self
                 .kiln_view()
-                .and_then(|v| v.slots[source as usize].as_ref().map(|s| s.count))
+                .and_then(|v| {
+                    v.slots
+                        .get(source as usize)
+                        .and_then(Option::as_ref)
+                        .map(|s| s.count)
+                })
                 .unwrap_or(0);
             let free = crate::inventory::STACK_LIMIT
                 - self.inventory.slots[slot as usize]

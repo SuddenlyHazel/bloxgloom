@@ -293,6 +293,7 @@ pub(super) async fn run_perf_benchmark_async(
         }
 
         let ui_frame = UiFrame {
+            container_screen: None,
             screen: UiScreen::Playing,
             selected_slot: 1,
             inventory: sample_inventory(),

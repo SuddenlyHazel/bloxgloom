@@ -1,4 +1,59 @@
 //! Behavior tests for UI layout and bounded geometry generation.
+use crate::content::Catalog;
+
+#[test]
+fn maximum_registered_container_layout_and_geometry_stay_bounded() {
+    let catalog = Catalog::builtins();
+    let screen = std::sync::Arc::new(bloxgloom_host_api::InventoryScreen::storage(
+        "test:large",
+        "test:large",
+        "LARGE CONTAINER",
+        54,
+        9,
+        vec![[0; 3]],
+    ));
+    screen.validate().unwrap();
+    for (width, height, scale) in [(640, 360, 1.0), (640, 360, 1.8), (1280, 720, 1.8)] {
+        let layout =
+            UiLayout::new(width, height, scale, UiScreen::Container).with_container(Some(&screen));
+        let stack = crate::inventory::Stack::new(crate::items::STICK, 128);
+        let frame = UiFrame {
+            screen: UiScreen::Container,
+            container_screen: Some(screen.clone()),
+            kiln: Some(crate::protocol::workstation::WorkstationView {
+                slots: vec![Some(stack.clone()); 54],
+                status: vec![],
+            }),
+            inventory: std::array::from_fn(|_| Some(stack.clone())),
+            ..Default::default()
+        };
+        for control in (0..54)
+            .map(UiControl::KilnSlot)
+            .chain((0..36).map(UiControl::InventorySlot))
+        {
+            let rect = layout.rect(control).unwrap();
+            assert!(
+                rect.x >= 0.0
+                    && rect.y >= 0.0
+                    && rect.x + rect.width <= width as f32
+                    && rect.y + rect.height <= height as f32
+            );
+            assert_eq!(
+                layout.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(control)
+            );
+        }
+        let mut vertices = Vec::new();
+        let mut builder = UiBuilder {
+            vertices: &mut vertices,
+            width: width as f32,
+            height: height as f32,
+            scale: layout.scale,
+        };
+        builder.draw_frame(&frame, &layout, &catalog);
+        assert!(vertices.len() <= MAX_UI_VERTICES);
+    }
+}
 
 use super::{
     draw::{MAX_UI_VERTICES, UiBuilder, item_color, item_name},
@@ -9,7 +64,12 @@ use super::{
 #[test]
 fn kiln_controls_fit_and_hit_test_on_compact_and_large_screens() {
     for (width, height, scale) in [(640, 360, 1.0), (1280, 720, 1.0), (640, 360, 1.5)] {
-        let layout = UiLayout::new(width, height, scale, UiScreen::Kiln);
+        let catalog = Catalog::builtins();
+        let layout = UiLayout::new(width, height, scale, UiScreen::Container).with_container(
+            catalog
+                .inventory_screen(crate::content::KILN_ENTITY_TYPE)
+                .map(|s| s.as_ref()),
+        );
         for control in (0..3)
             .map(UiControl::KilnSlot)
             .chain((0..36).map(UiControl::InventorySlot))
@@ -33,7 +93,12 @@ fn chest_slots_and_backpack_are_distinct_and_usable_at_small_and_large_sizes() {
         (1280, 720, 1.0),
         (1280, 720, 1.8),
     ] {
-        let layout = UiLayout::new(width, height, scale, UiScreen::Chest);
+        let catalog = Catalog::builtins();
+        let layout = UiLayout::new(width, height, scale, UiScreen::Container).with_container(
+            catalog
+                .inventory_screen(crate::content::CHEST_ENTITY_TYPE)
+                .map(|s| s.as_ref()),
+        );
         let mut rects = Vec::new();
         for control in (0..27)
             .map(UiControl::KilnSlot)
@@ -356,6 +421,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Graphics,
         ] {
             let frame = UiFrame {
+                container_screen: None,
                 screen,
                 selected_slot: 8,
                 inventory: std::array::from_fn(|_| None),

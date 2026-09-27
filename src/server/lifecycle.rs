@@ -11,8 +11,20 @@ mod tests;
 pub(crate) struct Registration {
     cubes: Vec<CubeBlock>,
     pub definitions: Vec<StorageBlockEntity>,
+    screens: Vec<bloxgloom_host_api::InventoryScreen>,
 }
 impl Registrar for Registration {
+    fn inventory_screen(
+        &mut self,
+        screen: bloxgloom_host_api::InventoryScreen,
+    ) -> Result<(), RegistrationError> {
+        screen.validate()?;
+        if self.screens.iter().any(|s| s.entity == screen.entity) {
+            return Err(RegistrationError("duplicate inventory screen".into()));
+        }
+        self.screens.push(screen);
+        Ok(())
+    }
     fn cube_block(&mut self, block: CubeBlock) -> Result<(), RegistrationError> {
         if self.cubes.iter().any(|b| b.key == block.key) {
             return Err(RegistrationError("duplicate block declaration".into()));
@@ -50,7 +62,13 @@ impl Registration {
         for definition in &registration.definitions {
             candidate.extension_storage(definition)?;
         }
+        for screen in &registration.screens {
+            candidate.register_inventory_screen(screen.clone())?;
+        }
         Registry::resolve(&candidate, &registration.definitions)?;
+        candidate
+            .storage_lifecycles
+            .extend(registration.definitions.clone());
         *catalog = candidate;
         Ok(registration)
     }
@@ -83,6 +101,22 @@ impl Registry {
             let entity = catalog
                 .entity_type_id_by_key(&definition.entity)
                 .ok_or_else(missing)?;
+            let screen = catalog.inventory_screen(entity).ok_or_else(missing)?;
+            let offsets: std::collections::BTreeSet<_> =
+                definition.footprint.iter().map(|c| c.offset).collect();
+            if usize::from(screen.slots) != definition.slots
+                || screen.block != definition.block
+                || screen
+                    .footprint
+                    .iter()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    != offsets
+            {
+                return Err(RegistrationError(
+                    "inventory screen differs from storage lifecycle".into(),
+                ));
+            }
             let block = catalog
                 .block_by_key(&definition.block)
                 .ok_or_else(missing)?;

@@ -6,7 +6,6 @@ fn hopper_codec_preserves_components_and_rejects_hidden_slots() {
     let catalog = Arc::new(Catalog::builtins());
     let codec = codec::Codec::<3> {
         catalog: catalog.clone(),
-        kind: crate::protocol::workstation::WorkstationKind::Hopper,
     };
     let item = ItemId(crate::world::STONE.0);
     let stack = Stack::with_components(item, 128, 1, vec![1, 2, 3]).unwrap();
@@ -20,10 +19,7 @@ fn hopper_codec_preserves_components_and_rejects_hidden_slots() {
         &codec.public_view(&decoded).unwrap(),
     )
     .unwrap();
-    assert_eq!(
-        public.kind,
-        crate::protocol::workstation::WorkstationKind::Hopper
-    );
+    assert_eq!(public.slots.len(), 3);
     assert_eq!(public.slots[1], Some(Stack::new(item, 128)));
     let mut invalid = Inventory::default();
     invalid.slots[35] = Some(stack);

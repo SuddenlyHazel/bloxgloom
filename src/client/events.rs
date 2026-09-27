@@ -213,21 +213,18 @@ impl ApplicationHandler for ClientApp {
                 if self.screen != UiScreen::Playing {
                     if button == MouseButton::Left
                         || (button == MouseButton::Right
-                            && matches!(
-                                self.screen,
-                                UiScreen::Inventory | UiScreen::Kiln | UiScreen::Chest
-                            ))
+                            && matches!(self.screen, UiScreen::Inventory | UiScreen::Container))
                     {
                         let control = self
                             .ui_layout
                             .as_ref()
                             .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
                         if let Some(control) = control {
-                            if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest)
+                            if self.screen == UiScreen::Container
                                 && let UiControl::KilnSlot(slot) = control
                             {
                                 self.kiln_click(slot, button == MouseButton::Right);
-                            } else if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest)
+                            } else if self.screen == UiScreen::Container
                                 && let UiControl::InventorySlot(slot) = control
                             {
                                 self.kiln_inventory_click(slot, button == MouseButton::Right);

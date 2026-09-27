@@ -5,6 +5,99 @@ use crate::server::entities::container::ContainerPayload;
 use crate::server::startup::ServerStartup;
 use std::sync::Arc;
 
+#[test]
+fn registered_slot_permissions_are_enforced_by_server_even_for_forged_requests() {
+    use bloxgloom_host_api::{
+        CubeBlock, Extension, InventoryScreen, Registrar, RegistrationError, SlotGroup,
+        StorageBlockEntity,
+    };
+    struct Restricted;
+    struct Gate<'a>(&'a mut dyn Registrar);
+    impl Registrar for Gate<'_> {
+        fn cube_block(&mut self, b: CubeBlock) -> Result<(), RegistrationError> {
+            self.0.cube_block(b)
+        }
+        fn storage_block_entity(&mut self, e: StorageBlockEntity) -> Result<(), RegistrationError> {
+            self.0.storage_block_entity(e)
+        }
+        fn inventory_screen(&mut self, mut s: InventoryScreen) -> Result<(), RegistrationError> {
+            s.groups = vec![
+                SlotGroup {
+                    label: "INPUT".into(),
+                    first: 0,
+                    count: 1,
+                    insert: true,
+                    extract: false,
+                },
+                SlotGroup {
+                    label: "OUTPUT".into(),
+                    first: 1,
+                    count: 8,
+                    insert: false,
+                    extract: true,
+                },
+            ];
+            self.0.inventory_screen(s)
+        }
+    }
+    impl Extension for Restricted {
+        fn register(&self, r: &mut dyn Registrar) -> Result<(), RegistrationError> {
+            bloxgloom_lifecycle_fixture::TallStore.register(&mut Gate(r))
+        }
+    }
+    let path = temp_save_dir("registered-slot-access");
+    let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+        .with_extension(&Restricted)
+        .unwrap();
+    let mut state = crate::server::server_state_with_startup(53, path.clone(), 8, startup).unwrap();
+    resident(&mut state);
+    let (block, item) = ids(&state);
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(Stack::new(item, 1));
+    inventory.slots[25] = Some(Stack::new(STICK, 5));
+    inventory.slots[24] = Some(Stack::new(STICK, 3));
+    let peer = add_test_client(&mut state, [-1.0, 79.0, 2.0], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    settle_live_action(&mut state, 10, edit(epoch | 1, 79, block));
+    let id = state
+        .entities
+        .anchored_at(CellCoord::new(-1, 79, -1))
+        .unwrap();
+    for (seq, operation, slot, player, count) in
+        [(2, 0, 0, 25, 5u16), (3, 1, 0, 25, 5), (4, 0, 8, 24, 3)]
+    {
+        let snapshot = state.entities.snapshot(id).unwrap();
+        let mut payload = vec![2, operation, slot, player];
+        payload.extend(count.to_le_bytes());
+        payload.extend(id.get().to_le_bytes());
+        payload.extend(snapshot.revision.to_le_bytes());
+        settle_live_action(
+            &mut state,
+            10 + seq,
+            ClientMessage::EntityInteract {
+                action_id: epoch | u128::from(seq),
+                target: [-1, 80, -1],
+                payload,
+            },
+        );
+    }
+    let snapshot = state.entities.snapshot(id).unwrap();
+    let payload = snapshot
+        .private_payload
+        .downcast_ref::<ContainerPayload>()
+        .unwrap();
+    assert_eq!(payload.slots[0], Some(Stack::new(STICK, 5)));
+    assert!(payload.slots[1..].iter().all(Option::is_none));
+    assert!(state.clients[&1].inventory.slots[25].is_none());
+    assert_eq!(
+        state.clients[&1].inventory.slots[24],
+        Some(Stack::new(STICK, 3))
+    );
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
 fn startup() -> ServerStartup {
     ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
         .with_extension(&bloxgloom_lifecycle_fixture::TallStore)

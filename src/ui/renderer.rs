@@ -21,6 +21,7 @@ struct UiCacheKey {
     inventory: [Option<crate::inventory::Stack>; crate::inventory::SLOTS],
     inventory_source: Option<u8>,
     kiln: Option<crate::protocol::workstation::WorkstationView>,
+    container_screen: Option<Arc<bloxgloom_host_api::InventoryScreen>>,
     kiln_source: Option<u8>,
     admin_enabled: bool,
     admin_page: usize,
@@ -206,6 +207,7 @@ impl UiRenderer {
             inventory: frame.inventory.clone(),
             inventory_source: frame.inventory_source,
             kiln: frame.kiln.clone(),
+            container_screen: frame.container_screen.clone(),
             kiln_source: frame.kiln_source,
             admin_enabled: frame.admin_enabled,
             admin_page: frame.admin_page,
@@ -219,14 +221,21 @@ impl UiRenderer {
         {
             return;
         }
-        let rebuild_layout = self.layout.as_ref().is_none_or(|layout| {
-            layout.width != self.width
-                || layout.height != self.height
-                || layout.scale.to_bits() != scale.to_bits()
-                || layout.screen != frame.screen
-        });
+        let rebuild_layout = self
+            .cache_key
+            .as_ref()
+            .is_none_or(|old| old.container_screen != key.container_screen)
+            || self.layout.as_ref().is_none_or(|layout| {
+                layout.width != self.width
+                    || layout.height != self.height
+                    || layout.scale.to_bits() != scale.to_bits()
+                    || layout.screen != frame.screen
+            });
         if rebuild_layout {
-            self.layout = Some(UiLayout::new(self.width, self.height, scale, frame.screen));
+            self.layout = Some(
+                UiLayout::new(self.width, self.height, scale, frame.screen)
+                    .with_container(frame.container_screen.as_deref()),
+            );
         }
         let layout = self.layout.as_ref().unwrap();
         self.vertices.clear();

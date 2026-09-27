@@ -15,6 +15,12 @@ The execution contract we are working toward:
 
 ## Status as of 2026-09-26
 
+- **Done:** registered inventory views/screens and independent container
+  persistence. External fixture opens from either block and transfers/reopens
+  after restart through the real client/listener. **652 tests passed**, formatting
+  and strict Clippy passed, and release UI previews were inspected. Default save is `world-v11`;
+  see [registered inventories](docs/REGISTERED-INVENTORIES.md).
+
 - **Done:** first public storage-lifecycle surface and external fixture. Chest
   uses the registered lifecycle path; a separately compiled nine-slot/two-cell
   storage block exercises cross-chunk persistence, refunds, conflicts, retries,

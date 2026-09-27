@@ -271,10 +271,7 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                 let chest = chunks.workstation([0, 78, 1]);
                 let view =
                     crate::protocol::workstation::WorkstationView::decode(&chest.payload).unwrap();
-                assert_eq!(
-                    view.kind,
-                    crate::protocol::workstation::WorkstationKind::Chest
-                );
+                assert_eq!(view.slots.len(), 27);
                 if view
                     .slots
                     .iter()

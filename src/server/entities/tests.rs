@@ -752,12 +752,10 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
         let views = store.public_views_for_chunk(chunk);
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, id);
-        assert_eq!(views[0].payload.len(), 24);
+        assert_eq!(views[0].payload.len(), 29);
         let public =
             crate::protocol::workstation::WorkstationView::decode(&views[0].payload).unwrap();
-        assert_eq!(public.facing, 1);
-        assert!(!public.lit);
-        assert_eq!(public.progress, 0);
+        assert_eq!(public.status, vec![0, 0]);
         assert_eq!(
             public.slots[1],
             Some(crate::inventory::Stack::new(crate::items::ItemId(4), 13))

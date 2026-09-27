@@ -3,6 +3,7 @@
 use crate::items::ItemId;
 use std::sync::Arc;
 
+pub(crate) mod container;
 mod store;
 pub use store::InventoryStore;
 

@@ -83,14 +83,9 @@ impl EntityPayloadCodec for KilnPayloadCodec {
             .as_ref()
             .and_then(|input| self.recipes.recipe(input))
             .map_or(1, |recipe| recipe.cook_ticks);
-        let progress =
-            (u32::from(payload.cook_progress) * 255 / u32::from(duration)).min(255) as u8;
+        let progress = (u32::from(payload.cook_progress) * 1000 / u32::from(duration)).min(1000);
         Ok(crate::protocol::workstation::WorkstationView {
-            kind: crate::protocol::workstation::WorkstationKind::Kiln,
-            facing: payload.facing.encoded(),
-            lit: payload.lit,
-            progress,
-            fuel: payload.fuel_remaining,
+            status: vec![u32::from(payload.fuel_remaining) * 400, progress],
             slots: payload.slots.to_vec(),
         }
         .encode())

@@ -32,6 +32,8 @@ pub(crate) mod drops;
 use drops::DropAnimator;
 mod movement;
 #[cfg(test)]
+pub(crate) use inventory_tests::InventoryProbe;
+#[cfg(test)]
 pub(crate) use tests::ReplicationProbe;
 pub(crate) mod trace;
 use movement::predict_player_movement;
@@ -103,11 +105,9 @@ fn edit_for_hit_with_catalog(
 fn escape_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Pause,
-        UiScreen::Inventory
-        | UiScreen::Kiln
-        | UiScreen::Chest
-        | UiScreen::Admin
-        | UiScreen::Pause => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Container | UiScreen::Admin | UiScreen::Pause => {
+            UiScreen::Playing
+        }
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
     }
@@ -116,7 +116,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
 fn inventory_screen(screen: UiScreen) -> UiScreen {
     match screen {
         UiScreen::Playing => UiScreen::Inventory,
-        UiScreen::Inventory | UiScreen::Kiln | UiScreen::Chest => UiScreen::Playing,
+        UiScreen::Inventory | UiScreen::Container => UiScreen::Playing,
         other => other,
     }
 }
@@ -401,7 +401,7 @@ impl ClientApp {
         self.focused_control = None;
         self.inventory_source = None;
         self.kiln_source = None;
-        if !matches!(screen, UiScreen::Kiln | UiScreen::Chest) {
+        if screen != UiScreen::Container {
             self.kiln_target = None;
         }
         self.set_grab(screen == UiScreen::Playing);
@@ -414,12 +414,10 @@ impl ClientApp {
     fn refresh_layout(&mut self) {
         if let Some(window) = &self.window {
             let size = window.inner_size();
-            self.ui_layout = Some(UiLayout::new(
-                size.width,
-                size.height,
-                self.config.scale,
-                self.screen,
-            ));
+            self.ui_layout = Some(
+                UiLayout::new(size.width, size.height, self.config.scale, self.screen)
+                    .with_container(self.container_screen().as_deref()),
+            );
         }
     }
 
@@ -533,14 +531,10 @@ impl ClientApp {
             UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
                 self.inventory_click(slot, false)
             }
-            UiControl::InventorySlot(slot)
-                if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) =>
-            {
+            UiControl::InventorySlot(slot) if self.screen == UiScreen::Container => {
                 self.kiln_inventory_click(slot, false)
             }
-            UiControl::KilnSlot(slot)
-                if matches!(self.screen, UiScreen::Kiln | UiScreen::Chest) =>
-            {
+            UiControl::KilnSlot(slot) if self.screen == UiScreen::Container => {
                 self.kiln_click(slot, false)
             }
             UiControl::KilnSlot(_) => {}
@@ -588,11 +582,7 @@ impl ClientApp {
     fn focus_order(&self) -> Vec<UiControl> {
         match self.screen {
             UiScreen::Playing => Vec::new(),
-            UiScreen::Kiln | UiScreen::Chest => (0..if self.screen == UiScreen::Chest {
-                27
-            } else {
-                3
-            })
+            UiScreen::Container => (0..self.container_screen().map_or(0, |s| s.slots))
                 .map(UiControl::KilnSlot)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),
@@ -1242,6 +1232,7 @@ impl ClientApp {
             inventory: self.inventory.slots.clone(),
             inventory_source: self.inventory_source,
             kiln: self.kiln_view(),
+            container_screen: self.container_screen(),
             kiln_source: self.kiln_source,
             admin_enabled: self.admin_enabled,
             admin_page: self.admin_page,
@@ -1355,5 +1346,7 @@ fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+#[cfg(test)]
+mod inventory_tests;
 #[cfg(test)]
 mod tests;

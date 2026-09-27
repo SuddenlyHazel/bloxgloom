@@ -39,32 +39,6 @@ pub(in crate::client) fn kiln_adapter() -> EntityAdapter {
     }
 }
 
-pub(in crate::client) fn hopper_adapter() -> EntityAdapter {
-    EntityAdapter {
-        entity_type: crate::content::HOPPER_ENTITY_TYPE,
-        project_avatar: no_avatar,
-        hit_test: |hit, catalog| {
-            catalog
-                .state(hit.block_id)
-                .is_some_and(|s| s.block_type == crate::content::HOPPER_BLOCK_TYPE)
-        },
-        interact: |_, _, _, _| None,
-    }
-}
-
-pub(in crate::client) fn chest_adapter() -> EntityAdapter {
-    EntityAdapter {
-        entity_type: crate::content::CHEST_ENTITY_TYPE,
-        project_avatar: no_avatar,
-        hit_test: |hit, catalog| {
-            catalog
-                .state(hit.block_id)
-                .is_some_and(|s| s.block_type == crate::content::CHEST_BLOCK_TYPE)
-        },
-        interact: |_, _, _, _| None,
-    }
-}
-
 pub(in crate::client) fn is_kiln_hit(hit: Hit, catalog: &Catalog) -> bool {
     catalog
         .state(hit.block_id)
@@ -121,15 +95,6 @@ fn request_bytes(operation: u8, kiln_slot: u8, hotbar_slot: u8) -> Vec<u8> {
 fn no_avatar(
     entity: &crate::protocol::PublicEntity,
 ) -> Result<Option<crate::render::VisualAvatar>, ()> {
-    let view = crate::protocol::workstation::WorkstationView::decode(&entity.payload).ok_or(())?;
-    use crate::protocol::workstation::WorkstationKind;
-    let expected = match entity.entity_type {
-        crate::content::HOPPER_ENTITY_TYPE => WorkstationKind::Hopper,
-        crate::content::CHEST_ENTITY_TYPE => WorkstationKind::Chest,
-        _ => WorkstationKind::Kiln,
-    };
-    if view.kind != expected {
-        return Err(());
-    }
+    crate::protocol::workstation::WorkstationView::decode(&entity.payload).ok_or(())?;
     Ok(None)
 }

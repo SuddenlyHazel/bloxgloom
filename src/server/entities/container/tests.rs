@@ -1,16 +1,62 @@
 use super::*;
 
 #[test]
-fn registered_chest_preserves_existing_private_and_public_bytes_and_exact_components() {
+fn registered_storage_automation_respects_slot_access_and_agrees_with_discovery() {
+    let catalog = Arc::new(Catalog::builtins());
+    let mut screen = bloxgloom_host_api::InventoryScreen::storage(
+        "test:store",
+        "test:store",
+        "STORE",
+        2,
+        2,
+        vec![[0; 3]],
+    );
+    screen.groups = vec![
+        bloxgloom_host_api::SlotGroup {
+            label: "INPUT".into(),
+            first: 0,
+            count: 1,
+            insert: true,
+            extract: false,
+        },
+        bloxgloom_host_api::SlotGroup {
+            label: "OUTPUT".into(),
+            first: 1,
+            count: 1,
+            insert: false,
+            extract: true,
+        },
+    ];
+    screen.validate().unwrap();
+    let port = policy::Port::<ContainerPayload>::for_screen(Arc::new(screen));
+    let codec = Codec {
+        catalog: catalog.clone(),
+        slots: 2,
+    };
+    let payload = EntityPayload::new(ContainerPayload {
+        slots: vec![Some(Stack::new(crate::items::STICK, 128)), None],
+    });
+    let public = codec.public_view(&payload).unwrap();
+    let one = Stack::new(crate::items::STICK, 1);
+    assert!(port.offers(&public).is_empty());
+    assert!(!port.accepts(&public, &one, &catalog));
+    assert!(
+        port.withdraw(&payload, one.item, 1, &catalog)
+            .unwrap()
+            .is_none()
+    );
+    assert!(port.deposit(&payload, &one, &catalog).unwrap().is_none());
+}
+
+#[test]
+fn registered_and_fixed_storage_share_format_and_preserve_exact_components() {
     let catalog = Arc::new(Catalog::builtins());
     let old = super::super::storage::codec::Codec::<27> {
         catalog: catalog.clone(),
-        kind: WorkstationKind::Chest,
     };
     let codec = Codec {
         catalog: catalog.clone(),
         slots: 27,
-        legacy_chest_view: true,
     };
     let stack = Stack::with_components(
         crate::items::STICK,
@@ -51,11 +97,7 @@ fn registered_chest_preserves_existing_private_and_public_bytes_and_exact_compon
         .unwrap()
         .unwrap();
     assert_eq!(codec.encode(&restored).unwrap(), bytes);
-    let small = Codec {
-        catalog,
-        slots: 9,
-        legacy_chest_view: false,
-    };
+    let small = Codec { catalog, slots: 9 };
     assert!(small.decode(&bytes).is_err());
 }
 
@@ -65,7 +107,6 @@ fn runtime_capacity_projection_is_discoverable_by_shared_inventory_ports() {
     let codec = Codec {
         catalog: catalog.clone(),
         slots: 9,
-        legacy_chest_view: false,
     };
     let mut payload = ContainerPayload {
         slots: vec![None; 9],

@@ -63,7 +63,7 @@ impl Catalog {
             }
         };
         for key in [
-            "storage-v1",
+            "storage-v2",
             &definition.entity,
             &definition.block,
             &definition.placement_item,
@@ -81,7 +81,7 @@ impl Catalog {
         self.register_entity_type(EntityTypeDef {
             id: EntityTypeId(self.entities.len() as u32),
             key: definition.entity.clone().into(),
-            schema_version: 1,
+            schema_version: 2,
             schema_fingerprint: hash,
         })
         .map_err(|e| ApiError(format!("{}: {e:?}", definition.entity)))

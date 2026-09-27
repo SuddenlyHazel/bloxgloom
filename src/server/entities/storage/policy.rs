@@ -5,44 +5,51 @@ use crate::protocol::workstation::WorkstationView;
 use crate::server::voxel_view::VoxelView;
 
 fn public_slots(public: &[u8]) -> Option<Vec<Option<Stack>>> {
-    if let Some(view) = WorkstationView::decode(public) {
-        return Some(view.slots);
-    }
-    if public.first() != Some(&4) {
-        return None;
-    }
-    let count = usize::from(*public.get(1)?);
-    if count == 0
-        || count > bloxgloom_host_api::lifecycle::MAX_STORAGE_SLOTS
-        || public.len() != 2 + count * 6
-    {
-        return None;
-    }
-    public[2..]
-        .chunks_exact(6)
-        .map(|bytes| {
-            let item = ItemId(u32::from_le_bytes(bytes[..4].try_into().ok()?));
-            let count = u16::from_le_bytes(bytes[4..].try_into().ok()?);
-            if count > STACK_LIMIT || (item.0 == 0) != (count == 0) {
-                return None;
-            }
-            Some((count != 0).then(|| Stack::new(item, count)))
-        })
-        .collect()
+    WorkstationView::decode(public).map(|view| view.slots)
 }
 
-pub(in crate::server::entities) struct Port<P>(std::marker::PhantomData<P>);
+pub(in crate::server::entities) struct Port<P> {
+    screen: Option<Arc<bloxgloom_host_api::InventoryScreen>>,
+    payload: std::marker::PhantomData<P>,
+}
 impl<P> Port<P> {
     pub fn new() -> Self {
-        Self(std::marker::PhantomData)
+        Self {
+            screen: None,
+            payload: std::marker::PhantomData,
+        }
+    }
+    pub fn for_screen(screen: Arc<bloxgloom_host_api::InventoryScreen>) -> Self {
+        Self {
+            screen: Some(screen),
+            payload: std::marker::PhantomData,
+        }
+    }
+    fn permits(&self, slot: usize, insert: bool) -> bool {
+        self.screen.as_ref().is_none_or(|s| {
+            s.group(slot as u8)
+                .is_some_and(|g| if insert { g.insert } else { g.extract })
+        })
     }
 }
 impl<P: Slots> EntityTransferPolicy for Port<P> {
     fn offers(&self, public: &[u8]) -> Vec<Stack> {
-        public_slots(public).map_or_else(Vec::new, |slots| slots.into_iter().flatten().collect())
+        public_slots(public).map_or_else(Vec::new, |slots| {
+            slots
+                .into_iter()
+                .enumerate()
+                .filter(|(index, _)| self.permits(*index, false))
+                .filter_map(|(_, slot)| slot)
+                .collect()
+        })
     }
     fn accepts(&self, public: &[u8], stack: &Stack, _: &Catalog) -> bool {
-        public_slots(public).is_some_and(|mut slots| slots.iter_mut().any(|slot| put(slot, stack)))
+        public_slots(public).is_some_and(|mut slots| {
+            slots
+                .iter_mut()
+                .enumerate()
+                .any(|(index, slot)| self.permits(index, true) && put(slot, stack))
+        })
     }
     fn withdraw(
         &self,
@@ -55,10 +62,11 @@ impl<P: Slots> EntityTransferPolicy for Port<P> {
             .downcast_ref::<P>()
             .ok_or(EntityError::InvalidPayload)?
             .clone();
-        for slot in payload.slots_mut() {
-            if slot
-                .as_ref()
-                .is_some_and(|s| s.item == item && s.count >= count)
+        for (index, slot) in payload.slots_mut().iter_mut().enumerate() {
+            if self.permits(index, false)
+                && slot
+                    .as_ref()
+                    .is_some_and(|s| s.item == item && s.count >= count)
             {
                 let stack = take(slot, count).ok_or(EntityError::InvalidPayload)?;
                 return Ok(Some((EntityPayload::new(payload), stack)));
@@ -79,7 +87,12 @@ impl<P: Slots> EntityTransferPolicy for Port<P> {
             .downcast_ref::<P>()
             .ok_or(EntityError::InvalidPayload)?
             .clone();
-        if payload.slots_mut().iter_mut().any(|slot| put(slot, stack)) {
+        if payload
+            .slots_mut()
+            .iter_mut()
+            .enumerate()
+            .any(|(index, slot)| self.permits(index, true) && put(slot, stack))
+        {
             Ok(Some(EntityPayload::new(payload)))
         } else {
             Ok(None)
@@ -123,7 +136,7 @@ impl<P: Slots> EntityInteractionPolicy for Interaction<P> {
         snapshot: &EntitySnapshot,
         request: &[u8],
         inventory: &Inventory,
-        _: &Catalog,
+        catalog: &Catalog,
         view: &VoxelView,
         _: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError> {
@@ -137,6 +150,13 @@ impl<P: Slots> EntityInteractionPolicy for Interaction<P> {
             return Err(EntityError::InvalidPayload);
         }
         let count = u16::from_le_bytes([request[4], request[5]]);
+        let group = catalog
+            .inventory_screen(snapshot.entity_type)
+            .and_then(|screen| screen.group(request[2]))
+            .ok_or(EntityError::InvalidPayload)?;
+        if (request[1] == 0 && !group.insert) || (request[1] == 1 && !group.extract) {
+            return Err(EntityError::InvalidPayload);
+        }
         if count == 0 || count > STACK_LIMIT {
             return Err(EntityError::InvalidPayload);
         }

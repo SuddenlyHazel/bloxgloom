@@ -22,9 +22,16 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    content::install(content::Catalog::builtins())
-        .map_err(|_| "content catalog was installed more than once")?;
+    let catalog = content::Catalog::builtins();
+    #[cfg(feature = "lifecycle-fixture")]
+    let catalog = server::catalog_with_extension(catalog, &bloxgloom_lifecycle_fixture::TallStore)?;
+    content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = std::env::args().skip(1);
+    let default_world = if cfg!(feature = "lifecycle-fixture") {
+        "world-v11-fixture"
+    } else {
+        "world-v11"
+    };
     match args.next().as_deref() {
         None => {
             let config_path = config::Config::default_path();
@@ -32,7 +39,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             config.ensure_profile(&config_path)?;
             let (addr, server) = server::start_local_server_with_admin(
                 0xB10C_6100,
-                "world-v10".into(),
+                default_world.into(),
                 config.profile,
             )?;
             let client_result = client::run_client_with_admin(&addr.to_string());
@@ -42,7 +49,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
-            let save_dir = args.next().unwrap_or_else(|| "world-v10".to_string());
+            let save_dir = args.next().unwrap_or_else(|| default_world.to_string());
             let admission_limit = args
                 .next()
                 .map(|value| value.parse::<usize>())
@@ -205,6 +212,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("usage: mossbun-motion-preview [directory]".into());
             }
             preview::render_mossbun_motion_previews(std::path::Path::new(&path))?;
+        }
+        Some("inventory-preview") => {
+            let entity = args
+                .next()
+                .ok_or("usage: inventory-preview <entity-key> <directory>")?;
+            let path = args
+                .next()
+                .ok_or("usage: inventory-preview <entity-key> <directory>")?;
+            if args.next().is_some() {
+                return Err("usage: inventory-preview <entity-key> <directory>".into());
+            }
+            preview::render_inventory_previews(&entity, std::path::Path::new(&path))?;
         }
         Some("chest-preview") => {
             let path = args.next().unwrap_or_else(|| "chest-preview".to_owned());

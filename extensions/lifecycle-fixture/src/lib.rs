@@ -12,6 +12,14 @@ impl Extension for TallStore {
             name: "TALL STORE".into(),
             texture: "bloxgloom:chest_side".into(),
         })?;
+        registrar.inventory_screen(bloxgloom_host_api::InventoryScreen::storage(
+            KEY,
+            KEY,
+            "TALL STORE",
+            9,
+            9,
+            vec![[0, 0, 0], [0, 1, 0]],
+        ))?;
         registrar.storage_block_entity(StorageBlockEntity {
             entity: KEY.into(),
             block: KEY.into(),

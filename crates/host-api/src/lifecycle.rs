@@ -3,9 +3,8 @@
 use crate::RegistrationError;
 
 pub const MAX_FOOTPRINT: usize = 64;
-// Current storage service uses the inventory snapshot codec. This bound is
-// explicit until the independent container format lands in the next slice.
-pub const MAX_STORAGE_SLOTS: usize = 36;
+// Fits full component-bearing snapshots within the host's 64 KiB entity bound.
+pub const MAX_STORAGE_SLOTS: usize = crate::inventory::MAX_SLOTS;
 
 #[derive(Clone, Debug)]
 pub struct FootprintCell {
@@ -54,7 +53,7 @@ impl StorageBlockEntity {
     pub fn validate(&self) -> Result<(), RegistrationError> {
         let invalid = |message: &str| RegistrationError(message.into());
         if self.slots == 0 || self.slots > MAX_STORAGE_SLOTS {
-            return Err(invalid("storage capacity must be 1..=36"));
+            return Err(invalid("storage capacity must be 1..=54"));
         }
         if self.footprint.is_empty() || self.footprint.len() > MAX_FOOTPRINT {
             return Err(invalid("footprint must contain 1..=64 cells"));
