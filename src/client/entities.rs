@@ -58,9 +58,23 @@ pub(super) enum Assembly {
 
 impl Replicas {
     pub(super) fn action_at(&self, target: [i32; 3], catalog: &Catalog) -> Option<&PublicEntity> {
-        self.kiln_at(target,catalog).or_else(|| {
-            let key = crate::world::world_to_chunk(target[0],target[1],target[2]).0;
-            self.entities.get(&key)?.values().find(|e| matches!(e.location,crate::protocol::PublicEntityLocation::Anchored { anchor, .. } if anchor == target))
+        self.kiln_at(target, catalog).or_else(|| {
+            let key = crate::world::world_to_chunk(target[0], target[1], target[2]).0;
+            self.entities.get(&key)?.values().find(|e| {
+                let crate::protocol::PublicEntityLocation::Anchored { anchor, .. } = e.location
+                else {
+                    return false;
+                };
+                catalog
+                    .anchored_entity(e.entity_type)
+                    .map_or(anchor == target, |definition| {
+                        definition.footprint.iter().any(|cell| {
+                            (0..3).all(|axis| {
+                                anchor[axis].checked_add(cell.offset[axis]) == Some(target[axis])
+                            })
+                        })
+                    })
+            })
         })
     }
     #[cfg(test)]

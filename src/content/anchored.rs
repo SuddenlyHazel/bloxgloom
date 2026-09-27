@@ -89,9 +89,20 @@ impl Catalog {
         }
         self.anchored_entities
             .resize_with(self.entities.len(), || None);
+        let action = (!d.interaction.is_empty()).then(|| bloxgloom_host_api::actions::Action {
+            key: format!("{}/interact", d.entity),
+            version: 1,
+            label: "USE".into(),
+            target: bloxgloom_host_api::actions::Target::Block(d.block.clone()),
+            operation: bloxgloom_host_api::actions::Operation::EntityRequest(d.interaction.clone()),
+            panel: None,
+        });
         self.anchored_entities[id.0 as usize] = Some(d);
         self.anchored_blocks.resize(self.blocks.len(), None);
         self.anchored_blocks[block.0 as usize] = Some(id);
+        if let Some(action) = action {
+            self.register_action(action)?;
+        }
         Ok(())
     }
 }

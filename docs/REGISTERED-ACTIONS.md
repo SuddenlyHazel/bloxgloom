@@ -17,7 +17,9 @@ participate in content-map/handshake compatibility via the player contract.
   component-bearing input, or stale inventory revision reject the entire action.
 * `Block(key)` offers the registered inventory screen or a fixed request to the
   anchored entity's existing registered interaction policy. Anchor cells are
-  discoverable; inventory descriptors also expose their declared footprint cells.
+  discoverable; inventory and anchored lifecycle descriptors also expose their
+  declared footprint cells. `AnchoredBlockEntity::interaction` automatically
+  registers its default use action (empty means no default use control).
 * `Entity(key)` offers a fixed request to a registered anchored/mobile own-state policy.
   The host validates entity identity, durable revision, current target cell, reach,
   subscription and visibility. The policy still owns its versioned private bytes.
@@ -55,7 +57,7 @@ need a newly discovered/current request and a new action sequence; resending the
 same sequence only replays its receipt. Loading/admission conflicts remain eligible
 for the existing durable queue's retry behavior. No new scheduling queues exist.
 
-Legacy identity-fenced inventory/mobile requests are resolved through the same
+Legacy identity-fenced inventory/mobile/anchored requests are resolved through the same
 registry. Unfenced inventory-v1 requests are rejected (including old R/F bytes).
 The network frame format and inventory encoding do not change; the action envelope
 uses payload tag 5 (tag 4 is reserved for anchored lifecycle requests). Catalog fingerprint changes require the parent's prerelease
@@ -72,7 +74,7 @@ catalog before startup. Standard inventory grids/status remain in
 `InventoryScreen`; arbitrary canvas/GPU or scripting widgets are not promised.
 
 Bounds: 256 action definitions, 8 actions per target, 8 widgets per panel, 128-byte
-action keys/fixed entity requests, 4 bytes of inventory-control arguments. Requests
+action keys, 239-byte fixed policy requests, 4 bytes of inventory-control arguments. Requests
 are at most 162 bytes (below the existing 256-byte interaction limit), reject
 truncation/trailing bytes before retaining arguments, and discovery scans at most
 the fixed registry capacity. Inventory work touches the 36 host slots and preserves

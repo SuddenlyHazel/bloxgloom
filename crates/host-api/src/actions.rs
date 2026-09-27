@@ -184,7 +184,7 @@ impl Action {
                     && !matches!(&self.target, Target::Item(k) if k != input)
             }
             (Target::Entity(_) | Target::Block(_), Operation::EntityRequest(bytes)) => {
-                !bytes.is_empty() && bytes.len() <= 128
+                !bytes.is_empty() && bytes.len() <= 239
             }
             (Target::Block(_), Operation::Inventory) => self.panel.is_none(),
             _ => false,

@@ -111,18 +111,15 @@ fn external_anchored_initialization_use_refund_and_restart_over_real_listener() 
             if !restart {
                 identity = Some(entity.id);
                 assert_eq!(entity.payload, vec![0, 0]);
-                let payload = bloxgloom_host_api::anchored::interaction_request(
-                    entity.id,
-                    entity.revision,
-                    b"toggle",
-                )
-                .unwrap();
-                let action_id = client.next_id();
-                let request = ClientMessage::EntityInteract {
-                    action_id,
-                    target: [0, 81, 2],
-                    payload,
+                // The real client's ray target is the non-anchor footprint cell.
+                // No fixture request bytes or identifiers enter client dispatch.
+                let request = client.action_on_block([0, 81, 2]);
+                let ClientMessage::EntityInteract { ref payload, .. } = request else {
+                    panic!()
                 };
+                let registered = bloxgloom_host_api::actions::Request::decode(payload).unwrap();
+                assert_eq!(registered.entity, entity.id);
+                assert_eq!(registered.entity_revision, entity.revision);
                 send(&mut peer, &mut client, request.clone(), &catalog);
                 send(&mut peer, &mut client, request, &catalog);
                 until(&mut peer, &mut client, &catalog, |c| {

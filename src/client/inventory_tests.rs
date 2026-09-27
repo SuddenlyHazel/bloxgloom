@@ -56,6 +56,24 @@ impl InventoryProbe {
             .pop_front()
             .expect("registered control emits request")
     }
+    pub(crate) fn action_on_block(&mut self, target: [i32; 3]) -> ClientMessage {
+        self.app.pending_commands.clear();
+        let direction = (Vec3::from_array(target.map(|v| v as f32 + 0.5))
+            - self.app.camera().position)
+            .normalize();
+        self.app.yaw = direction.z.atan2(direction.x);
+        self.app.pitch = direction.y.asin();
+        assert!(
+            self.app.open_aimed_kiln(),
+            "registered block actions are discovered from the production ray target"
+        );
+        assert_eq!(self.app.screen, UiScreen::Actions);
+        self.app.action_control(0);
+        self.app
+            .pending_commands
+            .pop_front()
+            .expect("block control emits registered request")
+    }
     pub(crate) fn anchored(&self, at: [i32; 3]) -> Option<crate::protocol::PublicEntity> {
         self.app.replicas.anchored_for_test(at).cloned()
     }

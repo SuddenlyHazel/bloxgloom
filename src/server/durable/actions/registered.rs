@@ -27,7 +27,7 @@ pub(super) fn plan(
                 *player,
                 vec![*direction, *slot, *low, *high],
             ),
-            [3, rest @ ..] if rest.len() >= 17 => (
+            [3 | 4, rest @ ..] if rest.len() >= 17 => (
                 u64::from_le_bytes(rest[..8].try_into().unwrap()),
                 u64::from_le_bytes(rest[8..16].try_into().unwrap()),
                 0,
@@ -48,6 +48,11 @@ pub(super) fn plan(
         let definition = if payload[0] == 2 {
             let screen = catalog.inventory_screen(snapshot.entity_type).ok_or_else(|| denied("no target inventory"))?;
             catalog.action(&format!("{}/inventory",screen.entity))
+        } else if payload[0] == 4 {
+            let definition = catalog.anchored_entity(snapshot.entity_type).ok_or_else(|| denied("not a registered anchored target"))?;
+            catalog.discover_actions(&Target::Block(definition.block.clone()))
+                .chain(catalog.discover_actions(&Target::Entity(definition.entity.clone())))
+                .find(|a| matches!(&a.operation,Operation::EntityRequest(bytes) if bytes.as_slice() == &payload[17..]))
         } else {
             let key = &catalog.entity_type(snapshot.entity_type).ok_or_else(|| denied("unknown entity"))?.key;
             catalog.discover_actions(&Target::Entity(key.to_string())).find(|a| matches!(&a.operation,Operation::EntityRequest(bytes) if bytes.as_slice() == &payload[17..]))
@@ -199,6 +204,18 @@ pub(super) fn plan(
                     inner
                 }
                 _ => return Err(denied("registered target does not match")),
+            };
+            let inner = if catalog.anchored_entity(snapshot.entity_type).is_some()
+                && matches!(action.operation, Operation::EntityRequest(_))
+            {
+                bloxgloom_host_api::anchored::interaction_request(
+                    id.get(),
+                    snapshot.revision,
+                    &inner,
+                )
+                .map_err(|_| denied("invalid anchored action envelope"))?
+            } else {
+                inner
             };
             entity::plan_interact(
                 state,
