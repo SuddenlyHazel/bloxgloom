@@ -6,6 +6,11 @@ Latest integration: content/assets, anchored lifecycle, component-aware machines
 registered actions/UI, and persistent owner-local systems are merged into main. This document
 tracks host capability parity; an installable mod loader is a separate milestone.
 
+Proposed next direction: [one coherent gameplay API](MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
+That proposal consolidates the remaining gaps around shared world access,
+mutations, events, and scheduling. It is a proposal, not an implementation status
+change or a decision to adopt Luau.
+
 ## Implementation status
 
 ### Status tracker
