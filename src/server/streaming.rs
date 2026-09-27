@@ -21,8 +21,11 @@ pub(in crate::server) mod workers;
 const MAX_LOAD_RESULTS_PER_TICK: usize = 32;
 const MAX_PREFETCH_CANDIDATES: usize = 16;
 const MAX_NEW_LOADS_PER_CLIENT: usize = 2;
-const SNAPSHOT_FRAME_HEADROOM: usize = 32;
-const SNAPSHOT_BYTE_HEADROOM: u64 = 512 * 1024;
+// Commits publish before new snapshots, but cannot overtake snapshots already
+// admitted to the ordered socket. Bound that bulk prefix to eight frames / 128
+// KiB (or one indivisible larger snapshot group) rather than filling the queue.
+const SNAPSHOT_FRAME_HEADROOM: usize = OUTBOUND_FRAME_CAPACITY - 8;
+const SNAPSHOT_BYTE_HEADROOM: u64 = OUTBOUND_CLIENT_BYTE_CAPACITY - 128 * 1024;
 
 pub(super) fn poll_chunk_loads(state: &mut State) -> io::Result<()> {
     for _ in 0..MAX_LOAD_RESULTS_PER_TICK {

@@ -4,13 +4,18 @@
 
 ### Integration follow-up
 
-Post-integration gameplay follow-ups are tracked in the root plan's **Current
+Post-integration gameplay follow-ups are tracked in the root plan's **Completed
 task: player-response path hardening** section. `ecb07ee` fixes reproduced entity
 reservation starvation; `36e177b` prioritizes direct edit meshes and separates
 mobile own-state use from movement-frame CAS (anchored/inventory fences remain
 strict). These verified local fixes do not certify end-to-end responsiveness.
-The user has approved a focused fairness/latency hardening pass with personal
-implementation/review and no subagents; it is currently in progress.
+The approved fairness/latency hardening pass is now implemented and personally
+reviewed without subagents: 702 tests, strict Clippy/fmt, release mixed-load and
+restart measurements, and inspected rendering preview. The original tactical
+drain/three mesh lanes are replaced by fixed bounded admission turns and fair
+two-lane worker/upload policy. See `docs/PLAYER-RESPONSE-PATH.md`; live window
+presentation latency remains observable through opt-in tracing, not a claim made
+from headless frame benchmarks.
 
 The baseline findings below are retained as the audit record. The integrating
 branch has since addressed these items; final combined verification is tracked

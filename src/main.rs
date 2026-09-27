@@ -9,6 +9,7 @@ mod preview;
 mod protocol;
 mod raycast;
 mod render;
+mod response_trace;
 mod server;
 mod storage;
 mod ui;

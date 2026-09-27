@@ -183,6 +183,15 @@ pub(super) fn apply_committed_action(
                 == 256
         });
     }
+    if let Some(id) = action.action_id {
+        crate::response_trace::event(format_args!("server committed {id}"));
+        for delta in &action.deltas {
+            crate::response_trace::event(format_args!(
+                "server edit {id} chunk={:?} version={}",
+                delta.key, delta.version
+            ));
+        }
+    }
     state.durability.publish_queue.push(PublishEffects {
         client_id: action.client_id,
         profile: action.profile,

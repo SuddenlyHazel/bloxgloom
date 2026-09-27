@@ -40,28 +40,36 @@ parity for its broader category.
 | Close remaining full-parity audit blockers | Planned | World systems/generation, harvest/loot, player rules/commands/bindings and world-drop policies; fire remains deferred |
 | Runtime adapter and user-installable mod loader | Deferred | Separate milestone: select runtime/language, then package/dependency handling, discovery/loading, and isolation |
 | Distribution and hot reload | Deferred | Later loader/product decisions; not part of current host-surface completion |
-| Player-response path hardening | In progress | Approved focused fairness/latency pass, implemented and reviewed by the main agent only; see current task below |
+| Player-response path hardening | Done | Fixed bounded admission turns, command/pickup capacity, fair two-lane mesh/upload scheduling, short snapshot backlog, shared trace clock, and mixed-load/restart proof; personally implemented/reviewed without subagents |
 
-### Current task: player-response path hardening
+### Completed task: player-response path hardening
 
-User approved implementation and personal review, **no subagents**. Complete this
-before adding more capabilities. Keep the solution small: explicit admission
-fairness, bounded player/simulation work, two client worker priorities (immediate
-edited geometry/seams vs background), prompt committed-update delivery, and a
-real-path mixed-load responsiveness/restart regression. Preserve authoritative
-movement, per-profile command order, WAL ordering, exact inventory/anchored fences,
-and stale mesh rejection. Avoid a configurable scheduler or extra global waits.
-Measure request → commit → client update → mesh/display; use deterministic
-progress assertions and repeatable release latency measurements, not fragile CI
-millisecond thresholds. Verify simulation progresses under sustained player work.
+Implemented and personally reviewed as approved, **no subagents**. The fixed
+policy uses two bounded admission lanes with three player-first mixed rounds to
+one simulation-first round, one end-of-wave barrier instead of the tactical
+mid-wave drain, independent motion conflict filtering, and reserved command/pickup
+capacity. Client workers coalesce superseded jobs and give background work every
+fourth dispatch; geometry/seams have immediate capacity through upload. Bulk
+snapshot backlog is bounded before FIFO admission. See
+[player-response path](docs/PLAYER-RESPONSE-PATH.md) for scope, invariants, tests,
+and repeatable measurements. Existing world-v14 saves remain compatible.
+
+**702 tests passed** (698 engine + 4 host API), strict workspace Clippy and format
+checks passed. The real-listener mixed test covers player movement, creatures,
+machine production, seam edits, both lighting modes, and restart; worker and
+admission tests assert bounded progress rather than CI timing thresholds. Release
+request-to-mesh-ready medians: baseline 24.2/25.7 ms (voxel/bounced), mixed
+34.4/34.4 ms, mixed after restart 35.0/28.3 ms. GPU upload/present is instrumented
+but excluded from these listener measurements. The release preview was inspected;
+the user's live window latency has not been independently observed.
 
 Completed follow-ups (do not lose these during compaction):
 - `8ba1dda`: all implementation branches integrated; public HUD art, component
   schema-safe processing, world-v14 defaults; 695 tests, Clippy/fmt, previews.
 - `ecb07ee`: reproduced edit starvation with one paused and one moving Copperling;
   draining motion before commands releases terrain reservations. Real-listener
-  break/place/restart regression passes. This is a tactical fix: the approved
-  hardening pass must replace timing-dependent fairness, not add more barriers.
+  break/place/restart regression passes. This tactical ordering fix is now
+  superseded by bounded admission turns and the single end-of-wave barrier.
 - `36e177b`: directly edited chunk mesh lane; mobile own-state use accepts older
   movement-frame revisions while checking stable identity/current reach/sight,
   rejecting zero/future revisions and retaining the actor inventory fence. Exact
@@ -71,7 +79,7 @@ Completed follow-ups (do not lose these during compaction):
 - Copper Lamp's unlit orange/black checker faces are deliberate fixture PNG art,
   not a missing texture; documented in REGISTERED-CONTENT.md.
 
-Latest follow-up verification: 695 tests plus strict Clippy/fmt passed. Measured
+Before hardening: 695 tests plus strict Clippy/fmt passed. Measured
 loopback edit confirmations were 40–70 ms; the user's full display delay has not
 been reproduced. Bounced lighting is enabled in the user's saved client settings.
 Latest headless steady CPU/GPU: voxel .308/.290 ms, bounced .351/.296 ms; setup

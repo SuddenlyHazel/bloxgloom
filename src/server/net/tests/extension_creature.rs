@@ -46,6 +46,15 @@ fn send(
 }
 #[test]
 fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_listener() {
+    creature_probe(false);
+}
+
+#[test]
+fn mixed_response_path_keeps_edits_creatures_and_machine_progressing_across_restart() {
+    creature_probe(true);
+}
+
+fn creature_probe(mixed: bool) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -121,6 +130,9 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
                 }
             }
             if !restarted {
+                if mixed {
+                    response_samples(&mut peer, &mut client, &catalog, "baseline");
+                }
                 let action_id = client.next_id();
                 let request = ClientMessage::AdminSpawnEntity {
                     action_id,
@@ -213,6 +225,9 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
                 send(&mut peer, &mut client, &catalog, &place),
                 "creatures must not starve placement (restart={restarted})"
             );
+            if mixed {
+                mixed_work(&mut peer, &mut client, &catalog, restarted);
+            }
             let _ = peer.shutdown(Shutdown::Both);
         }));
         stop_tx.send(()).unwrap();
@@ -223,4 +238,143 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
         }
     }
     std::fs::remove_dir_all(save).unwrap();
+}
+
+fn mixed_work(
+    peer: &mut TcpStream,
+    client: &mut MobileProbe,
+    catalog: &crate::content::Catalog,
+    restarted: bool,
+) {
+    let cell = [-2, 80, 1];
+    if !restarted {
+        for (key, count) in [
+            ("fixture:crusher", 1),
+            ("bloxgloom:stone", 8),
+            ("bloxgloom:stick", 1),
+        ] {
+            let item = catalog.items().find(|i| i.key == key).unwrap().id;
+            let request = ClientMessage::AdminGive {
+                action_id: client.next_id(),
+                item,
+                count,
+            };
+            assert!(send(peer, client, catalog, &request));
+            until(peer, client, catalog, |c| c.item_slot(item).is_some());
+        }
+        let item = catalog
+            .items()
+            .find(|i| i.key == "fixture:crusher")
+            .unwrap();
+        let place = ClientMessage::Edit {
+            action_id: client.next_id(),
+            x: cell[0],
+            y: cell[1],
+            z: cell[2],
+            block: item.placeable.unwrap(),
+            slot: client.item_slot(item.id).unwrap(),
+        };
+        assert!(send(peer, client, catalog, &place));
+        until(peer, client, catalog, |c| c.workstation(cell).is_some());
+        for (key, slot, count) in [("bloxgloom:stone", 1, 4u16), ("bloxgloom:stick", 0, 1u16)] {
+            let item = catalog.items().find(|i| i.key == key).unwrap().id;
+            let mut accepted = false;
+            for _ in 0..8 {
+                let entity = client.workstation(cell).unwrap();
+                let mut payload = vec![2, 0, slot, client.item_slot(item).unwrap()];
+                payload.extend(count.to_le_bytes());
+                payload.extend(entity.id.to_le_bytes());
+                payload.extend(entity.revision.to_le_bytes());
+                let request = ClientMessage::EntityInteract {
+                    action_id: client.next_id(),
+                    target: cell,
+                    payload,
+                };
+                if send(peer, client, catalog, &request) {
+                    accepted = true;
+                    break;
+                }
+            }
+            assert!(
+                accepted,
+                "machine input could not acquire a current fenced revision"
+            );
+        }
+    }
+    response_samples(
+        peer,
+        client,
+        catalog,
+        if restarted { "mixed-restart" } else { "mixed" },
+    );
+    until(peer, client, catalog, |c| {
+        c.workstation(cell)
+            .and_then(|e| crate::protocol::workstation::WorkstationView::decode(&e.payload))
+            .is_some_and(|view| {
+                view.slots
+                    .iter()
+                    .flatten()
+                    .any(|s| s.item == crate::items::ItemId(crate::world::GRAVEL.0) && s.count == 8)
+            })
+    });
+}
+
+fn response_samples(
+    peer: &mut TcpStream,
+    client: &mut MobileProbe,
+    catalog: &crate::content::Catalog,
+    phase: &str,
+) {
+    let stone = crate::items::ItemId(crate::world::STONE.0);
+    let grant = ClientMessage::AdminGive {
+        action_id: client.next_id(),
+        item: stone,
+        count: 32,
+    };
+    assert!(send(peer, client, catalog, &grant));
+    until(peer, client, catalog, |c| c.item_slot(stone).is_some());
+    let mut samples = Vec::new();
+    for bounced in [false, true] {
+        for x in [-1, 1] {
+            until(peer, client, catalog, |c| {
+                c.has_chunk(crate::world::world_to_chunk(x, 80, 3).0)
+            });
+            for place in [true, false, true, false] {
+                let action_id = client.next_id();
+                protocol::write_client_with_catalog(
+                    &mut *peer,
+                    &ClientMessage::Move {
+                        seq: action_id as u64,
+                        dx: if place { 0.01 } else { -0.01 },
+                        dy: 0.0,
+                        dz: 0.0,
+                    },
+                    catalog,
+                )
+                .unwrap();
+                let request = ClientMessage::Edit {
+                    action_id,
+                    x,
+                    y: 80,
+                    z: 3,
+                    block: if place {
+                        crate::world::STONE
+                    } else {
+                        crate::world::AIR
+                    },
+                    slot: client.item_slot(stone).unwrap(),
+                };
+                let start = Instant::now();
+                assert!(send(peer, client, catalog, &request));
+                let confirmed = start.elapsed();
+                let mesh = client.mesh_edit(crate::world::world_to_chunk(x, 80, 3).0, bounced);
+                samples.push((confirmed, mesh));
+                eprintln!(
+                    "response phase={phase} bounced={bounced} x={x} place={place}: confirmed={confirmed:?}, worker_mesh={mesh:?}, through_mesh={:?}",
+                    start.elapsed()
+                );
+            }
+        }
+    }
+    assert_eq!(samples.len(), 16);
 }

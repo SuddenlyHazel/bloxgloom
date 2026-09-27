@@ -30,6 +30,37 @@ impl MobileProbe {
             .as_ref()
             .map(|(message, _)| message.as_str())
     }
+    pub(crate) fn workstation(&self, cell: [i32; 3]) -> Option<crate::protocol::PublicEntity> {
+        self.app.replicas.kiln_at(cell, &self.app.catalog).cloned()
+    }
+    pub(crate) fn has_chunk(&self, key: ChunkKey) -> bool {
+        self.app.chunks.contains_key(&key)
+    }
+    /// Exercise the production submission/mailbox/light/mesh path. Presentation
+    /// is separately traced in the window; this probe ends at mesh readiness.
+    pub(crate) fn mesh_edit(&mut self, key: ChunkKey, bounced: bool) -> Duration {
+        let start = Instant::now();
+        self.app.config.bounced_gi = bounced;
+        self.app.queue_edited_chunk_relight(key);
+        let revision = self.app.lighting_revisions[&key];
+        loop {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "edited mesh starved"
+            );
+            self.app.poll_work();
+            if let Ok(result) = self
+                .app
+                .mesher
+                .results
+                .recv_timeout(Duration::from_millis(10))
+                && result.mesh.key == key
+                && result.mesh.lighting_revision == revision
+            {
+                return start.elapsed();
+            }
+        }
+    }
     pub(crate) fn item_slot(&self, item: crate::items::ItemId) -> Option<u8> {
         self.app
             .inventory

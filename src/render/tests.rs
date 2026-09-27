@@ -71,6 +71,19 @@ fn urgent_mesh_reorders_existing_pending_chunk_without_duplication() {
     assert_eq!(order, VecDeque::from([b, a, c]));
 }
 
+#[test]
+fn uploads_leave_background_a_turn_during_continuous_immediate_edits() {
+    let keys = (0..5)
+        .map(|x| ChunkKey { x, y: 0, z: 0 })
+        .collect::<Vec<_>>();
+    let immediate = keys[..4].iter().copied().collect();
+    let order = keys.iter().copied().collect();
+    assert_eq!(next_upload_index(&order, &immediate, 2), 0);
+    assert_eq!(next_upload_index(&order, &immediate, 3), 4);
+    let all_immediate = keys.iter().copied().collect();
+    assert_eq!(next_upload_index(&order, &all_immediate, 3), 0);
+}
+
 fn mapped_builtin(
     name: &str,
 ) -> (

@@ -114,7 +114,22 @@ fn hopper_feeds_kiln_collects_output_and_survives_restart_then_break() {
             }
         }
     }
-    pulse(&mut state, &mut tick, 400);
+    // Transfers use async receipts; under concurrent test I/O a fixed 400
+    // attempted ticks is not a fixed number of admitted processing steps.
+    for _ in 0..40 {
+        pulse(&mut state, &mut tick, 20);
+        if hopper(&state, 79)
+            .slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == ItemId(crate::world::STONE.0))
+            .map(|s| s.count)
+            .sum::<u16>()
+            == 3
+        {
+            break;
+        }
+    }
     let output = hopper(&state, 79);
     assert_eq!(
         output

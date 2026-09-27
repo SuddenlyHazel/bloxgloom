@@ -1467,7 +1467,7 @@ fn hot_chunk_motion_is_bounded_conserved_and_settles() {
                 crate::server::durable::DurableRequest::EntityTick { .. }
             ))
             .count(),
-        crate::server::durable::MAX_PENDING_DURABLE_ACTIONS,
+        crate::server::durable::MAX_DURABLE_LANE_ACTIONS,
         "one tick queues at most the bounded motion budget"
     );
     tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
@@ -1485,7 +1485,7 @@ fn hot_chunk_motion_is_bounded_conserved_and_settles() {
         .count();
     assert_eq!(
         moved,
-        crate::server::durable::MAX_PENDING_DURABLE_ACTIONS,
+        crate::server::durable::MAX_DURABLE_LANE_ACTIONS,
         "the whole bounded budget applies in its tick, no more"
     );
     assert_eq!(

@@ -249,6 +249,8 @@ pub(super) fn open(
             entity_tick_cursor: None,
             entity_sleep_cursor: None,
             entity_admission_turn: 0,
+            response_turn: 0,
+            pickup_cursor: 0,
             oversized_entity_retry: BTreeMap::new(),
             pending_wakes: Vec::new(),
             retry_pickups: HashSet::new(),

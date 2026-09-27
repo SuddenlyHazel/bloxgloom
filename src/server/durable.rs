@@ -70,6 +70,7 @@ pub(super) use state::{action_changes, chunk_state_key, inventory_state_key, is_
 
 pub(super) const MAX_PENDING_DURABLE_ACTIONS: usize = 256;
 pub(super) const MAX_DEFERRED_DURABLE_ACTIONS: usize = 256;
+pub(super) const MAX_DURABLE_LANE_ACTIONS: usize = MAX_DEFERRED_DURABLE_ACTIONS / 2;
 pub(super) const MAX_DIRTY_CHECKPOINT_KEYS: usize = 1_024;
 pub(super) const MAX_DIRTY_CHECKPOINT_BYTES: usize = 128 * 1024 * 1024;
 const CHECKPOINT_QUEUE_CAPACITY: usize = 16;
@@ -117,6 +118,9 @@ pub(super) struct Durability {
     /// Rotates scarce admission turns independently of tick parity, so even
     /// intermittent free capacity cannot repeatedly select the same lane.
     pub(super) entity_admission_turn: usize,
+    /// Fixed 3:1 player/simulation first-turn policy for mixed admission waves.
+    pub(super) response_turn: u8,
+    pub(super) pickup_cursor: u64,
     /// Transient retry deadlines for views rejected at their fixed capture
     /// bound. The persisted due entry remains authoritative across restart.
     pub(super) oversized_entity_retry: BTreeMap<EntityId, u64>,

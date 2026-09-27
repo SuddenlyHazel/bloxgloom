@@ -364,11 +364,14 @@ fn sleeping_lane_rotates_past_unavailable_work_under_sustained_due_and_hint_pres
                 .hint_entity_wake(EntityId::new(raw).unwrap());
         }
         assert_eq!(state.durability.pending_wakes.len(), 256);
-        for _ in 0..255 {
+        for _ in 0..128 {
             state
                 .durability
                 .queued
                 .push_back(DurableRequest::Pickup { id: u64::MAX });
+        }
+        for _ in 0..127 {
+            state.durability.queued.push_back(DurableRequest::Expire);
         }
         dispatch(&mut state, 10 + turn);
     }

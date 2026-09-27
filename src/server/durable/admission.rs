@@ -2,6 +2,22 @@
 use super::*;
 
 impl Durability {
+    /// Filter independently conflicting motion before combining a wave. One
+    /// nearby edit must not defer unrelated creatures in distant chunks.
+    pub(super) fn action_conflicts(&self, action: &CommitAction) -> io::Result<bool> {
+        let changes = action_changes(action, &self.catalog)?;
+        if changes.iter().any(|change| {
+            change.key.domain != crate::server::entities::ENTITY_REVISION_DOMAIN
+                && self.reserved.contains(&change.key)
+        }) {
+            return Ok(true);
+        }
+        Ok(action.entities.as_ref().is_some_and(|entities| {
+            entities
+                .read_keys()
+                .any(|key| self.reserved.contains(key) && !self.shared_reads.contains_key(key))
+        }))
+    }
     /// A rejected submission leaves the payload with its planner, consumes no
     /// transaction ID and holds no keys. Mirror permits cancel on drop before
     /// acceptance; afterwards the queue owns an armed permit until apply.

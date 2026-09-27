@@ -17,6 +17,8 @@ mod mobile_tests;
 mod mossbun_tests;
 #[path = "registered_tests.rs"]
 mod registered_tests;
+#[path = "response_fairness_tests.rs"]
+mod response_fairness_tests;
 #[path = "support_reads_tests.rs"]
 mod support_reads_tests;
 use crate::items::{ItemId, STICK};
@@ -866,7 +868,7 @@ fn full_queue_of_distinct_unavailable_ticks_rotates_to_ready_due_work() {
     }
     let mut state = crate::server::server_state_with_startup(7, path.clone(), 1, startup).unwrap();
     state.world.get_chunk(world_to_chunk(0, 80, 0).0).unwrap();
-    let mut spawns: Vec<_> = (0..super::super::MAX_DEFERRED_DURABLE_ACTIONS)
+    let mut spawns: Vec<_> = (0..super::super::MAX_DURABLE_LANE_ACTIONS)
         .map(|index| EntitySpawn::Mobile {
             entity_type: blocked_type,
             position: [1_000.5 + index as f32 * 0.001, 80.0, 0.5],
@@ -885,7 +887,7 @@ fn full_queue_of_distinct_unavailable_ticks_rotates_to_ready_due_work() {
     super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(6));
     assert_eq!(
         state.durability.queued.len(),
-        super::super::MAX_DEFERRED_DURABLE_ACTIONS
+        super::super::MAX_DURABLE_LANE_ACTIONS
     );
     assert!(
         !state
@@ -899,7 +901,7 @@ fn full_queue_of_distinct_unavailable_ticks_rotates_to_ready_due_work() {
         .unwrap();
     assert_eq!(
         state.durability.queued.len(),
-        super::super::MAX_DEFERRED_DURABLE_ACTIONS
+        super::super::MAX_DURABLE_LANE_ACTIONS
     );
     super::super::coordinator::queue_interaction_actions(&mut state, TickId::new(7));
     assert!(
@@ -922,7 +924,7 @@ fn full_queue_of_distinct_unavailable_ticks_rotates_to_ready_due_work() {
         Some(&8)
     );
     assert!(
-        ids[..256]
+        ids[..ids.len() - 1]
             .iter()
             .all(|id| state.entities.snapshot(*id).unwrap().revision == 1)
     );

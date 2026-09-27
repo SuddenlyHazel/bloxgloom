@@ -249,6 +249,7 @@ pub(crate) mod actors;
 mod admin;
 mod entities;
 mod kiln;
+mod mesh_queue;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
@@ -287,7 +288,6 @@ struct ClientApp {
     entity_registry: EntityClientRegistry,
     pending_mesh: HashMap<ChunkKey, u64>,
     urgent_mesh: std::collections::HashSet<ChunkKey>,
-    edited_mesh: std::collections::HashSet<ChunkKey>,
     lighting_revisions: HashMap<ChunkKey, u64>,
     light_samples: HashMap<ChunkKey, (u64, Box<[LightSample]>)>,
     next_lighting_revision: u64,
@@ -355,7 +355,6 @@ impl ClientApp {
             entity_registry,
             pending_mesh: HashMap::new(),
             urgent_mesh: std::collections::HashSet::new(),
-            edited_mesh: std::collections::HashSet::new(),
             lighting_revisions: HashMap::new(),
             light_samples: HashMap::new(),
             next_lighting_revision: 1,
@@ -753,17 +752,21 @@ impl ClientApp {
     }
 
     fn queue_edited_chunk_relight(&mut self, key: ChunkKey) {
-        trace::event(format_args!("relight {key:?}"));
-        self.edited_mesh.insert(key);
+        trace::event(format_args!(
+            "client applied {key:?} version={:?}",
+            self.chunks.get(&key).map(|chunk| chunk.version)
+        ));
         self.queue_relight(key, true);
-        // The light footprint belongs to the edit too: rebuilding only its
-        // own chunk urgently leaves neighbouring faces lit by an old lamp.
-        self.urgent_mesh.extend(
-            self.chunks
-                .keys()
-                .copied()
-                .filter(|affected| lighting_depends_on(*affected, key)),
-        );
+        // Direct geometry and face seams share the immediate lane. The wider
+        // propagated-light footprint is still invalidated above, but refines in
+        // the background instead of delaying the edit behind whole columns.
+        self.urgent_mesh
+            .extend(self.chunks.keys().copied().filter(|affected| {
+                i64::from(affected.x).abs_diff(i64::from(key.x))
+                    + i64::from(affected.y).abs_diff(i64::from(key.y))
+                    + i64::from(affected.z).abs_diff(i64::from(key.z))
+                    <= 1
+            }));
     }
 
     fn lighting_snapshot(&self, key: ChunkKey) -> HashMap<ChunkKey, Arc<Chunk>> {
@@ -1000,7 +1003,6 @@ impl ClientApp {
         self.pending_mesh
             .retain(|key, _| self.chunks.contains_key(key));
         self.urgent_mesh.retain(|key| self.chunks.contains_key(key));
-        self.edited_mesh.retain(|key| self.chunks.contains_key(key));
         for &(key, modified) in &evicted {
             self.mesher.invalidate(key, None);
             if modified {
@@ -1013,7 +1015,9 @@ impl ClientApp {
             }
             self.pending_upload
                 .retain(|mesh| self.chunks.contains_key(&mesh.key));
-            for _ in 0..(128usize.saturating_sub(self.pending_upload.len())).min(64) {
+            // Always drain the bounded result mailbox: otherwise a full bulk
+            // upload backlog hides newly completed immediate edits behind it.
+            for _ in 0..64 {
                 let Ok(result) = self.mesher.results.try_recv() else {
                     break;
                 };
@@ -1024,6 +1028,14 @@ impl ClientApp {
                     .is_some_and(|chunk| chunk.version == mesh.version)
                     && self.lighting_revisions.get(&mesh.key) == Some(&mesh.lighting_revision)
                 {
+                    let immediate = self.urgent_mesh.contains(&mesh.key);
+                    let limit = if immediate { 128 } else { 112 };
+                    if self.pending_upload.len() >= limit {
+                        // Keep the latest requested revision for a bounded retry;
+                        // never let bulk results consume the immediate reserve.
+                        self.pending_mesh.insert(mesh.key, mesh.lighting_revision);
+                        continue;
+                    }
                     self.light_samples
                         .insert(mesh.key, (mesh.lighting_revision, result.lighting));
                     if self.urgent_mesh.contains(&mesh.key) {
@@ -1048,16 +1060,15 @@ impl ClientApp {
                     break;
                 }
                 self.urgent_mesh.remove(&key);
-                self.edited_mesh.remove(&key);
             }
         }
         let Some(seed) = self.world_seed else {
             return;
         };
-        for _ in 0..16 {
+        for attempt in 0..16 {
             let Some(key) = self.pending_mesh.keys().copied().min_by_key(|key| {
                 (
-                    !self.edited_mesh.contains(key),
+                    self.urgent_mesh.contains(key) == (attempt % 4 == 3),
                     mesh_priority(
                         *key,
                         center,
@@ -1087,16 +1098,14 @@ impl ClientApp {
                 key,
                 self.urgent_mesh.contains(&key)
             ));
-            let sender = if self.edited_mesh.contains(&key) {
-                &self.mesher.edit_jobs
-            } else if self.urgent_mesh.contains(&key) {
+            let sender = if self.urgent_mesh.contains(&key) {
                 &self.mesher.urgent_jobs
             } else {
                 &self.mesher.jobs
             };
             if let Err(TrySendError::Full(_job)) = sender.try_send(job) {
                 self.pending_mesh.insert(key, revision);
-                break;
+                continue;
             }
         }
         if self.chunks.len() > MAX_CHUNKS {

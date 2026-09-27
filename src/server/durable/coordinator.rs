@@ -9,6 +9,8 @@ use super::*;
 #[cfg(test)]
 use crate::server::durable;
 use crate::server::{State, handle_message};
+#[path = "coordinator/scheduling.rs"]
+mod scheduling;
 
 enum PlannedAction {
     Commit(Box<CommitAction>),
@@ -32,7 +34,10 @@ pub(in crate::server) fn handle_live_message(
         _ => None,
     };
     if let Some(action_id) = action_id {
-        if state.durability.queued.len() >= MAX_DEFERRED_DURABLE_ACTIONS {
+        crate::response_trace::event(format_args!("server receive {action_id} client={id}"));
+        if state.durability.queued.len() >= MAX_DEFERRED_DURABLE_ACTIONS
+            || !scheduling::command_room(state, id)
+        {
             defer_action(state, id, action_id);
         } else {
             state.durability.queued.push_back(DurableRequest::Command {
@@ -99,25 +104,23 @@ pub(in crate::server) fn process_durable_actions(
         }
     }
 
+    scheduling::run(state, tick)?;
+    submit_dirty_checkpoints(state);
+    fail_if_durability_failed(state)
+}
+
+fn process_queue(
+    state: &mut State,
+    tick: TickId,
+    preplanned: &mut std::collections::VecDeque<io::Result<Option<CommitAction>>>,
+    blocked_profiles: &mut HashSet<u128>,
+) -> io::Result<()> {
     let mut attempts = state
         .durability
         .queued
         .len()
         .min(MAX_PENDING_DURABLE_ACTIONS);
     let mut deferred = std::collections::VecDeque::new();
-    let mut blocked_profiles = HashSet::new();
-    // The tick's motion commits first, as one WAL record (see
-    // `stage_motion_batch`): every step due in this tick is computed from
-    // tick-start state and applied before the tick ends, so the trajectory
-    // never depends on receipt timing. Commands, pickups, and expiry keep
-    // their queue order behind it in the loop below.
-    let (motion_staged, mut preplanned) = stage_motion_batch(state, tick, &mut deferred)?;
-    if motion_staged {
-        // Apply tick-start motion before admitting commands. Holding its terrain
-        // read reservations through command admission lets continuously ticking
-        // creatures starve nearby edits on every tick, even after restart.
-        drain_staged_receipts(state)?;
-    }
     while attempts > 0 {
         attempts -= 1;
         let Some(request) = state.durability.queued.pop_front() else {
@@ -195,20 +198,9 @@ pub(in crate::server) fn process_durable_actions(
             request,
             DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. }
         ) {
-            let planned = preplanned
+            preplanned
                 .pop_front()
-                .expect("requeued entity plan has a result");
-            if motion_staged {
-                // Non-batchable work was also captured at tick start. Motion
-                // may have changed its neighbours, so release any prepared
-                // resources and capture again against the newly applied state.
-                if let Ok(Some(action)) = &planned {
-                    cancel_prepared_entities(state, action);
-                }
-                plan_durable_request(state, &request, tick)
-            } else {
-                planned
-            }
+                .expect("requeued entity plan has a result")
         } else {
             plan_durable_request(state, &request, tick)
         };
@@ -308,6 +300,12 @@ pub(in crate::server) fn process_durable_actions(
                 };
                 match state.durability.try_stage(tick, &action, entity_permit) {
                     Ok(true) => {
+                        if let Some(action_id) = action.action_id {
+                            crate::response_trace::event(format_args!(
+                                "server admitted {action_id} tick={}",
+                                tick.get()
+                            ));
+                        }
                         if let Some(seed) = &action.fire_seed
                             && let Err(error) = state.fire.mark_seed_submitted(seed)
                         {
@@ -355,16 +353,6 @@ pub(in crate::server) fn process_durable_actions(
         }
     }
     state.durability.queued.append(&mut deferred);
-    if motion_staged {
-        // Motion is a pure function of the tick: the batch staged above is
-        // committed and applied before this tick ends, so the next tick
-        // plans from applied state. Receipt (fsync) latency stretches this
-        // tick's wall time but can never change the trajectory. Ticks with
-        // no motion keep their async receipt path, so command and pickup
-        // reservation fencing is unchanged.
-        drain_staged_receipts(state)?;
-    }
-    submit_dirty_checkpoints(state);
     fail_if_durability_failed(state)
 }
 
@@ -460,6 +448,11 @@ fn stage_motion_batch(
             Ok(Some(action))
                 if batchable_motion(&action) && candidates.len() < MAX_MOTION_BATCH =>
             {
+                if state.durability.action_conflicts(&action)? {
+                    cancel_prepared_entities(state, &action);
+                    deferred.push_back(request);
+                    continue;
+                }
                 candidates.push((request, action));
             }
             Ok(Some(action)) => {
@@ -651,14 +644,26 @@ pub(in crate::server) fn queue_interaction_actions(state: &mut State, tick: Tick
     }
     let mut ids: Vec<_> = state.clients.keys().copied().collect();
     ids.sort_unstable();
+    let start = ids.partition_point(|id| *id <= state.durability.pickup_cursor);
+    ids.rotate_left(start);
+    let mut pickups = state
+        .durability
+        .queued
+        .iter()
+        .filter(|r| matches!(r, DurableRequest::Pickup { .. }))
+        .count();
     for id in ids {
         if state.durability.retry_pickups.contains(&id) {
             continue;
         }
-        if state.durability.queued.len() >= MAX_DEFERRED_DURABLE_ACTIONS {
+        if state.durability.queued.len() >= MAX_DEFERRED_DURABLE_ACTIONS
+            || pickups >= scheduling::PICKUP_CAPACITY
+        {
             break;
         }
         state.durability.retry_pickups.insert(id);
+        state.durability.pickup_cursor = id;
+        pickups += 1;
         state
             .durability
             .queued
@@ -689,7 +694,18 @@ fn queue_entity_ticks(state: &mut State, tick: TickId) {
     for id in returned_wakes {
         state.durability.hint_entity_wake(id);
     }
-    let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
+    let available = MAX_DEFERRED_DURABLE_ACTIONS
+        .saturating_sub(state.durability.queued.len())
+        .min(
+            scheduling::LANE_CAPACITY.saturating_sub(
+                state
+                    .durability
+                    .queued
+                    .iter()
+                    .filter(|r| !scheduling::player_request(r))
+                    .count(),
+            ),
+        );
     // Reserve one bounded examination for each nonempty lane. Ordinary dues
     // get the remaining budget; scarce slots rotate by admission opportunity,
     // not tick parity. Sustained hints cannot hide sleeping or ordinary work.
@@ -783,7 +799,18 @@ fn queue_woken_entity_ticks(state: &mut State) {
     if state.durability.pending_wakes.is_empty() {
         return;
     }
-    let available = MAX_DEFERRED_DURABLE_ACTIONS.saturating_sub(state.durability.queued.len());
+    let available = MAX_DEFERRED_DURABLE_ACTIONS
+        .saturating_sub(state.durability.queued.len())
+        .min(
+            scheduling::LANE_CAPACITY.saturating_sub(
+                state
+                    .durability
+                    .queued
+                    .iter()
+                    .filter(|r| !scheduling::player_request(r))
+                    .count(),
+            ),
+        );
     if available == 0 {
         return;
     }

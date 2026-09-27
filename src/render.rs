@@ -132,6 +132,8 @@ pub struct Renderer {
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
     pending_order: VecDeque<ChunkKey>,
+    pending_immediate: std::collections::HashSet<ChunkKey>,
+    upload_burst: u8,
     size: PhysicalSize<u32>,
 }
 
@@ -252,6 +254,8 @@ impl Renderer {
             meshes: HashMap::new(),
             pending: HashMap::new(),
             pending_order: VecDeque::new(),
+            pending_immediate: std::collections::HashSet::new(),
+            upload_burst: 0,
             size,
         })
     }
@@ -330,7 +334,12 @@ impl Renderer {
         {
             return Ok(());
         }
-        if !self.pending.contains_key(&mesh.key) && self.pending.len() >= MAX_PENDING_MESHES {
+        let limit = if urgent {
+            MAX_PENDING_MESHES
+        } else {
+            MAX_PENDING_MESHES.saturating_sub(16)
+        };
+        if !self.pending.contains_key(&mesh.key) && self.pending.len() >= limit {
             return Err(mesh);
         }
         order_pending_mesh(
@@ -339,6 +348,9 @@ impl Renderer {
             self.pending.contains_key(&mesh.key),
             urgent,
         );
+        if urgent {
+            self.pending_immediate.insert(mesh.key);
+        }
         self.pending.insert(mesh.key, mesh);
         Ok(())
     }
@@ -346,11 +358,13 @@ impl Renderer {
     /// An authoritative edit supersedes a queued mesh but not the last
     /// rendered one. Keep drawing until its replacement is ready.
     pub fn discard_pending_chunk(&mut self, key: ChunkKey) {
+        self.pending_immediate.remove(&key);
         self.pending.remove(&key);
         self.pending_order.retain(|pending_key| *pending_key != key);
     }
 
     pub fn remove_chunk(&mut self, key: ChunkKey) {
+        self.pending_immediate.remove(&key);
         self.meshes.remove(&key);
         self.pending.remove(&key);
         self.pending_order.retain(|pending_key| *pending_key != key);
@@ -360,11 +374,17 @@ impl Renderer {
         let mut bytes = 0;
         let mut count = 0;
         while count < UPLOAD_MESHES_PER_FRAME {
-            let Some(key) = self.pending_order.front().copied() else {
+            let index = next_upload_index(
+                &self.pending_order,
+                &self.pending_immediate,
+                self.upload_burst,
+            );
+            let Some(key) = self.pending_order.get(index).copied() else {
                 break;
             };
             let Some(mesh) = self.pending.get(&key) else {
-                self.pending_order.pop_front();
+                self.pending_order.remove(index);
+                self.pending_immediate.remove(&key);
                 continue;
             };
             let mesh_bytes = mesh.byte_len();
@@ -373,10 +393,15 @@ impl Renderer {
             }
             let mesh = self.pending.remove(&key).unwrap();
             crate::client::trace::event(format_args!(
-                "upload {key:?} rev={}",
-                mesh.lighting_revision
+                "upload {key:?} version={} rev={}",
+                mesh.version, mesh.lighting_revision
             ));
-            self.pending_order.pop_front();
+            self.pending_order.remove(index);
+            self.upload_burst = if self.pending_immediate.remove(&key) {
+                (self.upload_burst + 1).min(3)
+            } else {
+                0
+            };
             if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 self.meshes.remove(&key);
                 continue;
@@ -605,10 +630,28 @@ impl Renderer {
         }
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);
+        if uploaded_chunks != 0 {
+            crate::client::trace::event(format_args!("present uploaded_chunks={uploaded_chunks}"));
+        }
         if reconfigure_after_present {
             self.surface.configure(&self.device, &self.config);
         }
         Ok(stats)
+    }
+}
+
+fn next_upload_index(
+    order: &VecDeque<ChunkKey>,
+    immediate: &std::collections::HashSet<ChunkKey>,
+    burst: u8,
+) -> usize {
+    if burst >= 3 {
+        order
+            .iter()
+            .position(|key| !immediate.contains(key))
+            .unwrap_or(0)
+    } else {
+        0
     }
 }
 

@@ -77,7 +77,7 @@ fn latest_edit_mesh_survives_a_superseded_kiln_relight_backlog() {
     // Model jobs already queued when a newer edit invalidates their light
     // fields. Publish invalidation first so cancellation is race-independent.
     for job in queued {
-        app.mesher.urgent_jobs.send(job).unwrap();
+        assert!(app.mesher.urgent_jobs.try_send(job).is_ok());
     }
     let mut obsolete = 0;
     loop {
@@ -299,10 +299,9 @@ fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
             block,
         });
         assert!(app.urgent_mesh.contains(&left));
-        assert!(app.edited_mesh.contains(&left));
         assert!(
-            !app.edited_mesh.contains(&right),
-            "lighting neighbours must not occupy the direct-edit lane"
+            !app.urgent_mesh.contains(&ChunkKey { x: 1, y: -1, z: 1 }),
+            "distant lighting refinement must leave the immediate lane to geometry and face seams"
         );
         assert!(
             app.urgent_mesh.contains(&right),
