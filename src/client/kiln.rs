@@ -1,17 +1,19 @@
 //! Workstation controls over replicated entity state and durable interactions.
 use super::*;
-use crate::protocol::kiln::KilnView;
+use crate::protocol::workstation::WorkstationView;
 
 impl ClientApp {
     pub(super) fn open_aimed_kiln(&mut self) -> bool {
         let Some(hit) = self.aimed_block() else {
             return false;
         };
-        if !entities::kiln::is_kiln_hit(hit, &self.catalog) {
+        if !entities::kiln::is_kiln_hit(hit, &self.catalog)
+            && hit.block_id != crate::content::HOPPER_STATE
+        {
             return false;
         }
         let Some(entity) = self.replicas.kiln_at(hit.block) else {
-            self.show_status("Kiln state is still loading");
+            self.show_status("Workstation state is still loading");
             return true;
         };
         let id = entity.id;
@@ -27,8 +29,8 @@ impl ClientApp {
             .filter(|entity| entity.id == id)
     }
 
-    pub(super) fn kiln_view(&self) -> Option<KilnView> {
-        KilnView::decode(&self.current_kiln()?.payload)
+    pub(super) fn kiln_view(&self) -> Option<WorkstationView> {
+        WorkstationView::decode(&self.current_kiln()?.payload)
     }
 
     pub(super) fn validate_kiln_screen(&mut self) {
@@ -44,7 +46,7 @@ impl ClientApp {
             && !self.disconnected;
         if !valid {
             self.set_screen(UiScreen::Playing);
-            self.show_status("Kiln is no longer available");
+            self.show_status("Workstation is no longer available");
         }
     }
 
@@ -53,7 +55,7 @@ impl ClientApp {
             return;
         }
         if let Some(inventory) = self.inventory_source {
-            if slot == 2 {
+            if slot == 2 && self.kiln_view().is_some_and(|v| !v.hopper) {
                 self.show_status("Output is collection only");
                 return;
             }

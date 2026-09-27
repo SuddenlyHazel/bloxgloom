@@ -3,7 +3,7 @@ use super::*;
 impl Catalog {
     pub fn builtins() -> Self {
         let mut catalog = Self::new();
-        const PNGS: [(&str, &[u8], bool, bool, bool); 23] = [
+        const PNGS: [(&str, &[u8], bool, bool, bool); 25] = [
             (
                 "grass_top",
                 include_bytes!("../../assets/textures/blocks/grass_top.png"),
@@ -161,6 +161,20 @@ impl Catalog {
             (
                 "kiln_lit",
                 include_bytes!("../../assets/textures/blocks/kiln_lit.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "hopper_side",
+                include_bytes!("../../assets/textures/blocks/hopper_side.png"),
+                false,
+                false,
+                false,
+            ),
+            (
+                "hopper_top",
+                include_bytes!("../../assets/textures/blocks/hopper_top.png"),
                 false,
                 false,
                 false,
@@ -473,6 +487,51 @@ impl Catalog {
                 })
                 .expect("unique builtin entity type");
         }
+        catalog
+            .register_block(BlockDef {
+                id: HOPPER_BLOCK_TYPE,
+                key: "bloxgloom:hopper".into(),
+                name: "HOPPER".into(),
+                swatch: [0.35, 0.39, 0.42, 1.0],
+                textures: BlockTextures {
+                    top: TextureId(24),
+                    side: TextureId(23),
+                    bottom: TextureId(23),
+                },
+                solid: true,
+                opaque: true,
+                cutout: false,
+                plant: false,
+                replaceable: false,
+                supports_plant: false,
+                flammable: false,
+                emission: 0,
+                reflectance: [100, 110, 120],
+                properties: vec![],
+            })
+            .expect("unique hopper block");
+        catalog
+            .register_state(HOPPER_STATE, HOPPER_BLOCK_TYPE, vec![], None)
+            .expect("unique hopper state");
+        catalog
+            .register_item(ItemDef {
+                id: HOPPER_ITEM,
+                key: "bloxgloom:hopper".into(),
+                name: "HOPPER".into(),
+                swatch: [0.35, 0.39, 0.42, 1.0],
+                texture: TextureId(23),
+                placeable: Some(HOPPER_STATE),
+                sprite: false,
+            })
+            .expect("unique hopper item");
+        catalog
+            .register_entity_type(EntityTypeDef {
+                id: HOPPER_ENTITY_TYPE,
+                key: "bloxgloom:hopper".into(),
+                schema_version: 1,
+                schema_fingerprint: 0x484f_5050_4552_0001,
+            })
+            .expect("unique hopper entity");
         catalog
     }
 }

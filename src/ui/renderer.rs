@@ -20,7 +20,7 @@ struct UiCacheKey {
     selected_slot: usize,
     inventory: [Option<crate::inventory::Stack>; crate::inventory::SLOTS],
     inventory_source: Option<u8>,
-    kiln: Option<crate::protocol::kiln::KilnView>,
+    kiln: Option<crate::protocol::workstation::WorkstationView>,
     kiln_source: Option<u8>,
     admin_enabled: bool,
     admin_page: usize,

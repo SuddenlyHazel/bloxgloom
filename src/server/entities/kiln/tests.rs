@@ -15,6 +15,7 @@ fn registry(catalog: &Arc<Catalog>) -> Arc<EntityTypeRegistry> {
     register_player_entity_type(&mut builder).unwrap();
     crate::server::entities::mossbun::register(&mut builder, catalog).unwrap();
     register_entity_type(&mut builder, catalog.clone()).unwrap();
+    crate::server::entities::hopper::register(&mut builder, catalog).unwrap();
     Arc::new(builder.freeze().unwrap())
 }
 
@@ -170,7 +171,7 @@ fn codec_projects_workstation_contents_and_recipe_progress_without_components() 
     let decoded = codec.decode(&private).unwrap();
     assert_eq!(decoded.downcast_ref::<KilnPayload>(), Some(&payload));
     let public = codec.public_view(&decoded).unwrap();
-    let summary = crate::protocol::kiln::KilnView::decode(&public).unwrap();
+    let summary = crate::protocol::workstation::WorkstationView::decode(&public).unwrap();
     assert_eq!(public.len(), 24);
     assert_eq!(summary.progress, (19 * 255 / 20) as u8);
     assert_eq!(summary.slots[0], payload.slots[0]);

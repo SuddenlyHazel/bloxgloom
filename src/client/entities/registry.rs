@@ -67,6 +67,7 @@ impl EntityClientRegistry {
             registry.register(super::mossbun::adapter(id));
         }
         registry.register(super::kiln::kiln_adapter());
+        registry.register(super::kiln::hopper_adapter());
         registry
     }
 

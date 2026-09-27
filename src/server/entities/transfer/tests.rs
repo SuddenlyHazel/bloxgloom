@@ -4,6 +4,7 @@ use crate::inventory::STACK_LIMIT;
 fn transfer_to(id: u64) -> EntityItemTransfer {
     EntityItemTransfer {
         source: EntityId::new(id).unwrap(),
+        push: false,
         item: crate::items::ItemId(7),
         count: 30,
     }
@@ -23,6 +24,7 @@ fn transfer_intent_rejects_self_pull_and_bad_counts() {
     assert_eq!(
         EntityItemTransfer {
             source: receiver,
+            push: false,
             item: crate::items::ItemId(7),
             count: 1,
         }
@@ -33,6 +35,7 @@ fn transfer_intent_rejects_self_pull_and_bad_counts() {
         assert_eq!(
             EntityItemTransfer {
                 source: EntityId::new(1).unwrap(),
+                push: false,
                 item: crate::items::ItemId(7),
                 count,
             }

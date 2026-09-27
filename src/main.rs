@@ -32,7 +32,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             config.ensure_profile(&config_path)?;
             let (addr, server) = server::start_local_server_with_admin(
                 0xB10C_6100,
-                "world-v8".into(),
+                "world-v9".into(),
                 config.profile,
             )?;
             let client_result = client::run_client_with_admin(&addr.to_string());
@@ -42,7 +42,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
-            let save_dir = args.next().unwrap_or_else(|| "world-v8".to_string());
+            let save_dir = args.next().unwrap_or_else(|| "world-v9".to_string());
             let admission_limit = args
                 .next()
                 .map(|value| value.parse::<usize>())
@@ -205,6 +205,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("usage: mossbun-motion-preview [directory]".into());
             }
             preview::render_mossbun_motion_previews(std::path::Path::new(&path))?;
+        }
+        Some("hopper-preview") => {
+            let path = args.next().unwrap_or_else(|| "hopper-preview".to_string());
+            if args.next().is_some() {
+                return Err("usage: hopper-preview [directory]".into());
+            }
+            preview::render_hopper_previews(std::path::Path::new(&path))?;
         }
         Some("kiln-preview") => {
             let path = args

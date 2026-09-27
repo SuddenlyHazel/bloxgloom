@@ -38,6 +38,7 @@ pub(super) fn drop_world() -> DropWorld {
     register_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     crate::server::entities::register_player_entity_type(&mut builder).unwrap();
     crate::server::entities::register_kiln_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
+    crate::server::entities::hopper::register(&mut builder, &catalog).unwrap();
     crate::server::entities::mossbun::register(&mut builder, &catalog).unwrap();
     let types = Arc::new(builder.freeze().unwrap());
     DropWorld {

@@ -41,6 +41,15 @@ fn action(
 
 #[test]
 fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
+    placement_probe(false);
+}
+
+#[test]
+fn running_hopper_feeds_kiln_while_player_moves_and_places_over_real_tcp() {
+    placement_probe(true);
+}
+
+fn placement_probe(with_hopper: bool) {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -66,6 +75,7 @@ fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
     inventory.slots[1] = Some(Stack::new(STICK, 1));
     inventory.slots[2] = Some(Stack::new(ItemId(crate::world::GRAVEL.0), 128));
     inventory.slots[3] = Some(Stack::new(ItemId(STONE.0), 128));
+    inventory.slots[4] = Some(Stack::new(crate::content::HOPPER_ITEM, 1));
     state.inventory_store.save(0xFACE, &inventory).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -120,14 +130,37 @@ fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
         );
         for burning in [false, true] {
             if burning {
-                for payload in [vec![1, 0, 0, 1, 1, 0], vec![1, 0, 1, 2, 128, 0]] {
+                if with_hopper {
                     let id = next_id();
+                    action(
+                        &mut peer,
+                        &mut chunks,
+                        ClientMessage::Edit {
+                            action_id: id,
+                            x: 0,
+                            y: 82,
+                            z: 1,
+                            block: crate::content::HOPPER_STATE,
+                            slot: 4,
+                        },
+                        id,
+                    );
+                }
+                for mut payload in [vec![1, 0, 0, 1, 1, 0], vec![1, 0, 1, 2, 128, 0]] {
+                    let id = next_id();
+                    let target = if with_hopper { [0, 82, 1] } else { [0, 80, 1] };
+                    if with_hopper {
+                        let entity = chunks.workstation(target);
+                        payload[0] = 2;
+                        payload.extend(entity.id.to_le_bytes());
+                        payload.extend(entity.revision.to_le_bytes());
+                    }
                     action(
                         &mut peer,
                         &mut chunks,
                         ClientMessage::EntityInteract {
                             action_id: id,
-                            target: [0, 80, 1],
+                            target,
                             payload,
                         },
                         id,

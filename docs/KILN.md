@@ -35,7 +35,8 @@ receipts. Local source selection is cosmetic and never removes an item.
 ## Content and checks
 
 Kiln entity schema 2 expands public presentation; the new default world folder
-is `world-v8`. The masonry and dark/lit vents are original generated assets in
+was `world-v8` when that schema landed; Hopper content now makes the default
+`world-v9`. The masonry and dark/lit vents are original generated assets in
 `assets/textures/blocks/`, reproducible with `source/kiln.py`.
 
 Tests exercise backpack transfers and stale-target rejection, public payload

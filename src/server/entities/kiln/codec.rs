@@ -85,7 +85,8 @@ impl EntityPayloadCodec for KilnPayloadCodec {
             .map_or(1, |recipe| recipe.cook_ticks);
         let progress =
             (u32::from(payload.cook_progress) * 255 / u32::from(duration)).min(255) as u8;
-        Ok(crate::protocol::kiln::KilnView {
+        Ok(crate::protocol::workstation::WorkstationView {
+            hopper: false,
             facing: payload.facing.encoded(),
             lit: payload.lit,
             progress,

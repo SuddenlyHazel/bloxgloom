@@ -15,6 +15,12 @@ impl std::ops::Deref for ReplicationProbe {
 }
 
 impl ReplicationProbe {
+    pub(crate) fn workstation(&self, cell: [i32; 3]) -> crate::protocol::PublicEntity {
+        self.replicas
+            .kiln_at(cell)
+            .expect("replicated workstation")
+            .clone()
+    }
     pub(crate) fn new() -> Self {
         Self {
             replicas: Replicas::default(),

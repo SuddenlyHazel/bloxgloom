@@ -5,6 +5,7 @@
 
 mod checkpoint;
 mod codec;
+pub(in crate::server) mod hopper;
 mod kiln;
 mod locomotion;
 mod mobile_pages;

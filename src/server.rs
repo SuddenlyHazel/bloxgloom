@@ -462,8 +462,15 @@ fn server_state_with_startup(
     block_actions.register(
         crate::content::KILN_BLOCK_TYPE,
         BlockActionHooks::new(
-            durable::actions::kiln::plan_place,
-            durable::actions::kiln::plan_break,
+            durable::actions::workstation::plan_place,
+            durable::actions::workstation::plan_break,
+        ),
+    )?;
+    block_actions.register(
+        crate::content::HOPPER_BLOCK_TYPE,
+        BlockActionHooks::new(
+            durable::actions::workstation::plan_place,
+            durable::actions::workstation::plan_break,
         ),
     )?;
     let block_actions = block_actions.freeze();

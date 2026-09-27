@@ -6,7 +6,11 @@ impl UiBuilder<'_> {
         let panel = layout.kiln_panel();
         self.panel(panel);
         self.text(
-            "KILN",
+            if frame.kiln.as_ref().is_some_and(|v| v.hopper) {
+                "HOPPER"
+            } else {
+                "KILN"
+            },
             panel.x + 20.0 * self.scale,
             panel.y + 14.0 * self.scale,
             1.0,
@@ -18,7 +22,11 @@ impl UiBuilder<'_> {
         };
         let state = if kiln.lit { "BURNING" } else { "UNLIT" };
         self.text(
-            &format!("{state}  /  FUEL {:.1}S", f32::from(kiln.fuel) * 0.4),
+            &if kiln.hopper {
+                "FLOW: DOWN  /  3 X 128 CAPACITY".to_owned()
+            } else {
+                format!("{state}  /  FUEL {:.1}S", f32::from(kiln.fuel) * 0.4)
+            },
             panel.x + 150.0 * self.scale,
             panel.y + 18.0 * self.scale,
             0.55,
@@ -30,7 +38,11 @@ impl UiBuilder<'_> {
                 continue;
             };
             self.text(
-                ["FUEL", "INPUT", "OUTPUT"][slot as usize],
+                if kiln.hopper {
+                    ["SLOT 1", "SLOT 2", "SLOT 3"][slot as usize]
+                } else {
+                    ["FUEL", "INPUT", "OUTPUT"][slot as usize]
+                },
                 rect.x,
                 rect.y - 15.0 * self.scale,
                 0.5,
@@ -63,10 +75,12 @@ impl UiBuilder<'_> {
                 );
             }
         }
-        if let (Some(input), Some(output)) = (
-            layout.rect(UiControl::KilnSlot(1)),
-            layout.rect(UiControl::KilnSlot(2)),
-        ) {
+        if !kiln.hopper
+            && let (Some(input), Some(output)) = (
+                layout.rect(UiControl::KilnSlot(1)),
+                layout.rect(UiControl::KilnSlot(2)),
+            )
+        {
             let x = input.x + input.width + 12.0 * self.scale;
             let width = output.x - x - 16.0 * self.scale;
             self.rect(
@@ -85,7 +99,11 @@ impl UiBuilder<'_> {
             );
         }
         self.text(
-            "GRAVEL > STONE  /  FUEL: WOOD, STICKS, SAPLINGS",
+            if kiln.hopper {
+                "PULLS FROM ABOVE  /  FEEDS BELOW  /  ONE PER PULSE"
+            } else {
+                "GRAVEL > STONE  /  FUEL: WOOD, STICKS, SAPLINGS"
+            },
             panel.x + 20.0 * self.scale,
             panel.y + 121.0 * self.scale,
             0.5,

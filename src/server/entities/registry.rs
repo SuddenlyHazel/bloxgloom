@@ -55,7 +55,7 @@ pub struct EntityTickPlan {
     /// Notification-only wake requests, with the same delivery contract as
     /// [`EntityInteractionPlan::wakes`].
     pub wakes: Vec<EntityId>,
-    /// Optional pull of items from one visible neighbour. The planner only
+    /// Optional push or pull of items with one visible neighbour. The planner only
     /// declares intent; the trusted durable layer resolves both snapshots,
     /// runs both pure exchange hooks, and stages both payload updates as one
     /// atomic batch. `None` plans the tick's own payload alone.
@@ -249,8 +249,8 @@ impl EntityTypeDescriptor {
     /// durable layer. Policies never see this: they only declare intent.
     /// `None` is not an error by itself: a tick plan naming this type as a
     /// transfer endpoint is rejected as a planner bug instead.
-    pub fn transfer_policy(&self) -> Option<&dyn EntityTransferPolicy> {
-        self.transfer_policy.as_deref()
+    pub fn transfer_policy(&self) -> Option<&Arc<dyn EntityTransferPolicy>> {
+        self.transfer_policy.as_ref()
     }
 
     /// Declared chunk read radius captured for interaction planning.

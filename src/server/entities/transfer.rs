@@ -1,7 +1,7 @@
 //! Cross-entity item transfer declarations and the pure exchange contract.
 //!
 //! Nothing can move an item between two entities except through here. A tick
-//! planner declares a pull (`EntityItemTransfer`) on its own schedule; the
+//! planner declares a push or pull (`EntityItemTransfer`) on its own schedule; the
 //! trusted durable layer (`super::super::durable::actions::entity`) resolves
 //! both snapshots, runs both pure exchange hooks, and stages both payload
 //! updates as one `Operation::Batch` with real `before` preimages on both
@@ -29,13 +29,53 @@ use crate::content::Catalog;
 use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
 
-/// One pull of `count` of `item` from `source`, initiated by the receiving
-/// entity on its own schedule. A lost wake costs latency and never state: the
+/// Exact, component-preserving slot operations shared by inventory ports.
+pub(super) fn put(slot: &mut Option<Stack>, stack: &Stack) -> bool {
+    if stack.count == 0 || stack.count > STACK_LIMIT {
+        return false;
+    }
+    match slot {
+        None => {
+            *slot = Some(stack.clone());
+            true
+        }
+        Some(old)
+            if old.item == stack.item
+                && old.components == stack.components
+                && u32::from(old.count) + u32::from(stack.count) <= u32::from(STACK_LIMIT) =>
+        {
+            old.count += stack.count;
+            true
+        }
+        _ => false,
+    }
+}
+
+pub(super) fn take(slot: &mut Option<Stack>, count: u16) -> Option<Stack> {
+    let old = slot.as_mut()?;
+    if count == 0 || count > old.count {
+        return None;
+    }
+    let mut taken = old.clone();
+    taken.count = count;
+    old.count -= count;
+    if old.count == 0 {
+        *slot = None;
+    }
+    Some(taken)
+}
+
+/// One transfer of `count` of `item` with a visible peer. `push == false`
+/// initiates a pull from `source`; `push == true` sends to that peer instead.
+/// The initiating entity advances its own schedule, preserving the peer's.
+/// A lost wake costs latency and never state: the
 /// sender never deducts speculatively, it only loses stock inside the atomic
 /// batch the receiver's trusted plan assembles.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntityItemTransfer {
     pub source: EntityId,
+    /// When true, `source` names the destination and the ticking entity sends.
+    pub push: bool,
     pub item: ItemId,
     pub count: u16,
 }
@@ -58,6 +98,13 @@ impl EntityItemTransfer {
 /// Pure per-type item exchange used only through the trusted transfer plan.
 /// Implementations must be deterministic functions of their inputs.
 pub trait EntityTransferPolicy: Send + Sync + 'static {
+    /// Automation discovery uses only the registered public projection.
+    fn offers(&self, _public: &[u8]) -> Vec<Stack> {
+        Vec::new()
+    }
+    fn accepts(&self, _public: &[u8], _stack: &Stack, _catalog: &Catalog) -> bool {
+        false
+    }
     /// Candidate sender payload after removing `count` of `item`, plus the
     /// exact taken stack. `None` defers: stock is unavailable right now.
     fn withdraw(

@@ -8,7 +8,7 @@ The world generates on demand as players travel, with no fixed horizontal bounda
 
 Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. This is the default lighting mode. In Settings, `LIGHTING: BOUNCED` enables a more expensive single diffuse RGB bounce from block surfaces, including color bleed. It is a voxel approximation, not path tracing or multi-bounce GI. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits or quality changes, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
 
-The current default save directory is `world-v8/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
+The current default save directory is `world-v9/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. This is groundwork for future mod loading, not a mod-file format or scripting API yet.
 
@@ -28,12 +28,12 @@ With a recent Rust toolchain, run a local game with one command:
 cargo run
 ```
 
-This starts a local server and client in the same process and saves edits in `world-v8/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
+This starts a local server and client in the same process and saves edits in `world-v9/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
 
 For a dedicated multiplayer server, start the server in one terminal:
 
 ```sh
-cargo run -- server 127.0.0.1:4000 world-v8
+cargo run -- server 127.0.0.1:4000 world-v9
 ```
 
 Start one or more clients in other terminals:
@@ -42,7 +42,7 @@ Start one or more clients in other terminals:
 cargo run -- client 127.0.0.1:4000
 ```
 
-The server defaults to `127.0.0.1:4000` and saves edits in `world-v8/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines have passed, but the combined gameplay acceptance workload remains unverified.
+The server defaults to `127.0.0.1:4000` and saves edits in `world-v9/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines have passed, but the combined gameplay acceptance workload remains unverified.
 
 Click the window to capture the mouse. Use WASD to fly horizontally, Space and Shift to ascend and descend. The crosshair marks the targeted block: left click harvests it, and right click places a block from the selected hotbar stack against it. Flowers drop themselves; tall grass can drop seeds, and leaves can drop leaves, sticks, and saplings. Seeds, sticks, and saplings are inventory items, not placeable blocks. Walk near a drop to pick it up. Use 1–9 or the mouse wheel to select a hotbar slot. Press Q to drop one selected item, or Shift+Q to drop its full stack.
 
@@ -55,6 +55,8 @@ Mossbuns now choose nearby destinations and use bounded worker-side A* to walk a
 **Use the Kiln:** in F4, run `give bloxgloom:kiln 1`, `give bloxgloom:gravel 16`, and `give bloxgloom:stick 4`. Place the Kiln with two blocks of vertical clearance, then right-click either half to open it. Select a backpack stack, then click **INPUT** for gravel or **FUEL** for sticks. Select **OUTPUT**, then an empty/compatible backpack slot to collect stone. Left-click transfers as much as fits (up to 128); right-click the destination transfers one. Select the selected source again to cancel. E or Escape closes the screen; Shift+right-click places a block against the Kiln instead of opening it. The existing R/Shift+R and F/Shift+F hotbar shortcuts remain available.
 
 The Kiln cooks one gravel into one stone in four 0.4-second simulation pulses. Wood, sticks, saplings, and other registered flammable block items are fuel. Its contents, fuel, and progress persist; breaking either half removes the whole Kiln and drops its remaining contents. This is a shared workstation: nearby players receive its item/count summary, while item components stay private. Transfers and cooking use the same entity transactions, worker scheduling, journal, and committed replication as Mossbun. See [Kiln implementation](docs/KILN.md).
+
+**Automate with Hoppers:** use F4 to `give bloxgloom:hopper 2`. Build a vertical chain: **Hopper → Kiln (two blocks tall) → Hopper**, with all four blocks touching. Hold Shift while placing against a workstation. Right-click the top Hopper and load sticks into slot 1, then gravel into slot 2. The Hopper feeds fuel and recipe input into the Kiln; the bottom Hopper collects finished stone. Each Hopper has three 128-item slots and tries one transfer every 20 simulation ticks, output first, then input if output cannot move. All three slots can be loaded or emptied using the same source/destination controls as the Kiln. It pulls from inventories directly above and feeds inventories directly below; loose world drops are not collected. See [Hopper implementation](docs/HOPPER.md).
 
 Blocks are now finite: the server owns inventory, drops, pickup, and placement. Breaking a block pops its drop upward; resting drops hover and spin, then fly toward the player when picked up. A full inventory leaves drops in the world. Inventory and world drops persist in the server save directory; drops expire after ten minutes. Each OS user has a persistent local profile ID for their inventory and saved position; simultaneous connections with that same profile are rejected. Exiting the local game saves the last authoritative position, and restarting restores it unless that position has become obstructed. Movement remains server-authoritative with block collision; gravity and other survival systems are not implemented yet. The inventory/drop protocol is versioned; older clients must be rebuilt.
 
@@ -211,6 +213,8 @@ Run `cargo run -- mossbun-preview mossbuns.png` to inspect two Mossbuns and a pl
 Run `cargo run --release -- mossbun-motion-preview mossbun-motion-previews` for six frames of walking, stopping, falling, and landing through the production client animator and actor shader.
 
 Run `cargo run --release -- kiln-preview kilns.png` to inspect unlit/lit Kilns. `ui-preview` includes the Kiln screen at desktop, compact, and enlarged UI sizes.
+
+Run `cargo run --release -- hopper-preview hopper-previews` for the Hopper/Kiln chain and desktop/compact Hopper screens.
 
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 

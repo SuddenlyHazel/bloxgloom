@@ -39,6 +39,19 @@ pub(in crate::client) fn kiln_adapter() -> EntityAdapter {
     }
 }
 
+pub(in crate::client) fn hopper_adapter() -> EntityAdapter {
+    EntityAdapter {
+        entity_type: crate::content::HOPPER_ENTITY_TYPE,
+        project_avatar: no_avatar,
+        hit_test: |hit, catalog| {
+            catalog
+                .state(hit.block_id)
+                .is_some_and(|s| s.block_type == crate::content::HOPPER_BLOCK_TYPE)
+        },
+        interact: |_, _, _, _| None,
+    }
+}
+
 pub(in crate::client) fn is_kiln_hit(hit: Hit, catalog: &Catalog) -> bool {
     catalog
         .state(hit.block_id)
@@ -95,6 +108,9 @@ fn request_bytes(operation: u8, kiln_slot: u8, hotbar_slot: u8) -> Vec<u8> {
 fn no_avatar(
     entity: &crate::protocol::PublicEntity,
 ) -> Result<Option<crate::render::VisualAvatar>, ()> {
-    crate::protocol::kiln::KilnView::decode(&entity.payload).ok_or(())?;
+    let view = crate::protocol::workstation::WorkstationView::decode(&entity.payload).ok_or(())?;
+    if view.hopper != (entity.entity_type == crate::content::HOPPER_ENTITY_TYPE) {
+        return Err(());
+    }
     Ok(None)
 }

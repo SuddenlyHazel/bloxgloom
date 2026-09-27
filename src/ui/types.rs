@@ -95,7 +95,7 @@ pub struct UiFrame<'a> {
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
     pub inventory_source: Option<u8>,
-    pub kiln: Option<crate::protocol::kiln::KilnView>,
+    pub kiln: Option<crate::protocol::workstation::WorkstationView>,
     pub kiln_source: Option<u8>,
     pub admin_enabled: bool,
     pub admin_page: usize,

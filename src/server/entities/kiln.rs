@@ -7,6 +7,7 @@
 mod codec;
 mod model;
 mod planning;
+mod port;
 
 use super::registry::{EntityTypeRegistration, EntityTypeRegistryBuilder};
 use super::types::{CellCoord, EntityError};
@@ -112,6 +113,12 @@ pub(in crate::server) fn register_entity_type_with_recipes(
         }),
     })?;
     builder.register_interaction_policy(KILN_ENTITY_TYPE, Arc::new(KilnInteractionPolicy))?;
+    builder.register_transfer_policy(
+        KILN_ENTITY_TYPE,
+        Arc::new(port::Port {
+            recipes: recipes.clone(),
+        }),
+    )?;
     builder.register_tick_planner(KILN_ENTITY_TYPE, Arc::new(KilnTickPlanner { recipes }))
 }
 

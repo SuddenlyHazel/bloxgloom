@@ -1,4 +1,6 @@
 use super::*;
+#[path = "hopper_tests.rs"]
+mod hopper_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
 use crate::items::{ItemId, STICK};
@@ -3193,6 +3195,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
                 block_states: Vec::new(),
                 wakes: Vec::new(),
                 transfer: Some(EntityItemTransfer {
+                    push: false,
                     source,
                     item: self.item,
                     count: self.count,
@@ -3216,6 +3219,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
             .unwrap_or(0);
         let transfer =
             (own.count < self.target && source_count >= self.count).then(|| EntityItemTransfer {
+                push: false,
                 source: peer.expect("source has stock, so a peer is visible").id,
                 item: self.item,
                 count: self.count,

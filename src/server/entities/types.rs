@@ -229,9 +229,21 @@ pub struct EntityPublicView {
 /// which it already holds as a snapshot. This carries only public
 /// projections: another entity's private payload can never appear here, and
 /// any path from a planner to one is a bug.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EntityView {
     entries: Vec<EntityPublicView>,
+    inventories: std::collections::BTreeMap<
+        EntityId,
+        std::sync::Arc<dyn super::transfer::EntityTransferPolicy>,
+    >,
+}
+
+impl std::fmt::Debug for EntityView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntityView")
+            .field("entries", &self.entries)
+            .finish()
+    }
 }
 
 impl EntityView {
@@ -242,7 +254,41 @@ impl EntityView {
         entries.sort_by_key(|view| view.id);
         entries.dedup_by_key(|view| view.id);
         entries.retain(|view| view.id != exclude);
-        Self { entries }
+        Self {
+            entries,
+            inventories: Default::default(),
+        }
+    }
+
+    pub(in crate::server) fn inventory_policies(
+        &mut self,
+        registry: &super::registry::EntityTypeRegistry,
+    ) {
+        for entry in &self.entries {
+            if let Ok(descriptor) = registry.descriptor(entry.entity_type)
+                && let Some(policy) = descriptor.transfer_policy()
+            {
+                self.inventories
+                    .insert(entry.id, std::sync::Arc::clone(policy));
+            }
+        }
+    }
+
+    pub fn offers(&self, entity: &EntityPublicView) -> Vec<crate::inventory::Stack> {
+        self.inventories
+            .get(&entity.id)
+            .map_or_else(Vec::new, |p| p.offers(&entity.payload))
+    }
+
+    pub fn accepts(
+        &self,
+        entity: &EntityPublicView,
+        stack: &crate::inventory::Stack,
+        catalog: &crate::content::Catalog,
+    ) -> bool {
+        self.inventories
+            .get(&entity.id)
+            .is_some_and(|p| p.accepts(&entity.payload, stack, catalog))
     }
 
     pub fn len(&self) -> usize {

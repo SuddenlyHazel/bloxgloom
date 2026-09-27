@@ -228,6 +228,26 @@ pub fn render_kiln_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     ))
 }
 
+pub fn render_hopper_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    std::fs::create_dir_all(directory)?;
+    let outputs = [
+        ("chain.png", 1280, 720, UiScreen::Playing),
+        ("hopper-ui.png", 1280, 720, UiScreen::Kiln),
+        ("hopper-compact.png", 640, 360, UiScreen::Kiln),
+    ]
+    .into_iter()
+    .map(|(name, width, height, screen)| PreviewOutput {
+        path: directory.join(name),
+        width,
+        height,
+        scale: 1.0,
+        screen,
+        orientation: None,
+    })
+    .collect();
+    pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Hoppers))
+}
+
 pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, phase) in [
@@ -299,6 +319,7 @@ enum DropPhase {
 #[derive(Clone, Copy)]
 enum PreviewScene {
     Kilns,
+    Hoppers,
     Surface,
     Vegetation,
     Drops(DropPhase),
@@ -368,6 +389,7 @@ async fn render_previews(
         }
         PreviewScene::Drops(_)
         | PreviewScene::Kilns
+        | PreviewScene::Hoppers
         | PreviewScene::Avatars
         | PreviewScene::Mossbuns
         | PreviewScene::MossbunMotion(_) => {
@@ -381,6 +403,8 @@ async fn render_previews(
                 PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_)
             ) {
                 Vec3::new(2.8, 1.7, 4.1)
+            } else if matches!(scene, PreviewScene::Hoppers) {
+                Vec3::new(5.0, 3.8, 7.0)
             } else if matches!(scene, PreviewScene::Avatars) {
                 Vec3::new(5.5, 3.1, 7.0)
             } else {
@@ -421,7 +445,10 @@ async fn render_previews(
     }
     if matches!(
         scene,
-        PreviewScene::Mossbuns | PreviewScene::MossbunMotion(_) | PreviewScene::Kilns
+        PreviewScene::Mossbuns
+            | PreviewScene::MossbunMotion(_)
+            | PreviewScene::Kilns
+            | PreviewScene::Hoppers
     ) {
         // A small display lawn makes feet and the player scale reference
         // inspectable instead of burying them in generated slopes/foliage.
@@ -438,6 +465,28 @@ async fn render_previews(
                     set_preview_block(&mut chunks, x, y, z, block);
                 }
             }
+        }
+    }
+    if matches!(scene, PreviewScene::Hoppers) {
+        for (dy, block) in [
+            (1, crate::content::HOPPER_STATE),
+            (
+                2,
+                crate::content::BlockStateId(crate::content::KILN_DEFAULT_STATE.0 + 1),
+            ),
+            (
+                3,
+                crate::content::BlockStateId(crate::content::KILN_DEFAULT_STATE.0 + 3),
+            ),
+            (4, crate::content::HOPPER_STATE),
+        ] {
+            set_preview_block(
+                &mut chunks,
+                target_xz.0,
+                target_height + dy,
+                target_xz.1,
+                block,
+            );
         }
     }
     if matches!(scene, PreviewScene::Kilns) {
@@ -813,11 +862,16 @@ async fn render_previews(
                 ])),
             );
         }
-        let ui_frame = preview_frame(
+        let mut ui_frame = preview_frame(
             output.screen,
             has_target.then_some([target_xz.0, target_height, target_xz.1]),
             output.scale,
         );
+        if matches!(scene, PreviewScene::Hoppers)
+            && let Some(view) = &mut ui_frame.kiln
+        {
+            view.hopper = true;
+        }
         ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         let bytes_per_row = output.width * 4;
         let padded_bytes_per_row = bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
@@ -1006,7 +1060,8 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
-        kiln: (screen == UiScreen::Kiln).then(|| crate::protocol::kiln::KilnView {
+        kiln: (screen == UiScreen::Kiln).then(|| crate::protocol::workstation::WorkstationView {
+            hopper: false,
             facing: 0,
             lit: true,
             progress: 170,

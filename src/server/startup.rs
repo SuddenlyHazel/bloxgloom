@@ -175,6 +175,7 @@ impl ServerStartup {
             .map_err(entity_error)?;
         super::entities::register_player_entity_type(&mut types).map_err(entity_error)?;
         super::entities::mossbun::register(&mut types, &catalog).map_err(entity_error)?;
+        super::entities::hopper::register(&mut types, &catalog).map_err(io::Error::other)?;
         super::entities::register_kiln_entity_type(&mut types, Arc::clone(&catalog))
             .map_err(entity_error)?;
         for registration in &self.entity_types {

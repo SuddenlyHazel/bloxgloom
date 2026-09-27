@@ -11,10 +11,10 @@ use crate::world::BlockId;
 
 mod admin;
 pub(in crate::server) mod entity;
-pub(in crate::server) mod kiln;
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+pub(in crate::server) mod workstation;
 
 pub(in crate::server) fn plan_durable_request(
     state: &mut State,

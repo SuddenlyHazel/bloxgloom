@@ -14,7 +14,7 @@ fn workstation_resolves_both_halves_and_closes_on_replacement() {
             anchor,
             anchor_state: crate::content::KILN_DEFAULT_STATE,
         },
-        payload: crate::protocol::kiln::KilnView::default().encode(),
+        payload: crate::protocol::workstation::WorkstationView::default().encode(),
     };
     let mut app = crate::client::ClientApp::new(
         crate::client::Network::disconnected_for_test(),

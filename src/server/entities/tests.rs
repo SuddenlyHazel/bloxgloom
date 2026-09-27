@@ -113,6 +113,7 @@ fn fixture_registry() -> Arc<EntityTypeRegistry> {
             .unwrap();
     }
     register_kiln_entity_type(&mut builder, catalog.clone()).unwrap();
+    hopper::register(&mut builder, &catalog).unwrap();
     mossbun::register(&mut builder, &catalog).unwrap();
     Arc::new(builder.freeze().unwrap())
 }
@@ -751,7 +752,8 @@ fn anchored_footprint_indexes_both_sides_of_negative_chunk_seam_atomically() {
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, id);
         assert_eq!(views[0].payload.len(), 24);
-        let public = crate::protocol::kiln::KilnView::decode(&views[0].payload).unwrap();
+        let public =
+            crate::protocol::workstation::WorkstationView::decode(&views[0].payload).unwrap();
         assert_eq!(public.facing, 1);
         assert!(!public.lit);
         assert_eq!(public.progress, 0);
@@ -913,7 +915,7 @@ fn a_frozen_type_registry_requires_every_catalogued_type_and_valid_anchor_schema
         Err(EntityError::MissingTypeRegistration(PLAYER_TYPE))
     ));
 
-    const TEST_ANCHORED_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(5);
+    const TEST_ANCHORED_TYPE: crate::content::EntityTypeId = crate::content::EntityTypeId(6);
     catalog
         .register_entity_type(EntityTypeDef {
             id: TEST_ANCHORED_TYPE,

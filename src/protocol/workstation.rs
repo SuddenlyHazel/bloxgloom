@@ -4,7 +4,8 @@ use crate::inventory::{STACK_LIMIT, Stack};
 use crate::items::ItemId;
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct KilnView {
+pub(crate) struct WorkstationView {
+    pub hopper: bool,
     pub facing: u8,
     pub lit: bool,
     pub progress: u8,
@@ -12,9 +13,14 @@ pub(crate) struct KilnView {
     pub slots: [Option<Stack>; 3],
 }
 
-impl KilnView {
+impl WorkstationView {
     pub fn encode(&self) -> Vec<u8> {
-        let mut bytes = vec![1, self.facing, u8::from(self.lit), self.progress];
+        let mut bytes = vec![
+            if self.hopper { 2 } else { 1 },
+            self.facing,
+            u8::from(self.lit),
+            self.progress,
+        ];
         bytes.extend(self.fuel.to_le_bytes());
         for slot in &self.slots {
             bytes.extend(slot.as_ref().map_or(0, |s| s.item.0).to_le_bytes());
@@ -24,11 +30,14 @@ impl KilnView {
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != 24 || bytes[0] != 1 || bytes[1] > 3 || bytes[2] > 1 {
+        if bytes.len() != 24 || !matches!(bytes[0], 1 | 2) || bytes[1] > 3 || bytes[2] > 1 {
             return None;
         }
         let fuel = u16::from_le_bytes(bytes[4..6].try_into().ok()?);
         if fuel > 240 || (fuel > 0) != (bytes[2] == 1) {
+            return None;
+        }
+        if bytes[0] == 2 && bytes[1..6].iter().any(|byte| *byte != 0) {
             return None;
         }
         let mut slots = std::array::from_fn(|_| None);
@@ -43,6 +52,7 @@ impl KilnView {
             }
         }
         Some(Self {
+            hopper: bytes[0] == 2,
             facing: bytes[1],
             lit: bytes[2] == 1,
             progress: bytes[3],

@@ -158,7 +158,8 @@ pub(super) fn capture_entity_view_for_plan(
             })?;
         collected.extend(players);
     }
-    let view = EntityView::assemble(collected, exclude);
+    let mut view = EntityView::assemble(collected, exclude);
+    view.inventory_policies(state.entities.types());
     if view.len() > MAX_PLAN_NEIGHBOURS {
         return Err(io::Error::new(
             ErrorKind::QuotaExceeded,
@@ -632,7 +633,7 @@ pub(in crate::server) fn commit_tick_plan(
 
 /// Assembles one atomic cross-entity item transfer as a single WAL batch.
 ///
-/// The recipient declared `transfer` in its tick plan; this trusted layer
+/// The initiating entity declared `transfer` in its tick plan; this trusted layer
 /// resolves both snapshots, runs both pure exchange hooks, and stages both
 /// payload updates with real `before` preimages in one `Operation::Batch`.
 /// The check and the move are the same statement: a recipient `before` that
@@ -641,7 +642,7 @@ pub(in crate::server) fn commit_tick_plan(
 /// applies. The 128 stack cap is enforced on the taken stack and by both
 /// type validators during preparation.
 ///
-/// The sender's schedule is untouched: it never deducts speculatively, it
+/// The non-initiating peer's schedule is untouched. The sender never deducts speculatively; it
 /// only loses stock inside this batch. Unavailable stock or a full
 /// destination defers (`WouldBlock`) so the work re-plans. Anything the
 /// planner got wrong — an unknown source, a source outside its declared
@@ -671,10 +672,33 @@ fn plan_transfer_batch(
             "transfer source is outside the declared neighbour view",
         ));
     }
-    let source_snapshot = state
+    let other_snapshot = state
         .entities
         .snapshot(transfer.source)
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "transfer source is unknown"))?;
+    let initiator = snapshot;
+    let initiator_base = receiver_base;
+    let initiator_anchor = anchor_update;
+    let (receiver, snapshot, receiver_base, anchor_update, source_snapshot, source_base) =
+        if transfer.push {
+            (
+                transfer.source,
+                &other_snapshot,
+                &other_snapshot.private_payload,
+                None,
+                initiator,
+                initiator_base,
+            )
+        } else {
+            (
+                receiver,
+                snapshot,
+                receiver_base,
+                anchor_update,
+                &other_snapshot,
+                &other_snapshot.private_payload,
+            )
+        };
     if catalog.item(transfer.item).is_none() {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,
@@ -704,12 +728,7 @@ fn plan_transfer_batch(
         )
     })?;
     let (sender_after, taken) = source_exchange
-        .withdraw(
-            &source_snapshot.private_payload,
-            transfer.item,
-            transfer.count,
-            catalog,
-        )
+        .withdraw(source_base, transfer.item, transfer.count, catalog)
         .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?
         .ok_or_else(|| io::Error::new(ErrorKind::WouldBlock, "transfer source has no stock"))?;
     if taken.item != transfer.item || taken.count != transfer.count || !taken.valid_in(catalog) {
@@ -729,7 +748,7 @@ fn plan_transfer_batch(
         })?;
     let receiver_patch = EntityPatch {
         payload: Some(receiver_after),
-        next_tick: Some(Some(next_tick)),
+        next_tick: (!transfer.push).then_some(Some(next_tick)),
         position: None,
     };
     let receiver_prepared = if let Some(anchor_update) = anchor_update {
@@ -745,18 +764,26 @@ fn plan_transfer_batch(
             .prepare_update(receiver, snapshot.revision, receiver_patch)
     }
     .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
-    let sender_prepared = state
-        .entities
-        .prepare_update(
-            transfer.source,
+    let sender_patch = EntityPatch {
+        payload: Some(sender_after),
+        next_tick: transfer.push.then_some(Some(next_tick)),
+        position: None,
+    };
+    let sender_prepared = if transfer.push
+        && let Some(anchor) = initiator_anchor
+    {
+        state.entities.prepare_anchor_update(
+            source_snapshot.id,
             source_snapshot.revision,
-            EntityPatch {
-                payload: Some(sender_after),
-                next_tick: None,
-                position: None,
-            },
+            anchor.clone(),
+            sender_patch,
         )
-        .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
+    } else {
+        state
+            .entities
+            .prepare_update(source_snapshot.id, source_snapshot.revision, sender_patch)
+    }
+    .map_err(|error| io::Error::new(ErrorKind::InvalidInput, error))?;
     state
         .entities
         .combine_prepared(vec![receiver_prepared, sender_prepared])

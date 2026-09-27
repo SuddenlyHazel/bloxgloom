@@ -34,6 +34,10 @@ pub const KILN_SCHEMA_FINGERPRINT: u64 = 0x4b49_4c4e_0000_0002;
 pub const MOSSBUN_ENTITY_TYPE: EntityTypeId = EntityTypeId(4);
 pub const MOSSBUN_SCHEMA_VERSION: u16 = 2;
 pub const MOSSBUN_SCHEMA_FINGERPRINT: u64 = 0x4d4f_5353_4255_0002;
+pub const HOPPER_BLOCK_TYPE: BlockTypeId = BlockTypeId(300);
+pub const HOPPER_STATE: BlockStateId = BlockStateId(600);
+pub const HOPPER_ITEM: ItemId = ItemId(300);
+pub const HOPPER_ENTITY_TYPE: EntityTypeId = EntityTypeId(5);
 
 pub(crate) const SOLID: u8 = 1;
 pub(crate) const OPAQUE: u8 = 2;
