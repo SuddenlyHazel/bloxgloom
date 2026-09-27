@@ -5,8 +5,10 @@
 //! Entity services are added here as host transaction participants are unified.
 use std::collections::BTreeMap;
 
+mod entities;
 mod handlers;
 mod inventory;
+pub use entities::Entity;
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
 pub use inventory::{Components, InventoryId, Slot, Stack};
 
@@ -46,6 +48,8 @@ impl std::error::Error for Error {}
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
     fn player(&self) -> Option<u128>;
+    fn entity(&mut self, id: u64) -> Result<Option<Entity>, Error>;
+    fn anchored_entity_at(&mut self, cell: Cell) -> Result<Option<u64>, Error>;
     fn block(&mut self, cell: Cell) -> Result<Block, Error>;
     fn state(&self, key: &str) -> Result<Block, Error>;
     fn item_exists(&self, key: &str) -> bool;

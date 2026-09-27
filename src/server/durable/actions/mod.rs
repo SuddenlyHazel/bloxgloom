@@ -585,7 +585,10 @@ fn plan_gameplay_removals(
         edits,
         removals,
         state.seed,
-        Some(actor),
+        crate::server::gameplay::Participants {
+            actor: Some(actor),
+            entities: &state.entities,
+        },
     );
     for key in requested {
         let _ = request_chunk(state, key);

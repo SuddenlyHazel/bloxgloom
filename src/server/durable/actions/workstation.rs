@@ -134,7 +134,10 @@ pub(super) fn place(
         &coords,
         &removals,
         context.seed(),
-        Some((command.profile, &inventory)),
+        crate::server::gameplay::Participants {
+            actor: Some((command.profile, &inventory)),
+            entities: context.entities(),
+        },
     )?;
     let inventory = plan.inventory.unwrap_or(inventory);
     for &(x, y, z, block) in &plan.edits {

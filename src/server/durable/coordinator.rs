@@ -278,6 +278,14 @@ fn process_queue(
                     cancel_prepared_entities(state, &action);
                     return Err(io::Error::new(ErrorKind::InvalidData, error));
                 }
+                if !action.terrain_reads.entities_current(&state.entities) {
+                    cancel_prepared_entities(state, &action);
+                    if let Some(profile) = request_profile {
+                        blocked_profiles.insert(profile);
+                    }
+                    deferred.push_back(request);
+                    continue;
+                }
                 let entity_permit = if action.entities.is_some() {
                     match state.durability.entity_mirror.try_reserve_durable() {
                         Err(error) => {

@@ -4,7 +4,13 @@ use crate::content::Catalog;
 use crate::world::{BlockId, ChunkKey, PreparedEdit, World};
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot};
 use std::io;
+mod entities;
 pub(super) mod inventory;
+
+pub(super) struct Participants<'a> {
+    pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    pub entities: &'a super::entities::EntityStore,
+}
 
 pub(super) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, Error> {
     let state = catalog
@@ -38,8 +44,21 @@ struct WorldSnapshot<'a> {
     requested: &'a mut Vec<ChunkKey>,
     actor: Option<(u128, &'a crate::inventory::Inventory)>,
     inventory_read: bool,
+    entities: Option<&'a super::entities::EntityStore>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn entity(&mut self, id: u64) -> Result<Option<bloxgloom_host_api::gameplay::Entity>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        entities::read(self.world.catalog(), self.reads, store, id)
+    }
+    fn anchored_entity_at(&mut self, cell: Cell) -> Result<Option<u64>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        entities::anchored(self.reads, store, cell)
+    }
     fn player(&self) -> Option<u128> {
         self.actor.map(|(profile, _)| profile)
     }
@@ -107,6 +126,7 @@ pub(super) fn prepare_edits(
         requested: &mut requested,
         actor: None,
         inventory_read: false,
+        entities: None,
     };
     let mut context = Context::new(&mut snapshot, edits.len());
     for &(x, y, z, state) in edits {
@@ -151,9 +171,10 @@ pub(super) fn plan_removals(
     edits: &[Edit],
     removals: &[Removal],
     seed: u64,
-    actor: Option<(u128, &crate::inventory::Inventory)>,
+    participants: Participants<'_>,
 ) -> io::Result<WorldPlan> {
     use bloxgloom_host_api::gameplay::{Event, EventKind, cell_random};
+    let actor = participants.actor;
     let catalog = world.catalog_arc();
     // Preparation is invisible. Its per-chunk version is stable random input
     // for existing harvest behavior; an expanded overlay is prepared below.
@@ -164,6 +185,7 @@ pub(super) fn plan_removals(
         requested,
         actor,
         inventory_read: false,
+        entities: Some(participants.entities),
     };
     let mut context = Context::new(&mut snapshot, 4096);
     for &(x, y, z, state) in edits {

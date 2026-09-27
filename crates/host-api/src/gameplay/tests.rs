@@ -4,6 +4,12 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn entity(&mut self, _: u64) -> Result<Option<Entity>, Error> {
+        Ok(None)
+    }
+    fn anchored_entity_at(&mut self, _: Cell) -> Result<Option<u64>, Error> {
+        Ok(None)
+    }
     fn player(&self) -> Option<u128> {
         None
     }
@@ -78,6 +84,12 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn entity(&mut self, _: u64) -> Result<Option<Entity>, Error> {
+        Ok(None)
+    }
+    fn anchored_entity_at(&mut self, _: Cell) -> Result<Option<u64>, Error> {
+        Ok(None)
+    }
     fn player(&self) -> Option<u128> {
         Some(7)
     }

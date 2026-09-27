@@ -10,6 +10,8 @@ impl Handler for HarvestHandler {
         assert_eq!(*cause, RemovalCause::Break);
         assert_eq!(context.block(*cell)?.block_type, "bloxgloom:air");
         let next = [cell[0] + 1, cell[1], cell[2]];
+        assert!(context.entity(1)?.is_none());
+        assert!(context.anchored_entity_at(next)?.is_none());
         let player = context.player().unwrap();
         if !context.give(
             player,
@@ -97,6 +99,7 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
         .unwrap()
         .unwrap();
     assert_eq!(planned.world_edits.len(), 2);
+    assert!(planned.terrain_reads.entities_current(&state.entities));
     assert!(planned.entities.is_some());
     assert_eq!(
         state.world.cached_block(15, y, 0),
@@ -105,6 +108,7 @@ fn registered_gameplay_combines_seam_edits_and_drops_and_recovers_once() {
     assert_eq!(state.world.cached_block(16, y, 0), Some(AIR));
     settle_live_action(&mut state, 10, message.clone());
     settle_live_action(&mut state, 11, message);
+    assert!(!planned.terrain_reads.entities_current(&state.entities));
     assert_eq!(
         state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
         3

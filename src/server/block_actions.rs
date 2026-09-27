@@ -82,7 +82,7 @@ impl BlockCommitBuilder<'_> {
         edits: &[super::gameplay::Edit],
         removals: &[super::gameplay::Removal],
         seed: u64,
-        actor: Option<(u128, &crate::inventory::Inventory)>,
+        participants: super::gameplay::Participants<'_>,
     ) -> io::Result<super::gameplay::WorldPlan> {
         super::gameplay::plan_removals(
             self.world,
@@ -91,7 +91,7 @@ impl BlockCommitBuilder<'_> {
             edits,
             removals,
             seed,
-            actor,
+            participants,
         )
     }
     /// Reads one cell, recording its chunk for the coordinator to request

@@ -31,7 +31,8 @@ pub(super) fn apply_committed_action(
     mut action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
-    if !action.terrain_reads.is_current() {
+    if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
+    {
         return Err(io::Error::other(
             "committed terrain dependency changed before apply",
         ));

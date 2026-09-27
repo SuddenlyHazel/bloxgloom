@@ -447,7 +447,7 @@ This section exists so compaction or a new session does not restart the design.
   of the content manifest and survives remapping. Dispatch uses a frozen index.
   Anchored placement uses this path for displaced plants. Anchored destruction,
   cascade semantics and broader lifecycle unification remain phase-1 work.
-- **Third increment:** the shared context now exposes exact component-preserving
+- **Third increment (`8d797ee`):** the shared context now exposes exact component-preserving
   inventory reads, give/take/transfer, and component-bearing drop creation. Full
   destination/insufficient source returns without partial changes; invalid output
   fails the whole plan. The live removal adapter captures the acting player's
@@ -456,6 +456,13 @@ This section exists so compaction or a new session does not restart the design.
   unavailable until their host participants are connected; the public overlay
   already supports transfers between captured inventories. No phase completion
   claim is made for that remaining host integration.
+- **Fourth increment:** public entity lookup and anchored-footprint lookup now
+  capture presence/absence dependencies in the shared planning read set. Entity
+  identity/payload/motion reads fence exact record keys; anchored occupancy reads
+  fence the exact cell, rather than blocking on unrelated creatures in its chunk.
+  Coordinator admission checks freshness and committed publication rechecks it.
+  Entity mutations, entity inventory adapters and generic entity definitions are
+  still pending; these read operations do not expose private native payloads.
 - **Latest verification:** initial 704-test workspace run; then 64 durable-action
   regressions, 18 content regressions, and 2 focused gameplay tests passed for the
   registered-handler increment. The gameplay tests cover unavailable neighbour
@@ -464,6 +471,11 @@ This section exists so compaction or a new session does not restart the design.
   tests and 3 focused public gameplay tests; the integrated seam/restart test now
   also checks atomic inventory rewards and no mutation on unavailable terrain.
   Strict workspace Clippy passed. No benchmark.
+- **Fourth-increment verification:** entity regressions (56), conflict regressions
+  (11), focused gameplay checks (3), and the real nonblocking-listener edit/restart
+  test passed. The new read regression checks that an absent entity becomes stale
+  on creation while unrelated mobile occupancy does not invalidate an anchored
+  cell read.
 - **Next concrete step:** connect entity inventory/read/mutation participants to
   the same transaction boundary and migrate remaining removal/lifecycle paths.
 - **Open implementation blockers:** none established; UI dependency selection is

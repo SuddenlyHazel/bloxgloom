@@ -5,26 +5,38 @@ use super::*;
 #[derive(Clone, Debug, Default)]
 pub struct EntityDependencies {
     chunks: BTreeMap<ChunkKey, super::super::spatial::ChunkPage>,
-    records: BTreeMap<EntityId, (u64, u64)>,
+    records: BTreeMap<EntityId, Option<(u64, u64)>>,
+    cells: BTreeMap<CellCoord, Option<EntityId>>,
 }
 
 impl EntityDependencies {
     pub fn is_current(&self, store: &EntityStore) -> bool {
-        self.chunks
+        self.cells
             .iter()
-            .all(|(key, page)| match store.indexes.chunks.get(key) {
-                Some(current) => current == page,
-                None => page.entity_ids.is_empty(),
-            })
+            .all(|(cell, expected)| store.indexes.anchored_cells.get(cell).copied() == *expected)
+            && self
+                .chunks
+                .iter()
+                .all(|(key, page)| match store.indexes.chunks.get(key) {
+                    Some(current) => current == page,
+                    None => page.entity_ids.is_empty(),
+                })
             && self.records.iter().all(|(id, expected)| {
                 store
                     .records
                     .get(id)
-                    .is_some_and(|record| (record.revision, record.motion_revision) == *expected)
+                    .map(|record| (record.revision, record.motion_revision))
+                    == *expected
             })
     }
 
-    pub(super) fn merge(&mut self, other: Self) -> Result<(), EntityError> {
+    pub(in crate::server) fn merge(&mut self, other: Self) -> Result<(), EntityError> {
+        for (cell, owner) in other.cells {
+            if self.cells.get(&cell).is_some_and(|old| *old != owner) {
+                return Err(EntityError::InvalidTransaction);
+            }
+            self.cells.insert(cell, owner);
+        }
         for (key, page) in other.chunks {
             if self.chunks.get(&key).is_some_and(|old| *old != page) {
                 return Err(EntityError::InvalidTransaction);
@@ -38,23 +50,53 @@ impl EntityDependencies {
             self.records.insert(id, revisions);
         }
         let references: usize = self.chunks.values().map(|page| page.entity_ids.len()).sum();
-        if self.chunks.len() + references + 2 * self.records.len() > MAX_ENTITY_TRANSACTION_CHANGES
+        if self.cells.len() + self.chunks.len() + references + 2 * self.records.len()
+            > MAX_ENTITY_TRANSACTION_CHANGES
         {
             return Err(EntityError::TooManyTransactionChanges);
         }
         Ok(())
     }
 
-    fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
-        self.chunks.keys().copied().map(chunk_state_key).chain(
-            self.records
-                .keys()
-                .flat_map(|id| [entity_state_key(*id), motion_state_key(*id)]),
-        )
+    pub(in crate::server) fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
+        self.cells
+            .keys()
+            .copied()
+            .map(cell_state_key)
+            .chain(self.chunks.keys().copied().map(chunk_state_key))
+            .chain(
+                self.records
+                    .keys()
+                    .flat_map(|id| [entity_state_key(*id), motion_state_key(*id)]),
+            )
+    }
+
+    pub(in crate::server) fn is_empty(&self) -> bool {
+        self.cells.is_empty() && self.chunks.is_empty() && self.records.is_empty()
     }
 }
 
 impl EntityStore {
+    pub(in crate::server) fn capture_anchor_dependency(
+        &self,
+        cell: CellCoord,
+    ) -> EntityDependencies {
+        let mut result = EntityDependencies::default();
+        result
+            .cells
+            .insert(cell, self.indexes.anchored_cells.get(&cell).copied());
+        result
+    }
+    pub(in crate::server) fn capture_entity_dependency(&self, id: EntityId) -> EntityDependencies {
+        let mut result = EntityDependencies::default();
+        result.records.insert(
+            id,
+            self.records
+                .get(&id)
+                .map(|record| (record.revision, record.motion_revision)),
+        );
+        result
+    }
     /// AABB decisions must fence all containing owner pages, not just the IDs
     /// returned by the mobile index: a previously absent candidate can enter.
     pub fn capture_mobile_dependencies(
@@ -110,7 +152,7 @@ impl EntityStore {
                         .ok_or(EntityError::InvalidTransaction)?;
                     result
                         .records
-                        .insert(*id, (record.revision, record.motion_revision));
+                        .insert(*id, Some((record.revision, record.motion_revision)));
                 }
             }
             if result.records.len() > maximum_references {

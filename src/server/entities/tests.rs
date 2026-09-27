@@ -148,6 +148,37 @@ fn spawn_drop(store: &EntityStore, position: [f32; 3]) -> PreparedEntityTransact
 }
 
 #[test]
+fn gameplay_entity_reads_fence_absence_without_fencing_unrelated_mobile_occupancy() {
+    let mut store = EntityStore::new(fixture_registry());
+    let cell = CellCoord::new(0, 0, 0);
+    let id = EntityId::new(1).unwrap();
+    let anchored = store.capture_anchor_dependency(cell);
+    let absent = store.capture_entity_dependency(id);
+    assert_eq!(
+        anchored.keys().collect::<Vec<_>>(),
+        vec![cell_state_key(cell)]
+    );
+    store.apply_committed(spawn_drop(&store, [0.5; 3])).unwrap();
+    assert!(anchored.is_current(&store));
+    assert!(!absent.is_current(&store));
+    let present = store.capture_entity_dependency(id);
+    let snapshot = store.snapshot(id).unwrap();
+    let update = store
+        .prepare_update(
+            id,
+            snapshot.revision,
+            EntityPatch {
+                payload: Some(stack_payload(4, 8, &[9, 8, 7])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    store.apply_committed(update).unwrap();
+    assert!(!present.is_current(&store));
+    assert!(anchored.is_current(&store));
+}
+
+#[test]
 fn mobile_lifecycle_is_prepared_revisioned_and_transfers_at_owner_boundary() {
     let mut store = EntityStore::new(fixture_registry());
     let spawn = spawn_drop(&store, [15.5, -0.5, -0.5]);

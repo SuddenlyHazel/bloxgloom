@@ -359,7 +359,6 @@ impl EntityStore {
         self.mobile_pages.page(key)
     }
 
-    #[cfg(test)]
     pub fn public_view(&self, id: EntityId) -> Option<EntityPublicView> {
         self.records.get(&id).map(EntityRecord::public_view)
     }

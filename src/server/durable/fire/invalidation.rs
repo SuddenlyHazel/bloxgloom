@@ -40,7 +40,8 @@ pub(super) fn stage(
         state.fire.note_full(1);
         return Ok(());
     };
-    if !action.terrain_reads.is_current() {
+    if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
+    {
         state.fire.note_conflict(1);
         return Ok(());
     }

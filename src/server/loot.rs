@@ -1,4 +1,5 @@
-//! Deterministic, server-owned harvest rules. Item IDs need not be placeable blocks.
+//! Test harness for the public built-in harvest policy. Production dispatch uses
+//! the shared world planning context in `server::gameplay`.
 use crate::content::Catalog;
 use crate::items::ItemId;
 use crate::world::BlockId;
@@ -86,6 +87,14 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn entity(&mut self, _: u64) -> Result<Option<bloxgloom_host_api::gameplay::Entity>, Error> {
+        Err(Error::Invalid(
+            "entity lookup unavailable in loot test snapshot".into(),
+        ))
+    }
+    fn anchored_entity_at(&mut self, cell: Cell) -> Result<Option<u64>, Error> {
+        Err(Error::Unavailable(cell))
+    }
     fn player(&self) -> Option<u128> {
         None
     }
