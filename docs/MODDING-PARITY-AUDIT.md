@@ -2,6 +2,35 @@
 
 ## Baseline and verdict
 
+### Integration follow-up
+
+The baseline findings below are retained as the audit record. The integrating
+branch has since addressed these items; final combined verification is tracked
+in the root plan:
+
+- **F2:** exact automation slot selection and snapshot-local component-equivalence
+  keys are implemented. Component predicates/output policies and numeric-remap
+  recovery are covered by `server/durable/actions/machine_component_tests.rs`.
+- **Anchored lifecycle / F4:** registered own-state initialization, codecs,
+  projections, interaction and support/neighbor reactions are implemented. Fire
+  footprint invalidation now combines terrain/entity/refund changes with the fire
+  state in one WAL record. This is lifecycle compatibility, not migration of fire
+  behavior to the public API. See `docs/ANCHORED-BEHAVIORS.md`.
+- **Recovery review fix:** anchored output encoding now checks canonical decoding
+  before admission. `anchored_codec_tests.rs` rejects an unrecoverable callback
+  output before WAL admission and checks valid-state recovery.
+- **F3:** block planners now capture explicit read-only terrain stamps, including
+  support cells and absence checks. Admission reserves those chunk keys until
+  apply; stale plans are rejected after reservations clear. The seam race test is
+  `server/durable/actions/support_reads_tests.rs`.
+- **F7:** public persistent owner systems and an independent region-clock fixture
+  now exist, with real-listener restart verification. The supported API is still
+  owner-only; terrain reads/effects and full world-system parity remain open.
+  See `docs/REGISTERED-SYSTEMS.md`.
+
+Content/composition and stock-client action discovery still require review after
+their implementation branches are merged.
+
 Audited baseline: **`0d3eebf616eb7bf2c5a942cc6e199b210168666e`**, on
 `modding/audit`. This is a source/call-path audit, not a new runtime test report.
 Rust implementation paths below omit the common `src/` prefix (for example,

@@ -31,6 +31,11 @@ pub(super) fn apply_committed_action(
     mut action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
+    if !action.terrain_reads.is_current() {
+        return Err(io::Error::other(
+            "committed terrain dependency changed before apply",
+        ));
+    }
     if action.entities.is_some() != entity_permit.is_some() {
         return Err(io::Error::other(
             "WAL-committed entity action has no checkpoint mirror reservation",

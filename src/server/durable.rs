@@ -33,6 +33,8 @@ use std::time::{Duration, Instant};
 #[path = "durable/actions/mod.rs"]
 pub(super) mod actions;
 mod admission;
+mod terrain_reads;
+pub(in crate::server) use terrain_reads::TerrainReads;
 #[path = "durable/checkpoint.rs"]
 mod checkpoint;
 #[path = "durable/coordinator.rs"]
@@ -212,6 +214,7 @@ pub(super) struct CommitAction {
     pub(super) inventory_before: Option<Vec<u8>>,
     pub(super) inventory: Option<Inventory>,
     pub(super) world_edits: Vec<PreparedEdit>,
+    pub(super) terrain_reads: TerrainReads,
     pub(super) deltas: Vec<BlockDelta>,
     pub(super) changed_cells: Vec<CellCoord>,
     pub(super) pickups: Vec<DroppedItem>,
@@ -231,6 +234,7 @@ impl CommitAction {
             action_id: None,
             receipt_value: None,
             receipt_transition: Some(transition),
+            terrain_reads: Default::default(),
             inventory_before: None,
             inventory: None,
             world_edits: Vec::new(),
@@ -391,6 +395,9 @@ impl Durability {
                 "entity WAL admission requires one mirror reservation",
             )));
         }
+        if !action.terrain_reads.is_current() {
+            return Err(StageError::Conflict);
+        }
         let mut action = action.clone();
         if let Some(entities) = &mut action.entities {
             entities
@@ -403,6 +410,7 @@ impl Durability {
             .as_ref()
             .map(|entities| entities.read_keys().cloned().collect())
             .unwrap_or_default();
+        read_keys.extend(action.terrain_reads.keys());
         // Generic block edits also read anchored occupancy, including absence.
         // This protects them against pending footprint changes even if no
         // entity mutation belongs to this action.

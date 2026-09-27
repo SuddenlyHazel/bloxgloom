@@ -337,6 +337,7 @@ fn fixture_action(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits,

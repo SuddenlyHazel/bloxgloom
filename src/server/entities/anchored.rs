@@ -96,6 +96,21 @@ impl EntityPayloadCodec for Adapter {
         if bytes.len() > self.definition.max_state_bytes {
             return Err(EntityCodecError::InvalidData);
         }
+        // Admission must enforce the same canonical round trip as recovery.
+        // Otherwise a successful callback could journal an unrecoverable value.
+        let restored = self
+            .definition
+            .behavior
+            .decode(&bytes)
+            .map_err(|_| EntityCodecError::InvalidData)?;
+        let canonical = self
+            .definition
+            .behavior
+            .encode(&restored)
+            .map_err(|_| EntityCodecError::InvalidData)?;
+        if canonical != bytes {
+            return Err(EntityCodecError::InvalidData);
+        }
         Ok(bytes)
     }
     fn public_view(&self, p: &EntityPayload) -> Result<Vec<u8>, EntityCodecError> {

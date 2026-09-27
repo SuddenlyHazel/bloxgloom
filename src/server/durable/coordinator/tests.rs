@@ -89,6 +89,7 @@ fn inventory_action(state: &State, profile: u128, action_id: u128) -> CommitActi
             .unwrap(),
         ),
         inventory_before: Some(InventoryStore::encode_snapshot(&before).unwrap()),
+        terrain_reads: Default::default(),
         inventory: Some(after),
         world_edits: Vec::new(),
         deltas: Vec::new(),

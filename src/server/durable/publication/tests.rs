@@ -62,6 +62,7 @@ fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: prepared,

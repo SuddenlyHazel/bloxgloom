@@ -70,6 +70,7 @@ pub(in crate::server) fn plan_durable_request(
                 action_id: Some(action_id),
                 receipt_value: Some(receipt_value.clone()),
                 receipt_transition: None,
+                terrain_reads: Default::default(),
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
@@ -262,6 +263,7 @@ pub(in crate::server) fn plan_durable_request(
                 action_id: None,
                 receipt_value: None,
                 receipt_transition: None,
+                terrain_reads: Default::default(),
                 inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
                     &original,
                     state.world.catalog(),
@@ -293,6 +295,7 @@ pub(in crate::server) fn plan_durable_request(
                 action_id: None,
                 receipt_value: None,
                 receipt_transition: None,
+                terrain_reads: Default::default(),
                 inventory_before: None,
                 inventory: None,
                 world_edits: Vec::new(),
@@ -375,6 +378,7 @@ fn plan_block_edit(
         ..
     } = command;
     let mut coords = vec![(x, y, z, block)];
+    let mut terrain_reads = TerrainReads::default();
     let mut removed_plants = Vec::new();
     if block != AIR {
         if !has(previous, crate::content::REPLACEABLE) {
@@ -391,7 +395,14 @@ fn plan_block_edit(
                 ));
             }
             if !has(
-                cached_block_or_request(state, x, y - 1, z, "plant support chunk is not resident")?,
+                cached_block_with_reads(
+                    state,
+                    &mut terrain_reads,
+                    x,
+                    y - 1,
+                    z,
+                    "plant support chunk is not resident",
+                )?,
                 crate::content::SUPPORTS_PLANT,
             ) {
                 return Err(io::Error::new(
@@ -465,6 +476,7 @@ fn plan_block_edit(
             action_id: Some(action_id),
             receipt_value: Some(receipt_value),
             receipt_transition: None,
+            terrain_reads,
             inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
                 &inventory_before,
                 &catalog,
@@ -489,8 +501,14 @@ fn plan_block_edit(
     if has(previous, crate::content::SUPPORTS_PLANT)
         && let Some(above_y) = y.checked_add(1)
     {
-        let above =
-            cached_block_or_request(state, x, above_y, z, "plant-check chunk is not resident")?;
+        let above = cached_block_with_reads(
+            state,
+            &mut terrain_reads,
+            x,
+            above_y,
+            z,
+            "plant-check chunk is not resident",
+        )?;
         if has(above, crate::content::PLANT) {
             coords.push((x, above_y, z, AIR));
             removed_plants.push((above, [x, above_y, z]));
@@ -534,6 +552,7 @@ fn plan_block_edit(
         action_id: Some(action_id),
         receipt_value: Some(receipt_value),
         receipt_transition: None,
+        terrain_reads,
         inventory_before: None,
         inventory: None,
         world_edits: prepared,
@@ -560,6 +579,23 @@ fn plan_block_edit(
 /// cell stays unread, so no preimage is verified and nothing commits on this
 /// pass; the coordinator's command timeout is the escape hatch for
 /// over-long deferrals.
+fn cached_block_with_reads(
+    state: &mut State,
+    reads: &mut TerrainReads,
+    x: i32,
+    y: i32,
+    z: i32,
+    reason: &'static str,
+) -> io::Result<BlockId> {
+    if let Some(block) = reads.read(&mut state.world, x, y, z)? {
+        return Ok(block);
+    }
+    cached_block_or_request(state, x, y, z, reason)?;
+    reads
+        .read(&mut state.world, x, y, z)?
+        .ok_or_else(|| io::Error::new(ErrorKind::WouldBlock, reason))
+}
+
 fn cached_block_or_request(
     state: &mut State,
     x: i32,

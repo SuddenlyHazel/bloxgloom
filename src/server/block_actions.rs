@@ -73,6 +73,7 @@ impl BlockActionContext<'_> {
 pub(super) struct BlockCommitBuilder<'a> {
     world: &'a mut World,
     requested_chunks: Vec<ChunkKey>,
+    terrain_reads: super::durable::TerrainReads,
 }
 
 impl BlockCommitBuilder<'_> {
@@ -87,7 +88,7 @@ impl BlockCommitBuilder<'_> {
         z: i32,
         reason: &'static str,
     ) -> io::Result<BlockId> {
-        if let Some(block) = self.world.cached_block(x, y, z) {
+        if let Some(block) = self.terrain_reads.read(self.world, x, y, z)? {
             return Ok(block);
         }
         let key = world_to_chunk(x, y, z).0;
@@ -141,8 +142,14 @@ pub(super) fn invoke_hook(
     let mut builder = BlockCommitBuilder {
         world: &mut state.world,
         requested_chunks: Vec::new(),
+        terrain_reads: Default::default(),
     };
-    let result = hook(&context, &mut builder, tick, command, previous);
+    let result = hook(&context, &mut builder, tick, command, previous).and_then(|mut action| {
+        action
+            .terrain_reads
+            .extend(std::mem::take(&mut builder.terrain_reads))?;
+        Ok(action)
+    });
     let requested = builder.take_requested_chunks();
     for key in requested {
         let _ = super::streaming::request_chunk(state, key);

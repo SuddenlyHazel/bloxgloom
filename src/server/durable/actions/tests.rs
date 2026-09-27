@@ -1,4 +1,6 @@
 use super::*;
+#[path = "anchored_codec_tests.rs"]
+mod anchored_codec_tests;
 #[path = "anchored_tests.rs"]
 mod anchored_tests;
 #[path = "chest_tests.rs"]
@@ -13,6 +15,8 @@ mod machine_tests;
 mod mobile_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
+#[path = "support_reads_tests.rs"]
+mod support_reads_tests;
 use crate::items::{ItemId, STICK};
 use crate::server::entities::{CellCoord, KilnSlot, kiln_block_states, kiln_payload};
 use crate::server::movement::MovementState;
@@ -384,6 +388,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: overlapping_edit,
@@ -2040,6 +2045,7 @@ fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
@@ -2455,6 +2461,7 @@ fn stage_entity_spawn(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
@@ -2527,6 +2534,7 @@ fn stage_entity_spawn_batch(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),
@@ -3395,6 +3403,7 @@ fn stage_entity_update(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),

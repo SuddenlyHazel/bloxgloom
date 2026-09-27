@@ -79,6 +79,7 @@ fn action(entities: PreparedEntityTransaction) -> CommitAction {
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),

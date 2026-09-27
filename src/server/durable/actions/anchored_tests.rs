@@ -187,6 +187,7 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: state

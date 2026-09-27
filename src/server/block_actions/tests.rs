@@ -35,6 +35,7 @@ fn probe_place(
         action_id: Some(command.action_id),
         receipt_value: Some(command.receipt_value),
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits,

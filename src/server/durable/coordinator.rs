@@ -375,6 +375,7 @@ fn batchable_motion(action: &CommitAction) -> bool {
         .as_ref()
         .is_some_and(|entities| entities.entity_ids().len() == 1)
         && action.world_edits.is_empty()
+        && action.terrain_reads.is_empty()
         && action.deltas.is_empty()
         && action.changed_cells.is_empty()
         && action.pickups.is_empty()
@@ -542,6 +543,7 @@ fn stage_motion_batch(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits: Vec::new(),

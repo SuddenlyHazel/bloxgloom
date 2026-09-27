@@ -159,6 +159,18 @@ pub struct PreparedEdit {
     after_edits: BTreeMap<u16, BlockId>,
 }
 
+/// A read-only authority stamp invalidated by any committed edit to its chunk.
+#[derive(Clone, Debug)]
+pub(crate) struct ChunkReadStamp {
+    revision: Arc<AtomicU64>,
+    expected_revision: u64,
+}
+impl ChunkReadStamp {
+    pub(crate) fn is_current(&self) -> bool {
+        self.revision.load(Ordering::Acquire) == self.expected_revision
+    }
+}
+
 /// Immutable authoritative edit input. A worker may build and encode one
 /// chunk's complete sparse after-value without borrowing the live World.
 pub(crate) struct EditBasis {
@@ -396,6 +408,17 @@ impl World {
     #[inline]
     pub fn cached_version(&self, key: ChunkKey) -> Option<u64> {
         self.cache.get(&key).map(|entry| entry.read().chunk.version)
+    }
+
+    /// Capture edit authority without pinning a chunk in the cache. The stamp
+    /// shares the edit invalidator, including across eviction and reload.
+    pub(crate) fn cached_read_stamp(&mut self, key: ChunkKey) -> Option<ChunkReadStamp> {
+        self.cache.get(&key)?;
+        let (revision, expected_revision) = self.prepared_revision(key);
+        Some(ChunkReadStamp {
+            revision,
+            expected_revision,
+        })
     }
 
     /// Resident chunk count for admission control and server telemetry.

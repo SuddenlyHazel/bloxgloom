@@ -40,6 +40,10 @@ pub(super) fn stage(
         state.fire.note_full(1);
         return Ok(());
     };
+    if !action.terrain_reads.is_current() {
+        state.fire.note_conflict(1);
+        return Ok(());
+    }
     let entities = action
         .entities
         .as_mut()
@@ -51,6 +55,7 @@ pub(super) fn stage(
     let reads = entities
         .read_keys()
         .cloned()
+        .chain(action.terrain_reads.keys())
         .chain(action.changed_cells.iter().map(|c| {
             crate::server::entities::cell_state_key(crate::server::entities::CellCoord::new(
                 c.x, c.y, c.z,

@@ -364,6 +364,7 @@ pub(in crate::server) fn plan_interact(
         action_id: Some(action_id),
         receipt_value: Some(receipt_value),
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
             &inventory_before,
             &catalog,
@@ -711,6 +712,7 @@ pub(in crate::server) fn commit_tick_plan(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
+        terrain_reads: Default::default(),
         inventory_before: None,
         inventory: None,
         world_edits,
