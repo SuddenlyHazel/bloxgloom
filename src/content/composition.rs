@@ -116,6 +116,10 @@ impl Composition {
                     api::MACHINES,
                     api::MOBILE_ENTITIES,
                     api::INVENTORY_SCREENS,
+                    api::ANCHORED_ENTITIES,
+                    api::ACTIONS,
+                    api::OWNER_SYSTEMS,
+                    api::ITEM_ICONS,
                 ]
                 .contains(&c.as_str())
                 {

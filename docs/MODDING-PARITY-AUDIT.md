@@ -28,8 +28,22 @@ in the root plan:
   owner-only; terrain reads/effects and full world-system parity remain open.
   See `docs/REGISTERED-SYSTEMS.md`.
 
-Content/composition and stock-client action discovery still require review after
-their implementation branches are merged.
+Content/composition and stock-client action discovery are now merged and personally
+reviewed in main. Public state/item/PNG/material/geometry declarations, component
+schemas, tags and dependency/capability bundles reach the frozen catalog. Builtin
+HUD art now uses public `item_icon` registration rather than item-key dispatch;
+Etched Chip proves the independent path, including remap and fingerprint checks.
+Registered action discovery reaches bounded stock-client panels and durable
+identity/inventory-revision-fenced dispatch. SignalPost targeting includes a
+non-anchor footprint cell. Knapping verifies duplicate/stale/restart behavior over
+the real listener. Integration additionally validates recipe/fuel constants against
+component schemas and prevents incompatible component-preserving output from
+consuming input/fuel. Combined tests and previews are recorded in the root plan.
+
+These close the content, composition, inventory-selector, anchored lifecycle and
+bounded action/UI findings. General harvest/loot, world reads/effects, generation,
+player policy/commands/bindings and world-drop policies remain planned blockers;
+fire behavior migration remains deferred.
 
 Audited baseline: **`0d3eebf616eb7bf2c5a942cc6e199b210168666e`**, on
 `modding/audit`. This is a source/call-path audit, not a new runtime test report.

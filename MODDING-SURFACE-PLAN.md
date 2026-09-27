@@ -2,7 +2,8 @@
 
 Status: implementation in progress. The public crate exposes the completed
 slices below; the remaining internal interfaces are not yet a supported mod API.
-Last implementation milestone: `faefe1e` (registered machines). This document
+Latest integration: content/assets, anchored lifecycle, component-aware machines,
+registered actions/UI, and persistent owner-local systems are merged into main. This document
 tracks host capability parity; an installable mod loader is a separate milestone.
 
 ## Implementation status
@@ -22,21 +23,34 @@ parity for its broader category.
 | Registered inventory screens | Done | Shared discovery, layout, slot access, status fields, and independent 1–54-slot storage |
 | Ground-creature behavior and presentation | Done | Mossbun migration and Copperling proof: behavior, sensing, host movement, interaction, lifecycle, cuboid models, and animation |
 | Inventory-machine slice | Done | Kiln/Hopper migration and Crusher proof: scheduling, private bytes, recipes/fuels, filters, named/sided ports, recovery, and refunds |
-| Content and asset registration parity | In progress | Limited cube blocks and creature presentation exist; broader states, items/components, textures/materials, geometry, lighting, and tags remain |
-| Registration and composition parity | In progress | Namespaced IDs, schemas, reference validation, and compatibility checks exist; complete dependency/capability and composition contracts remain |
-| General block / anchored-entity lifecycle | In progress | Storage/machine paths exist; custom initialization/projections, configurable costs/refunds, and general use/neighbor/support/invalidation hooks remain |
-| Inventory / process parity | In progress | Basic registered processing and conserving transfers exist; exact stack selectors and component-aware process operations remain |
-| General item use, harvest, and loot | Planned | Public item-action and harvest/drop contracts, built-in migrations, and an external item-action proof |
-| General interaction actions and UI composition | In progress | Inventory screens and creature own-state interactions exist; general action discovery/dispatch and supported custom UI composition remain |
+| Content and asset registration parity | Done | Legal states, standalone items/component schemas, PNG textures, existing geometry/collision/selection choices, lighting/material properties, tags, and registered HUD bitmap art; Copper Lamp/Reed/Etched Chip proof |
+| Registration and composition parity | Done | Deterministic bundled registration, exact-version dependencies, capability validation, frozen identities, references, and compatibility fingerprints |
+| General block / anchored-entity lifecycle | Done | Bounded own-state initialization/codecs/projections/use, neighbor/support reactions, costs/refunds, and atomic footprint invalidation; SignalPost proof |
+| Inventory / process parity | Done | Exact slot/component-equivalence selectors, component-aware recipes/fuels/output policies, schema validation, conserving transfers and remap recovery |
+| General item use, harvest, and loot | Planned | Registered item recipe action is implemented; general harvest/drop contracts and built-in loot migration remain |
+| General interaction actions and UI composition | Done | Item/empty-space/block/entity discovery, fenced durable dispatch, bounded label/button/tooltip panels, stock-client integration and external knapping proof |
+| Persistent owner-local system slice | Done | Public codecs, bounded persistent bytes, schedules/seeds, region-clock fixture and real-listener restart; world reads/effects remain below |
 | World-system API and growth/support migration | Planned | Expose internal owner/system scheduling through public bounded read, effect, persistence, and wake contracts |
 | Fire migration | Deferred | Parked pending explicit authorization; still a blocker for full capability parity |
 | World-generation API | Planned | Deterministic terrain/vegetation contributions, ordering, bounded output, and seam ownership |
 | Player rules, commands, and bindings | Planned | Audit and expose supported movement/spawn/player-rule hooks and registered commands/actions/bindings |
 | World-drop gameplay and presentation parity | Planned | Move remaining drop policies and presentation capabilities onto accessible contracts |
-| External cross-category integration proof | In progress | TallStore, Copperling, and Crusher proven; item action and world/system contribution remain |
-| Exhaustive built-in parity audit | In progress | Migrated paths verified; audit remaining categories and close privileged built-in paths |
+| External cross-category integration proof | Done | Independently compiled TallStore, Copperling, Crusher, SignalPost, Copper Lamp/Reed/Etched Chip, knapping action and persistent region clock; broader world-effect proof belongs to planned world-system work |
+| Built-in call-path audit | Done | Category inventory and integration follow-up in docs/MODDING-PARITY-AUDIT.md; remaining privileged paths identified explicitly |
+| Close remaining full-parity audit blockers | Planned | World systems/generation, harvest/loot, player rules/commands/bindings and world-drop policies; fire remains deferred |
 | Runtime adapter and user-installable mod loader | Deferred | Separate milestone: select runtime/language, then package/dependency handling, discovery/loading, and isolation |
 | Distribution and hot reload | Deferred | Later loader/product decisions; not part of current host-surface completion |
+
+- **Combined integration verified:** 695 workspace/all-feature tests passed,
+  including real nonblocking-listener extension/restart tests; strict workspace
+  Clippy passed. Default saves now use **`world-v14` / `world-v14-fixture`**.
+  Registered content/action previews were inspected. Integrated terrain benchmark:
+  setup 1723.9 ms; 17,292,744 mesh bytes (unchanged); steady CPU/GPU medians
+  0.315/0.286 ms. Content-branch baseline was 1709.2 ms setup and
+  0.301/0.292 ms CPU/GPU; these small differences do not establish a regression.
+  See [content](docs/REGISTERED-CONTENT.md), [actions](docs/REGISTERED-ACTIONS.md),
+  [anchored behaviors](docs/ANCHORED-BEHAVIORS.md), and
+  [owner systems](docs/REGISTERED-SYSTEMS.md) for supported bounds.
 
 - **Registered machine slice implemented:** public scheduled behavior, bounded
   private bytes, registered footprints, item filters, recipes/fuels, named/sided
@@ -44,8 +58,8 @@ parity for its broader category.
   and Hopper use the generic adapter; their older implementations are test-only
   regression references. The independent Crusher fixture exercises manual input,
   automated feed/extraction, processing, restart, and refunds over the real listener.
-  Current default save: **`world-v13`**. See [registered machines](docs/REGISTERED-MACHINES.md)
-  for supported contracts and remaining general anchored-lifecycle gaps.
+   Default save at that slice: **`world-v13`**. See [registered machines](docs/REGISTERED-MACHINES.md)
+   for supported contracts.
   **659 workspace/all-feature tests passed**, with clean formatting and strict Clippy;
   the release shared-inventory preview was inspected.
 
@@ -70,10 +84,10 @@ parity for its broader category.
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
   **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
-- Passive storage, generic inventory screens, mobile creature behavior, and
-  inventory machines are now exposed. Arbitrary block/anchored lifecycle callbacks
-  and custom UI composition remain open. The broader
-  parity inventory and the remaining slices below are not marked complete.
+- Storage, inventory screens, creatures, machines, bounded anchored callbacks,
+  registered content, actions and composed controls are exposed. Owner systems
+  currently mutate only their own persistent bytes. The broader world, player,
+  harvest and drop capabilities below remain open.
 
 ## Remaining work and next sequence
 
@@ -85,26 +99,21 @@ the entire entity or block-entity category complete.
 
 | Workstream | Already available | Work remaining | Rough size |
 | --- | --- | --- | --- |
-| Content and assets | Namespaced identities, limited cube-block registration, registered creature cuboids/animation, catalog compatibility checks | Public block states, item definitions/components, textures/materials, collision/selection geometry, lighting properties, tags, and references matching built-in capabilities; finish dependency/composition validation | Large |
-| General blocks and anchored entities | Passive storage and scheduled inventory machines; registered footprints; one-item placement/refund and contents recovery | Custom initialization/codecs/projections, configurable costs/refunds, use/neighbor/support callbacks, and invalidation across all edit paths | Medium–large |
-| Items, loot, and interactions | Registered single-input machine recipes/fuels and slot filters; inventory requests; creature own-state interactions | Item-use hooks, harvest/drop rules, component-aware operations, exact automation slot/stack selectors, and registered action discovery/dispatch | Large |
-| World systems | Internal persistent owner/system scheduling and transaction machinery | Public bounded read/effect/wake contracts and built-in growth/support/fire migration; fire remains parked pending explicit authorization | Large |
+| Items and loot | Registered actions, component-aware processing, exact selectors, durable inventory recipes | General harvest/drop rules and builtin loot migration | Medium |
+| World systems | Public persistent owner-local scheduling/codecs and region-clock proof | Public bounded world read/effect/wake contracts and support migration; fire remains parked pending explicit authorization | Large |
 | World generation | Existing internal terrain and vegetation generation | Public deterministic contributions, ordering, bounded output, and seam ownership; built-in consumers and external proof | Medium–large |
-| Player and presentation | Ground-creature movement/appearance and shared inventory screens | Audit/expose player movement/spawn/rule hooks, commands/bindings, world-drop gameplay/presentation, remaining block/item visuals, and supported UI composition | Medium–large |
-| Final parity audit and external proof | TallStore, Copperling, and Crusher compile separately and exercise production paths | External item action and world/system contribution; complete the built-in call-path audit and close every privileged gameplay path | Medium |
+| Player and presentation | Ground creatures, registered inventory/action UI and item art | Player movement/spawn/rule hooks, commands/bindings and world-drop gameplay/presentation | Medium–large |
+| Final parity closure | Cross-category fixtures and call-path audit complete | Close remaining privileged paths and prove world effects/generation/player/drop extensions | Medium |
 
 Recommended next sequence:
 
-1. Content/block registration and general anchored lifecycle.
-2. Item-use, harvest/loot, interaction actions, and remaining inventory selectors.
-3. World-system contracts and built-in migrations, with fire explicitly scheduled.
-4. World-generation contributions and player/presentation hooks.
-5. Final cross-category external proof and parity audit.
+1. Harvest/loot contracts and builtin migration.
+2. World-system reads/effects and support migration, with fire explicitly scheduled.
+3. World-generation contributions and player/drop hooks.
+4. Verify remaining audit blockers through independent extensions.
 
-Planning estimate: roughly **5–7 substantial implementation slices** remain,
-depending on how these workstreams are grouped. “About halfway through the host
-surface” is a rough effort estimate, not measured completion or a delivery date.
-World/player call-path audits may uncover additional gaps. The capability
+The remaining work is substantial; no percentage or delivery estimate is implied
+by the completed slices. The capability
 checklist and completion rules below determine completion, not that estimate.
 
 ### Separate loader/runtime milestone

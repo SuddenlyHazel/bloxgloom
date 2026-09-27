@@ -592,6 +592,7 @@ impl Catalog {
             )
             .expect("builtin creature");
         catalog.builtin_inventory_screens();
+        catalog.builtin_item_icons();
         catalog.builtin_machines();
         catalog
     }

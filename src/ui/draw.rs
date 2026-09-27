@@ -174,153 +174,7 @@ impl UiBuilder<'_> {
     }
 
     pub(super) fn draw_item_swatch(&mut self, rect: UiRect, item: ItemId, catalog: &Catalog) {
-        let key = catalog
-            .item(item)
-            .map_or("", |definition| definition.key.as_ref());
-        let rows: &[&str] = match key {
-            "bloxgloom:wood" => &[
-                "..bbbbbbbb..",
-                ".bmmllmmbb.",
-                "bmmlbbllmmb.",
-                "bmlbbmbllmb.",
-                "bmlbbmbllmb.",
-                "bmmlbbllmmb.",
-                "bmmbbbbbmmb.",
-                "bmlbbmbllmb.",
-                "bmlbbmbllmb.",
-                "bmmlbbllmmb.",
-                ".bmmllmmbb.",
-                "..bbbbbbbb..",
-            ],
-            "bloxgloom:leaves" => &[
-                "...ddddd....",
-                ".ddggggddd..",
-                "dggllggggdd.",
-                "dggggggllgd.",
-                "ddggggggggd.",
-                ".dggllggggdd",
-                "dggggggllggd",
-                "dggggggggggd",
-                ".ddggggggdd.",
-                "..dggggggd..",
-                "...ddggdd...",
-                "....dddd....",
-            ],
-            "bloxgloom:red_flower" => &[
-                ".....rr.....",
-                "...rrrrrr...",
-                "..rrrRrrr...",
-                ".rrrrRrrrr..",
-                ".rrrRCRrrr..",
-                "..rrrRrrr...",
-                "....gg......",
-                "...ggg......",
-                "....ggg.....",
-                "....gg......",
-                "...gggg......",
-                "....gg......",
-            ],
-            "bloxgloom:yellow_flower" => &[
-                "....yyyy....",
-                "..yyyyyyyy..",
-                ".yyyyyyyyyy.",
-                ".yyyhhyyyyy.",
-                "..yyhCChyy..",
-                "...yyCCyy...",
-                ".....gg.....",
-                "....ggg.....",
-                "...gggg......",
-                ".....gg......",
-                "....gggg.....",
-                ".....gg......",
-            ],
-            "bloxgloom:blue_flower" => &[
-                "....bb.......",
-                "...bbbb......",
-                "..bbbbbb.....",
-                ".bbbHHbbb....",
-                ".bbbHHbbb....",
-                "..bbbbbb.....",
-                "...bbbb......",
-                ".....gg......",
-                "....ggg......",
-                "...gggg.......",
-                ".....gg.......",
-                "....ggg.......",
-            ],
-            "bloxgloom:fern" => &[
-                ".....gg......",
-                "....gglg.....",
-                "...ggllgg....",
-                "..ggllllgg...",
-                ".ggllggllgg..",
-                "ggllggggllgg.",
-                "...ggllgg.....",
-                "....ggllgg....",
-                ".....ggllgg...",
-                "......ggllgg..",
-                ".......ggllgg.",
-                "........ggg...",
-            ],
-            "bloxgloom:tall_grass" => &[
-                "..g.....g....",
-                "..g...ggg....",
-                "..g..gg.g....",
-                ".gg..g..g....",
-                ".g..gg..g....",
-                ".g..g...g....",
-                "gg..g..gg....",
-                "g...g..g.....",
-                "g..gg..g.....",
-                "g..g...g.....",
-                "gggg..ggg....",
-                "..gg..gg.....",
-            ],
-            "bloxgloom:seeds" => &[
-                "....ssss....",
-                "...stttss...",
-                "..stuuuttss..",
-                "..sttttstss..",
-                "...sssstss...",
-                "......ss.....",
-                "..ssss.......",
-                ".stttss.......",
-                ".stuutss......",
-                "..sstsss......",
-                "....sss.......",
-                "..............",
-            ],
-            "bloxgloom:sapling" => &[
-                "....dddd......",
-                "..ddggggdd....",
-                ".dggllggggd...",
-                "dggggggllgd...",
-                "ddggggggggd...",
-                "..dggllggdd...",
-                "...dggggd......",
-                ".....mm........",
-                ".....mm........",
-                ".....mm........",
-                "....mmbmm.......",
-                ".....bbb........",
-            ],
-            "bloxgloom:stick" => &[
-                "........b.....",
-                ".......bbm....",
-                "......bbmmk...",
-                ".....bbmmk....",
-                "....bbmmk.....",
-                "...bbmmk......",
-                "..bbmmk.......",
-                ".bbmmk........",
-                "bbmmk.........",
-                "bmmk..........",
-                "bk............",
-                "..............",
-            ],
-            _ => &[],
-        };
-        if rows.is_empty() {
+        let Some(icon) = catalog.item_icon(item) else {
             self.rect(
                 rect.x,
                 rect.y,
@@ -329,33 +183,19 @@ impl UiBuilder<'_> {
                 item_color_for(item, catalog),
             );
             return;
-        }
+        };
+        let rows = &icon.rows;
         let columns = rows.iter().map(|row| row.len()).max().unwrap_or(1) as f32;
         let cell_w = rect.width / columns;
         let cell_h = rect.height / rows.len() as f32;
         for (y, row) in rows.iter().enumerate() {
             let row_offset = (rect.width - row.len() as f32 * cell_w) * 0.5;
-            for (x, pixel) in row.chars().enumerate() {
-                let color = match pixel {
-                    'b' if key == "bloxgloom:blue_flower" => Some([0.25, 0.47, 0.81, 1.0]),
-                    'b' => Some([0.31, 0.19, 0.12, 1.0]),
-                    'm' => Some([0.55, 0.34, 0.19, 1.0]),
-                    'l' if key == "bloxgloom:wood" => Some([0.72, 0.48, 0.27, 1.0]),
-                    'l' => Some([0.46, 0.78, 0.40, 1.0]),
-                    'd' => Some([0.19, 0.40, 0.25, 1.0]),
-                    'g' => Some([0.29, 0.62, 0.33, 1.0]),
-                    'r' => Some([0.70, 0.12, 0.22, 1.0]),
-                    'R' => Some([0.94, 0.29, 0.34, 1.0]),
-                    'y' => Some([0.96, 0.68, 0.14, 1.0]),
-                    'h' => Some([1.0, 0.84, 0.30, 1.0]),
-                    'H' => Some([0.53, 0.77, 0.96, 1.0]),
-                    'C' => Some([0.96, 0.72, 0.22, 1.0]),
-                    's' => Some([0.35, 0.23, 0.15, 1.0]),
-                    't' => Some([0.72, 0.48, 0.24, 1.0]),
-                    'u' => Some([0.92, 0.72, 0.40, 1.0]),
-                    'k' => Some([0.76, 0.52, 0.28, 1.0]),
-                    _ => None,
-                };
+            for (x, pixel) in row.bytes().enumerate() {
+                let color = icon
+                    .palette
+                    .iter()
+                    .find(|(symbol, _)| *symbol == pixel)
+                    .map(|(_, color)| *color);
                 if let Some(color) = color {
                     self.rect(
                         rect.x + row_offset + x as f32 * cell_w,

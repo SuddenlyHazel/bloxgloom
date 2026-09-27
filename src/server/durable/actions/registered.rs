@@ -132,6 +132,7 @@ pub(super) fn plan(
                 action_id: Some(action_id),
                 receipt_value: Some(receipt_value),
                 receipt_transition: None,
+                terrain_reads: Default::default(),
                 inventory_before: Some(InventoryStore::encode_snapshot_with_catalog(
                     before, &catalog,
                 )?),

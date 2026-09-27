@@ -15,10 +15,10 @@ mod machine_tests;
 mod mobile_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
-#[path = "support_reads_tests.rs"]
-mod support_reads_tests;
 #[path = "registered_tests.rs"]
 mod registered_tests;
+#[path = "support_reads_tests.rs"]
+mod support_reads_tests;
 use crate::items::{ItemId, STICK};
 use crate::server::entities::{CellCoord, KilnSlot, kiln_block_states, kiln_payload};
 use crate::server::movement::MovementState;

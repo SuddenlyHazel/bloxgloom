@@ -57,6 +57,10 @@ fn public_content_compiles_and_all_metadata_survives_manifest_remapping() {
         0.35
     );
     let chip = resolved.items().find(|i| i.key == CHIP).unwrap().id;
+    assert_eq!(resolved.item_icon(chip).unwrap().rows[0], ".cccc.");
+    let mut changed = catalog.clone();
+    changed.item_icons.remove(CHIP);
+    assert_ne!(changed.fingerprint(), catalog.fingerprint());
     assert!(
         Stack::with_components(chip, 2, 2, vec![3, 9])
             .unwrap()

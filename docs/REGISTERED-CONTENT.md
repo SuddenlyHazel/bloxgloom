@@ -150,3 +150,12 @@ cargo run --release --features lifecycle-fixture -- block-preview fixture:copper
 The focused preview uses the installed catalog, normal voxel light/meshing,
 opaque/cutout pipelines and post-processing. Standard UI previews still use
 their builtin-only UI catalog; they are not evidence of external HUD-icon parity.
+## Integration additions
+
+`Registrar::item_icon` registers bounded bitmap HUD art (up to 32×32 pixels,
+32 palette symbols). Built-in handcrafted icons and the external Etched Chip use
+the same frozen catalog lookup, manifest remapping and compatibility fingerprint.
+The capability is `bloxgloom:item_icons/v1`. Anchored entities, actions, and
+owner-local systems also have explicit versioned package capability identifiers.
+Recipe/fuel constants are checked against registered component schemas; dynamic
+component-preserving output is validated before input or fuel is consumed.

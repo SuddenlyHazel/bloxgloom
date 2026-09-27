@@ -1,0 +1,213 @@
+//! Original HUD art, registered as ordinary public item icons at startup.
+use bloxgloom_host_api::icon::ItemIcon;
+pub(super) fn definitions() -> Vec<ItemIcon> {
+    let art: &[(&str, &[&str])] = &[
+        (
+            "wood",
+            &[
+                "..bbbbbbbb..",
+                ".bmmllmmbb.",
+                "bmmlbbllmmb.",
+                "bmlbbmbllmb.",
+                "bmlbbmbllmb.",
+                "bmmlbbllmmb.",
+                "bmmbbbbbmmb.",
+                "bmlbbmbllmb.",
+                "bmlbbmbllmb.",
+                "bmmlbbllmmb.",
+                ".bmmllmmbb.",
+                "..bbbbbbbb..",
+            ],
+        ),
+        (
+            "leaves",
+            &[
+                "...ddddd....",
+                ".ddggggddd..",
+                "dggllggggdd.",
+                "dggggggllgd.",
+                "ddggggggggd.",
+                ".dggllggggdd",
+                "dggggggllggd",
+                "dggggggggggd",
+                ".ddggggggdd.",
+                "..dggggggd..",
+                "...ddggdd...",
+                "....dddd....",
+            ],
+        ),
+        (
+            "red_flower",
+            &[
+                ".....rr.....",
+                "...rrrrrr...",
+                "..rrrRrrr...",
+                ".rrrrRrrrr..",
+                ".rrrRCRrrr..",
+                "..rrrRrrr...",
+                "....gg......",
+                "...ggg......",
+                "....ggg.....",
+                "....gg......",
+                "...gggg......",
+                "....gg......",
+            ],
+        ),
+        (
+            "yellow_flower",
+            &[
+                "....yyyy....",
+                "..yyyyyyyy..",
+                ".yyyyyyyyyy.",
+                ".yyyhhyyyyy.",
+                "..yyhCChyy..",
+                "...yyCCyy...",
+                ".....gg.....",
+                "....ggg.....",
+                "...gggg......",
+                ".....gg......",
+                "....gggg.....",
+                ".....gg......",
+            ],
+        ),
+        (
+            "blue_flower",
+            &[
+                "....bb.......",
+                "...bbbb......",
+                "..bbbbbb.....",
+                ".bbbHHbbb....",
+                ".bbbHHbbb....",
+                "..bbbbbb.....",
+                "...bbbb......",
+                ".....gg......",
+                "....ggg......",
+                "...gggg.......",
+                ".....gg.......",
+                "....ggg.......",
+            ],
+        ),
+        (
+            "fern",
+            &[
+                ".....gg......",
+                "....gglg.....",
+                "...ggllgg....",
+                "..ggllllgg...",
+                ".ggllggllgg..",
+                "ggllggggllgg.",
+                "...ggllgg.....",
+                "....ggllgg....",
+                ".....ggllgg...",
+                "......ggllgg..",
+                ".......ggllgg.",
+                "........ggg...",
+            ],
+        ),
+        (
+            "tall_grass",
+            &[
+                "..g.....g....",
+                "..g...ggg....",
+                "..g..gg.g....",
+                ".gg..g..g....",
+                ".g..gg..g....",
+                ".g..g...g....",
+                "gg..g..gg....",
+                "g...g..g.....",
+                "g..gg..g.....",
+                "g..g...g.....",
+                "gggg..ggg....",
+                "..gg..gg.....",
+            ],
+        ),
+        (
+            "seeds",
+            &[
+                "....ssss....",
+                "...stttss...",
+                "..stuuuttss..",
+                "..sttttstss..",
+                "...sssstss...",
+                "......ss.....",
+                "..ssss.......",
+                ".stttss.......",
+                ".stuutss......",
+                "..sstsss......",
+                "....sss.......",
+                "..............",
+            ],
+        ),
+        (
+            "sapling",
+            &[
+                "....dddd......",
+                "..ddggggdd....",
+                ".dggllggggd...",
+                "dggggggllgd...",
+                "ddggggggggd...",
+                "..dggllggdd...",
+                "...dggggd......",
+                ".....mm........",
+                ".....mm........",
+                ".....mm........",
+                "....mmbmm.......",
+                ".....bbb........",
+            ],
+        ),
+        (
+            "stick",
+            &[
+                "........b.....",
+                ".......bbm....",
+                "......bbmmk...",
+                ".....bbmmk....",
+                "....bbmmk.....",
+                "...bbmmk......",
+                "..bbmmk.......",
+                ".bbmmk........",
+                "bbmmk.........",
+                "bmmk..........",
+                "bk............",
+                "..............",
+            ],
+        ),
+    ];
+    art.iter()
+        .map(|(key, rows)| ItemIcon {
+            item: format!("bloxgloom:{key}"),
+            rows: rows.iter().map(|r| (*r).into()).collect(),
+            palette: vec![
+                (
+                    b'b',
+                    if *key == "blue_flower" {
+                        [0.25, 0.47, 0.81, 1.0]
+                    } else {
+                        [0.31, 0.19, 0.12, 1.0]
+                    },
+                ),
+                (b'm', [0.55, 0.34, 0.19, 1.0]),
+                (
+                    b'l',
+                    if *key == "wood" {
+                        [0.72, 0.48, 0.27, 1.0]
+                    } else {
+                        [0.46, 0.78, 0.40, 1.0]
+                    },
+                ),
+                (b'd', [0.19, 0.40, 0.25, 1.0]),
+                (b'g', [0.29, 0.62, 0.33, 1.0]),
+                (b'r', [0.70, 0.12, 0.22, 1.0]),
+                (b'R', [0.94, 0.29, 0.34, 1.0]),
+                (b'y', [0.96, 0.68, 0.14, 1.0]),
+                (b'h', [1.0, 0.84, 0.30, 1.0]),
+                (b'H', [0.53, 0.77, 0.96, 1.0]),
+                (b'C', [0.96, 0.72, 0.22, 1.0]),
+                (b's', [0.35, 0.23, 0.15, 1.0]),
+                (b't', [0.72, 0.48, 0.24, 1.0]),
+                (b'u', [0.92, 0.72, 0.40, 1.0]),
+                (b'k', [0.76, 0.52, 0.28, 1.0]),
+            ],
+        })
+        .collect()
+}

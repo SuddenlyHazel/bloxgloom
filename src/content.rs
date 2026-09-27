@@ -7,13 +7,14 @@ use std::sync::OnceLock;
 
 use crate::world::{self, BlockId};
 
-mod anchored;
 mod actions;
+mod anchored;
 mod builtins;
 pub(crate) mod composition;
 pub(crate) mod creatures;
 pub(crate) mod declarations;
 mod extensions;
+mod icons;
 mod ids;
 mod inventories;
 pub(crate) mod machines;
@@ -204,6 +205,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    item_icons: HashMap<String, std::sync::Arc<bloxgloom_host_api::icon::ItemIcon>>,
     owner_systems:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
     anchored_blocks: Vec<Option<EntityTypeId>>,
@@ -241,6 +243,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            item_icons: HashMap::new(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
             anchored_entities: Vec::new(),
@@ -782,6 +785,20 @@ impl Catalog {
                     add(self.state(state).unwrap().key.as_bytes());
                 }
                 add(&[item.sprite as u8]);
+                if let Some(icon) = self.item_icon(item.id) {
+                    add(&[1, icon.rows.len() as u8]);
+                    for row in &icon.rows {
+                        add(&[row.len() as u8]);
+                        add(row.as_bytes());
+                    }
+                    add(&[icon.palette.len() as u8]);
+                    for (symbol, color) in &icon.palette {
+                        add(&[*symbol]);
+                        for value in color {
+                            add(&value.to_bits().to_le_bytes());
+                        }
+                    }
+                }
                 self.component_fingerprint(item.key.as_ref(), &mut hash);
             }
             b'E' => {

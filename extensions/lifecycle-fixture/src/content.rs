@@ -17,7 +17,7 @@ impl Extension for Content {
                 package: "fixture:art".into(),
                 version: 1,
             }],
-            requires: vec![CONTENT.into()],
+            requires: vec![CONTENT.into(), ITEM_ICONS.into()],
         })?;
         r.package(Package {
             key: "fixture:art".into(),
@@ -41,6 +41,17 @@ impl Extension for Content {
                 max_bytes: 16,
                 required: true,
             },
+        })?;
+        r.item_icon(bloxgloom_host_api::icon::ItemIcon {
+            item: CHIP.into(),
+            rows: vec![
+                ".cccc.".into(),
+                "cggggc".into(),
+                "cgccgc".into(),
+                "cggggc".into(),
+                ".cccc.".into(),
+            ],
+            palette: vec![(b'c', [0.8, 0.4, 0.2, 1.0]), (b'g', [1.0, 0.8, 0.4, 1.0])],
         })?;
         let mut lamp = Block {
             key: LAMP.into(),

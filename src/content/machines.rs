@@ -134,6 +134,20 @@ impl Catalog {
             return Err(bad());
         }
         if let Some(p) = &m.process {
+            let valid_components = |key: &str, policy: &ComponentMatch| {
+                self.items()
+                    .find(|i| i.key == key)
+                    .is_some_and(|i| match policy {
+                        ComponentMatch::Empty => self.valid_item_components(i.id, None),
+                        ComponentMatch::Exact(value) => {
+                            self.valid_item_components(i.id, Some((value.version, &value.bytes)))
+                        }
+                        ComponentMatch::Present => !matches!(
+                            self.item_components.get(key),
+                            Some(bloxgloom_host_api::content::Components::None)
+                        ),
+                    })
+            };
             let accepts = |slot: u8, key: &String| {
                 m.filters[slot as usize].items.is_empty()
                     || m.filters[slot as usize].items.contains(key)
@@ -142,6 +156,15 @@ impl Catalog {
                 !valid_key(&r.key)
                     || !item(&r.input)
                     || !item(&r.output)
+                    || !valid_components(&r.input, &r.input_components)
+                    || !valid_components(
+                        &r.output,
+                        &match &r.output_components {
+                            ComponentOutput::Empty => ComponentMatch::Empty,
+                            ComponentOutput::Exact(value) => ComponentMatch::Exact(value.clone()),
+                            ComponentOutput::PreserveInput => r.input_components.clone(),
+                        },
+                    )
                     || !accepts(p.input, &r.input)
                     || !accepts(p.output, &r.output)
                     || (r.input_components != ComponentMatch::Empty
@@ -155,6 +178,7 @@ impl Catalog {
                     } && !m.filters[p.output as usize].components)
             }) || p.fuels.iter().any(|f| {
                 !item(&f.item)
+                    || !valid_components(&f.item, &f.components)
                     || p.fuel.is_none_or(|slot| {
                         !accepts(slot, &f.item)
                             || (f.components != ComponentMatch::Empty

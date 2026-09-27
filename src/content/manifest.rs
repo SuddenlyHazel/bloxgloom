@@ -226,6 +226,7 @@ impl ContentManifest {
         }
         resolved.narrow_plants = local.narrow_plants.clone();
         resolved.item_components = local.item_components.clone();
+        resolved.item_icons = local.item_icons.clone();
         resolved.composition = local.composition.clone();
         for entry in self
             .entries
@@ -341,8 +342,10 @@ impl ContentManifest {
         let mut previous = None;
         let mut keys = HashSet::with_capacity(self.entries.len().min(262_144));
         for entry in &self.entries {
-            if !matches!(entry.kind, b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y')
-                || entry.id >= MAX_ASSIGNED_ID
+            if !matches!(
+                entry.kind,
+                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y'
+            ) || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }
                 || !if entry.kind == b'S' {

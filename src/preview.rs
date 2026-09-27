@@ -434,7 +434,12 @@ async fn render_previews(
     );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
-    let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
+    let mut ui_renderer = ui::UiRenderer::new_with_catalog(
+        &device,
+        &queue,
+        FORMAT,
+        std::sync::Arc::new(crate::content::catalog().clone()),
+    );
     measure_ui_prepare(&mut ui_renderer, &queue);
     let center_x = center_chunk.0 * 16;
     let center_z = center_chunk.1 * 16;
@@ -1201,6 +1206,18 @@ fn sample_inventory() -> [Option<Stack>; SLOTS] {
         (29, 6, 128),
     ] {
         slots[index] = Some(Stack::new(crate::items::ItemId::new(item), count));
+    }
+    for (slot, key) in [(11, "bloxgloom:wood"), (12, "bloxgloom:stick")] {
+        if let Some(item) = crate::content::catalog().items().find(|i| i.key == key) {
+            slots[slot] = Some(Stack::new(item.id, 8));
+        }
+    }
+    #[cfg(feature = "lifecycle-fixture")]
+    if let Some(item) = crate::content::catalog()
+        .items()
+        .find(|i| i.key == bloxgloom_lifecycle_fixture::content::CHIP)
+    {
+        slots[14] = Stack::with_components(item.id, 3, 2, vec![1]);
     }
     slots
 }

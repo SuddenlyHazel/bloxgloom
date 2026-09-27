@@ -200,3 +200,30 @@ fn ambiguous_or_oversized_component_operations_are_rejected_and_metadata_is_iden
         });
     assert!(definition.validate().is_err());
 }
+
+#[test]
+fn preserved_components_incompatible_with_output_schema_do_not_consume_input_or_fuel() {
+    let catalog = Arc::new(
+        crate::server::catalog_with_extension(
+            Catalog::builtins(),
+            &bloxgloom_lifecycle_fixture::content::Content,
+        )
+        .unwrap(),
+    );
+    let mut definition = (**catalog.machine(KILN_ENTITY_TYPE).unwrap()).clone();
+    let output = bloxgloom_lifecycle_fixture::content::CHIP;
+    definition.filters[2].items = vec![output.into()];
+    definition.filters[2].components = true;
+    let recipe = &mut definition.process.as_mut().unwrap().recipes[0];
+    recipe.input_components = api::ComponentMatch::Present;
+    recipe.output_components = api::ComponentOutput::PreserveInput;
+    recipe.output = output.into();
+    let adapter = Adapter::new(catalog, Arc::new(definition));
+    let mut payload = MachinePayload::empty(3, 0);
+    payload.slots[0] = Some(Stack::new(STICK, 2));
+    payload.slots[1] = Some(Stack::with_components(ItemId(GRAVEL.0), 2, 1, vec![7]).unwrap());
+    let slots = payload.slots.clone();
+    adapter.process(&mut payload).unwrap();
+    assert_eq!(payload.slots, slots);
+    assert_eq!((payload.progress, payload.fuel), (0, 0));
+}

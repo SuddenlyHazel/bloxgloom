@@ -31,7 +31,7 @@ impl Adapter {
             )),
         };
         let mut destination = p.slots[d.output as usize].clone();
-        if !put(&mut destination, &output) {
+        if !self.accepts_slot(usize::from(d.output), &output) || !put(&mut destination, &output) {
             p.fuel = p.fuel.saturating_sub(1);
             return Ok(());
         }

@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     content: crate::content::declarations::Declarations,
     cubes: Vec<CubeBlock>,
@@ -20,6 +21,15 @@ pub(crate) struct Registration {
     systems: Vec<bloxgloom_host_api::system::System>,
 }
 impl Registrar for Registration {
+    fn item_icon(
+        &mut self,
+        icon: bloxgloom_host_api::icon::ItemIcon,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        icon.validate()?;
+        self.icons.push(icon);
+        Ok(())
+    }
     fn owner_system(
         &mut self,
         system: bloxgloom_host_api::system::System,
@@ -162,6 +172,7 @@ impl Registration {
             + self.anchored.len()
             + self.systems.len()
             + self.actions.len()
+            + self.icons.len()
             >= 4096
         {
             return Err(RegistrationError(
@@ -177,8 +188,10 @@ impl Registration {
         let mut registration = Self::default();
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
-        registration.systems.sort_by(|a,b|a.key.cmp(&b.key));
-        registration.anchored.sort_by(|a,b|a.entity.cmp(&b.entity));
+        registration.systems.sort_by(|a, b| a.key.cmp(&b.key));
+        registration
+            .anchored
+            .sort_by(|a, b| a.entity.cmp(&b.entity));
         for system in &registration.systems {
             candidate.register_owner_system(system.clone())?;
         }
@@ -201,6 +214,9 @@ impl Registration {
             .content
             .install_items_and_tags(&mut candidate)?;
         candidate.refresh_builtin_fuels()?;
+        for icon in &registration.icons {
+            candidate.register_item_icon(icon.clone())?;
+        }
         for definition in &registration.definitions {
             candidate.extension_storage(definition)?;
         }

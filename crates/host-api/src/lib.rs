@@ -2,11 +2,12 @@
 //! This is not a mod loader or a stable native ABI.
 use std::fmt;
 
+pub mod actions;
 pub mod anchored;
 pub mod composition;
 pub mod content;
-pub mod actions;
 pub mod entity;
+pub mod icon;
 pub mod inventory;
 pub mod lifecycle;
 pub mod machine;
@@ -34,6 +35,11 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn item_icon(&mut self, _icon: icon::ItemIcon) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "item icons unsupported by this registrar".into(),
+        ))
+    }
     fn owner_system(&mut self, _system: system::System) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "owner systems unsupported by this registrar".into(),

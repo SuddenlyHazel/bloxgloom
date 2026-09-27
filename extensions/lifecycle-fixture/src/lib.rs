@@ -4,9 +4,9 @@ use bloxgloom_host_api::{
 };
 
 pub const KEY: &str = "fixture:tall_store";
+pub mod actions;
 pub mod anchored;
 pub mod content;
-pub mod actions;
 pub mod creature;
 pub mod machine;
 pub mod system;
