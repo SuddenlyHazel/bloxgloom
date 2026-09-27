@@ -375,8 +375,8 @@ support as the final model system.
 
 | Phase | Work to land | Status |
 | --- | --- | --- |
-| 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | In progress |
-| 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | Planned |
+| 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
+| 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | In progress |
 | 3 | Public generation context and migration of existing terrain/vegetation | Planned |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Planned |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Planned |
@@ -427,9 +427,9 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 1 — public terrain/drop/inventory overlay and registered
-  removal decisions implemented; entity participants and broader routing remain
-  in progress.
+- **Active phase:** 2 — general gameplay foundation landed; next unify decision
+  events and persistent scheduling, then remaining built-in world/drop/player and
+  fire behavior. Phase 1 does not claim Luau, client packages or authored UI.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -471,6 +471,20 @@ This section exists so compaction or a new session does not restart the design.
   harvest reward into a nearby chest and checks exact recovery of both sides.
   Generic entity definitions/spawn/update/remove and non-actor player inventories
   remain pending, as do complete removal/lifecycle routing and later phases.
+- **Phase 1 closing increment:** registered non-archetypal durable mobile entities
+  now have canonical bounded private state and a separate bounded public projection.
+  Shared handlers can query nearby entities with complete/absence dependencies and
+  spawn, update or remove their own namespaced entities. Spawns validate position,
+  radius and resident terrain; entity changes share the WAL record with block
+  edits, inventory changes, registered chest/machine transfers and component-safe
+  drops. Generic entity state is versioned through the content manifest; byte
+  schema changes require a new world version or explicit declaration change, not
+  an implicit migration. Anchor destruction now calls the registered removal
+  decision on the anchor while keeping full-footprint validation and the existing
+  single refund of the block/container contents. Default cube harvest does not
+  duplicate that refund. Bound entity state does not imply a model importer,
+  arbitrary movement/collision, ticks or a script runtime; those are separate
+  phases or explicitly deferred.
 - **Latest verification:** initial 704-test workspace run; then 64 durable-action
   regressions, 18 content regressions, and 2 focused gameplay tests passed for the
   registered-handler increment. The gameplay tests cover unavailable neighbour
@@ -488,9 +502,14 @@ This section exists so compaction or a new session does not restart the design.
   tests passed, including player-to-chest transfer combined with seam edits and
   drops, duplicate requests, unavailable terrain and restart. All-target/all-feature
   workspace checks and strict Clippy passed.
-- **Next concrete step:** add generic entity definition/spawn/update/remove
-  participants and migrate remaining removal/lifecycle paths. Entity lookup and
-  registered storage/machine inventory participation are already connected.
+- **Phase 1 close verification:** 67 durable-action tests, a real nonblocking
+  listener edit/recovery check and strict all-feature Clippy passed. Focused
+  tests cover a non-archetypal entity's creation, state update and removal,
+  nearby read and read-your-writes semantics, atomic chest transfer and anchored
+  destruction with one refund plus registered loot. No benchmarks were run.
+- **Next concrete step:** start Phase 2 with general event/decision registration
+  across placement/use and scheduled world behavior using this same plan. Migrate
+  specialized support and fire behavior without creating another WAL lane.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

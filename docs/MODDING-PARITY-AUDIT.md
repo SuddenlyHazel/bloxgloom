@@ -11,8 +11,12 @@ breaks, replacement/support-loss harvest and anchored placement's displaced plan
 use it. Built-in harvest policy uses only the public host API. A registered
 handler can read neighbouring terrain and stage extra edits plus drops in the
 same command transaction, with recorded dependencies and restart recovery.
-Inventory/entity services, complete lifecycle routing and later phases remain
-in progress; this is not a declaration of full parity.
+Registered container/machine inventory transfers and generic durable mobile
+entities now share that atomic planning boundary. Anchor destruction also invokes
+registered removal decisions while preserving footprint refunds without duplicate
+cube loot. The Phase 1 gameplay transaction context is complete; Phase 2 events,
+scheduled world behavior, drop policies, player rules and fire migration, plus
+later Luau/package/presentation phases, remain open. This is not full parity.
 
 ### Integration follow-up
 

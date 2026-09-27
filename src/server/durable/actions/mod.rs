@@ -454,15 +454,17 @@ fn plan_block_edit(
             &coords,
             &removals,
             (profile, &updated),
+            tick.get(),
         )?;
         let updated = plan.inventory.unwrap_or(updated);
         let coords = plan.edits;
         let prepared = plan.prepared;
         let deltas = prepared_deltas(&coords, &prepared);
-        let entities = crate::server::drops::plan_stack_spawns(
+        let entities = crate::server::drops::plan_stack_spawns_with_extra(
             &state.entities,
             &catalog,
             &plan.drops,
+            plan.entity_spawns,
             tick.get(),
             crate::server::drops::unix_ms(),
         )?;
@@ -538,14 +540,16 @@ fn plan_block_edit(
         &coords,
         &removals,
         (profile, &inventory_before),
+        tick.get(),
     )?;
     let coords = plan.edits;
     let prepared = plan.prepared;
     let deltas = prepared_deltas(&coords, &prepared);
-    let entities = crate::server::drops::plan_stack_spawns(
+    let entities = crate::server::drops::plan_stack_spawns_with_extra(
         &state.entities,
         &catalog,
         &plan.drops,
+        plan.entity_spawns,
         tick.get(),
         crate::server::drops::unix_ms(),
     )?;
@@ -583,15 +587,19 @@ fn plan_gameplay_removals(
     edits: &[crate::server::gameplay::Edit],
     removals: &[crate::server::gameplay::Removal],
     actor: (u128, &Inventory),
+    tick: u64,
 ) -> io::Result<crate::server::gameplay::WorldPlan> {
     let mut requested = Vec::new();
     let result = crate::server::gameplay::plan_removals(
         &mut state.world,
         reads,
         &mut requested,
-        edits,
-        removals,
-        state.seed,
+        crate::server::gameplay::OperationInput {
+            edits,
+            removals,
+            seed: state.seed,
+            tick,
+        },
         crate::server::gameplay::Participants {
             actor: Some(actor),
             entities: &state.entities,

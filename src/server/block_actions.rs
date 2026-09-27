@@ -17,7 +17,7 @@ use super::durable::actions::BlockEditCommand;
 use super::entities::EntityStore;
 use super::simulation::TickId;
 use crate::content::{BlockStateId, BlockTypeId, Catalog};
-use crate::world::{BlockId, ChunkKey, PreparedEdit, World, world_to_chunk};
+use crate::world::{BlockId, ChunkKey, World, world_to_chunk};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
@@ -82,15 +82,19 @@ impl BlockCommitBuilder<'_> {
         edits: &[super::gameplay::Edit],
         removals: &[super::gameplay::Removal],
         seed: u64,
+        tick: u64,
         participants: super::gameplay::Participants<'_>,
     ) -> io::Result<super::gameplay::WorldPlan> {
         super::gameplay::plan_removals(
             self.world,
             &mut self.terrain_reads,
             &mut self.requested_chunks,
-            edits,
-            removals,
-            seed,
+            super::gameplay::OperationInput {
+                edits,
+                removals,
+                seed,
+                tick,
+            },
             participants,
         )
     }
@@ -115,13 +119,15 @@ impl BlockCommitBuilder<'_> {
         Err(io::Error::new(ErrorKind::WouldBlock, reason))
     }
 
-    /// Prepares validated versioned edits. This only interns planning
-    /// revisions; nothing becomes visible before the WAL receipt.
-    pub(super) fn prepare_edits(
+    #[cfg(test)]
+    fn prepare_edits(
         &mut self,
         edits: &[(i32, i32, i32, BlockId)],
-    ) -> io::Result<Vec<PreparedEdit>> {
-        super::gameplay::prepare_edits(self.world, &mut self.terrain_reads, edits)
+    ) -> io::Result<Vec<crate::world::PreparedEdit>> {
+        for &(x, y, z, _) in edits {
+            self.cached_block_or_request(x, y, z, "test hook edit chunk unavailable")?;
+        }
+        self.world.prepare_edits(edits)
     }
 
     fn take_requested_chunks(&mut self) -> Vec<ChunkKey> {

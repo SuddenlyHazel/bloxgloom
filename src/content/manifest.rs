@@ -299,6 +299,7 @@ impl ContentManifest {
                 .register_entity_type(entity)
                 .map_err(|_| invalid("invalid mapped entity type"))?;
         }
+        resolved.gameplay_entities = local.gameplay_entities.clone();
         for (_, mobile) in local.mobile_entities() {
             let id = resolved
                 .entity_type_id_by_key(&mobile.key)

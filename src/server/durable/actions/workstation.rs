@@ -134,6 +134,7 @@ pub(super) fn place(
         &coords,
         &removals,
         context.seed(),
+        tick.get(),
         crate::server::gameplay::Participants {
             actor: Some((command.profile, &inventory)),
             entities: context.entities(),
@@ -169,11 +170,13 @@ pub(super) fn place(
     let deltas = prepared_deltas(&coords, &world_edits);
     // The kiln spawn rides in the same atomic batch as its displaced-plant
     // drops: one WAL record, so the kiln and its loot never split.
+    let mut extra_spawns = plan.entity_spawns;
+    extra_spawns.push(spawn);
     let entities = crate::server::drops::plan_stack_spawns_with_extra(
         context.entities(),
         &catalog,
         &plan.drops,
-        vec![spawn],
+        extra_spawns,
         tick.get(),
         crate::server::drops::unix_ms(),
     )?
@@ -248,26 +251,80 @@ pub(super) fn remove(
         }
         coords.push((cell.x, cell.y, cell.z, AIR));
     }
+    let inventory_before = context
+        .client(command.id)
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "missing actor"))?
+        .inventory
+        .clone();
+    let target = cells
+        .iter()
+        .find(|(cell, _)| *cell == anchor)
+        .ok_or_else(|| corrupt("anchor absent from footprint"))?
+        .1;
+    let plan = builder.plan_removals(
+        &coords,
+        &[(
+            target,
+            [anchor.x, anchor.y, anchor.z],
+            bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak,
+        )],
+        context.seed(),
+        tick.get(),
+        crate::server::gameplay::Participants {
+            actor: Some((command.profile, &inventory_before)),
+            entities: context.entities(),
+        },
+    )?;
+    if coords.iter().any(|edit| !plan.edits.contains(edit)) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "gameplay handler changed the removed footprint",
+        ));
+    }
+    for &(x, y, z, block) in &plan.edits {
+        let part_of_footprint = coords
+            .iter()
+            .any(|&(cx, cy, cz, _)| [x, y, z] == [cx, cy, cz]);
+        if !part_of_footprint
+            && (context
+                .entities()
+                .anchored_at(CellCoord::new(x, y, z))
+                .is_some()
+                || (catalog.block_flags(block) & crate::content::SOLID != 0
+                    && context
+                        .clients()
+                        .values()
+                        .any(|client| block_intersects_player([x, y, z], client.position()))))
+        {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "gameplay edit conflicts with an anchor or player",
+            ));
+        }
+    }
     let entities = context
         .entities()
         .prepare_despawn(id, snapshot.revision)
         .map_err(io::Error::other)?;
-    let world_edits = builder.prepare_edits(&coords)?;
+    let coords = plan.edits;
+    let world_edits = plan.prepared;
     let deltas = prepared_deltas(&coords, &world_edits);
     let drop_position = [
         anchor.x as f32 + 0.5,
         anchor.y as f32 + 0.5,
         anchor.z as f32 + 0.5,
     ];
-    let spawns: Vec<_> = drops
+    let mut spawns: Vec<_> = drops
         .into_iter()
         .map(|stack: Stack| (drop_position, stack, Duration::from_millis(250)))
         .collect();
+    spawns.extend(plan.drops);
     // The kiln despawn and its refund drops stage as one atomic batch.
-    let entities = match crate::server::drops::plan_stack_spawns(
+    let entities = match crate::server::drops::plan_stack_spawns_with_extra(
         context.entities(),
         &catalog,
         &spawns,
+        plan.entity_spawns,
         tick.get(),
         crate::server::drops::unix_ms(),
     )? {
@@ -277,6 +334,12 @@ pub(super) fn remove(
             .map_err(io::Error::other)?,
         None => entities,
     };
+    let entities = crate::server::gameplay::combine_entities(
+        context.entities(),
+        Some(entities),
+        plan.entity_updates,
+    )?
+    .expect("anchored removal includes a despawn");
     Ok(CommitAction {
         client_id: Some(command.id),
         profile: Some(command.profile),
@@ -284,8 +347,12 @@ pub(super) fn remove(
         receipt_value: Some(command.receipt_value),
         receipt_transition: None,
         terrain_reads: Default::default(),
-        inventory_before: None,
-        inventory: None,
+        inventory_before: plan
+            .inventory
+            .as_ref()
+            .map(|_| InventoryStore::encode_snapshot_with_catalog(&inventory_before, &catalog))
+            .transpose()?,
+        inventory: plan.inventory,
         world_edits,
         deltas,
         changed_cells: coords

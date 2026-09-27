@@ -87,6 +87,28 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn project_entity_state(&self, _: u64, _: &[u8]) -> Result<Vec<u8>, Error> {
+        Err(Error::Invalid(
+            "entity projection unavailable in loot test snapshot".into(),
+        ))
+    }
+    fn nearby_entities(
+        &mut self,
+        _: [f32; 3],
+        _: f32,
+    ) -> Result<Vec<bloxgloom_host_api::gameplay::Entity>, Error> {
+        Err(Error::Invalid(
+            "entity query unavailable in loot test snapshot".into(),
+        ))
+    }
+    fn entity_state(&mut self, _: u64, _: &str) -> Result<Option<Vec<u8>>, Error> {
+        Err(Error::Invalid(
+            "entity state unavailable in loot test snapshot".into(),
+        ))
+    }
+    fn validate_entity_state(&self, key: &str, _: &str, _: &[u8]) -> Result<(), Error> {
+        Err(Error::UnknownContent(key.into()))
+    }
     fn inventory_accepts(
         &self,
         _: bloxgloom_host_api::gameplay::InventoryId,

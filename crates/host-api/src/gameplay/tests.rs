@@ -4,6 +4,18 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn project_entity_state(&self, _: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
+        Ok(state.to_vec())
+    }
+    fn nearby_entities(&mut self, _: [f32; 3], _: f32) -> Result<Vec<Entity>, Error> {
+        Ok(vec![])
+    }
+    fn entity_state(&mut self, _: u64, _: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(None)
+    }
+    fn validate_entity_state(&self, key: &str, _: &str, _: &[u8]) -> Result<(), Error> {
+        Err(Error::UnknownContent(key.into()))
+    }
     fn inventory_accepts(&self, _: InventoryId, _: usize, _: &Stack) -> bool {
         true
     }
@@ -87,6 +99,18 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn project_entity_state(&self, _: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
+        Ok(state.to_vec())
+    }
+    fn nearby_entities(&mut self, _: [f32; 3], _: f32) -> Result<Vec<Entity>, Error> {
+        Ok(vec![])
+    }
+    fn entity_state(&mut self, _: u64, _: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(None)
+    }
+    fn validate_entity_state(&self, key: &str, _: &str, _: &[u8]) -> Result<(), Error> {
+        Err(Error::UnknownContent(key.into()))
+    }
     fn inventory_accepts(&self, _: InventoryId, _: usize, _: &Stack) -> bool {
         true
     }

@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     gameplay_handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
@@ -22,6 +23,15 @@ pub(crate) struct Registration {
     systems: Vec<bloxgloom_host_api::system::System>,
 }
 impl Registrar for Registration {
+    fn gameplay_entity(
+        &mut self,
+        definition: bloxgloom_host_api::gameplay::EntityDefinition,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        definition.validate()?;
+        self.gameplay_entities.push(definition);
+        Ok(())
+    }
     fn gameplay_handler(
         &mut self,
         handler: bloxgloom_host_api::gameplay::HandlerRegistration,
@@ -174,6 +184,7 @@ impl Registrar for Registration {
 impl Registration {
     fn room(&self) -> Result<(), RegistrationError> {
         if self.content.len()
+            + self.gameplay_entities.len()
             + self.gameplay_handlers.len()
             + self.cubes.len()
             + self.definitions.len()
@@ -210,6 +221,9 @@ impl Registration {
         registration.cubes.sort_by(|a, b| a.key.cmp(&b.key));
         registration.mobiles.sort_by(|a, b| a.key.cmp(&b.key));
         registration
+            .gameplay_entities
+            .sort_by(|a, b| a.key.cmp(&b.key));
+        registration
             .definitions
             .sort_by(|a, b| a.entity.cmp(&b.entity));
         registration
@@ -217,6 +231,9 @@ impl Registration {
             .sort_by(|a, b| a.entity.cmp(&b.entity));
         for mobile in &registration.mobiles {
             candidate.register_mobile(mobile.clone())?;
+        }
+        for entity in &registration.gameplay_entities {
+            candidate.register_gameplay_entity(entity.clone())?;
         }
         for cube in &registration.cubes {
             candidate.extension_cube(cube)?;

@@ -13,8 +13,12 @@ impl bloxgloom_host_api::gameplay::Handler for Harvest {
             cell,
             previous,
             random,
+            cause,
             ..
         } = event;
+        if *cause == bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak {
+            return Ok(());
+        }
         harvest(context, previous, *cell, *random)
     }
 }

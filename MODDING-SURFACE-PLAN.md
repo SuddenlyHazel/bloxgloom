@@ -1,10 +1,11 @@
 # Plan: built-in/mod capability parity
 
-**Next implementation proposal:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md).
+**Approved implementation plan:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md).
 It consolidates the full host, Luau, package delivery, UI and shader scope into one
 approval and execution plan. The user approved full implementation; Luau/mlua
 selection and inclusion of previously deferred fire migration are now active
-decisions. Phase 1 is in progress in that document.
+decisions. Phase 1 (shared gameplay world/entity/item operations and harvest
+migration) is done; Phase 2 is in progress in that document.
 This file remains the historical/current implementation tracker.
 
 Status: implementation in progress. The public crate exposes the completed
@@ -13,13 +14,10 @@ Latest integration: content/assets, anchored lifecycle, component-aware machines
 registered actions/UI, and persistent owner-local systems are merged into main. This document
 tracks host capability parity; an installable mod loader is a separate milestone.
 
-Proposed next direction: [one coherent gameplay API](MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
-That proposal consolidates the remaining gaps around shared world access,
-mutations, events, and scheduling. It is a proposal, not an implementation status
-change. Luau through `mlua` is now the likely runtime, not a final selection. The
-proposal also records server-delivered client packages, richer UI based on Rust
-prior art, custom shaders/textures, and deferred custom models pending a modeling
-workflow decision. These are additional targets, not already-completed features.
+The earlier [gameplay API proposal](MODDING-GAMEPLAY-SURFACE-PROPOSAL.md) is
+background, superseded by the approved implementation plan. Luau through `mlua`
+is the selected first runtime; server-delivered client packages, authored UI and
+shaders remain planned, and custom imported models remain deferred.
 
 ## Implementation status
 
@@ -42,19 +40,20 @@ parity for its broader category.
 | Registration and composition parity | Done | Deterministic bundled registration, exact-version dependencies, capability validation, frozen identities, references, and compatibility fingerprints |
 | General block / anchored-entity lifecycle | Done | Bounded own-state initialization/codecs/projections/use, neighbor/support reactions, costs/refunds, and atomic footprint invalidation; SignalPost proof |
 | Inventory / process parity | Done | Exact slot/component-equivalence selectors, component-aware recipes/fuels/output policies, schema validation, conserving transfers and remap recovery |
-| General item use, harvest, and loot | Planned | Registered item recipe action is implemented; general harvest/drop contracts and built-in loot migration remain |
+| General item use, harvest, and loot | In progress | Shared removal decisions and built-in ordinary/anchored harvest are implemented; general use and wider loot/event policies remain in Phase 2 |
+| Shared world/entity/item transaction context | Done | Registered handlers combine terrain, exact inventory operations, drops and generic durable entity spawn/update/removal with preimage capture, WAL publication and recovery; scheduling and additional events remain in Phase 2 |
 | General interaction actions and UI composition | Done | Item/empty-space/block/entity discovery, fenced durable dispatch, bounded label/button/tooltip panels, stock-client integration and external knapping proof |
 | Persistent owner-local system slice | Done | Public codecs, bounded persistent bytes, schedules/seeds, region-clock fixture and real-listener restart; world reads/effects remain below |
 | World-system API and growth/support migration | Planned | Expose internal owner/system scheduling through public bounded read, effect, persistence, and wake contracts |
-| Fire migration | Deferred | Parked pending explicit authorization; still a blocker for full capability parity |
+| Fire migration | Planned | Explicitly authorized in the approved plan; preserve frontier durability, support/anchor invalidation and bounded work when migrating through the shared gameplay boundary |
 | World-generation API | Planned | Deterministic terrain/vegetation contributions, ordering, bounded output, and seam ownership |
 | Player rules, commands, and bindings | Planned | Audit and expose supported movement/spawn/player-rule hooks and registered commands/actions/bindings |
 | World-drop gameplay and presentation parity | Planned | Move remaining drop policies and presentation capabilities onto accessible contracts |
 | External cross-category integration proof | Done | Independently compiled TallStore, Copperling, Crusher, SignalPost, Copper Lamp/Reed/Etched Chip, knapping action and persistent region clock; broader world-effect proof belongs to planned world-system work |
 | Built-in call-path audit | Done | Category inventory and integration follow-up in docs/MODDING-PARITY-AUDIT.md; remaining privileged paths identified explicitly |
-| Close remaining full-parity audit blockers | Planned | World systems/generation, harvest/loot, player rules/commands/bindings and world-drop policies; fire remains deferred |
-| Runtime adapter and user-installable mod loader | Deferred | Separate milestone: select runtime/language, then package/dependency handling, discovery/loading, and isolation |
-| Server-delivered client packages | Planned | Joining a modded server obtains required client/shared scripts and assets, caches matching content, and builds a compatible session catalog before play; likely Luau/mlua |
+| Close remaining full-parity audit blockers | Planned | Remaining world systems/generation, use/loot event policies, player rules/commands/bindings, world-drop policies and fire migration |
+| Runtime adapter and user-installable mod loader | Planned | Approved Luau/mlua runtime, local packages and module lifecycle are Phase 4; server delivery is Phase 5 |
+| Server-delivered client packages | Planned | Joining a modded server obtains required client/shared scripts and assets, caches matching content, and builds a compatible session catalog before play; Luau/mlua is selected |
 | General authored UI/GUI | Planned | Evaluate Rust prior art such as Blitz/Taffy for layout, styling, text/input, and script events; existing bounded panels are a convenience subset |
 | Custom shaders and render integration | Planned | Mod-provided shader code, textures/materials, host rendering interfaces and visual-effect composition; existing PNG registration is only the foundation |
 | Custom model pipeline | Deferred | First decide the long-term modeling/authoring workflow for the game; then expose the same pipeline to mods |

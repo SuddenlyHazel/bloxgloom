@@ -36,6 +36,14 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn gameplay_entity(
+        &mut self,
+        _entity: gameplay::EntityDefinition,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "gameplay entities unsupported by this registrar".into(),
+        ))
+    }
     fn gameplay_handler(
         &mut self,
         _handler: gameplay::HandlerRegistration,

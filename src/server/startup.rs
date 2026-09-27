@@ -259,6 +259,22 @@ impl ServerStartup {
         for (id, _) in catalog.mobile_entities() {
             super::entities::mobile::register(&mut types, &catalog, id).map_err(entity_error)?;
         }
+        for definition in catalog.gameplay_entities() {
+            let id = catalog
+                .entity_type_id_by_key(&definition.key)
+                .ok_or_else(|| entity_error(EntityError::InvalidType))?;
+            types
+                .register(EntityTypeRegistration {
+                    id,
+                    ownership: EntityOwnership::Mobile,
+                    tick_policy: TickPolicy::Never,
+                    max_payload_bytes: usize::from(definition.max_state_bytes),
+                    codec: Arc::new(super::entities::GameplayCodec {
+                        definition: Arc::clone(definition),
+                    }),
+                })
+                .map_err(entity_error)?;
+        }
         for (id, _) in catalog.machines() {
             super::entities::machine::register(&mut types, catalog.clone(), id)
                 .map_err(entity_error)?;

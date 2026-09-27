@@ -48,6 +48,31 @@ struct WorldSnapshot<'a> {
     entities: Option<&'a super::entities::EntityStore>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn project_entity_state(&self, id: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        entities::project(store, id, state)
+    }
+    fn nearby_entities(
+        &mut self,
+        position: [f32; 3],
+        radius: f32,
+    ) -> Result<Vec<bloxgloom_host_api::gameplay::Entity>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        entities::nearby(self.world.catalog(), self.reads, store, position, radius)
+    }
+    fn entity_state(&mut self, id: u64, owner: &str) -> Result<Option<Vec<u8>>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
+        entities::state(self.world.catalog(), self.reads, store, id, owner)
+    }
+    fn validate_entity_state(&self, key: &str, owner: &str, state: &[u8]) -> Result<(), Error> {
+        entities::validate_state(self.world.catalog(), key, owner, state)
+    }
     fn entity(&mut self, id: u64) -> Result<Option<bloxgloom_host_api::gameplay::Entity>, Error> {
         let store = self
             .entities
@@ -133,52 +158,20 @@ impl Snapshot for WorldSnapshot<'_> {
     }
 }
 
-/// Shared staged terrain path. Even blind writes acquire terrain dependencies;
-/// the caller merges them into the same CommitAction as inventory/entities.
-pub(super) fn prepare_edits(
-    world: &mut World,
-    reads: &mut TerrainReads,
-    edits: &[(i32, i32, i32, BlockId)],
-) -> io::Result<Vec<PreparedEdit>> {
-    let catalog = world.catalog_arc();
-    let mut requested = Vec::new();
-    let mut snapshot = WorldSnapshot {
-        world,
-        reads,
-        requested: &mut requested,
-        actor: None,
-        inventory_read: false,
-        entities: None,
-    };
-    let mut context = Context::new(&mut snapshot, edits.len());
-    for &(x, y, z, state) in edits {
-        let state = catalog
-            .state(state)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown block state"))?;
-        context.set_block([x, y, z], &state.key).map_err(error)?;
-    }
-    let plan = context.finish().map_err(error)?;
-    let edits = plan
-        .blocks
-        .into_iter()
-        .map(|([x, y, z], key)| {
-            catalog
-                .state_by_key(&key)
-                .map(|id| (x, y, z, id))
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "staged state disappeared")
-                })
-        })
-        .collect::<io::Result<Vec<_>>>()?;
-    world.prepare_edits(&edits)
-}
-
 pub(super) type Edit = (i32, i32, i32, BlockId);
 pub(super) type Spawn = ([f32; 3], crate::inventory::Stack, std::time::Duration);
 pub(super) type Removal = (BlockId, Cell, bloxgloom_host_api::gameplay::RemovalCause);
 
+pub(super) struct OperationInput<'a> {
+    pub edits: &'a [Edit],
+    pub removals: &'a [Removal],
+    pub seed: u64,
+    pub tick: u64,
+}
+
 pub(super) struct WorldPlan {
     pub entity_updates: Vec<super::entities::PreparedEntityTransaction>,
+    pub entity_spawns: Vec<super::entities::EntitySpawn>,
     pub edits: Vec<Edit>,
     pub prepared: Vec<PreparedEdit>,
     pub drops: Vec<Spawn>,
@@ -191,12 +184,16 @@ pub(super) fn plan_removals(
     world: &mut World,
     reads: &mut TerrainReads,
     requested: &mut Vec<ChunkKey>,
-    edits: &[Edit],
-    removals: &[Removal],
-    seed: u64,
+    input: OperationInput<'_>,
     participants: Participants<'_>,
 ) -> io::Result<WorldPlan> {
     use bloxgloom_host_api::gameplay::{Event, EventKind, cell_random};
+    let OperationInput {
+        edits,
+        removals,
+        seed,
+        tick,
+    } = input;
     let actor = participants.actor;
     let catalog = world.catalog_arc();
     // Preparation is invisible. Its per-chunk version is stable random input
@@ -237,7 +234,7 @@ pub(super) fn plan_removals(
             cause,
             random: cell_random(seed, cell, version),
         };
-        handler.handler.handle(&mut context, &event).map_err(|e| {
+        context.dispatch(handler, &event).map_err(|e| {
             let e = error(e);
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
@@ -268,6 +265,29 @@ pub(super) fn plan_removals(
             entity_updates.push(update);
         }
     }
+    use bloxgloom_host_api::gameplay::EntityChange;
+    for (id, change) in plan.entity_changes {
+        let id = super::entities::EntityId::new(id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid entity ID"))?;
+        let before = participants.entities.snapshot(id).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::WouldBlock, "entity changed during planning")
+        })?;
+        let transaction = match change {
+            EntityChange::Update { state, .. } => participants.entities.prepare_update(
+                id,
+                before.revision,
+                super::entities::EntityPatch {
+                    payload: Some(super::entities::EntityPayload::new(state)),
+                    ..Default::default()
+                },
+            ),
+            EntityChange::Remove { .. } => {
+                participants.entities.prepare_despawn(id, before.revision)
+            }
+        }
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        entity_updates.push(transaction);
+    }
     let final_edits = plan
         .blocks
         .into_iter()
@@ -287,6 +307,52 @@ pub(super) fn plan_removals(
     } else {
         world.prepare_edits(&final_edits)?
     };
+    let mut entity_spawns = Vec::with_capacity(plan.entity_spawns.len());
+    for spawn in plan.entity_spawns {
+        let id = catalog.entity_type_id_by_key(&spawn.key).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "unknown gameplay entity")
+        })?;
+        let target = spawn.position.map(|n| n.floor() as i32);
+        if removals.iter().all(|(_, source, _)| {
+            (0..3).any(|i| (i64::from(target[i]) - i64::from(source[i])).abs() > 8)
+        }) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "entity spawn outside interaction radius",
+            ));
+        }
+        let state = if let Some(&(_, _, _, state)) = final_edits
+            .iter()
+            .find(|&&(x, y, z, _)| [x, y, z] == target)
+        {
+            state
+        } else {
+            let [x, y, z] = target;
+            let Some(state) = reads.read(world, x, y, z)? else {
+                let key = crate::world::world_to_chunk(x, y, z).0;
+                if !requested.contains(&key) {
+                    requested.push(key);
+                }
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "entity spawn terrain unavailable",
+                ));
+            };
+            state
+        };
+        if catalog.block_flags(state) & crate::content::SOLID != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "entity spawn is obstructed",
+            ));
+        }
+        entity_spawns.push(super::entities::EntitySpawn::Mobile {
+            entity_type: id,
+            position: spawn.position,
+            payload: super::entities::EntityPayload::new(spawn.state),
+            spawn_tick: tick,
+        });
+    }
     let drops = plan
         .drops
         .into_iter()
@@ -300,6 +366,7 @@ pub(super) fn plan_removals(
         .collect::<io::Result<Vec<_>>>()?;
     Ok(WorldPlan {
         entity_updates,
+        entity_spawns,
         edits: final_edits,
         prepared,
         drops,

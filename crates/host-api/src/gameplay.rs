@@ -5,10 +5,12 @@
 //! Entity services are added here as host transaction participants are unified.
 use std::collections::BTreeMap;
 
+mod definition;
 mod entities;
 mod handlers;
 mod inventory;
-pub use entities::Entity;
+pub use definition::{EntityDefinition, EntityState};
+pub use entities::{Entity, EntityChange, EntitySpawn};
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
 pub use inventory::{Components, InventoryId, Slot, Stack};
 
@@ -49,6 +51,10 @@ impl std::error::Error for Error {}
 pub trait Snapshot {
     fn player(&self) -> Option<u128>;
     fn entity(&mut self, id: u64) -> Result<Option<Entity>, Error>;
+    fn nearby_entities(&mut self, position: [f32; 3], radius: f32) -> Result<Vec<Entity>, Error>;
+    fn entity_state(&mut self, id: u64, owner: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn project_entity_state(&self, id: u64, state: &[u8]) -> Result<Vec<u8>, Error>;
+    fn validate_entity_state(&self, key: &str, owner: &str, state: &[u8]) -> Result<(), Error>;
     fn anchored_entity_at(&mut self, cell: Cell) -> Result<Option<u64>, Error>;
     fn block(&mut self, cell: Cell) -> Result<Block, Error>;
     fn state(&self, key: &str) -> Result<Block, Error>;
@@ -72,12 +78,16 @@ pub struct Plan {
     pub blocks: BTreeMap<Cell, String>,
     pub drops: Vec<DropSpawn>,
     pub inventories: BTreeMap<InventoryId, Vec<Option<Stack>>>,
+    pub entity_spawns: Vec<EntitySpawn>,
+    pub entity_changes: BTreeMap<u64, EntityChange>,
 }
 
 pub struct Context<'a> {
     snapshot: &'a mut dyn Snapshot,
     blocks: BTreeMap<Cell, Block>,
     inventories: BTreeMap<InventoryId, Vec<Slot>>,
+    handler_namespace: Option<String>,
+    entity_overlay: BTreeMap<u64, Option<Vec<u8>>>,
     plan: Plan,
     remaining: usize,
     failure: Option<Error>,
@@ -92,10 +102,28 @@ impl<'a> Context<'a> {
             snapshot,
             blocks: BTreeMap::new(),
             inventories: BTreeMap::new(),
+            handler_namespace: None,
+            entity_overlay: BTreeMap::new(),
             plan: Plan::default(),
             remaining: operation_budget,
             failure: None,
         }
+    }
+
+    /// The host dispatches a startup-resolved owner. Language bindings expose
+    /// handler operations, not a way to select or impersonate this registration.
+    pub fn dispatch(
+        &mut self,
+        registration: &HandlerRegistration,
+        event: &Event,
+    ) -> Result<(), Error> {
+        self.handler_namespace = registration
+            .key
+            .split_once(':')
+            .map(|(namespace, _)| namespace.to_owned());
+        let result = registration.handler.handle(self, event);
+        self.handler_namespace = None;
+        result
     }
 
     fn charge(&mut self) -> Result<(), Error> {

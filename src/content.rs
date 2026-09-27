@@ -15,6 +15,7 @@ pub(crate) mod creatures;
 pub(crate) mod declarations;
 mod extensions;
 mod gameplay;
+mod gameplay_entities;
 mod icons;
 mod ids;
 mod inventories;
@@ -206,6 +207,8 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    gameplay_entities:
+        HashMap<String, std::sync::Arc<bloxgloom_host_api::gameplay::EntityDefinition>>,
     gameplay_dispatch: HashMap<
         bloxgloom_host_api::gameplay::EventKind,
         HashMap<String, std::sync::Arc<bloxgloom_host_api::gameplay::HandlerRegistration>>,
@@ -253,6 +256,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            gameplay_entities: Default::default(),
             gameplay_handlers: Default::default(),
             gameplay_dispatch: Default::default(),
             item_icons: HashMap::new(),
@@ -834,6 +838,9 @@ impl Catalog {
                 add(entity.key.as_bytes());
                 add(&entity.schema_version.to_le_bytes());
                 add(&entity.schema_fingerprint.to_le_bytes());
+                if let Some(generic) = self.gameplay_entities.get(entity.key.as_ref()) {
+                    add(&generic.max_state_bytes.to_le_bytes());
+                }
                 if let Some(machine) = self.machine(entity.id) {
                     add(&machine.fingerprint_bytes());
                 }

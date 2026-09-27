@@ -7,6 +7,8 @@ pub(in crate::server) mod anchored;
 mod checkpoint;
 pub(in crate::server) mod chest;
 mod codec;
+mod gameplay;
+pub(in crate::server) use gameplay::Codec as GameplayCodec;
 pub(in crate::server) mod container;
 #[cfg(test)]
 pub(in crate::server) mod hopper;

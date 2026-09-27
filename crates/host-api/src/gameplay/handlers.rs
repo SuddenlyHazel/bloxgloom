@@ -12,6 +12,9 @@ pub enum RemovalCause {
     Break,
     Replacement,
     SupportLoss,
+    /// An anchored structure's entire footprint is removed. Standard refunds
+    /// remain owned by its lifecycle contract, not the fallback cube harvest.
+    AnchoredBreak,
 }
 
 #[derive(Clone, Debug)]
