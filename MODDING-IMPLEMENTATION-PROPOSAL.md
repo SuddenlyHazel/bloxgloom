@@ -1,6 +1,10 @@
 # Complete modding implementation proposal
 
-**Status: Proposed — awaiting user approval.**
+**Status: Approved — implementation in progress.**
+
+The user approved full implementation and instructed personal implementation,
+incremental documentation updates and commits, continued execution, no subagents,
+and focused verification without excessive tests or performance-test runs.
 
 This is the single implementation proposal for completing Bloxgloom's modding
 surface and making it usable by mod authors and players. It consolidates the
@@ -371,7 +375,7 @@ support as the final model system.
 
 | Phase | Work to land | Status |
 | --- | --- | --- |
-| 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Planned |
+| 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | In progress |
 | 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | Planned |
 | 3 | Public generation context and migration of existing terrain/vegetation | Planned |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Planned |
@@ -421,8 +425,10 @@ user approval gate.
 
 This section exists so compaction or a new session does not restart the design.
 
-- **Authorization:** awaiting explicit user approval of this proposal.
-- **Active phase:** none; implementation of this proposal has not started.
+- **Authorization:** approved by the user; all non-deferred phases authorized,
+  including Luau/mlua selection and fire migration. No subagents.
+- **Active phase:** 1 — examining existing command planners and public contracts
+  to introduce shared gameplay operations through the current transaction path.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation commits:** none for this proposal yet.
