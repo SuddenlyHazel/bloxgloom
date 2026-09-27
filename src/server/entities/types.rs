@@ -1,10 +1,8 @@
 use crate::content::{BlockStateId, EntityTypeId};
 use crate::world::ChunkKey;
-use std::any::Any;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
 
 pub const MAX_ENTITY_PAYLOAD_BYTES: usize = 64 * 1024;
 pub const MAX_ENTITY_PUBLIC_VIEW_BYTES: usize = 4 * 1024;
@@ -19,28 +17,7 @@ pub const MAX_PLAN_NEIGHBOUR_BYTES: usize = 64 * 1024;
 
 /// Immutable type-erased payload kept decoded in the live store. Feature
 /// modules recover their concrete type with `downcast_ref`.
-#[derive(Clone)]
-pub struct EntityPayload(Arc<dyn Any + Send + Sync>);
-
-impl EntityPayload {
-    pub fn new<T: Any + Send + Sync>(value: T) -> Self {
-        Self(Arc::new(value))
-    }
-
-    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        self.0.downcast_ref()
-    }
-
-    pub(super) fn same_instance(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl fmt::Debug for EntityPayload {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("EntityPayload(<decoded>)")
-    }
-}
+pub use bloxgloom_host_api::entity::Payload as EntityPayload;
 
 /// Persisted, monotonic identity. Zero is reserved and IDs are never reused.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -270,6 +270,14 @@ impl ContentManifest {
                 .register_entity_type(entity)
                 .map_err(|_| invalid("invalid mapped entity type"))?;
         }
+        for (_, mobile) in local.mobile_entities() {
+            let id = resolved
+                .entity_type_id_by_key(&mobile.key)
+                .ok_or_else(|| invalid("missing mobile type"))?;
+            resolved
+                .bind_mobile(id, mobile.clone())
+                .map_err(|_| invalid("invalid mobile binding"))?;
+        }
         for (_, screen) in local.inventory_screens() {
             resolved
                 .register_inventory_screen((**screen).clone())

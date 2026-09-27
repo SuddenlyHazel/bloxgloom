@@ -195,6 +195,7 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
         return Err(());
     }
     Ok(Some(crate::render::VisualAvatar {
+        animation: Default::default(),
         model: crate::render::AvatarModel::Player,
         pose: [0.0; 4],
         airborne: false,

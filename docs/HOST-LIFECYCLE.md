@@ -72,7 +72,7 @@ footprint cell in their terrain dependency checks, including across chunk seams.
 
 The initial lifecycle slice preserved Chest's private/public bytes. The subsequent
 inventory slice introduced BGCT snapshots and a generic view schema; the default
-is now `world-v11`.
+at that slice was `world-v11`; the current dynamic-entity catalog uses `world-v12`.
 
 ## Explicit limits / next work
 

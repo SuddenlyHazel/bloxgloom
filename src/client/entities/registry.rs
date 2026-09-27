@@ -66,9 +66,6 @@ impl EntityClientRegistry {
         let mut registry = Self::new();
         registry.inventory_catalog = Some(std::sync::Arc::new(catalog.clone()));
         registry.register(super::avatar::player_adapter());
-        if let Some(id) = catalog.entity_type_id_by_key("bloxgloom:mossbun") {
-            registry.register(super::mossbun::adapter(id));
-        }
         registry.register(super::kiln::kiln_adapter());
         registry
     }
@@ -100,6 +97,38 @@ impl EntityClientRegistry {
     ) -> Result<Vec<VisualAvatar>, ()> {
         let mut avatars = Vec::new();
         for entity in entities.values() {
+            if let Some(catalog) = &self.inventory_catalog
+                && let Some(definition) = catalog.mobile_entity(entity.entity_type)
+            {
+                let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location
+                else {
+                    return Err(());
+                };
+                if position
+                    .iter()
+                    .any(|v| !v.is_finite() || v.abs() >= 999_999.0)
+                    || position[1] <= crate::world::BEDROCK_Y as f32
+                    || entity.payload.len() > definition.max_public_bytes
+                {
+                    return Err(());
+                }
+                let pose = definition.behavior.pose(&entity.payload).map_err(|_| ())?;
+                if !pose.yaw.is_finite() {
+                    return Err(());
+                }
+                avatars.push(VisualAvatar {
+                    animation: definition.animation,
+                    model: crate::render::AvatarModel::Registered(entity.entity_type),
+                    pose: [pose.yaw, 0.0, 0.0, 0.0],
+                    airborne: !pose.grounded,
+                    id: entity.id,
+                    position: glam::Vec3::from_array(position),
+                    cosmetics: [0; 4],
+                    light_levels: [0; 4],
+                    bounce: [0; 4],
+                });
+                continue;
+            }
             if let Some(catalog) = &self.inventory_catalog
                 && let Some(screen) = catalog.inventory_screen(entity.entity_type)
             {

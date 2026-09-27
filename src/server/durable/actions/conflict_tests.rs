@@ -28,6 +28,7 @@ impl crate::server::entities::EntityTickPolicy for Probe {
         neighbours: &crate::server::entities::EntityView,
     ) -> Result<crate::server::entities::EntityTickPlan, crate::server::entities::EntityError> {
         Ok(crate::server::entities::EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(neighbours.len() as u8)),
             next_tick: Some(snapshot.next_tick.unwrap() + 5),
             anchor_update: None,

@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 mod avatar;
 pub(super) mod kiln;
-mod mossbun;
 mod registry;
+mod targeting;
 pub(in crate::client) use registry::{EntityClientRegistry, EntityVerb};
 
 const MAX_PENDING_SNAPSHOTS: usize = 8;

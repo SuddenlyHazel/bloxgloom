@@ -68,6 +68,7 @@ impl EntityTickPolicy for Planner {
             }
         }
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: None,
             next_tick: Some(tick.checked_add(20).ok_or(EntityError::RevisionExhausted)?),
             anchor_update: None,

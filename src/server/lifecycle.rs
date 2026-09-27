@@ -12,8 +12,20 @@ pub(crate) struct Registration {
     cubes: Vec<CubeBlock>,
     pub definitions: Vec<StorageBlockEntity>,
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
+    mobiles: Vec<bloxgloom_host_api::entity::MobileEntity>,
 }
 impl Registrar for Registration {
+    fn mobile_entity(
+        &mut self,
+        entity: bloxgloom_host_api::entity::MobileEntity,
+    ) -> Result<(), RegistrationError> {
+        entity.validate()?;
+        if self.mobiles.iter().any(|e| e.key == entity.key) {
+            return Err(RegistrationError("duplicate mobile declaration".into()));
+        }
+        self.mobiles.push(entity);
+        Ok(())
+    }
     fn inventory_screen(
         &mut self,
         screen: bloxgloom_host_api::InventoryScreen,
@@ -56,6 +68,9 @@ impl Registration {
         let mut registration = Self::default();
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
+        for mobile in &registration.mobiles {
+            candidate.register_mobile(mobile.clone())?;
+        }
         for cube in &registration.cubes {
             candidate.extension_cube(cube)?;
         }

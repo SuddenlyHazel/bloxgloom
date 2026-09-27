@@ -1,5 +1,9 @@
 # Creature movement and presentation
 
+The [dynamic-entity surface](DYNAMIC-ENTITIES.md) now exposes these capabilities
+through the public host API. Mossbun and the independently compiled Copperling
+use the shared contracts; the current save target is `world-v12`.
+
 Mossbun is the first consumer of three reusable layers. Registration, immutable
 worker capture, terrain revision fences, WAL receipts, and entity publication
 remain the authority boundary.

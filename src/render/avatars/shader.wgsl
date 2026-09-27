@@ -10,6 +10,7 @@ struct VertexInput {
     @location(5) light_levels: vec4<u32>,
     @location(6) bounce: vec4<u32>,
     @location(7) pose: vec4<f32>,
+    @location(8) color: vec3<f32>,
 };
 
 struct VertexOutput {
@@ -59,11 +60,7 @@ const PANTS = array<vec3<f32>, 6>(
     if input.part == 2u { albedo = PANTS[input.cosmetics.z % 6u]; }
     if input.part == 3u { albedo = mix(PANTS[input.cosmetics.z % 6u], vec3<f32>(0.10, 0.08, 0.07), 0.65); }
     if input.part == 4u { albedo = vec3<f32>(0.025, 0.035, 0.045); }
-    if input.part == 5u { albedo = vec3<f32>(0.49, 0.77, 0.58); }
-    if input.part == 6u || input.part >= 10u { albedo = vec3<f32>(0.96, 0.88, 0.68); }
-    if input.part == 7u { albedo = vec3<f32>(0.93, 0.49, 0.51); }
-    if input.part == 8u { albedo = vec3<f32>(0.025, 0.045, 0.05); }
-    if input.part == 9u { albedo = vec3<f32>(1.0, 0.97, 0.86); }
+    if input.part >= 5u { albedo = input.color; }
     let sky = f32(input.light_levels.x) / 15.0;
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3<f32>(f32(input.bounce.x), f32(input.bounce.y), f32(input.bounce.z)) / 255.0;

@@ -24,7 +24,10 @@ fn live_command(state: &mut State, tick: u64, action_id: u128) {
     crate::server::durable::handle_live_message(
         state,
         1,
-        ClientMessage::AdminSpawnMossbun { action_id },
+        ClientMessage::AdminSpawnEntity {
+            action_id,
+            entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
+        },
         TickId::new(tick),
     )
     .unwrap();
@@ -160,7 +163,13 @@ fn missing_mossbun_terrain_defers_locally_then_runs_on_residency() {
     let mut state = server_state(23, path.clone()).unwrap();
     resident_platform(&mut state);
     state.admin_profile = Some(17);
-    let action = super::super::admin::plan_mossbun(&mut state, 17, [0.5, 80.0, 0.5], 1);
+    let action = super::super::admin::plan_spawn(
+        &mut state,
+        17,
+        [0.5, 80.0, 0.5],
+        1,
+        crate::content::MOSSBUN_ENTITY_TYPE,
+    );
     // The live spawn/receipt/restart test above owns the integration setup;
     // this test checks capture's fail-closed retry before there is a worker.
     let batch = action.unwrap();
@@ -197,14 +206,26 @@ fn mossbun_spawn_limit_rejects_without_allocating_or_consuming_items() {
     resident_platform(&mut state);
     state.admin_profile = Some(17);
     for _ in 0..16 {
-        let prepared =
-            super::super::admin::plan_mossbun(&mut state, 17, [0.5, 80.0, 0.5], 1).unwrap();
+        let prepared = super::super::admin::plan_spawn(
+            &mut state,
+            17,
+            [0.5, 80.0, 0.5],
+            1,
+            crate::content::MOSSBUN_ENTITY_TYPE,
+        )
+        .unwrap();
         state.entities.apply_committed(prepared).unwrap();
     }
     assert_eq!(
-        super::super::admin::plan_mossbun(&mut state, 17, [0.5, 80.0, 0.5], 1)
-            .unwrap_err()
-            .kind(),
+        super::super::admin::plan_spawn(
+            &mut state,
+            17,
+            [0.5, 80.0, 0.5],
+            1,
+            crate::content::MOSSBUN_ENTITY_TYPE
+        )
+        .unwrap_err()
+        .kind(),
         ErrorKind::QuotaExceeded
     );
     assert_eq!(

@@ -1,7 +1,8 @@
-//! Runtime-neutral declarations for the first host capability: stored block
-//! entities. This is not a mod loader or a stable native ABI.
+//! Host contracts for registered storage, inventory screens, and mobile entities.
+//! This is not a mod loader or a stable native ABI.
 use std::fmt;
 
+pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
@@ -28,6 +29,11 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn mobile_entity(&mut self, _entity: entity::MobileEntity) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "mobile entities unsupported by this registrar".into(),
+        ))
+    }
     fn inventory_screen(&mut self, screen: InventoryScreen) -> Result<(), RegistrationError>;
     fn cube_block(&mut self, block: CubeBlock) -> Result<(), RegistrationError>;
     fn storage_block_entity(&mut self, entity: StorageBlockEntity)

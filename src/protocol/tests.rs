@@ -2,7 +2,8 @@ use super::*;
 
 #[test]
 fn mossbun_spawn_wire_has_only_an_authenticated_action_identity() {
-    let message = ClientMessage::AdminSpawnMossbun {
+    let message = ClientMessage::AdminSpawnEntity {
+        entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
         action_id: (1u128 << 64) | 1,
     };
     let mut wire = Vec::new();
@@ -11,7 +12,10 @@ fn mossbun_spawn_wire_has_only_an_authenticated_action_identity() {
     assert!(
         write_client(
             &mut Vec::new(),
-            &ClientMessage::AdminSpawnMossbun { action_id: 0 }
+            &ClientMessage::AdminSpawnEntity {
+                action_id: 0,
+                entity_type: crate::content::MOSSBUN_ENTITY_TYPE
+            }
         )
         .is_err()
     );

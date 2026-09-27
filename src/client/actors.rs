@@ -92,7 +92,8 @@ impl Track {
             - std::f32::consts::PI;
         self.yaw += angle * (1.0 - (-14.0 * dt).exp());
         visual.pose[0] = self.yaw;
-        if visual.model == AvatarModel::Mossbun {
+        if matches!(visual.model, AvatarModel::Registered(_)) {
+            let animation = visual.animation;
             self.age += dt;
             if self.airborne && !visual.airborne {
                 self.landing = 1.0;
@@ -105,14 +106,15 @@ impl Track {
                 0.0
             };
             self.gait += (moving - self.gait) * (1.0 - (-18.0 * dt).exp());
-            self.stride = (self.stride + distance * 10.0).rem_euclid(std::f32::consts::TAU);
-            visual.pose[1] = self.stride.sin() * self.gait;
-            visual.pose[2] =
-                (self.age * 2.5).sin() * 0.004 + self.stride.sin().abs() * self.gait * 0.018;
+            self.stride =
+                (self.stride + distance * animation.stride_rate).rem_euclid(std::f32::consts::TAU);
+            visual.pose[1] = self.stride.sin() * self.gait * animation.stride_amplitude;
+            visual.pose[2] = (self.age * animation.idle_rate).sin() * animation.idle_bob
+                + self.stride.sin().abs() * self.gait * animation.walk_bob;
             visual.pose[3] = if visual.airborne {
-                -0.08
+                -animation.fall_stretch
             } else {
-                self.landing * 0.16
+                self.landing * animation.landing_squash
             };
         }
         visual

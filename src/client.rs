@@ -34,6 +34,8 @@ mod movement;
 #[cfg(test)]
 pub(crate) use inventory_tests::InventoryProbe;
 #[cfg(test)]
+pub(crate) use mobile_tests::MobileProbe;
+#[cfg(test)]
 pub(crate) use tests::ReplicationProbe;
 pub(crate) mod trace;
 use movement::predict_player_movement;
@@ -184,7 +186,7 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
-        | ClientMessage::AdminSpawnMossbun { action_id }
+        | ClientMessage::AdminSpawnEntity { action_id, .. }
         | ClientMessage::EntityInteract { action_id, .. } => Some(*action_id),
         _ => None,
     }
@@ -1142,6 +1144,41 @@ impl ClientApp {
         )
     }
 
+    fn interact_aimed_mobile(&mut self) -> bool {
+        let camera = self.camera();
+        let limit = self.aimed_block().map_or(7.0, |hit| hit.distance);
+        let Some(entity) =
+            self.replicas
+                .aimed_mobile(&self.catalog, camera.position, camera.direction(), limit)
+        else {
+            return false;
+        };
+        let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
+            return false;
+        };
+        let mut payload = vec![3];
+        payload.extend(entity.id.to_le_bytes());
+        payload.extend(entity.revision.to_le_bytes());
+        payload.extend(
+            &self
+                .catalog
+                .mobile_entity(entity.entity_type)
+                .unwrap()
+                .interaction,
+        );
+        let target = position.map(|v| v.floor() as i32);
+        let Some(action_id) = self.allocate_action_id() else {
+            self.show_status("Action session pending or busy");
+            return true;
+        };
+        self.queue_command(ClientMessage::EntityInteract {
+            action_id,
+            target,
+            payload,
+        });
+        true
+    }
+
     fn edit_aimed_block(&mut self, place: bool) {
         if self.screen != UiScreen::Playing || !self.grabbed {
             return;
@@ -1272,7 +1309,10 @@ impl ClientApp {
         for avatar in &mut visual_avatars {
             let height = match avatar.model {
                 crate::render::AvatarModel::Player => 1.45,
-                crate::render::AvatarModel::Mossbun => 0.5,
+                crate::render::AvatarModel::Registered(id) => self
+                    .catalog
+                    .mobile_entity(id)
+                    .map_or(0.5, |d| d.body.height * 0.5),
             };
             let sample = self.light_at(avatar.position + Vec3::Y * height);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
@@ -1348,5 +1388,7 @@ fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::
 
 #[cfg(test)]
 mod inventory_tests;
+#[cfg(test)]
+mod mobile_tests;
 #[cfg(test)]
 mod tests;

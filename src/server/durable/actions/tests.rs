@@ -5,6 +5,8 @@ mod chest_tests;
 mod extension_tests;
 #[path = "hopper_tests.rs"]
 mod hopper_tests;
+#[path = "mobile_tests.rs"]
+mod mobile_tests;
 #[path = "mossbun_tests.rs"]
 mod mossbun_tests;
 use crate::items::{ItemId, STICK};
@@ -710,6 +712,7 @@ impl crate::server::entities::EntityTickPolicy for PairTick {
             .and_then(|view| view.payload.last().copied())
             .ok_or(EntityError::InvalidType)?;
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(echo)),
             next_tick: Some(current_tick + 5),
             anchor_update: None,
@@ -889,6 +892,7 @@ impl crate::server::entities::EntityTickPolicy for CounterTick {
             return Err(crate::server::entities::EntityError::InvalidType);
         }
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(crate::server::entities::EntityPayload::new(8u8)),
             next_tick: Some(current_tick + 5),
             anchor_update: None,
@@ -941,6 +945,7 @@ impl crate::server::entities::EntityTickPolicy for WatcherTick {
             .map_err(|_| EntityError::ViewOutOfRange)?;
         let solid = catalog.block_flags(above) & crate::content::SOLID != 0;
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(u8::from(solid))),
             next_tick: Some(current_tick + 5),
             anchor_update: None,
@@ -993,6 +998,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
             ) {
                 Err(_) => Err(EntityError::ViewOutOfRange),
                 Ok(_) => Ok(EntityTickPlan {
+                    lifecycle: Default::default(),
                     payload: Some(EntityPayload::new(42u8)),
                     next_tick: Some(current_tick + 5),
                     anchor_update: None,
@@ -1006,6 +1012,7 @@ impl crate::server::entities::EntityTickPolicy for FarReadTick {
         view.block(position[0] as i32, position[1] as i32, position[2] as i32)
             .map_err(|_| EntityError::ViewOutOfRange)?;
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(43u8)),
             next_tick: Some(current_tick + 5),
             anchor_update: None,
@@ -2282,6 +2289,7 @@ impl crate::server::entities::EntityTickPolicy for PokeConsumer {
             )
         };
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload,
             next_tick: Some(next_tick),
             anchor_update: None,
@@ -2324,6 +2332,7 @@ impl crate::server::entities::EntityTickPolicy for PokeProducer {
             vec![peer.id]
         };
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: None,
             next_tick: Some(due.checked_add(5).ok_or(EntityError::RevisionExhausted)?),
             anchor_update: None,
@@ -2353,6 +2362,7 @@ impl crate::server::entities::EntityTickPolicy for PokeBlind {
             return Err(EntityError::InvalidType);
         };
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: None,
             next_tick: Some(due.checked_add(5).ok_or(EntityError::RevisionExhausted)?),
             anchor_update: None,
@@ -3193,6 +3203,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
         let next_tick = due.checked_add(5).ok_or(EntityError::RevisionExhausted)?;
         if let Some(source) = self.blind_source {
             return Ok(EntityTickPlan {
+                lifecycle: Default::default(),
                 payload: None,
                 next_tick: Some(next_tick),
                 anchor_update: None,
@@ -3232,6 +3243,7 @@ impl crate::server::entities::EntityTickPolicy for BinPullTick {
         // receiver's after-payload from this snapshot inside the trusted
         // layer, so the planner never touches another entity's state.
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: None,
             next_tick: Some(next_tick),
             anchor_update: None,
@@ -3721,6 +3733,7 @@ impl crate::server::entities::EntityTickPolicy for BadTick {
             return Err(EntityError::InvalidType);
         }
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: None,
             next_tick: Some(due),
             anchor_update: None,
@@ -3834,6 +3847,7 @@ impl crate::server::entities::EntityTickPolicy for PlayerEchoTick {
             .and_then(|view| view.payload.last().copied())
             .ok_or(EntityError::InvalidType)?;
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(echo)),
             next_tick: Some(current_tick + 5),
             anchor_update: None,
@@ -3882,6 +3896,7 @@ impl crate::server::entities::EntityTickPolicy for AnchorEchoTick {
             }
         };
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: Some(EntityPayload::new(8u8)),
             next_tick: Some(current_tick + 5),
             anchor_update: None,

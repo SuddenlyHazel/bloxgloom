@@ -209,14 +209,41 @@ pub(in crate::server) fn plan_interact(
         return Err(permission("entity interaction target is out of reach"));
     }
     let inventory_before = client.inventory.clone();
-    let id = state
-        .entities
-        .anchored_at(target_cell)
-        .ok_or_else(|| permission("no anchored entity at target"))?;
+    let mobile_request = request.first() == Some(&3);
+    let id = if mobile_request {
+        if request.len() < 18 {
+            return Err(permission("invalid mobile interaction"));
+        }
+        EntityId::new(u64::from_le_bytes(request[1..9].try_into().unwrap()))
+            .ok_or_else(|| permission("invalid mobile identity"))?
+    } else {
+        state
+            .entities
+            .anchored_at(target_cell)
+            .ok_or_else(|| permission("no anchored entity at target"))?
+    };
     let snapshot = state
         .entities
         .snapshot(id)
-        .ok_or_else(|| corrupt("entity footprint references a missing record"))?;
+        .ok_or_else(|| permission("interaction entity is no longer present"))?;
+    let request = if mobile_request {
+        let EntityLocation::Mobile { position } = snapshot.location else {
+            return Err(permission("not a mobile entity"));
+        };
+        if position_to_cell(position).map_err(io::Error::other)? != target_cell
+            || snapshot.revision != u64::from_le_bytes(request[9..17].try_into().unwrap())
+            || state
+                .world
+                .catalog()
+                .mobile_entity(snapshot.entity_type)
+                .is_none()
+        {
+            return Err(permission("stale mobile interaction"));
+        }
+        &request[17..]
+    } else {
+        request
+    };
     let descriptor = state
         .entities
         .types()
@@ -232,6 +259,36 @@ pub(in crate::server) fn plan_interact(
     let reads_neighbours = descriptor.interaction_reads_neighbours();
     let catalog = state.world.catalog_arc();
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
+    if mobile_request {
+        let EntityLocation::Mobile {
+            position: target_position,
+        } = snapshot.location
+        else {
+            unreachable!()
+        };
+        let body = catalog.mobile_entity(snapshot.entity_type).unwrap().body;
+        let eye = glam::Vec3::from_array(position) + glam::Vec3::Y * 1.6;
+        let center = glam::Vec3::from_array(target_position) + glam::Vec3::Y * (body.height * 0.5);
+        let delta = center - eye;
+        let mut missing = false;
+        let blocked = crate::raycast::raycast_with_catalog(
+            eye,
+            delta.normalize_or_zero(),
+            delta.length(),
+            |x, y, z| {
+                view.block(x, y, z)
+                    .map_err(|_| {
+                        missing = true;
+                    })
+                    .ok()
+            },
+            &catalog,
+        )
+        .is_some();
+        if missing || blocked {
+            return Err(permission("mobile interaction is occluded"));
+        }
+    }
     let neighbours = if reads_neighbours {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
     } else {
@@ -481,6 +538,8 @@ pub(in crate::server) fn commit_tick_plan(
         && plan.payload.is_none()
         && plan.transfer.is_none()
         && plan.position.is_none()
+        && !plan.lifecycle.despawn
+        && plan.lifecycle.spawns.is_empty()
         && snapshot.next_tick == plan.next_tick
     {
         return Ok(None);
@@ -531,7 +590,18 @@ pub(in crate::server) fn commit_tick_plan(
         next_tick: Some(plan.next_tick),
         position: None,
     };
-    let mut entities = if let Some(position) = plan.position {
+    let mut entities = if plan.lifecycle.despawn {
+        if catalog.mobile_entity(snapshot.entity_type).is_none()
+            || plan.position.is_some()
+            || plan.transfer.is_some()
+        {
+            return Err(permission("invalid mobile removal effect"));
+        }
+        state
+            .entities
+            .prepare_despawn(id, snapshot.revision)
+            .map_err(tick_preparation_error)?
+    } else if let Some(position) = plan.position {
         if plan.anchor_update.is_some() {
             return Err(corrupt("mobile entity planner returned an anchor update"));
         }
@@ -599,6 +669,16 @@ pub(in crate::server) fn commit_tick_plan(
             .prepare_update(id, snapshot.revision, patch)
             .map_err(tick_preparation_error)?
     };
+    if !plan.lifecycle.spawns.is_empty() {
+        entities = super::mobile_lifecycle::spawn_effects(
+            state,
+            &snapshot,
+            &view,
+            plan.lifecycle.spawns,
+            current_tick,
+            entities,
+        )?;
+    }
     // The footprint preimages cover only block changes. Physics and other
     // tick policies may read terrain without writing any blocks; keep their
     // whole captured terrain set fenced until the WAL receipt is applied.

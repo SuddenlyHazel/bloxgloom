@@ -48,6 +48,7 @@ impl EntityTickPolicy for DropTickPlanner {
                 TerrainCheck::Missing => return Err(EntityError::ViewOutOfRange),
                 TerrainCheck::Hit(_) => {
                     return Ok(EntityTickPlan {
+                        lifecycle: Default::default(),
                         payload: None,
                         next_tick: None,
                         anchor_update: None,
@@ -77,6 +78,7 @@ impl EntityTickPolicy for DropTickPlanner {
                 let mut after = payload.clone();
                 after.vertical_speed = 0.0;
                 Ok(EntityTickPlan {
+                    lifecycle: Default::default(),
                     // A settled tick persists rest speed and suspends the
                     // schedule. A woken settled drop plans all-`None` here,
                     // which reaffirms without staging a WAL record.
@@ -96,6 +98,7 @@ impl EntityTickPolicy for DropTickPlanner {
                 let mut after = payload.clone();
                 after.vertical_speed = speed;
                 Ok(EntityTickPlan {
+                    lifecycle: Default::default(),
                     payload: (after.vertical_speed.to_bits() != payload.vertical_speed.to_bits())
                         .then(|| after.into_entity_payload()),
                     next_tick: Some(next),

@@ -11,6 +11,7 @@ use crate::world::BlockId;
 
 mod admin;
 pub(in crate::server) mod entity;
+mod mobile_lifecycle;
 pub(in crate::server) mod storage_lifecycle;
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -33,7 +34,7 @@ pub(in crate::server) fn plan_durable_request(
                 | ClientMessage::InventoryMove { action_id, .. }
                 | ClientMessage::DropStack { action_id, .. }
                 | ClientMessage::AdminGive { action_id, .. }
-                | ClientMessage::AdminSpawnMossbun { action_id }
+                | ClientMessage::AdminSpawnEntity { action_id, .. }
                 | ClientMessage::EntityInteract { action_id, .. } => *action_id,
                 _ => {
                     return Err(io::Error::new(
@@ -77,9 +78,14 @@ pub(in crate::server) fn plan_durable_request(
                 entities: None,
             };
             match message {
-                ClientMessage::AdminSpawnMossbun { .. } => {
-                    action.entities =
-                        Some(admin::plan_mossbun(state, profile, position, tick.get())?);
+                ClientMessage::AdminSpawnEntity { entity_type, .. } => {
+                    action.entities = Some(admin::plan_spawn(
+                        state,
+                        profile,
+                        position,
+                        tick.get(),
+                        *entity_type,
+                    )?);
                 }
                 ClientMessage::AdminGive { item, count, .. } => {
                     let Some(next) = admin::plan_grant(

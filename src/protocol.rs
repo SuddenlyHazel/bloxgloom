@@ -67,8 +67,9 @@ pub enum ClientMessage {
         count: u16,
     },
     /// One creature near the authenticated administrator; no client position.
-    AdminSpawnMossbun {
+    AdminSpawnEntity {
         action_id: u128,
+        entity_type: crate::content::EntityTypeId,
     },
     /// Opaque, bounded command for the entity anchored at a touched world cell.
     /// The server resolves type, reach, and private inventory authority.
@@ -376,12 +377,17 @@ pub fn write_client_with_catalog(
             out.extend(item.0.to_le_bytes());
             out.extend(count.to_le_bytes());
         }
-        ClientMessage::AdminSpawnMossbun { action_id } => {
-            if !valid_action_id(*action_id) {
+        ClientMessage::AdminSpawnEntity {
+            action_id,
+            entity_type,
+        } => {
+            if !valid_action_id(*action_id) || content_catalog.mobile_entity(*entity_type).is_none()
+            {
                 return Err(invalid("invalid spawn action"));
             }
             out.push(13);
             out.extend(action_id.to_le_bytes());
+            out.extend(entity_type.0.to_le_bytes());
         }
         ClientMessage::ContentReady { fingerprint } => {
             out.push(9);
@@ -899,10 +905,14 @@ pub fn read_client_with_catalog(
         }
         13 => {
             let action_id = c.u128()?;
-            if !valid_action_id(action_id) {
+            let entity_type = crate::content::EntityTypeId(c.u32()?);
+            if !valid_action_id(action_id) || content_catalog.mobile_entity(entity_type).is_none() {
                 return Err(invalid("invalid spawn action"));
             }
-            ClientMessage::AdminSpawnMossbun { action_id }
+            ClientMessage::AdminSpawnEntity {
+                action_id,
+                entity_type,
+            }
         }
         _ => return Err(invalid("unknown client message")),
     };

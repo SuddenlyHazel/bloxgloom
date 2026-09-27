@@ -19,7 +19,10 @@ fn mossbun_adapter_uses_the_negotiated_catalog_assignment() {
         .project(&BTreeMap::from([(91, bun)]))
         .unwrap();
     assert_eq!(visuals.len(), 1);
-    assert_eq!(visuals[0].model, crate::render::AvatarModel::Mossbun);
+    assert_eq!(
+        visuals[0].model,
+        crate::render::AvatarModel::Registered(EntityTypeId(71_234))
+    );
 }
 
 #[test]
@@ -32,7 +35,10 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
     let projected = registry
         .project(&BTreeMap::from([(91, bun.clone())]))
         .unwrap();
-    assert_eq!(projected[0].model, crate::render::AvatarModel::Mossbun);
+    assert_eq!(
+        projected[0].model,
+        crate::render::AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE)
+    );
     assert_eq!(projected[0].pose[0], std::f32::consts::FRAC_PI_2);
     for payload in [vec![], vec![4, 0], vec![0, 4], vec![0; 3]] {
         let mut invalid = bun.clone();

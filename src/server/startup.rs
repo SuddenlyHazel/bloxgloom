@@ -235,7 +235,9 @@ impl ServerStartup {
         super::drops::register_entity_type(&mut types, Arc::clone(&catalog))
             .map_err(entity_error)?;
         super::entities::register_player_entity_type(&mut types).map_err(entity_error)?;
-        super::entities::mossbun::register(&mut types, &catalog).map_err(entity_error)?;
+        for (id, _) in catalog.mobile_entities() {
+            super::entities::mobile::register(&mut types, &catalog, id).map_err(entity_error)?;
+        }
         super::entities::hopper::register(&mut types, &catalog).map_err(io::Error::other)?;
         for definition in self.lifecycles(&catalog)?.entries.values() {
             super::entities::container::register(&mut types, &catalog, definition)

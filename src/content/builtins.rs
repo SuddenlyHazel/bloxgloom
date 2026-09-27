@@ -580,6 +580,12 @@ impl Catalog {
                 schema_fingerprint: 0x4348_4553_5400_0002,
             })
             .expect("unique chest entity");
+        catalog
+            .bind_mobile(
+                MOSSBUN_ENTITY_TYPE,
+                std::sync::Arc::new(super::creatures::mossbun::definition()),
+            )
+            .expect("builtin creature");
         catalog.builtin_inventory_screens();
         catalog
     }

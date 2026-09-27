@@ -1,15 +1,24 @@
 # Plan: built-in/mod capability parity
 
-Status: proposed implementation plan. This document does not introduce a mod
-loader or declare the current internal interfaces to be a supported mod API.
+Status: implementation in progress. The public crate exposes the completed
+slices below; the remaining internal interfaces are not yet a supported mod API.
 
 ## Implementation status
+
+- **Dynamic entity slice implemented:** public private-state codecs, bounded
+  projections, immutable behavior/sensing contexts, host locomotion/navigation,
+  scheduling, atomic spawn/self-removal effects, targeting, cuboid models, and
+  procedural animation declarations. Mossbun uses these contracts. The separately
+  compiled Copperling fixture spawns, patrols, pauses on interaction, and recovers
+  through the real listener/client paths. **655 tests passed**, strict Clippy and
+  formatting passed, and release previews were inspected. Current default save:
+  **`world-v12`**. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
 
 - **Registered inventory slice implemented:** shared inventory-view schema,
   descriptor-based opening/layout/slot access/status widgets, independent bounded
   container snapshots, and a fully usable external fixture through the real client
   and listener. Chest, Hopper, and Kiln use the same screen contracts. Default save
-  is `world-v11`. **652 tests passed**, with clean formatting and strict Clippy;
+   at that slice was `world-v11`. **652 tests passed**, with clean formatting and strict Clippy;
   see [registered inventories](docs/REGISTERED-INVENTORIES.md).
 
 - **First lifecycle slice implemented:** dependency-free public API crate,
@@ -17,10 +26,9 @@ loader or declare the current internal interfaces to be a supported mod API.
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
   **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
-- The surface currently exposes passive storage lifecycle declarations. General
-  entity behavior and arbitrary lifecycle callbacks remain subsequent work.
-  Independent container encoding and generic inventory screens are now complete.
-  Named/sided ports and custom UI composition remain open. The broader
+- Passive storage, generic inventory screens, and mobile creature behavior are
+  now exposed. Arbitrary block/anchored lifecycle callbacks, named/sided ports,
+  recipe/process registration, and custom UI composition remain open. The broader
   parity inventory and the remaining slices below are not marked complete.
 
 ## Goal and completion rule
@@ -67,12 +75,11 @@ Those pieces are not yet a complete external contract. For example:
   expose internal server/client/store/commit types.
 - `server/durable/actions/workstation.rs` still selects built-in payloads and
   lifecycle behavior by type.
-- `protocol/workstation.rs` fixes the supported machine kinds and capacities.
-- `server/entities/storage/` reuses player-inventory serialization and capacity.
-- Client inventory discovery, screen selection, and slot routing recognize
-  built-in types. `client/entities/registry.rs` projects to the current avatar
-  representation and targets block hits; that is not a general presentation or
-  entity-targeting API.
+- Inventory views and storage encoding are now generic and independent of the
+  player backpack. Machine recipe/filter behavior still needs public registration.
+- Mobile entity targeting, cuboid models, and the existing procedural creature
+  animation capabilities are now registered. Broader asset/material definitions,
+  player presentation parity, and arbitrary custom UI remain open surfaces.
 - A public-looking trait in a binary crate, or one requiring inaccessible types,
   is not an externally usable extension interface.
 

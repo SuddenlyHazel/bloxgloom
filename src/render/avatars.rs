@@ -2,7 +2,6 @@
 //! Cosmetics and lighting are public presentation state; no profile/inventory data.
 
 mod mesh;
-mod mossbun;
 
 use super::{DEPTH_FORMAT, shader::with_world_sun};
 use bytemuck::{Pod, Zeroable};
@@ -14,11 +13,12 @@ pub(crate) const MAX_AVATARS: usize = 512;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AvatarModel {
     Player,
-    Mossbun,
+    Registered(crate::content::EntityTypeId),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualAvatar {
+    pub animation: bloxgloom_host_api::entity::Animation,
     pub model: AvatarModel,
     /// Yaw, stride, body bob, squash. Never used for authoritative movement.
     pub pose: [f32; 4],
@@ -48,9 +48,8 @@ pub(crate) struct AvatarRenderer {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     instances: wgpu::Buffer,
-    player_indices: u32,
-    total_indices: u32,
-    counts: [u32; 2],
+    models: Vec<(AvatarModel, std::ops::Range<u32>)>,
+    counts: Vec<u32>,
 }
 
 impl AvatarRenderer {
@@ -58,6 +57,7 @@ impl AvatarRenderer {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         camera_buffer: &wgpu::Buffer,
+        catalog: &crate::content::Catalog,
     ) -> Self {
         let source = with_world_sun(include_str!("avatars/shader.wgsl"));
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -94,6 +94,7 @@ impl AvatarRenderer {
             0 => Float32x3,
             1 => Float32x3,
             2 => Uint32,
+            8 => Float32x3,
         ];
         let instance_attrs = wgpu::vertex_attr_array![
             3 => Float32x3,
@@ -148,8 +149,30 @@ impl AvatarRenderer {
             cache: None,
         });
         let mut mesh = mesh::build();
-        let player_indices = mesh.indices.len() as u32;
-        mossbun::append(&mut mesh);
+        let mut models = vec![(AvatarModel::Player, 0..mesh.indices.len() as u32)];
+        for (id, definition) in catalog.mobile_entities() {
+            let start = mesh.indices.len() as u32;
+            for part in &definition.model {
+                let base = mesh.vertices.len();
+                mesh::emit_cuboid(
+                    &mut mesh,
+                    part.min,
+                    part.max,
+                    match part.motion {
+                        bloxgloom_host_api::entity::PartMotion::Body => 5,
+                        bloxgloom_host_api::entity::PartMotion::LeftFoot => 10,
+                        bloxgloom_host_api::entity::PartMotion::RightFoot => 11,
+                    },
+                );
+                for vertex in &mut mesh.vertices[base..] {
+                    vertex.color = part.color;
+                }
+            }
+            models.push((
+                AvatarModel::Registered(id),
+                start..mesh.indices.len() as u32,
+            ));
+        }
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shared avatar vertices"),
             contents: bytemuck::cast_slice(&mesh.vertices),
@@ -172,9 +195,8 @@ impl AvatarRenderer {
             vertices,
             indices,
             instances,
-            player_indices,
-            total_indices: mesh.indices.len() as u32,
-            counts: [0; 2],
+            counts: vec![0; models.len()],
+            models,
         }
     }
 
@@ -182,16 +204,13 @@ impl AvatarRenderer {
     /// with world/entity population or modded entity count.
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
-        for (index, model) in [AvatarModel::Player, AvatarModel::Mossbun]
-            .into_iter()
-            .enumerate()
-        {
+        for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
             instances.extend(
                 avatars
                     .iter()
                     .take(MAX_AVATARS)
-                    .filter(|a| a.model == model)
+                    .filter(|a| a.model == *model)
                     .map(|avatar| AvatarInstance {
                         origin: avatar.position.to_array(),
                         cosmetics: avatar.cosmetics,
@@ -208,26 +227,23 @@ impl AvatarRenderer {
     }
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
-        if self.counts == [0; 2] {
+        if self.counts.iter().all(|n| *n == 0) {
             return 0;
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_group, &[]);
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_vertex_buffer(1, self.instances.slice(..));
-        pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-        let [players, buns] = self.counts;
-        if players > 0 {
-            pass.draw_indexed(0..self.player_indices, 0, 0..players);
+        pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+        let mut start = 0;
+        let mut triangles = 0;
+        for ((_, indices), count) in self.models.iter().zip(&self.counts) {
+            if *count > 0 {
+                pass.draw_indexed(indices.clone(), 0, start..start + count);
+            }
+            start += count;
+            triangles += (indices.end - indices.start) as usize * *count as usize / 3;
         }
-        if buns > 0 {
-            pass.draw_indexed(
-                self.player_indices..self.total_indices,
-                0,
-                players..players + buns,
-            );
-        }
-        (self.player_indices * players + (self.total_indices - self.player_indices) * buns) as usize
-            / 3
+        triangles
     }
 }

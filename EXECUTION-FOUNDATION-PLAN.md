@@ -15,6 +15,13 @@ The execution contract we are working toward:
 
 ## Status as of 2026-09-26
 
+- **Done (2026-09-27):** public dynamic-entity contracts and Mossbun migration;
+  independently compiled Copperling with patrol behavior, registered model,
+  host physics, and a durable pause/resume interaction. Production listener,
+  worker, client targeting, and recovery verified. **655 tests passed**, strict
+  Clippy and formatting passed; release previews inspected. Default save is now
+  `world-v12`. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
+
 - **Done:** registered inventory views/screens and independent container
   persistence. External fixture opens from either block and transfers/reopens
   after restart through the real client/listener. **652 tests passed**, formatting

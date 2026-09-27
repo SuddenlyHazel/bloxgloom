@@ -38,6 +38,7 @@ pub struct EntityInteractionPlan {
 
 #[derive(Clone, Debug)]
 pub struct EntityTickPlan {
+    pub lifecycle: bloxgloom_host_api::entity::Lifecycle,
     pub payload: Option<EntityPayload>,
     /// `Some(tick)` schedules the next due tick; `None` suspends the entity
     /// from ordinary due ticks. Suspended tick policies are re-evaluated by a

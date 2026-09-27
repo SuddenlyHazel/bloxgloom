@@ -52,6 +52,7 @@ fn entity_tick_policy_runs_on_workers_in_durable_coordinator_order() {
                 panic!("test-only entity worker failure");
             }
             Ok(EntityTickPlan {
+                lifecycle: Default::default(),
                 payload: None,
                 next_tick: snapshot.next_tick.map(|due| due + 1),
                 anchor_update: None,

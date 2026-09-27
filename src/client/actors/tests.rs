@@ -1,7 +1,8 @@
 use super::*;
 fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
-        model: AvatarModel::Mossbun,
+        animation: Default::default(),
+        model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
         pose: [0.0; 4],
         airborne: false,
         id: 1,

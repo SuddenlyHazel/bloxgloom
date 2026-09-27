@@ -24,13 +24,13 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let catalog = content::Catalog::builtins();
     #[cfg(feature = "lifecycle-fixture")]
-    let catalog = server::catalog_with_extension(catalog, &bloxgloom_lifecycle_fixture::TallStore)?;
+    let catalog = server::catalog_with_extension(catalog, &bloxgloom_lifecycle_fixture::Fixture)?;
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = std::env::args().skip(1);
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v11-fixture"
+        "world-v12-fixture"
     } else {
-        "world-v11"
+        "world-v12"
     };
     match args.next().as_deref() {
         None => {
@@ -212,6 +212,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("usage: mossbun-motion-preview [directory]".into());
             }
             preview::render_mossbun_motion_previews(std::path::Path::new(&path))?;
+        }
+        Some("creature-preview") => {
+            let key = args
+                .next()
+                .ok_or("usage: creature-preview <entity-key> <output.png>")?;
+            let path = args
+                .next()
+                .ok_or("usage: creature-preview <entity-key> <output.png>")?;
+            if args.next().is_some() {
+                return Err("usage: creature-preview <entity-key> <output.png>".into());
+            }
+            preview::render_creature_preview(&key, std::path::Path::new(&path))?;
         }
         Some("inventory-preview") => {
             let entity = args

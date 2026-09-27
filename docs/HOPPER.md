@@ -36,7 +36,7 @@ version.
   inventory ownership path was added.
 
 New content uses stable block/item ID 300, state ID 600, entity ID 5, and entity
-schema 2. Hopper initially used `world-v9`; registered-inventory content now makes the default `world-v11`.
+schema 2. Hopper initially used `world-v9`; the current dynamic-entity catalog makes the default `world-v12`.
 No old-save conversion is provided.
 
 ## Verification

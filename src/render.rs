@@ -190,7 +190,8 @@ impl Renderer {
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog);
-        let avatars = avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer);
+        let avatars =
+            avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer, &catalog);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));

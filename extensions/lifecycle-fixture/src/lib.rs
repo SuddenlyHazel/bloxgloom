@@ -4,6 +4,14 @@ use bloxgloom_host_api::{
 };
 
 pub const KEY: &str = "fixture:tall_store";
+pub mod creature;
+pub struct Fixture;
+impl Extension for Fixture {
+    fn register(&self, r: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        TallStore.register(r)?;
+        r.mobile_entity(creature::definition())
+    }
+}
 pub struct TallStore;
 impl Extension for TallStore {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {

@@ -8,10 +8,12 @@ use std::sync::OnceLock;
 use crate::world::{self, BlockId};
 
 mod builtins;
+pub(crate) mod creatures;
 mod extensions;
 mod ids;
 mod inventories;
 mod manifest;
+mod mobile;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
 pub use manifest::{ContentEntry, ContentManifest, MAX_MANIFEST_BYTES};
@@ -194,6 +196,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
     inventory_screens: Vec<Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>>,
     blocks: Vec<Option<BlockDef>>,
@@ -219,6 +222,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
             inventory_screens: Vec::new(),
             blocks: Vec::new(),
@@ -728,6 +732,9 @@ impl Catalog {
                 add(entity.key.as_bytes());
                 add(&entity.schema_version.to_le_bytes());
                 add(&entity.schema_fingerprint.to_le_bytes());
+                if let Some(mobile) = self.mobile_entity(entity.id) {
+                    add(&mobile.fingerprint_bytes());
+                }
                 if let Some(screen) = self.inventory_screen(entity.id) {
                     add(&screen.fingerprint_bytes());
                 }

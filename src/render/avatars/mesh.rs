@@ -6,11 +6,12 @@ pub(super) struct AvatarVertex {
     pub(super) position: [f32; 3],
     pub(super) normal: [f32; 3],
     pub(super) part: u32,
+    pub(super) color: [f32; 3],
 }
 
 pub(super) struct AvatarMesh {
     pub(super) vertices: Vec<AvatarVertex>,
-    pub(super) indices: Vec<u16>,
+    pub(super) indices: Vec<u32>,
 }
 
 pub(super) fn build() -> AvatarMesh {
@@ -43,7 +44,7 @@ pub(super) fn emit_cuboid(mesh: &mut AvatarMesh, min: [f32; 3], max: [f32; 3], p
         let u = (axis + 1) % 3;
         let v = (axis + 2) % 3;
         for side in [-1i32, 1] {
-            let base = mesh.vertices.len() as u16;
+            let base = mesh.vertices.len() as u32;
             let mut normal = [0.0; 3];
             normal[axis] = side as f32;
             for (du, dv) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
@@ -55,6 +56,7 @@ pub(super) fn emit_cuboid(mesh: &mut AvatarMesh, min: [f32; 3], max: [f32; 3], p
                     position,
                     normal,
                     part,
+                    color: [1.0; 3],
                 });
             }
             if side > 0 {
@@ -80,7 +82,7 @@ mod tests {
         assert!(
             mesh.indices
                 .iter()
-                .all(|index| usize::from(*index) < mesh.vertices.len())
+                .all(|index| (*index as usize) < mesh.vertices.len())
         );
         assert!(mesh.vertices.iter().any(|vertex| vertex.part == 4));
         assert!(mesh.vertices.iter().all(|vertex| {

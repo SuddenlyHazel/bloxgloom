@@ -10,7 +10,9 @@ pub(in crate::server) mod container;
 pub(in crate::server) mod hopper;
 mod kiln;
 mod locomotion;
+pub(in crate::server) mod mobile;
 mod mobile_pages;
+#[cfg(test)]
 pub(in crate::server) mod mossbun;
 mod navigation;
 mod persistence;

@@ -240,7 +240,8 @@ impl ApplicationHandler for ClientApp {
                 } else if button == MouseButton::Left {
                     self.edit_aimed_block(false);
                 } else if button == MouseButton::Right
-                    && (self.shift_down || !self.open_aimed_kiln())
+                    && (self.shift_down
+                        || (!self.interact_aimed_mobile() && !self.open_aimed_kiln()))
                 {
                     self.edit_aimed_block(true);
                 }

@@ -1,5 +1,9 @@
 # Registered inventory views and screens
 
+Current follow-up: [dynamic entities](DYNAMIC-ENTITIES.md) adds Copperling to the
+fixture package and advances default saves to `world-v12` / `world-v12-fixture`.
+Version-11 references below describe this inventory slice's original format change.
+
 This slice completes the first end-to-end extension container: registration,
 placement, persistence, right-click discovery, screen layout, slot requests, and
 destruction. Chest, Hopper, and Kiln use the same inventory-view and screen
@@ -86,7 +90,7 @@ cargo run --release --features lifecycle-fixture
 ```
 
 This installs the same fixture package into both peers and uses the separate
-default `world-v11-fixture/`. In F4 enter `give fixture:tall_store 1`, place it,
+default `world-v12-fixture/`. In F4 enter `give fixture:tall_store 1`, place it,
 and right-click either block. Select a source and destination to transfer; right
 click the destination for one item, or left click for as much as fits. E/Escape
 closes the screen. Restart to reopen the stored contents.

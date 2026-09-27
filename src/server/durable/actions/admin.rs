@@ -8,13 +8,14 @@ use std::io::{self, ErrorKind};
 /// One spawn, at one of twelve nearby supported locations, with a bounded
 /// population query. The allocator and destination chunk serialize concurrent
 /// spawns; terrain read keys remain fenced through the shared WAL receipt.
-pub(super) fn plan_mossbun(
+pub(super) fn plan_spawn(
     state: &mut crate::server::State,
     profile: u128,
     position: [f32; 3],
     tick: u64,
+    entity_type: crate::content::EntityTypeId,
 ) -> io::Result<crate::server::entities::PreparedEntityTransaction> {
-    use crate::server::entities::{EntityLocation, EntityPayload, EntitySpawn, mossbun};
+    use crate::server::entities::{EntityLocation, EntitySpawn, mobile};
     if state.admin_profile != Some(profile) || profile == 0 {
         return Err(io::Error::new(
             ErrorKind::PermissionDenied,
@@ -23,11 +24,12 @@ pub(super) fn plan_mossbun(
     }
     let view =
         super::entity::capture_view_for_plan(state, &EntityLocation::Mobile { position }, 1)?;
-    let entity_type = state
+    let definition = state
         .world
         .catalog()
-        .entity_type_id_by_key("bloxgloom:mossbun")
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "mossbun type unavailable"))?;
+        .mobile_entity(entity_type)
+        .cloned()
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unregistered creature"))?;
     for [dx, dz] in [[2.0, 0.0], [0.0, 2.0], [-2.0, 0.0], [0.0, -2.0]] {
         for dy in [0.0, 1.0, -1.0] {
             let candidate = [
@@ -35,7 +37,7 @@ pub(super) fn plan_mossbun(
                 position[1].floor() + dy,
                 position[2].floor() + 0.5 + dz,
             ];
-            if !mossbun::spawn_clear(&view, candidate).map_err(io::Error::other)? {
+            if !mobile::spawn_clear(&view, definition.body, candidate).map_err(io::Error::other)? {
                 continue;
             }
             let chunk = crate::server::entities::position_to_cell(candidate)
@@ -54,7 +56,7 @@ pub(super) fn plan_mossbun(
             {
                 return Err(io::Error::new(
                     ErrorKind::QuotaExceeded,
-                    "at most 16 mossbuns per spawn chunk",
+                    "at most 16 creatures of one type per spawn chunk",
                 ));
             }
             let mut prepared = state
@@ -62,7 +64,7 @@ pub(super) fn plan_mossbun(
                 .prepare_spawn_batch(vec![EntitySpawn::Mobile {
                     entity_type,
                     position: candidate,
-                    payload: EntityPayload::new(mossbun::Mossbun::default()),
+                    payload: definition.behavior.initial(),
                     spawn_tick: tick,
                 }])
                 .map_err(io::Error::other)?;

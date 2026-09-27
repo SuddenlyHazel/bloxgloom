@@ -124,6 +124,7 @@ impl EntityTickPolicy for KilnTickPlanner {
         )?;
         let block_states = block_state_changes(snapshot, payload, &planned_payload, catalog)?;
         Ok(EntityTickPlan {
+            lifecycle: Default::default(),
             payload: tick.payload.map(|payload| payload.into_entity_payload()),
             next_tick: Some(tick.next_tick),
             anchor_update: Some(anchor_update),

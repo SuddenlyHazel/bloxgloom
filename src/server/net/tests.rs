@@ -512,6 +512,8 @@ fn complete_content_handshake(peer: &mut TcpStream) {
     protocol::write_client(peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
 }
 
+#[path = "tests/extension_creature.rs"]
+mod extension_creature;
 #[path = "tests/extension_lifecycle.rs"]
 mod extension_lifecycle;
 #[path = "tests/kiln_latency.rs"]
@@ -684,7 +686,8 @@ fn production_reactor_joins_and_commits_an_edit_over_real_tcp() {
         let spawn_action = u128::from(epoch) << 64 | 2;
         protocol::write_client(
             &mut peer,
-            &ClientMessage::AdminSpawnMossbun {
+            &ClientMessage::AdminSpawnEntity {
+                entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
                 action_id: spawn_action,
             },
         )

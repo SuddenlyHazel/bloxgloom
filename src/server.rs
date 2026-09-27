@@ -731,7 +731,7 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         | ClientMessage::InventoryMove { .. }
         | ClientMessage::DropStack { .. }
         | ClientMessage::AdminGive { .. }
-        | ClientMessage::AdminSpawnMossbun { .. }
+        | ClientMessage::AdminSpawnEntity { .. }
         | ClientMessage::EntityInteract { .. }
         | ClientMessage::ActionAck { .. } => Err(io::Error::new(
             ErrorKind::InvalidData,

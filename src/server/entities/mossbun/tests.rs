@@ -19,7 +19,8 @@ fn plan(
     tick: u64,
     view: &VoxelView,
 ) -> Result<EntityTickPlan, EntityError> {
-    Wander.plan(
+    EntityTickPolicy::plan(
+        &super::super::mobile::Adapter(Arc::new(crate::content::creatures::mossbun::definition())),
         snapshot,
         tick,
         &Catalog::builtins(),
@@ -31,12 +32,14 @@ fn plan(
 #[test]
 fn choices_are_restartable_latency_independent_and_early_wakes_do_not_step() {
     let view = view(&[], &[]);
+    let codec =
+        super::super::mobile::Adapter(Arc::new(crate::content::creatures::mossbun::definition()));
     let snapshot = snapshot([8.5, 80.0, 8.5], Mossbun::default());
     let first = plan(&snapshot, 4, &view).unwrap();
     let late = plan(&snapshot, 100, &view).unwrap();
     assert_eq!(
-        Codec.encode(first.payload.as_ref().unwrap()).unwrap(),
-        Codec.encode(late.payload.as_ref().unwrap()).unwrap()
+        codec.encode(first.payload.as_ref().unwrap()).unwrap(),
+        codec.encode(late.payload.as_ref().unwrap()).unwrap()
     );
     let mut walking = snapshot.clone();
     walking.private_payload = first.payload.unwrap();
@@ -151,6 +154,8 @@ fn creature_follows_route_around_obstacle_and_idles_at_goal() {
 
 #[test]
 fn fall_velocity_and_navigation_state_round_trip_canonically() {
+    let codec =
+        super::super::mobile::Adapter(Arc::new(crate::content::creatures::mossbun::definition()));
     let payload = EntityPayload::new(Mossbun {
         cycle: 42,
         facing: 3,
@@ -161,23 +166,23 @@ fn fall_velocity_and_navigation_state_round_trip_canonically() {
         grounded: false,
         think_at: 123,
     });
-    let bytes = Codec.encode(&payload).unwrap();
+    let bytes = codec.encode(&payload).unwrap();
     assert_eq!(bytes.len(), 41);
-    assert_eq!(Codec.encode(&Codec.decode(&bytes).unwrap()).unwrap(), bytes);
-    assert_eq!(Codec.public_view(&payload).unwrap(), [3, 1]);
+    assert_eq!(codec.encode(&codec.decode(&bytes).unwrap()).unwrap(), bytes);
+    assert_eq!(codec.public_view(&payload).unwrap(), [3, 1]);
     for bytes in [vec![], vec![0; 42], vec![255; 41]] {
-        assert!(Codec.decode(&bytes).is_err());
+        assert!(codec.decode(&bytes).is_err());
     }
     let mut invalid = bytes;
     invalid[10..14].copy_from_slice(&f32::NAN.to_le_bytes());
-    assert!(Codec.decode(&invalid).is_err());
+    assert!(codec.decode(&invalid).is_err());
     for position in [
         [f32::NAN, 80.0, 0.0],
         [1_000_000.0, 80.0, 0.0],
         [0.0, crate::world::BEDROCK_Y as f32, 0.0],
     ] {
         assert!(
-            Codec
+            codec
                 .validate_location(&EntityLocation::Mobile { position })
                 .is_err()
         );
