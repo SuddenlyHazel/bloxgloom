@@ -604,6 +604,15 @@ impl Catalog {
             })
             .expect("builtin harvest handler");
         catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: "bloxgloom:plant_support".into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::NeighborChanged,
+                target: None,
+                handler: std::sync::Arc::new(crate::gameplay::PlantSupport),
+            })
+            .expect("builtin plant support handler");
+        catalog
     }
 }
 

@@ -31,6 +31,11 @@ Read-only committed observers now see public projections off the coordinator.
 Their advisory delivery is bounded, lossy and not replayed; authoritative
 follow-up must use durable decisions/scheduling. Fire and owner-wave commits
 are not yet projected through this observation lane.
+Shared gameplay edits now dispatch bounded neighbor/support decisions, including
+semantic use and scheduled entity effects. Built-in plant support loss runs via
+the public fallback, including its harvest, in the triggering transaction.
+Legacy fire still bypasses that planner; the same guarantee does not yet apply
+to burns or all trusted owner systems.
 
 ### Integration follow-up
 

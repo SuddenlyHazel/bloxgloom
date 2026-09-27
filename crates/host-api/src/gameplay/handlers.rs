@@ -8,6 +8,7 @@ pub enum EventKind {
     BlockPlaced,
     ActionRequested,
     EntityTick,
+    NeighborChanged,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +16,8 @@ pub enum RemovalCause {
     Break,
     Replacement,
     SupportLoss,
+    /// A non-player scheduled or system effect changed the block.
+    WorldEdit,
     /// An anchored structure's entire footprint is removed. Standard refunds
     /// remain owned by its lifecycle contract, not the fallback cube harvest.
     AnchoredBreak,
@@ -47,6 +50,14 @@ pub enum Event {
         entity: u64,
         position: [f32; 3],
         tick: u64,
+    },
+    /// `cell` is the neighbor's location and `changed` the edited cell.
+    /// A handler may read the staged result and alter the same transaction.
+    NeighborChanged {
+        cell: Cell,
+        changed: Cell,
+        previous: Block,
+        current: Block,
     },
 }
 
@@ -97,6 +108,7 @@ impl HandlerRegistration {
             EventKind::BlockPlaced => 1,
             EventKind::ActionRequested => 2,
             EventKind::EntityTick => 3,
+            EventKind::NeighborChanged => 4,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

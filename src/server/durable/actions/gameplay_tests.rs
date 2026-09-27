@@ -174,6 +174,65 @@ impl Extension for UseExtension {
     }
 }
 struct PlacementExtension;
+struct SupportExtension;
+struct SoilUse;
+impl Handler for SoilUse {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::ActionRequested { position, .. } = event else {
+            return Err(Error::Invalid("not a use action".into()));
+        };
+        let below = [
+            position[0].floor() as i32 + 2,
+            position[1].floor() as i32,
+            position[2].floor() as i32,
+        ];
+        context.set_block(below, "bloxgloom:air")
+    }
+}
+struct FlowerNeighbor;
+impl Handler for FlowerNeighbor {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::NeighborChanged {
+            cell,
+            changed,
+            previous,
+            current,
+        } = event
+        else {
+            return Err(Error::Invalid("not a neighbor decision".into()));
+        };
+        if cell[1] != changed[1] + 1 || !previous.supports_plant || current.supports_plant {
+            return Err(Error::Invalid("wrong support transition".into()));
+        }
+        context.set_block(*cell, "bloxgloom:air")
+    }
+}
+impl Extension for SupportExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        registrar.action(Action {
+            key: "test:remove_soil".into(),
+            version: 1,
+            label: "REMOVE SOIL".into(),
+            target: Target::Item("bloxgloom:stick".into()),
+            operation: Operation::Gameplay,
+            panel: None,
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:remove_soil".into(),
+            version: 1,
+            event: EventKind::ActionRequested,
+            target: Some("test:remove_soil".into()),
+            handler: Arc::new(SoilUse),
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:flower_support".into(),
+            version: 1,
+            event: EventKind::NeighborChanged,
+            target: Some("bloxgloom:red_flower".into()),
+            handler: Arc::new(FlowerNeighbor),
+        })
+    }
+}
 struct SandPlacement;
 impl Handler for SandPlacement {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
@@ -597,6 +656,74 @@ fn scheduled_general_entity_commits_world_state_and_next_due_atomically() {
             .sum::<u16>(),
         1
     );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn semantic_use_neighbor_support_and_harvest_share_one_receipt() {
+    let path = temp_save_dir("gameplay-neighbor-support");
+    let y = 95;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&SupportExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    state.world.edit(16, y, 0, crate::world::GRASS).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 1));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let request = Request {
+        key: "test:remove_soil".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    let command = ClientMessage::EntityInteract {
+        action_id: epoch | 1,
+        target: [i32::MAX, y, 0],
+        payload: request.encode().unwrap(),
+    };
+    assert_eq!(
+        plan_durable_request(&mut state, &edit_request(command.clone()), TickId::new(10))
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::WouldBlock
+    );
+    state
+        .world
+        .edit(16, y + 1, 0, crate::world::RED_FLOWER)
+        .unwrap();
+    for [x, dy, z] in [[15, 0, 0], [17, 0, 0], [16, -1, 0], [16, 0, -1], [16, 0, 1]] {
+        state.world.get_block(x, y + dy, z).unwrap();
+    }
+    settle_live_action(&mut state, 11, command.clone());
+    settle_live_action(&mut state, 12, command);
+    assert_eq!(state.world.cached_block(16, y, 0), Some(AIR));
+    assert_eq!(state.world.cached_block(16, y + 1, 0), Some(AIR));
+    let flowers = crate::server::drops::nearby(&state.entities, [16.5, y as f32 + 1.5, 0.5]);
+    assert_eq!(
+        flowers
+            .iter()
+            .filter(|item| item.item == crate::items::ItemId::new(crate::world::RED_FLOWER.get()))
+            .map(|item| item.count)
+            .sum::<u16>(),
+        1
+    );
+    drop(peer);
+    drop(state);
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&SupportExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(state.world.get_block(16, y, 0).unwrap(), AIR);
+    assert_eq!(state.world.get_block(16, y + 1, 0).unwrap(), AIR);
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }

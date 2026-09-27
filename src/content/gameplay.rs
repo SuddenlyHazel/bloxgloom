@@ -15,7 +15,7 @@ impl Catalog {
             .target
             .as_ref()
             .is_some_and(|target| match handler.event {
-                EventKind::BlockPlaced | EventKind::BlockRemoved => {
+                EventKind::BlockPlaced | EventKind::BlockRemoved | EventKind::NeighborChanged => {
                     self.block_by_key(target).is_none()
                 }
                 EventKind::ActionRequested => self.action(target).is_none_or(|action| {
@@ -68,5 +68,11 @@ impl Catalog {
     ) -> Option<&Arc<HandlerRegistration>> {
         let handlers = self.gameplay_dispatch.get(&event)?;
         handlers.get(target).or_else(|| handlers.get(""))
+    }
+
+    pub(crate) fn has_targeted_neighbor_handlers(&self) -> bool {
+        self.gameplay_dispatch
+            .get(&EventKind::NeighborChanged)
+            .is_some_and(|handlers| handlers.keys().any(|key| !key.is_empty()))
     }
 }

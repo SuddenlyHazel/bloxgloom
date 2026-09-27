@@ -60,6 +60,8 @@ impl Snapshot for World {
             state: key.into(),
             block_type: key.into(),
             primary_item: Some("test:stone".into()),
+            plant: false,
+            supports_plant: false,
         })
     }
     fn item_exists(&self, key: &str) -> bool {

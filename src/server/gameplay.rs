@@ -27,6 +27,8 @@ pub(super) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, Error> {
             .primary_block_item(id)
             .and_then(|id| catalog.item(id))
             .map(|item| item.key.to_string()),
+        plant: catalog.block_flags(id) & crate::content::PLANT != 0,
+        supports_plant: catalog.block_flags(id) & crate::content::SUPPORTS_PLANT != 0,
     })
 }
 
@@ -344,6 +346,7 @@ pub(super) fn plan_removals(
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
+    dispatch_neighbors(&catalog, &mut context, edits, seed, tick)?;
     let mut plan = context.finish().map_err(error)?;
     if let Some(Event::EntityTick { entity, .. }) = &action
         && !matches!(
@@ -563,6 +566,139 @@ pub(super) fn plan_removals(
         drops,
         inventory,
     })
+}
+
+/// Run support and registered neighbor decisions on the same staged overlay,
+/// including edits created by another handler. Only the upward support path
+/// uses the fallback; targeted handlers observe any of the six adjacent cells.
+fn dispatch_neighbors(
+    catalog: &Catalog,
+    context: &mut Context<'_>,
+    edits: &[Edit],
+    seed: u64,
+    tick: u64,
+) -> io::Result<()> {
+    use bloxgloom_host_api::gameplay::{Event, EventKind, RemovalCause, cell_random};
+    use std::collections::BTreeSet;
+    let mut seen = BTreeSet::new();
+    let mut processed = std::collections::BTreeMap::new();
+    let original_edits: BTreeSet<_> = edits.iter().map(|&(x, y, z, _)| [x, y, z]).collect();
+    let targeted = catalog.has_targeted_neighbor_handlers();
+    loop {
+        let pending: Vec<_> = context
+            .staged_block_transitions()
+            .into_iter()
+            .filter(|(cell, _, _)| !seen.contains(cell))
+            .collect();
+        if pending.is_empty() {
+            if context
+                .staged_block_transitions()
+                .iter()
+                .any(|(cell, _, after)| processed.get(cell).is_some_and(|value| value != after))
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "neighbor handler rewrote an already dispatched block",
+                ));
+            }
+            return Ok(());
+        }
+        if seen.len() + pending.len() > 256 {
+            return Err(io::Error::new(
+                io::ErrorKind::QuotaExceeded,
+                "neighbor decision chain exceeds 256 edits",
+            ));
+        }
+        for (changed, previous, current) in pending {
+            seen.insert(changed);
+            processed.insert(changed, current.clone());
+            if !original_edits.contains(&changed)
+                && previous.block_type != "bloxgloom:air"
+                && previous != current
+            {
+                let event = Event::BlockRemoved {
+                    cell: changed,
+                    previous: previous.clone(),
+                    cause: if context.player().is_none() {
+                        RemovalCause::WorldEdit
+                    } else if current.block_type == "bloxgloom:air" {
+                        RemovalCause::Break
+                    } else {
+                        RemovalCause::Replacement
+                    },
+                    random: cell_random(seed, changed, tick),
+                };
+                if let Some(handler) =
+                    catalog.gameplay_handler(EventKind::BlockRemoved, &previous.block_type)
+                {
+                    context.dispatch(handler, &event).map_err(error)?;
+                }
+            }
+            let lost_support = previous.supports_plant && !current.supports_plant;
+            if !targeted && !lost_support {
+                continue;
+            }
+            for offset in [
+                [0, 1, 0],
+                [0, -1, 0],
+                [1, 0, 0],
+                [-1, 0, 0],
+                [0, 0, 1],
+                [0, 0, -1],
+            ] {
+                let Some(cell) = (0..3)
+                    .map(|axis| changed[axis].checked_add(offset[axis]))
+                    .collect::<Option<Vec<_>>>()
+                else {
+                    continue;
+                };
+                let cell: Cell = cell.try_into().expect("three axes");
+                let above = offset == [0, 1, 0] && lost_support;
+                if !targeted && !above {
+                    continue;
+                }
+                let neighbor = context.block(cell).map_err(error)?;
+                if neighbor.block_type == "bloxgloom:air" {
+                    continue;
+                }
+                let Some(handler) =
+                    catalog.gameplay_handler(EventKind::NeighborChanged, &neighbor.block_type)
+                else {
+                    continue;
+                };
+                if handler.target.is_none() && !above {
+                    continue;
+                }
+                let event = Event::NeighborChanged {
+                    cell,
+                    changed,
+                    previous: previous.clone(),
+                    current: current.clone(),
+                };
+                context.dispatch(handler, &event).map_err(error)?;
+                let after = context.block(cell).map_err(error)?;
+                if neighbor != after && after.block_type == "bloxgloom:air" {
+                    if let Some(removal) =
+                        catalog.gameplay_handler(EventKind::BlockRemoved, &neighbor.block_type)
+                    {
+                        context
+                            .dispatch(
+                                removal,
+                                &Event::BlockRemoved {
+                                    cell,
+                                    previous: neighbor,
+                                    cause: RemovalCause::SupportLoss,
+                                    random: cell_random(seed, cell, tick),
+                                },
+                            )
+                            .map_err(error)?;
+                    }
+                    seen.insert(cell);
+                    processed.insert(cell, after);
+                }
+            }
+        }
+    }
 }
 
 pub(super) fn combine_entities(

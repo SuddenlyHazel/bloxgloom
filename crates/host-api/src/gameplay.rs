@@ -25,6 +25,8 @@ pub struct Block {
     pub state: String,
     pub block_type: String,
     pub primary_item: Option<String>,
+    pub plant: bool,
+    pub supports_plant: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +99,7 @@ pub struct Plan {
 pub struct Context<'a> {
     snapshot: &'a mut dyn Snapshot,
     blocks: BTreeMap<Cell, Block>,
+    block_preimages: BTreeMap<Cell, Block>,
     inventories: BTreeMap<InventoryId, Vec<Slot>>,
     handler_namespace: Option<String>,
     handler_key: Option<String>,
@@ -117,6 +120,7 @@ impl<'a> Context<'a> {
         Self {
             snapshot,
             blocks: BTreeMap::new(),
+            block_preimages: BTreeMap::new(),
             inventories: BTreeMap::new(),
             handler_namespace: None,
             handler_key: None,
@@ -194,14 +198,29 @@ impl<'a> Context<'a> {
     /// Records the preimage even for a blind write. Later reads see this state;
     /// repeated writes coalesce without forgetting the original dependency.
     pub fn set_block(&mut self, cell: Cell, state: &str) -> Result<(), Error> {
-        self.block(cell)?;
+        let before = self.block(cell)?;
         let block = match self.snapshot.state(state) {
             Ok(block) => block,
             Err(error) => return self.fail(error),
         };
         self.plan.blocks.insert(cell, block.state.clone());
+        self.block_preimages.entry(cell).or_insert(before);
         self.blocks.insert(cell, block);
         Ok(())
+    }
+
+    /// Changed preimages and proposed values in stable coordinate order.
+    /// Hosts use this to dispatch support/neighbor decisions on the same overlay.
+    pub fn staged_block_transitions(&self) -> Vec<(Cell, Block, Block)> {
+        self.plan
+            .blocks
+            .keys()
+            .filter_map(|cell| {
+                let before = self.block_preimages.get(cell)?;
+                let after = self.blocks.get(cell)?;
+                (before != after).then(|| (*cell, before.clone(), after.clone()))
+            })
+            .collect()
     }
 
     /// Explicit item creation, not an inventory transfer. Each spawn is one

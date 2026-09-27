@@ -388,7 +388,7 @@ fn plan_block_edit(
         slot,
         ..
     } = command;
-    let mut coords = vec![(x, y, z, block)];
+    let coords = vec![(x, y, z, block)];
     let mut terrain_reads = TerrainReads::default();
     let mut removed_plants = Vec::new();
     if block != AIR {
@@ -523,29 +523,8 @@ fn plan_block_edit(
             "target is already air",
         ));
     }
-    if has(previous, crate::content::SUPPORTS_PLANT)
-        && let Some(above_y) = y.checked_add(1)
-    {
-        let above = cached_block_with_reads(
-            state,
-            &mut terrain_reads,
-            x,
-            above_y,
-            z,
-            "plant-check chunk is not resident",
-        )?;
-        if has(above, crate::content::PLANT) {
-            coords.push((x, above_y, z, AIR));
-            removed_plants.push((above, [x, above_y, z]));
-        }
-    }
     ensure_no_unhandled_anchor(state, &coords)?;
-    let mut removals = vec![(previous, [x, y, z], RemovalCause::Break)];
-    removals.extend(
-        removed_plants
-            .into_iter()
-            .map(|(id, at)| (id, at, RemovalCause::SupportLoss)),
-    );
+    let removals = vec![(previous, [x, y, z], RemovalCause::Break)];
     let plan = plan_gameplay_removals(
         state,
         &mut terrain_reads,

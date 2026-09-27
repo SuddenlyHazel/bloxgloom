@@ -3,6 +3,34 @@
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error};
 
 pub(crate) struct Harvest;
+pub(crate) struct PlantSupport;
+impl bloxgloom_host_api::gameplay::Handler for PlantSupport {
+    fn handle(
+        &self,
+        context: &mut Context<'_>,
+        event: &bloxgloom_host_api::gameplay::Event,
+    ) -> Result<(), Error> {
+        let bloxgloom_host_api::gameplay::Event::NeighborChanged {
+            cell,
+            changed,
+            previous,
+            current,
+        } = event
+        else {
+            return Ok(());
+        };
+        if cell[0] == changed[0]
+            && cell[1].checked_sub(1) == Some(changed[1])
+            && cell[2] == changed[2]
+            && previous.supports_plant
+            && !current.supports_plant
+            && context.block(*cell)?.plant
+        {
+            context.set_block(*cell, "bloxgloom:air")?;
+        }
+        Ok(())
+    }
+}
 impl bloxgloom_host_api::gameplay::Handler for Harvest {
     fn handle(
         &self,

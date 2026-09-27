@@ -560,6 +560,17 @@ This section exists so compaction or a new session does not restart the design.
   canonical handler key; repeated plans at the same inputs and independent
   handler registrations do not share a mutable RNG stream. This supports
   retryable use and due callbacks without exposing VM-global randomness.
+- **Phase 2 support/neighbor increment:** the shared staged gameplay planner
+  now dispatches `NeighborChanged` decisions after block edits, including edits
+  produced by semantic use and general-entity due callbacks. The built-in plant
+  support policy uses the public handler instead of a player-edit-only branch;
+  removal/loot and the triggering edit share one WAL receipt. Explicit target
+  handlers may own the neighbor decision for a block type; the fallback runs for
+  upward support loss. Neighbor reads capture authoritative chunk dependencies,
+  missing chunks defer, and a 256-transition bound rejects recursive edit chains.
+  A seam-crossing semantic-use test checks missing-neighbor deferral, a targeted
+  support handler, one flower refund despite duplicate requests, and recovery.
+  Fire still uses its older transaction path and is not covered by this migration.
 - **Next concrete step:** add general owner-local scheduled world work, then
   migrate support/world/drop behavior and built-in fire, preserving durable
   intent rather than treating advisory observations as guaranteed delivery.
