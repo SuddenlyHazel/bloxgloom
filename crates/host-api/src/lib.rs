@@ -6,6 +6,7 @@ pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
 pub mod machine;
+pub mod system;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
 pub use lifecycle::{FootprintCell, StorageBlockEntity};
 
@@ -30,6 +31,11 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn owner_system(&mut self, _system: system::System) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "owner systems unsupported by this registrar".into(),
+        ))
+    }
     fn machine(&mut self, _machine: machine::Machine) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "machines unsupported by this registrar".into(),

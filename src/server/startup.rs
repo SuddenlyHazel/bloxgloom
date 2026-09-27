@@ -26,6 +26,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
+mod public_systems;
+
 /// One stable entity implementation, resolved by canonical content key each
 /// time the world's numeric assignment is loaded. Optional policies stay
 /// paired with the same codec and ownership declaration.
@@ -77,6 +79,7 @@ impl ServerStartup {
         super::lifecycle::Registry::resolve(&catalog, &storage).map_err(io::Error::other)?;
         self.catalog = Arc::new(catalog);
         self.storage = storage;
+        self.install_public_systems();
         Ok(self)
     }
 
@@ -120,7 +123,7 @@ impl ServerStartup {
         registration
             .definitions
             .extend(catalog.storage_lifecycles.clone());
-        Self {
+        let mut startup = Self {
             catalog,
             storage: registration.definitions,
             entity_types: Vec::new(),
@@ -128,7 +131,9 @@ impl ServerStartup {
             systems: Vec::new(),
             owner_codecs: BTreeMap::new(),
             owners: Vec::new(),
-        }
+        };
+        startup.install_public_systems();
+        startup
     }
 
     #[allow(

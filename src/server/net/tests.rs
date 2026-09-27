@@ -516,6 +516,8 @@ fn complete_content_handshake(peer: &mut TcpStream) {
 mod extension_creature;
 #[path = "tests/extension_lifecycle.rs"]
 mod extension_lifecycle;
+#[path = "tests/extension_system.rs"]
+mod extension_system;
 #[path = "tests/kiln_latency.rs"]
 mod kiln_latency;
 

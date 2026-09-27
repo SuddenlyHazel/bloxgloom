@@ -217,6 +217,13 @@ impl ContentManifest {
         }
 
         let mut resolved = Catalog::new();
+        for entry in self.entries.iter().filter(|entry| entry.kind == b'Y') {
+            let system = local
+                .owner_systems()
+                .find(|s| s.key == entry.key)
+                .ok_or_else(|| invalid("missing owner system"))?;
+            resolved.owner_systems.insert(entry.id, system.clone());
+        }
         resolved.storage_lifecycles = local.storage_lifecycles.clone();
         resolved.textures = local.textures.clone();
         resolved.texture_fingerprints = local.texture_fingerprints.clone();
@@ -307,7 +314,7 @@ impl ContentManifest {
         let mut previous = None;
         let mut keys = HashSet::with_capacity(self.entries.len().min(262_144));
         for entry in &self.entries {
-            if !matches!(entry.kind, b'B' | b'S' | b'I' | b'E')
+            if !matches!(entry.kind, b'B' | b'S' | b'I' | b'E' | b'Y')
                 || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }

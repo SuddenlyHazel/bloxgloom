@@ -15,6 +15,7 @@ mod inventories;
 pub(crate) mod machines;
 mod manifest;
 mod mobile;
+mod owner_systems;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
 pub use manifest::{ContentEntry, ContentManifest, MAX_MANIFEST_BYTES};
@@ -197,6 +198,8 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    owner_systems:
+        std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
@@ -224,6 +227,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            owner_systems: Default::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
@@ -638,6 +642,14 @@ impl Catalog {
     /// Stable save identities, including schema and compiled behavior in each fingerprint.
     pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         let mut entries = Vec::new();
+        for (id, system) in &self.owner_systems {
+            entries.push((
+                b'Y',
+                *id,
+                system.key.as_str(),
+                self.definition_fingerprint(b'Y', *id),
+            ));
+        }
         for (id, definition) in self.blocks.iter().enumerate() {
             if let Some(block) = definition {
                 entries.push((
@@ -686,6 +698,7 @@ impl Catalog {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut add = |bytes: &[u8]| hash_bytes(&mut hash, bytes);
         match kind {
+            b'Y' => add(&self.owner_systems[&id].fingerprint_bytes()),
             b'B' => {
                 let block = self.block_type(BlockTypeId(id)).unwrap();
                 add(block.key.as_bytes());

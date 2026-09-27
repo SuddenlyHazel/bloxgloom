@@ -14,8 +14,20 @@ pub(crate) struct Registration {
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
     mobiles: Vec<bloxgloom_host_api::entity::MobileEntity>,
     machines: Vec<bloxgloom_host_api::machine::Machine>,
+    systems: Vec<bloxgloom_host_api::system::System>,
 }
 impl Registrar for Registration {
+    fn owner_system(
+        &mut self,
+        system: bloxgloom_host_api::system::System,
+    ) -> Result<(), RegistrationError> {
+        system.validate()?;
+        if self.systems.iter().any(|old| old.key == system.key) {
+            return Err(RegistrationError("duplicate owner system".into()));
+        }
+        self.systems.push(system);
+        Ok(())
+    }
     fn machine(
         &mut self,
         m: bloxgloom_host_api::machine::Machine,
@@ -84,6 +96,9 @@ impl Registration {
         let mut registration = Self::default();
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
+        for system in &registration.systems {
+            candidate.register_owner_system(system.clone())?;
+        }
         for mobile in &registration.mobiles {
             candidate.register_mobile(mobile.clone())?;
         }
