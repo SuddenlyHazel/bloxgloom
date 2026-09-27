@@ -11,6 +11,7 @@ mod admin;
 pub(in crate::server) mod anchored;
 pub(in crate::server) mod entity;
 mod gameplay_action;
+pub(in crate::server) mod gameplay_fire;
 pub(in crate::server) mod gameplay_tick;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;

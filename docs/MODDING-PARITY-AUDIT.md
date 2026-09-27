@@ -34,8 +34,10 @@ are not yet projected through this observation lane.
 Shared gameplay edits now dispatch bounded neighbor/support decisions, including
 semantic use and scheduled entity effects. Built-in plant support loss runs via
 the public fallback, including its harvest, in the triggering transaction.
-Legacy fire still bypasses that planner; the same guarantee does not yet apply
-to burns or all trusted owner systems.
+Fire burns now use the same removal/support transaction, including anchored
+footprint refunds and cross-chunk support effects in the fire WAL receipt. The
+fire frontier/propagation and cross-chunk delivery policy remain native-only;
+owner-local world-system, drop and player parity remain open.
 
 ### Integration follow-up
 

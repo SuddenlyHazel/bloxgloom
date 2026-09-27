@@ -8,6 +8,134 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+struct BurnExtension;
+struct BurnGrass;
+impl bloxgloom_host_api::gameplay::Handler for BurnGrass {
+    fn handle(
+        &self,
+        context: &mut bloxgloom_host_api::gameplay::Context<'_>,
+        event: &bloxgloom_host_api::gameplay::Event,
+    ) -> Result<(), bloxgloom_host_api::gameplay::Error> {
+        use bloxgloom_host_api::gameplay::{Event, RemovalCause};
+        let Event::BlockRemoved {
+            cell,
+            cause: RemovalCause::Burn,
+            ..
+        } = event
+        else {
+            return Err(bloxgloom_host_api::gameplay::Error::Invalid(
+                "expected burned grass".into(),
+            ));
+        };
+        context.spawn_drop(cell.map(|v| v as f32 + 0.5), "bloxgloom:stick", 1, 250)
+    }
+}
+impl bloxgloom_host_api::Extension for BurnExtension {
+    fn register(
+        &self,
+        registrar: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), bloxgloom_host_api::RegistrationError> {
+        registrar.gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+            key: "test:burn_grass".into(),
+            version: 1,
+            event: bloxgloom_host_api::gameplay::EventKind::BlockRemoved,
+            target: Some("bloxgloom:grass".into()),
+            handler: std::sync::Arc::new(BurnGrass),
+        })
+    }
+}
+
+#[test]
+fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
+    use crate::world::{GRASS, RED_FLOWER};
+    let path = temp_save();
+    let startup = crate::server::startup::ServerStartup::new(std::sync::Arc::new(
+        crate::content::Catalog::builtins(),
+    ))
+    .with_extension(&BurnExtension)
+    .unwrap();
+    let mut state = crate::server::server_state_with_startup(71, path.clone(), 8, startup).unwrap();
+    let (source, local) = world_to_chunk(8, 95, 8);
+    let cell = Chunk::index(local).unwrap() as u16;
+    let edits = state
+        .world
+        .prepare_edits(&[
+            (8, 95, 8, GLOWSTONE),
+            (9, 95, 8, GRASS),
+            (9, 96, 8, RED_FLOWER),
+        ])
+        .unwrap();
+    let seed = state
+        .fire
+        .prepare_seed_from_edit(TickId::new(1), source, cell, GLOWSTONE)
+        .unwrap()
+        .unwrap();
+    let action = CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        terrain_reads: Default::default(),
+        inventory_before: None,
+        inventory: None,
+        world_edits: edits,
+        deltas: Vec::new(),
+        changed_cells: Vec::new(),
+        pickups: Vec::new(),
+        fire_seed: Some(seed.clone()),
+        entity_wakes: Vec::new(),
+        entities: None,
+    };
+    assert!(
+        state
+            .durability
+            .try_stage(TickId::new(1), &action, None)
+            .unwrap()
+    );
+    state.fire.mark_seed_submitted(&seed).unwrap();
+    drain_wal(&mut state);
+    run_delivery(&mut state, TickId::new(3)).unwrap();
+    drain_wal(&mut state);
+    run_source(&mut state, TickId::new(4)).unwrap();
+    assert_eq!(
+        state.world.cached_block(9, 95, 8),
+        Some(GRASS),
+        "burn must wait for WAL receipt"
+    );
+    drain_wal(&mut state);
+    assert_eq!(state.world.cached_block(9, 95, 8), Some(AIR));
+    assert_eq!(state.world.cached_block(9, 96, 8), Some(AIR));
+    let drops = crate::server::drops::nearby(&state.entities, [9.5, 95.5, 8.5]);
+    assert_eq!(
+        drops
+            .iter()
+            .filter(|drop| drop.item == crate::items::STICK)
+            .map(|drop| drop.count)
+            .sum::<u16>(),
+        1
+    );
+    assert_eq!(
+        drops
+            .iter()
+            .filter(|drop| drop.item == crate::items::ItemId::new(RED_FLOWER.get()))
+            .map(|drop| drop.count)
+            .sum::<u16>(),
+        1
+    );
+    drop(state);
+    let startup = crate::server::startup::ServerStartup::new(std::sync::Arc::new(
+        crate::content::Catalog::builtins(),
+    ))
+    .with_extension(&BurnExtension)
+    .unwrap();
+    let mut state = crate::server::server_state_with_startup(71, path.clone(), 8, startup).unwrap();
+    assert_eq!(state.world.get_block(9, 95, 8).unwrap(), AIR);
+    assert_eq!(state.world.get_block(9, 96, 8).unwrap(), AIR);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
 fn temp_save() -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)

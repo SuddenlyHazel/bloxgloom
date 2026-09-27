@@ -18,6 +18,9 @@ pub enum RemovalCause {
     SupportLoss,
     /// A non-player scheduled or system effect changed the block.
     WorldEdit,
+    /// A persisted fire frontier consumed this cell. The default harvest rule
+    /// does not reward burnt blocks; targeted handlers may still react.
+    Burn,
     /// An anchored structure's entire footprint is removed. Standard refunds
     /// remain owned by its lifecycle contract, not the fallback cube harvest.
     AnchoredBreak,

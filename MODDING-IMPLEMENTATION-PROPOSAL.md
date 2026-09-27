@@ -570,10 +570,19 @@ This section exists so compaction or a new session does not restart the design.
   missing chunks defer, and a 256-transition bound rejects recursive edit chains.
   A seam-crossing semantic-use test checks missing-neighbor deferral, a targeted
   support handler, one flower refund despite duplicate requests, and recovery.
-  Fire still uses its older transaction path and is not covered by this migration.
-- **Next concrete step:** add general owner-local scheduled world work, then
-  migrate support/world/drop behavior and built-in fire, preserving durable
-  intent rather than treating advisory observations as guaranteed delivery.
+- **Phase 2 fire-effect increment:** worker-selected fire burns now dispatch the
+  public `BlockRemoved` decision with `Burn` cause and the shared neighbor/support
+  decisions before admission. The default harvest deliberately creates no
+  rewards for a burnt block. Handler edits, safe anchored-footprint destruction,
+  refunds, support-loss loot, entity/drop effects and fire frontier/mailbox/cursor
+  transitions share one receipted WAL record. Fire delivery and frontier work
+  still use the native registered worker policy and its durable bounded mailbox;
+  the behavioral owner/scheduler is **not** yet a public authoring service. The
+  burn-and-restart and two-anchored-footprint tests exercise the combined path.
+- **Next concrete step:** expose general owner-local scheduled world reads/effects
+  and reusable durable cross-owner intent, then move fire propagation/delivery
+  decisions off the native-only policy. Migrate remaining drops, player rules,
+  commands and helper paths before marking Phase 2 done.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

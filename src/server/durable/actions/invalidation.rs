@@ -165,10 +165,70 @@ pub(in crate::server) fn plan(
                 .map_err(capacity_error)?,
         );
     }
-    if let Some(batch) = crate::server::drops::plan_stack_spawns(
+    let coords: Vec<_> = coords
+        .into_iter()
+        .map(|((x, y, z), b)| (x, y, z, b))
+        .collect();
+    let catalog = state.world.catalog_arc();
+    let original = coords
+        .iter()
+        .map(|&(x, y, z, _)| [x, y, z])
+        .collect::<BTreeSet<_>>();
+    let mut removals = Vec::with_capacity(edits.len());
+    for &(x, y, z, _) in edits {
+        let previous = cached_block_or_request(state, x, y, z, "burn target unavailable")?;
+        removals.push((previous, [x, y, z], RemovalCause::Burn));
+    }
+    let mut reads = TerrainReads::default();
+    let mut requested = Vec::new();
+    let planned = crate::server::gameplay::plan_removals(
+        &mut state.world,
+        &mut reads,
+        &mut requested,
+        crate::server::gameplay::OperationInput {
+            edits: &coords,
+            removals: &removals,
+            seed: state.seed,
+            tick,
+            action: None,
+        },
+        crate::server::gameplay::Participants {
+            actor: None,
+            entities: &state.entities,
+        },
+    );
+    for key in requested {
+        let _ = request_chunk(state, key);
+    }
+    let planned = planned?;
+    if coords.iter().any(|edit| !planned.edits.contains(edit)) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "burn handler rewrote an invalidated footprint",
+        ));
+    }
+    for &(x, y, z, block) in &planned.edits {
+        if !original.contains(&[x, y, z]) {
+            ensure_no_unhandled_anchor(state, &[(x, y, z, block)])?;
+        }
+        if catalog.block_flags(block) & crate::content::SOLID != 0
+            && state
+                .clients
+                .values()
+                .any(|client| block_intersects_player([x, y, z], client.position()))
+        {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "burn effect overlaps a player",
+            ));
+        }
+    }
+    drops.extend(planned.drops);
+    if let Some(batch) = crate::server::drops::plan_stack_spawns_with_extra(
         &state.entities,
-        state.world.catalog(),
+        &catalog,
         &drops,
+        planned.entity_spawns,
         tick,
         crate::server::drops::unix_ms(),
     )
@@ -184,28 +244,25 @@ pub(in crate::server) fn plan(
     })? {
         batches.push(batch);
     }
+    batches.extend(planned.entity_updates);
     let entities = state
         .entities
         .combine_prepared(batches)
         .map_err(capacity_error)?;
-    let coords: Vec<_> = coords
-        .into_iter()
-        .map(|((x, y, z), b)| (x, y, z, b))
-        .collect();
-    let world_edits = state.world.prepare_edits(&coords)?;
-    let deltas = prepared_deltas(&coords, &world_edits);
+    let deltas = prepared_deltas(&planned.edits, &planned.prepared);
     Ok(Some(CommitAction {
         client_id: None,
         profile: None,
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
-        terrain_reads: Default::default(),
+        terrain_reads: reads,
         inventory_before: None,
         inventory: None,
-        world_edits,
+        world_edits: planned.prepared,
         deltas,
-        changed_cells: coords
+        changed_cells: planned
+            .edits
             .iter()
             .map(|&(x, y, z, _)| CellCoord::new(x, y, z))
             .collect(),

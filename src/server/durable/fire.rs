@@ -143,6 +143,18 @@ pub(in crate::server) fn stage_wave(
         for transaction in transactions {
             if invalidation::touches_anchor(state, &transaction) {
                 invalidation::stage(state, tick, transaction)?;
+            } else if transaction.world_edit.is_some() {
+                stage_gameplay_burn(state, tick, transaction)?;
+            } else {
+                stage_transactions(state, tick, vec![transaction])?;
+            }
+        }
+        return Ok(());
+    }
+    if transactions.iter().any(|t| t.world_edit.is_some()) {
+        for transaction in transactions {
+            if transaction.world_edit.is_some() {
+                stage_gameplay_burn(state, tick, transaction)?;
             } else {
                 stage_transactions(state, tick, vec![transaction])?;
             }
@@ -150,6 +162,106 @@ pub(in crate::server) fn stage_wave(
         return Ok(());
     }
     stage_transactions(state, tick, transactions)
+}
+
+fn stage_gameplay_burn(
+    state: &mut State,
+    tick: TickId,
+    mut transaction: FireTransaction,
+) -> io::Result<()> {
+    let mut action = match actions::gameplay_fire::plan(state, &transaction, tick.get()) {
+        Ok(action) => action,
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::WouldBlock | ErrorKind::QuotaExceeded
+            ) =>
+        {
+            state.fire.note_conflict(1);
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
+    {
+        state.fire.note_conflict(1);
+        return Ok(());
+    }
+    let permit = if let Some(entities) = &mut action.entities {
+        let Some(permit) = state.durability.entity_mirror.try_reserve_durable()? else {
+            state.fire.note_full(1);
+            return Ok(());
+        };
+        entities
+            .assign_publication(state.durability.entity_publication_frontier)
+            .map_err(io::Error::other)?;
+        Some((
+            permit,
+            entities.publication_frontier().map_err(io::Error::other)?,
+        ))
+    } else {
+        None
+    };
+    let reads = action
+        .entities
+        .as_ref()
+        .into_iter()
+        .flat_map(|entities| entities.read_keys().cloned())
+        .chain(action.terrain_reads.keys())
+        .chain(action.changed_cells.iter().map(|c| {
+            crate::server::entities::cell_state_key(crate::server::entities::CellCoord::new(
+                c.x, c.y, c.z,
+            ))
+        }))
+        .collect();
+    transaction.world_edit = None;
+    transaction.changed_cells.clear();
+    transaction
+        .changes
+        .retain(|change| change.key != chunk_state_key(transaction.owner));
+    let mut changes = action_changes(&action, state.world.catalog())?;
+    changes.extend(transaction.changes.iter().cloned());
+    let bytes = changes.iter().fold(30usize, |sum, change| {
+        sum.saturating_add(
+            17 + change.key.domain.len()
+                + change.key.bytes.len()
+                + change.before.len()
+                + change.after.len(),
+        )
+    });
+    if bytes > crate::server::journal::MAX_TRANSACTION_BYTES {
+        state.fire.note_full(1);
+        return Ok(());
+    }
+    let (permit, frontier) = match permit {
+        Some((permit, frontier)) => (Some(permit), Some(frontier)),
+        None => (None, None),
+    };
+    let mut payload = Some(PendingPayload::FireAction(transaction.clone(), action));
+    match state
+        .durability
+        .try_stage_changes(tick, changes, reads, &mut payload, permit)
+    {
+        Ok(true) => {
+            if let Some(frontier) = frontier {
+                state.durability.entity_publication_frontier = frontier;
+            }
+            if let Err(error) = state.fire.mark_submitted(&transaction) {
+                state.durability.failed = true;
+                return Err(error);
+            }
+            state.fire.note_admitted(1);
+        }
+        Err(StageError::Full) => state.fire.note_full(1),
+        Err(StageError::Conflict) => state.fire.note_conflict(1),
+        other => {
+            state.durability.failed = true;
+            return Err(io::Error::other(format!(
+                "fire gameplay WAL admission failed: {other:?}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn stage_transactions(

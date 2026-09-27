@@ -47,7 +47,11 @@ impl bloxgloom_host_api::gameplay::Handler for Harvest {
         else {
             return Ok(());
         };
-        if *cause == bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak {
+        if matches!(
+            cause,
+            bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak
+                | bloxgloom_host_api::gameplay::RemovalCause::Burn
+        ) {
             return Ok(());
         }
         harvest(context, previous, *cell, *random)
