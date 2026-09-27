@@ -4,50 +4,32 @@ use bloxgloom_host_api::{CubeBlock, RegistrationError as ApiError, StorageBlockE
 
 impl Catalog {
     pub(crate) fn extension_cube(&mut self, definition: &CubeBlock) -> Result<(), ApiError> {
-        let texture = self
-            .textures
-            .iter()
-            .position(|t| t.key == definition.texture)
-            .map(|i| TextureId(i as u32))
-            .ok_or_else(|| ApiError(format!("missing texture {}", definition.texture)))?;
-        let block = BlockTypeId(self.blocks.len() as u32);
-        let state = BlockStateId(self.states.len() as u32);
-        let item = ItemId(self.items.len() as u32);
-        let error = |e: RegistrationError| ApiError(format!("{}: {e:?}", definition.key));
-        self.register_block(BlockDef {
-            id: block,
-            key: definition.key.clone().into(),
-            name: definition.name.clone().into(),
+        use bloxgloom_host_api::content::*;
+        self.public_block(&Block {
+            key: definition.key.clone(),
+            name: definition.name.clone(),
             swatch: [0.55, 0.33, 0.14, 1.0],
-            textures: BlockTextures {
-                top: texture,
-                side: texture,
-                bottom: texture,
-            },
+            textures: FaceTextures::uniform(&definition.texture),
             solid: true,
-            opaque: true,
-            cutout: false,
-            plant: false,
+            material: Material::Opaque,
+            geometry: Geometry::Cube,
             replaceable: false,
             supports_plant: false,
             flammable: false,
             emission: 0,
             reflectance: [140, 90, 45],
             properties: vec![],
-        })
-        .map_err(error)?;
-        self.register_state(state, block, vec![], None)
-            .map_err(error)?;
-        self.register_item(ItemDef {
-            id: item,
-            key: definition.key.clone().into(),
-            name: definition.name.clone().into(),
+            states: vec![BlockState::default()],
+        })?;
+        self.public_item(&Item {
+            key: definition.key.clone(),
+            name: definition.name.clone(),
             swatch: [0.55, 0.33, 0.14, 1.0],
-            texture,
-            placeable: Some(state),
+            texture: definition.texture.clone(),
+            placeable: Some(definition.key.clone()),
             sprite: false,
+            components: Components::Unstructured,
         })
-        .map_err(error)
     }
 
     pub(crate) fn extension_storage(

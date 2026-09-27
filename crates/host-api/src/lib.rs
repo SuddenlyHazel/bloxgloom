@@ -1,8 +1,10 @@
-//! Host contracts for registered storage, inventory screens, and mobile entities.
+//! Host contracts for content, composition, storage, inventories and mobile entities.
 //! This is not a mod loader or a stable native ABI.
 use std::fmt;
 
 pub mod anchored;
+pub mod composition;
+pub mod content;
 pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
@@ -20,8 +22,7 @@ impl fmt::Display for RegistrationError {
 }
 impl std::error::Error for RegistrationError {}
 
-/// Simple opaque cube content. References are canonical namespaced keys, never
-/// save/wire integers. Richer state/material definitions are a later capability.
+/// Convenience shorthand for an opaque cube, one state, and a placeable item.
 #[derive(Clone, Debug)]
 pub struct CubeBlock {
     pub key: String,
@@ -43,6 +44,31 @@ pub trait Registrar {
     ) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "anchored behaviors unsupported by this registrar".into(),
+        ))
+    }
+    fn package(&mut self, _definition: composition::Package) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "package contracts unsupported by this registrar".into(),
+        ))
+    }
+    fn texture(&mut self, _definition: content::Texture) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "textures unsupported by this registrar".into(),
+        ))
+    }
+    fn block(&mut self, _definition: content::Block) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "block definitions unsupported by this registrar".into(),
+        ))
+    }
+    fn item(&mut self, _definition: content::Item) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "item definitions unsupported by this registrar".into(),
+        ))
+    }
+    fn tag(&mut self, _definition: content::Tag) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "tags unsupported by this registrar".into(),
         ))
     }
     fn machine(&mut self, _machine: machine::Machine) -> Result<(), RegistrationError> {

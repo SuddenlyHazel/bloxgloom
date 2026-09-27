@@ -7,7 +7,8 @@ mod components;
 pub use components::{ComponentMatch, ComponentOutput, ComponentValue};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
-    /// Namespaced allowlist; empty accepts any registered item.
+    /// Namespaced allowlist (or `#namespace:item_tag`); empty accepts any item.
+    /// Tags expand at startup; missing/empty tags and expansions over 4096 fail.
     pub items: Vec<String>,
     /// Allow exact component-bearing stacks, including registered process inputs.
     pub components: bool,

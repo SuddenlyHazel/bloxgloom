@@ -75,7 +75,13 @@ impl WorkstationView {
                 .slots
                 .iter()
                 .flatten()
-                .all(|s| s.valid_in(catalog) && s.components.is_none())
+                // This is a deliberately redacted projection, not a private
+                // authoritative stack. Required components remain server-side.
+                .all(|s| {
+                    catalog.item(s.item).is_some()
+                        && (1..=STACK_LIMIT).contains(&s.count)
+                        && s.components.is_none()
+                })
             && self
                 .status
                 .iter()

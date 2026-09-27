@@ -51,6 +51,31 @@ pub(super) fn until(
 
 #[test]
 fn external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_listener() {
+    storage_roundtrip(
+        &bloxgloom_lifecycle_fixture::TallStore,
+        "bloxgloom:stick",
+        1,
+    );
+}
+
+#[test]
+fn registered_item_components_transfer_and_recover_over_real_listener() {
+    let extensions: [&dyn bloxgloom_host_api::Extension; 2] = [
+        &bloxgloom_lifecycle_fixture::TallStore,
+        &bloxgloom_lifecycle_fixture::content::Content,
+    ];
+    storage_roundtrip(
+        &bloxgloom_host_api::composition::Bundle(&extensions),
+        bloxgloom_lifecycle_fixture::content::CHIP,
+        2,
+    );
+}
+
+fn storage_roundtrip(
+    extension: &dyn bloxgloom_host_api::Extension,
+    component_key: &str,
+    component_version: u16,
+) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -61,7 +86,7 @@ fn external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_
     ));
     for restarted in [false, true] {
         let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
-            .with_extension(&bloxgloom_lifecycle_fixture::TallStore)
+            .with_extension(extension)
             .unwrap();
         let mut state = Box::new(
             crate::server::server_state_with_startup(7, save.clone(), 8, startup).unwrap(),
@@ -75,6 +100,7 @@ fn external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_
             .find(|i| i.key == bloxgloom_lifecycle_fixture::KEY)
             .unwrap()
             .id;
+        let component_item = catalog.items().find(|i| i.key == component_key).unwrap().id;
         state.spawn_anchor = [0.5, 80.0, 0.5];
         if !restarted {
             for x in -2..=2 {
@@ -98,8 +124,9 @@ fn external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_
             }
             let mut inventory = Inventory::default();
             inventory.slots[0] = Some(Stack::new(item, 2));
-            inventory.slots[1] =
-                Some(Stack::with_components(crate::items::STICK, 5, 1, vec![3, 9]).unwrap());
+            inventory.slots[1] = Some(
+                Stack::with_components(component_item, 5, component_version, vec![3, 9]).unwrap(),
+            );
             state.inventory_store.save(0xFACE, &inventory).unwrap();
         }
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -216,6 +243,23 @@ fn external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_
             std::panic::resume_unwind(panic);
         }
     }
+    let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+        .with_extension(extension)
+        .unwrap();
+    let state = crate::server::server_state_with_startup(7, save.clone(), 8, startup).unwrap();
+    let item = state
+        .world
+        .catalog()
+        .items()
+        .find(|i| i.key == component_key)
+        .unwrap()
+        .id;
+    assert_eq!(
+        state.inventory_store.load(0xFACE).unwrap().slots[1],
+        Some(Stack::with_components(item, 5, component_version, vec![3, 9]).unwrap()),
+        "exact registered component bytes survive both transfers and restarts"
+    );
+    drop(state);
     std::fs::remove_dir_all(save).unwrap();
 }
 

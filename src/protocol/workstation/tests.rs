@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn required_components_remain_private_without_invalidating_inventory_projection() {
+    use bloxgloom_lifecycle_fixture::content::{CHIP, Content};
+    let catalog =
+        crate::server::catalog_with_extension(crate::content::Catalog::builtins(), &Content)
+            .unwrap();
+    let item = catalog.items().find(|i| i.key == CHIP).unwrap().id;
+    let private = Stack::with_components(item, 7, 2, vec![3, 9]).unwrap();
+    assert!(private.valid_in(&catalog));
+    let view = WorkstationView {
+        slots: vec![Some(private)],
+        status: vec![],
+    };
+    let projected = WorkstationView::decode(&view.encode()).unwrap();
+    let screen = InventoryScreen::storage(
+        "test:storage",
+        "test:storage",
+        "STORAGE",
+        1,
+        1,
+        vec![[0; 3]],
+    );
+    assert!(projected.valid_for(&screen, &catalog));
+    let redacted = projected.slots[0].as_ref().unwrap();
+    assert!(redacted.components.is_none());
+    assert!(
+        !redacted.valid_in(&catalog),
+        "a public projection is not an authoritative stack"
+    );
+}
+
+#[test]
 fn registered_inventory_view_checks_exact_shape_permissions_metadata_and_status_bounds() {
     let catalog = crate::content::Catalog::builtins();
     let screen = catalog

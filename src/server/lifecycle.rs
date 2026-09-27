@@ -10,6 +10,7 @@ mod tests;
 #[derive(Default)]
 pub(crate) struct Registration {
     anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
+    content: crate::content::declarations::Declarations,
     cubes: Vec<CubeBlock>,
     pub definitions: Vec<StorageBlockEntity>,
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
@@ -22,6 +23,7 @@ impl Registrar for Registration {
         &mut self,
         system: bloxgloom_host_api::system::System,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         system.validate()?;
         if self.systems.iter().any(|old| old.key == system.key) {
             return Err(RegistrationError("duplicate owner system".into()));
@@ -33,14 +35,42 @@ impl Registrar for Registration {
         &mut self,
         entity: bloxgloom_host_api::anchored::AnchoredBlockEntity,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         entity.validate()?;
         self.anchored.push(entity);
         Ok(())
+    }
+    fn package(
+        &mut self,
+        d: bloxgloom_host_api::composition::Package,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        self.content.package(d)
+    }
+    fn texture(
+        &mut self,
+        d: bloxgloom_host_api::content::Texture,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        self.content.texture(d)
+    }
+    fn block(&mut self, d: bloxgloom_host_api::content::Block) -> Result<(), RegistrationError> {
+        self.room()?;
+        self.content.block(d)
+    }
+    fn item(&mut self, d: bloxgloom_host_api::content::Item) -> Result<(), RegistrationError> {
+        self.room()?;
+        self.content.item(d)
+    }
+    fn tag(&mut self, d: bloxgloom_host_api::content::Tag) -> Result<(), RegistrationError> {
+        self.room()?;
+        self.content.tag(d)
     }
     fn machine(
         &mut self,
         m: bloxgloom_host_api::machine::Machine,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         m.validate()?;
         if self
             .machines
@@ -56,6 +86,7 @@ impl Registrar for Registration {
         &mut self,
         entity: bloxgloom_host_api::entity::MobileEntity,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         entity.validate()?;
         if self.mobiles.iter().any(|e| e.key == entity.key) {
             return Err(RegistrationError("duplicate mobile declaration".into()));
@@ -67,6 +98,7 @@ impl Registrar for Registration {
         &mut self,
         screen: bloxgloom_host_api::InventoryScreen,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         screen.validate()?;
         if self.screens.iter().any(|s| s.entity == screen.entity) {
             return Err(RegistrationError("duplicate inventory screen".into()));
@@ -75,6 +107,10 @@ impl Registrar for Registration {
         Ok(())
     }
     fn cube_block(&mut self, block: CubeBlock) -> Result<(), RegistrationError> {
+        self.room()?;
+        if block.key.len() > 255 || block.name.len() > 255 || block.texture.len() > 255 {
+            return Err(RegistrationError("cube declaration too large".into()));
+        }
         if self.cubes.iter().any(|b| b.key == block.key) {
             return Err(RegistrationError("duplicate block declaration".into()));
         }
@@ -85,6 +121,7 @@ impl Registrar for Registration {
         &mut self,
         entity: StorageBlockEntity,
     ) -> Result<(), RegistrationError> {
+        self.room()?;
         entity.validate()?;
         if self
             .definitions
@@ -98,6 +135,23 @@ impl Registrar for Registration {
     }
 }
 impl Registration {
+    fn room(&self) -> Result<(), RegistrationError> {
+        if self.content.len()
+            + self.cubes.len()
+            + self.definitions.len()
+            + self.screens.len()
+            + self.mobiles.len()
+            + self.machines.len()
+            + self.anchored.len()
+            + self.systems.len()
+            >= 4096
+        {
+            return Err(RegistrationError(
+                "registration exceeds 4096 declarations".into(),
+            ));
+        }
+        Ok(())
+    }
     pub fn install(
         extension: &dyn Extension,
         catalog: &mut Catalog,
@@ -105,15 +159,30 @@ impl Registration {
         let mut registration = Self::default();
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
+        registration.systems.sort_by(|a,b|a.key.cmp(&b.key));
+        registration.anchored.sort_by(|a,b|a.entity.cmp(&b.entity));
         for system in &registration.systems {
             candidate.register_owner_system(system.clone())?;
         }
+        registration.content.install_base(&mut candidate)?;
+        registration.cubes.sort_by(|a, b| a.key.cmp(&b.key));
+        registration.mobiles.sort_by(|a, b| a.key.cmp(&b.key));
+        registration
+            .definitions
+            .sort_by(|a, b| a.entity.cmp(&b.entity));
+        registration
+            .machines
+            .sort_by(|a, b| a.entity.cmp(&b.entity));
         for mobile in &registration.mobiles {
             candidate.register_mobile(mobile.clone())?;
         }
         for cube in &registration.cubes {
             candidate.extension_cube(cube)?;
         }
+        registration
+            .content
+            .install_items_and_tags(&mut candidate)?;
+        candidate.refresh_builtin_fuels()?;
         for definition in &registration.definitions {
             candidate.extension_storage(definition)?;
         }
@@ -134,6 +203,9 @@ impl Registration {
         candidate
             .storage_lifecycles
             .extend(registration.definitions.clone());
+        candidate
+            .validate()
+            .map_err(|e| RegistrationError(format!("invalid catalog: {e:?}")))?;
         *catalog = candidate;
         Ok(registration)
     }

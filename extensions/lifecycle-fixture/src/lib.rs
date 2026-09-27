@@ -5,12 +5,14 @@ use bloxgloom_host_api::{
 
 pub const KEY: &str = "fixture:tall_store";
 pub mod anchored;
+pub mod content;
 pub mod creature;
 pub mod machine;
 pub mod system;
 pub struct Fixture;
 impl Extension for Fixture {
     fn register(&self, r: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        content::Content.register(r)?;
         TallStore.register(r)?;
         r.mobile_entity(creature::definition())?;
         machine::register(r)?;

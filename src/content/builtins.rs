@@ -1,4 +1,5 @@
 use super::*;
+use bloxgloom_host_api::content as api;
 
 impl Catalog {
     pub fn builtins() -> Self {
@@ -197,18 +198,14 @@ impl Catalog {
         for (name, png, stitch_edges, stitch_vertical, alpha_cutout) in PNGS {
             // Embedded assets are exercised by the renderer's material tests; avoid decoding
             // them once here and again during GPU upload on every startup.
-            let texture = TextureDef {
-                key: format!("bloxgloom:{name}").into(),
+            let texture = api::Texture {
+                key: format!("bloxgloom:{name}"),
                 png: Cow::Borrowed(png),
                 stitch_edges,
                 stitch_vertical,
                 alpha_cutout,
             };
-            catalog.texture_keys.insert(texture.key.to_string());
-            catalog
-                .texture_fingerprints
-                .push(fingerprint_texture(&texture));
-            catalog.textures.push(texture);
+            catalog.embedded_texture(&texture);
         }
 
         let blocks = [
@@ -319,9 +316,9 @@ impl Catalog {
                 [16, 16, 16],
             ),
         ];
-        for definition in blocks {
+        for (id, definition) in blocks.into_iter().enumerate() {
             catalog
-                .register_block(definition)
+                .public_block_type_at(BlockTypeId(id as u32), &definition)
                 .expect("unique builtin block");
         }
         catalog
@@ -417,17 +414,21 @@ impl Catalog {
         for id in 1..=world::MAX_BUILTIN_BLOCK.0 {
             let state = BlockStateId(id);
             let definition = catalog.block(state).unwrap();
-            let item = ItemDef {
-                id: ItemId(id),
-                key: definition.key.clone(),
-                name: definition.name.clone(),
+            let item = api::Item {
+                key: definition.key.to_string(),
+                name: definition.name.to_string(),
                 swatch: definition.swatch,
-                texture: definition.textures.top,
-                placeable: Some(state),
+                texture: catalog
+                    .texture(definition.textures.top)
+                    .unwrap()
+                    .key
+                    .to_string(),
+                placeable: Some(catalog.state(state).unwrap().key.clone()),
                 sprite: definition.cutout,
+                components: api::Components::Unstructured,
             };
             catalog
-                .register_item(item)
+                .public_item_at(ItemId(id), &item)
                 .expect("unique builtin block item");
         }
         catalog
@@ -465,15 +466,18 @@ impl Catalog {
             ),
         ] {
             catalog
-                .register_item(ItemDef {
+                .public_item_at(
                     id,
-                    key: format!("bloxgloom:{name}").into(),
-                    name: label.into(),
-                    swatch: color,
-                    texture: TextureId(layer),
-                    placeable: None,
-                    sprite: true,
-                })
+                    &api::Item {
+                        key: format!("bloxgloom:{name}"),
+                        name: label.to_string(),
+                        swatch: color,
+                        texture: catalog.texture(TextureId(layer)).unwrap().key.to_string(),
+                        placeable: None,
+                        sprite: true,
+                        components: api::Components::Unstructured,
+                    },
+                )
                 .expect("unique builtin item");
         }
         for (id, key, schema_version, schema_fingerprint) in [
@@ -598,34 +602,64 @@ fn block(
     name: &'static str,
     swatch: [f32; 4],
     [top, side, bottom]: [u32; 3],
-) -> BlockDef {
+) -> api::Block {
     let flags = BUILTIN_FLAGS[id.0 as usize];
-    BlockDef {
-        id: BlockTypeId(id.0),
-        key: format!("bloxgloom:{key}").into(),
+    const TEXTURE_KEYS: [&str; 17] = [
+        "grass_top",
+        "grass_side",
+        "dirt",
+        "stone",
+        "sand",
+        "snow",
+        "moss",
+        "gravel",
+        "glowstone",
+        "wood_side",
+        "wood_top",
+        "leaves",
+        "flower_red",
+        "flower_yellow",
+        "flower_blue",
+        "fern",
+        "tall_grass",
+    ];
+    api::Block {
+        key: format!("bloxgloom:{key}"),
         name: name.into(),
         swatch,
-        textures: BlockTextures {
-            top: TextureId(top),
-            side: TextureId(side),
-            bottom: TextureId(bottom),
+        textures: api::FaceTextures {
+            top: format!("bloxgloom:{}", TEXTURE_KEYS[top as usize]),
+            side: format!("bloxgloom:{}", TEXTURE_KEYS[side as usize]),
+            bottom: format!("bloxgloom:{}", TEXTURE_KEYS[bottom as usize]),
         },
         solid: flags & SOLID != 0,
-        opaque: flags & OPAQUE != 0,
-        cutout: flags & CUTOUT != 0,
-        plant: flags & PLANT != 0,
+        material: if flags & OPAQUE != 0 {
+            api::Material::Opaque
+        } else if flags & CUTOUT != 0 {
+            api::Material::Cutout
+        } else {
+            api::Material::Invisible
+        },
+        geometry: if id == world::TALL_GRASS {
+            api::Geometry::NarrowCrossedPlant
+        } else if flags & PLANT != 0 {
+            api::Geometry::CrossedPlant
+        } else {
+            api::Geometry::Cube
+        },
         replaceable: flags & REPLACEABLE != 0,
         supports_plant: flags & SUPPORTS_PLANT != 0,
         flammable: flags & FLAMMABLE != 0,
         emission: BUILTIN_EMISSION[id.0 as usize],
         reflectance: BUILTIN_REFLECTANCE[id.0 as usize],
         properties: if id == world::WOOD {
-            vec![PropertyDef {
+            vec![api::Property {
                 name: "axis".into(),
                 values: vec!["x".into(), "y".into(), "z".into()],
             }]
         } else {
             Vec::new()
         },
+        states: vec![], // Builtin save IDs are reserved explicitly below.
     }
 }

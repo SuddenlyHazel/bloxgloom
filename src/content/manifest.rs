@@ -224,6 +224,18 @@ impl ContentManifest {
                 .ok_or_else(|| invalid("missing owner system"))?;
             resolved.owner_systems.insert(entry.id, system.clone());
         }
+        resolved.narrow_plants = local.narrow_plants.clone();
+        resolved.item_components = local.item_components.clone();
+        resolved.composition = local.composition.clone();
+        for entry in self
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind, b'P' | b'T' | b'U'))
+        {
+            if !resolved.composition.remap(entry.kind, &entry.key, entry.id) {
+                return Err(invalid("missing composition definition"));
+            }
+        }
         resolved.storage_lifecycles = local.storage_lifecycles.clone();
         resolved.textures = local.textures.clone();
         resolved.texture_fingerprints = local.texture_fingerprints.clone();
@@ -322,7 +334,7 @@ impl ContentManifest {
         let mut previous = None;
         let mut keys = HashSet::with_capacity(self.entries.len().min(262_144));
         for entry in &self.entries {
-            if !matches!(entry.kind, b'B' | b'S' | b'I' | b'E' | b'Y')
+            if !matches!(entry.kind, b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y')
                 || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }

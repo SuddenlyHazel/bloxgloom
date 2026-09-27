@@ -8,6 +8,13 @@ pub const KEY: &str = "fixture:crusher";
 pub const MARKED_INPUT: &[u8] = b"crusher:marked";
 pub const REFINED_INPUT: &[u8] = b"crusher:refined";
 pub fn register(r: &mut dyn Registrar) -> Result<(), RegistrationError> {
+    r.tag(bloxgloom_host_api::content::Tag {
+        key: "fixture:crushable".into(),
+        kind: bloxgloom_host_api::content::TagKind::Item,
+        members: vec![bloxgloom_host_api::content::TagMember::Definition(
+            "bloxgloom:stone".into(),
+        )],
+    })?;
     r.cube_block(CubeBlock {
         key: KEY.into(),
         name: "CRUSHER".into(),
@@ -63,7 +70,7 @@ pub fn register(r: &mut dyn Registrar) -> Result<(), RegistrationError> {
                 components: false,
             },
             Filter {
-                items: vec!["bloxgloom:stone".into()],
+                items: vec!["#fixture:crushable".into()],
                 components: true,
             },
             Filter {

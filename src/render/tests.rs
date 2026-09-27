@@ -9,6 +9,47 @@ use crate::world::{
 use super::*;
 
 #[test]
+fn public_fixture_assets_reach_material_upload_lighting_and_mesh_compilation() {
+    use bloxgloom_lifecycle_fixture::content::{Content, LAMP, REED, TEXTURE};
+    let catalog =
+        crate::server::catalog_with_extension(crate::content::Catalog::builtins(), &Content)
+            .unwrap();
+    let lamp = catalog
+        .state_by_key(&format!("{LAMP}[axis=x,lit=true]"))
+        .unwrap();
+    let reed = catalog.state_by_key(REED).unwrap();
+    let mut chunk = Chunk {
+        key: ChunkKey { x: 0, y: 10, z: 0 },
+        version: 1,
+        blocks: vec![AIR; CHUNK_SIZE.pow(3)].into(),
+    };
+    chunk.blocks.set(Chunk::index([3, 2, 4]).unwrap(), lamp);
+    chunk.blocks.set(Chunk::index([3, 3, 4]).unwrap(), reed);
+    let known = std::collections::HashMap::from([(chunk.key, Arc::new(chunk.clone()))]);
+    let light = crate::lighting::LightField::build_with_catalog(chunk.key, &known, 7, &catalog);
+    let mesh = mesh::mesh_chunk_lit_with_catalog(&chunk, &light, 1, &catalog);
+    assert_eq!(mesh.indices.len(), 36);
+    assert_eq!(mesh.cutout_indices.len(), 12);
+    // The face samples the adjacent cell: normal propagation attenuates 13 to 12.
+    assert_eq!(light.face([3, 2, 4], 0, 1).glow, 12);
+    let layer = catalog
+        .textures()
+        .iter()
+        .position(|t| t.key == TEXTURE)
+        .unwrap();
+    assert!(
+        mesh.cutout_vertices
+            .chunks_exact(VERTEX_FLOATS)
+            .all(|v| v[8] == layer as f32)
+    );
+    let tiles = material::material_tiles_for(&catalog);
+    let stride = (material::TEXTURE_SIZE.pow(2) * 4) as usize;
+    let pixels = &tiles[layer * stride..(layer + 1) * stride];
+    assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
+    assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
+}
+
+#[test]
 fn urgent_mesh_reorders_existing_pending_chunk_without_duplication() {
     let a = ChunkKey { x: 0, y: 0, z: 0 };
     let b = ChunkKey { x: 1, y: 0, z: 0 };

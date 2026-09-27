@@ -309,7 +309,7 @@ pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
 }
 
 /// Development installation seam shared by local server and client catalogs.
-#[cfg(feature = "lifecycle-fixture")]
+#[cfg(any(test, feature = "lifecycle-fixture"))]
 pub(crate) fn catalog_with_extension(
     mut catalog: crate::content::Catalog,
     extension: &dyn bloxgloom_host_api::Extension,

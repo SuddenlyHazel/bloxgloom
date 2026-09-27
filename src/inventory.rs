@@ -66,6 +66,12 @@ impl Stack {
         catalog.item(self.item).is_some()
             && (1..=STACK_LIMIT).contains(&self.count)
             && self.valid_components()
+            && catalog.valid_item_components(
+                self.item,
+                self.components
+                    .as_ref()
+                    .map(|p| (p.version, p.bytes.as_ref())),
+            )
     }
 
     fn valid_components(&self) -> bool {

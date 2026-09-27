@@ -2,6 +2,60 @@ use super::*;
 use bloxgloom_host_api::{FootprintCell, RegistrationError as ApiError, machine::*};
 use std::sync::Arc;
 impl Catalog {
+    /// Recompile the builtin's declarative flammability-derived fuels after all
+    /// extension items exist, not only during Catalog::builtins().
+    pub(crate) fn refresh_builtin_fuels(&mut self) -> Result<(), ApiError> {
+        let Some(id) = self.entity_type_id_by_key("bloxgloom:kiln") else {
+            return Ok(());
+        };
+        let Some(machine) = self.machine(id) else {
+            return Ok(());
+        };
+        let mut machine = (**machine).clone();
+        let fuels = self.kiln_fuels();
+        machine.filters[0].items = fuels.iter().map(|f| f.item.clone()).collect();
+        machine
+            .process
+            .as_mut()
+            .expect("builtin kiln process")
+            .fuels = fuels;
+        machine.validate()?;
+        self.machines[id.0 as usize] = Some(Arc::new(machine));
+        Ok(())
+    }
+
+    fn kiln_fuels(&self) -> Vec<Fuel> {
+        let mut fuels = self
+            .items()
+            .filter_map(|i| {
+                if !self.valid_item_components(i.id, None) {
+                    return None;
+                }
+                let pulses = if i.key == "bloxgloom:stick" {
+                    40
+                } else if i.key == "bloxgloom:sapling" {
+                    80
+                } else {
+                    let block = self.block_type(self.state(i.placeable?)?.block_type)?;
+                    if !block.flammable {
+                        return None;
+                    }
+                    if block.key == "bloxgloom:wood" {
+                        240
+                    } else {
+                        60
+                    }
+                };
+                Some(Fuel {
+                    item: i.key.to_string(),
+                    components: ComponentMatch::Empty,
+                    pulses,
+                })
+            })
+            .collect::<Vec<_>>();
+        fuels.sort_by(|a, b| a.item.cmp(&b.item));
+        fuels
+    }
     pub(crate) fn machine(&self, id: EntityTypeId) -> Option<&Arc<Machine>> {
         self.machines.get(id.0 as usize)?.as_ref()
     }
@@ -28,6 +82,11 @@ impl Catalog {
         id: EntityTypeId,
         m: Arc<Machine>,
     ) -> Result<(), ApiError> {
+        let mut definition = (*m).clone();
+        for filter in &mut definition.filters {
+            filter.items = self.expand_item_filter(&filter.items)?;
+        }
+        let m = Arc::new(definition);
         m.validate()?;
         let bad = || ApiError("unresolved or incompatible machine declaration".into());
         if self.entity_type(id).is_none_or(|e| e.key != m.entity)
@@ -70,7 +129,7 @@ impl Catalog {
                 }
             }
         }
-        let item = |s: &str| self.items().any(|i| i.key == s);
+        let item = |s: &str| self.item_keys.contains(s);
         if m.filters.iter().flat_map(|f| &f.items).any(|s| !item(s)) {
             return Err(bad());
         }
@@ -157,31 +216,7 @@ impl Catalog {
                 ],
             })
             .collect();
-        let fuels = self
-            .items()
-            .filter_map(|i| {
-                let pulses = if i.key == "bloxgloom:stick" {
-                    40
-                } else if i.key == "bloxgloom:sapling" {
-                    80
-                } else {
-                    let block = self.block_type(self.state(i.placeable?)?.block_type)?;
-                    if !block.flammable {
-                        return None;
-                    }
-                    if block.key == "bloxgloom:wood" {
-                        240
-                    } else {
-                        60
-                    }
-                };
-                Some(Fuel {
-                    item: i.key.to_string(),
-                    components: ComponentMatch::Empty,
-                    pulses,
-                })
-            })
-            .collect::<Vec<_>>();
+        let fuels = self.kiln_fuels();
         let kiln = Machine {
             entity: "bloxgloom:kiln".into(),
             block: "bloxgloom:kiln".into(),

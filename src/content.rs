@@ -9,7 +9,9 @@ use crate::world::{self, BlockId};
 
 mod anchored;
 mod builtins;
+pub(crate) mod composition;
 pub(crate) mod creatures;
+pub(crate) mod declarations;
 mod extensions;
 mod ids;
 mod inventories;
@@ -17,6 +19,7 @@ pub(crate) mod machines;
 mod manifest;
 mod mobile;
 mod owner_systems;
+mod public;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
 pub use manifest::{ContentEntry, ContentManifest, MAX_MANIFEST_BYTES};
@@ -204,6 +207,9 @@ pub struct Catalog {
     anchored_blocks: Vec<Option<EntityTypeId>>,
     anchored_entities:
         Vec<Option<std::sync::Arc<bloxgloom_host_api::anchored::AnchoredBlockEntity>>>,
+    narrow_plants: HashSet<String>,
+    item_components: HashMap<String, bloxgloom_host_api::content::Components>,
+    pub(crate) composition: composition::Composition,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
@@ -234,6 +240,9 @@ impl Catalog {
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
             anchored_entities: Vec::new(),
+            narrow_plants: HashSet::new(),
+            item_components: HashMap::new(),
+            composition: composition::Composition::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
@@ -647,7 +656,7 @@ impl Catalog {
 
     /// Stable save identities, including schema and compiled behavior in each fingerprint.
     pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
-        let mut entries = Vec::new();
+        let mut entries = self.composition.identities();
         for (id, system) in &self.owner_systems {
             entries.push((
                 b'Y',
@@ -708,6 +717,10 @@ impl Catalog {
             b'B' => {
                 let block = self.block_type(BlockTypeId(id)).unwrap();
                 add(block.key.as_bytes());
+                add(block.name.as_bytes());
+                for value in block.swatch {
+                    add(&value.to_le_bytes());
+                }
                 add(&[flags(block), block.emission]);
                 add(&block.reflectance);
                 for texture in [
@@ -724,6 +737,9 @@ impl Catalog {
                         add(value.as_bytes());
                         add(&[0]);
                     }
+                }
+                if self.narrow_plants.contains(block.key.as_ref()) {
+                    add(b"narrow-plant-selection");
                 }
             }
             b'S' => {
@@ -743,11 +759,16 @@ impl Catalog {
             b'I' => {
                 let item = self.item(ItemId(id)).unwrap();
                 add(item.key.as_bytes());
+                add(item.name.as_bytes());
+                for value in item.swatch {
+                    add(&value.to_le_bytes());
+                }
                 add(&self.texture_fingerprints[item.texture.0 as usize].to_le_bytes());
                 if let Some(state) = item.placeable {
                     add(self.state(state).unwrap().key.as_bytes());
                 }
                 add(&[item.sprite as u8]);
+                self.component_fingerprint(item.key.as_ref(), &mut hash);
             }
             b'E' => {
                 let entity = self.entity_type(EntityTypeId(id)).unwrap();

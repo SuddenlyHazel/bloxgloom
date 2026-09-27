@@ -195,11 +195,7 @@ fn plant_intersection(
     block: BlockId,
     catalog: &Catalog,
 ) -> Option<(f64, Face)> {
-    let tall_grass = catalog
-        .state(block)
-        .and_then(|state| catalog.block_type(state.block_type))
-        .is_some_and(|definition| definition.key == "bloxgloom:tall_grass");
-    let margin = if tall_grass { 0.35 } else { 0.22 };
+    let margin = catalog.plant_selection_margin(block);
     let lower = [margin, 0.0, margin];
     let upper = [1.0 - margin, 0.9, 1.0 - margin];
     let mut enter = f64::NEG_INFINITY;
