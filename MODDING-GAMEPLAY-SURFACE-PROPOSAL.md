@@ -1,5 +1,9 @@
 # Proposal: one coherent gameplay API
 
+**Consolidated successor:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md)
+is the single proposal for approval and full implementation. This document is
+retained as design background; use the successor's scope and continuation record.
+
 Status: **Proposed**. This document records the proposed direction; it does not
 claim implementation or approval to begin implementation. The likely runtime is
 **Luau embedded through `mlua`**, but that selection is not final. The product

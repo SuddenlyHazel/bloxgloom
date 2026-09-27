@@ -1,5 +1,11 @@
 # Plan: built-in/mod capability parity
 
+**Next implementation proposal:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md).
+It consolidates the full host, Luau, package delivery, UI and shader scope into one
+approval and execution plan. It is awaiting approval; its runtime selection and
+inclusion of previously deferred fire migration are not yet active decisions.
+This file remains the historical/current implementation tracker.
+
 Status: implementation in progress. The public crate exposes the completed
 slices below; the remaining internal interfaces are not yet a supported mod API.
 Latest integration: content/assets, anchored lifecycle, component-aware machines,
