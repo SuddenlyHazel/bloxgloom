@@ -132,7 +132,7 @@ pub(super) fn place(
             at,
             version,
             context.seed(),
-        );
+        )?;
     }
     // The kiln spawn rides in the same atomic batch as its displaced-plant
     // drops: one WAL record, so the kiln and its loot never split.

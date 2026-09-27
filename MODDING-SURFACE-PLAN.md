@@ -2,8 +2,9 @@
 
 **Next implementation proposal:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md).
 It consolidates the full host, Luau, package delivery, UI and shader scope into one
-approval and execution plan. It is awaiting approval; its runtime selection and
-inclusion of previously deferred fire migration are not yet active decisions.
+approval and execution plan. The user approved full implementation; Luau/mlua
+selection and inclusion of previously deferred fire migration are now active
+decisions. Phase 1 is in progress in that document.
 This file remains the historical/current implementation tracker.
 
 Status: implementation in progress. The public crate exposes the completed

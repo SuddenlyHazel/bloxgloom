@@ -7,6 +7,7 @@ pub mod anchored;
 pub mod composition;
 pub mod content;
 pub mod entity;
+pub mod gameplay;
 pub mod icon;
 pub mod inventory;
 pub mod lifecycle;

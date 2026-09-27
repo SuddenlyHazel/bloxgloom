@@ -1,6 +1,7 @@
 mod client;
 mod config;
 mod content;
+mod gameplay;
 mod inventory;
 mod items;
 mod lighting;

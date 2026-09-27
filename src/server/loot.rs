@@ -1,7 +1,12 @@
 //! Deterministic, server-owned harvest rules. Item IDs need not be placeable blocks.
 use crate::content::Catalog;
-use crate::items::{ItemId, SAPLING, SEEDS, STICK};
-use crate::world::{self, BlockId};
+use crate::items::ItemId;
+use crate::world::BlockId;
+use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot, cell_random};
+use std::io;
+use std::time::Duration;
+
+pub(super) type Spawn = ([f32; 3], ItemId, u16, Duration);
 
 #[cfg(test)]
 pub(super) fn harvest(
@@ -10,13 +15,20 @@ pub(super) fn harvest(
     edit_version: u64,
     seed: u64,
 ) -> [Option<(ItemId, u16)>; 3] {
-    harvest_with_catalog(
+    let drops = harvest_with_catalog(
         crate::content::catalog(),
         block,
         position,
         edit_version,
         seed,
     )
+    .unwrap();
+    let mut result = [None; 3];
+    assert!(drops.len() <= result.len());
+    for (slot, (_, item, count, _)) in result.iter_mut().zip(drops) {
+        *slot = Some((item, count));
+    }
+    result
 }
 
 pub(super) fn harvest_with_catalog(
@@ -25,39 +37,79 @@ pub(super) fn harvest_with_catalog(
     position: [i32; 3],
     edit_version: u64,
     seed: u64,
-) -> [Option<(ItemId, u16)>; 3] {
-    let [x, y, z] = position;
-    let roll = mix(seed
-        ^ (x as i64 as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
-        ^ (y as i64 as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
-        ^ (z as i64 as u64).wrapping_mul(0x94d0_49bb_1331_11eb)
-        ^ edit_version);
-    match block {
-        world::AIR => [None; 3],
-        world::TALL_GRASS => [roll.is_multiple_of(3).then_some((SEEDS, 1)), None, None],
-        world::LEAVES => [
-            ((roll & 15) == 0).then_some((ItemId::new(world::LEAVES.get()), 1)),
-            (roll >> 8).is_multiple_of(5).then_some((STICK, 1)),
-            (roll >> 16).is_multiple_of(20).then_some((SAPLING, 1)),
-        ],
-        _ => [
-            catalog.primary_block_item(block).map(|item| (item, 1)),
-            None,
-            None,
-        ],
+) -> io::Result<Vec<Spawn>> {
+    let block = super::gameplay::block(catalog, block).map_err(super::gameplay::error)?;
+    let mut snapshot = HarvestSnapshot {
+        catalog,
+        block: block.clone(),
+        position,
+    };
+    let mut context = Context::new(&mut snapshot, 256);
+    crate::gameplay::harvest(
+        &mut context,
+        &block,
+        position,
+        cell_random(seed, position, edit_version),
+    )
+    .map_err(super::gameplay::error)?;
+    let plan = context.finish().map_err(super::gameplay::error)?;
+    if !plan.blocks.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "harvest adapter cannot discard staged terrain edits",
+        ));
     }
+    plan.drops
+        .into_iter()
+        .map(|drop| {
+            catalog
+                .items()
+                .find(|item| item.key == drop.item)
+                .map(|item| {
+                    (
+                        drop.position,
+                        item.id,
+                        drop.count,
+                        Duration::from_millis(u64::from(drop.pickup_delay_ms)),
+                    )
+                })
+                .ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "harvest item disappeared")
+                })
+        })
+        .collect()
 }
 
-#[inline]
-fn mix(mut value: u64) -> u64 {
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
+struct HarvestSnapshot<'a> {
+    catalog: &'a Catalog,
+    block: Block,
+    position: Cell,
+}
+impl Snapshot for HarvestSnapshot<'_> {
+    fn block(&mut self, cell: Cell) -> Result<Block, Error> {
+        if cell == self.position {
+            Ok(self.block.clone())
+        } else {
+            Err(Error::Unavailable(cell))
+        }
+    }
+    fn state(&self, key: &str) -> Result<Block, Error> {
+        let id = self
+            .catalog
+            .state_by_key(key)
+            .ok_or_else(|| Error::UnknownContent(key.into()))?;
+        super::gameplay::block(self.catalog, id)
+    }
+    fn item_exists(&self, key: &str) -> bool {
+        self.catalog.items().any(|item| item.key == key)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::items::{SAPLING, SEEDS, STICK};
+    use crate::world;
 
     #[test]
     fn flower_harvests_itself_and_grass_and_leaves_have_distinct_loot() {

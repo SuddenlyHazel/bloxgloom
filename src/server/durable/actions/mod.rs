@@ -446,7 +446,8 @@ fn plan_block_edit(
             removed_plants.push((previous, [x, y, z]));
         }
         ensure_no_unhandled_anchor(state, &coords)?;
-        let prepared = state.world.prepare_edits(&coords)?;
+        let prepared =
+            crate::server::gameplay::prepare_edits(&mut state.world, &mut terrain_reads, &coords)?;
         let deltas = prepared_deltas(&coords, &prepared);
         let mut drop_spawns = Vec::new();
         for (plant, at) in removed_plants {
@@ -455,7 +456,7 @@ fn plan_block_edit(
                 .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
                 .map(|edit| edit.new_version)
                 .unwrap_or(0);
-            push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
+            push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed)?;
         }
         let entities = crate::server::drops::plan_spawns(
             &state.entities,
@@ -516,7 +517,8 @@ fn plan_block_edit(
         }
     }
     ensure_no_unhandled_anchor(state, &coords)?;
-    let prepared = state.world.prepare_edits(&coords)?;
+    let prepared =
+        crate::server::gameplay::prepare_edits(&mut state.world, &mut terrain_reads, &coords)?;
     let deltas = prepared_deltas(&coords, &prepared);
     let mut drop_spawns = Vec::new();
     let base_version = prepared
@@ -531,14 +533,14 @@ fn plan_block_edit(
         [x, y, z],
         base_version,
         state.seed,
-    );
+    )?;
     for (plant, at) in removed_plants {
         let version = prepared
             .iter()
             .find(|edit| edit.key == world_to_chunk(at[0], at[1], at[2]).0)
             .map(|edit| edit.new_version)
             .unwrap_or(0);
-        push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed);
+        push_harvest_spawns(&mut drop_spawns, &catalog, plant, at, version, state.seed)?;
     }
     let entities = crate::server::drops::plan_spawns(
         &state.entities,
@@ -666,18 +668,9 @@ fn push_harvest_spawns(
     position: [i32; 3],
     version: u64,
     seed: u64,
-) {
-    let position = position.map(|coordinate| coordinate as f32 + 0.5);
-    output.extend(
-        loot::harvest_with_catalog(
-            catalog,
-            block,
-            position.map(|n| n.floor() as i32),
-            version,
-            seed,
-        )
-        .into_iter()
-        .flatten()
-        .map(|(item, count)| (position, item, count, Duration::from_millis(250))),
-    );
+) -> io::Result<()> {
+    output.extend(loot::harvest_with_catalog(
+        catalog, block, position, version, seed,
+    )?);
+    Ok(())
 }

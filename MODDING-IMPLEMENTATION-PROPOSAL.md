@@ -427,11 +427,23 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 1 — examining existing command planners and public contracts
-  to introduce shared gameplay operations through the current transaction path.
+- **Active phase:** 1 — initial public staged terrain/drop context implemented;
+  remaining shared inventory/entity operations and general handler dispatch are
+  still in progress.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
-- **Implementation commits:** none for this proposal yet.
+- **Implementation:** `2674f88` records approval. The first code increment adds
+  `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
+  read-your-writes, coalesced block edits, explicit item creation and whole-plan
+  failure on ignored errors/budget exhaustion. Ordinary and anchored terrain
+  preparation use its host adapter. Harvest policy now lives in `src/gameplay.rs`
+  and uses only public host contracts; its adapter still has a captured target
+  rather than general world access. This is not completion of phase 1.
+- **Latest verification:** 704 workspace tests passed (698 engine, 6 host API),
+  all-feature/all-target strict Clippy passed. No performance benchmark run.
+- **Next concrete step:** replace the remaining harvest-only capture with the
+  general world planning context and register gameplay handlers through startup;
+  add shared inventory/entity participants to the same transaction boundary.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

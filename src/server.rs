@@ -12,6 +12,7 @@ mod effects;
 mod entities;
 mod entity_checkpoint;
 mod fire;
+mod gameplay;
 mod interest;
 mod journal;
 mod lifecycle;

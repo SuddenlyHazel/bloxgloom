@@ -104,7 +104,7 @@ impl BlockCommitBuilder<'_> {
         &mut self,
         edits: &[(i32, i32, i32, BlockId)],
     ) -> io::Result<Vec<PreparedEdit>> {
-        self.world.prepare_edits(edits)
+        super::gameplay::prepare_edits(self.world, &mut self.terrain_reads, edits)
     }
 
     fn take_requested_chunks(&mut self) -> Vec<ChunkKey> {
