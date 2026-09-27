@@ -4,6 +4,9 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn seed(&self) -> u64 {
+        23
+    }
     fn tick(&self) -> u64 {
         0
     }
@@ -65,6 +68,42 @@ impl Snapshot for World {
 }
 
 #[test]
+fn handler_random_is_stable_per_seed_cell_and_registration() {
+    use std::sync::{Arc, Mutex};
+    struct Probe(Arc<Mutex<Vec<u64>>>);
+    impl Handler for Probe {
+        fn handle(&self, ctx: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            let first = ctx.random([1, 2, 3], 7)?;
+            assert_eq!(first, ctx.random([1, 2, 3], 7)?);
+            self.0.lock().unwrap().push(first);
+            Ok(())
+        }
+    }
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let event = Event::BlockPlaced {
+        cell: [1, 2, 3],
+        previous: World { reads: 0 }.state("test:air").unwrap(),
+        placed: World { reads: 0 }.state("test:stone").unwrap(),
+    };
+    for key in ["test:first", "test:first", "test:second"] {
+        let registration = HandlerRegistration {
+            key: key.into(),
+            version: 1,
+            event: EventKind::BlockPlaced,
+            target: None,
+            handler: Arc::new(Probe(Arc::clone(&observed))),
+        };
+        let mut world = World { reads: 0 };
+        let mut ctx = Context::new(&mut world, 8);
+        ctx.dispatch(&registration, &event).unwrap();
+        ctx.finish().unwrap();
+    }
+    let words = observed.lock().unwrap();
+    assert_eq!(words[0], words[1]);
+    assert_ne!(words[0], words[2]);
+}
+
+#[test]
 fn writes_capture_preimages_and_reads_see_coalesced_changes() {
     let mut world = World { reads: 0 };
     let mut ctx = Context::new(&mut world, 8);
@@ -102,6 +141,9 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn seed(&self) -> u64 {
+        23
+    }
     fn tick(&self) -> u64 {
         0
     }

@@ -54,6 +54,7 @@ impl std::error::Error for Error {}
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
     fn tick(&self) -> u64;
+    fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
     fn entity(&mut self, id: u64) -> Result<Option<Entity>, Error>;
     fn nearby_entities(&mut self, position: [f32; 3], radius: f32) -> Result<Vec<Entity>, Error>;
@@ -98,6 +99,7 @@ pub struct Context<'a> {
     blocks: BTreeMap<Cell, Block>,
     inventories: BTreeMap<InventoryId, Vec<Slot>>,
     handler_namespace: Option<String>,
+    handler_key: Option<String>,
     entity_overlay: BTreeMap<u64, Option<Vec<u8>>>,
     plan: Plan,
     remaining: usize,
@@ -117,6 +119,7 @@ impl<'a> Context<'a> {
             blocks: BTreeMap::new(),
             inventories: BTreeMap::new(),
             handler_namespace: None,
+            handler_key: None,
             entity_overlay: BTreeMap::new(),
             plan: Plan::default(),
             remaining: operation_budget,
@@ -135,9 +138,27 @@ impl<'a> Context<'a> {
             .key
             .split_once(':')
             .map(|(namespace, _)| namespace.to_owned());
+        self.handler_key = Some(registration.key.clone());
         let result = registration.handler.handle(self, event);
         self.handler_namespace = None;
+        self.handler_key = None;
         result
+    }
+
+    /// Stable per-handler random word. The caller chooses an explicit cell and
+    /// sequence, so retries do not depend on callback order or VM RNG state.
+    pub fn random(&mut self, cell: Cell, sequence: u64) -> Result<u64, Error> {
+        self.charge()?;
+        let Some(key) = self.handler_key.as_deref() else {
+            return self.fail(Error::Invalid(
+                "random requires a registered handler".into(),
+            ));
+        };
+        let mut salt = 0xcbf2_9ce4_8422_2325u64;
+        for byte in key.bytes() {
+            salt = (salt ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        Ok(cell_random(self.snapshot.seed() ^ salt, cell, sequence))
     }
 
     fn charge(&mut self) -> Result<(), Error> {

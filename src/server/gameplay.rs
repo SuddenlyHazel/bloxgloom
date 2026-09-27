@@ -47,10 +47,14 @@ struct WorldSnapshot<'a> {
     inventory_read: bool,
     entities: Option<&'a super::entities::EntityStore>,
     tick: u64,
+    seed: u64,
 }
 impl Snapshot for WorldSnapshot<'_> {
     fn tick(&self) -> u64 {
         self.tick
+    }
+    fn seed(&self) -> u64 {
+        self.seed
     }
     fn validate_entity_schedule(&self, raw_id: u64) -> Result<(), Error> {
         let id = super::entities::EntityId::new(raw_id)
@@ -243,6 +247,7 @@ pub(super) fn plan_removals(
         inventory_read: false,
         entities: Some(participants.entities),
         tick,
+        seed,
     };
     let mut context = Context::new(&mut snapshot, 4096);
     let mut placements = Vec::new();

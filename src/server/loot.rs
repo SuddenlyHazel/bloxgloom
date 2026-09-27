@@ -87,6 +87,9 @@ struct HarvestSnapshot<'a> {
     position: Cell,
 }
 impl Snapshot for HarvestSnapshot<'_> {
+    fn seed(&self) -> u64 {
+        23
+    }
     fn tick(&self) -> u64 {
         0
     }

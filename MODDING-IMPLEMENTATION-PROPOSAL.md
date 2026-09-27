@@ -555,6 +555,11 @@ This section exists so compaction or a new session does not restart the design.
   for a duplicate receipt, no callback on restart and a manifest mismatch for
   an observer's version. Native callbacks must remain bounded; Luau delivery
   and panic/time limits remain later runtime work.
+- **Shared deterministic input:** registered decision handlers can call
+  `Context::random(cell, sequence)`, derived from the world seed and their
+  canonical handler key; repeated plans at the same inputs and independent
+  handler registrations do not share a mutable RNG stream. This supports
+  retryable use and due callbacks without exposing VM-global randomness.
 - **Next concrete step:** add general owner-local scheduled world work, then
   migrate support/world/drop behavior and built-in fire, preserving durable
   intent rather than treating advisory observations as guaranteed delivery.
