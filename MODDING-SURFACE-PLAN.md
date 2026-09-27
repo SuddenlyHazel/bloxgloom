@@ -9,7 +9,10 @@ tracks host capability parity; an installable mod loader is a separate milestone
 Proposed next direction: [one coherent gameplay API](MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
 That proposal consolidates the remaining gaps around shared world access,
 mutations, events, and scheduling. It is a proposal, not an implementation status
-change or a decision to adopt Luau.
+change. Luau through `mlua` is now the likely runtime, not a final selection. The
+proposal also records server-delivered client packages, richer UI based on Rust
+prior art, custom shaders/textures, and deferred custom models pending a modeling
+workflow decision. These are additional targets, not already-completed features.
 
 ## Implementation status
 
@@ -44,6 +47,10 @@ parity for its broader category.
 | Built-in call-path audit | Done | Category inventory and integration follow-up in docs/MODDING-PARITY-AUDIT.md; remaining privileged paths identified explicitly |
 | Close remaining full-parity audit blockers | Planned | World systems/generation, harvest/loot, player rules/commands/bindings and world-drop policies; fire remains deferred |
 | Runtime adapter and user-installable mod loader | Deferred | Separate milestone: select runtime/language, then package/dependency handling, discovery/loading, and isolation |
+| Server-delivered client packages | Planned | Joining a modded server obtains required client/shared scripts and assets, caches matching content, and builds a compatible session catalog before play; likely Luau/mlua |
+| General authored UI/GUI | Planned | Evaluate Rust prior art such as Blitz/Taffy for layout, styling, text/input, and script events; existing bounded panels are a convenience subset |
+| Custom shaders and render integration | Planned | Mod-provided shader code, textures/materials, host rendering interfaces and visual-effect composition; existing PNG registration is only the foundation |
+| Custom model pipeline | Deferred | First decide the long-term modeling/authoring workflow for the game; then expose the same pipeline to mods |
 | Distribution and hot reload | Deferred | Later loader/product decisions; not part of current host-surface completion |
 | Player-response path hardening | Done | Fixed bounded admission turns, command/pickup capacity, fair two-lane mesh/upload scheduling, short snapshot backlog, shared trace clock, and mixed-load/restart proof; personally implemented/reviewed without subagents |
 

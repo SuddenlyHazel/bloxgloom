@@ -1,8 +1,9 @@
 # Proposal: one coherent gameplay API
 
 Status: **Proposed**. This document records the proposed direction; it does not
-claim implementation or approval to begin implementation. Runtime selection,
-including possible Luau adoption, remains undecided.
+claim implementation or approval to begin implementation. The likely runtime is
+**Luau embedded through `mlua`**, but that selection is not final. The product
+requirements below are user-specified directions for this proposal.
 
 The existing implementation and completion tracker remain in
 [`MODDING-SURFACE-PLAN.md`](MODDING-SURFACE-PLAN.md). This proposal reframes the
@@ -166,10 +167,115 @@ A capable API that is unpleasant to use is not finished. Include:
 - Documented limits and explicit failure results—never silent truncation or
   dropped effects.
 
-This does not promise arbitrary access to every engine capability. New rendering
-techniques, physics models, or audio facilities still require engine support.
+Custom shaders, textures, and authored UI are part of the intended surface, not
+exceptions reserved for engine developers. The host must expose useful rendering
+integration points rather than restricting mods to a fixed list of visual presets.
+New physics models or facilities such as audio still require engine support.
 Ordinary gameplay combinations should not require engine changes merely because
 we did not anticipate them.
+
+## 7. Server-delivered mod packages
+
+Joining a modded server should give the client everything required to play on
+that server. Players should not have to manually assemble a matching mod folder.
+Design for Luau scripts embedded through `mlua`, while keeping the gameplay host
+contracts independent of the eventual language binding.
+
+A package should distinguish server-only, client-only, and shared modules/assets.
+The server advertises the exact required client package set and makes the required
+bytes available: client/shared scripts, content definitions, UI documents/styles,
+textures, shaders, and eventually models. Server-only implementation and private
+world data do not belong in that client bundle.
+
+The intended connection flow is:
+
+1. Exchange engine/protocol and runtime compatibility information and a package
+   manifest containing identities, versions, dependencies, and content hashes.
+2. Reuse matching cached content and obtain missing package data from the server's
+   delivery mechanism. Show download/preparation progress and useful errors.
+3. Resolve the client package set, run startup registration, prepare required
+   assets, and construct the session's frozen catalog and client runtime.
+4. Complete catalog compatibility/readiness before entering authoritative play.
+
+Downloaded code runs through the embedded runtime's explicit host API. Package
+resources resolve through the package namespace/cache. Client scripts handle
+presentation and requests; authoritative gameplay continues on the server.
+Disconnecting or switching servers must retire the session's runtime and resources
+without mixing incompatible package sets; immutable cached bytes can be reused.
+
+This requires extending the current handshake. Today's preinstalled Rust fixture,
+catalog fingerprint check, and manifest remapping do **not** implement package
+delivery or dynamic client registration. Startup freezing remains useful, but the
+client's modded catalog must be constructed for the negotiated server session.
+Delivery transport, package format, and Luau source/bytecode compatibility are
+design choices to settle when implementing this milestone.
+
+## 8. Build UI on existing Rust work
+
+Both our game and mods need a real UI/GUI authoring surface: layout, styling,
+images/fonts, scrolling, controls, text input, focus, and script event handlers.
+The existing label/button/inventory descriptors remain conveniences, not the
+ceiling for authored interfaces.
+
+Investigate established Rust UI/rendering work before building another layout,
+text, or styling engine. HTML/CSS or a familiar CSS-style authoring model is a
+candidate, not a selected dependency.
+
+Initial candidates checked against their project documentation:
+
+- [Blitz](https://github.com/DioxusLabs/blitz): a modular HTML/CSS rendering
+  engine with an existing wgpu texture integration example. Its project currently
+  describes it as beta. The high-level HTML wrapper does not itself provide the
+  full interactive scripting bridge we need; DOM events and Luau integration
+  would need evaluation. Using its native renderer need not imply adopting a
+  JavaScript gameplay runtime.
+- [Taffy](https://github.com/DioxusLabs/taffy): Rust block/flexbox/grid layout,
+  used by other UI systems. It is a layout component, not a complete HTML/CSS
+  renderer, text system, widget library, or input implementation.
+
+Choose based on embedding into the existing renderer/window, authoring experience,
+text/input quality, dynamic updates, custom game widgets and performance. The
+same authoring/event path should serve built-in and modded interfaces. UI files,
+styles, fonts, images and scripts belong in server-deliverable client packages.
+
+## 9. Custom shaders and visual assets
+
+Mods must be able to ship their own shader code, textures and material definitions.
+Existing PNG and lighting-property registration is a foundation, not completion of
+this requirement.
+
+Define shader/material registrations with explicit texture/uniform inputs and
+stable host-provided interfaces for relevant geometry, transforms, lighting and
+time. Provide a path for custom material shading and registered visual effects /
+render passes, including how multiple mods' effects compose. WGSL is a natural
+candidate for the current wgpu renderer; the exact shader interface and supported
+stages still need design.
+
+The renderer owns GPU resources and scheduling. Mods supply shader programs and
+their data through this surface, with useful compilation errors attributed to the
+package and asset. Shader/pipeline preparation must fit the asynchronous asset
+path so joining or loading effects does not stall the window. Required graphics
+capabilities participate in package readiness and compatibility.
+
+Custom visual code remains presentation: an effect cannot determine whether an
+item was picked up or a world edit committed. This separation should not restrict
+the author to recoloring a fixed collection of built-in shaders.
+
+## 10. Custom models: required direction, deferred work
+
+Mods should eventually ship their own models. **Do not implement a model-import
+API now.** First decide the game's long-term modeling and authoring workflow:
+
+- How block-like, free-form and animated objects are authored.
+- Tools and source/interchange formats.
+- Coordinate conventions, scale, pivots and attachment points.
+- Material/shader association and animation/rigging needs.
+- How visual geometry relates to collision and selection.
+- Runtime representation, batching and asset preparation.
+
+Choose these for the game and mods together. Then expose the resulting model
+pipeline through the same package and asset registration path. The existing
+registered cuboid models remain useful, but are not the final custom-model system.
 
 ## Implementation sequence
 
@@ -188,7 +294,13 @@ we did not anticipate them.
    different execution contexts without inventing a separate vocabulary for each.
 6. **Close usability gaps and document the boundary.** Review actual gameplay
    implementations for awkward workarounds, missing operations, and built-in-only
-   access. Runtime selection and loading remain separate.
+   access.
+
+The host work must accommodate the server-delivered client packages, richer UI,
+and shader interfaces described above. Runtime/package delivery is a separate
+implementation milestone, not an optional part of the intended player experience.
+UI-library selection and shader interface design require focused evaluation;
+custom models remain deferred until the modeling workflow is decided.
 
 ## Intended outcome
 
