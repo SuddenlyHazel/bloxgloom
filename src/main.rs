@@ -213,6 +213,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_mossbun_motion_previews(std::path::Path::new(&path))?;
         }
+        Some("block-preview") => {
+            let key = args
+                .next()
+                .ok_or("usage: block-preview <state-key> <output.png>")?;
+            let path = args
+                .next()
+                .ok_or("usage: block-preview <state-key> <output.png>")?;
+            if args.next().is_some() {
+                return Err("usage: block-preview <state-key> <output.png>".into());
+            }
+            preview::render_block_preview(&key, std::path::Path::new(&path))?;
+        }
         Some("creature-preview") => {
             let key = args
                 .next()

@@ -10,7 +10,11 @@ full declarations without importing engine types or assigning numeric IDs.
 ## Existing capabilities exposed
 
 * PNG textures: up to 4 MiB, at most 2048×2048, RGB/RGBA after PNG expansion,
-  edge/vertical stitching and alpha-cutout preprocessing. Embedded builtin art
+  edge/vertical stitching, alpha-cutout preprocessing, and surface emissive
+  strength 0–16 (separate from voxel lighting). Glowstone's existing 3.5 radiance
+  is now registered, not a shader key/texture-layer exception. A frozen 4-byte
+  scalar per texture feeds the common cube/cutout shader in constant time.
+  Embedded builtin art
   uses the same public metadata with a private trusted-byte fast path; external
   art is always decoded and validated before installation.
 * Blocks: display name/swatch, top/side/bottom texture references, opaque/cutout/
@@ -128,3 +132,21 @@ translucent shaders, liquid physics, per-stack render callbacks, sound, or custo
 component interpreters. Those are not current builtin content capabilities.
 General gameplay hooks, process transformations, world systems, UI actions,
 world generation and mod discovery remain their own host surfaces.
+
+**UI integration gap:** `ui/draw.rs` still selects its small hand-authored HUD
+bitmap icons by builtin item key. Registered texture/sprite presentation covers
+world meshes and drops; it does not yet provide those inventory bitmap icons.
+That key dispatch belongs to the UI registration workstream and must be migrated
+before claiming exhaustive item-presentation parity.
+
+For a direct GPU check of registered terrain art (including non-builtin texture
+layers and emissive surfaces), use:
+
+```text
+cargo run --release --features lifecycle-fixture -- block-preview 'fixture:copper_lamp[axis=x,lit=false]' lamp.png
+cargo run --release --features lifecycle-fixture -- block-preview fixture:copper_reed reed.png
+```
+
+The focused preview uses the installed catalog, normal voxel light/meshing,
+opaque/cutout pipelines and post-processing. Standard UI previews still use
+their builtin-only UI catalog; they are not evidence of external HUD-icon parity.

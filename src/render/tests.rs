@@ -37,6 +37,16 @@ fn public_fixture_assets_reach_material_upload_lighting_and_mesh_compilation() {
         .iter()
         .position(|t| t.key == TEXTURE)
         .unwrap();
+    let emission = material::emission_strengths(&catalog);
+    assert_eq!(emission[layer], 1.25);
+    assert_eq!(
+        emission[material::material_layer_for(&catalog, GLOWSTONE, 1, 1) as usize],
+        3.5
+    );
+    assert_eq!(
+        emission[material::material_layer_for(&catalog, STONE, 1, 1) as usize],
+        0.0
+    );
     assert!(
         mesh.cutout_vertices
             .chunks_exact(VERTEX_FLOATS)
@@ -269,6 +279,7 @@ fn registered_texture_and_block_extend_material_array_without_shader_changes() {
             stitch_edges: true,
             stitch_vertical: true,
             alpha_cutout: false,
+            emission_strength: 0.0,
         })
         .unwrap();
     catalog

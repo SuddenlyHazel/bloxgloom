@@ -108,17 +108,12 @@ pub(super) fn material_tiles_for(catalog: &content::Catalog) -> Vec<u8> {
     pixels
 }
 
-pub(super) fn glowstone_layer_for(catalog: &content::Catalog) -> u32 {
+pub(super) fn emission_strengths(catalog: &content::Catalog) -> Vec<f32> {
     catalog
-        .identities()
-        .into_iter()
-        .find_map(|(kind, id, key, _)| {
-            (kind == b'S' && key == "bloxgloom:glowstone")
-                .then_some(crate::content::BlockStateId::new(id))
-        })
-        .and_then(|state| catalog.state(state))
-        .and_then(|state| state.face_texture(1, 1))
-        .map_or(3, |texture| texture.get())
+        .textures()
+        .iter()
+        .map(|texture| texture.emission_strength)
+        .collect()
 }
 
 fn stitch_material_edges(pixels: &mut [u8], stitch_vertical: bool) {

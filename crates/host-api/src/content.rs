@@ -10,6 +10,9 @@ pub struct Texture {
     pub stitch_edges: bool,
     pub stitch_vertical: bool,
     pub alpha_cutout: bool,
+    /// Surface radiance multiplier, 0–16. Independent of voxel light emission;
+    /// the builtin glowstone material uses 3.5. Applies to cube/cutout surfaces.
+    pub emission_strength: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

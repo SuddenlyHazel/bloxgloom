@@ -235,5 +235,6 @@ fn texture_definition(definition: &api::Texture) -> TextureDef {
         stitch_edges: definition.stitch_edges,
         stitch_vertical: definition.stitch_vertical,
         alpha_cutout: definition.alpha_cutout,
+        emission_strength: definition.emission_strength,
     }
 }

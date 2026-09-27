@@ -204,6 +204,7 @@ impl Catalog {
                 stitch_edges,
                 stitch_vertical,
                 alpha_cutout,
+                emission_strength: if name == "glowstone" { 3.5 } else { 0.0 },
             };
             catalog.embedded_texture(&texture);
         }

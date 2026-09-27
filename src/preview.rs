@@ -1,5 +1,7 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
+mod block;
+pub use block::render_block_preview;
 mod perf;
 
 use perf::run_perf_benchmark_async;
@@ -367,6 +369,7 @@ enum DropPhase {
 
 #[derive(Clone, Copy)]
 enum PreviewScene {
+    Block(crate::content::BlockStateId),
     Inventory(crate::content::EntityTypeId),
     Chests,
     Kilns,
@@ -467,6 +470,7 @@ async fn render_previews(
         | PreviewScene::Chests
         | PreviewScene::Avatars
         | PreviewScene::Creature(_)
+        | PreviewScene::Block(_)
         | PreviewScene::MossbunMotion(_) => {
             let target = Vec3::new(
                 target_xz.0 as f32 + 0.5,
@@ -475,7 +479,7 @@ async fn render_previews(
             );
             let offset = if matches!(
                 scene,
-                PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_)
+                PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_) | PreviewScene::Block(_)
             ) {
                 Vec3::new(2.8, 1.7, 4.1)
             } else if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) {
@@ -521,6 +525,7 @@ async fn render_previews(
     if matches!(
         scene,
         PreviewScene::Creature(_)
+            | PreviewScene::Block(_)
             | PreviewScene::MossbunMotion(_)
             | PreviewScene::Kilns
             | PreviewScene::Hoppers
@@ -542,6 +547,15 @@ async fn render_previews(
                 }
             }
         }
+    }
+    if let PreviewScene::Block(state) = scene {
+        set_preview_block(
+            &mut chunks,
+            target_xz.0,
+            target_height + 1,
+            target_xz.1,
+            state,
+        );
     }
     if matches!(scene, PreviewScene::Chests) {
         for (dy, block) in [

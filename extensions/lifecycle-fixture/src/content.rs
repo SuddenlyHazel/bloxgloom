@@ -145,6 +145,7 @@ impl Extension for Content {
             stitch_edges: false,
             stitch_vertical: false,
             alpha_cutout: true,
+            emission_strength: 1.25,
         })
     }
 }

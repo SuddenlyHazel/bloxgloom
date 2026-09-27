@@ -156,6 +156,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             stitch_edges: true,
             stitch_vertical: true,
             alpha_cutout: false,
+            emission_strength: 0.0,
         })
         .unwrap();
     assert_eq!(layer, TextureId(27));
@@ -222,6 +223,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             stitch_edges: true,
             stitch_vertical: true,
             alpha_cutout: false,
+            emission_strength: 0.0,
         }),
         Err(RegistrationError::DuplicateKey)
     );

@@ -1,7 +1,8 @@
 use super::material;
-use super::shader::with_voxel_constants;
+use super::shader::with_world_sun;
 use super::{DEPTH_FORMAT, VERTEX_FLOATS};
 use crate::content::Catalog;
+use wgpu::util::DeviceExt;
 
 const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
 
@@ -16,7 +17,7 @@ pub(crate) fn create_voxel_pipeline(
     wgpu::BindGroup,
     wgpu::BindGroup,
 ) {
-    create_voxel_pipeline_with_catalog(device, queue, format, &Catalog::builtins())
+    create_voxel_pipeline_with_catalog(device, queue, format, crate::content::catalog())
 }
 
 pub(crate) fn create_voxel_pipeline_with_catalog(
@@ -33,9 +34,7 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
 ) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(
-            with_voxel_constants(SHADER, material::glowstone_layer_for(catalog)).into(),
-        ),
+        source: wgpu::ShaderSource::Wgsl(with_world_sun(SHADER).into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
@@ -140,7 +139,22 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
+    });
+    let emission = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("frozen voxel material emission"),
+        contents: bytemuck::cast_slice(&material::emission_strengths(catalog)),
+        usage: wgpu::BufferUsages::STORAGE,
     });
     let texture_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("voxel material bind group"),
@@ -153,6 +167,10 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: emission.as_entire_binding(),
             },
         ],
     });
@@ -234,6 +252,7 @@ struct VertexOutput {
 };
 @group(1) @binding(0) var material: texture_2d_array<f32>;
 @group(1) @binding(1) var material_sampler: sampler;
+@group(1) @binding(2) var<storage, read> material_emission: array<f32>;
 @vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     output.position = camera.view_projection * vec4<f32>(input.position, 1.0);
@@ -256,7 +275,7 @@ struct VertexOutput {
 fn shade(input: VertexOutput, albedo: vec3<f32>) -> vec4<f32> {
     let fog = smoothstep(38.0, 135.0, input.distance);
     let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
-    let emission = select(vec3<f32>(0.0), albedo * 3.5, input.layer == GLOWSTONE_LAYER);
+    let emission = albedo * material_emission[u32(input.layer)];
     return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {

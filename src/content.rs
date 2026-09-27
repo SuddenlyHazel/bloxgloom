@@ -107,6 +107,7 @@ pub struct TextureDef {
     pub stitch_edges: bool,
     pub stitch_vertical: bool,
     pub alpha_cutout: bool,
+    pub emission_strength: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -278,6 +279,11 @@ impl Catalog {
         }
         if self.texture_keys.contains(definition.key.as_ref()) {
             return Err(RegistrationError::DuplicateKey);
+        }
+        if !definition.emission_strength.is_finite()
+            || !(0.0..=16.0).contains(&definition.emission_strength)
+        {
+            return Err(RegistrationError::InvalidTexture);
         }
         validate_texture(&definition.png)?;
         if self.textures.len() >= MAX_TEXTURES {
@@ -800,6 +806,7 @@ fn hash_bytes(hash: &mut u64, bytes: &[u8]) {
 fn fingerprint_texture(texture: &TextureDef) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     hash_bytes(&mut hash, texture.key.as_bytes());
+    hash_bytes(&mut hash, &texture.emission_strength.to_le_bytes());
     hash_bytes(
         &mut hash,
         &[

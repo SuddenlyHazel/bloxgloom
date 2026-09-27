@@ -208,6 +208,7 @@ fn invalid_composition_and_missing_content_fail_atomically_before_installation()
                 stitch_edges: false,
                 stitch_vertical: false,
                 alpha_cutout: false,
+                emission_strength: 0.0,
             })
         }),
         Declare(|r| {
@@ -423,4 +424,50 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
     assert!(
         crate::server::catalog_with_extension(Catalog::builtins(), &required_placement).is_err()
     );
+}
+
+struct Emitter(Texture);
+impl Extension for Emitter {
+    fn register(&self, r: &mut dyn Registrar) -> Result<(), Error> {
+        r.texture(self.0.clone())?;
+        let mut block = switch_block();
+        block.textures = FaceTextures::uniform(&self.0.key);
+        r.block(block)
+    }
+}
+#[test]
+fn surface_emission_is_registered_bounded_and_part_of_material_compatibility() {
+    let source = fixture();
+    let png = source
+        .textures()
+        .iter()
+        .find(|t| t.key == bloxgloom_lifecycle_fixture::content::TEXTURE)
+        .unwrap()
+        .png
+        .clone();
+    let mut texture = Texture {
+        key: "test:emitter".into(),
+        png,
+        stitch_edges: false,
+        stitch_vertical: false,
+        alpha_cutout: false,
+        emission_strength: 1.25,
+    };
+    let a = crate::server::catalog_with_extension(Catalog::builtins(), &Emitter(texture.clone()))
+        .unwrap();
+    texture.emission_strength = 2.5;
+    let b = crate::server::catalog_with_extension(Catalog::builtins(), &Emitter(texture.clone()))
+        .unwrap();
+    assert!(
+        ContentManifest::from_catalog(&a)
+            .resolve_catalog(&b)
+            .is_err()
+    );
+    for invalid in [f32::NAN, f32::INFINITY, -1.0, 16.1] {
+        texture.emission_strength = invalid;
+        assert!(
+            crate::server::catalog_with_extension(Catalog::builtins(), &Emitter(texture.clone()))
+                .is_err()
+        );
+    }
 }
