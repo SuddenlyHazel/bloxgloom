@@ -17,6 +17,7 @@ use std::time::Duration;
 
 pub(super) struct Placement {
     pub item: crate::items::ItemId,
+    pub cost: u16,
     pub cells: Vec<(CellCoord, BlockId)>,
     pub spawn: crate::server::entities::EntitySpawn,
 }
@@ -30,7 +31,12 @@ pub(super) fn place(
     plan: Placement,
 ) -> io::Result<CommitAction> {
     let catalog = context.catalog();
-    let Placement { item, cells, spawn } = plan;
+    let Placement {
+        item,
+        cost,
+        cells,
+        spawn,
+    } = plan;
     let inventory_before = {
         let client = context.client(command.id).ok_or_else(|| {
             io::Error::new(
@@ -55,7 +61,7 @@ pub(super) fn place(
                 "selected workstation item mismatch",
             )
         })?;
-    if selected.count == 0 {
+    if cost == 0 || selected.count < cost {
         return Err(io::Error::new(
             ErrorKind::PermissionDenied,
             "selected workstation stack empty",
@@ -106,11 +112,13 @@ pub(super) fn place(
         }
     }
     let mut inventory = inventory_before.clone();
-    if !inventory.consume(command.slot, item) {
-        return Err(io::Error::new(
-            ErrorKind::PermissionDenied,
-            "selected workstation stack empty",
-        ));
+    for _ in 0..cost {
+        if !inventory.consume(command.slot, item) {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "selected workstation stack empty",
+            ));
+        }
     }
     let world_edits = builder.prepare_edits(&coords)?;
     let deltas = prepared_deltas(&coords, &world_edits);

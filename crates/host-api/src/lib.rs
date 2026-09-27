@@ -2,6 +2,7 @@
 //! This is not a mod loader or a stable native ABI.
 use std::fmt;
 
+pub mod anchored;
 pub mod entity;
 pub mod inventory;
 pub mod lifecycle;
@@ -34,6 +35,14 @@ pub trait Registrar {
     fn owner_system(&mut self, _system: system::System) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "owner systems unsupported by this registrar".into(),
+        ))
+    }
+    fn anchored_block_entity(
+        &mut self,
+        _entity: anchored::AnchoredBlockEntity,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "anchored behaviors unsupported by this registrar".into(),
         ))
     }
     fn machine(&mut self, _machine: machine::Machine) -> Result<(), RegistrationError> {

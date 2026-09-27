@@ -49,7 +49,6 @@ pub const MAX_JOURNAL_BYTES: u64 = 256 * 1024 * 1024;
 pub const JOURNAL_ROTATION_SOFT_LIMIT_BYTES: u64 = 224 * 1024 * 1024;
 
 /// Maximum encoded transaction payload, excluding its length and checksum.
-#[cfg(test)]
 pub const MAX_TRANSACTION_BYTES: usize = MAX_RECORD_BYTES;
 
 /// Stable identity of one server-owned value. `domain` is a short namespaced

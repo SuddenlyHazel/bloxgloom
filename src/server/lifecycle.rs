@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     cubes: Vec<CubeBlock>,
     pub definitions: Vec<StorageBlockEntity>,
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
@@ -26,6 +27,14 @@ impl Registrar for Registration {
             return Err(RegistrationError("duplicate owner system".into()));
         }
         self.systems.push(system);
+        Ok(())
+    }
+    fn anchored_block_entity(
+        &mut self,
+        entity: bloxgloom_host_api::anchored::AnchoredBlockEntity,
+    ) -> Result<(), RegistrationError> {
+        entity.validate()?;
+        self.anchored.push(entity);
         Ok(())
     }
     fn machine(
@@ -107,6 +116,9 @@ impl Registration {
         }
         for definition in &registration.definitions {
             candidate.extension_storage(definition)?;
+        }
+        for definition in &registration.anchored {
+            candidate.register_anchored(definition.clone())?;
         }
         for machine in &registration.machines {
             candidate.register_machine_identity(machine)?;

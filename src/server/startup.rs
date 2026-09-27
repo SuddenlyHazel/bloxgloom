@@ -97,6 +97,18 @@ impl ServerStartup {
         use super::block_actions::{BlockActionHooks, BlockActionRegistryBuilder};
         use super::durable::actions::{machine, storage_lifecycle};
         let mut actions = BlockActionRegistryBuilder::new(catalog);
+        for (_, definition) in catalog.anchored_entities() {
+            let block = catalog
+                .block_by_key(&definition.block)
+                .ok_or_else(|| io::Error::other("anchored block missing"))?;
+            actions.register(
+                block,
+                BlockActionHooks::new(
+                    super::durable::actions::anchored::place,
+                    super::durable::actions::anchored::remove,
+                ),
+            )?;
+        }
         for (_, m) in catalog.machines() {
             let block = catalog
                 .block_by_key(&m.block)
@@ -237,6 +249,10 @@ impl ServerStartup {
         catalog: Arc<Catalog>,
     ) -> io::Result<Arc<EntityTypeRegistry>> {
         let mut types = EntityTypeRegistryBuilder::new(&catalog);
+        for (id, _) in catalog.anchored_entities() {
+            super::entities::anchored::register(&mut types, catalog.clone(), id)
+                .map_err(entity_error)?;
+        }
         super::drops::register_entity_type(&mut types, Arc::clone(&catalog))
             .map_err(entity_error)?;
         super::entities::register_player_entity_type(&mut types).map_err(entity_error)?;

@@ -108,6 +108,20 @@ fn advance_receipts(state: &mut State, wait_through: Option<u128>) -> io::Result
                 payload => {
                     flush_ready_fire(state, &mut fire)?;
                     match payload {
+                        PendingPayload::FireAction(transaction, action) => {
+                            state
+                                .fire
+                                .validate_synced_batch(std::slice::from_ref(&transaction))?;
+                            super::publication::apply_committed_action(
+                                state,
+                                action,
+                                commit.entity_permit,
+                            )?;
+                            super::publication::publish_committed_fire_after_world(
+                                state,
+                                transaction,
+                            )?;
+                        }
                         PendingPayload::Action(action) => {
                             super::publication::apply_committed_action(
                                 state,

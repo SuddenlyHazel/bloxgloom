@@ -593,7 +593,8 @@ pub(in crate::server) fn commit_tick_plan(
         position: None,
     };
     let mut entities = if plan.lifecycle.despawn {
-        if catalog.mobile_entity(snapshot.entity_type).is_none()
+        if (catalog.mobile_entity(snapshot.entity_type).is_none()
+            && catalog.anchored_entity(snapshot.entity_type).is_none())
             || plan.position.is_some()
             || plan.transfer.is_some()
         {
@@ -671,6 +672,18 @@ pub(in crate::server) fn commit_tick_plan(
             .prepare_update(id, snapshot.revision, patch)
             .map_err(tick_preparation_error)?
     };
+    if plan.lifecycle.despawn && catalog.anchored_entity(snapshot.entity_type).is_some() {
+        if plan
+            .block_states
+            .iter()
+            .any(|c| c.after != crate::world::AIR)
+        {
+            return Err(permission(
+                "anchored removal must clear the complete footprint",
+            ));
+        }
+        entities = super::anchored::refund_removal(state, &snapshot, current_tick, entities)?;
+    }
     if !plan.lifecycle.spawns.is_empty() {
         entities = super::mobile_lifecycle::spawn_effects(
             state,

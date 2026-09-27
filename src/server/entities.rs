@@ -3,6 +3,7 @@
 //! Entity type declarations, persistence, indexing, and transaction preparation
 //! live here so feature modules can share one ownership and revision contract.
 
+pub(in crate::server) mod anchored;
 mod checkpoint;
 pub(in crate::server) mod chest;
 mod codec;

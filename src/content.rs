@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 
 use crate::world::{self, BlockId};
 
+mod anchored;
 mod builtins;
 pub(crate) mod creatures;
 mod extensions;
@@ -200,6 +201,9 @@ pub enum RegistrationError {
 pub struct Catalog {
     owner_systems:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
+    anchored_blocks: Vec<Option<EntityTypeId>>,
+    anchored_entities:
+        Vec<Option<std::sync::Arc<bloxgloom_host_api::anchored::AnchoredBlockEntity>>>,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
@@ -228,6 +232,8 @@ impl Catalog {
     pub fn new() -> Self {
         Self {
             owner_systems: Default::default(),
+            anchored_blocks: Vec::new(),
+            anchored_entities: Vec::new(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
             storage_lifecycles: Vec::new(),

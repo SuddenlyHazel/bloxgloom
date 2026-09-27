@@ -58,6 +58,7 @@ pub(in crate::server) fn plan_place(
         previous,
         Placement {
             item: definition.item,
+            cost: 1,
             cells,
             spawn,
         },

@@ -8,6 +8,8 @@
 use super::*;
 use crate::server::fire::{FireTransaction, FireWave};
 use crate::server::{State, streaming};
+#[path = "fire/invalidation.rs"]
+mod invalidation;
 
 impl Durability {
     pub(super) fn try_stage_fire_wave(
@@ -131,6 +133,30 @@ pub(in crate::server) fn stage_wave(
         return Ok(());
     }
     state.fire.prioritize_transactions(&mut transactions);
+    // Preserve canonical fire order. Ordinary waves retain the existing batched
+    // admission; a mixed wave admits each exceptional footprint burn as one combined
+    // record. Deferred removals retain their original frontier for retry.
+    if transactions
+        .iter()
+        .any(|t| invalidation::touches_anchor(state, t))
+    {
+        for transaction in transactions {
+            if invalidation::touches_anchor(state, &transaction) {
+                invalidation::stage(state, tick, transaction)?;
+            } else {
+                stage_transactions(state, tick, vec![transaction])?;
+            }
+        }
+        return Ok(());
+    }
+    stage_transactions(state, tick, transactions)
+}
+
+fn stage_transactions(
+    state: &mut State,
+    tick: TickId,
+    transactions: Vec<FireTransaction>,
+) -> io::Result<()> {
     let mut prefix = transactions.len();
     let mut deferred_reason = None;
     loop {

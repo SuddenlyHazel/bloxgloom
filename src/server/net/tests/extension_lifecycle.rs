@@ -6,7 +6,7 @@ use crate::server::startup::ServerStartup;
 use std::sync::Arc;
 use std::time::Instant;
 
-fn send(
+pub(super) fn send(
     peer: &mut TcpStream,
     client: &mut InventoryProbe,
     message: ClientMessage,
@@ -36,7 +36,7 @@ fn send(
         }
     }
 }
-fn until(
+pub(super) fn until(
     peer: &mut TcpStream,
     client: &mut InventoryProbe,
     catalog: &crate::content::Catalog,

@@ -285,6 +285,14 @@ impl ContentManifest {
                 .bind_mobile(id, mobile.clone())
                 .map_err(|_| invalid("invalid mobile binding"))?;
         }
+        for (_, definition) in local.anchored_entities() {
+            let id = resolved
+                .entity_type_id_by_key(&definition.entity)
+                .ok_or_else(|| invalid("missing anchored identity"))?;
+            resolved
+                .bind_anchored(id, definition.clone())
+                .map_err(|_| invalid("invalid anchored binding"))?;
+        }
         for (_, screen) in local.inventory_screens() {
             resolved
                 .register_inventory_screen((**screen).clone())

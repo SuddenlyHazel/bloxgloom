@@ -58,7 +58,12 @@ pub(in crate::server) fn place(
         tick,
         command,
         previous,
-        workstation::Placement { item, cells, spawn },
+        workstation::Placement {
+            item,
+            cost: 1,
+            cells,
+            spawn,
+        },
     )
 }
 pub(in crate::server) fn remove(

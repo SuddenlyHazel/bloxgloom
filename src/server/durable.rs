@@ -196,6 +196,7 @@ pub(super) struct PendingCommit {
     reason = "Pending commits are admission-bounded; preserve inline transaction ownership without adding per-action allocation."
 )]
 pub(super) enum PendingPayload {
+    FireAction(crate::server::fire::FireTransaction, CommitAction),
     Action(CommitAction),
     Fire(FireTransaction),
     Owner(super::runtime::owner_commit::OwnerCommit),
