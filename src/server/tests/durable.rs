@@ -794,6 +794,10 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     // A WAL-staged spawn followed by a forced generation cut: the BGEN
     // checkpoint now covers the drop, so everything after replays from WAL.
     spawn_drop(&mut state, tick, position, STONE_ITEM, 1, Duration::ZERO);
+    // Keep pickup in the post-cut phase deliberately. A tick that completes
+    // rotation may also admit and apply new work; relying on async receipt
+    // timing here allowed pickup to race the checkpoint assertions.
+    let client = state.clients.remove(&session.id).unwrap();
     state.durability.rotation_requested = true;
     for _ in 0..2_000 {
         run_empty_tick(&mut state, &mut tick);
@@ -809,6 +813,8 @@ fn post_cut_pickup_replays_from_an_older_checkpoint_after_full_server_restart() 
     assert!(state.durability.dirty_checkpoints.is_empty());
     assert!(state.durability.checkpoint_inflight.is_empty());
     assert_eq!(drop_nearby(&state, position).len(), 1);
+
+    state.clients.insert(session.id, client);
 
     // Commit a post-cut pickup and let its WAL receipt apply — but do NOT
     // rotate again. Restart must replay the pickup from the journal over

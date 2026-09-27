@@ -7,6 +7,11 @@ startup declarations, not a plugin loader or an arbitrary renderer API. Use
 The separately compiled `lifecycle-fixture::content::Content` demonstrates the
 full declarations without importing engine types or assigning numeric IDs.
 
+The Copper Lamp's unlit top/bottom deliberately use the fixture's tiny copper
+checker PNG (`fixture:copper_checks`), also used by Copper Reed. This is diagnostic
+fixture art, not a missing-texture fallback. Its lit states use glowstone art;
+ordinary placement selects the unlit state.
+
 ## Existing capabilities exposed
 
 * PNG textures: up to 4 MiB, at most 2048×2048, RGB/RGBA after PNG expansion,

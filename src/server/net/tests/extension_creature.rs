@@ -22,6 +22,8 @@ fn send(
 ) -> bool {
     let id = match request {
         ClientMessage::AdminSpawnEntity { action_id, .. }
+        | ClientMessage::Edit { action_id, .. }
+        | ClientMessage::AdminGive { action_id, .. }
         | ClientMessage::EntityInteract { action_id, .. } => *action_id,
         _ => panic!(),
     };
@@ -148,6 +150,11 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
                 until(&mut peer, &mut client, &catalog, |c| {
                     c.entity(entity_type).unwrap().payload[1] == 1
                 });
+                let request = ClientMessage::AdminSpawnEntity {
+                    action_id: client.next_id(),
+                    entity_type,
+                };
+                assert!(send(&mut peer, &mut client, &catalog, &request));
             } else {
                 until(&mut peer, &mut client, &catalog, |c| {
                     c.entity(entity_type).is_some()
@@ -156,6 +163,40 @@ fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_liste
                 assert_eq!(Some(entity.id), saved_id);
                 assert_eq!(entity.payload[1], 1, "pause interaction must persist");
             }
+            let stone = crate::items::ItemId(crate::world::STONE.0);
+            let grant = ClientMessage::AdminGive {
+                action_id: client.next_id(),
+                item: stone,
+                count: 2,
+            };
+            assert!(send(&mut peer, &mut client, &catalog, &grant));
+            until(&mut peer, &mut client, &catalog, |c| {
+                c.item_slot(stone).is_some()
+            });
+            let request = ClientMessage::Edit {
+                action_id: client.next_id(),
+                x: 0,
+                y: 79,
+                z: if restarted { 2 } else { 1 },
+                block: crate::world::AIR,
+                slot: 0,
+            };
+            assert!(
+                send(&mut peer, &mut client, &catalog, &request),
+                "paused creature must not starve nearby edits (restart={restarted})"
+            );
+            let place = ClientMessage::Edit {
+                action_id: client.next_id(),
+                x: 0,
+                y: 79,
+                z: if restarted { 2 } else { 1 },
+                block: crate::world::STONE,
+                slot: client.item_slot(stone).unwrap(),
+            };
+            assert!(
+                send(&mut peer, &mut client, &catalog, &place),
+                "creatures must not starve placement (restart={restarted})"
+            );
             let _ = peer.shutdown(Shutdown::Both);
         }));
         stop_tx.send(()).unwrap();

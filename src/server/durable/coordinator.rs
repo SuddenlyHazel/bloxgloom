@@ -112,6 +112,12 @@ pub(in crate::server) fn process_durable_actions(
     // never depends on receipt timing. Commands, pickups, and expiry keep
     // their queue order behind it in the loop below.
     let (motion_staged, mut preplanned) = stage_motion_batch(state, tick, &mut deferred)?;
+    if motion_staged {
+        // Apply tick-start motion before admitting commands. Holding its terrain
+        // read reservations through command admission lets continuously ticking
+        // creatures starve nearby edits on every tick, even after restart.
+        drain_staged_receipts(state)?;
+    }
     while attempts > 0 {
         attempts -= 1;
         let Some(request) = state.durability.queued.pop_front() else {
@@ -189,9 +195,20 @@ pub(in crate::server) fn process_durable_actions(
             request,
             DurableRequest::EntityTick { .. } | DurableRequest::EntityWake { .. }
         ) {
-            preplanned
+            let planned = preplanned
                 .pop_front()
-                .expect("requeued entity plan has a result")
+                .expect("requeued entity plan has a result");
+            if motion_staged {
+                // Non-batchable work was also captured at tick start. Motion
+                // may have changed its neighbours, so release any prepared
+                // resources and capture again against the newly applied state.
+                if let Ok(Some(action)) = &planned {
+                    cancel_prepared_entities(state, action);
+                }
+                plan_durable_request(state, &request, tick)
+            } else {
+                planned
+            }
         } else {
             plan_durable_request(state, &request, tick)
         };

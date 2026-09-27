@@ -24,6 +24,14 @@ impl MobileProbe {
     pub(crate) fn next_id(&mut self) -> u128 {
         self.app.allocate_action_id().unwrap()
     }
+    pub(crate) fn item_slot(&self, item: crate::items::ItemId) -> Option<u8> {
+        self.app
+            .inventory
+            .slots
+            .iter()
+            .position(|slot| slot.as_ref().is_some_and(|stack| stack.item == item))
+            .map(|slot| slot as u8)
+    }
     pub(crate) fn entity(
         &self,
         id: crate::content::EntityTypeId,
