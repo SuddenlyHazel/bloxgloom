@@ -7,6 +7,37 @@ tracks host capability parity; an installable mod loader is a separate milestone
 
 ## Implementation status
 
+### Status tracker
+
+**Planned** = remaining work, not started. **In progress** = partially implemented
+with gaps still open; it does not imply an implementation task is currently running.
+**Done** = the stated scope is implemented and verified. **Deferred** = deliberately
+parked or assigned to a later milestone. A completed slice does not imply full
+parity for its broader category.
+
+| Surface / deliverable | Status | Scope completed or work remaining |
+| --- | --- | --- |
+| Public host API boundary | Done | Public crate, extension registration, and independent Rust fixture package |
+| Passive storage lifecycle | Done | Chest and TallStore placement, persistence, footprint removal, and refunds |
+| Registered inventory screens | Done | Shared discovery, layout, slot access, status fields, and independent 1–54-slot storage |
+| Ground-creature behavior and presentation | Done | Mossbun migration and Copperling proof: behavior, sensing, host movement, interaction, lifecycle, cuboid models, and animation |
+| Inventory-machine slice | Done | Kiln/Hopper migration and Crusher proof: scheduling, private bytes, recipes/fuels, filters, named/sided ports, recovery, and refunds |
+| Content and asset registration parity | In progress | Limited cube blocks and creature presentation exist; broader states, items/components, textures/materials, geometry, lighting, and tags remain |
+| Registration and composition parity | In progress | Namespaced IDs, schemas, reference validation, and compatibility checks exist; complete dependency/capability and composition contracts remain |
+| General block / anchored-entity lifecycle | In progress | Storage/machine paths exist; custom initialization/projections, configurable costs/refunds, and general use/neighbor/support/invalidation hooks remain |
+| Inventory / process parity | In progress | Basic registered processing and conserving transfers exist; exact stack selectors and component-aware process operations remain |
+| General item use, harvest, and loot | Planned | Public item-action and harvest/drop contracts, built-in migrations, and an external item-action proof |
+| General interaction actions and UI composition | In progress | Inventory screens and creature own-state interactions exist; general action discovery/dispatch and supported custom UI composition remain |
+| World-system API and growth/support migration | Planned | Expose internal owner/system scheduling through public bounded read, effect, persistence, and wake contracts |
+| Fire migration | Deferred | Parked pending explicit authorization; still a blocker for full capability parity |
+| World-generation API | Planned | Deterministic terrain/vegetation contributions, ordering, bounded output, and seam ownership |
+| Player rules, commands, and bindings | Planned | Audit and expose supported movement/spawn/player-rule hooks and registered commands/actions/bindings |
+| World-drop gameplay and presentation parity | Planned | Move remaining drop policies and presentation capabilities onto accessible contracts |
+| External cross-category integration proof | In progress | TallStore, Copperling, and Crusher proven; item action and world/system contribution remain |
+| Exhaustive built-in parity audit | In progress | Migrated paths verified; audit remaining categories and close privileged built-in paths |
+| Runtime adapter and user-installable mod loader | Deferred | Separate milestone: select runtime/language, then package/dependency handling, discovery/loading, and isolation |
+| Distribution and hot reload | Deferred | Later loader/product decisions; not part of current host-surface completion |
+
 - **Registered machine slice implemented:** public scheduled behavior, bounded
   private bytes, registered footprints, item filters, recipes/fuels, named/sided
   automation ports, and host-owned inventory/process projections. Production Kiln
