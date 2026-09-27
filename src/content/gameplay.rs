@@ -14,7 +14,15 @@ impl Catalog {
         if handler
             .target
             .as_ref()
-            .is_some_and(|target| self.block_by_key(target).is_none())
+            .is_some_and(|target| match handler.event {
+                EventKind::BlockPlaced | EventKind::BlockRemoved => {
+                    self.block_by_key(target).is_none()
+                }
+                EventKind::ActionRequested => self.action(target).is_none_or(|action| {
+                    action.operation != bloxgloom_host_api::actions::Operation::Gameplay
+                }),
+            })
+            || (handler.event == EventKind::ActionRequested && handler.target.is_none())
         {
             return Err(RegistrationError(format!(
                 "{}: unknown gameplay target",

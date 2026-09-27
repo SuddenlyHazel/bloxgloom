@@ -1,8 +1,119 @@
 use super::*;
+use bloxgloom_host_api::actions::{Action, Operation, Request, Target};
 use bloxgloom_host_api::{Extension, Registrar, RegistrationError, gameplay::*};
 use std::sync::Arc;
 
 struct HarvestExtension;
+struct UseExtension;
+struct UseStick;
+struct MarkUse;
+impl Handler for MarkUse {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::ActionRequested {
+            entity: Some(id),
+            cell: Some(_),
+            ..
+        } = event
+        else {
+            return Err(Error::Invalid("expected identified entity use".into()));
+        };
+        if context.entity_state(*id)? != Some(vec![1]) {
+            return Err(Error::Invalid("marker changed".into()));
+        }
+        if !context.update_entity(*id, &[2])? {
+            return Err(Error::Invalid("marker gone".into()));
+        }
+        Ok(())
+    }
+}
+impl Handler for UseStick {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::ActionRequested {
+            action,
+            position,
+            cell,
+            entity,
+            slot,
+            arguments,
+        } = event
+        else {
+            return Err(Error::Invalid("expected item use".into()));
+        };
+        if action != "test:use_stick"
+            || cell.is_some()
+            || entity.is_some()
+            || !matches!(arguments.as_slice(), [] | [1])
+        {
+            return Err(Error::Invalid("invalid item use target".into()));
+        }
+        let actor = context
+            .player()
+            .ok_or_else(|| Error::Invalid("actor missing".into()))?;
+        let used = context
+            .take(actor, usize::from(*slot), 1)?
+            .ok_or_else(|| Error::Invalid("item absent".into()))?;
+        let cell = [
+            position[0].floor() as i32 + 2,
+            position[1].floor() as i32,
+            position[2].floor() as i32,
+        ];
+        if context.block(cell)?.block_type != "bloxgloom:air" {
+            return Err(Error::Invalid("use target obstructed".into()));
+        }
+        context.set_block(cell, "bloxgloom:sand")?;
+        context.spawn_stack(position.map(|n| n + 0.5), used, 250)?;
+        if arguments == &[1] {
+            context.spawn_drop(
+                [position[0] + 100.0, position[1], position[2]],
+                "bloxgloom:stick",
+                1,
+                0,
+            )?;
+        }
+        context.spawn_entity("test:marker", position.map(|n| n + 0.5), &[1])
+    }
+}
+impl Extension for UseExtension {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        registrar.gameplay_entity(EntityDefinition {
+            key: "test:marker".into(),
+            schema_version: 1,
+            schema_fingerprint: 0x123456,
+            max_state_bytes: 1,
+            state: Arc::new(MarkerState),
+        })?;
+        registrar.action(Action {
+            key: "test:use_stick".into(),
+            version: 1,
+            label: "USE STICK".into(),
+            target: Target::Item("bloxgloom:stick".into()),
+            operation: Operation::Gameplay,
+            panel: None,
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:use_stick".into(),
+            version: 1,
+            event: EventKind::ActionRequested,
+            target: Some("test:use_stick".into()),
+            handler: Arc::new(UseStick),
+        })?;
+        registrar.action(Action {
+            key: "test:mark_use".into(),
+            version: 1,
+            label: "MARK".into(),
+            target: Target::Entity("test:marker".into()),
+            operation: Operation::Gameplay,
+            panel: None,
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:mark_use".into(),
+            version: 1,
+            event: EventKind::ActionRequested,
+            target: Some("test:mark_use".into()),
+            handler: Arc::new(MarkUse),
+        })
+    }
+}
 struct PlacementExtension;
 struct SandPlacement;
 impl Handler for SandPlacement {
@@ -160,6 +271,142 @@ fn open(path: &std::path::Path) -> State {
             .with_extension(&HarvestExtension)
             .unwrap();
     crate::server::server_state_with_startup(23, path.to_owned(), 8, startup).unwrap()
+}
+
+#[test]
+fn semantic_item_use_composes_world_inventory_drop_entity_and_receipt() {
+    let path = temp_save_dir("gameplay-use");
+    let y = MAX_GENERATED_HEIGHT + 32;
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(STICK, 2));
+    let peer = add_test_client(&mut state, [14.5, y as f32, 0.5], inventory);
+    let epoch = u128::from(grant_action_epoch(&mut state, 17)) << 64;
+    let request = Request {
+        key: "test:use_stick".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    let message = |payload| ClientMessage::EntityInteract {
+        action_id: epoch | 1,
+        target: [i32::MAX, y, 0],
+        payload,
+    };
+    let edit = message(request.encode().unwrap());
+    assert_eq!(
+        plan_durable_request(&mut state, &edit_request(edit.clone()), TickId::new(10))
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::WouldBlock
+    );
+    state.world.edit(16, y, 0, AIR).unwrap();
+    let mut wrong = request.clone();
+    wrong.entity = 1;
+    assert!(
+        plan_durable_request(
+            &mut state,
+            &edit_request(message(wrong.encode().unwrap())),
+            TickId::new(10)
+        )
+        .is_err()
+    );
+    wrong = request.clone();
+    wrong.arguments = vec![1];
+    assert_eq!(
+        plan_durable_request(
+            &mut state,
+            &edit_request(message(wrong.encode().unwrap())),
+            TickId::new(10)
+        )
+        .err()
+        .unwrap()
+        .kind(),
+        ErrorKind::PermissionDenied
+    );
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        2
+    );
+    settle_live_action(&mut state, 11, edit.clone());
+    settle_live_action(&mut state, 12, edit);
+    assert_eq!(state.world.cached_block(16, y, 0), Some(crate::world::SAND));
+    assert_eq!(
+        state.clients[&1].inventory.slots[0].as_ref().unwrap().count,
+        1
+    );
+    let marker = state
+        .entities
+        .query_mobile_aabb([14.0, y as f32, 0.0], [16.0, y as f32 + 2.0, 2.0])
+        .unwrap()
+        .into_iter()
+        .find(|id| {
+            state.entities.public_view(*id).is_some_and(|view| {
+                view.entity_type
+                    == state
+                        .world
+                        .catalog()
+                        .entity_type_id_by_key("test:marker")
+                        .unwrap()
+            })
+        })
+        .unwrap();
+    assert_eq!(state.entities.public_view(marker).unwrap().payload, vec![1]);
+    let mark = Request {
+        key: "test:mark_use".into(),
+        version: 1,
+        slot: 0,
+        inventory_revision: state.clients[&1].inventory.revision,
+        entity: marker.get(),
+        entity_revision: state.entities.snapshot(marker).unwrap().revision,
+        arguments: vec![],
+    };
+    let targeted = |request: &Request| ClientMessage::EntityInteract {
+        action_id: epoch | 2,
+        target: [15, y, 1],
+        payload: request.encode().unwrap(),
+    };
+    let mut stale = mark.clone();
+    stale.entity_revision += 1;
+    assert!(
+        plan_durable_request(&mut state, &edit_request(targeted(&stale)), TickId::new(13)).is_err()
+    );
+    settle_live_action(&mut state, 13, targeted(&mark));
+    assert_eq!(state.entities.public_view(marker).unwrap().payload, vec![2]);
+    drop(peer);
+    drop(state);
+    let startup =
+        crate::server::startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&UseExtension)
+            .unwrap();
+    let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
+    assert_eq!(state.world.get_block(16, y, 0).unwrap(), crate::world::SAND);
+    assert_eq!(
+        state.inventory_store.load(17).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        1
+    );
+    assert_eq!(state.entities.public_view(marker).unwrap().payload, vec![2]);
+    assert_eq!(
+        crate::server::drops::nearby(&state.entities, [15.0, y as f32 + 1.0, 1.0])
+            .iter()
+            .filter(|drop| drop.item == STICK)
+            .map(|drop| drop.count)
+            .sum::<u16>(),
+        1
+    );
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
 }
 
 #[test]

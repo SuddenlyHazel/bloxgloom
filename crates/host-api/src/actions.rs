@@ -85,6 +85,9 @@ pub enum Target {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Operation {
+    /// Run the registered gameplay decision for this action key. The handler
+    /// uses the shared context rather than a closed list of action effects.
+    Gameplay,
     /// Explicit consumption/creation, not an inventory move. Only plain stacks
     /// match: component-bearing stacks are never silently stripped or consumed.
     Recipe {
@@ -168,6 +171,7 @@ impl Action {
                 Target::Item(k) | Target::Block(k) | Target::Entity(k) => key(k),
             };
         let operation = match (&self.target, &self.operation) {
+            (_, Operation::Gameplay) => true,
             (
                 Target::Item(_) | Target::Empty,
                 Operation::Recipe {
@@ -223,6 +227,7 @@ impl Action {
             }
         }
         match &self.operation {
+            Operation::Gameplay => out.push(3),
             Operation::Recipe {
                 input,
                 consume,

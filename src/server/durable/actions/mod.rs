@@ -10,6 +10,7 @@ use bloxgloom_host_api::gameplay::RemovalCause;
 mod admin;
 pub(in crate::server) mod anchored;
 pub(in crate::server) mod entity;
+mod gameplay_action;
 pub(in crate::server) mod invalidation;
 pub(in crate::server) mod machine;
 mod mobile_lifecycle;
@@ -599,6 +600,7 @@ fn plan_gameplay_removals(
             removals,
             seed: state.seed,
             tick,
+            action: None,
         },
         crate::server::gameplay::Participants {
             actor: Some(actor),

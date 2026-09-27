@@ -271,6 +271,21 @@ impl Registration {
         for handler in &registration.gameplay_handlers {
             candidate.register_gameplay_handler(handler.clone())?;
         }
+        for action in candidate.registered_actions() {
+            if action.operation == bloxgloom_host_api::actions::Operation::Gameplay
+                && candidate
+                    .gameplay_handler(
+                        bloxgloom_host_api::gameplay::EventKind::ActionRequested,
+                        &action.key,
+                    )
+                    .is_none()
+            {
+                return Err(RegistrationError(format!(
+                    "{}: missing gameplay action owner",
+                    action.key
+                )));
+            }
+        }
         candidate
             .validate()
             .map_err(|error| RegistrationError(format!("invalid composed catalog: {error:?}")))?;

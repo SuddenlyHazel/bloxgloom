@@ -94,6 +94,7 @@ impl BlockCommitBuilder<'_> {
                 removals,
                 seed,
                 tick,
+                action: None,
             },
             participants,
         )

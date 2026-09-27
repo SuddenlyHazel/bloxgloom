@@ -20,6 +20,10 @@ later Luau/package/presentation phases, remain open. This is not full parity.
 Phase 2 has begun with registered placement decisions, ordered after removals
 over the same staged world view; committed notifications and scheduling remain
 open.
+Registered semantic use actions can now compose ordinary item, entity, drop and
+world operations through that plan. Existing built-in recipes and specialized
+entity requests have not yet been migrated, and the client discovery surface
+does not yet expose arbitrary author-defined action argument schemas.
 
 ### Integration follow-up
 

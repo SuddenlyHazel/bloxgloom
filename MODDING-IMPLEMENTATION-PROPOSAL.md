@@ -427,10 +427,10 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 2 — general gameplay foundation landed; removal and placement
-  decisions share one transaction overlay. Next add committed notifications and
-  persistent scheduling, then remaining built-in world/drop/player and fire
-  behavior. Phase 1 does not claim Luau, client packages or authored UI.
+- **Active phase:** 2 — removal, placement, and registered semantic use decisions
+  share one transaction overlay. Next add committed notifications and persistent
+  scheduling, then remaining built-in world/drop/player and fire behavior. No
+  Luau, client packages or authored UI is implemented yet.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -515,6 +515,19 @@ This section exists so compaction or a new session does not restart the design.
   emitted by a handler do not recurse into new decision handlers. A focused
   cross-chunk placement test verifies unavailable neighbour deferral, one item
   debit and reward despite duplicate requests, and restart recovery.
+- **Phase 2 use increment:** a registered `Operation::Gameplay` action resolves
+  its matching startup handler rather than a closed recipe/entity operation.
+  Item/empty use receives the authoritative player position; block/entity use
+  checks current target identity, reach, interest and captured line of sight,
+  plus exact entity state/motion revisions. All variants run on the shared
+  world/inventory/entity/drop plan with host-owned receipts and WAL admission.
+  The current wire envelope permits up to four argument bytes; broader authored
+  argument schemas and client action discovery are later work, not implied by
+  this host path. A focused item/entity-use test checks chunk deferral,
+  compositional updates, stale identity, duplicate receipts, recovery, and
+  rejection of remote effects without partial item debit. Edits, drops and
+  spawns are limited to eight cells around the original operation/actor;
+  positions outside the world no longer silently saturate to valid coordinates.
 - **Next concrete step:** add after-commit notifications and persistent scheduled
   gameplay handlers through existing owner clock/effect machinery, then route
   ordinary use/support/world behavior on the same contract.

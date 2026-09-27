@@ -167,6 +167,7 @@ pub(super) struct OperationInput<'a> {
     pub removals: &'a [Removal],
     pub seed: u64,
     pub tick: u64,
+    pub action: Option<bloxgloom_host_api::gameplay::Event>,
 }
 
 pub(super) struct WorldPlan {
@@ -193,6 +194,7 @@ pub(super) fn plan_removals(
         removals,
         seed,
         tick,
+        action,
     } = input;
     let actor = participants.actor;
     let catalog = world.catalog_arc();
@@ -266,6 +268,20 @@ pub(super) fn plan_removals(
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
+    if let Some(event @ Event::ActionRequested { action, .. }) = action.as_ref() {
+        let handler = catalog
+            .gameplay_handler(EventKind::ActionRequested, action)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "gameplay action handler missing",
+                )
+            })?;
+        context.dispatch(handler, event).map_err(|e| {
+            let e = error(e);
+            io::Error::new(e.kind(), format!("{}: {e}", handler.key))
+        })?;
+    }
     let mut plan = context.finish().map_err(error)?;
     let inventory = if snapshot.inventory_read {
         let (profile, before) = actor.expect("inventory read requires actor capture");
@@ -329,6 +345,37 @@ pub(super) fn plan_removals(
         .collect::<io::Result<Vec<_>>>()?;
     let mut original = edits.to_vec();
     original.sort_by_key(|&(x, y, z, _)| [x, y, z]);
+    let mut sources = removals
+        .iter()
+        .map(|(_, cell, _)| *cell)
+        .chain(edits.iter().map(|&(x, y, z, _)| [x, y, z]))
+        .collect::<Vec<_>>();
+    if let Some(Event::ActionRequested { cell, position, .. }) = &action {
+        let origin = match cell {
+            Some(cell) => *cell,
+            None => {
+                let at = super::entities::position_to_cell(*position).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid action position")
+                })?;
+                [at.x, at.y, at.z]
+            }
+        };
+        sources.push(origin);
+    }
+    let within_reach = |cell: Cell| {
+        sources.iter().any(|source| {
+            (0..3).all(|axis| (i64::from(cell[axis]) - i64::from(source[axis])).abs() <= 8)
+        })
+    };
+    if final_edits
+        .iter()
+        .any(|&(x, y, z, _)| !within_reach([x, y, z]))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "gameplay edit outside interaction radius",
+        ));
+    }
     let prepared = if final_edits == original {
         prepared
     } else {
@@ -339,10 +386,14 @@ pub(super) fn plan_removals(
         let id = catalog.entity_type_id_by_key(&spawn.key).ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "unknown gameplay entity")
         })?;
-        let target = spawn.position.map(|n| n.floor() as i32);
-        if removals.iter().all(|(_, source, _)| {
-            (0..3).any(|i| (i64::from(target[i]) - i64::from(source[i])).abs() > 8)
-        }) {
+        let at = super::entities::position_to_cell(spawn.position).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid gameplay entity position",
+            )
+        })?;
+        let target = [at.x, at.y, at.z];
+        if !within_reach(target) {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "entity spawn outside interaction radius",
@@ -384,6 +435,18 @@ pub(super) fn plan_removals(
         .drops
         .into_iter()
         .map(|drop| {
+            let at = super::entities::position_to_cell(drop.position).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid gameplay drop position",
+                )
+            })?;
+            if !within_reach([at.x, at.y, at.z]) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "gameplay drop outside interaction radius",
+                ));
+            }
             Ok((
                 drop.position,
                 inventory::stack(&catalog, &drop.stack).map_err(error)?,

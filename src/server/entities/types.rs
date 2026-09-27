@@ -371,7 +371,7 @@ pub fn position_to_cell(position: [f32; 3]) -> Result<CellCoord, EntityError> {
             return Err(EntityError::InvalidLocation);
         }
         let floor = value.floor();
-        if floor < i32::MIN as f32 || floor > i32::MAX as f32 {
+        if f64::from(floor) < f64::from(i32::MIN) || f64::from(floor) > f64::from(i32::MAX) {
             return Err(EntityError::InvalidLocation);
         }
         Ok(floor as i32)

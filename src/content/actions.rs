@@ -18,6 +18,7 @@ impl Catalog {
             Target::Entity(k) => self.entity_type_id_by_key(k).is_some(),
         };
         let operation = match &action.operation {
+            Operation::Gameplay => true,
             Operation::Recipe { input, output, .. } => [input, output].iter().all(|k| {
                 self.items()
                     .any(|i| &*i.key == k.as_str() && self.valid_item_components(i.id, None))

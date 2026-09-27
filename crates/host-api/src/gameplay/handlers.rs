@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub enum EventKind {
     BlockRemoved,
     BlockPlaced,
+    ActionRequested,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +31,16 @@ pub enum Event {
         cell: Cell,
         previous: Block,
         placed: Block,
+    },
+    /// Host-fenced semantic use. `cell` is the verified world target, if any;
+    /// item/untargeted actions receive the authoritative actor position instead.
+    ActionRequested {
+        action: String,
+        position: [f32; 3],
+        cell: Option<Cell>,
+        entity: Option<u64>,
+        slot: u8,
+        arguments: Vec<u8>,
     },
 }
 
@@ -78,6 +89,7 @@ impl HandlerRegistration {
         bytes.push(match self.event {
             EventKind::BlockRemoved => 0,
             EventKind::BlockPlaced => 1,
+            EventKind::ActionRequested => 2,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

@@ -86,6 +86,19 @@ pub(super) fn plan(
         return Err(denied("stale actor inventory"));
     }
     match &action.operation {
+        Operation::Gameplay => gameplay_action::plan(
+            state,
+            gameplay_action::Invocation {
+                client_id,
+                profile,
+                action_id,
+                target,
+                request: &request,
+                kind: &action.target,
+                receipt_value,
+                tick,
+            },
+        ),
         Operation::Recipe {
             input,
             consume,
