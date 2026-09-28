@@ -436,9 +436,29 @@ support loss (`WorldEdit` versus `SupportLoss`); its focused regression passes
 The drop tick policy now delegates fixed-step falling, collision and support
 rechecks to a bounded public `entity::FallingContext` over captured terrain.
 The integrated main-tree suite passes 884/884, formatting and strict Clippy pass.
-Spawn/merge/split, pickup eligibility and transfer, expiry and terrain-change
-wake selection still use their existing native paths and do not meet complete
-drop parity.
+At the `2a238f3` falling increment, spawn/merge/split, pickup eligibility and
+transfer, expiry and terrain-change wake selection remained native paths; that
+increment alone did not meet complete drop parity.
+**New drop policy slice under verification:** production spawn planning now uses
+a public deterministic merge-target policy after host-captured exact stack and
+age inputs. Automatic pickup and script extraction use the same public
+delay/expiry policy; the bounded expiry scanner uses its public lifetime
+predicate. The server still owns candidates, split allocation, inventory
+credit, despawns and WAL commits. Terrain-change wake selection and remaining
+native orchestration are not counted as migrated. The main-tree 4-thread suite
+passes **889/889**, and the public entity-policy unit tests, formatting and
+strict Clippy pass.
+**Player-rule audit:** movement credit is currently server-owned (10 blocks/s
+budget), client intent uses its own 8 blocks/s value, and collision samples
+are shared for prediction but repeated in spawn checks. Public configurable
+movement/body rules therefore require handshake-visible rule identity and
+prediction/reconciliation consistency; do not expose a server-only tuning knob.
+**Helper audit:** storage placement/break already uses `StorageBlockEntity`
+declarations, built-in mossbun registers a public mobile `Behavior`, and
+anchored placement/refunds call the public anchored definition and callbacks.
+The new machine footprint planner closes one remaining private decision, but
+shared service and registered binding parity still needs a production audit;
+do not mark all helpers complete from their registration surfaces alone.
 The builtin `give` and `spawn` console requests now resolve registered actions
 and invoke authenticated public gameplay operations, including from Luau;
 `help` is client-local usage text rather than a WAL command. Machine placement
@@ -573,7 +593,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **888/888**. The user reported the Jade example working live, but that does
+  **889/889**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -639,7 +659,7 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **888/888** after admin/machine integration;
+  latest reviewed 4-thread suite passed **889/889** after drop policy integration;
   strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
