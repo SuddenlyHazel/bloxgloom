@@ -379,7 +379,7 @@ support as the final model system.
 | 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | In progress |
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
-| 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Planned |
+| 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Planned |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Planned |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
@@ -756,6 +756,14 @@ This section exists so compaction or a new session does not restart the design.
   SHA-256 cache identity and strict decode/verification. Server sources and
   private save data never enter the artifact. This does not yet deliver packages
   over the network or execute client scripts.
+- **Phase 5 transport:** wire v9 offers a frozen bundle before the ordinary
+  catalog handshake, streams bounded shared frames on the nonblocking listener,
+  and requires a verified bundle acknowledgment before admission. The client
+  verifies canonical bytes and caches one immutable artifact across reconnects;
+  failed transfers do not enter the cache. Downloaded package definitions are
+  not yet registered into the client catalog, so modded joins can still reject
+  catalog mismatch; no compatibility check was weakened. Listener/protocol/
+  client focused tests, strict Clippy and formatting passed.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

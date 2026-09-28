@@ -84,6 +84,16 @@ fn outbound_wire_lengths_match_serialized_frames() {
         age_ms: 12,
     };
     let messages = vec![
+        ServerMessage::BundleOffer {
+            identity: BundleIdentity {
+                key: crate::server::client_bundle::CacheKey::from_bytes([7; 32]),
+                total_len: 3,
+            },
+        },
+        ServerMessage::BundlePart {
+            offset: 0,
+            bytes: vec![1, 2, 3],
+        },
         ServerMessage::Welcome { id: 1, seed: 2 },
         ServerMessage::Position {
             ack_seq: 3,

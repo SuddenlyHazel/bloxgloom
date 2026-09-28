@@ -252,6 +252,8 @@ mod kiln;
 mod mesh_queue;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
+#[cfg(test)]
+pub(crate) use workers::connect_bundle_probe;
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 
 #[derive(Default)]
@@ -779,7 +781,9 @@ impl ClientApp {
 
     fn accept(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::ContentManifestPart { .. } => {
+            ServerMessage::ContentManifestPart { .. }
+            | ServerMessage::BundleOffer { .. }
+            | ServerMessage::BundlePart { .. } => {
                 self.disconnected = true;
                 self.show_status("Unexpected content manifest after handshake");
             }
@@ -1460,6 +1464,7 @@ impl ClientApp {
     }
 }
 
+pub(crate) mod bundle;
 mod events;
 
 pub fn run_client(addr: &str) -> Result<(), Box<dyn std::error::Error>> {

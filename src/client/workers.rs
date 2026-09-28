@@ -19,6 +19,8 @@ pub(super) enum Incoming {
 }
 
 pub(super) struct Network {
+    // Session-owned immutable artifact, installed before any snapshot is read.
+    _bundle: Option<Arc<crate::server::client_bundle::ClientBundle>>,
     pub(super) incoming: Receiver<Incoming>,
     pub(super) catalog: Arc<Catalog>,
     outgoing: SyncSender<ClientMessage>,
@@ -30,6 +32,7 @@ impl Network {
         let (_, incoming) = mpsc::sync_channel(1);
         let (outgoing, _) = mpsc::sync_channel(1);
         Self {
+            _bundle: None,
             incoming,
             outgoing,
             catalog: Arc::new(crate::content::catalog().clone()),
@@ -49,13 +52,32 @@ impl Network {
                 content_fingerprint: crate::content::catalog().fingerprint(),
             },
         )?;
-        let (content_fingerprint, catalog) = receive_content_manifest(&mut socket)?;
+        let mut first = protocol::read_server(&mut socket)?;
+        let bundle = if let ServerMessage::BundleOffer { identity } = first {
+            let bundle = super::bundle::install(&mut socket, identity)?;
+            // Transfer time does not consume the separate content/Join
+            // budget (the receiver narrows OS timeouts to its remaining time).
+            socket.set_read_timeout(Some(Duration::from_secs(10)))?;
+            socket.set_write_timeout(Some(Duration::from_secs(10)))?;
+            first = protocol::read_server(&mut socket)?;
+            Some(bundle)
+        } else {
+            None
+        };
+        let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first)?;
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
                 fingerprint: content_fingerprint,
             },
         )?;
+        let first = protocol::read_server_with_catalog(&mut socket, &catalog)?;
+        if !matches!(first, ServerMessage::Welcome { .. }) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "expected Welcome after preparation",
+            ));
+        }
         socket.set_read_timeout(None)?;
         socket.set_write_timeout(None)?;
         let mut reader = socket.try_clone()?;
@@ -63,6 +85,9 @@ impl Network {
         let reader_catalog = Arc::clone(&catalog);
         let writer_catalog = Arc::clone(&catalog);
         let (incoming_tx, incoming) = mpsc::sync_channel(256);
+        incoming_tx
+            .send(Incoming::Message(Box::new(first)))
+            .map_err(|_| io::Error::other("network incoming queue closed"))?;
         let (outgoing, outgoing_rx) = mpsc::sync_channel(256);
         thread::spawn(move || {
             loop {
@@ -97,6 +122,7 @@ impl Network {
             })
             .map_err(|_| io::Error::other("network writer stopped"))?;
         Ok(Self {
+            _bundle: bundle,
             incoming,
             catalog,
             outgoing,
@@ -115,7 +141,10 @@ impl Network {
     }
 }
 
-fn receive_content_manifest(socket: &mut TcpStream) -> io::Result<(u64, Arc<Catalog>)> {
+fn receive_content_manifest(
+    socket: &mut TcpStream,
+    mut message: ServerMessage,
+) -> io::Result<(u64, Arc<Catalog>)> {
     let mut bytes = Vec::new();
     let mut expected: Option<(usize, u64)> = None;
     loop {
@@ -124,7 +153,7 @@ fn receive_content_manifest(socket: &mut TcpStream) -> io::Result<(u64, Arc<Cata
             total_len,
             offset,
             bytes: part,
-        } = protocol::read_server(&mut *socket)?
+        } = message
         else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -170,7 +199,25 @@ fn receive_content_manifest(socket: &mut TcpStream) -> io::Result<(u64, Arc<Cata
             }
             return Ok((fingerprint, Arc::new(catalog)));
         }
+        message = protocol::read_server(&mut *socket)?;
     }
+}
+
+#[cfg(test)]
+pub(crate) fn connect_bundle_probe(
+    address: &str,
+    profile: u128,
+) -> io::Result<Option<Arc<crate::server::client_bundle::ClientBundle>>> {
+    let network = Network::connect(address, 1, profile)?;
+    let Incoming::Message(first) = network
+        .incoming
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap()
+    else {
+        panic!("connection closed before Welcome");
+    };
+    assert!(matches!(*first, ServerMessage::Welcome { .. }));
+    Ok(network._bundle.clone())
 }
 
 pub(super) struct ConfigWriter {

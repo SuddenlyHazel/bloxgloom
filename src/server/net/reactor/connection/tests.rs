@@ -130,3 +130,90 @@ fn full_coordinator_queue_preserves_one_command_and_its_sequence() {
         })
     ));
 }
+
+#[test]
+fn bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline() {
+    use crate::server::client_bundle::{CacheKey, ClientBundle};
+    use sha2::{Digest, Sha256};
+    let bytes = b"BGCLIENT\x01\0\0\0\0";
+    let bundle =
+        ClientBundle::decode_verify(bytes, CacheKey::from_bytes(Sha256::digest(bytes).into()))
+            .unwrap();
+    let (mut first, _peer, local) = test_connection();
+    let (mut second, _peer2, _) = test_connection();
+    let content = ContentHandshake::with_bundle(Arc::clone(&local.catalog), Some(&bundle)).unwrap();
+    let codecs = CodecWorkers::new(
+        Arc::clone(&content.catalog),
+        2,
+        Arc::clone(&first.stats),
+        Arc::new(Poller::new().unwrap()),
+    )
+    .unwrap();
+    let (input, receiver) = mpsc::sync_channel(1);
+    let now = Instant::now();
+    for connection in [&mut first, &mut second] {
+        connection
+            .handle_message(
+                now,
+                ClientMessage::Hello {
+                    name: "bundle".into(),
+                    profile: 1,
+                    content_fingerprint: 0,
+                },
+                &content,
+                &input,
+            )
+            .unwrap();
+        let deadline = connection.deadline;
+        connection.prepare_write(&content, &codecs).unwrap();
+        assert!(Arc::ptr_eq(
+            &connection.pending_write.as_ref().unwrap().bytes,
+            &content.bundle.as_ref().unwrap().offer
+        ));
+        connection.poll_write().unwrap();
+        let identity = content.bundle.as_ref().unwrap().identity;
+        connection
+            .handle_message(
+                now,
+                ClientMessage::BundleRequest { identity },
+                &content,
+                &input,
+            )
+            .unwrap();
+        connection.prepare_write(&content, &codecs).unwrap();
+        assert!(Arc::ptr_eq(
+            &connection.pending_write.as_ref().unwrap().bytes,
+            &content.bundle.as_ref().unwrap().parts[0]
+        ));
+        assert_eq!(connection.bundle_index, 0);
+        assert_eq!(connection.deadline, deadline);
+        assert!(connection.inventory_receiver.is_none());
+        assert!(connection.pending_encode_frame.is_none());
+        assert!(connection.encode_receiver.is_none());
+        assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
+        // Advance deterministic host time, not the socket or a sleeping worker.
+        let workers = InventoryWorkers {
+            sender: None,
+            workers: Vec::new(),
+        };
+        assert_eq!(
+            connection
+                .poll(
+                    deadline,
+                    &content,
+                    &workers,
+                    &codecs,
+                    &input,
+                    &mut VecDeque::new(),
+                    Readiness::default()
+                )
+                .unwrap_err()
+                .kind(),
+            ErrorKind::TimedOut
+        );
+    }
+    assert!(Arc::ptr_eq(
+        &first.pending_write.as_ref().unwrap().bytes,
+        &second.pending_write.as_ref().unwrap().bytes
+    ));
+}

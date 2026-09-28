@@ -5,7 +5,9 @@ use crate::items::ItemId;
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, PaletteView, PalettedBlocks};
 use std::io::{self, Read, Write};
 
+mod bundle;
 mod entities;
+pub use bundle::{BundleIdentity, MAX_BUNDLE_PART};
 pub(crate) mod workstation;
 pub use entities::{
     BlockCellChange, EntitySnapshotPage, PublicEntity, PublicEntityChange, PublicEntityLocation,
@@ -16,7 +18,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 8;
+const WIRE_VERSION: u8 = 9;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 /// Fixed vertical streaming/retention radius shared by server and client.
@@ -30,6 +32,12 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    BundleRequest {
+        identity: BundleIdentity,
+    },
+    BundleReady {
+        identity: BundleIdentity,
+    },
     Hello {
         name: String,
         profile: u128,
@@ -112,6 +120,13 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    BundleOffer {
+        identity: BundleIdentity,
+    },
+    BundlePart {
+        offset: u32,
+        bytes: Vec<u8>,
+    },
     Welcome {
         id: u64,
         seed: u64,
@@ -186,6 +201,8 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
+            ServerMessage::BundleOffer { .. } => 32 + 4,
+            ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
             ServerMessage::Welcome { .. } => 8 + 8,
             ServerMessage::Position { .. } => 8 + 12,
             ServerMessage::Chunk(chunk) => {
@@ -273,6 +290,14 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::BundleRequest { identity } => {
+            out.push(14);
+            bundle::write_identity(&mut out, identity)?;
+        }
+        ClientMessage::BundleReady { identity } => {
+            out.push(15);
+            bundle::write_identity(&mut out, identity)?;
+        }
         ClientMessage::Hello {
             name,
             profile,
@@ -436,6 +461,14 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::BundleOffer { identity } => {
+            out.push(19);
+            bundle::write_identity(&mut out, identity)?;
+        }
+        ServerMessage::BundlePart { offset, bytes } => {
+            out.push(20);
+            bundle::write_part(&mut out, *offset, bytes)?;
+        }
         ServerMessage::Welcome { id, seed } => {
             out.push(1);
             out.extend(id.to_le_bytes());
@@ -914,6 +947,12 @@ pub fn read_client_with_catalog(
                 entity_type,
             }
         }
+        14 => ClientMessage::BundleRequest {
+            identity: bundle::read_identity(&mut c)?,
+        },
+        15 => ClientMessage::BundleReady {
+            identity: bundle::read_identity(&mut c)?,
+        },
         _ => return Err(invalid("unknown client message")),
     };
     c.done()?;
@@ -1136,6 +1175,10 @@ pub fn read_server_with_catalog(
             }
             ServerMessage::OwnedEntity { id }
         }
+        19 => ServerMessage::BundleOffer {
+            identity: bundle::read_identity(&mut c)?,
+        },
+        20 => bundle::read_part(&mut c)?,
         _ => return Err(invalid("unknown server message")),
     };
     c.done()?;

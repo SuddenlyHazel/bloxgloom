@@ -93,4 +93,7 @@ assets/textures/<path>.png`. Format 1 modules stay server-only. The immutable
 client artifact contains client/shared source and declared texture bytes, but
 never server modules or original paths. Its SHA-256 cache key verifies exact
 canonical bytes; it does not authenticate who supplied that key. Package
-transfer, client execution and decoded-image limits are separate work.
+client execution and decoded-image limits are separate work. Local package
+servers now offer the verified bundle before catalog matching and gameplay
+admission. The client verifies and caches one artifact across reconnects;
+matching bundle bytes alone cannot construct the matching client catalog yet.

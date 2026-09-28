@@ -2,7 +2,8 @@
 //!
 //! Built-ins and startup extensions freeze together before storage opens.
 //! Native extensions and explicitly selected local Luau packages use the public
-//! registrar; this is not network distribution or a durable script-state contract.
+//! registrar. Their frozen client artifact is retained for join distribution;
+//! this is not a durable script-state contract.
 
 use super::builtins;
 use super::durable::Durability;
@@ -42,6 +43,7 @@ pub(crate) struct StartupEntityType {
 }
 
 pub(crate) struct ServerStartup {
+    pub(super) client_bundle: Option<Arc<super::script::package::client::ClientBundle>>,
     catalog: Arc<Catalog>,
     storage: Vec<bloxgloom_host_api::StorageBlockEntity>,
     entity_types: Vec<StartupEntityType>,
@@ -66,8 +68,13 @@ impl ServerStartup {
     /// Explicit local-development root only. All scripts finish and all public
     /// declarations validate before a replacement startup catalog is published.
     pub(crate) fn with_local_packages(self, root: &std::path::Path) -> io::Result<Self> {
+        if self.client_bundle.is_some() {
+            return Err(io::Error::other("local package set already installed"));
+        }
         let declarations = super::script::startup::Declarations::discover(root)?;
-        self.with_extension(&declarations)
+        let mut startup = self.with_extension(&declarations)?;
+        startup.client_bundle = Some(Arc::clone(&declarations.client_bundle));
+        Ok(startup)
     }
 
     pub(super) fn generation(&self) -> Vec<bloxgloom_host_api::generation::Registration> {
@@ -157,6 +164,7 @@ impl ServerStartup {
             .definitions
             .extend(catalog.storage_lifecycles.clone());
         let mut startup = Self {
+            client_bundle: None,
             catalog,
             storage: registration.definitions,
             entity_types: Vec::new(),

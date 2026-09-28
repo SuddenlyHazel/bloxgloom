@@ -25,6 +25,10 @@ enum Phase {
     AwaitHello,
     SendingManifest,
     AwaitContentReady,
+    SendingBundleOffer,
+    AwaitBundleRequest,
+    SendingBundle,
+    AwaitBundleReady,
     ReadyToLoadInventory,
     LoadingInventory,
     ReadyToJoin,
@@ -36,6 +40,8 @@ enum Phase {
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum PendingWriteKind {
     Manifest,
+    BundleOffer,
+    BundlePart,
     Outbound,
 }
 
@@ -79,6 +85,7 @@ pub(super) struct Connection {
     peer_closed: bool,
     input_buffer: Vec<u8>,
     manifest_index: usize,
+    bundle_index: usize,
     pending_write: Option<PendingWrite>,
     pending_decode_frame: Option<Vec<u8>>,
     decode_receiver: Option<Receiver<io::Result<ClientMessage>>>,
@@ -114,6 +121,7 @@ impl Connection {
             peer_closed: false,
             input_buffer: Vec::with_capacity(SOCKET_CHUNK),
             manifest_index: 0,
+            bundle_index: 0,
             pending_write: None,
             pending_decode_frame: None,
             decode_receiver: None,
@@ -347,6 +355,28 @@ impl Connection {
     ) -> io::Result<()> {
         if self.pending_write.is_none() {
             match self.phase {
+                Phase::SendingBundleOffer => {
+                    let bundle = content.bundle.as_ref().expect("bundle required");
+                    self.pending_write = Some(PendingWrite {
+                        bytes: Arc::clone(&bundle.offer),
+                        offset: 0,
+                        kind: PendingWriteKind::BundleOffer,
+                        reservation: None,
+                    });
+                }
+                Phase::SendingBundle => {
+                    let bundle = content.bundle.as_ref().expect("bundle required");
+                    if let Some(frame) = bundle.parts.get(self.bundle_index) {
+                        self.pending_write = Some(PendingWrite {
+                            bytes: Arc::clone(frame),
+                            offset: 0,
+                            kind: PendingWriteKind::BundlePart,
+                            reservation: None,
+                        });
+                    } else {
+                        self.phase = Phase::AwaitBundleReady;
+                    }
+                }
                 Phase::SendingManifest => {
                     if let Some(frame) = content.manifest_frames.get(self.manifest_index) {
                         self.pending_write = Some(PendingWrite::manifest(Arc::clone(frame)));
@@ -439,6 +469,10 @@ impl Connection {
             };
             if completed.kind == PendingWriteKind::Manifest {
                 self.manifest_index += 1;
+            } else if completed.kind == PendingWriteKind::BundleOffer {
+                self.phase = Phase::AwaitBundleRequest;
+            } else if completed.kind == PendingWriteKind::BundlePart {
+                self.bundle_index += 1;
             } else if let Some(frame) = completed.reservation.take() {
                 self.stats.send_age(frame.age());
                 frame.record_sent();
@@ -517,9 +551,10 @@ impl Connection {
                 | Phase::ReadyToJoin
                 | Phase::AwaitJoin
         ) {
-            // ContentReady is the gate. Bytes that arrived after it remain in
-            // the bounded parser buffer until Join completes; commands are
-            // never submitted against a player ID that has not been created.
+            // ContentReady (and, when required, BundleReady) is the gate.
+            // Later bytes remain in the bounded parser buffer until Join
+            // completes; commands are never submitted against a player ID that
+            // has not been created.
             return Ok(false);
         }
         if self.decode_receiver.is_some() || self.pending_command.is_some() {
@@ -611,8 +646,19 @@ impl Connection {
                 },
             ) if !name.is_empty() && !name.chars().any(char::is_control) && profile != 0 => {
                 self.profile = Some(profile);
-                self.phase = Phase::SendingManifest;
-                self.deadline = now + HELLO_TIMEOUT;
+                self.phase = if content.bundle.is_some() {
+                    Phase::SendingBundleOffer
+                } else {
+                    Phase::SendingManifest
+                };
+                // Transfer precedes catalog validation so clients can obtain
+                // artifacts without already having the package definitions.
+                self.deadline = now
+                    + if content.bundle.is_some() {
+                        super::super::BUNDLE_TIMEOUT
+                    } else {
+                        HELLO_TIMEOUT
+                    };
                 Ok(())
             }
             (Phase::AwaitContentReady, ClientMessage::ContentReady { fingerprint })
@@ -622,12 +668,39 @@ impl Connection {
                 self.deadline = now + JOIN_TIMEOUT;
                 Ok(())
             }
-            (Phase::Active, ClientMessage::Hello { .. } | ClientMessage::ContentReady { .. }) => {
-                Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "duplicate content handshake message",
-                ))
+            (Phase::AwaitBundleRequest, ClientMessage::BundleRequest { identity })
+                if content
+                    .bundle
+                    .as_ref()
+                    .is_some_and(|bundle| bundle.identity == identity) =>
+            {
+                // The absolute deadline established by Hello is not extended
+                // by requests or part progress.
+                self.phase = Phase::SendingBundle;
+                Ok(())
             }
+            (
+                Phase::AwaitBundleRequest | Phase::AwaitBundleReady,
+                ClientMessage::BundleReady { identity },
+            ) if content
+                .bundle
+                .as_ref()
+                .is_some_and(|bundle| bundle.identity == identity) =>
+            {
+                self.phase = Phase::SendingManifest;
+                self.deadline = now + HELLO_TIMEOUT;
+                Ok(())
+            }
+            (
+                Phase::Active,
+                ClientMessage::Hello { .. }
+                | ClientMessage::ContentReady { .. }
+                | ClientMessage::BundleRequest { .. }
+                | ClientMessage::BundleReady { .. },
+            ) => Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "duplicate content handshake message",
+            )),
             (Phase::Active, message) => self.enqueue_command(input, message),
             _ => Err(io::Error::new(
                 ErrorKind::InvalidData,

@@ -171,7 +171,8 @@ fn serve_listener_inner(
     let address = listener.local_addr()?;
     let inventory_store = state.inventory_store.clone();
     let outbound = Arc::clone(&state.outbound);
-    let content = ContentHandshake::from_catalog(state.world.catalog_arc())?;
+    let content =
+        ContentHandshake::with_bundle(state.world.catalog_arc(), state.client_bundle.as_deref())?;
     let workers = InventoryWorkers::new(inventory_store)?;
     let poller = Arc::new(Poller::new()?);
     outbound.install_poller(Arc::clone(&poller))?;

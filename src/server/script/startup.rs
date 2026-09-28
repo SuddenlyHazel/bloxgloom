@@ -39,6 +39,7 @@ use std::sync::Arc;
 const MAX_ITEMS_PER_PACKAGE: usize = 32;
 
 pub(in crate::server) struct Declarations {
+    pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     packages: Vec<bloxgloom_host_api::composition::Package>,
     items: Vec<Item>,
     generation: Vec<bloxgloom_host_api::generation::Registration>,
@@ -97,6 +98,7 @@ impl Declarations {
             }
         }
         Ok(Self {
+            client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
             generation,

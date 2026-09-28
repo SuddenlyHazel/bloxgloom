@@ -103,9 +103,9 @@
 //! Explicit development startup also runs entries with a bounded registration
 //! host instead of integer inputs (see the sibling `startup` module). Semantic
 //! actions bind the public gameplay Context and existing host transactions;
-//! other events remain unbound. Asset rendering, compatibility negotiation,
-//! network/UI and hot reload are not added.
-//! No world/save/wire format changes accompany this local manifest format.
+//! other events remain unbound. The frozen client artifact is delivered by the
+//! join transport; asset rendering, client script execution/UI and hot reload
+//! remain separate. This local manifest format does not alter world/save data.
 //! Generation modules can also be registered at startup; their frozen sources
 //! run in fresh VMs on loader threads through the public Contributor contract.
 
@@ -115,6 +115,7 @@ pub(super) mod manifest;
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::{ScriptError, ScriptFailure};
 use manifest::Manifest;
@@ -130,7 +131,7 @@ const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 /// Private fields prevent mutation or bypassing validation after discovery.
 pub struct PackageSnapshot {
     packages: BTreeMap<String, Package>,
-    client: client::ClientBundle,
+    client: Arc<client::ClientBundle>,
 }
 
 struct Package {
@@ -350,11 +351,11 @@ impl PackageSnapshot {
         }
         // Build only from the validated immutable snapshot, never reopen files or
         // serialize a local manifest (which contains server-only paths/entry).
-        let client = client::ClientBundle::from_packages(&packages)?;
+        let client = Arc::new(client::ClientBundle::from_packages(&packages)?);
         Ok(Self { packages, client })
     }
 
-    pub fn client_bundle(&self) -> &client::ClientBundle {
+    pub fn client_bundle(&self) -> &Arc<client::ClientBundle> {
         &self.client
     }
 

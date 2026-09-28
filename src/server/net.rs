@@ -25,11 +25,13 @@ use std::time::Duration;
 #[cfg(test)]
 use std::time::Instant;
 
+mod bundle;
 mod reactor;
 pub(in crate::server) use reactor::{TransportSnapshot, TransportStats};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+const BUNDLE_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(test)]
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -41,10 +43,23 @@ pub(super) struct ContentHandshake {
     fingerprint: u64,
     manifest_frames: Arc<[Arc<[u8]>]>,
     catalog: Arc<Catalog>,
+    bundle: Option<Arc<bundle::BundleHandshake>>,
 }
 
 impl ContentHandshake {
+    #[cfg(test)]
     pub(super) fn from_catalog(catalog: Arc<Catalog>) -> io::Result<Arc<Self>> {
+        Self::with_bundle(catalog, None)
+    }
+
+    fn with_bundle(
+        catalog: Arc<Catalog>,
+        bundle: Option<&super::script::package::client::ClientBundle>,
+    ) -> io::Result<Arc<Self>> {
+        let bundle = bundle
+            .map(|bundle| bundle::BundleHandshake::new(bundle, &catalog))
+            .transpose()?
+            .map(Arc::new);
         let manifest = ContentManifest::from_catalog(&catalog).encode()?;
         let fingerprint = catalog.fingerprint();
         let total_len = u32::try_from(manifest.len())
@@ -65,6 +80,7 @@ impl ContentHandshake {
             manifest_frames.push(Arc::from(frame));
         }
         Ok(Arc::new(Self {
+            bundle,
             fingerprint,
             manifest_frames: Arc::from(manifest_frames),
             catalog,

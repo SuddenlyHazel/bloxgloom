@@ -31,6 +31,7 @@ mod runtime;
 // Phase 4 foundation: not dispatched by gameplay yet.
 #[allow(dead_code)]
 mod script;
+pub(crate) use script::package::client as client_bundle;
 mod simulation;
 mod spawn;
 mod startup;
@@ -149,6 +150,7 @@ impl Client {
 }
 
 struct State {
+    client_bundle: Option<Arc<script::package::client::ClientBundle>>,
     notifications: notifications::Lane,
     admission_limit: usize,
     world: World,
@@ -530,9 +532,11 @@ fn server_state_with_startup(
     .map_err(|error| io::Error::other(format!("entity tick worker pool: {error:?}")))?;
     let mut system_runtime =
         SystemRuntime::with_durable_store(worker_count, owner_store, wake_store, cursors)?;
+    let client_bundle = startup.client_bundle.clone();
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
     Ok(State {
+        client_bundle,
         notifications,
         admission_limit,
         world,
@@ -714,7 +718,9 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
         ClientMessage::Hello { .. } => {
             Err(io::Error::new(ErrorKind::InvalidData, "duplicate Hello"))
         }
-        ClientMessage::ContentReady { .. } => Err(io::Error::new(
+        ClientMessage::ContentReady { .. }
+        | ClientMessage::BundleRequest { .. }
+        | ClientMessage::BundleReady { .. } => Err(io::Error::new(
             ErrorKind::InvalidData,
             "duplicate content readiness",
         )),

@@ -783,13 +783,18 @@ fn receive_content_manifest(peer: &mut TcpStream) -> (u64, Vec<u8>) {
     let mut manifest = Vec::new();
     let mut total_len = None;
     let mut fingerprint = None;
+    let mut first = protocol::read_server(&mut *peer).unwrap();
+    if let ServerMessage::BundleOffer { identity } = first {
+        crate::client::bundle::receive(peer, identity, None).unwrap();
+        first = protocol::read_server(&mut *peer).unwrap();
+    }
     loop {
         let ServerMessage::ContentManifestPart {
             fingerprint: part_fingerprint,
             total_len: part_total_len,
             offset,
             bytes,
-        } = protocol::read_server(&mut *peer).unwrap()
+        } = first
         else {
             panic!("expected content manifest part");
         };
@@ -802,6 +807,7 @@ fn receive_content_manifest(peer: &mut TcpStream) -> (u64, Vec<u8>) {
         if manifest.len() == total_len.unwrap() {
             break;
         }
+        first = protocol::read_server(&mut *peer).unwrap();
     }
     (fingerprint.unwrap(), manifest)
 }
