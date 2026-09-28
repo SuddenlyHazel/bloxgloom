@@ -451,6 +451,11 @@ harvesting migration are accepted. No phase-level work remains.
   player credit checks and atomic drop/inventory WAL ownership remain host-owned.
   The real listener pickup/restart test, 892/892 suite, formatting and strict
   Clippy pass.
+- **Verified Luau pickup binding:** `collect_drop(entity, max_count)`
+  reuses the same public routing and authenticated inventory operations. The
+  server still selects automatic candidates and validates credits and WAL work.
+  Its real listener/restart test and the 892/892 suite, formatting and strict
+  Clippy pass.
 - Authenticated `give`/`spawn` console requests use registered actions and
   public Luau gameplay operations (`99e8276`); `help` is client-local text.
   Production `InventoryMove` uses public `move_slots`, preserving capped merges,
