@@ -96,4 +96,9 @@ canonical bytes; it does not authenticate who supplied that key. Package
 client execution and decoded-image limits are separate work. Local package
 servers now offer the verified bundle before catalog matching and gameplay
 admission. The client verifies and caches one artifact across reconnects;
-matching bundle bytes alone cannot construct the matching client catalog yet.
+matching bundle bytes alone do not grant client catalog compatibility.
+For current local packages that register only sprite items, canonical bundle
+metadata now constructs a fresh matching session catalog, including saved
+numeric IDs. Downloaded code remains inert. Servers with other scripted
+catalog registrations still reject the client explicitly until those metadata
+types are supported.

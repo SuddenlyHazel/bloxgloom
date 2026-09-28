@@ -764,6 +764,13 @@ This section exists so compaction or a new session does not restart the design.
   not yet registered into the client catalog, so modded joins can still reject
   catalog mismatch; no compatibility check was weakened. Listener/protocol/
   client focused tests, strict Clippy and formatting passed.
+- **Phase 5 negotiated catalog slice:** the verified artifact now includes
+  canonical, data-only metadata for currently supported package sprite items.
+  Clients build a fresh per-session catalog, resolve the server's persisted
+  numeric manifest, and verify its exact fingerprint before `ContentReady`.
+  Real listener joins and modded/plain session switches pass without executing
+  downloaded source. Other content registrations fail explicitly rather than
+  admitting clients against an incomplete catalog; Phase 5 remains open.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

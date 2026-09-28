@@ -10,6 +10,11 @@ use std::time::{Duration, Instant};
 
 static CACHE: Mutex<Option<Arc<ClientBundle>>> = Mutex::new(None);
 
+// Tests asserting single-entry cache reuse must exclude concurrent production
+// connects, which legitimately replace that entry with a different artifact.
+#[cfg(test)]
+pub(crate) static TEST_CACHE_LOCK: Mutex<()> = Mutex::new(());
+
 pub(super) fn install(
     socket: &mut TcpStream,
     identity: BundleIdentity,

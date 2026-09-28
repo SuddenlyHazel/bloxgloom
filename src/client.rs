@@ -252,9 +252,9 @@ mod kiln;
 mod mesh_queue;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
-#[cfg(test)]
-pub(crate) use workers::connect_bundle_probe;
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
+#[cfg(test)]
+pub(crate) use workers::{connect_bundle_probe, connect_catalog_probe, connect_inventory_probe};
 
 #[derive(Default)]
 struct Keys {

@@ -1,6 +1,6 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 1
+//! Canonical, client-safe package set, independent of filesystem paths. Version 2
 //! is an uncompressed little-endian length-prefixed format, not a save or network
-//! protocol. No entry, server capabilities, local paths or original manifests are
+//! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
 //! including empty server-only libraries, so dependency validation is complete.
 //!
@@ -18,10 +18,13 @@ use super::manifest::{SourceSide, identifier, valid_version};
 use super::{MAX_ASSET_BYTES, MAX_ASSETS, MAX_MODULES, MAX_PACKAGES, MAX_SOURCE_BYTES};
 use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
-const MAGIC: &[u8] = b"BGCLIENT\x01";
+mod declarations;
+
+const MAGIC: &[u8] = b"BGCLIENT\x02";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
-pub const MAX_BUNDLE_BYTES: usize = MAX_TOTAL_BYTES + 1024 * 1024;
+/// Two further MiB bound declarative startup metadata (64 * 32 sprite items).
+pub const MAX_BUNDLE_BYTES: usize = MAX_TOTAL_BYTES + 3 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CacheKey([u8; 32]);
@@ -38,7 +41,7 @@ impl CacheKey {
     /// Domain/version prefix avoids collisions with other future cache formats.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
-        let mut name = String::from("client-v1-sha256-");
+        let mut name = String::from("client-v2-sha256-");
         for byte in self.0 {
             write!(name, "{byte:02x}").expect("write String");
         }
@@ -74,6 +77,7 @@ pub struct ClientBundle {
     bytes: Vec<u8>,
     key: CacheKey,
     packages: BTreeMap<String, ClientPackage>,
+    declarations: Option<declarations::Startup>,
 }
 
 impl ClientBundle {
@@ -125,6 +129,7 @@ impl ClientBundle {
                 writer.field(bytes)?;
             }
         }
+        writer.count(0)?; // Discovery alone has not executed startup declarations.
         let key = CacheKey(Sha256::digest(&writer.0).into());
         // Use the same bounded canonical validator for local publication and
         // later cache/stream decoding. Failure never publishes a partial set.
@@ -197,6 +202,7 @@ impl ClientBundle {
                 },
             );
         }
+        let declarations = declarations::Startup::decode(&mut reader, &packages)?;
         if !reader.0.is_empty() {
             return Err(invalid());
         }
@@ -211,6 +217,7 @@ impl ClientBundle {
             bytes: bytes.to_vec(),
             key: expected,
             packages,
+            declarations,
         })
     }
 }

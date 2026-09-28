@@ -10,8 +10,9 @@
 //! Each package may declare 32 non-placeable sprite items, with builtin texture
 //! references, a white swatch, no components and the ordinary 128 stack cap.
 //! Keys must belong to the entry package; imported helpers may receive the
-//! callback but gain only that entry's authority. No assets, grants or client
-//! loading are provided. Every dependency entry runs too; library packages can
+//! callback but gain only that entry's authority. No assets or grants are
+//! registered. Sprite declarations are exported as inert client metadata.
+//! Every dependency entry runs too; library packages can
 //! return a no-op entry and export helpers from other modules.
 //! With `requires bloxgloom:generation/v1`, an entry may additionally declare one
 //! `host.register_generator("demo:terrain", 1, "demo:terrain")`. The named own
@@ -97,8 +98,20 @@ impl Declarations {
                 ));
             }
         }
+        let client_bundle = snapshot
+            .client_bundle()
+            .with_startup(
+                &packages,
+                &items,
+                !generation.is_empty()
+                    || !actions.is_empty()
+                    || !handlers.is_empty()
+                    || !entities.is_empty()
+                    || !systems.is_empty(),
+            )
+            .map_err(std::io::Error::other)?;
         Ok(Self {
-            client_bundle: Arc::clone(snapshot.client_bundle()),
+            client_bundle: Arc::new(client_bundle),
             packages,
             items,
             generation,

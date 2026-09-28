@@ -283,8 +283,9 @@ fn bundle_wire_rejects_unbounded_lengths_before_allocation() {
 
 #[test]
 fn production_network_installs_session_bundle_before_exposing_welcome() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     // An empty local package root exports a canonical empty artifact while
-    // retaining the built-in catalog, which this no-script client can resolve.
+    // retaining the built-in catalog.
     let fixture = Fixture::new();
     let mut prior = None;
     for _ in 0..2 {
@@ -320,17 +321,16 @@ fn production_network_installs_session_bundle_before_exposing_welcome() {
                 .is_none()
         );
     });
-    // Downloaded sources do not fabricate missing catalog definitions. Client
-    // registration is a later increment; keep the existing mismatch gate.
+    // Package identity is now declared as inert metadata. The hostile client
+    // source remains unexecuted, and opaque image bytes remain undecoded.
     let modded = self::fixture();
     gameplay::serve(Box::new(modded.open().unwrap()), |address| {
-        let error = crate::client::connect_bundle_probe(&address.to_string(), 0x600).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
-        assert!(error.to_string().contains("content definitions differ"));
-        // Same profile can still complete a catalog-capable handshake. The
-        // failed default client was not admitted merely for verifying bytes.
-        let (mut peer, identity) = offer(address, 0x600);
-        crate::client::bundle::receive(&mut peer, identity, None).unwrap();
-        welcome(&mut peer);
+        let catalog = crate::client::connect_catalog_probe(&address.to_string(), 0x600).unwrap();
+        assert!(
+            crate::content::ContentManifest::from_catalog(&catalog)
+                .entries
+                .iter()
+                .any(|e| e.key == "demo:package")
+        );
     });
 }

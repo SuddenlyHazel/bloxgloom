@@ -135,7 +135,7 @@ fn full_coordinator_queue_preserves_one_command_and_its_sequence() {
 fn bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline() {
     use crate::server::client_bundle::{CacheKey, ClientBundle};
     use sha2::{Digest, Sha256};
-    let bytes = b"BGCLIENT\x01\0\0\0\0";
+    let bytes = b"BGCLIENT\x02\0\0\0\0\0\0\0\0";
     let bundle =
         ClientBundle::decode_verify(bytes, CacheKey::from_bytes(Sha256::digest(bytes).into()))
             .unwrap();

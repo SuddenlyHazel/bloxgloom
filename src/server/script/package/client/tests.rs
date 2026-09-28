@@ -26,6 +26,7 @@ fn package(writer: &mut Writer, name: &str, dependency: Option<&str>) {
 fn tampering_truncation_trailing_bytes_and_wrong_keys_are_rejected() {
     let mut writer = header(1);
     package(&mut writer, "app", None);
+    writer.count(0).unwrap(); // no startup metadata
     let expected = key(&writer.0);
     ClientBundle::decode_verify(&writer.0, expected).unwrap();
     assert_eq!(expected.as_bytes(), &Sha256::digest(&writer.0)[..]);
@@ -53,6 +54,7 @@ fn canonical_order_dependency_identity_and_count_bounds_are_verified() {
         let mut writer = header(2);
         package(&mut writer, a, dependency);
         package(&mut writer, b, None);
+        writer.count(0).unwrap();
         assert!(ClientBundle::decode_verify(&writer.0, key(&writer.0)).is_err());
     }
     let writer = header(MAX_PACKAGES + 1);
@@ -78,4 +80,96 @@ fn decoder_rejects_server_classification_and_oversized_payloads_before_copying()
         writer.count(0).unwrap(); // assets
         assert!(ClientBundle::decode_verify(&writer.0, key(&writer.0)).is_err());
     }
+}
+
+fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)]) -> Vec<u8> {
+    let mut writer = header(1);
+    package(&mut writer, owner, None);
+    writer.count(1).unwrap(); // startup metadata
+    writer.count(0).unwrap(); // supported
+    writer.count(requires.len()).unwrap();
+    for requirement in requires {
+        writer.field(requirement.as_bytes()).unwrap();
+    }
+    writer.count(items.len()).unwrap();
+    for (key, display, texture) in items {
+        for field in [key, display, texture] {
+            writer.field(field.as_bytes()).unwrap();
+        }
+    }
+    writer.0
+}
+
+#[test]
+fn metadata_validates_namespace_capability_shape_and_limits_before_compilation() {
+    const CONTENT: &str = bloxgloom_host_api::composition::CONTENT;
+    let item = ("demo:token", "Token", "bloxgloom:stone");
+    let bytes = sprite_metadata("demo", &[CONTENT], &[item]);
+    let verified = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+    assert!(
+        verified
+            .session_catalog()
+            .unwrap()
+            .items()
+            .any(|i| i.key == "demo:token")
+    );
+    for bytes in [
+        sprite_metadata("demo", &[], &[item]),
+        sprite_metadata("demo", &[CONTENT, CONTENT], &[item]),
+        sprite_metadata("demo", &["bloxgloom:filesystem/v1"], &[item]),
+        sprite_metadata(
+            "bloxgloom",
+            &[CONTENT],
+            &[("bloxgloom:token", "Token", "bloxgloom:stone")],
+        ),
+        sprite_metadata(
+            "demo",
+            &[CONTENT],
+            &[("other:token", "Token", "bloxgloom:stone")],
+        ),
+        sprite_metadata("demo", &[CONTENT], &[("demo:token", "", "bloxgloom:stone")]),
+        sprite_metadata(
+            "demo",
+            &[CONTENT],
+            &[("demo:token", &"x".repeat(256), "bloxgloom:stone")],
+        ),
+        sprite_metadata(
+            "demo",
+            &[CONTENT],
+            &[("demo:token", "Token", "demo:custom")],
+        ),
+        sprite_metadata("demo", &[CONTENT], &[item, item]),
+        sprite_metadata("demo", &[CONTENT], &[item; 33]),
+    ] {
+        assert!(ClientBundle::decode_verify(&bytes, key(&bytes)).is_err());
+    }
+    let bytes = sprite_metadata(
+        "demo",
+        &[CONTENT],
+        &[("demo:token", "Token", "bloxgloom:missing")],
+    );
+    let bundle = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+    assert!(
+        bundle
+            .session_catalog()
+            .unwrap_err()
+            .to_string()
+            .contains("missing texture")
+    );
+}
+
+#[test]
+fn startup_metadata_is_integrity_checked_and_cannot_be_truncated_even_with_new_digest() {
+    let bytes = sprite_metadata(
+        "demo",
+        &[bloxgloom_host_api::composition::CONTENT],
+        &[("demo:token", "Token", "bloxgloom:stone")],
+    );
+    let expected = key(&bytes);
+    for len in 0..bytes.len() {
+        assert!(ClientBundle::decode_verify(&bytes[..len], key(&bytes[..len])).is_err());
+    }
+    let mut changed = bytes;
+    *changed.last_mut().unwrap() ^= 1;
+    assert!(ClientBundle::decode_verify(&changed, expected).is_err());
 }

@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 #[path = "script_startup/bundle.rs"]
 mod bundle;
+#[path = "script_startup/bundle_catalog.rs"]
+mod bundle_catalog;
 #[path = "script_startup/gameplay.rs"]
 mod gameplay;
 #[path = "script_startup/generation.rs"]

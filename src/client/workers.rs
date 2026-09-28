@@ -49,7 +49,7 @@ impl Network {
             &ClientMessage::Hello {
                 name: "Player".into(),
                 profile,
-                content_fingerprint: crate::content::catalog().fingerprint(),
+                content_fingerprint: Catalog::builtins().fingerprint(),
             },
         )?;
         let mut first = protocol::read_server(&mut socket)?;
@@ -64,7 +64,11 @@ impl Network {
         } else {
             None
         };
-        let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first)?;
+        let local = match &bundle {
+            Some(bundle) => bundle.session_catalog()?,
+            None => Catalog::builtins(),
+        };
+        let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first, &local)?;
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
@@ -144,6 +148,7 @@ impl Network {
 fn receive_content_manifest(
     socket: &mut TcpStream,
     mut message: ServerMessage,
+    local: &Catalog,
 ) -> io::Result<(u64, Arc<Catalog>)> {
     let mut bytes = Vec::new();
     let mut expected: Option<(usize, u64)> = None;
@@ -190,7 +195,7 @@ fn receive_content_manifest(
         bytes.extend_from_slice(&part);
         if bytes.len() == total {
             let manifest = ContentManifest::decode(&bytes)?;
-            let catalog = manifest.resolve_catalog(crate::content::catalog())?;
+            let catalog = manifest.resolve_catalog(local)?;
             if catalog.fingerprint() != fingerprint {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -218,6 +223,43 @@ pub(crate) fn connect_bundle_probe(
     };
     assert!(matches!(*first, ServerMessage::Welcome { .. }));
     Ok(network._bundle.clone())
+}
+
+#[cfg(test)]
+pub(crate) fn connect_catalog_probe(address: &str, profile: u128) -> io::Result<Arc<Catalog>> {
+    Ok(Network::connect(address, 1, profile)?.catalog)
+}
+
+#[cfg(test)]
+pub(crate) fn connect_inventory_probe(
+    address: &str,
+    profile: u128,
+    expected: crate::content::ItemId,
+) -> io::Result<Arc<Catalog>> {
+    let network = Network::connect(address, 1, profile)?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let incoming = network
+            .incoming
+            .recv_timeout(remaining)
+            .expect("inventory deadline");
+        match incoming {
+            Incoming::Message(message) => {
+                if let ServerMessage::Inventory { slots, .. } = *message {
+                    assert!(
+                        slots
+                            .iter()
+                            .flatten()
+                            .any(|stack| stack.item == expected && stack.count == 128)
+                    );
+                    return Ok(network.catalog);
+                }
+            }
+            Incoming::Closed(error) => panic!("closed before inventory: {error}"),
+        }
+        assert!(std::time::Instant::now() < deadline, "inventory deadline");
+    }
 }
 
 pub(super) struct ConfigWriter {
