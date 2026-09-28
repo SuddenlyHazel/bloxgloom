@@ -548,7 +548,7 @@ mixed-load response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **873/873**. That does not close these cross-system checks or verify the live
+  **879/879**. That does not close these cross-system checks or verify the live
   fire cue.
 
 Land and review usable increments regularly. A completed slice does not check
@@ -1109,8 +1109,10 @@ This section exists so compaction or a new session does not restart the design.
   sends a durable intent, then edits a neighboring chunk on a later tick;
   real-listener/restart, unavailable terrain, read-fence, receipt loss and
   old-fingerprint tests passed. Five focused integration tests, formatting and
-  strict Clippy passed; the full main-tree run is pending. Native fire and
-  directly authored owner entity/drop operations remain open.
+  strict Clippy passed; the main-tree 4-thread suite passed **879/879**. An
+  isolated agent run hit a stale-entity kiln placement failure, also observed
+  with the shared main-tree test binary on a rerun; the main-tree suite passed.
+  Native fire and directly authored owner entity/drop operations remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
