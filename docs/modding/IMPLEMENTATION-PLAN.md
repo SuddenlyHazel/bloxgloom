@@ -532,7 +532,7 @@ to check in this phase.
   the actual host contract and deferred model scope.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
-  rendering/performance comparisons. The latest suite is **857/857**, but that
+  rendering/performance comparisons. The latest suite is **864/864**, but that
   does not close these cross-system checks or verify the live fire cue.
 
 Land and review usable increments regularly. A completed slice does not check
@@ -1050,7 +1050,7 @@ This section exists so compaction or a new session does not restart the design.
   Startup failure refuses readiness with package/module attribution, and
   reconnect/switch constructs fresh session state. Focused real-listener,
   failure, import-visibility and caught-limit tests, formatting and strict
-  Clippy passed; the isolated agent suite passed 861/861. General client
+  Clippy passed; the integrated suite now passes **864/864**. General client
   services and asynchronous window-visible preparation remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
