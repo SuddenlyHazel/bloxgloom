@@ -1117,6 +1117,14 @@ This section exists so compaction or a new session does not restart the design.
   isolated agent run hit a stale-entity kiln placement failure, also observed
   with the shared main-tree test binary on a rerun; the main-tree suite passed.
   Native fire and directly authored owner entity/drop operations remain open.
+- **Kiln probe timing fix:** a follow-up full run after the UI preview change
+  reproduced the old `stale action entity` failure. The real-listener latency
+  harness now retries only that expected revision rejection after observing a
+  fresh authoritative workstation replica; other denials still fail and
+  placement latency samples remain unchanged. Focused kiln, formatting and
+  strict Clippy checks passed, followed by **879/879** on the main-tree 4-thread
+  suite. This does not change gameplay authorization or prove the test can
+  never fail under other scheduling loads.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
