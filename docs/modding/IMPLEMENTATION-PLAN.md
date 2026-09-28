@@ -929,6 +929,12 @@ This section exists so compaction or a new session does not restart the design.
   full-suite response-path test failed and reproduced isolated while other
   client work was concurrently in flight, so final combined verification
   remains open rather than being declared clean.
+- **Fire presentation check:** a short, optional cue for committed burns was
+  committed with focused tests and an inspected synthetic preview, but the
+  user's live glowstone-beside-tree test showed **no visible fire**. Do not
+  treat the visual as verified. Park presentation debugging for now; it is
+  separate from the confirmed server-side fire spread and the Phase 2 migration
+  of fire propagation/delivery onto the public gameplay contract.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
