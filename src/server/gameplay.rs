@@ -10,6 +10,7 @@ pub(super) mod inventory;
 
 pub(super) struct Participants<'a> {
     pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    pub actor_position: Option<[f32; 3]>,
     pub admin: bool,
     pub entities: &'a super::entities::EntityStore,
 }
@@ -47,6 +48,7 @@ struct WorldSnapshot<'a> {
     reads: &'a mut TerrainReads,
     requested: &'a mut Vec<ChunkKey>,
     actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    actor_position: Option<[f32; 3]>,
     admin: bool,
     inventory_read: bool,
     entities: Option<&'a super::entities::EntityStore>,
@@ -55,6 +57,9 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn player_position(&self) -> Option<[f32; 3]> {
+        self.actor.and(self.actor_position)
+    }
     fn admin(&self) -> bool {
         self.admin && self.actor.is_some_and(|(profile, _)| profile != 0)
     }
@@ -296,6 +301,7 @@ pub(super) fn plan_removals(
         reads,
         requested,
         actor,
+        actor_position: participants.actor_position,
         admin: participants.admin,
         inventory_read: false,
         entities: Some(participants.entities),

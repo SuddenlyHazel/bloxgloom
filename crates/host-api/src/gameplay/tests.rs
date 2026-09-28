@@ -48,6 +48,14 @@ fn pickup_routing_respects_components_cap_and_failed_destination() {
     assert_eq!(success.remaining(), 0);
 }
 
+#[test]
+fn non_player_snapshot_has_no_authored_player_position() {
+    let mut world = World { reads: 0 };
+    let context = Context::new(&mut world, 8);
+    assert_eq!(context.player(), None);
+    assert_eq!(context.player_position(), None);
+}
+
 struct World {
     reads: usize,
 }

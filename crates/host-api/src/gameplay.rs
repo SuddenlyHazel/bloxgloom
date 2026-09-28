@@ -58,6 +58,11 @@ pub trait Snapshot {
     fn tick(&self) -> u64;
     fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
+    /// Captured authoritative feet position for this authenticated actor.
+    /// Never derive this from an action's client-supplied target coordinates.
+    fn player_position(&self) -> Option<[f32; 3]> {
+        None
+    }
     /// Server-authenticated admin identity, never derived from request bytes.
     fn admin(&self) -> bool {
         false
@@ -121,6 +126,9 @@ impl<'a> Context<'a> {
     }
     pub fn player(&self) -> Option<InventoryId> {
         self.snapshot.player().map(InventoryId::Player)
+    }
+    pub fn player_position(&self) -> Option<[f32; 3]> {
+        self.snapshot.player_position()
     }
     /// Explicit creative grant, gated by the host's authenticated admin session.
     /// Ordinary `give` remains available to gameplay rewards without admin access.

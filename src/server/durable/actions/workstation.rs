@@ -137,6 +137,7 @@ pub(super) fn place(
         tick.get(),
         crate::server::gameplay::Participants {
             actor: Some((command.profile, &inventory)),
+            actor_position: context.client(command.id).map(|client| client.position()),
             admin: false,
             entities: context.entities(),
         },
@@ -273,6 +274,7 @@ pub(super) fn remove(
         tick.get(),
         crate::server::gameplay::Participants {
             actor: Some((command.profile, &inventory_before)),
+            actor_position: context.client(command.id).map(|client| client.position()),
             admin: false,
             entities: context.entities(),
         },

@@ -154,6 +154,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         },
         crate::server::gameplay::Participants {
             actor: Some((profile, &before)),
+            actor_position: Some(position),
             admin: state.admin_profile == Some(profile),
             entities: &state.entities,
         },

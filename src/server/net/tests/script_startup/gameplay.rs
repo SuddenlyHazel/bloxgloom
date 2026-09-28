@@ -25,6 +25,9 @@ return function(c, e)
     assert(e.kind == 'ActionRequested' and e.action == 'demo:shift')
     assert(e.slot == 0 and e.cell == nil and e.entity_lo == nil)
     assert(e.position[1] == 0.5 and e.position[2] == 80 and e.position[3] == 0.5)
+    -- The request's item-action target is [0,0,0]; this is session state instead.
+    assert(c.player_position[1] == 0.5 and c.player_position[2] == 80 and c.player_position[3] == 0.5)
+    assert(not pcall(function() c.player_position[1] = 2 end))
     assert(type(c.tick_lo) == 'number' and type(c.tick_hi) == 'number')
     assert(print == nil and require == nil and os == nil)
     assert(c.transfer(e.slot, 1, 1))
@@ -391,6 +394,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
             },
             Participants {
                 actor: Some((PROFILE, &inventory)),
+                actor_position: Some([0.5, 80.0, 0.5]),
                 admin: false,
                 entities: &state.entities,
             },

@@ -403,6 +403,7 @@ fn plan_block_edit(
             &coords,
             &removals,
             (profile, &updated),
+            position,
             tick.get(),
         )?;
         let updated = plan.inventory.unwrap_or(updated);
@@ -468,6 +469,7 @@ fn plan_block_edit(
         &coords,
         &removals,
         (profile, &inventory_before),
+        position,
         tick.get(),
     )?;
     let coords = plan.edits;
@@ -515,6 +517,7 @@ fn plan_gameplay_removals(
     edits: &[crate::server::gameplay::Edit],
     removals: &[crate::server::gameplay::Removal],
     actor: (u128, &Inventory),
+    actor_position: [f32; 3],
     tick: u64,
 ) -> io::Result<crate::server::gameplay::WorldPlan> {
     let mut requested = Vec::new();
@@ -531,6 +534,7 @@ fn plan_gameplay_removals(
         },
         crate::server::gameplay::Participants {
             actor: Some(actor),
+            actor_position: Some(actor_position),
             admin: false,
             entities: &state.entities,
         },

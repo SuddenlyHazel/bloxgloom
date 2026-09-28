@@ -129,6 +129,10 @@ event's entity-ID table; host inventory access, pickup delay, destination
 filters and transactional validation still apply. A refused destination leaves
 those items available for later slots. This does not select candidates or
 permit a client to claim a pickup based on animation timing.
+`c.player_position` is a readonly 1-indexed `{x,y,z}` sequence of the
+authenticated actor's server-captured feet position, or nil for non-player
+events. It is not the requested target cell and does not authorize edits or
+movement by itself.
 `spawn_stack` accepts the exact `{item,count,components}` stack returned by
 `take`, so a script can move a component-bearing item from an inventory to a
 world drop in one authoritative transaction. The builtin drop-stack binding

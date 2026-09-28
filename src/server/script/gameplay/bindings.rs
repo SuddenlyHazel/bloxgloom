@@ -21,6 +21,14 @@ pub(super) fn invoke(
     let host = lua.create_table()?;
     host.set("tick_lo", context.tick() as u32)?;
     host.set("tick_hi", (context.tick() >> 32) as u32)?;
+    if let Some(position) = context.player_position() {
+        let feet = lua.create_table()?;
+        for (index, coordinate) in position.into_iter().enumerate() {
+            feet.raw_set(index + 1, coordinate)?;
+        }
+        feet.set_readonly(true);
+        host.set("player_position", feet)?;
+    }
     let context = RefCell::new(context);
     // Every argument is a raw Value: decoding never calls metamethods, walks
     // script tables or allocates an unbounded Rust string. Errors are latched

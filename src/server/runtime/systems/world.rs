@@ -187,6 +187,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         },
         Participants {
             actor: None,
+            actor_position: None,
             admin: false,
             entities,
         },
