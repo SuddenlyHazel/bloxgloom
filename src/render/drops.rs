@@ -282,4 +282,40 @@ mod tests {
                 .all(|vertex| vertex[8] == 17.0)
         );
     }
+
+    #[test]
+    fn registered_non_placeable_item_can_choose_cube_or_sprite_drop_mesh() {
+        use bloxgloom_host_api::content::{Components, Item};
+        let mut catalog = Catalog::builtins();
+        let mut declarations = crate::content::declarations::Declarations::default();
+        for sprite in [false, true] {
+            declarations
+                .item(Item {
+                    key: format!("test:{}", if sprite { "sprite" } else { "cube" }),
+                    name: "Token".into(),
+                    swatch: [1.0; 4],
+                    texture: "bloxgloom:stone".into(),
+                    placeable: None,
+                    sprite,
+                    components: Components::None,
+                })
+                .unwrap();
+        }
+        declarations.install_items_and_tags(&mut catalog).unwrap();
+        for (key, sprite) in [("test:cube", false), ("test:sprite", true)] {
+            let item = catalog.item_by_key(key).unwrap();
+            let mesh = mesh_with_catalog(
+                &[VisualDrop {
+                    item,
+                    center: Vec3::ZERO,
+                    angle: 0.0,
+                    scale: 1.0,
+                    light: LightSample::default(),
+                }],
+                &catalog,
+            );
+            assert_eq!(mesh.cutout_indices.len(), if sprite { 12 } else { 0 });
+            assert_eq!(mesh.opaque_indices.len(), if sprite { 0 } else { 36 });
+        }
+    }
 }

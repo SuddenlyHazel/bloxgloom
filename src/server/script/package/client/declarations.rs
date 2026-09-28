@@ -75,14 +75,25 @@ impl ClientBundle {
                                 || item.texture != block.textures.top
                                 || item.name != block.name
                         }
-                        None => item.placeable.is_some() || !item.sprite,
+                        None => item.placeable.is_some(),
                     }
                 {
                     return Err(invalid());
                 }
                 writer.field(item.key.as_bytes())?;
                 writer.field(item.name.as_bytes())?;
-                writer.field(item.texture.as_bytes())?;
+                // The existing three-argument record remains byte-for-byte
+                // unchanged. A non-placeable cube is distinguished by a
+                // reserved, non-key prefix on its texture field; the decoder
+                // strips it before resolving the actual texture key.
+                if cube.is_none() && !item.sprite {
+                    if item.texture.len() >= 255 {
+                        return Err(invalid());
+                    }
+                    writer.field(format!("!{}", item.texture).as_bytes())?;
+                } else {
+                    writer.field(item.texture.as_bytes())?;
+                }
             }
             let own = textures
                 .iter()
@@ -234,7 +245,11 @@ impl Startup {
             for _ in 0..count {
                 let key = reader.text(129)?;
                 let display = reader.text(255)?;
-                let texture = reader.text(255)?;
+                let encoded_texture = reader.text(255)?;
+                let (sprite, texture) = match encoded_texture.strip_prefix('!') {
+                    Some(texture) => (false, texture.to_owned()),
+                    None => (true, encoded_texture),
+                };
                 if key <= previous
                     || key
                         .split_once(':')
@@ -253,7 +268,7 @@ impl Startup {
                     texture,
                     swatch: [1.0; 4],
                     placeable: None,
-                    sprite: true,
+                    sprite,
                     components: content::Components::None,
                 });
             }
@@ -341,7 +356,7 @@ impl Startup {
                     .iter_mut()
                     .find(|i| i.key == key)
                     .ok_or_else(|| error(name, format!("block {key} has no placeable item")))?;
-                if item.name != display || item.texture != texture {
+                if item.name != display || item.texture != texture || !item.sprite {
                     return Err(error(name, format!("block {key} item does not match")));
                 }
                 item.placeable = Some(key.clone());

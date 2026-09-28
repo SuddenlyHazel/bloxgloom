@@ -5,6 +5,55 @@ use crate::server::client_bundle::{CacheKey, ClientBundle};
 use std::net::Shutdown;
 
 #[test]
+fn item_sprite_option_is_negotiated_and_omission_preserves_default_identity() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let entry = |options: &str| {
+        format!(
+            "return function(h) h.register_item('demo:token', 'Token', 'bloxgloom:stone'{options}) end"
+        )
+    };
+    fixture.package("demo", CONTENT, &entry(""));
+    let default = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    let default_key = default.client_bundle.as_ref().unwrap().cache_key();
+    let default_catalog = default.catalog();
+    let default_fingerprint = default_catalog.fingerprint();
+    assert!(
+        default_catalog
+            .item_by_key("demo:token")
+            .is_some_and(|id| default_catalog.item(id).unwrap().sprite)
+    );
+
+    fixture.package("demo", CONTENT, &entry(", { sprite = true }"));
+    let explicit = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    assert_eq!(
+        explicit.client_bundle.as_ref().unwrap().cache_key(),
+        default_key
+    );
+    assert_eq!(explicit.catalog().fingerprint(), default_fingerprint);
+
+    fixture.package("demo", CONTENT, &entry(", { sprite = false }"));
+    let state = Box::new(fixture.open().unwrap());
+    let server = state.world.catalog_arc();
+    assert_ne!(
+        state.client_bundle.as_ref().unwrap().cache_key(),
+        default_key
+    );
+    assert_ne!(server.fingerprint(), default_fingerprint);
+    let expected_manifest = ContentManifest::from_catalog(&server);
+    gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x705).unwrap();
+        assert_eq!(client.fingerprint(), server.fingerprint());
+        assert_eq!(ContentManifest::from_catalog(&client), expected_manifest);
+        let item = client
+            .item(client.item_by_key("demo:token").unwrap())
+            .unwrap();
+        assert!(!item.sprite);
+        assert!(item.placeable.is_none());
+    });
+}
+
+#[test]
 fn sprite_catalog_restart_remaps_saved_ids_and_switches_without_global_state() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();

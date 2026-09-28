@@ -215,6 +215,21 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
             "return function(h) for i = 1, 33 do pcall(function() h.register_item('bad:item' .. i, 'Item', 'bloxgloom:stone') end) end end",
             "limit exceeded",
         ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { sprite = 'false' }) end) end",
+            "sprite option must be boolean",
+        ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { unknown = true }) end) end",
+            "unknown item option",
+        ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', false) end) end",
+            "item options must be a table",
+        ),
     ];
     for (requires, source, message) in cases {
         let fixture = Fixture::new();

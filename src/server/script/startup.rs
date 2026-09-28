@@ -52,6 +52,7 @@ const MAX_TEXTURES_PER_PACKAGE: usize = 32;
 const MAX_BLOCKS_PER_PACKAGE: usize = 32;
 mod block;
 pub(in crate::server::script) use block::cube;
+mod item;
 
 pub(super) struct PackageTexture {
     pub(super) definition: Texture,
@@ -221,59 +222,63 @@ pub(super) fn invoke(
     let namespace = namespace.to_owned();
     let texture_namespace = namespace.clone();
     let block_namespace = namespace.clone();
-    let register = lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
-        let mut pending = capture.borrow_mut();
-        let result = (|| {
-            if let Some(error) = pending.error {
-                return Err(error);
-            }
-            if !permits_content {
-                return Err("register_item requires bloxgloom:content/v1");
-            }
-            if pending.items.len() >= MAX_ITEMS_PER_PACKAGE {
-                return Err("startup item limit exceeded (32 per package)");
-            }
-            // Validate lengths before copying VM strings into host allocations.
-            // Do not traverse Lua tables or invoke metamethods during decoding.
-            let key = text(key)?;
-            let name = text(name)?;
-            let texture = text(texture)?;
-            let Some((owner, local)) = key.split_once(':') else {
-                return Err("item key must be namespaced");
-            };
-            if owner != namespace || !super::package::manifest::identifier(local) {
-                return Err("item key must belong to the startup package namespace");
-            }
-            let Some((texture_owner, texture_local)) = texture.split_once(':') else {
-                return Err("item texture must be a namespaced key");
-            };
-            if (texture_owner != "bloxgloom" && texture_owner != namespace)
-                || !super::package::manifest::identifier(texture_local)
-            {
-                return Err("startup items require a builtin or package-owned texture");
-            }
-            if pending.items.iter().any(|item| item.key == key)
-                || pending.blocks.iter().any(|block| block.key == key)
-            {
-                return Err("duplicate startup item");
-            }
-            pending.items.push(Item {
-                key,
-                name,
-                texture,
-                swatch: [1.0; 4],
-                placeable: None,
-                sprite: true,
-                components: bloxgloom_host_api::content::Components::None,
-            });
-            Ok(())
-        })();
-        result.map_err(|error| {
-            // pcall cannot turn a rejected host declaration into partial success.
-            pending.error.get_or_insert(error);
-            mlua::Error::RuntimeError(error.into())
-        })
-    })?;
+    let register = lua.create_function(
+        move |_, (key, name, texture, options): (Value, Value, Value, Value)| {
+            let mut pending = capture.borrow_mut();
+            let result = (|| {
+                if let Some(error) = pending.error {
+                    return Err(error);
+                }
+                if !permits_content {
+                    return Err("register_item requires bloxgloom:content/v1");
+                }
+                if pending.items.len() >= MAX_ITEMS_PER_PACKAGE {
+                    return Err("startup item limit exceeded (32 per package)");
+                }
+                // Validate lengths before copying VM strings into host allocations.
+                // Only the bounded item option parser traverses a table; do not
+                // invoke metamethods while decoding declarations.
+                let key = text(key)?;
+                let name = text(name)?;
+                let texture = text(texture)?;
+                let sprite = item::sprite(options)?;
+                let Some((owner, local)) = key.split_once(':') else {
+                    return Err("item key must be namespaced");
+                };
+                if owner != namespace || !super::package::manifest::identifier(local) {
+                    return Err("item key must belong to the startup package namespace");
+                }
+                let Some((texture_owner, texture_local)) = texture.split_once(':') else {
+                    return Err("item texture must be a namespaced key");
+                };
+                if (texture_owner != "bloxgloom" && texture_owner != namespace)
+                    || !super::package::manifest::identifier(texture_local)
+                {
+                    return Err("startup items require a builtin or package-owned texture");
+                }
+                if pending.items.iter().any(|item| item.key == key)
+                    || pending.blocks.iter().any(|block| block.key == key)
+                {
+                    return Err("duplicate startup item");
+                }
+                pending.items.push(Item {
+                    key,
+                    name,
+                    texture,
+                    swatch: [1.0; 4],
+                    placeable: None,
+                    sprite,
+                    components: bloxgloom_host_api::content::Components::None,
+                });
+                Ok(())
+            })();
+            result.map_err(|error| {
+                // pcall cannot turn a rejected host declaration into partial success.
+                pending.error.get_or_insert(error);
+                mlua::Error::RuntimeError(error.into())
+            })
+        },
+    )?;
     let register_texture = lua.create_function(move |_, (key, asset): (Value, Value)| {
         let mut pending = texture_capture.borrow_mut();
         let result = (|| {
