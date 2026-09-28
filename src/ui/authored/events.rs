@@ -15,7 +15,11 @@ impl Session {
     pub(super) fn can_dispatch(&self, i: usize) -> bool {
         self.document().script.is_none()
             || self.document().nodes[i].event.is_none()
-            || (self.pending.is_none() && self.failure.is_none() && self.worker.is_some())
+            || (self.pending.is_none()
+                && self.action.is_none()
+                && self.in_flight.is_none()
+                && self.failure.is_none()
+                && self.worker.is_some())
     }
 
     pub(super) fn dispatch(&mut self, i: usize) -> bool {
@@ -105,13 +109,23 @@ impl Session {
         let result = reply.result.and_then(|commands| {
             // Validate the whole batch before modifying anything. Target IDs must
             // name this exact document, not even another document of this package.
+            let owner = self.document().id.split_once(':').unwrap().0;
             let valid = commands.iter().all(|c| match c {
                 Command::State(_) => true,
                 Command::Text(id, _) => self.document().nodes.iter().any(|n| {
                     n.id == *id && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
                 }),
                 Command::Visible(id, _) => self.document().nodes.iter().any(|n| n.id == *id),
-            });
+                Command::Action(key) => key
+                    .split_once(':')
+                    .is_some_and(|(package, local)| package == owner && identifier(local)),
+            }) && commands
+                .iter()
+                .filter(|c| matches!(c, Command::Action(_)))
+                .count()
+                <= 1
+                && (self.action.is_none() && self.in_flight.is_none()
+                    || !commands.iter().any(|c| matches!(c, Command::Action(_))));
             if !valid {
                 return Err(format!(
                     "{}: invalid local-ui target",
@@ -143,6 +157,10 @@ impl Session {
                             .unwrap();
                         self.visible[i] = visible;
                     }
+                    Command::Action(key) => {
+                        self.feedback = Some("REQUESTING ACTION".into());
+                        self.action = Some(key);
+                    }
                 }
             }
             if self.focused.is_some_and(|i| !self.is_visible(i)) {
@@ -164,6 +182,39 @@ impl Session {
         }
     }
 
+    pub(crate) fn take_action(&mut self) -> Option<String> {
+        self.action.take()
+    }
+
+    pub(crate) fn action_submitted(&mut self, id: u128) {
+        self.in_flight = Some((id, self.document_generation));
+        self.feedback = Some("WAITING FOR SERVER".into());
+    }
+
+    pub(crate) fn action_failed_locally(&mut self, reason: &str) {
+        self.feedback = Some(format!("ACTION NOT SENT: {reason}"));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn feedback(&self) -> Option<&str> {
+        self.feedback.as_deref()
+    }
+
+    pub(crate) fn action_result(&mut self, id: u128, accepted: bool, reason: &str) {
+        if let Some((pending, generation)) = self.in_flight
+            && pending == id
+        {
+            self.in_flight = None;
+            if generation == self.document_generation {
+                self.feedback = Some(if accepted {
+                    "SERVER APPLIED ACTION".into()
+                } else {
+                    format!("SERVER DENIED: {reason}")
+                });
+            }
+        }
+    }
+
     pub(super) fn is_visible(&self, mut i: usize) -> bool {
         loop {
             if !self.visible[i] {
@@ -181,7 +232,7 @@ impl Session {
             "UNBOUND"
         } else if self.failure.is_some() || self.worker.is_none() {
             "DISABLED: HANDLER ERROR"
-        } else if self.pending.is_some() {
+        } else if self.pending.is_some() || self.action.is_some() || self.in_flight.is_some() {
             "BUSY: INPUT PAUSED"
         } else {
             "LOCAL UI"

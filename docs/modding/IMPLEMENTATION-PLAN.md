@@ -399,10 +399,12 @@ The following are known material limitations of the committed implementation.
 These are work to finish, not deferred deliverables or implicit approval to
 ship reduced versions of phases 2–8:
 
-1. **Authored UI cannot request gameplay.** Its Luau events edit only local
-   text, visibility and a short string. Even the sample “Plant a seed” button
-   changes presentation only; it does not plant anything. It needs an explicit
-   authorized server-request bridge, result/receipt handling and a real example.
+1. **Authored UI requests cover only a narrow action slice.** Luau events can
+   now request one package-owned registered item/empty gameplay action; the
+   client supplies its current selection/session/revision and shows the server
+   receipt. `uidemo` actually transfers one stick on the server. Block/entity
+   targeting, bounded argument schemas, server-driven UI updates and broad
+   built-in UI migration remain; the text input is still local-only.
 2. **Server gameplay parity is incomplete.** Owner-world transactions now
    include generated entity/drop participants, but wakes have no payload and native fire
    propagation/delivery, drop motion/merging/expiration, player rules and
@@ -426,7 +428,7 @@ ship reduced versions of phases 2–8:
 6. **Authored UI is an initial widget subset.** No scrolling, wrapping,
    Unicode shaping/IME, clipboard, accessibility or dynamic document building.
    The other built-in interfaces have not yet migrated onto it. The current
-   UI event bridge cannot issue authorized game requests (item 1).
+   authorized UI request bridge covers only the item/empty slice (item 1).
 7. **Shader/material/effect support is partial.** Package UI images/fonts and
    one verified WGSL fullscreen scene-color effect now work, but custom voxel/
    item materials, packaged world textures, typed parameters and multi-pass
@@ -489,7 +491,8 @@ This section exists so compaction or a new session does not restart the design.
   local client UI handler, not complete binding parity. Phase 5 transfers
   bundles and negotiates catalogs, without complete client runtime/cache
   lifecycle. Phase 6 displays authored UI and handles local presentation
-  events, but cannot yet request gameplay; its request bridge is in flight.
+  events and can request package-owned item/empty gameplay actions, but lacks
+  general targets and server-driven document updates.
   Phase 7 has a verified single fullscreen effect and a renderer-only custom
   albedo hook, not package-delivered world materials or effect composition.
 - **Recent reviewed commits:** `279cbcc` adds opt-in Luau LSP IDE guidance;
@@ -862,6 +865,14 @@ This section exists so compaction or a new session does not restart the design.
   queues or stale replies. The uidemo package demonstrates real input/button
   reactions in inspected dynamic previews. No gameplay command, network API,
   timer, server authority, imports or general client runtime is bound.
+- **Phase 6 authorized UI action slice:** the client now accepts one bounded
+  package-owned semantic action key from a presentation callback, composes its
+  own item/empty request with current slot, inventory revision and durable
+  session identity, and shows the authoritative `ActionResult`. The server
+  registered `uidemo:store` transaction transfers exactly one stick or denies
+  it. Real nonblocking-listener tests cover receipts, denial, duplicate IDs,
+  retry and restart. No new protocol or client-authoritative effect was added;
+  block/entity targets, arguments and richer response data remain open.
 - **Phase 7 first WGSL slice:** format-2 packages can deliver one validated
   `scene_color` fullscreen fragment effect with fixed HDR source, sampler and
   elapsed-time/viewport bindings. Preparation validates Naga on a worker and

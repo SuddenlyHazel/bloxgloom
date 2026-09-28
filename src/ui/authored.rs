@@ -33,18 +33,25 @@
 //! "ASCII"}, {op:"visible",node:...,value:boolean}, or {op:"state",value:"ASCII"}.
 //! Text/state are <=128 bytes. Only the active document is writable. Hidden
 //! ancestors hide descendants and remove focus, but retain layout space.
+//! An `action` command can request a package-owned registered item/empty action;
+//! scripts supply only its bounded key. The client composes the identity-fenced
+//! request from its selected slot and inventory revision, then the server
+//! authorizes/stages the effect and returns a durable action receipt. Host-owned
+//! chrome reports pending, denial and acceptance; local script text is not proof
+//! of server application. Switching documents invalidates old feedback.
 //! Results validate atomically; errors are module/event-attributed and disable
 //! handlers until reset. One outstanding event, request and reply queues of one;
 //! busy clicks/edits are rejected (visible BUSY status), never queued for retry.
 //! Local retained dynamic text is bounded by 64 nodes x 128 bytes (plus inputs),
 //! independent of the static 4096-byte resource budget. Disconnect drops worker
 //! channels without waiting on the window thread; late replies cannot enter a
-//! new session. No server messages or world/inventory references enter this API.
+//! new session. The sandbox never receives world/inventory references or native
+//! networking handles.
 //!
 //! Unsupported: scroll widgets, wrapping, HTML/CSS, dynamic documents, Unicode
 //! shaping/bidi/kerning, IME, selection, clipboard, caret movement, accessibility,
 //! animations and hot reload. Without the explicit capability, event IDs remain
-//! inert and shown as UNBOUND. No gameplay or server bindings exist. Fontdue
+//! inert and shown as UNBOUND. Fontdue
 //! supplies rasterization, not a complete text-editing or shaping stack.
 //! `fixtures/packages/uidemo` is the sample used by ui-preview and loopback tests.
 mod draw;

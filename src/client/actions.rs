@@ -1,6 +1,6 @@
 //! Generic registered action discovery, composition and durable request controls.
 use super::*;
-use bloxgloom_host_api::actions::{Action, Panel, Request, Target, Widget};
+use bloxgloom_host_api::actions::{Action, Operation, Panel, Request, Target, Widget};
 
 #[derive(Clone)]
 pub(super) struct ActionChoice {
@@ -10,6 +10,44 @@ pub(super) struct ActionChoice {
 }
 
 impl ClientApp {
+    pub(super) fn pump_package_action(&mut self) {
+        let Some(key) = self.package_ui.as_mut().and_then(|ui| ui.take_action()) else {
+            return;
+        };
+        let slot = self.config.selected_slot as u8;
+        // Validate selection before allocating: a locally rejected request must
+        // not leave a hole in the server-issued receipt sequence.
+        let Some(mut request) = compose_package_action(
+            &self.catalog,
+            &key,
+            slot,
+            &self.inventory,
+            self.position.to_array().map(|v| v.floor() as i32),
+            1u128 << 64 | 1,
+        ) else {
+            self.package_ui
+                .as_mut()
+                .unwrap()
+                .action_failed_locally("select a matching item");
+            return;
+        };
+        let Some(action_id) = self.allocate_action_id() else {
+            self.package_ui
+                .as_mut()
+                .unwrap()
+                .action_failed_locally("action session pending or busy");
+            return;
+        };
+        let ClientMessage::EntityInteract { action_id: id, .. } = &mut request else {
+            unreachable!()
+        };
+        *id = action_id;
+        self.queue_command(request);
+        self.package_ui
+            .as_mut()
+            .unwrap()
+            .action_submitted(action_id);
+    }
     pub(super) fn action_panel(&self) -> Option<Panel> {
         if self.screen != UiScreen::Actions {
             return None;
@@ -130,4 +168,44 @@ impl ClientApp {
             payload: choice.request.encode().expect("validated action request"),
         });
     }
+}
+
+// Only compose a registered item/empty action. The script supplies its own key,
+// never an inventory revision, effect, entity identity, or target authority.
+pub(crate) fn compose_package_action(
+    catalog: &crate::content::Catalog,
+    key: &str,
+    slot: u8,
+    inventory: &crate::inventory::Inventory,
+    target: [i32; 3],
+    action_id: u128,
+) -> Option<ClientMessage> {
+    let action = catalog.action(key)?;
+    if action.operation != Operation::Gameplay {
+        return None;
+    }
+    match &action.target {
+        Target::Empty => {}
+        Target::Item(item) => {
+            let stack = inventory.slots.get(usize::from(slot))?.as_ref()?;
+            if catalog.item(stack.item)?.key != *item {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+    let request = Request {
+        key: action.key.clone(),
+        version: action.version,
+        slot,
+        inventory_revision: inventory.revision,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    Some(ClientMessage::EntityInteract {
+        action_id,
+        target,
+        payload: request.encode()?,
+    })
 }

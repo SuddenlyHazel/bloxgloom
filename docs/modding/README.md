@@ -10,8 +10,9 @@ before treating a capability as complete.
 
 - [Local Luau packages](LUAU-PACKAGES.md): runnable
   [`uidemo`](../../fixtures/packages/uidemo/) example, manifest, command line,
-  and current server/client bindings. Its UI changes are *local only*; buttons
-  cannot yet send authoritative server requests.
+  and current server/client bindings. Its button now sends an authorized
+  registered action and displays the server's receipt; its text input remains
+  local presentation state.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
   currently bound callbacks; runtime validation remains authoritative.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.

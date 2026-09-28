@@ -21,6 +21,9 @@ impl Session {
             [0.9, 0.85, 0.6, 1.0],
             96,
         );
+        if let Some(feedback) = &self.feedback {
+            builder.text(feedback, 12.0, 32.0, 0.6, [0.9, 0.85, 0.6, 1.0], 96);
+        }
         if let Some(id) = self.focused_id() {
             let label = self.event().map_or_else(
                 || id.to_owned(),

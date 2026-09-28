@@ -1,6 +1,5 @@
-//! Local-only presentation protocol. One outstanding event per Session, no
-//! retries/coalescing: busy input is rejected before changing local text. Fresh
-//! VMs make state explicit; no imports, native handles, or gameplay commands.
+//! Bounded presentation commands. A script may name its own registered semantic
+//! action, but the client composes the request and the server owns its effects.
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 
@@ -24,6 +23,7 @@ pub(crate) enum Command {
     Text(String, String),
     Visible(String, bool),
     State(String),
+    Action(String),
 }
 
 #[derive(Debug)]
@@ -114,6 +114,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                     Command::Visible(text(&command, "node", 194)?, value)
                 }
                 "state" => Command::State(text(&command, "value", 128)?),
+                "action" => Command::Action(text(&command, "key", 129)?),
                 _ => return Err(invalid()),
             });
         }

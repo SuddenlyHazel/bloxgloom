@@ -8,6 +8,7 @@ use taffy::prelude::*;
 pub(crate) struct Session {
     pub(super) resources: Arc<Resources>,
     document: usize,
+    pub(super) document_generation: u64,
     pub(super) rects: Vec<UiRect>,
     pub(super) clips: Vec<UiRect>,
     pub(super) inputs: Vec<String>,
@@ -21,6 +22,9 @@ pub(crate) struct Session {
     pub(super) pending: Option<u32>,
     pub(super) expected: Option<u32>,
     pub(super) failure: Option<String>,
+    pub(super) action: Option<String>,
+    pub(super) in_flight: Option<(u128, u64)>,
+    pub(super) feedback: Option<String>,
 }
 
 impl Session {
@@ -38,6 +42,7 @@ impl Session {
         let mut session = Self {
             resources,
             document: 0,
+            document_generation: 0,
             rects: Vec::new(),
             clips: Vec::new(),
             inputs: Vec::new(),
@@ -51,6 +56,9 @@ impl Session {
             pending: None,
             expected: None,
             failure: None,
+            action: None,
+            in_flight: None,
+            feedback: None,
         };
         session.reset();
         session.failure = failure;
@@ -59,8 +67,11 @@ impl Session {
 
     fn reset(&mut self) {
         // Invalidate an outstanding result without admitting a second job.
+        self.document_generation = self.document_generation.wrapping_add(1);
         self.expected = None;
         self.failure = None;
+        self.action = None;
+        self.feedback = None;
         self.state.clear();
         self.texts = self
             .document()

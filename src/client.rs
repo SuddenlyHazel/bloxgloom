@@ -248,6 +248,8 @@ impl ActionTracker {
 }
 
 mod actions;
+#[cfg(test)]
+pub(crate) use actions::compose_package_action;
 pub(crate) mod actors;
 mod admin;
 mod entities;
@@ -909,6 +911,9 @@ impl ClientApp {
                 accepted,
                 reason,
             } => {
+                if let Some(ui) = &mut self.package_ui {
+                    ui.action_result(action_id, accepted, &reason);
+                }
                 trace::event(format_args!("ack {action_id} accepted={accepted}"));
                 if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
@@ -1006,6 +1011,9 @@ impl ClientApp {
             self.package_ui = None;
         } else if let Some(session) = &mut self.package_ui {
             session.poll_presentation();
+        }
+        if !self.disconnected {
+            self.pump_package_action();
         }
         let center = crate::world::world_to_chunk(
             self.position.x.floor() as i32,

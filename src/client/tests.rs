@@ -290,7 +290,14 @@ fn package_ui_key_dispatch_opens_from_play_and_consumes_keys_without_gameplay() 
         .unwrap()
         .wait_for_presentation()
         .unwrap();
-    assert_eq!(app.package_ui.as_ref().unwrap().text_at(1), "Seed planted!");
+    assert_eq!(
+        app.package_ui.as_mut().unwrap().take_action().as_deref(),
+        Some("uidemo:store")
+    );
+    assert_eq!(
+        app.package_ui.as_ref().unwrap().text_at(1),
+        "Garden: Moss & stoneq"
+    );
     assert!(app.pending_commands.is_empty());
     assert!(!app.keys.forward);
     assert!(app.package_ui_key(KeyCode::Escape, None, false));

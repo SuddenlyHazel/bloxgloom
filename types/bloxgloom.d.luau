@@ -98,3 +98,4 @@ export type BloxUiCommand =
     { op: "text", node: string, value: string }
     | { op: "visible", node: string, value: boolean }
     | { op: "state", value: string }
+    | { op: "action", key: string }

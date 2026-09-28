@@ -90,13 +90,18 @@ fn worker_dispatches_click_and_input_with_bounded_admission_and_explicit_state()
     session.activate(); // Repeated click while pending is rejected, not replayed.
     assert_eq!(session.sequence, 2);
     session.wait_for_presentation().unwrap();
-    assert_eq!(session.text_at(1), "Seed planted!");
-    assert_eq!(session.state, "planted");
-    assert!(!session.is_visible(3));
+    assert_eq!(session.take_action().as_deref(), Some("uidemo:store"));
+    session.action_submitted(42);
+    session.activate();
+    assert_eq!(session.sequence, 2);
+    session.action_result(42, false, "needs stick");
+    assert_eq!(
+        session.feedback.as_deref(),
+        Some("SERVER DENIED: needs stick")
+    );
     session.activate();
     session.wait_for_presentation().unwrap();
-    assert_eq!(session.sequence, 3);
-    assert_eq!(session.text_at(1), "Another seed planted!");
+    assert_eq!(session.take_action().as_deref(), Some("uidemo:store"));
 }
 
 #[test]
@@ -110,7 +115,7 @@ fn switching_document_discards_pending_result_and_resets_state_not_event_sequenc
     assert_eq!(session.pending, Some(1));
     session.wait_for_presentation().unwrap();
     assert_eq!(session.text_at(1), "Welcome to the garden");
-    assert_eq!(session.text_at(5), "Plant a seed [local only]");
+    assert_eq!(session.text_at(5), "Store one stick [server]");
     assert!(session.state.is_empty());
     assert!(session.is_visible(3));
     session.resize(640, 360, 1.0);
@@ -119,13 +124,31 @@ fn switching_document_discards_pending_result_and_resets_state_not_event_sequenc
     session.activate();
     session.wait_for_presentation().unwrap();
     assert_eq!(session.sequence, 2);
-    assert_eq!(session.text_at(1), "Seed planted!");
+    assert_eq!(session.take_action().as_deref(), Some("uidemo:store"));
+}
+
+#[test]
+fn late_authoritative_result_does_not_repaint_a_reset_document() {
+    let mut session = Session::new(Arc::clone(sample().ui().unwrap()));
+    session.resize(640, 360, 1.0);
+    session.tab(false);
+    session.tab(false);
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.take_action().as_deref(), Some("uidemo:store"));
+    session.action_submitted(42);
+    session.next_document(); // Even cycling back to the same document invalidates feedback.
+    session.action_result(42, true, "");
+    assert_eq!(session.feedback, None);
+    assert!(session.in_flight.is_none());
 }
 
 #[test]
 fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() {
     for source in [
         "return function(i) return {{op='text',node='uidemo:welcome/title',value='partial'}, {op='text',node='other:welcome/title',value='escape'}} end",
+        "return function(i) return {{op='text',node='uidemo:welcome/title',value='partial'}, {op='action',key='other:give'}} end",
+        "return function(i) return {{op='action',key='uidemo:store'}, {op='action',key='uidemo:store'}} end",
         "return function(i) return {{op='text',node='uidemo:welcome/title',value='partial'}, {op='text',node='uidemo:other/title',value='escape'}} end",
         "return function(i) return {{op='world',value='stone'}} end",
         "return function(i) return {{op='visible',node='uidemo:welcome/title',value='false'}} end",
@@ -153,7 +176,7 @@ fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() 
 #[test]
 fn shared_handler_has_no_native_authority_and_hidden_ancestor_removes_focus() {
     let mut session = dynamic(
-        "return function(i) assert(io == nil and os == nil and debug == nil and require == nil and print == nil and getfenv == nil and setfenv == nil and game == nil and world == nil and inventory == nil); assert(i.sequence == 1 and i.event == 'uidemo:plant'); return {{op='visible',node='uidemo:welcome/root',value=false}} end",
+        "return function(i) assert(io == nil and os == nil and debug == nil and require == nil and print == nil and getfenv == nil and setfenv == nil and game == nil and world == nil and inventory == nil); assert(i.sequence == 1 and i.event == 'uidemo:store'); return {{op='visible',node='uidemo:welcome/root',value=false}} end",
         2,
     );
     session.activate();

@@ -12,10 +12,13 @@ cargo run --release -- server-packages fixtures/packages 127.0.0.1:4000 ./world-
 cargo run --release -- client 127.0.0.1:4000
 ```
 
-Press **F6** after joining; type in the field, then click the button or focus
-it and press Enter. These changes are **local UI presentation only**: the
-example does not plant a seed or send a server request. See `client/view.luau`
-for the handler and `assets/ui/welcome.json` for the widget/event declarations.
+Press **F6** after joining. The name field updates local presentation. Select
+a stick in your hotbar and click **Store one stick**, or focus it and press
+Enter. The client sends `uidemo:store` through the normal registered-action
+request/receipt path; the server transfers exactly one stick to slot 2 or
+denies the request. There is no planting feature in this example. See
+`client/view.luau` for the handler, `server/store.luau` for its authoritative
+policy, and `assets/ui/welcome.json` for widget/event declarations.
 `cargo run -- ui-preview <output-dir>` writes UI previews without joining.
 
 # Package shape
@@ -129,8 +132,12 @@ module must be a verified client/shared `.luau` module and return a function
 receiving `{sequence,event,value,state,texts}`. It returns up to 16 commands:
 `{op="text",node="uidemo:welcome/title",value="Hello"}`,
 `{op="visible",node="uidemo:welcome/icon",value=false}`, or
-`{op="state",value="local state"}`. Widget event IDs belong to the document's
-package. The worker executes each event in a fresh sandbox and never exposes
-world/inventory/network handles; state is an explicitly bounded ASCII string.
-Buttons and edited inputs are presentation-only, not a path to gameplay
-actions. See `fixtures/packages/uidemo/` for a runnable local example.
+`{op="state",value="local state"}`, or one
+`{op="action",key="uidemo:store"}`. Widget event IDs and action keys must belong
+to the document's package. The worker executes each event in a fresh sandbox;
+it never receives world/inventory/network handles. The client composes only
+registered item/empty gameplay requests using its current slot, inventory
+revision and durable session ID. Server permissions, costs, WAL transactions
+and receipts remain authoritative. UI feedback distinguishes unsent, pending,
+applied and denied requests. Block/entity-targeted controls and arbitrary
+argument schemas are not yet bound. See `fixtures/packages/uidemo/`.
