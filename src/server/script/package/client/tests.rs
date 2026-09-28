@@ -99,6 +99,7 @@ fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)])
             writer.field(field.as_bytes()).unwrap();
         }
     }
+    writer.count(0).unwrap(); // startup textures
     for _ in 0..5 {
         writer.count(0).unwrap();
     } // runtime declaration categories

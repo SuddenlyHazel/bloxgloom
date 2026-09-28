@@ -16,6 +16,7 @@ fn metadata() -> (Vec<u8>, BTreeMap<&'static str, usize>) {
         w.field(cap.as_bytes()).unwrap();
     }
     w.count(0).unwrap(); // items
+    w.count(0).unwrap(); // startup textures
     offsets.insert("actions", w.0.len());
     w.count(1).unwrap();
     w.field(b"demo:use").unwrap();

@@ -35,7 +35,20 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-    let catalog = crate::content::Catalog::builtins();
+    let mut catalog = crate::content::Catalog::builtins();
+    let layer = catalog
+        .register_texture(crate::content::TextureDef {
+            key: "jade:tile".into(),
+            png: std::borrow::Cow::Borrowed(include_bytes!(
+                "../../../fixtures/material-packages/jade/assets/textures/jade.png"
+            )),
+            stitch_edges: true,
+            stitch_vertical: true,
+            alpha_cutout: false,
+            emission_strength: 0.0,
+        })
+        .unwrap()
+        .get() as f32;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages");
     let bundle = crate::server::PackageSnapshot::discover(&root).unwrap();
     let shader = bundle
@@ -65,13 +78,13 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
         bytemuck::cast_slice(&glam::Mat4::IDENTITY.to_cols_array()),
     );
 
-    // Selected stone in both sky and dark light, and unselected dirt. The
-    // production 12-float vertex layout and indexed draw are unchanged.
+    // Package-owned tile through the item/cutout pipeline in both sky and dark
+    // light, and unselected opaque dirt. The production vertex layout is unchanged.
     let mut vertices = Vec::<f32>::new();
     let mut indices = Vec::<u32>::new();
     for (x0, x1, y0, y1, layer, sky) in [
-        (-1.0, 0.0, 0.0, 1.0, 3.0, 1.0),
-        (-1.0, 0.0, -1.0, 0.0, 3.0, 0.0),
+        (-1.0, 0.0, 0.0, 1.0, layer, 1.0),
+        (-1.0, 0.0, -1.0, 0.0, layer, 0.0),
         (0.0, 1.0, -1.0, 1.0, 2.0, 1.0),
     ] {
         let base = (vertices.len() / VERTEX_FLOATS) as u32;
@@ -177,8 +190,9 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
         pass.set_bind_group(1, &texture_group, &[]);
         pass.set_vertex_buffer(0, vertices.slice(..));
         pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..18, 0, 0..1);
+        pass.draw_indexed(12..18, 0, 0..1);
         pass.set_pipeline(&cutout);
+        pass.draw_indexed(0..12, 0, 0..1);
         pass.draw_indexed(18..30, 0, 0..1);
     }
     encoder.copy_texture_to_buffer(

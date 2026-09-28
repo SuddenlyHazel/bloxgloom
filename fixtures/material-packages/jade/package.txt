@@ -2,6 +2,8 @@ format 2
 package jade
 version 1.0.0
 entry main
+requires bloxgloom:content/v1
 module server main server/main.luau
+asset texture tile assets/textures/jade.png
 asset material tint assets/materials/tint.json
 asset material-shader jade assets/shaders/jade.wgsl

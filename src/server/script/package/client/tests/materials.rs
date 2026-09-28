@@ -70,28 +70,72 @@ fn material_bundle_verifies_key_ownership_limits_and_catalog_readiness() {
     ] {
         assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
     }
-    let mut v4 = bytes.clone();
-    v4[8] = 4;
-    assert!(ClientBundle::decode_verify(&v4, key(&v4)).is_err());
-    assert_ne!(verified.cache_key(), key(&v4));
+    let mut v5 = bytes.clone();
+    v5[8] = 5;
+    assert!(ClientBundle::decode_verify(&v5, key(&v5)).is_err());
+    assert_ne!(verified.cache_key(), key(&v5));
 }
 
 #[test]
 fn format_two_fixture_discovers_and_resolves_material_without_effect_or_ui() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages");
     let snapshot = crate::server::PackageSnapshot::discover(&root).unwrap();
+    assert!(
+        snapshot
+            .client_bundle()
+            .material()
+            .unwrap()
+            .resolve(&crate::content::Catalog::builtins())
+            .is_err()
+    );
+    let startup = crate::server::script::startup::Declarations::discover(&root).unwrap();
     let verified = ClientBundle::decode_verify(
-        snapshot.client_bundle().bytes(),
-        snapshot.client_bundle().cache_key(),
+        startup.client_bundle.bytes(),
+        startup.client_bundle.cache_key(),
     )
     .unwrap();
+    let catalog = verified.session_catalog().unwrap();
     assert_eq!(verified.material().unwrap().owner, "jade:tint");
     assert!(verified.effect().is_none() && verified.ui().is_none());
-    verified
-        .material()
+    assert_eq!(
+        verified.packages()["jade"].textures["tile"],
+        include_bytes!(
+            "../../../../../../fixtures/material-packages/jade/assets/textures/jade.png"
+        )
+    );
+    assert_eq!(catalog.textures().last().unwrap().key.as_ref(), "jade:tile");
+    verified.material().unwrap().resolve(&catalog).unwrap();
+    let item = catalog.item_by_key("jade:token").unwrap();
+    assert_eq!(
+        catalog
+            .texture(catalog.item(item).unwrap().texture)
+            .unwrap()
+            .key
+            .as_ref(),
+        "jade:tile"
+    );
+    let mut manifest = crate::content::ContentManifest::from_catalog(&catalog);
+    manifest
+        .entries
+        .iter_mut()
+        .find(|entry| entry.kind == b'I' && entry.key == "jade:token")
         .unwrap()
-        .resolve(&crate::content::Catalog::builtins())
-        .unwrap();
+        .id = 65_536;
+    manifest
+        .entries
+        .sort_unstable_by_key(|entry| (entry.kind, entry.id));
+    let remapped = manifest.resolve_catalog(&catalog).unwrap();
+    let remapped_item = remapped.item_by_key("jade:token").unwrap();
+    assert_eq!(remapped_item.get(), 65_536);
+    assert_eq!(
+        remapped
+            .texture(remapped.item(remapped_item).unwrap().texture)
+            .unwrap()
+            .key
+            .as_ref(),
+        "jade:tile"
+    );
+    verified.material().unwrap().resolve(&remapped).unwrap();
 }
 
 #[test]
@@ -136,4 +180,77 @@ fn material_effect_and_ui_assets_coexist_in_canonical_bundle() {
         .resolve(&crate::content::Catalog::builtins())
         .unwrap();
     assert!(bundle.packages()["jade"].textures.is_empty());
+}
+
+fn texture_metadata(png: &[u8], texture_key: &str, asset: &str) -> Vec<u8> {
+    let mut writer = header(1);
+    writer.field(b"jade").unwrap();
+    writer.field(b"1.0.0").unwrap();
+    writer.count(0).unwrap(); // dependencies
+    writer.count(0).unwrap(); // modules
+    writer.count(1).unwrap(); // assets
+    writer.field(b"tile").unwrap();
+    writer.count(1).unwrap();
+    writer.field(png).unwrap();
+    writer.count(1).unwrap(); // startup present
+    writer.count(1).unwrap(); // requirements
+    writer.field(b"bloxgloom:content/v1").unwrap();
+    writer.count(0).unwrap(); // items
+    writer.count(1).unwrap(); // textures
+    writer.field(texture_key.as_bytes()).unwrap();
+    writer.field(asset.as_bytes()).unwrap();
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    } // runtime categories
+    writer.0
+}
+
+#[test]
+fn bound_texture_asset_must_decode_and_match_owned_canonical_metadata() {
+    let image = include_bytes!(
+        "../../../../../../fixtures/material-packages/jade/assets/textures/jade.png"
+    );
+    let good = texture_metadata(image, "jade:tile", "tile");
+    let bundle = ClientBundle::decode_verify(&good, key(&good)).unwrap();
+    assert_eq!(
+        bundle
+            .session_catalog()
+            .unwrap()
+            .textures()
+            .last()
+            .unwrap()
+            .png
+            .as_ref(),
+        image
+    );
+    let replacement = texture_metadata(
+        include_bytes!("../../../../../../assets/textures/blocks/hopper_side.png"),
+        "jade:tile",
+        "tile",
+    );
+    let other = ClientBundle::decode_verify(&replacement, key(&replacement)).unwrap();
+    assert_ne!(bundle.cache_key(), other.cache_key());
+    assert_ne!(
+        bundle.session_catalog().unwrap().fingerprint(),
+        other.session_catalog().unwrap().fingerprint()
+    );
+    for (image, name, asset) in [
+        (&b"not png"[..], "jade:tile", "tile"),
+        (&image[..], "foreign:tile", "tile"),
+        (&image[..], "jade:tile", "missing"),
+    ] {
+        let bad = texture_metadata(image, name, asset);
+        assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
+    }
+    let mut huge = Vec::new();
+    let mut encoder = png::Encoder::new(&mut huge, 2049, 1);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&vec![0; 2049 * 3])
+        .unwrap();
+    let bad = texture_metadata(&huge, "jade:tile", "tile");
+    assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
 }

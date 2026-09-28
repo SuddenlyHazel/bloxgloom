@@ -62,10 +62,11 @@
 //! this cannot detect secrets deliberately copied/renamed into approved files.
 //!
 //! Discovery also builds a canonical `client::ClientBundle`, containing only
-//! client/shared sources and declared texture bytes, plus package identities and
-//! exact dependencies. Local paths, entries, capabilities and original manifests
-//! are never exported. SHA-256 keys and bounded decode/verify are ready for a
-//! later cache/stream layer; there is no transport or client VM in this slice.
+//! client/shared sources and declared asset bytes, plus package identities and
+//! exact dependencies. Startup may bind a declared PNG to a package-owned
+//! catalog texture. Local paths, entries, capabilities and original manifests
+//! are never exported. SHA-256 keys and bounded decode/verify protect the
+//! streamed artifact; the client never executes server startup scripts.
 //!
 //! The secure filesystem backend currently supports Unix only; other platforms
 //! fail closed. Every path component, including root ancestors, is opened with
@@ -104,8 +105,9 @@
 //! host instead of integer inputs (see the sibling `startup` module). Semantic
 //! actions bind the public gameplay Context and existing host transactions;
 //! other events remain unbound. The frozen client artifact is delivered by the
-//! join transport; asset rendering, client script execution/UI and hot reload
-//! remain separate. This local manifest format does not alter world/save data.
+//! join transport. Texture/material rendering uses the existing catalog and
+//! voxel paths; hot reload remains separate. This local manifest format does
+//! not alter world/save data.
 //! Generation modules can also be registered at startup; their frozen sources
 //! run in fresh VMs on loader threads through the public Contributor contract.
 
@@ -383,6 +385,14 @@ impl PackageSnapshot {
             return None;
         }
         package.sources.get(module).map(String::as_str)
+    }
+
+    /// Only the entry package's explicitly declared texture asset, never a
+    /// filesystem path or another package's bytes, may back a startup texture.
+    pub(super) fn texture_asset(&self, package: &str, asset: &str) -> Option<&[u8]> {
+        let package = self.packages.get(package)?;
+        (package.manifest.asset_kinds.get(asset) == Some(&1))
+            .then(|| package.assets.get(asset).map(Vec::as_slice))?
     }
 
     /// Imports are `package:module`, never paths. Visibility is lexical to the

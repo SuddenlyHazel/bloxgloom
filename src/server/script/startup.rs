@@ -7,11 +7,12 @@
 //! `function(host) host.register_item("demo:token", "Token", "bloxgloom:stone") end`.
 //! This host replaces integer inputs only for startup, not execute_package.
 //!
-//! Each package may declare 32 non-placeable sprite items, with builtin texture
-//! references, a white swatch, no components and the ordinary 128 stack cap.
+//! Each package may declare 32 bounded PNG-backed textures by local asset name
+//! and 32 non-placeable sprite items with builtin or own registered textures,
+//! a white swatch, no components and the ordinary 128 stack cap.
 //! Keys must belong to the entry package; imported helpers may receive the
-//! callback but gain only that entry's authority. No assets or grants are
-//! registered. Sprite/action definitions and entity schema metadata are exported
+//! callback but gain only that entry's authority. No undeclared assets or grants
+//! are registered. Texture/item and entity schema metadata are exported
 //! as inert client metadata. Handler/owner-system compatibility hashes do not
 //! export callbacks, owner seeds, codecs, or execution authority; generators
 //! export key/revision only and remain server-executed.
@@ -33,7 +34,10 @@
 //! Generator execution failures are reported later by chunk loading. Existing catalog
 //! identity/reconciliation and client compatibility checks remain authoritative.
 use super::{Invocation, Output, Program, ScriptInput, ScriptWorker, package::PackageSnapshot};
-use bloxgloom_host_api::{Extension, Registrar, RegistrationError, content::Item};
+use bloxgloom_host_api::{
+    Extension, Registrar, RegistrationError,
+    content::{Item, Texture},
+};
 use mlua::{Function, Lua, Value};
 use std::cell::RefCell;
 use std::path::Path;
@@ -41,11 +45,18 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 const MAX_ITEMS_PER_PACKAGE: usize = 32;
+const MAX_TEXTURES_PER_PACKAGE: usize = 32;
+
+pub(super) struct PackageTexture {
+    pub(super) definition: Texture,
+    pub(super) asset: String,
+}
 
 pub(in crate::server) struct Declarations {
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
     pub(super) items: Vec<Item>,
+    pub(super) textures: Vec<PackageTexture>,
     pub(super) generation: Vec<bloxgloom_host_api::generation::Registration>,
     pub(super) actions: Vec<super::gameplay::Registration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -59,6 +70,7 @@ impl Declarations {
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
         let worker = ScriptWorker::spawn(super::Limits::default())?;
         let mut items = Vec::new();
+        let mut textures = Vec::new();
         let mut generation = Vec::new();
         let mut actions = Vec::new();
         let mut handlers = Vec::new();
@@ -83,6 +95,7 @@ impl Declarations {
                 unreachable!("startup execution")
             };
             items.extend(declarations.items);
+            textures.extend(declarations.textures);
             handlers.extend(declarations.handlers);
             entities.extend(declarations.entities);
             if let Some(system) = declarations.system {
@@ -105,6 +118,7 @@ impl Declarations {
             client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
+            textures,
             generation,
             actions,
             handlers,
@@ -125,6 +139,9 @@ impl Extension for Declarations {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
         for package in &self.packages {
             registrar.package(package.clone())?;
+        }
+        for texture in &self.textures {
+            registrar.texture(texture.definition.clone())?;
         }
         for item in &self.items {
             registrar.item(item.clone())?;
@@ -152,6 +169,7 @@ impl Extension for Declarations {
 #[derive(Default)]
 pub(super) struct Pending {
     items: Vec<Item>,
+    textures: Vec<PackageTexture>,
     pub(super) generation: Option<super::generation::Declaration>,
     pub(super) action: Option<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -169,6 +187,8 @@ pub(super) fn invoke(
     let permits_content = snapshot.permits_content(namespace);
     let pending = Rc::new(RefCell::new(Pending::default()));
     let capture = Rc::clone(&pending);
+    let texture_capture = Rc::clone(&pending);
+    let asset_snapshot = Arc::clone(snapshot);
     let generation =
         super::generation::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let action =
@@ -184,6 +204,7 @@ pub(super) fn invoke(
         Arc::clone(snapshot),
     )?;
     let namespace = namespace.to_owned();
+    let texture_namespace = namespace.clone();
     let register = lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
         let mut pending = capture.borrow_mut();
         let result = (|| {
@@ -207,8 +228,13 @@ pub(super) fn invoke(
             if owner != namespace || !super::package::manifest::identifier(local) {
                 return Err("item key must belong to the startup package namespace");
             }
-            if !texture.starts_with("bloxgloom:") {
-                return Err("startup items require an existing builtin texture");
+            let Some((texture_owner, texture_local)) = texture.split_once(':') else {
+                return Err("item texture must be a namespaced key");
+            };
+            if (texture_owner != "bloxgloom" && texture_owner != namespace)
+                || !super::package::manifest::identifier(texture_local)
+            {
+                return Err("startup items require a builtin or package-owned texture");
             }
             if pending.items.iter().any(|item| item.key == key) {
                 return Err("duplicate startup item");
@@ -230,8 +256,60 @@ pub(super) fn invoke(
             mlua::Error::RuntimeError(error.into())
         })
     })?;
+    let register_texture = lua.create_function(move |_, (key, asset): (Value, Value)| {
+        let mut pending = texture_capture.borrow_mut();
+        let result = (|| {
+            if let Some(error) = pending.error {
+                return Err(error);
+            }
+            if !permits_content {
+                return Err("register_texture requires bloxgloom:content/v1");
+            }
+            if pending.textures.len() >= MAX_TEXTURES_PER_PACKAGE {
+                return Err("startup texture limit exceeded (32 per package)");
+            }
+            let key = text(key)?;
+            let asset = text(asset)?;
+            let Some((owner, local)) = key.split_once(':') else {
+                return Err("texture key must be namespaced");
+            };
+            if owner != texture_namespace || !super::package::manifest::identifier(local) {
+                return Err("texture key must belong to the startup package namespace");
+            }
+            if !super::package::manifest::identifier(&asset) {
+                return Err("texture asset must be a local declared name");
+            }
+            let bytes = asset_snapshot
+                .texture_asset(&texture_namespace, &asset)
+                .ok_or("texture asset is not a local declared PNG")?;
+            if pending
+                .textures
+                .iter()
+                .any(|texture| texture.definition.key == key)
+            {
+                return Err("duplicate startup texture");
+            }
+            pending.textures.push(PackageTexture {
+                definition: Texture {
+                    key,
+                    png: std::borrow::Cow::Owned(bytes.to_vec()),
+                    stitch_edges: true,
+                    stitch_vertical: true,
+                    alpha_cutout: false,
+                    emission_strength: 0.0,
+                },
+                asset,
+            });
+            Ok(())
+        })();
+        result.map_err(|error| {
+            pending.error.get_or_insert(error);
+            mlua::Error::RuntimeError(error.into())
+        })
+    })?;
     let host = lua.create_table()?;
     host.set("register_item", register)?;
+    host.set("register_texture", register_texture)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
     host.set("register_handler", handler)?;

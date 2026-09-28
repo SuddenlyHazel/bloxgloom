@@ -448,7 +448,8 @@ ship reduced versions of phases 2–8:
    authorized UI request bridge covers only the item/empty slice (item 1).
 7. **Shader/material/effect support is partial.** Package UI images/fonts, one
    WGSL fullscreen scene-color effect and one package-delivered voxel albedo
-   shader for a catalog texture layer work. New package-owned world textures,
+   shader for a catalog texture layer work. Package-owned PNG catalog textures
+   can now back sprite items and the albedo shader; authored world blocks,
    typed parameters, wider geometry/material hooks and multi-pass effect
    graphs are not supported. Initial renderer setup waits for GPU preparation,
    rather than reporting asynchronous readiness progress.
@@ -913,8 +914,12 @@ This section exists so compaction or a new session does not restart the design.
   handshake's session catalog before `ContentReady`; renderer setup installs
   the shader or fails with package-attributed errors. A `jade` fixture,
   GPU readback and nonblocking-listener join tests passed. Bundle format v5
-  separates material from UI/effect assets. New world texture registration,
-  multiple material owners, typed parameters and other geometry remain open.
+  separates material from UI/effect assets. A follow-up adds bounded package PNG
+  texture registration in Luau startup, binds exact verified bytes in client
+  bundle v6, and uses `jade:tile` on a package sprite item; listener join,
+  identity/remapping, invalid-registration and GPU shading tests passed.
+  Package-authored blocks, multiple material owners, typed parameters and
+  other geometry remain open.
 - **Phase 2 owner participant increment:** owner-world edits now carry generated
   entity spawns/updates/schedules and drops with owner state, terrain and
   deadline in one WAL record. Entity dependencies and mirror capacity are

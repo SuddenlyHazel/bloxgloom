@@ -141,7 +141,15 @@ fn create_voxel_pipeline_source(
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    for (level, pixels) in material::material_mips_for(catalog).iter().enumerate() {
+    // Decode and build mips off the window thread. The verified catalog owns
+    // bounded PNG bytes; no package image work belongs in a frame or event.
+    let mips = std::thread::scope(|scope| {
+        scope
+            .spawn(|| material::material_mips_for(catalog))
+            .join()
+            .expect("verified material tiles decode")
+    });
+    for (level, pixels) in mips.iter().enumerate() {
         let size = material::TEXTURE_SIZE >> level;
         let layer_bytes = (size * size * 4) as usize;
         for layer in 0..material::texture_layers_for(catalog) {
