@@ -1937,7 +1937,12 @@ fn entity_neighbour_view_bound_rejects_one_entity_and_keeps_serving() {
             && state.entities.snapshot(healthy_id).unwrap().revision == 2
         {
             if let Some(first) = settled_healthy_at {
-                if pass - first > 20 {
+                if pass - first > 20
+                    && state
+                        .durability
+                        .oversized_entity_retry
+                        .contains_key(&watcher_id)
+                {
                     break;
                 }
             } else {

@@ -53,6 +53,22 @@ impl Network {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn idle_for_test() -> (Self, SyncSender<Incoming>) {
+        let (sender, incoming) = mpsc::sync_channel(1);
+        let (outgoing, _) = mpsc::sync_channel(1);
+        (
+            Self {
+                _bundle: None,
+                material: None,
+                incoming,
+                outgoing,
+                catalog: Arc::new(crate::content::catalog().clone()),
+            },
+            sender,
+        )
+    }
+
     pub(super) fn connect(addr: &str, view_distance: u8, profile: u128) -> io::Result<Self> {
         let mut socket = TcpStream::connect(addr)?;
         socket.set_nodelay(true)?;

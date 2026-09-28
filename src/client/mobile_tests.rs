@@ -1,13 +1,15 @@
 use super::*;
 pub(crate) struct MobileProbe {
     app: ClientApp,
+    _incoming: std::sync::mpsc::SyncSender<Incoming>,
 }
 impl MobileProbe {
     pub(crate) fn new(catalog: Arc<crate::content::Catalog>, path: PathBuf) -> Self {
-        let mut network = Network::disconnected_for_test();
+        let (mut network, incoming) = Network::idle_for_test();
         network.catalog = catalog;
         Self {
             app: ClientApp::new(network, Config::default(), path),
+            _incoming: incoming,
         }
     }
     pub(crate) fn accept(&mut self, message: ServerMessage) {
