@@ -12,6 +12,15 @@ const MAX_ITEMS: usize = 32;
 const MAX_TEXTURES: usize = 32;
 const MAX_BLOCKS: usize = 32;
 
+pub(super) struct Format {
+    pub sized: bool,
+    pub animated: bool,
+    pub player: bool,
+    pub appearance: bool,
+    pub policy: bool,
+    pub extended_blocks: bool,
+}
+
 #[derive(Debug)]
 pub(super) struct Startup {
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
@@ -52,7 +61,12 @@ impl ClientBundle {
         let policy = items
             .iter()
             .any(|item| item.drop_policy != DropPolicy::default());
-        let version = if has_appearance && policy {
+        let extended_blocks = blocks
+            .iter()
+            .any(crate::server::script::startup::extended_block);
+        let version = if extended_blocks {
+            BLOCK_OPTIONS_MAGIC
+        } else if has_appearance && policy {
             APPEARANCE_POLICY_MAGIC
         } else if has_appearance {
             APPEARANCE_MAGIC
@@ -128,20 +142,20 @@ impl ClientBundle {
                 } else {
                     writer.field(item.texture.as_bytes())?;
                 }
-                if sized || animated || policy {
+                if sized || animated || policy || extended_blocks {
                     writer.field(&[match item.drop_size {
                         DropSize::Normal => 0,
                         DropSize::Small => 1,
                         DropSize::Large => 2,
                     }])?;
                 }
-                if animated || policy {
+                if animated || policy || extended_blocks {
                     if !item.drop_animation.valid() {
                         return Err(invalid());
                     }
                     writer.field(&item.drop_animation.to_bytes())?;
                 }
-                if policy {
+                if policy || extended_blocks {
                     if !item.drop_policy.valid() {
                         return Err(invalid());
                     }
@@ -199,10 +213,21 @@ impl ClientBundle {
                 writer.field(block.textures.top.as_bytes())?;
                 writer
                     .field(&[u8::from(block.flammable) | (u8::from(block.supports_plant) << 1)])?;
+                if extended_blocks {
+                    writer.field(block.textures.side.as_bytes())?;
+                    writer.field(block.textures.bottom.as_bytes())?;
+                    writer.field(&[
+                        u8::from(block.solid) | (u8::from(block.replaceable) << 1),
+                        block.emission,
+                        block.reflectance[0],
+                        block.reflectance[1],
+                        block.reflectance[2],
+                    ])?;
+                }
             }
             runtime.encode_package(&mut writer, name)?;
         }
-        if has_appearance {
+        if has_appearance || extended_blocks {
             writer.count(usize::from(declarations.player_rules.is_some()))?;
         }
         if let Some(selection) = &declarations.player_rules {
@@ -210,6 +235,9 @@ impl ClientBundle {
             writer.field(selection.key.as_bytes())?;
             writer.field(&selection.revision.to_le_bytes())?;
             writer.field(&selection.rules.canonical_bytes())?;
+        }
+        if extended_blocks {
+            writer.count(usize::from(has_appearance))?;
         }
         if let Some(appearance) = &declarations.appearance {
             appearance::encode(&mut writer, appearance)?;
@@ -296,14 +324,17 @@ impl Startup {
     pub(super) fn decode(
         reader: &mut Reader<'_>,
         packages: &BTreeMap<String, ClientPackage>,
-        sized: bool,
-        animated: bool,
-        player: bool,
-        appearance: bool,
-        policy: bool,
+        Format {
+            sized,
+            animated,
+            player,
+            appearance,
+            policy,
+            extended_blocks,
+        }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized || animated || player || appearance || policy {
+            if sized || animated || player || appearance || policy || extended_blocks {
                 return Err(invalid());
             }
             return Ok(None);
@@ -311,6 +342,7 @@ impl Startup {
         let mut has_nondefault_size = false;
         let mut has_nondefault_animation = false;
         let mut has_nondefault_policy = false;
+        let mut has_extended_block = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -478,6 +510,20 @@ impl Startup {
                 if flags & !3 != 0 {
                     return Err(error(name, "invalid startup block flags"));
                 }
+                let extras = if extended_blocks {
+                    let side = reader.text(129)?;
+                    let bottom = reader.text(129)?;
+                    let bytes = reader.field(5)?;
+                    let [options, emission, r, g, b] = bytes else {
+                        return Err(invalid());
+                    };
+                    if options & !3 != 0 || *emission > 15 {
+                        return Err(invalid());
+                    }
+                    Some((side, bottom, *options, *emission, [*r, *g, *b]))
+                } else {
+                    None
+                };
                 if key <= previous
                     || key
                         .split_once(':')
@@ -512,6 +558,27 @@ impl Startup {
                         .map_err(|reason| error(name, reason))?;
                 block.flammable = flags & 1 != 0;
                 block.supports_plant = flags & 2 != 0;
+                if let Some((side, bottom, options, emission, reflectance)) = extras {
+                    for face in [&side, &bottom] {
+                        if face
+                            .split_once(':')
+                            .is_none_or(|(owner, local)| owner != name || !identifier(local))
+                            || !startup
+                                .textures
+                                .iter()
+                                .any(|registered| registered.key == *face)
+                        {
+                            return Err(invalid());
+                        }
+                    }
+                    block.textures.side = side;
+                    block.textures.bottom = bottom;
+                    block.solid = options & 1 != 0;
+                    block.replaceable = options & 2 != 0;
+                    block.emission = emission;
+                    block.reflectance = reflectance;
+                    has_extended_block |= crate::server::script::startup::extended_block(&block);
+                }
                 startup.blocks.push(block);
             }
             startup.runtime.decode_package(reader, name, &requires)?;
@@ -529,7 +596,7 @@ impl Startup {
                 requires,
             });
         }
-        let player = if appearance {
+        let player = if appearance || extended_blocks {
             reader.count(1)? == 1
         } else {
             player
@@ -558,13 +625,16 @@ impl Startup {
             selection.validate().map_err(|_| invalid())?;
             startup.player_rules = Some(selection);
         }
+        let appearance = appearance || extended_blocks && reader.count(1)? == 1;
         if appearance {
             startup.appearance = Some(appearance::decode(reader, &startup.packages)?);
         }
         if !appearance
+            && !extended_blocks
             && ((sized && !animated && !has_nondefault_size)
                 || (animated && !policy && !has_nondefault_animation))
-            || (policy && !has_nondefault_policy)
+            || (policy && !extended_blocks && !has_nondefault_policy)
+            || (extended_blocks && !has_extended_block)
         {
             return Err(invalid());
         }

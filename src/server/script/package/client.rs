@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–22
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–23
 //! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -19,6 +19,8 @@
 //! required bounded player appearance record (including the model identity).
 //! V20/V21 add per-item authoritative drop policies without/with player rules;
 //! V22 combines those policies with the V13 appearance record and optional rules.
+//! V23 adds one-state block face/material properties, while retaining optional
+//! player rules/appearance and per-item metadata without changing earlier bytes.
 //! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
@@ -46,6 +48,7 @@ const APPEARANCE_MAGIC: &[u8] = b"BGCLIENT\x0d";
 const POLICY_MAGIC: &[u8] = b"BGCLIENT\x14";
 const PLAYER_POLICY_MAGIC: &[u8] = b"BGCLIENT\x15";
 const APPEARANCE_POLICY_MAGIC: &[u8] = b"BGCLIENT\x16";
+const BLOCK_OPTIONS_MAGIC: &[u8] = b"BGCLIENT\x17";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -199,6 +202,7 @@ impl ClientBundle {
             POLICY_MAGIC,
             PLAYER_POLICY_MAGIC,
             APPEARANCE_POLICY_MAGIC,
+            BLOCK_OPTIONS_MAGIC,
         ]
         .contains(&version)
         {
@@ -292,28 +296,34 @@ impl ClientBundle {
         let declarations = declarations::Startup::decode(
             &mut reader,
             &packages,
-            version == SIZED_MAGIC
-                || version == ANIMATED_MAGIC
-                || version == PLAYER_SIZED_MAGIC
-                || version == PLAYER_ANIMATED_MAGIC
-                || version == APPEARANCE_MAGIC
-                || version == POLICY_MAGIC
-                || version == PLAYER_POLICY_MAGIC
-                || version == APPEARANCE_POLICY_MAGIC,
-            version == ANIMATED_MAGIC
-                || version == PLAYER_ANIMATED_MAGIC
-                || version == APPEARANCE_MAGIC
-                || version == POLICY_MAGIC
-                || version == PLAYER_POLICY_MAGIC
-                || version == APPEARANCE_POLICY_MAGIC,
-            version == PLAYER_MAGIC
-                || version == PLAYER_SIZED_MAGIC
-                || version == PLAYER_ANIMATED_MAGIC
-                || version == PLAYER_POLICY_MAGIC,
-            version == APPEARANCE_MAGIC || version == APPEARANCE_POLICY_MAGIC,
-            version == POLICY_MAGIC
-                || version == PLAYER_POLICY_MAGIC
-                || version == APPEARANCE_POLICY_MAGIC,
+            declarations::Format {
+                sized: version == SIZED_MAGIC
+                    || version == ANIMATED_MAGIC
+                    || version == PLAYER_SIZED_MAGIC
+                    || version == PLAYER_ANIMATED_MAGIC
+                    || version == APPEARANCE_MAGIC
+                    || version == POLICY_MAGIC
+                    || version == PLAYER_POLICY_MAGIC
+                    || version == APPEARANCE_POLICY_MAGIC
+                    || version == BLOCK_OPTIONS_MAGIC,
+                animated: version == ANIMATED_MAGIC
+                    || version == PLAYER_ANIMATED_MAGIC
+                    || version == APPEARANCE_MAGIC
+                    || version == POLICY_MAGIC
+                    || version == PLAYER_POLICY_MAGIC
+                    || version == APPEARANCE_POLICY_MAGIC
+                    || version == BLOCK_OPTIONS_MAGIC,
+                player: version == PLAYER_MAGIC
+                    || version == PLAYER_SIZED_MAGIC
+                    || version == PLAYER_ANIMATED_MAGIC
+                    || version == PLAYER_POLICY_MAGIC,
+                appearance: version == APPEARANCE_MAGIC || version == APPEARANCE_POLICY_MAGIC,
+                policy: version == POLICY_MAGIC
+                    || version == PLAYER_POLICY_MAGIC
+                    || version == APPEARANCE_POLICY_MAGIC
+                    || version == BLOCK_OPTIONS_MAGIC,
+                extended_blocks: version == BLOCK_OPTIONS_MAGIC,
+            },
         )?;
         if !reader.0.is_empty() {
             return Err(invalid());

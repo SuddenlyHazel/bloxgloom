@@ -1,5 +1,6 @@
-//! Bounded optional gameplay flags for one-state package-owned opaque cubes.
+//! Bounded options for one-state package-owned opaque cubes.
 //! Keep the old three-argument declaration's block definition unchanged.
+use crate::server::script::values::{integer, text};
 use bloxgloom_host_api::content::{Block, BlockState, FaceTextures, Geometry, Material};
 use mlua::Value;
 
@@ -30,19 +31,59 @@ pub(in crate::server::script) fn cube(
         Value::Table(table) => table,
         _ => return Err("block options must be a table"),
     };
-    for pair in options.pairs::<Value, Value>().take(3) {
+    for (index, pair) in options.pairs::<Value, Value>().enumerate() {
+        if index >= 9 {
+            return Err("too many block options");
+        }
         let (key, value) = pair.map_err(|_| "invalid block option")?;
         let Value::String(key) = key else {
             return Err("invalid block option key");
         };
-        let Value::Boolean(value) = value else {
-            return Err("block option must be boolean");
-        };
         match key.as_bytes().as_ref() {
-            b"flammable" => block.flammable = value,
-            b"supports_plant" => block.supports_plant = value,
+            b"flammable" => block.flammable = boolean(value)?,
+            b"supports_plant" => block.supports_plant = boolean(value)?,
+            b"solid" => block.solid = boolean(value)?,
+            b"replaceable" => block.replaceable = boolean(value)?,
+            b"side" => block.textures.side = text(value)?,
+            b"bottom" => block.textures.bottom = text(value)?,
+            b"emission" => block.emission = integer(value, 0, 15)? as u8,
+            b"reflectance" => {
+                let Value::Table(table) = value else {
+                    return Err("reflectance must be a three-byte array");
+                };
+                if table.raw_len() != 3
+                    || table.clone().pairs::<Value, Value>().take(4).count() != 3
+                {
+                    return Err("reflectance must have exactly three channels");
+                }
+                for (index, channel) in block.reflectance.iter_mut().enumerate() {
+                    *channel = integer(
+                        table
+                            .raw_get(index + 1)
+                            .map_err(|_| "invalid reflectance")?,
+                        0,
+                        255,
+                    )? as u8;
+                }
+            }
             _ => return Err("unknown block option"),
         }
     }
     Ok(block)
+}
+
+fn boolean(value: Value) -> Result<bool, &'static str> {
+    match value {
+        Value::Boolean(value) => Ok(value),
+        _ => Err("block option must be boolean"),
+    }
+}
+
+pub(in crate::server::script) fn extended(block: &Block) -> bool {
+    block.textures.top != block.textures.side
+        || block.textures.top != block.textures.bottom
+        || !block.solid
+        || block.replaceable
+        || block.emission != 0
+        || block.reflectance != [128; 3]
 }

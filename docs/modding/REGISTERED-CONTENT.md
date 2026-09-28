@@ -49,6 +49,16 @@ ordinary placement selects the unlit state.
   `lifetime_ms` (1 second–24 hours). Omitted fields retain stock behavior.
   The policy is part of item save/catalog identity and the verified client
   metadata, but the server alone decides motion, merges, pickup and expiry.
+
+Local Luau `register_block(key, name, texture, options?)` currently registers
+one-state opaque cubes. Its optional table supports `flammable`,
+`supports_plant`, `solid`, `replaceable`, `emission` (0–15),
+`reflectance` (exactly three 0–255 channels), and `side`/`bottom` face texture
+keys. Face textures must already be registered by the same package; the required
+third argument supplies the top texture and the default for other faces.
+Unsupported geometry, state/property combinations and cutout materials still
+require a broader Luau binding; do not mistake this cube shorthand for the
+entire public Rust `Block` contract.
 * Components: `Unstructured` preserves builtin behavior (nonzero version,
   1–1024 opaque bytes), `None` forbids components, and `Opaque` declares a version,
   schema fingerprint, byte maximum and whether a payload is required. The host

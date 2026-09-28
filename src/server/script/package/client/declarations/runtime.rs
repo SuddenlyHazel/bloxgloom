@@ -50,10 +50,7 @@ impl Runtime {
         let mut result = Self::default();
         for (action, handler) in &d.actions {
             action.validate().map_err(|_| invalid())?;
-            if action.operation != Operation::Gameplay
-                || action.panel.is_some()
-                || matches!(action.target, Target::Entity(_))
-            {
+            if action.operation != Operation::Gameplay || action.panel.is_some() {
                 return Err(invalid());
             }
             result.actions.push(action.clone());
@@ -154,7 +151,12 @@ impl Runtime {
                     })?;
                     writer.field(key.as_bytes())?;
                 }
-                Target::Entity(_) => return Err(invalid()),
+                Target::Entity(key) => {
+                    // Tag 7 is new and rejects on older clients instead of
+                    // silently turning entity authority into empty targeting.
+                    writer.count(7)?;
+                    writer.field(key.as_bytes())?;
+                }
             }
             if let Some(command) = &action.command {
                 writer.count(command.arguments.len())?;
@@ -218,11 +220,12 @@ impl Runtime {
             let key = own_key(reader, name, &mut previous)?;
             let version = reader.count(u16::MAX.into())? as u16;
             let label = reader.text(255)?;
-            let kind = reader.count(6)?;
+            let kind = reader.count(7)?;
             let target = match kind {
                 0 => Target::Empty,
                 1 => Target::Item(reader.text(255)?),
                 2 => Target::Block(reader.text(255)?),
+                7 => Target::Entity(reader.text(255)?),
                 5 | 6 => Target::Empty,
                 _ => return Err(invalid()),
             };

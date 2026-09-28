@@ -32,6 +32,10 @@ participate in content-map/handshake compatibility via the player contract.
 Block-bound actions take discovery precedence over entity-type actions on an
 anchor; item-bound actions similarly precede empty-space actions. Each discovery
 context is independently capped at eight, rather than merging then truncating.
+Luau `register_action` accepts `"entity"` as a target kind alongside `"empty"`,
+`"item"` and `"block"`. Its gameplay handler receives the resolved entity ID
+and uses the same server-side reach, revision and ownership checks as native
+registered gameplay actions. Target-kind tag 7 fails closed on older clients.
 
 Operations are deliberately host capabilities, not arbitrary mutable callbacks:
 `Recipe`, `EntityRequest`, `Inventory`, and `Gameplay`. Action registration cannot obtain raw

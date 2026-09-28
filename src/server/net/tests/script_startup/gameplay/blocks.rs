@@ -262,6 +262,76 @@ fn package_cube_flags_are_frozen_and_old_declaration_keeps_defaults() {
 }
 
 #[test]
+fn package_cube_material_options_negotiate_and_survive_restart() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let default = Fixture::new();
+    package(
+        &default,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile') end",
+    );
+    let default_bundle = default.startup(Arc::new(Catalog::builtins())).unwrap();
+    assert!(
+        default_bundle
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x07")
+    );
+    let explicit = Fixture::new();
+    package(
+        &explicit,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile',{solid=true,replaceable=false,emission=0,reflectance={128,128,128}}) end",
+    );
+    let explicit_bundle = explicit.startup(Arc::new(Catalog::builtins())).unwrap();
+    assert_eq!(
+        default_bundle.client_bundle.as_ref().unwrap().cache_key(),
+        explicit_bundle.client_bundle.as_ref().unwrap().cache_key()
+    );
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile',{solid=false,replaceable=true,emission=8,reflectance={12,34,56},side='demo:tile',bottom='demo:tile'}) end",
+    );
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let jade = catalog.state_by_key("demo:jade").unwrap();
+    let block = catalog.block(jade).unwrap();
+    assert!(!block.solid);
+    assert!(block.replaceable);
+    assert_eq!(block.emission, 8);
+    assert_eq!(block.reflectance, [12, 34, 56]);
+    let fingerprint = catalog.fingerprint();
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x17")
+    );
+    serve(state, |address| {
+        let joined = crate::client::connect_catalog_probe(&address.to_string(), 0xabc2).unwrap();
+        assert_eq!(joined.fingerprint(), fingerprint);
+        assert_eq!(joined.block(jade).unwrap().reflectance, [12, 34, 56]);
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    let saved_map = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile',{solid=false,replaceable=true,emission=9,reflectance={12,34,56}}) end",
+    );
+    assert!(fixture.open().is_err());
+    assert_eq!(
+        std::fs::read(fixture.0.join("save/content.map")).unwrap(),
+        saved_map
+    );
+}
+
+#[test]
 fn package_cube_rejections_fail_before_world_open() {
     for (source, expected) in [
         (
@@ -299,6 +369,18 @@ fn package_cube_rejections_fail_before_world_open() {
         (
             "h.register_block('demo:jade','Jade','demo:tile',{madeup=true})",
             "unknown block option",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{side='demo:missing'})",
+            "registered package-owned textures",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{emission=16})",
+            "integer out of bounds",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{reflectance={1,2,300}})",
+            "integer out of bounds",
         ),
         (
             "pcall(function() h.register_block('demo:jade','Jade','demo:tile',{supports_plant='yes'}) end)",

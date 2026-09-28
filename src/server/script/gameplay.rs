@@ -103,8 +103,12 @@ pub(super) fn declarer(
                     "empty" if target.is_nil() => Target::Empty,
                     "item" => Target::Item(text(target)?),
                     "block" => Target::Block(text(target)?),
-                    // Entity operations/events are intentionally not bound yet.
-                    _ => return Err("action target must be empty/nil, item/key or block/key"),
+                    "entity" => Target::Entity(text(target)?),
+                    _ => {
+                        return Err(
+                            "action target must be empty/nil, item/key, block/key or entity/key",
+                        );
+                    }
                 };
                 let action = Action {
                     key,

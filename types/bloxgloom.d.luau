@@ -7,7 +7,7 @@ export type BloxStartupHost = {
     register_item: (key: string, name: string, texture: string) -> (),
     register_generator: (key: string, revision: number, module: string) -> (),
     -- Optional command facet: empty-target only; action key is its name.
-    register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block", target_key: string?, module: string, command: BloxCommand?) -> (),
+    register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block" | "entity", target_key: string?, module: string, command: BloxCommand?) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),

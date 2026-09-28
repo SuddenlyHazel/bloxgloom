@@ -36,6 +36,35 @@ const BLOCK_SOURCE: &str = r#"return function(c,e)
     else error('wrong event') end
 end"#;
 
+#[test]
+fn entity_target_action_is_discovered_in_verified_session_catalog() {
+    use bloxgloom_host_api::actions::Target;
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    fixture.action(
+        "return function(h) h.register_entity('demo:marker',1,8,8,nil); h.register_action('demo:inspect',1,'Inspect','entity','demo:marker','demo:action') end",
+        "return function(c,e) assert(e.kind == 'ActionRequested' and e.entity_lo ~= nil) end",
+    );
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    assert_eq!(
+        catalog
+            .discover_actions(&Target::Entity("demo:marker".into()))
+            .count(),
+        1
+    );
+    serve(state, |address| {
+        let joined = crate::client::connect_catalog_probe(&address.to_string(), 0xa4).unwrap();
+        assert_eq!(joined.fingerprint(), catalog.fingerprint());
+        assert_eq!(
+            joined
+                .discover_actions(&Target::Entity("demo:marker".into()))
+                .count(),
+            1
+        );
+    });
+}
+
 fn prepare_player(state: &mut State) {
     state.spawn_anchor = [0.5, 80.0, 0.5];
     state.world.edit(0, 79, 0, STONE).unwrap();

@@ -57,6 +57,7 @@ const MAX_TEXTURES_PER_PACKAGE: usize = 32;
 const MAX_BLOCKS_PER_PACKAGE: usize = 32;
 mod block;
 pub(in crate::server::script) use block::cube;
+pub(in crate::server::script) use block::extended as extended_block;
 mod appearance;
 mod item;
 mod player;
@@ -401,12 +402,23 @@ pub(super) fn invoke(
                 {
                     return Err("duplicate startup block or item");
                 }
-                pending.blocks.push(block::cube(
-                    key.clone(),
-                    name.clone(),
-                    texture.clone(),
-                    options,
-                )?);
+                let block = block::cube(key.clone(), name.clone(), texture.clone(), options)?;
+                for face in [
+                    &block.textures.top,
+                    &block.textures.side,
+                    &block.textures.bottom,
+                ] {
+                    if face.split_once(':').is_none_or(|(owner, local)| {
+                        owner != block_namespace || !super::package::manifest::identifier(local)
+                    }) || !pending
+                        .textures
+                        .iter()
+                        .any(|registered| registered.definition.key == *face)
+                    {
+                        return Err("block faces require registered package-owned textures");
+                    }
+                }
+                pending.blocks.push(block);
                 pending.items.push(Item {
                     key: key.clone(),
                     name,

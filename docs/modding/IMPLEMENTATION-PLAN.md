@@ -619,6 +619,15 @@ through a real listener/catalog join, restart, invalid-registration regressions,
 the 896/896 suite, formatting and strict Clippy. The rest of the public
 block/material surface remains open.
 
+Package cubes now also declare bounded one-state side/bottom face textures,
+solid/replaceable flags, emission and RGB reflectance. Non-default definitions
+use a V23 client bundle; explicit defaults retain prior bytes. The exact catalog
+round-trips over a nonblocking listener and changed settings reject the saved
+identity. Entity-target gameplay actions are registered and negotiated, with the
+existing authenticated target/revision check before handler dispatch. This
+widens authoring but does not complete Phase 4's dynamic content, owner and
+client-presentation services.
+
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
 retain the prior default identity. Its existing cube/cutout drop mesh paths are
