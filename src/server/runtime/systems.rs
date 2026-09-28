@@ -60,7 +60,14 @@ pub(in crate::server) struct RegisteredWaveInputs<'a> {
     pub effects: &'a EffectKindRegistryFrozen,
     pub durability: &'a mut Durability,
     pub in_flight: &'a [Vec<StateKey>],
+    pub world: RegisteredWorldInputs<'a>,
+}
+
+pub(in crate::server) struct RegisteredWorldInputs<'a> {
     pub world: Option<&'a mut crate::world::World>,
+    pub entities: Option<&'a crate::server::entities::EntityStore>,
+    pub players: &'a [[f32; 3]],
+    pub seed: u64,
     pub missing: &'a mut Vec<crate::world::ChunkKey>,
 }
 
@@ -90,6 +97,11 @@ impl PreparedRegisteredWave {
         let clear_changes = runtime
             .durable_wakes
             .stage_clears(&self.durables.durable_served);
+        let world_changes = self
+            .durables
+            .world_action
+            .as_ref()
+            .map_or_else(Vec::new, |action| action.changes());
         canonical_key_set(
             self.durables
                 .prepared
@@ -97,7 +109,8 @@ impl PreparedRegisteredWave {
                 .iter()
                 .chain(self.durables.wake_sets.changes().iter())
                 .chain(clear_changes.iter())
-                .chain(self.durables.cursor.iter()),
+                .chain(self.durables.cursor.iter())
+                .chain(world_changes.iter()),
         )
     }
 }
@@ -410,9 +423,15 @@ impl SystemRuntime {
         tick: TickId,
         batch_wave: u16,
         effect_kinds: &EffectKindRegistryFrozen,
-        mut world: Option<&mut crate::world::World>,
-        missing: &mut Vec<crate::world::ChunkKey>,
+        world_inputs: RegisteredWorldInputs<'_>,
     ) -> io::Result<Option<PreparedRegisteredWave>> {
+        let RegisteredWorldInputs {
+            mut world,
+            entities,
+            players,
+            seed,
+            missing,
+        } = world_inputs;
         if system.is_coordinator_adapter() {
             return Err(io::Error::other(format!(
                 "coordinator adapter {} cannot run as an owner handler",
@@ -716,6 +735,34 @@ impl SystemRuntime {
                 id.as_str()
             )),
         })?;
+        let world_action = if validated
+            .patches()
+            .iter()
+            .any(|patch| !OwnerEffectPatch::world_edits(patch).is_empty())
+        {
+            let world = world.ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidInput, "owner edits have no world")
+            })?;
+            let entities = entities.ok_or_else(|| {
+                io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner edits have no entity authority",
+                )
+            })?;
+            world::plan_edits(world::EditInputs {
+                world,
+                entities,
+                players,
+                seed,
+                tick: tick.get(),
+                radius: system.world_read_radius(),
+                patches: validated.patches(),
+                reads: &mut terrain_reads,
+                missing,
+            })?
+        } else {
+            None
+        };
         let mut scheduled = Vec::new();
         for patch in validated.patches() {
             for (destination, owner) in OwnerEffectPatch::durable_wakes(patch) {
@@ -820,7 +867,8 @@ impl SystemRuntime {
                 cursor_change,
             )
             .with_live_wakes(wakes.live().to_vec())
-            .with_terrain_reads(terrain_reads),
+            .with_terrain_reads(terrain_reads)
+            .with_world_action(world_action),
         }))
     }
 
@@ -855,8 +903,13 @@ impl SystemRuntime {
                 effects: effect_kinds,
                 durability,
                 in_flight,
-                world: None,
-                missing: &mut missing,
+                world: RegisteredWorldInputs {
+                    world: None,
+                    entities: None,
+                    players: &[],
+                    seed: 0,
+                    missing: &mut missing,
+                },
             },
         )
     }
@@ -873,12 +926,11 @@ impl SystemRuntime {
             durability,
             in_flight,
             world,
-            missing,
         } = inputs;
         let pending_before = self.pending_wakes.get(system.id()).cloned();
         let result = (|| {
             let prepared =
-                self.prepare_registered_wave(system, tick, batch_wave, effects, world, missing)?;
+                self.prepare_registered_wave(system, tick, batch_wave, effects, world)?;
             let Some(prepared) = prepared else {
                 return Ok(None);
             };

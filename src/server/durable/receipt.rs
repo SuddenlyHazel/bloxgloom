@@ -129,7 +129,10 @@ fn advance_receipts(state: &mut State, wait_through: Option<u128>) -> io::Result
                                 commit.entity_permit,
                             )?;
                         }
-                        PendingPayload::Owner(owner) => {
+                        PendingPayload::Owner(mut owner) => {
+                            if let Some(world) = owner.world_action.take() {
+                                super::publication::apply_committed_owner_world(state, world.0)?;
+                            }
                             progress.owner_writes += state
                                 .system_runtime
                                 .apply_receipted_owner_wave(owner, receipt)?;

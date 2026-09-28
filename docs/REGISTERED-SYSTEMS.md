@@ -3,7 +3,7 @@
 `Registrar::owner_system` exposes the existing owner-worker and durable-wave
 runtime through `bloxgloom_host_api::system`. It is entity-independent background
 computation; chunk owners may opt into authoritative read-only terrain, but it
-is not yet a terrain-editing API.
+supports bounded conditional block edits through the same owner WAL record.
 
 An extension declares a namespaced system, schema fingerprint, partition
 (chunk/entity/profile), state-byte bound, job budget, simulation-phase dependencies,
@@ -41,6 +41,16 @@ has its own manifest identity. The independent `fixture:world_probe` and
 rejection, conflicting same/adjacent-chunk edits, and replay, including a
 real nonblocking-listener join.
 
+`Plan::edits` accepts up to 16 conditional block-state transitions per job
+(256 per wave), sourced inside the owner chunk. The host checks the captured
+preimage and routes removal, placement and neighbor decisions through the
+shared gameplay planner. Resulting terrain writes within the declared read
+neighborhood commit atomically with owner bytes, deadline, cursor and wakes;
+players and anchored entities block unsafe placements. A result requiring an
+entity/drop/inventory participant is currently rejected rather than partly
+committed. `fixture:world_writer` verifies one placement and owner state
+recover together from the journal.
+
 `Plan::wakes` can name other registered `(system, owner)` pairs. Each job may
 request at most 32 and a wave at most 2,048. The host validates the destination
 partition and journals wake flags together with the producing owner's new
@@ -56,8 +66,8 @@ across restart; `fixture:wake_loop` covers refreshing served flags and recovery.
 The owner-world loopback test also installs both declarations together and
 checks the restored destination after a real nonblocking-listener join.
 
-This still does **not** complete world-system parity: atomic terrain/entity
-effects, dynamic owner creation/removal, and durable
+This still does **not** complete world-system parity: atomic terrain **with**
+entity/drop effects, dynamic owner creation/removal, and durable
 cross-owner **payload intent** remain explicit followups, as do public fire propagation
 and delivery. Built-in support removal uses the shared neighbor decision path
 for existing edit producers rather than an owner-system callback.

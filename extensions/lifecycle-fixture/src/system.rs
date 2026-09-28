@@ -48,6 +48,7 @@ impl Behavior for Clock {
                 .checked_add(50)
                 .ok_or_else(|| RegistrationError("clock exhausted".into()))?,
             wakes: vec![],
+            edits: vec![],
         })
     }
 }
@@ -148,6 +149,62 @@ impl Behavior for Probe {
             data: vec![value],
             next_tick: context.tick + 2,
             wakes: vec![],
+            edits: vec![],
+        })
+    }
+}
+
+/// One conditional owner-local placement, for atomic owner/world WAL recovery.
+pub struct WorldWriter;
+impl bloxgloom_host_api::Extension for WorldWriter {
+    fn register(
+        &self,
+        registrar: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), RegistrationError> {
+        registrar.owner_system(System {
+            key: "fixture:world_writer".into(),
+            schema: 1,
+            partition: Partition::Chunk,
+            max_state_bytes: 1,
+            max_jobs_per_tick: 1,
+            read_radius_chunks: Some(1),
+            after: vec![],
+            seeds: vec![Seed {
+                owner: Owner::Chunk([8, 6, 0]),
+                data: vec![0],
+            }],
+            behavior: Arc::new(Writer),
+        })
+    }
+}
+struct Writer;
+impl Behavior for Writer {
+    fn validate(&self, data: &[u8]) -> Result<(), RegistrationError> {
+        if !matches!(data, [0] | [1]) {
+            return Err(RegistrationError(
+                "world writer state must be one bit".into(),
+            ));
+        }
+        Ok(())
+    }
+    fn plan(&self, context: &Context<'_>) -> Result<Plan, RegistrationError> {
+        let cell = [128, 96, 0];
+        let block = context
+            .block(cell)
+            .map_err(|error| RegistrationError(error.to_string()))?;
+        Ok(Plan {
+            data: vec![1],
+            next_tick: context.tick + 1_000,
+            wakes: vec![],
+            edits: if context.data == [0] && block.state == "bloxgloom:air" {
+                vec![BlockEdit {
+                    cell,
+                    before: block.state,
+                    after: "bloxgloom:sand".into(),
+                }]
+            } else {
+                vec![]
+            },
         })
     }
 }
@@ -222,6 +279,7 @@ impl Behavior for Pair {
             data: vec![u8::from(x == 8 || context.revision > 0)],
             next_tick: context.tick + 1_000,
             wakes,
+            edits: vec![],
         })
     }
 }

@@ -1,6 +1,69 @@
 use super::*;
 
 #[test]
+fn external_owner_world_edit_and_state_recover_from_one_receipt() {
+    let save = TestSave::new("owner-world-write");
+    let startup = || {
+        ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&bloxgloom_lifecycle_fixture::system::WorldWriter)
+            .unwrap()
+    };
+    let system = crate::server::registry::SystemId::new("fixture:world_writer").unwrap();
+    let owner =
+        crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 8, y: 6, z: 0 });
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    let mut tick = 1;
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap(),
+        (0, vec![0])
+    );
+    for _ in 0..1_000 {
+        if state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .0
+            > 0
+        {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(
+        state.world.cached_block(128, 96, 0),
+        Some(crate::world::SAND)
+    );
+    drop(state);
+    let mut recovered =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(
+        recovered
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(
+        recovered.world.get_block(128, 96, 0).unwrap(),
+        crate::world::SAND
+    );
+}
+
+#[test]
 fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observations() {
     let save = TestSave::new("owner-world-read");
     let startup = || {
@@ -54,6 +117,7 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
     let mut missing = Vec::new();
     let manual_tick = TickId::new(tick + 2);
     let effect_kinds = Arc::clone(&state.effect_kinds);
+    let seed = state.seed;
     let wave = state
         .system_runtime
         .stage_registered_wave_with_world(
@@ -64,8 +128,13 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
                 effects: &effect_kinds,
                 durability: &mut state.durability,
                 in_flight: &[],
-                world: Some(&mut state.world),
-                missing: &mut missing,
+                world: crate::server::runtime::systems::RegisteredWorldInputs {
+                    world: Some(&mut state.world),
+                    entities: Some(&state.entities),
+                    players: &[],
+                    seed,
+                    missing: &mut missing,
+                },
             },
         )
         .unwrap()
@@ -202,6 +271,7 @@ fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edit
     let mut missing = Vec::new();
     let manual_tick = TickId::new(tick + 2);
     let effects = Arc::clone(&state.effect_kinds);
+    let seed = state.seed;
     let wave = state
         .system_runtime
         .stage_registered_wave_with_world(
@@ -212,8 +282,13 @@ fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edit
                 effects: &effects,
                 durability: &mut state.durability,
                 in_flight: &[],
-                world: Some(&mut state.world),
-                missing: &mut missing,
+                world: crate::server::runtime::systems::RegisteredWorldInputs {
+                    world: Some(&mut state.world),
+                    entities: Some(&state.entities),
+                    players: &[],
+                    seed,
+                    missing: &mut missing,
+                },
             },
         )
         .unwrap()

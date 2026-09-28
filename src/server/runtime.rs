@@ -391,6 +391,14 @@ pub(super) fn tick_with_inputs(
                 let batch_wave = u16::try_from(index)
                     .map_err(|_| io::Error::other("too many registered phase systems"))?;
                 let effect_kinds = Arc::clone(&context.state.effect_kinds);
+                let players: Vec<_> = context
+                    .state
+                    .clients
+                    .values()
+                    .map(|client| client.position())
+                    .collect();
+                let seed = context.state.seed;
+                let entities = &context.state.entities;
                 // Split the borrows: the owner wave stages through the
                 // shared durable journal while applying to the runtime store.
                 let (system_runtime, durability, world) = (
@@ -407,8 +415,13 @@ pub(super) fn tick_with_inputs(
                         effects: &effect_kinds,
                         durability,
                         in_flight: &staged_key_sets,
-                        world: Some(world),
-                        missing: &mut missing,
+                        world: systems::RegisteredWorldInputs {
+                            world: Some(world),
+                            entities: Some(entities),
+                            players: &players,
+                            seed,
+                            missing: &mut missing,
+                        },
                     },
                 );
                 for key in missing {

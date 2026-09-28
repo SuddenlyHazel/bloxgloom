@@ -1,8 +1,13 @@
 //! Bounded, authoritative owner-neighborhood capture for public worker jobs.
 //! Every observed chunk is fenced until the owner's WAL receipt. Missing
 //! chunks are requested asynchronously by the coordinator, never synthesized.
-use super::{OwnerKey, TerrainReads};
+use super::{OwnerEffectPatch, OwnerKey, OwnerPatch, TerrainReads};
+use crate::server::durable::{BlockDelta, CommitAction};
+use crate::server::effects::CellCoord;
+use crate::server::entities::{CellCoord as EntityCell, EntityStore};
+use crate::server::gameplay::{self, OperationInput, Participants};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, World};
+use bloxgloom_host_api::gameplay::RemovalCause;
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
@@ -56,4 +61,200 @@ pub(super) fn capture(
         }
     }
     Ok((chunks.len() == width * width * width).then_some(chunks))
+}
+
+/// Translate public owner proposals through the shared edit/neighbor planner.
+/// Only terrain is supported in this increment: reject any generated entity,
+/// drop or inventory participant rather than committing a partial lifecycle.
+pub(super) struct EditInputs<'a> {
+    pub world: &'a mut World,
+    pub entities: &'a EntityStore,
+    pub players: &'a [[f32; 3]],
+    pub seed: u64,
+    pub tick: u64,
+    pub radius: Option<u8>,
+    pub patches: &'a [OwnerPatch],
+    pub reads: &'a mut TerrainReads,
+    pub missing: &'a mut Vec<ChunkKey>,
+}
+
+pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitAction>> {
+    let EditInputs {
+        world,
+        entities,
+        players,
+        seed,
+        tick,
+        radius,
+        patches,
+        reads,
+        missing,
+    } = inputs;
+    let mut edits = Vec::new();
+    let mut removals = Vec::new();
+    let mut owners = Vec::new();
+    let catalog = world.catalog_arc();
+    for patch in patches {
+        let proposals = OwnerEffectPatch::world_edits(patch);
+        if proposals.is_empty() {
+            continue;
+        }
+        let Some(owner) = patch.owner().as_chunk() else {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "world edit requires a chunk owner",
+            ));
+        };
+        if radius.is_none() {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "world edit requires captured terrain",
+            ));
+        }
+        owners.push(owner);
+        for edit in proposals {
+            if edits.len() >= 256 {
+                return Err(io::Error::new(
+                    ErrorKind::QuotaExceeded,
+                    "owner wave exceeds 256 block edits",
+                ));
+            }
+            let [x, y, z] = edit.cell;
+            if crate::world::world_to_chunk(x, y, z).0 != owner {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner edit escaped its chunk",
+                ));
+            }
+            let previous = world.cached_block(x, y, z).ok_or_else(|| {
+                io::Error::new(ErrorKind::WouldBlock, "owner edit chunk no longer resident")
+            })?;
+            if gameplay::block(&catalog, previous)
+                .map_err(gameplay::error)?
+                .state
+                != edit.before
+            {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "owner edit preimage changed",
+                ));
+            }
+            let after = catalog.state_by_key(&edit.after).ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidInput, "unknown owner edit block state")
+            })?;
+            edits.push((x, y, z, after));
+            if previous != crate::world::AIR {
+                removals.push((previous, edit.cell, RemovalCause::WorldEdit));
+            }
+        }
+    }
+    if edits.is_empty() {
+        return Ok(None);
+    }
+    let mut requested = Vec::new();
+    let planned = gameplay::plan_removals(
+        world,
+        reads,
+        &mut requested,
+        OperationInput {
+            edits: &edits,
+            removals: &removals,
+            seed,
+            tick,
+            action: None,
+        },
+        Participants {
+            actor: None,
+            entities,
+        },
+    );
+    for key in requested {
+        if missing.len() == 8 {
+            break;
+        }
+        if !missing.contains(&key) {
+            missing.push(key);
+        }
+    }
+    let planned = planned?;
+    if !planned.entity_updates.is_empty()
+        || !planned.entity_spawns.is_empty()
+        || !planned.drops.is_empty()
+        || planned.inventory.is_some()
+        || !planned.drop_takes.is_empty()
+    {
+        return Err(io::Error::new(
+            ErrorKind::Unsupported,
+            "owner block edit needs atomic entity/drop participants",
+        ));
+    }
+    let radius = i64::from(radius.expect("edits require a world view"));
+    for &(x, y, z, after) in &planned.edits {
+        let (key, _) = crate::world::world_to_chunk(x, y, z);
+        if !owners.iter().any(|owner| {
+            (i64::from(key.x) - i64::from(owner.x)).abs() <= radius
+                && (i64::from(key.y) - i64::from(owner.y)).abs() <= radius
+                && (i64::from(key.z) - i64::from(owner.z)).abs() <= radius
+        }) {
+            return Err(io::Error::new(
+                ErrorKind::Unsupported,
+                "gameplay effect escaped the owner read neighborhood",
+            ));
+        }
+        if entities.anchored_at(EntityCell::new(x, y, z)).is_some() {
+            return Err(io::Error::new(
+                ErrorKind::Unsupported,
+                "owner block edit would orphan an anchored entity",
+            ));
+        }
+        if catalog.block_flags(after) & crate::content::SOLID != 0
+            && players
+                .iter()
+                .any(|position| crate::server::block_intersects_player([x, y, z], *position))
+        {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "owner block edit overlaps a player",
+            ));
+        }
+    }
+    let deltas = planned
+        .edits
+        .iter()
+        .filter_map(|&(x, y, z, block)| {
+            let (key, local) = crate::world::world_to_chunk(x, y, z);
+            let version = planned
+                .prepared
+                .iter()
+                .find(|edit| edit.key == key)?
+                .new_version;
+            Some(BlockDelta {
+                key,
+                local: local.map(|v| v as u8),
+                version,
+                block,
+            })
+        })
+        .collect();
+    Ok(Some(CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        terrain_reads: reads.clone(),
+        inventory_before: None,
+        inventory: None,
+        world_edits: planned.prepared,
+        deltas,
+        changed_cells: planned
+            .edits
+            .iter()
+            .map(|&(x, y, z, _)| CellCoord::new(x, y, z))
+            .collect(),
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: None,
+    }))
 }

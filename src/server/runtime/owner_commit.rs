@@ -29,7 +29,7 @@ use super::super::simulation::TickId;
 use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
 use super::owner_effects::OwnerEffectPatch;
 use super::owner_wake::PreparedWakeSets;
-use crate::server::durable::TerrainReads;
+use crate::server::durable::{CommitAction, TerrainReads};
 use std::collections::BTreeSet;
 use std::io;
 
@@ -44,6 +44,38 @@ pub(in crate::server) struct OwnerCommit {
     pub live_wakes: Vec<(SystemId, OwnerKey)>,
     pub tick: TickId,
     pub terrain_reads: TerrainReads,
+    pub world_action: Option<OwnerWorldAction>,
+}
+
+/// World changes carried by the owner WAL record, not submitted as a second
+/// action. Keep unrelated player/session fields out of the debug projection.
+pub(in crate::server) struct OwnerWorldAction(pub CommitAction);
+
+impl OwnerWorldAction {
+    pub fn changes(&self) -> Vec<Change> {
+        self.0
+            .world_edits
+            .iter()
+            .filter(|edit| edit.changed)
+            .map(|edit| {
+                Change::new(
+                    crate::server::durable::chunk_state_key(edit.key),
+                    edit.before_snapshot.clone(),
+                    edit.after_snapshot.clone(),
+                )
+            })
+            .collect()
+    }
+}
+
+impl std::fmt::Debug for OwnerWorldAction {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OwnerWorldAction")
+            .field("chunks", &self.0.world_edits.len())
+            .field("cells", &self.0.changed_cells.len())
+            .finish()
+    }
 }
 
 /// Wave-attached durable pieces for one owner commit.
@@ -59,6 +91,7 @@ pub(in crate::server) struct OwnerWaveDurables {
     pub cursor: Option<Change>,
     pub live_wakes: Vec<(SystemId, OwnerKey)>,
     pub terrain_reads: TerrainReads,
+    pub world_action: Option<OwnerWorldAction>,
 }
 
 impl OwnerWaveDurables {
@@ -77,6 +110,7 @@ impl OwnerWaveDurables {
             cursor,
             live_wakes: Vec::new(),
             terrain_reads: TerrainReads::default(),
+            world_action: None,
         }
     }
 
@@ -87,6 +121,11 @@ impl OwnerWaveDurables {
 
     pub fn with_terrain_reads(mut self, reads: TerrainReads) -> Self {
         self.terrain_reads = reads;
+        self
+    }
+
+    pub fn with_world_action(mut self, action: Option<CommitAction>) -> Self {
+        self.world_action = action.map(OwnerWorldAction);
         self
     }
 }

@@ -28,7 +28,9 @@ General entity due handlers now run on the persisted entity clock, with owned
 state/next due time and shared world/drop effects in one durable transaction.
 Owner-local systems may now capture their authoritative owner chunk or immediate
 3×3×3 neighborhood for read-only worker queries, with unavailable-chunk
-deferral and WAL read fences on every captured chunk;
+deferral and WAL read fences on every captured chunk. Conditional owner-local
+block edits now share the owner WAL record, but generated entity/drop effects
+are rejected pending atomic participant support;
 they can also durably wake another registered owner to run sooner without
 carrying a payload. This does not yet supply general owner-local world effects
 or built-in fire.

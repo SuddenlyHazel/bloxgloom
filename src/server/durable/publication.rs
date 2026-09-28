@@ -28,8 +28,27 @@ mod tests;
 
 pub(super) fn apply_committed_action(
     state: &mut State,
+    action: CommitAction,
+    entity_permit: Option<super::MirrorPermit>,
+) -> io::Result<()> {
+    apply_committed_action_inner(state, action, entity_permit, true)
+}
+
+/// An owner-state and world edit already share one WAL record; this applies
+/// its block projection at the same receipt without changing the drop-expiry
+/// coordinator's independent queued sweep.
+pub(super) fn apply_committed_owner_world(
+    state: &mut State,
+    action: CommitAction,
+) -> io::Result<()> {
+    apply_committed_action_inner(state, action, None, false)
+}
+
+fn apply_committed_action_inner(
+    state: &mut State,
     mut action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
+    complete_expiry: bool,
 ) -> io::Result<()> {
     if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
     {
@@ -166,7 +185,7 @@ pub(super) fn apply_committed_action(
     state.pending_block_changes.extend(action.changed_cells);
     let completed_pickup =
         action.action_id.is_none() && action.profile.is_some() && action.inventory.is_some();
-    if action.profile.is_none() {
+    if complete_expiry && action.profile.is_none() {
         state.durability.expire_queued = false;
         // A full expiry batch may leave more expired drops behind; the next
         // throttled scan re-queues the sweep.

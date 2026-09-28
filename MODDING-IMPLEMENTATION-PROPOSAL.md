@@ -643,8 +643,17 @@ This section exists so compaction or a new session does not restart the design.
   external declarations (owner read, neighborhood read and durable wake).
   The focused 91-test owner suite and strict all-feature Clippy passed.
   This remains read-only: owner-world **effects** are next.
-- **Next concrete step:** make owner-local world/entity changes atomic with the
-  persisted owner wave, then add durable cross-owner **payload** intent and move
+- **Phase 2 conditional owner-world-edit increment:** bounded public owner
+  plans can propose exact-preimage block edits inside their owner chunk. The
+  shared removal/placement/neighbor planner prepares resulting terrain effects,
+  and one WAL record commits them with owner state, deadline, cursor and wakes.
+  Generated entity/drop/inventory participants are deliberately rejected until
+  the owner transaction can reserve and publish them atomically. The separate
+  world-writer fixture exercises deferred loading and restart recovery of
+  both owner state and terrain. The focused 92-test owner suite and strict
+  all-feature workspace Clippy passed. Fire propagation/delivery remains native.
+- **Next concrete step:** add atomic entity/drop participants to owner-world
+  changes, then durable cross-owner **payload** intent and move
   fire propagation/delivery decisions off the native-only policy. Migrate
   remaining drops, player rules, commands and helper paths before marking
   Phase 2 done.

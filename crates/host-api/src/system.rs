@@ -54,6 +54,19 @@ pub struct Plan {
     /// Durable, bounded invitations for another registered owner to run
     /// sooner. A wake carries no payload and cannot replace a world effect.
     pub wakes: Vec<Wake>,
+    /// Bounded conditional block transitions. Sources must lie in this
+    /// chunk owner's cells and require a captured world view. The host runs
+    /// removal, placement and neighbor decisions before WAL admission.
+    pub edits: Vec<BlockEdit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlockEdit {
+    pub cell: Cell,
+    /// Exact namespaced block-state preimage observed through `Context::block`.
+    pub before: String,
+    /// Namespaced replacement state, resolved against the frozen catalog.
+    pub after: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

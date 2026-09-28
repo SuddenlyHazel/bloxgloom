@@ -15,12 +15,19 @@ impl Durability {
         if !commit.terrain_reads.is_current() {
             return Err(Box::new((StageError::Conflict, commit)));
         }
-        let reads = commit
+        let mut reads: Vec<_> = commit
             .prepared
             .read_keys()
             .into_iter()
             .chain(commit.terrain_reads.keys())
             .collect();
+        if let Some(world) = &commit.world_action {
+            reads.extend(world.0.changed_cells.iter().map(|cell| {
+                crate::server::entities::cell_state_key(crate::server::entities::CellCoord::new(
+                    cell.x, cell.y, cell.z,
+                ))
+            }));
+        }
         let mut payload = Some(PendingPayload::Owner(commit));
         match self.try_stage_changes(tick, changes, reads, &mut payload, None) {
             Ok(true) => Ok(CommitBarrier::Through(self.next_id - 1)),

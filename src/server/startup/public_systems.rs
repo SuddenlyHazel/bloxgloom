@@ -120,17 +120,14 @@ impl SystemHandler for Adapter {
             chunks: job.world_chunks(),
             catalog,
         });
-        let plan = self
-            .0
-            .behavior
-            .plan(&api::Context {
-                owner: public_owner(job.owner()),
-                revision: snapshot.revision(),
-                tick,
-                data,
-                world: world.as_ref().map(|world| world as &dyn api::WorldRead),
-            })
-            .map_err(|_| reject())?;
+        let context = api::Context {
+            owner: public_owner(job.owner()),
+            revision: snapshot.revision(),
+            tick,
+            data,
+            world: world.as_ref().map(|world| world as &dyn api::WorldRead),
+        };
+        let plan = self.0.behavior.plan(&context).map_err(|_| reject())?;
         if plan.next_tick <= tick {
             return Err(reject());
         }
@@ -138,6 +135,32 @@ impl SystemHandler for Adapter {
             return Err(SystemHandlerError::Rejected(
                 "public owner system exceeds 32 wakes per job".into(),
             ));
+        }
+        if plan.edits.len() > 16 {
+            return Err(SystemHandlerError::Rejected(
+                "public owner system exceeds 16 block edits per job".into(),
+            ));
+        }
+        let mut edited = std::collections::BTreeSet::new();
+        for edit in &plan.edits {
+            if !matches!(job.owner(), OwnerKey::Chunk(key) if key == crate::world::world_to_chunk(edit.cell[0], edit.cell[1], edit.cell[2]).0)
+                || !edited.insert(edit.cell)
+                || edit.before == edit.after
+                || edit.before.len() > 128
+                || edit.after.len() > 128
+                || job
+                    .owner_catalog()
+                    .and_then(|catalog| catalog.state_by_key(&edit.after))
+                    .is_none()
+                || context
+                    .block(edit.cell)
+                    .map(|block| block.state != edit.before)
+                    .unwrap_or(true)
+            {
+                return Err(SystemHandlerError::Rejected(
+                    "invalid conditional owner block edit".into(),
+                ));
+            }
         }
         let wakes = plan
             .wakes
@@ -150,11 +173,20 @@ impl SystemHandler for Adapter {
             })
             .collect::<Result<Vec<_>, SystemHandlerError>>()?;
         let state = self.decode(&plan.data).map_err(|_| reject())?;
-        let bytes = plan.data.len();
-        let output = if wakes.is_empty() {
+        let bytes = plan.data.len()
+            + plan
+                .edits
+                .iter()
+                .map(|edit| edit.before.len() + edit.after.len() + 16)
+                .sum::<usize>();
+        let output = if wakes.is_empty() && plan.edits.is_empty() {
             None
         } else {
-            Some(OwnerEffectPatch::new(state.clone(), Vec::new()).with_durable_wakes(wakes))
+            Some(
+                OwnerEffectPatch::new(state.clone(), Vec::new())
+                    .with_durable_wakes(wakes)
+                    .with_world_edits(plan.edits),
+            )
         };
         let usage = PatchUsage {
             writes: 1,

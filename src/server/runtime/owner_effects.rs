@@ -65,6 +65,7 @@ pub(in crate::server) struct OwnerEffectPatch {
     state: OwnerData,
     effects: Vec<EmittedOwnerEffect>,
     durable_wakes: Vec<(SystemId, OwnerKey)>,
+    world_edits: Vec<bloxgloom_host_api::system::BlockEdit>,
 }
 
 impl OwnerEffectPatch {
@@ -77,6 +78,7 @@ impl OwnerEffectPatch {
             state,
             effects,
             durable_wakes: Vec::new(),
+            world_edits: Vec::new(),
         }
     }
 
@@ -92,6 +94,22 @@ impl OwnerEffectPatch {
         patch
             .payload::<OwnerEffectPatch>()
             .map_or(&[], |emission| &emission.durable_wakes)
+    }
+
+    pub(in crate::server) fn with_world_edits(
+        mut self,
+        edits: Vec<bloxgloom_host_api::system::BlockEdit>,
+    ) -> Self {
+        self.world_edits = edits;
+        self
+    }
+
+    pub(in crate::server) fn world_edits(
+        patch: &OwnerPatch,
+    ) -> &[bloxgloom_host_api::system::BlockEdit] {
+        patch
+            .payload::<OwnerEffectPatch>()
+            .map_or(&[], |emission| &emission.world_edits)
     }
 
     /// Actual emitted intent count for wave bound accounting. Plain patches
