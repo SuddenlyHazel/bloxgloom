@@ -185,6 +185,10 @@ impl VoxelView {
     pub fn is_solid(&self, x: i32, y: i32, z: i32) -> Result<bool, MissingChunk> {
         Ok(self.catalog.block_flags(self.block(x, y, z)?) & crate::content::SOLID != 0)
     }
+
+    pub(super) fn player_rules(&self) -> bloxgloom_host_api::player::PlayerRules {
+        self.catalog.player_rules()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -202,9 +206,12 @@ pub fn resolve_player_movement(
     position: [f32; 3],
     delta: [f32; 3],
 ) -> Result<[f32; 3], MovementError> {
-    crate::physics::resolve_player_movement(position, delta, |x, y, z| {
-        Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)
-    })
+    crate::physics::resolve_player_movement(
+        view.player_rules().body(),
+        position,
+        delta,
+        |x, y, z| Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0),
+    )
     .map_err(|error| match error {
         crate::physics::ResolveError::Missing(chunk) => MovementError::MissingChunk(chunk),
         crate::physics::ResolveError::InvalidCoordinates => MovementError::InvalidCoordinates,
@@ -212,11 +219,11 @@ pub fn resolve_player_movement(
     })
 }
 
-/// Tests the shared builtin body at feet, torso and head sample heights.
+/// Tests the catalog-selected body at feet, torso and head sample heights.
 /// Missing samples are explicit errors rather than guessed empty space.
 #[cfg(test)]
 pub fn player_collides(view: &VoxelView, feet: [f32; 3]) -> Result<bool, MissingChunk> {
-    crate::physics::player_collides(feet, |x, y, z| {
+    crate::physics::player_collides(view.player_rules().body(), feet, |x, y, z| {
         Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)
     })
 }

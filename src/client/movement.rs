@@ -12,14 +12,19 @@ pub(super) fn predict_player_movement(
     position: Vec3,
     delta: Vec3,
 ) -> Vec3 {
-    crate::physics::resolve_player_movement(position.to_array(), delta.to_array(), |x, y, z| {
-        let (key, local) = crate::world::world_to_chunk(x, y, z);
-        let block = chunks
-            .get(&key)
-            .and_then(|chunk| chunk.block(local))
-            .ok_or(())?;
-        Ok::<bool, ()>(catalog.block_flags(block) & crate::content::SOLID != 0)
-    })
+    crate::physics::resolve_player_movement(
+        catalog.player_rules().body(),
+        position.to_array(),
+        delta.to_array(),
+        |x, y, z| {
+            let (key, local) = crate::world::world_to_chunk(x, y, z);
+            let block = chunks
+                .get(&key)
+                .and_then(|chunk| chunk.block(local))
+                .ok_or(())?;
+            Ok::<bool, ()>(catalog.block_flags(block) & crate::content::SOLID != 0)
+        },
+    )
     .map(Vec3::from_array)
     // Missing chunks are unknown, not air. Server input still goes through.
     .unwrap_or(position)

@@ -3,12 +3,12 @@
 
 use super::{State, streaming};
 use crate::world::{BEDROCK_Y, MAX_GENERATED_HEIGHT, World, world_to_chunk};
-use bloxgloom_host_api::player::BUILTIN_SPAWN;
 use std::io::{self, ErrorKind};
 
 pub(super) fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
-    let ceiling = BUILTIN_SPAWN.ceiling(MAX_GENERATED_HEIGHT);
     let catalog = world.catalog_arc();
+    let spawn = catalog.player_rules().spawn();
+    let ceiling = spawn.ceiling(MAX_GENERATED_HEIGHT);
     let solid = |block| catalog.block_flags(block) & crate::content::SOLID != 0;
     if solid(world.get_block(0, ceiling, 0)?) {
         return Err(io::Error::new(
@@ -16,9 +16,9 @@ pub(super) fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
             "spawn terrain exceeds scan ceiling",
         ));
     }
-    for y in BUILTIN_SPAWN.startup_support_levels(BEDROCK_Y, MAX_GENERATED_HEIGHT) {
+    for y in spawn.startup_support_levels(BEDROCK_Y, MAX_GENERATED_HEIGHT) {
         if solid(world.get_block(0, y, 0)?) {
-            let position = BUILTIN_SPAWN.feet(y + 1);
+            let position = spawn.feet(y + 1);
             if !collides(world, position)? {
                 return Ok(position);
             }
@@ -39,7 +39,11 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
     let mut missing = false;
     // Keep the historical preference for the original/upward surface, but
     // mining it must not strand later joins when a safe lower surface exists.
-    for y in BUILTIN_SPAWN.cached_feet_levels(start_y, BEDROCK_Y) {
+    for y in catalog
+        .player_rules()
+        .spawn()
+        .cached_feet_levels(start_y, BEDROCK_Y)
+    {
         let support = match state.world.cached_block(0, y - 1, 0) {
             Some(block) => block,
             None => {
@@ -51,7 +55,7 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
         if catalog.block_flags(support) & crate::content::SOLID == 0 {
             continue;
         }
-        let position = BUILTIN_SPAWN.feet(y);
+        let position = catalog.player_rules().spawn().feet(y);
         match collides_cached(state, position)? {
             Some(false) => return Ok(position),
             Some(true) => {}
@@ -73,8 +77,9 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
 
 pub(super) fn collides_cached(state: &mut State, feet: [f32; 3]) -> io::Result<Option<bool>> {
     let mut missing = false;
-    let collides =
-        bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, |x, y, z| -> io::Result<bool> {
+    let collides = state.world.catalog().player_rules().body().collides(
+        feet,
+        |x, y, z| -> io::Result<bool> {
             let cell = [x, y, z];
             match state.world.cached_block(x, y, z) {
                 Some(block) => {
@@ -86,7 +91,8 @@ pub(super) fn collides_cached(state: &mut State, feet: [f32; 3]) -> io::Result<O
                     Ok(false)
                 }
             }
-        })?;
+        },
+    )?;
     Ok(if collides {
         Some(true)
     } else {
@@ -102,7 +108,7 @@ fn request_missing(state: &mut State, cell: [i32; 3]) -> io::Result<()> {
 
 pub(super) fn collides(world: &mut World, feet: [f32; 3]) -> io::Result<bool> {
     let catalog = world.catalog_arc();
-    bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, |x, y, z| {
+    catalog.player_rules().body().collides(feet, |x, y, z| {
         Ok(catalog.block_flags(world.get_block(x, y, z)?) & crate::content::SOLID != 0)
     })
 }

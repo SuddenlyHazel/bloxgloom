@@ -204,7 +204,9 @@ pub(in crate::server) fn plan_interact(
         .ok_or_else(|| io::Error::new(ErrorKind::NotConnected, "entity client disconnected"))?;
     let position = client.position();
     let distance_sq = (target[0] as f32 + 0.5 - position[0]).powi(2)
-        + (target[1] as f32 + 0.5 - (position[1] + 1.6)).powi(2)
+        + (target[1] as f32 + 0.5
+            - (position[1] + state.world.catalog().player_rules().eye_height()))
+        .powi(2)
         + (target[2] as f32 + 0.5 - position[2]).powi(2);
     if distance_sq > crate::server::EDIT_REACH * crate::server::EDIT_REACH
         || !client.interested(target_cell.chunk())
@@ -348,7 +350,7 @@ fn interaction_sight(
     snapshot: &EntitySnapshot,
     catalog: &crate::content::Catalog,
 ) -> io::Result<BTreeSet<ChunkKey>> {
-    let eye = glam::Vec3::from_array(actor) + glam::Vec3::Y * 1.6;
+    let eye = glam::Vec3::from_array(actor) + glam::Vec3::Y * catalog.player_rules().eye_height();
     let center = match snapshot.location {
         EntityLocation::Mobile { position } => {
             let body = catalog
@@ -827,7 +829,11 @@ fn plan_reaction_removal(
             .is_some_and(|id| id != snapshot.id)
             || (catalog.block_flags(block) & crate::content::SOLID != 0
                 && state.clients.values().any(|client| {
-                    crate::server::block_intersects_player([x, y, z], client.position())
+                    crate::server::block_intersects_player(
+                        catalog.player_rules().body(),
+                        [x, y, z],
+                        client.position(),
+                    )
                 }))
         {
             return Err(permission(

@@ -12,7 +12,11 @@ fn descent_prediction_stops_at_streamed_ground() {
     let mut chunks = HashMap::new();
     chunks.insert(chunk.key, Arc::new(chunk));
     let position = Vec3::new(0.5, 1.0, 0.5);
-    let catalog = Catalog::builtins();
+    // Prediction uses the connection-reconstructed catalog, not a global body.
+    let local = Catalog::builtins();
+    let catalog = crate::content::ContentManifest::from_catalog(&local)
+        .resolve_catalog(&local)
+        .unwrap();
 
     assert_eq!(
         predict_player_movement(&chunks, &catalog, position, Vec3::new(0.0, -0.2, 0.0)),

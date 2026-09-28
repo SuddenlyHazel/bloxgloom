@@ -13,10 +13,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<WorkerLoad> {
+    let rules = state.world.catalog().player_rules();
     let mut active = Vec::new();
     for (&id, client) in &mut state.clients {
         if client.pending_moves.is_empty() {
-            client.movement.advance_idle_tick();
+            client.movement.advance_idle_tick(rules);
         } else {
             active.push(id);
         }
@@ -26,7 +27,8 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
     }
     active.sort_unstable();
 
-    // A 250 ms burst moves at most 2.5 blocks. The 3x3x3 neighborhood
+    // Validated rules bound a 250 ms burst to 4 blocks (builtin: 2.5).
+    // Together with the validated body bounds, the 3x3x3 neighborhood
     // contains every possible collision sample around the current chunk;
     // absent chunks are left out so the pure resolver can identify the exact
     // one to request. Clustered players share the same immutable Arcs.
@@ -110,7 +112,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
                 .get_mut(&id)
                 .unwrap()
                 .movement
-                .advance_idle_tick();
+                .advance_idle_tick(rules);
         }
         return Ok(worker_load);
     }

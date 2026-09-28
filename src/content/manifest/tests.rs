@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn builtin_player_rules_survive_save_and_connection_reconstruction() {
+    let local = Catalog::builtins();
+    let manifest = ContentManifest::from_catalog(&local);
+    let mut saved = ContentManifest::decode(&manifest.encode().unwrap()).unwrap();
+    let (world, changed) = saved.resolve_world_catalog(&local).unwrap();
+    assert!(!changed);
+    assert_eq!(
+        world.player_rules(),
+        bloxgloom_host_api::player::BUILTIN_RULES
+    );
+    let connected = ContentManifest::from_catalog(&world)
+        .resolve_catalog(&local)
+        .unwrap();
+    assert_eq!(connected.player_rules(), world.player_rules());
+    assert_eq!(connected.fingerprint(), world.fingerprint());
+    assert_eq!(ContentManifest::from_catalog(&connected), manifest);
+}
+
+#[test]
+fn unnegotiated_player_override_is_rejected_not_reconstructed_as_builtin() {
+    use bloxgloom_host_api::player::{BUILTIN_RULES, PlayerRules};
+    let mut local = Catalog::builtins();
+    let mut saved = ContentManifest::from_catalog(&local);
+    local.player_rules = PlayerRules::new(
+        BUILTIN_RULES.body(),
+        BUILTIN_RULES.motion(),
+        BUILTIN_RULES.spawn(),
+        1.5,
+    )
+    .unwrap();
+    assert_eq!(
+        local.validate(),
+        Err(super::super::RegistrationError::InvalidDefinition)
+    );
+    assert!(saved.resolve_world_catalog(&local).is_err());
+    assert!(saved.resolve_catalog(&local).is_err());
+}
+
+#[test]
 fn manifest_round_trips_wide_ids_and_rejects_corruption() {
     let manifest = ContentManifest {
         entries: vec![

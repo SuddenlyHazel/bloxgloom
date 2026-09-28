@@ -6,6 +6,7 @@
 //! missing authoritative data before retrying.
 
 use super::voxel_view::{MissingChunk, MovementError, VoxelView, resolve_player_movement};
+use bloxgloom_host_api::player::PlayerRules;
 use std::time::Duration;
 
 mod coordinator;
@@ -20,8 +21,6 @@ pub(super) struct WorkerLoad {
     pub(super) capacity: Duration,
 }
 
-const SPEED_BLOCKS_PER_SECOND: f64 =
-    bloxgloom_host_api::player::BUILTIN_MOTION.budget_blocks_per_second;
 const TICK_MILLIS: f64 = 20.0;
 const CREDIT_SCALE: f64 = 1_000_000_000.0;
 // The client sends f32 displacements. A tiny fixed tolerance absorbs f32
@@ -29,11 +28,14 @@ const CREDIT_SCALE: f64 = 1_000_000_000.0;
 // blocks/s), while nanoblock accounting prevents per-command quantization
 // from accumulating into visible movement debt.
 const FLOAT_ROUNDING_ALLOWANCE_PER_TICK: u32 = 256;
-const CREDIT_PER_TICK: u32 = (SPEED_BLOCKS_PER_SECOND * TICK_MILLIS / 1_000.0 * CREDIT_SCALE)
-    as u32
-    + FLOAT_ROUNDING_ALLOWANCE_PER_TICK;
-const MAX_CREDIT: u32 = (SPEED_BLOCKS_PER_SECOND * 0.250 * CREDIT_SCALE) as u32;
-const MAX_COMMAND_DISTANCE: f64 = MAX_CREDIT as f64 / CREDIT_SCALE;
+fn credit_per_tick(rules: PlayerRules) -> u32 {
+    (rules.motion().budget_blocks_per_second * TICK_MILLIS / 1_000.0 * CREDIT_SCALE) as u32
+        + FLOAT_ROUNDING_ALLOWANCE_PER_TICK
+}
+
+fn max_credit(rules: PlayerRules) -> u32 {
+    (rules.motion().budget_blocks_per_second * 0.250 * CREDIT_SCALE) as u32
+}
 
 /// Maximum number of commands (including replays and rejected inputs) handled
 /// for one player in a tick. Remaining commands stay queued for the next tick.
@@ -75,11 +77,11 @@ impl MovementState {
     /// Advances an idle player without constructing a voxel view or worker
     /// job. The coordinator calls exactly one of this or
     /// `process_movement_batch` for each player on each tick.
-    pub fn advance_idle_tick(&mut self) {
+    pub fn advance_idle_tick(&mut self, rules: PlayerRules) {
         self.credit_nanoblocks = self
             .credit_nanoblocks
-            .saturating_add(CREDIT_PER_TICK)
-            .min(MAX_CREDIT);
+            .saturating_add(credit_per_tick(rules))
+            .min(max_credit(rules));
     }
 }
 
@@ -136,7 +138,8 @@ pub fn process_movement_batch(
     mut state: MovementState,
     commands: &[MovementCommand],
 ) -> MovementBatch {
-    state.advance_idle_tick();
+    let rules = view.player_rules();
+    state.advance_idle_tick(rules);
 
     let work_count = commands.len().min(MAX_COMMANDS_PER_TICK);
     let mut acknowledgments = Vec::with_capacity(work_count);
@@ -149,7 +152,7 @@ pub fn process_movement_batch(
             continue;
         }
 
-        let Some(cost) = movement_cost(command.delta) else {
+        let Some(cost) = movement_cost(rules, command.delta) else {
             state.last_seq = command.seq;
             acknowledgments.push(MovementAck {
                 seq: command.seq,
@@ -222,13 +225,13 @@ pub fn process_movement_batch(
 
 /// Converts a finite, bounded movement vector to conservative fixed-point
 /// distance. Rounding upward ensures quantization can never grant extra speed.
-fn movement_cost(delta: [f32; 3]) -> Option<u32> {
+fn movement_cost(rules: PlayerRules, delta: [f32; 3]) -> Option<u32> {
     if delta.iter().any(|component| !component.is_finite()) {
         return None;
     }
     let [x, y, z] = delta.map(f64::from);
     let distance = (x * x + y * y + z * z).sqrt();
-    if distance > MAX_COMMAND_DISTANCE {
+    if distance > max_credit(rules) as f64 / CREDIT_SCALE {
         return None;
     }
     Some((distance * CREDIT_SCALE).ceil() as u32)

@@ -22,7 +22,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
-const SPEED: f32 = bloxgloom_host_api::player::BUILTIN_MOTION.intent_blocks_per_second;
 // Diagnostic interest-volume bound, not an eviction budget.
 const MAX_CHUNKS: usize = (2 * crate::protocol::MAX_VIEW_DISTANCE as usize + 1).pow(2)
     * (2 * crate::protocol::VERTICAL_VIEW_DISTANCE as usize + 1);
@@ -421,7 +420,7 @@ impl ClientApp {
 
     fn camera(&self) -> Camera {
         Camera {
-            position: self.position + Vec3::Y * 1.6,
+            position: self.position + Vec3::Y * self.catalog.player_rules().eye_height(),
             yaw: self.yaw,
             pitch: self.pitch,
             fov_y_radians: self.config.fov_degrees.to_radians(),
@@ -1201,7 +1200,13 @@ impl ClientApp {
         if direction == Vec3::ZERO {
             return;
         }
-        let delta = direction.normalize() * SPEED * dt.min(0.05);
+        let delta = direction.normalize()
+            * self
+                .catalog
+                .player_rules()
+                .motion()
+                .intent_blocks_per_second
+            * dt.min(0.05);
         let seq = self.next_seq;
         self.next_seq += 1;
         if self.unacked.len() >= 256 {

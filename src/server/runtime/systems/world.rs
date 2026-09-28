@@ -226,9 +226,13 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             ));
         }
         if catalog.block_flags(after) & crate::content::SOLID != 0
-            && players
-                .iter()
-                .any(|position| crate::server::block_intersects_player([x, y, z], *position))
+            && players.iter().any(|position| {
+                crate::server::block_intersects_player(
+                    catalog.player_rules().body(),
+                    [x, y, z],
+                    *position,
+                )
+            })
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,

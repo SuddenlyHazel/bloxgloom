@@ -217,6 +217,7 @@ impl ContentManifest {
         }
 
         let mut resolved = Catalog::new();
+        resolved.player_rules = local.player_rules();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
             let observer = local
                 .gameplay_observers

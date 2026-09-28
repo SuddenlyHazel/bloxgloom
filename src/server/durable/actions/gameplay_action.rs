@@ -69,7 +69,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             if request.entity != 0 || request.entity_revision != 0 {
                 return Err(denied("block use has an entity"));
             }
-            verify_reach(client, target)?;
+            verify_reach(client, target, catalog.player_rules())?;
             let actual = read_target(state, &mut reads, target)?;
             // read_target captured the authority stamp carried through admission
             // and confirmed apply. Compare the client's persisted chunk version
@@ -91,7 +91,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             cell = Some(target);
         }
         Target::Entity(key) => {
-            verify_reach(client, target)?;
+            verify_reach(client, target, catalog.player_rules())?;
             let id = crate::server::entities::EntityId::new(request.entity)
                 .ok_or_else(|| denied("missing action entity"))?;
             reads.entities(state.entities.capture_entity_dependency(id))?;
@@ -197,10 +197,9 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
     ensure_no_unhandled_anchor(state, &plan.edits)?;
     for &(x, y, z, block) in &plan.edits {
         if catalog.block_flags(block) & crate::content::SOLID != 0
-            && state
-                .clients
-                .values()
-                .any(|client| block_intersects_player([x, y, z], client.position()))
+            && state.clients.values().any(|client| {
+                block_intersects_player(catalog.player_rules().body(), [x, y, z], client.position())
+            })
         {
             return Err(denied("gameplay block overlaps a player"));
         }
@@ -248,13 +247,17 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
     })
 }
 
-fn verify_reach(client: &crate::server::Client, target: [i32; 3]) -> io::Result<()> {
+fn verify_reach(
+    client: &crate::server::Client,
+    target: [i32; 3],
+    rules: bloxgloom_host_api::player::PlayerRules,
+) -> io::Result<()> {
     if target[1] <= BEDROCK_Y
         || !client.interested(world_to_chunk(target[0], target[1], target[2]).0)
     {
         return Err(denied("target outside world or interest"));
     }
-    let eye = Vec3::from_array(client.position()) + Vec3::Y * 1.6;
+    let eye = Vec3::from_array(client.position()) + Vec3::Y * rules.eye_height();
     let center = Vec3::from_array(target.map(|n| n as f32 + 0.5));
     if !eye.is_finite() || (center - eye).length() > EDIT_REACH {
         return Err(denied("action target out of reach"));
@@ -287,7 +290,8 @@ fn sight(
     target: [i32; 3],
     mobile: bool,
 ) -> io::Result<()> {
-    let eye = Vec3::from_array(position) + Vec3::Y * 1.6;
+    let eye =
+        Vec3::from_array(position) + Vec3::Y * state.world.catalog().player_rules().eye_height();
     let center = Vec3::from_array(target.map(|n| n as f32 + 0.5));
     let delta = center - eye;
     let mut missing = BTreeSet::new();

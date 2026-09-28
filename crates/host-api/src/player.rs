@@ -1,6 +1,106 @@
 //! Player body geometry shared by authoritative movement, spawn selection,
-//! placement checks, and client prediction. This is a builtin contract, not a
-//! runtime tuning knob: changing it requires a coordinated client/server update.
+//! placement checks, and client prediction. Rules are validated immutable values;
+//! the host currently installs only the builtin selection in its frozen catalog.
+
+/// One immutable player contract. Accessors return copies, never mutable fields.
+/// Validation preserves the bounds assumed by the twelve-sample collision shape,
+/// fixed-point movement accounting, and 3x3x3 movement snapshot capture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlayerRules {
+    body: Body,
+    motion: MotionRates,
+    spawn: SpawnSearch,
+    eye_height: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvalidPlayerRules {
+    Body,
+    Motion,
+    Spawn,
+    EyeHeight,
+}
+
+pub const BUILTIN_RULES: PlayerRules = PlayerRules {
+    body: BUILTIN_BODY,
+    motion: BUILTIN_MOTION,
+    spawn: BUILTIN_SPAWN,
+    eye_height: 1.6,
+};
+
+impl PlayerRules {
+    pub fn new(
+        body: Body,
+        motion: MotionRates,
+        spawn: SpawnSearch,
+        eye_height: f32,
+    ) -> Result<Self, InvalidPlayerRules> {
+        let rules = Self {
+            body,
+            motion,
+            spawn,
+            eye_height,
+        };
+        rules.validate()?;
+        Ok(rules)
+    }
+
+    pub fn validate(self) -> Result<(), InvalidPlayerRules> {
+        let body = self.body;
+        if [
+            body.half_width,
+            body.foot_inset,
+            body.middle_height,
+            body.head_height,
+        ]
+        .iter()
+        .any(|value| !value.is_finite())
+            || !(0.125..=0.5).contains(&body.half_width)
+            || !(0.0..=0.25).contains(&body.foot_inset)
+            || body.middle_height <= body.foot_inset
+            || body.head_height <= body.middle_height
+            || body.middle_height - body.foot_inset > 1.0
+            || body.head_height - body.middle_height > 1.0
+            || body.head_height > 2.0
+        {
+            return Err(InvalidPlayerRules::Body);
+        }
+        let motion = self.motion;
+        // 16 blocks/s permits a 4-block burst: below u32 nanoblock capacity,
+        // the resolver's 64 steps/axis, and the neighboring-chunk capture bound.
+        if !motion.intent_blocks_per_second.is_finite()
+            || !motion.budget_blocks_per_second.is_finite()
+            || motion.intent_blocks_per_second < 0.1
+            || f64::from(motion.intent_blocks_per_second) > motion.budget_blocks_per_second
+            || motion.budget_blocks_per_second > 16.0
+        {
+            return Err(InvalidPlayerRules::Motion);
+        }
+        if !(2..=128).contains(&self.spawn.headroom) || !(1..=1024).contains(&self.spawn.max_rise) {
+            return Err(InvalidPlayerRules::Spawn);
+        }
+        if !self.eye_height.is_finite()
+            || self.eye_height < body.foot_inset
+            || self.eye_height > body.head_height
+        {
+            return Err(InvalidPlayerRules::EyeHeight);
+        }
+        Ok(())
+    }
+
+    pub const fn body(self) -> Body {
+        self.body
+    }
+    pub const fn motion(self) -> MotionRates {
+        self.motion
+    }
+    pub const fn spawn(self) -> SpawnSearch {
+        self.spawn
+    }
+    pub const fn eye_height(self) -> f32 {
+        self.eye_height
+    }
+}
 
 /// Feet-relative collision shape. Sampling heights preserve the built-in
 /// voxel movement behavior; overlap uses the same outer bounds for placement.

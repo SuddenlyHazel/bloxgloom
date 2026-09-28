@@ -96,10 +96,13 @@ pub(super) fn place(
             ));
         }
         if catalog.block_flags(*block) & SOLID != 0
-            && context
-                .clients()
-                .values()
-                .any(|client| block_intersects_player([cell.x, cell.y, cell.z], client.position()))
+            && context.clients().values().any(|client| {
+                block_intersects_player(
+                    catalog.player_rules().body(),
+                    [cell.x, cell.y, cell.z],
+                    client.position(),
+                )
+            })
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
@@ -149,10 +152,13 @@ pub(super) fn place(
             .anchored_at(CellCoord::new(x, y, z))
             .is_some()
             || (catalog.block_flags(block) & SOLID != 0
-                && context
-                    .clients()
-                    .values()
-                    .any(|client| block_intersects_player([x, y, z], client.position())))
+                && context.clients().values().any(|client| {
+                    block_intersects_player(
+                        catalog.player_rules().body(),
+                        [x, y, z],
+                        client.position(),
+                    )
+                }))
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,
@@ -295,10 +301,13 @@ pub(super) fn remove(
                 .anchored_at(CellCoord::new(x, y, z))
                 .is_some()
                 || (catalog.block_flags(block) & crate::content::SOLID != 0
-                    && context
-                        .clients()
-                        .values()
-                        .any(|client| block_intersects_player([x, y, z], client.position()))))
+                    && context.clients().values().any(|client| {
+                        block_intersects_player(
+                            catalog.player_rules().body(),
+                            [x, y, z],
+                            client.position(),
+                        )
+                    })))
         {
             return Err(io::Error::new(
                 ErrorKind::PermissionDenied,

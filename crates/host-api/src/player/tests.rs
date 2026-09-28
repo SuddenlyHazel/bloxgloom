@@ -1,6 +1,114 @@
 use super::*;
 
 #[test]
+fn immutable_rules_preserve_builtin_contract() {
+    let rules = PlayerRules::new(BUILTIN_BODY, BUILTIN_MOTION, BUILTIN_SPAWN, 1.6).unwrap();
+    assert_eq!(rules, BUILTIN_RULES);
+    assert_eq!(rules.body(), BUILTIN_BODY);
+    assert_eq!(rules.motion(), BUILTIN_MOTION);
+    assert_eq!(rules.spawn(), BUILTIN_SPAWN);
+    assert_eq!(rules.eye_height(), 1.6);
+    let mut detached_body = rules.body();
+    detached_body.half_width = 0.5;
+    assert_ne!(rules.body(), detached_body);
+}
+
+#[test]
+fn rules_reject_invalid_geometry_rates_search_and_eye() {
+    for body in [
+        Body {
+            half_width: f32::NAN,
+            ..BUILTIN_BODY
+        },
+        Body {
+            half_width: 0.6,
+            ..BUILTIN_BODY
+        },
+        Body {
+            foot_inset: -0.1,
+            ..BUILTIN_BODY
+        },
+        Body {
+            middle_height: 0.05,
+            ..BUILTIN_BODY
+        },
+        Body {
+            middle_height: 1.1,
+            ..BUILTIN_BODY
+        },
+        Body {
+            head_height: f32::INFINITY,
+            ..BUILTIN_BODY
+        },
+        Body {
+            head_height: 2.1,
+            ..BUILTIN_BODY
+        },
+    ] {
+        assert_eq!(
+            PlayerRules::new(body, BUILTIN_MOTION, BUILTIN_SPAWN, 1.6),
+            Err(InvalidPlayerRules::Body)
+        );
+    }
+    for motion in [
+        MotionRates {
+            intent_blocks_per_second: f32::NAN,
+            ..BUILTIN_MOTION
+        },
+        MotionRates {
+            intent_blocks_per_second: 0.0,
+            ..BUILTIN_MOTION
+        },
+        MotionRates {
+            intent_blocks_per_second: 11.0,
+            ..BUILTIN_MOTION
+        },
+        MotionRates {
+            budget_blocks_per_second: f64::INFINITY,
+            ..BUILTIN_MOTION
+        },
+        MotionRates {
+            budget_blocks_per_second: 17.0,
+            ..BUILTIN_MOTION
+        },
+    ] {
+        assert_eq!(
+            PlayerRules::new(BUILTIN_BODY, motion, BUILTIN_SPAWN, 1.6),
+            Err(InvalidPlayerRules::Motion)
+        );
+    }
+    for spawn in [
+        SpawnSearch {
+            headroom: 1,
+            ..BUILTIN_SPAWN
+        },
+        SpawnSearch {
+            headroom: i32::MAX,
+            ..BUILTIN_SPAWN
+        },
+        SpawnSearch {
+            max_rise: 0,
+            ..BUILTIN_SPAWN
+        },
+        SpawnSearch {
+            max_rise: i32::MAX,
+            ..BUILTIN_SPAWN
+        },
+    ] {
+        assert_eq!(
+            PlayerRules::new(BUILTIN_BODY, BUILTIN_MOTION, spawn, 1.6),
+            Err(InvalidPlayerRules::Spawn)
+        );
+    }
+    for eye in [f32::NAN, f32::INFINITY, -0.1, 2.0] {
+        assert_eq!(
+            PlayerRules::new(BUILTIN_BODY, BUILTIN_MOTION, BUILTIN_SPAWN, eye),
+            Err(InvalidPlayerRules::EyeHeight)
+        );
+    }
+}
+
+#[test]
 fn movement_samples_and_placement_bounds_agree_at_block_edges() {
     let feet = [0.5, 1.0, 0.5];
     for block in [[0, 1, 0], [0, 2, 0]] {

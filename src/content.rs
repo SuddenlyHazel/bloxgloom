@@ -209,6 +209,9 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    // Builtin-only until startup selection and negotiated identity are implemented
+    // together. No setter: a catalog cannot advertise one contract and run another.
+    player_rules: bloxgloom_host_api::player::PlayerRules,
     // Negotiated compatibility metadata, never executable registrations.
     client_metadata: client_metadata::Metadata,
     gameplay_entities:
@@ -265,6 +268,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            player_rules: bloxgloom_host_api::player::BUILTIN_RULES,
             client_metadata: Default::default(),
             gameplay_entities: Default::default(),
             gameplay_handlers: Default::default(),
@@ -602,6 +606,14 @@ impl Catalog {
     }
 
     pub fn validate(&self) -> Result<(), RegistrationError> {
+        self.player_rules
+            .validate()
+            .map_err(|_| RegistrationError::InvalidDefinition)?;
+        if self.player_rules != bloxgloom_host_api::player::BUILTIN_RULES {
+            // Custom selection must land together with save/wire identity and
+            // verified client reconstruction, not as an implicit local override.
+            return Err(RegistrationError::InvalidDefinition);
+        }
         self.actions
             .validate_composition()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
@@ -686,6 +698,11 @@ impl Catalog {
             .get(type_id.0 as usize)
             .copied()
             .flatten()
+    }
+
+    /// Immutable player contract shared by every world and prediction consumer.
+    pub fn player_rules(&self) -> bloxgloom_host_api::player::PlayerRules {
+        self.player_rules
     }
 
     /// Assigned IDs and schema/behavior/material definitions used by a connection.

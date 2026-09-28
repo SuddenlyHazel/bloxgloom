@@ -13,6 +13,7 @@ pub(crate) enum ResolveError<E> {
 /// Resolve X/Z/Y motion against authoritative or locally streamed voxels.
 /// A missing voxel aborts the entire prediction rather than inventing terrain.
 pub(crate) fn resolve_player_movement<E>(
+    body: bloxgloom_host_api::player::Body,
     mut position: [f32; 3],
     delta: [f32; 3],
     mut solid: impl FnMut(i32, i32, i32) -> Result<bool, E>,
@@ -38,7 +39,7 @@ pub(crate) fn resolve_player_movement<E>(
             if candidate.iter().any(|value| value.abs() >= 1_000_000.0) {
                 break;
             }
-            if player_collides(candidate, &mut solid).map_err(ResolveError::Missing)? {
+            if player_collides(body, candidate, &mut solid).map_err(ResolveError::Missing)? {
                 break;
             }
             position = candidate;
@@ -47,10 +48,11 @@ pub(crate) fn resolve_player_movement<E>(
     Ok(position)
 }
 
-/// The builtin body is shared with spawn checks and placement validation.
+/// The catalog-selected body is shared with spawn checks and placement validation.
 pub(crate) fn player_collides<E>(
+    body: bloxgloom_host_api::player::Body,
     feet: [f32; 3],
     solid: impl FnMut(i32, i32, i32) -> Result<bool, E>,
 ) -> Result<bool, E> {
-    bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, solid)
+    body.collides(feet, solid)
 }

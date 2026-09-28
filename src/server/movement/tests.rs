@@ -204,9 +204,52 @@ fn per_tick_work_limit_leaves_the_suffix_unresolved() {
 fn idle_credit_cannot_accumulate_without_bound() {
     let mut state = MovementState::new([1.0, 1.0, 1.0], 0);
     for _ in 0..10_000 {
-        state.advance_idle_tick();
+        state.advance_idle_tick(bloxgloom_host_api::player::BUILTIN_RULES);
     }
-    assert_eq!(state.credit_nanoblocks(), super::MAX_CREDIT);
+    assert_eq!(state.credit_nanoblocks(), 2_500_000_000);
+}
+
+#[test]
+fn reconstructed_catalog_uses_same_idle_and_worker_budget_after_missing_chunk_retry() {
+    use crate::content::{Catalog, ContentManifest};
+    use std::sync::Arc;
+
+    let local = Catalog::builtins();
+    let catalog = Arc::new(
+        ContentManifest::from_catalog(&local)
+            .resolve_catalog(&local)
+            .unwrap(),
+    );
+    let rules = catalog.player_rules();
+    let missing_view =
+        VoxelView::from_chunks_in([air_chunk(key(0, 0, 0))], catalog.clone()).unwrap();
+    let initial = MovementState::new([15.65, 1.0, 1.0], 0);
+    let mut idle = initial;
+    idle.advance_idle_tick(rules);
+    let commands = [command(1, [0.1, 0.0, 0.0]), command(2, [0.1, 0.0, 0.0])];
+    let deferred = process_movement_batch(&missing_view, initial, &commands);
+    assert_eq!(deferred.consumed, 0);
+    assert_eq!(deferred.state, idle);
+    assert_eq!(idle.credit_nanoblocks(), 200_000_256);
+    assert_eq!(
+        deferred.first_missing_chunk,
+        Some(MissingChunk { key: key(1, 0, 0) })
+    );
+
+    let loaded_view =
+        VoxelView::from_chunks_in([air_chunk(key(0, 0, 0)), air_chunk(key(1, 0, 0))], catalog)
+            .unwrap();
+    let retried = process_movement_batch(&loaded_view, deferred.state, &commands);
+    assert_eq!(retried.stop_reason, StopReason::InputDrained);
+    assert_eq!(retried.consumed, 2);
+    assert_eq!(retried.state.last_seq(), 2);
+    close(retried.state.position()[0], 15.85);
+    assert!(
+        retried
+            .acknowledgments
+            .iter()
+            .all(|ack| ack.kind == AckKind::Resolved)
+    );
 }
 
 #[test]
