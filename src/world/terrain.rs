@@ -8,15 +8,15 @@ use super::{
     WOOD, YELLOW_FLOWER, supports_plant,
 };
 
-pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
+pub(super) fn generate_blocks(key: ChunkKey, seed: u64) -> Vec<BlockId> {
     let mut blocks = vec![AIR; CHUNK_VOLUME];
     let bottom = i64::from(key.y) * CHUNK_SIZE as i64;
     if bottom + CHUNK_SIZE as i64 <= i64::from(BEDROCK_Y) {
         blocks.fill(STONE);
-        return Chunk::from_blocks(key, 0, blocks);
+        return blocks;
     }
     if bottom > i64::from(MAX_GENERATED_HEIGHT) {
-        return Chunk::from_blocks(key, 0, blocks);
+        return blocks;
     }
     let mut patterns = HashMap::new();
     for z in 0..CHUNK_SIZE {
@@ -39,9 +39,10 @@ pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
         }
     }
     decorate_chunk(key, seed, &mut blocks, &mut patterns);
-    Chunk::from_blocks(key, 0, blocks)
+    blocks
 }
 
+#[cfg(test)]
 pub(super) fn generated_block(x: i64, y: i64, z: i64, seed: u64) -> BlockId {
     let column = terrain_column(x, z, seed);
     let ground = generated_block_in_column(x, y, z, column, seed);
@@ -111,6 +112,7 @@ fn tree_piece(tree: Tree, x: i64, y: i64, z: i64) -> Option<BlockId> {
     (dx <= radius && dz <= radius && dx + dz <= radius + 1).then_some(LEAVES)
 }
 
+#[cfg(test)]
 fn tree_block_at(x: i64, y: i64, z: i64, seed: u64) -> Option<BlockId> {
     let mut leaf = false;
     for cz in (z - TREE_RADIUS).div_euclid(TREE_CELL)..=(z + TREE_RADIUS).div_euclid(TREE_CELL) {

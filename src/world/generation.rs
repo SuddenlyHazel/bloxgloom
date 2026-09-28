@@ -1,7 +1,7 @@
-//! Frozen authoritative composition over the unchanged builtin terrain baseline.
-use super::{Chunk, ChunkKey};
+//! Frozen authoritative composition of builtin and registered contributors.
+use super::{AIR, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey};
 use crate::content::Catalog;
-use bloxgloom_host_api::generation::{Context, GenerationError, Output, Registration};
+use bloxgloom_host_api::generation::{Context, Contributor, GenerationError, Output, Registration};
 use std::collections::BTreeSet;
 use std::io;
 
@@ -31,10 +31,6 @@ impl Generator {
         bytes
     }
 
-    pub(super) fn has_contributors(&self) -> bool {
-        !self.contributors.is_empty()
-    }
-
     pub(super) fn generate(
         &self,
         key: ChunkKey,
@@ -52,7 +48,7 @@ fn generation_error(error: GenerationError) -> io::Error {
     )
 }
 
-/// Builds a candidate chunk without touching storage. The builtin terrain runs
+/// Builds a candidate chunk without touching storage. The builtin contributor runs
 /// first. Contributors run in lexical key order (independent of registration
 /// order); later keys win overlaps, including over builtin terrain. An error
 /// discards the entire candidate, rather than exposing a partially built chunk.
@@ -94,27 +90,106 @@ fn compose(
     catalog: &Catalog,
     ordered: &[Registration],
 ) -> Result<Chunk, GenerationError> {
-    let mut chunk = super::generate_chunk(key, seed);
+    let mut blocks = vec![AIR; CHUNK_VOLUME];
     let context = Context {
         seed,
         chunk: [key.x, key.y, key.z],
     };
+    apply(&Builtin, context, &mut blocks, catalog)?;
     for registration in ordered {
-        let mut output = Output::default();
-        registration.contributor.generate(context, &mut output)?;
-        output.finish()?;
-        // Resolve all names before applying any writes from this contributor.
-        for (_, state) in output.writes() {
-            if catalog.state_by_key(state).is_none() {
-                return Err(GenerationError::InvalidState(state.to_owned()));
+        apply(
+            registration.contributor.as_ref(),
+            context,
+            &mut blocks,
+            catalog,
+        )?;
+    }
+    Ok(Chunk::from_blocks(key, 0, blocks))
+}
+
+fn apply(
+    contributor: &dyn Contributor,
+    context: Context,
+    blocks: &mut [BlockId],
+    catalog: &Catalog,
+) -> Result<(), GenerationError> {
+    let mut output = Output::default();
+    contributor.generate(context, &mut output)?;
+    output.finish()?;
+    // Resolve all names before applying any writes from this contributor.
+    let writes = output
+        .writes()
+        .map(|(index, state)| {
+            catalog
+                .state_by_key(state)
+                .map(|block| (usize::from(index), block))
+                .ok_or_else(|| GenerationError::InvalidState(state.to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, block) in writes {
+        blocks[index] = block;
+    }
+    Ok(())
+}
+
+/// Terrain and vegetation share one bounded output so trees can retain their
+/// original collision rules against the terrain and each other.
+struct Builtin;
+
+impl Contributor for Builtin {
+    fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
+        let key = ChunkKey {
+            x: context.chunk[0],
+            y: context.chunk[1],
+            z: context.chunk[2],
+        };
+        for (index, block) in super::terrain::generate_blocks(key, context.seed)
+            .into_iter()
+            .enumerate()
+        {
+            if block != AIR {
+                output.set(
+                    [
+                        (index % CHUNK_SIZE) as i32,
+                        (index / (CHUNK_SIZE * CHUNK_SIZE)) as i32,
+                        ((index / CHUNK_SIZE) % CHUNK_SIZE) as i32,
+                    ],
+                    builtin_state_key(block)?,
+                )?;
             }
         }
-        for (index, state) in output.writes() {
-            let block = catalog.state_by_key(state).expect("validated state key");
-            chunk.blocks.set(usize::from(index), block);
-        }
+        Ok(())
     }
-    Ok(chunk)
+}
+
+fn builtin_state_key(block: BlockId) -> Result<&'static str, GenerationError> {
+    const KEYS: [&str; 16] = [
+        "bloxgloom:air",
+        "bloxgloom:grass",
+        "bloxgloom:dirt",
+        "bloxgloom:stone",
+        "bloxgloom:sand",
+        "bloxgloom:snow",
+        "bloxgloom:moss",
+        "bloxgloom:gravel",
+        "bloxgloom:glowstone",
+        "bloxgloom:wood[axis=y]",
+        "bloxgloom:leaves",
+        "bloxgloom:red_flower",
+        "bloxgloom:yellow_flower",
+        "bloxgloom:blue_flower",
+        "bloxgloom:fern",
+        "bloxgloom:tall_grass",
+    ];
+    KEYS.get(block.0 as usize).copied().ok_or_else(|| {
+        GenerationError::Contributor(format!("unknown builtin generation block ID {}", block.0))
+    })
+}
+
+/// The standalone builtin preview follows the same contributor/composition path
+/// as authoritative generation, with no extension registrations.
+pub fn generate_chunk(key: ChunkKey, seed: u64) -> Chunk {
+    compose(key, seed, crate::content::catalog(), &[]).expect("builtin generation is valid")
 }
 
 #[cfg(test)]

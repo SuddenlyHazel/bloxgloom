@@ -41,6 +41,153 @@ fn open(path: &Path, contributors: Vec<Registration>) -> io::Result<World> {
 }
 
 #[test]
+fn unknown_builtin_generation_id_is_reported_without_panicking() {
+    assert!(matches!(
+        builtin_state_key(crate::content::BlockStateId(u32::MAX)),
+        Err(GenerationError::Contributor(_))
+    ));
+}
+
+#[test]
+fn builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams() {
+    let catalog = Catalog::builtins();
+    let seed = 73;
+    // Frozen fingerprints from the pre-contributor generator, including a
+    // negative horizontal seam, a vertical seam, bedrock, plants and empty sky.
+    for (key, fingerprint) in [
+        (ChunkKey { x: -2, y: 1, z: -1 }, 0xbcdc125b0b118626),
+        (ChunkKey { x: -1, y: 1, z: -1 }, 0x23ece1ce2000def6),
+        (ChunkKey { x: -1, y: 2, z: -1 }, 0x9c1bda7f8c872325),
+        (ChunkKey { x: 0, y: 1, z: -1 }, 0x7790562fc8fd1ca5),
+        (ChunkKey { x: 0, y: 2, z: -1 }, 0x9c1bda7f8c872325),
+        (ChunkKey { x: -1, y: 1, z: 0 }, 0x6d2df6130ea01718),
+        (ChunkKey { x: 0, y: -5, z: 0 }, 0x82c546d079aba325),
+        (ChunkKey { x: 0, y: -4, z: 0 }, 0x67b3a0af5e4df9b6),
+        (ChunkKey { x: 0, y: 8, z: 0 }, 0x9c1bda7f8c872325),
+    ] {
+        let expected = super::super::terrain::generate_blocks(key, seed);
+        let composed = compose(key, seed, &catalog, &[]).unwrap();
+        assert_eq!(
+            composed.blocks.iter().copied().collect::<Vec<_>>(),
+            expected,
+            "{key:?}"
+        );
+        assert_eq!(
+            format!("{:?}", composed.blocks),
+            format!("{:?}", Chunk::from_blocks(key, 0, expected).blocks),
+            "palette representation at {key:?}"
+        );
+        assert_eq!(generate_chunk(key, seed), composed, "{key:?}");
+        let hash = composed
+            .blocks
+            .iter()
+            .fold(0xcbf29ce484222325u64, |hash, block| {
+                block.0.to_le_bytes().iter().fold(hash, |hash, byte| {
+                    (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+                })
+            });
+        assert_eq!(hash, fingerprint, "{key:?}");
+        for z in 0..16 {
+            for x in 0..16 {
+                for y in 0..16 {
+                    let local = [x, y, z];
+                    let world = [
+                        i64::from(key.x) * 16 + x as i64,
+                        i64::from(key.y) * 16 + y as i64,
+                        i64::from(key.z) * 16 + z as i64,
+                    ];
+                    assert_eq!(
+                        composed.block(local),
+                        Some(super::super::terrain::generated_block(
+                            world[0], world[1], world[2], seed
+                        )),
+                        "{key:?} {local:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn builtin_contributor_preserves_tree_canopy_across_chunk_seam() {
+    let seed = 0xB10C_6100;
+    let tree = (-20..=20)
+        .flat_map(|z| (-20..=20).map(move |x| (x, z)))
+        .filter_map(|(x, z)| super::super::terrain::tree_anchor(x, z, seed))
+        .find(|tree| tree.x.rem_euclid(16) >= 13 || tree.z.rem_euclid(16) >= 13)
+        .unwrap();
+    let (first, _) =
+        super::super::world_to_chunk(tree.x as i32, tree.trunk_top as i32, tree.z as i32);
+    let (neighbor, _) = if tree.x.rem_euclid(16) >= 13 {
+        super::super::world_to_chunk((tree.x + 3) as i32, tree.trunk_top as i32, tree.z as i32)
+    } else {
+        super::super::world_to_chunk(tree.x as i32, tree.trunk_top as i32, (tree.z + 3) as i32)
+    };
+    assert_ne!(first, neighbor);
+    let catalog = Catalog::builtins();
+    for key in [first, neighbor] {
+        let baseline = super::super::terrain::generate_blocks(key, seed);
+        let generated = compose(key, seed, &catalog, &[]).unwrap();
+        assert_eq!(
+            generated.blocks.iter().copied().collect::<Vec<_>>(),
+            baseline
+        );
+        assert!(
+            generated
+                .blocks
+                .iter()
+                .any(|&block| block == super::super::LEAVES)
+        );
+    }
+}
+
+#[test]
+fn builtin_edit_baseline_uses_contributor_output_at_negative_seam() {
+    let path = crate::world::tests::test_dir();
+    let mut world = open(&path, Vec::new()).unwrap();
+    let key = ChunkKey { x: -1, y: 1, z: -1 };
+    let baseline = world.get_chunk(key).unwrap();
+    let seam_cells = [
+        crate::world::Chunk::index([15, 0, 15]).unwrap(),
+        crate::world::Chunk::index([0, 15, 0]).unwrap(),
+        crate::world::Chunk::index([15, 15, 0]).unwrap(),
+    ];
+    let changed = seam_cells.map(|index| {
+        (
+            index as u16,
+            if baseline.blocks[index] == AIR {
+                STONE
+            } else {
+                AIR
+            },
+        )
+    });
+    let prepared = world
+        .cached_edit_basis(key)
+        .unwrap()
+        .prepare_sparse(&changed)
+        .unwrap();
+    world.apply_prepared_edit(prepared).unwrap();
+    let reset = seam_cells.map(|index| (index as u16, baseline.blocks[index]));
+    let prepared = world
+        .cached_edit_basis(key)
+        .unwrap()
+        .prepare_sparse(&reset)
+        .unwrap();
+    assert!(
+        world
+            .storage
+            .decode_snapshot(Some(&prepared.after_snapshot))
+            .unwrap()
+            .blocks
+            .is_empty()
+    );
+    drop(world);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn authoritative_generation_edit_baselines_survive_cache_miss_and_restart() {
     let path = crate::world::tests::test_dir();
     let mut world = open(&path, registrations()).unwrap();

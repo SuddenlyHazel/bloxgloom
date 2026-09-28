@@ -674,6 +674,14 @@ This section exists so compaction or a new session does not restart the design.
   tests (728 application, 10 host API), strict Clippy and format checks passed.
   Native terrain/vegetation still need migration onto the public contributor
   contract; the language runtime and package pipeline remain later phases.
+- **Phase 3 builtin migration:** native terrain and vegetation now run as the
+  first implementation of the same bounded contributor contract. One dense
+  block vector composes built-in and extension writes before palette creation;
+  edited-chunk baselines use the same output. Frozen negative-coordinate,
+  canopy-seam and palette tests protect existing generation results. Builtin
+  per-cell sampling remains a consistency test, not a separate edit baseline.
+  Public sampling and documented cross-boundary authoring conventions are
+  remaining Phase 3 polish before calling that phase complete.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

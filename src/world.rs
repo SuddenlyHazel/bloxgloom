@@ -14,12 +14,13 @@ mod owner_apply;
 mod palette;
 mod terrain;
 use cache::ChunkCache;
+pub use generation::generate_chunk;
 #[cfg(test)]
 pub use generation::generate_chunk_with_contributors;
 pub(crate) use generation::{Generator, MAX_GENERATION_IDENTITY_BYTES};
 pub(crate) use owner_apply::OwnerApplyReceipt;
 pub use palette::{PaletteView, PalettedBlocks};
-pub use terrain::generate_chunk;
+#[cfg(test)]
 use terrain::generated_block;
 pub(crate) use terrain::terrain_height;
 #[cfg(test)]
@@ -205,8 +206,8 @@ impl EditBasis {
         let mut after_chunk = (*self.chunk).clone();
         after_chunk.version = 0;
         let mut changed = false;
-        // Contributors have a chunk-only contract: never invent a separate
-        // per-cell implementation. Reconstruct once, lazily, on the edit worker.
+        // All contributors, including the builtins, have a chunk-only contract.
+        // Reconstruct once, lazily, on the edit worker.
         let mut generated = None;
         for &(cell, block) in edits {
             let index = usize::from(cell);
@@ -219,12 +220,8 @@ impl EditBasis {
                     "invalid sparse edit",
                 ));
             }
-            let local_x = (index % CHUNK_SIZE) as i64;
-            let local_z = ((index / CHUNK_SIZE) % CHUNK_SIZE) as i64;
             let local_y = (index / (CHUNK_SIZE * CHUNK_SIZE)) as i64;
-            let x = i64::from(self.key.x) * CHUNK_SIZE as i64 + local_x;
             let y = i64::from(self.key.y) * CHUNK_SIZE as i64 + local_y;
-            let z = i64::from(self.key.z) * CHUNK_SIZE as i64 + local_z;
             if y <= i64::from(BEDROCK_Y) {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
@@ -236,18 +233,13 @@ impl EditBasis {
             }
             changed = true;
             after_chunk.blocks.set(index, block);
-            let baseline = if self.generator.has_contributors() {
-                if generated.is_none() {
-                    generated = Some(self.generator.generate(
-                        self.key,
-                        self.seed,
-                        &self.catalog,
-                    )?);
-                }
-                generated.as_ref().expect("generated baseline").blocks[index]
-            } else {
-                generated_block(x, y, z, self.seed)
-            };
+            if generated.is_none() {
+                generated = Some(
+                    self.generator
+                        .generate(self.key, self.seed, &self.catalog)?,
+                );
+            }
+            let baseline = generated.as_ref().expect("generated baseline").blocks[index];
             if block == baseline {
                 after_edits.remove(&cell);
             } else {
