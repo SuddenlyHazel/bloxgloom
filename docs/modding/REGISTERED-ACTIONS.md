@@ -86,12 +86,16 @@ version cannot authorize an edit. Other targets retain tag 5 or their existing
 identity-fenced envelopes.
 
 Bounds: 256 action definitions, 8 actions per target, 8 widgets per panel, 128-byte
-action keys, 239-byte fixed policy requests, 4 bytes of inventory-control arguments. Requests
-are at most 162 bytes normally or 171 bytes with a chunk-version observation
-for gameplay block actions (both below the 256-byte interaction limit), reject
-truncation/trailing bytes before retaining arguments, and discovery scans at most
-the fixed registry capacity. Inventory work touches the 36 host slots and preserves
-the 128-per-stack cap. Text is printable ASCII with per-field lengths.
+action keys, 239-byte fixed policy requests, 4 bytes of inventory-control arguments.
+The canonical registered request codec allows up to 130 argument bytes for
+gameplay actions (enough for a two-byte count plus a 128-byte content key),
+but the entire request—including a nine-byte chunk-version wrapper when used—
+must fit the existing 256-byte interaction limit. Longer arguments do not
+authorize a command: argument schemas and permission descriptors are still
+pending. Decoding rejects truncation/trailing bytes before retaining arguments,
+and discovery scans at most the fixed registry capacity. Inventory work touches
+the 36 host slots and preserves the 128-per-stack cap. Text is printable ASCII
+with per-field lengths.
 
 The independent fixture's `fixture:knap` action consumes two plain gravel and
 produces three sticks. The loopback test uses its actual composed client control,

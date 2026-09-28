@@ -499,9 +499,27 @@ movement budget of 10 blocks/s and client intent rate of 8 blocks/s. The
 builtin `player::Body` supplies the same collision samples to prediction,
 movement and spawn checks, and its bounds to placement validation. This does
 **not** offer mod-selectable rules: those need handshake-visible identity and
-consistent prediction/reconciliation,
-not a server-only tuning knob. Semantic command discovery/rebinding remains
-open.
+consistent prediction/reconciliation, not a server-only tuning knob. Semantic
+command discovery/rebinding remains open.
+
+**Appearance audit:** the server publishes a four-byte cosmetic-only player
+entity payload, but new sessions still create `[0, 0, 0, 0]` and the client
+avatar shader uses fixed skin/shirt/pants palettes. Mod-selectable appearance
+needs a negotiated palette/model identity and a profile-owned selection path;
+the existing cosmetic bytes alone are not an authoring contract.
+
+**Command contract audit:** registered gameplay actions already use the WAL and
+authenticated handler path, but their descriptors have no command argument
+schema or permission metadata. The client still parses `give`/`spawn` locally,
+and the four current key bindings are fixed semantic actions. Before migrating
+commands or exposing mod-defined shortcuts, a negotiated command facet must
+validate bounded arguments and server-authenticated permission; local bindings
+must store namespaced action keys and become inert when that command is absent
+on a different server. A verified bounded registered-request codec prerequisite
+now supports up to 130 argument bytes within the existing 256-byte interaction
+cap; inventory controls still require exactly four bytes. The root suite
+**907/907**, host API **28/28**, formatting and strict Clippy pass. This codec
+does not itself define or authorize a command.
 
 **Verified spawn-search slice:** startup highest-surface and cached
 join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.
