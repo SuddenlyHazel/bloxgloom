@@ -15,6 +15,9 @@ before treating a capability as complete.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
+- [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):
+  one bounded fullscreen scene-color effect, **not** the complete material or
+  multi-pass shader surface required by Phase 7.
 
 ## Rust extension and host reference
 

@@ -2,6 +2,7 @@
 
 mod avatars;
 mod drops;
+pub(crate) mod effects;
 mod material;
 mod mesh;
 mod pipeline;
@@ -138,6 +139,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    pub(crate) fn install_package_effect(
+        &mut self,
+        effect: &effects::Prepared,
+    ) -> Result<(), String> {
+        self.post.install_effect(&self.device, effect)
+    }
     pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
         self.ui
             .install_package_ui(&self.device, &self.queue, resources);
@@ -587,7 +594,8 @@ impl Renderer {
                 stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
         }
-        self.post.encode(&mut encoder, &view);
+        self.post
+            .encode(&self.device, &self.queue, &mut encoder, &view);
         if ui_frame.target.is_some() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("target block outline"),

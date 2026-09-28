@@ -77,7 +77,7 @@ fn gpu_post_preserves_black_hdr_highlights_and_output_transfer() {
                             ..Default::default()
                         });
                     }
-                    post.encode(&mut encoder, &view);
+                    post.encode(&device, &queue, &mut encoder, &view);
                     encoder.copy_texture_to_buffer(
                         wgpu::TexelCopyTextureInfo {
                             texture: &output,

@@ -25,6 +25,8 @@ pub(crate) struct PostProcess {
     exposure: f32,
     enabled: bool,
     bloom_strength: f32,
+    effect: Option<super::effects::Effect>,
+    filtered: Option<wgpu::TextureView>,
 }
 
 impl PostProcess {
@@ -83,7 +85,8 @@ impl PostProcess {
             ]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let targets = targets::Targets::new(device, width, height, &layout, &sampler, &settings);
+        let targets =
+            targets::Targets::new(device, width, height, &layout, &sampler, &settings, false);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("HDR and bloom shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("post.wgsl").into()),
@@ -136,6 +139,8 @@ impl PostProcess {
             enabled: true,
             bloom_strength: 0.12,
             composite_group: targets.composite_group,
+            effect: None,
+            filtered: None,
         }
     }
 
@@ -147,11 +152,25 @@ impl PostProcess {
             &self.layout,
             &self.sampler,
             &self.settings,
+            self.effect.is_some(),
         );
         self.scene = targets.scene;
         self.bloom = targets.bloom;
         self.groups = targets.groups;
         self.composite_group = targets.composite_group;
+        self.filtered = targets.filtered;
+    }
+
+    pub(crate) fn install_effect(
+        &mut self,
+        device: &wgpu::Device,
+        prepared: &super::effects::Prepared,
+    ) -> Result<(), String> {
+        let effect = super::effects::Effect::prepare(device, prepared)?;
+        self.effect = Some(effect);
+        let size = self.scene.texture().size();
+        self.resize(device, size.width, size.height);
+        Ok(())
     }
 
     pub fn configure(
@@ -182,7 +201,16 @@ impl PostProcess {
         );
     }
 
-    pub fn encode(&self, encoder: &mut wgpu::CommandEncoder, output: &wgpu::TextureView) {
+    pub fn encode(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        output: &wgpu::TextureView,
+    ) {
+        if let (Some(effect), Some(target)) = (&self.effect, &self.filtered) {
+            effect.encode(device, queue, encoder, &self.scene, target);
+        }
         let mut draw = |label,
                         pipeline: &wgpu::RenderPipeline,
                         group: &wgpu::BindGroup,

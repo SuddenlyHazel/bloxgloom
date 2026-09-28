@@ -409,7 +409,7 @@ pub(super) async fn run_perf_benchmark_async(
                 }
             }
         }
-        post.encode(&mut encoder, &color_view);
+        post.encode(&device, &queue, &mut encoder, &color_view);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("target block outline"),

@@ -38,6 +38,21 @@ const MESHER_RESULT_CAPACITY: usize = 64;
 const CLIENT_MESH_RESULT_BATCH: usize = 64;
 const CLIENT_PENDING_UPLOADS: usize = 128;
 
+pub fn render_effect_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1000,
+            height: 600,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Effect,
+    ))
+}
+
 pub fn render_preview(path: &Path, center_x: i32, center_z: i32) -> Result<(), Box<dyn Error>> {
     if !(i32::MIN + 128..=i32::MAX - 128).contains(&center_x)
         || !(i32::MIN + 128..=i32::MAX - 128).contains(&center_z)
@@ -381,6 +396,7 @@ enum PreviewScene {
     Kilns,
     Hoppers,
     Surface,
+    Effect,
     Vegetation,
     Drops(DropPhase),
     Avatars,
@@ -448,7 +464,7 @@ async fn render_previews(
         .iter()
         .any(|output| output.screen == UiScreen::Package);
     // Authored previews are visual verification, not UI preparation benchmarks.
-    if !authored_preview {
+    if !authored_preview && !matches!(scene, PreviewScene::Effect) {
         measure_ui_prepare(&mut ui_renderer, &queue);
     }
     let mut package_ui = if authored_preview {
@@ -464,6 +480,20 @@ async fn render_previews(
     } else {
         None
     };
+    let package_effect = if matches!(scene, PreviewScene::Effect) {
+        let snapshot = crate::server::PackageSnapshot::discover(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages"),
+        )
+        .map_err(|error| format!("effect preview: {error:?}"))?;
+        Some(Arc::clone(
+            snapshot
+                .client_bundle()
+                .effect()
+                .ok_or("missing sample effect")?,
+        ))
+    } else {
+        None
+    };
     let center_x = center_chunk.0 * 16;
     let center_z = center_chunk.1 * 16;
     let camera_xz = (center_x + 40, center_z + 16);
@@ -474,7 +504,7 @@ async fn render_previews(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
-        PreviewScene::Surface | PreviewScene::Inventory(_) => (
+        PreviewScene::Surface | PreviewScene::Effect | PreviewScene::Inventory(_) => (
             Vec3::new(
                 camera_xz.0 as f32 + 0.5,
                 surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
@@ -1079,7 +1109,10 @@ async fn render_previews(
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
+        let mut post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
+        if let Some(effect) = &package_effect {
+            post.install_effect(&device, effect)?;
+        }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("preview commands"),
         });
@@ -1142,7 +1175,7 @@ async fn render_previews(
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
         }
-        post.encode(&mut encoder, &color_view);
+        post.encode(&device, &queue, &mut encoder, &color_view);
         if has_target {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview target outline"),

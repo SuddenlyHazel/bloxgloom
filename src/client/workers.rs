@@ -27,6 +27,9 @@ pub(super) struct Network {
 }
 
 impl Network {
+    pub(super) fn package_effect(&self) -> Option<&crate::render::effects::Prepared> {
+        self._bundle.as_ref()?.effect().map(AsRef::as_ref)
+    }
     pub(super) fn package_ui(&self) -> Option<crate::ui::authored::Session> {
         self._bundle
             .as_ref()?

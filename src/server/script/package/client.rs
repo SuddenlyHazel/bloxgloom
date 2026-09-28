@@ -73,6 +73,7 @@ pub struct ClientPackage {
     /// paths. Separately typed UI assets do not enter this map.
     pub textures: BTreeMap<String, Vec<u8>>,
     pub(crate) ui_assets: BTreeMap<String, (u32, Vec<u8>)>,
+    pub(crate) effect_assets: BTreeMap<String, (u32, Vec<u8>)>,
 }
 
 /// Immutable bytes and decoded view, published together only after validation.
@@ -83,9 +84,13 @@ pub struct ClientBundle {
     packages: BTreeMap<String, ClientPackage>,
     declarations: Option<declarations::Startup>,
     ui: Option<std::sync::Arc<crate::ui::authored::Resources>>,
+    effect: Option<std::sync::Arc<crate::render::effects::Prepared>>,
 }
 
 impl ClientBundle {
+    pub(crate) fn effect(&self) -> Option<&std::sync::Arc<crate::render::effects::Prepared>> {
+        self.effect.as_ref()
+    }
     pub(crate) fn ui(&self) -> Option<&std::sync::Arc<crate::ui::authored::Resources>> {
         self.ui.as_ref()
     }
@@ -192,6 +197,7 @@ impl ClientBundle {
             assets += count;
             let mut textures = BTreeMap::new();
             let mut ui_assets = BTreeMap::new();
+            let mut effect_assets = BTreeMap::new();
             let mut previous = String::new();
             for _ in 0..count {
                 let key = reader.identifier()?;
@@ -199,16 +205,27 @@ impl ClientBundle {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
-                let kind = reader.count(5)? as u32;
+                let kind = reader.count(7)? as u32;
                 if kind == 0 {
                     return Err(invalid());
                 }
-                let bytes = reader.field(MAX_ASSET_BYTES.min(MAX_TOTAL_BYTES - payload))?;
+                let asset_limit = match kind {
+                    6 => crate::render::effects::MAX_SHADER_BYTES,
+                    7 => 1024,
+                    _ => MAX_ASSET_BYTES,
+                };
+                let bytes = reader
+                    .field(asset_limit.min(MAX_TOTAL_BYTES - payload))
+                    .map_err(|_| {
+                        error(&name, format!("asset {key}: invalid or oversized payload"))
+                    })?;
                 payload += bytes.len();
                 if kind == 1 {
                     textures.insert(key, bytes.to_vec());
-                } else {
+                } else if kind <= 5 {
                     ui_assets.insert(key, (kind, bytes.to_vec()));
+                } else {
+                    effect_assets.insert(key, (kind, bytes.to_vec()));
                 }
             }
             packages.insert(
@@ -219,6 +236,7 @@ impl ClientBundle {
                     sources,
                     textures,
                     ui_assets,
+                    effect_assets,
                 },
             );
         }
@@ -236,12 +254,16 @@ impl ClientBundle {
         let ui = crate::ui::authored::Resources::compile(&packages)
             .map_err(|message| error("<client-ui>", message))?
             .map(std::sync::Arc::new);
+        let effect = crate::render::effects::prepare(&packages)
+            .map_err(|message| error("<client-effect>", message))?
+            .map(std::sync::Arc::new);
         Ok(Self {
             bytes: bytes.to_vec(),
             key: expected,
             packages,
             declarations,
             ui,
+            effect,
         })
     }
 }

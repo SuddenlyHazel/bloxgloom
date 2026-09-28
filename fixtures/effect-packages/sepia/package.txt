@@ -1,0 +1,7 @@
+format 2
+package sepia
+version 1.0.0
+entry main
+module server main server/main.luau
+asset shader sepia assets/shaders/sepia.wgsl
+asset effect grade assets/effects/grade.json

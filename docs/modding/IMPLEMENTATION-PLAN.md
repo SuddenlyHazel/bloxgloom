@@ -390,7 +390,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | In progress |
-| 7 | WGSL shader/material/effect registration and package-delivered visual resources | Planned |
+| 7 | WGSL shader/material/effect registration and package-delivered visual resources | In progress |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
 
 ### End-to-end gaps — do not mistake an increment for a completed capability
@@ -427,9 +427,11 @@ ship reduced versions of phases 2–8:
    Unicode shaping/IME, clipboard, accessibility or dynamic document building.
    The other built-in interfaces have not yet migrated onto it. The current
    UI event bridge cannot issue authorized game requests (item 1).
-7. **Shaders/materials/effects are not committed yet.** Package UI images and
-   fonts are real, but they are not proof of custom world materials or WGSL
-   effects. Phase 7's first shader increment is under development.
+7. **Shader/material/effect support is partial.** Package UI images/fonts and
+   one verified WGSL fullscreen scene-color effect now work, but custom voxel/
+   item materials, packaged world textures, typed parameters and multi-pass
+   effect graphs are not supported. Initial renderer setup waits for GPU
+   preparation, rather than reporting asynchronous readiness progress.
 8. **Authoring and integrated verification are incomplete.** The examples do
    not yet cover a real combined gameplay+UI+shader flow; response latency,
    rendering and mixed-load behavior have not received final integrated
@@ -481,7 +483,7 @@ This section exists so compaction or a new session does not restart the design.
   including Luau/mlua selection and fire migration. The user now explicitly
   requests one coder subagent at a time, with personal review and commits.
 - **Active work (September 28, 2026):** Phase 3 is done. Phases 2, 4, 5
-  and 6 are in progress; phases 7 and 8 have not started. Phase 6 now includes
+  6 and 7 are in progress; Phase 8 has not started. Phase 6 now includes
   a reviewed authored UI document/layout/resource slice; Luau event dispatch,
   richer controls and built-in panel migration remain. Phase 2
   still needs atomic owner entity/drop effects, durable cross-owner payloads,
@@ -496,8 +498,8 @@ This section exists so compaction or a new session does not restart the design.
   focused inventory search with mouse/keyboard focus. The preceding commits
   `f8b283c`, `a885160`, `1e1e28e` and `09a9c61` delivered canonical package
   artifacts, bounded transfer, session sprite catalogs and full current Luau
-  catalog compatibility metadata respectively. No shader/effect increment is
-  committed; this plan is not complete.
+  catalog compatibility metadata respectively. A bounded single-effect WGSL
+  slice has since landed; this plan is not complete.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
@@ -865,6 +867,14 @@ This section exists so compaction or a new session does not restart the design.
   queues or stale replies. The uidemo package demonstrates real input/button
   reactions in inspected dynamic previews. No gameplay command, network API,
   timer, server authority, imports or general client runtime is bound.
+- **Phase 7 first WGSL slice:** format-2 packages can deliver one validated
+  `scene_color` fullscreen fragment effect with fixed HDR source, sampler and
+  elapsed-time/viewport bindings. Preparation validates Naga on a worker and
+  compiles the wgpu pipeline off the window thread; the renderer owns the pass
+  before bloom/display mapping. The sepia example and inspected effect preview
+  prove real package shader execution; conflicting owners and invalid shaders
+  fail readiness. This is not custom voxel/item material shading, texture
+  registration or a composable multi-effect graph; Phase 7 remains open.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

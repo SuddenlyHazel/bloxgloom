@@ -32,6 +32,28 @@ fn fixture() -> Fixture {
     fixture
 }
 
+#[test]
+fn package_effect_is_prepared_by_real_client_join_before_welcome() {
+    let fixture = fixture();
+    let dir = fixture.0.join("packages/demo");
+    let sample =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages/sepia");
+    for path in ["assets/shaders/sepia.wgsl", "assets/effects/grade.json"] {
+        std::fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+        std::fs::copy(sample.join(path), dir.join(path)).unwrap();
+    }
+    let manifest = dir.join("package.txt");
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("asset shader sepia assets/shaders/sepia.wgsl\nasset effect grade assets/effects/grade.json\n");
+    std::fs::write(manifest, text).unwrap();
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        let bundle = crate::client::connect_bundle_probe(&address.to_string(), 0xeffec7)
+            .unwrap()
+            .unwrap();
+        assert_eq!(bundle.effect().unwrap().owner, "demo:grade");
+    });
+}
+
 fn fragmented(peer: &mut TcpStream, message: &ClientMessage) {
     let mut bytes = Vec::new();
     protocol::write_client(&mut bytes, message).unwrap();

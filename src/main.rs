@@ -183,6 +183,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_preview(std::path::Path::new(&path), x, z)?;
             println!("wrote {path}");
         }
+        Some("effect-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "effect-preview.png".to_owned());
+            preview::render_effect_preview(std::path::Path::new(&path))?;
+        }
         Some("ui-preview") => {
             let directory = args.next().unwrap_or_else(|| "ui-previews".to_string());
             preview::render_ui_previews(std::path::Path::new(&directory))?;

@@ -1,4 +1,5 @@
 use super::*;
+mod effects;
 mod runtime;
 
 fn key(bytes: &[u8]) -> CacheKey {
