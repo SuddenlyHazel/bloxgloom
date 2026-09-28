@@ -224,3 +224,105 @@ fn registered_inventory_checks_identity_revision_reach_visibility_and_fences_sig
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
+
+#[test]
+fn registered_block_observation_is_required_and_remains_fenced_at_admission() {
+    use bloxgloom_host_api::actions::TerrainRequest;
+    let path = temp_save_dir("registered-terrain-observation");
+    let startup = crate::server::startup::ServerStartup::new(std::sync::Arc::new(
+        crate::content::Catalog::builtins(),
+    ))
+    .with_local_packages(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures/ui-target-actions/packages"),
+    )
+    .unwrap();
+    let mut state = crate::server::server_state_with_startup(31, path.clone(), 8, startup).unwrap();
+    for x in 0..=3 {
+        for y in 80..=82 {
+            state.world.edit(x, y, 0, AIR).unwrap();
+        }
+    }
+    state.world.edit(3, 81, 0, crate::world::STONE).unwrap();
+    let key = world_to_chunk(3, 81, 0).0;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(Stack::new(STICK, 2));
+    let peer = add_test_client(&mut state, [0.5, 80.0, 0.5], inventory.clone());
+    let observed = TerrainRequest {
+        version: state.world.cached_version(key).unwrap(),
+        request: Request {
+            key: "uitarget:light".into(),
+            version: 1,
+            slot: 0,
+            inventory_revision: 0,
+            entity: 0,
+            entity_revision: 0,
+            arguments: vec![],
+        },
+    };
+    let plan = |state: &mut State, payload| {
+        plan_durable_request(
+            state,
+            &edit_request(ClientMessage::EntityInteract {
+                action_id: 1,
+                target: [3, 81, 0],
+                payload,
+            }),
+            TickId::new(1),
+        )
+    };
+    let missing = plan(&mut state, observed.request.encode().unwrap())
+        .err()
+        .unwrap();
+    assert_eq!(missing.kind(), ErrorKind::PermissionDenied);
+    assert!(missing.to_string().contains("needs terrain fence"));
+    let mut future = observed.clone();
+    future.version += 1;
+    assert_eq!(
+        plan(&mut state, future.encode().unwrap())
+            .err()
+            .unwrap()
+            .kind(),
+        ErrorKind::PermissionDenied
+    );
+    let action = plan(&mut state, observed.encode().unwrap())
+        .unwrap()
+        .unwrap();
+    assert!(
+        action
+            .terrain_reads
+            .keys()
+            .any(|read| read == super::super::super::chunk_state_key(key))
+    );
+    assert!(action.terrain_reads.is_current());
+    assert_eq!(state.clients[&1].inventory, inventory);
+    state.world.edit(3, 81, 0, AIR).unwrap();
+    state.world.edit(3, 81, 0, crate::world::STONE).unwrap();
+    assert!(!action.terrain_reads.is_current());
+    let permit = action.entities.as_ref().map(|_| {
+        state
+            .durability
+            .entity_mirror
+            .try_reserve_durable()
+            .unwrap()
+            .expect("mirror admits the block-action conflict probe")
+    });
+    assert!(matches!(
+        state.durability.try_stage(TickId::new(2), &action, permit),
+        Err(StageError::Conflict)
+    ));
+    let stale = plan(&mut state, observed.encode().unwrap()).err().unwrap();
+    assert_eq!(stale.kind(), ErrorKind::PermissionDenied);
+    assert!(
+        stale
+            .to_string()
+            .contains("target changed since observation")
+    );
+    let mut fresh = observed;
+    fresh.version = state.world.cached_version(key).unwrap();
+    assert!(plan(&mut state, fresh.encode().unwrap()).is_ok());
+    assert_eq!(state.clients[&1].inventory, inventory);
+    drop(peer);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}

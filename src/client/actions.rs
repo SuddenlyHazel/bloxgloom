@@ -1,6 +1,8 @@
 //! Generic registered action discovery, composition and durable request controls.
 use super::*;
-use bloxgloom_host_api::actions::{Action, Operation, Panel, Request, Target, Widget};
+use bloxgloom_host_api::actions::{
+    Action, Operation, Panel, Request, Target, TerrainRequest, Widget,
+};
 
 #[derive(Clone)]
 pub(super) struct ActionChoice {
@@ -14,18 +16,9 @@ impl ClientApp {
         let Some(key) = self.package_ui.as_mut().and_then(|ui| ui.take_action()) else {
             return;
         };
-        let slot = self.config.selected_slot as u8;
         // Validate selection before allocating: a locally rejected request must
         // not leave a hole in the server-issued receipt sequence.
-        let Some(mut request) = compose_package_action(
-            &self.catalog,
-            &key,
-            slot,
-            &self.inventory,
-            self.position.to_array().map(|v| v.floor() as i32),
-            self.aimed_block(),
-            1u128 << 64 | 1,
-        ) else {
+        let Some(mut request) = self.compose_current_package_action(&key) else {
             self.package_ui
                 .as_mut()
                 .unwrap()
@@ -48,6 +41,22 @@ impl ClientApp {
             .as_mut()
             .unwrap()
             .action_submitted(action_id);
+    }
+
+    fn compose_current_package_action(&self, key: &str) -> Option<ClientMessage> {
+        compose_package_action(
+            &self.catalog,
+            key,
+            self.config.selected_slot as u8,
+            &self.inventory,
+            self.position.to_array().map(|v| v.floor() as i32),
+            self.aimed_block().and_then(|hit| {
+                let [x, y, z] = hit.block;
+                let chunk = self.chunks.get(&crate::world::world_to_chunk(x, y, z).0)?;
+                Some((hit, chunk.version))
+            }),
+            1u128 << 64 | 1,
+        )
     }
     pub(super) fn action_panel(&self) -> Option<Panel> {
         if self.screen != UiScreen::Actions {
@@ -173,6 +182,43 @@ impl ClientApp {
         self.set_screen(UiScreen::Playing);
     }
     pub(super) fn send_registered(&mut self, choice: ActionChoice) {
+        let terrain_version = if choice.action.operation == Operation::Gameplay
+            && let Target::Block(key) = &choice.action.target
+        {
+            let [x, y, z] = choice.target;
+            let Some((state, version)) = self
+                .block_at(x, y, z)
+                .zip(self.chunks.get(&crate::world::world_to_chunk(x, y, z).0))
+                .map(|(state, chunk)| (state, chunk.version))
+            else {
+                self.show_status("Target terrain is still loading");
+                return;
+            };
+            if self
+                .catalog
+                .state(state)
+                .and_then(|state| self.catalog.block_type(state.block_type))
+                .is_none_or(|block| block.key != *key)
+            {
+                self.show_status("Target block changed");
+                return;
+            }
+            Some(version)
+        } else {
+            None
+        };
+        let payload = match terrain_version {
+            Some(version) => TerrainRequest {
+                version,
+                request: choice.request,
+            }
+            .encode(),
+            None => choice.request.encode(),
+        };
+        let Some(payload) = payload else {
+            self.show_status("Invalid action request");
+            return;
+        };
         let Some(action_id) = self.allocate_action_id() else {
             self.show_status("Action session pending or busy");
             return;
@@ -180,13 +226,13 @@ impl ClientApp {
         self.queue_command(ClientMessage::EntityInteract {
             action_id,
             target: choice.target,
-            payload: choice.request.encode().expect("validated action request"),
+            payload,
         });
     }
 }
 
 // The script supplies only its owned key. The caller supplies current client
-// selection and a ray hit from streamed chunks, never script target coordinates.
+// selection and a ray hit/version from streamed chunks, never script target coordinates.
 // Server authorization still owns reach, sight, costs and target validation.
 pub(crate) fn compose_package_action(
     catalog: &crate::content::Catalog,
@@ -194,13 +240,14 @@ pub(crate) fn compose_package_action(
     slot: u8,
     inventory: &crate::inventory::Inventory,
     mut target: [i32; 3],
-    aimed: Option<Hit>,
+    aimed: Option<(Hit, u64)>,
     action_id: u128,
 ) -> Option<ClientMessage> {
     let action = catalog.action(key)?;
     if action.operation != Operation::Gameplay {
         return None;
     }
+    let mut terrain_version = None;
     match &action.target {
         Target::Empty => {}
         Target::Item(item) => {
@@ -210,12 +257,13 @@ pub(crate) fn compose_package_action(
             }
         }
         Target::Block(key) => {
-            let hit = aimed?;
+            let (hit, version) = aimed?;
             let state = catalog.state(hit.block_id)?;
             if catalog.block_type(state.block_type)?.key != *key {
                 return None;
             }
             target = hit.block;
+            terrain_version = Some(version);
         }
         Target::Entity(_) => return None,
     }
@@ -231,7 +279,10 @@ pub(crate) fn compose_package_action(
     Some(ClientMessage::EntityInteract {
         action_id,
         target,
-        payload: request.encode()?,
+        payload: match terrain_version {
+            Some(version) => TerrainRequest { version, request }.encode()?,
+            None => request.encode()?,
+        },
     })
 }
 

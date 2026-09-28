@@ -129,6 +129,10 @@ fn luau_action_block_targets_keep_real_reach_sight_and_identity_checks() {
     ] {
         state.world.edit(x, y, z, block).unwrap();
     }
+    let terrain_version = state
+        .world
+        .cached_version(crate::world::world_to_chunk(2, 80, 0).0)
+        .unwrap();
     let catalog = state.world.catalog_arc();
     serve(state, |address| {
         let mut peer = Peer::connect(address, catalog);
@@ -139,23 +143,52 @@ fn luau_action_block_targets_keep_real_reach_sight_and_identity_checks() {
             ([4, 80, 0], "occluded"),
         ] {
             let mut request = peer.request(0);
-            if let ClientMessage::EntityInteract { target: at, .. } = &mut request {
+            if let ClientMessage::EntityInteract {
+                target: at,
+                payload,
+                ..
+            } = &mut request
+            {
                 *at = target;
+                *payload = bloxgloom_host_api::actions::TerrainRequest {
+                    version: terrain_version,
+                    request: Request::decode(payload).unwrap(),
+                }
+                .encode()
+                .unwrap();
             }
             let (accepted, reason) = peer.send(&request);
             assert!(!accepted, "{reason}");
             assert!(reason.contains(expected_reason), "{reason}");
         }
         let mut request = peer.request(0);
-        if let ClientMessage::EntityInteract { target, .. } = &mut request {
+        if let ClientMessage::EntityInteract {
+            target, payload, ..
+        } = &mut request
+        {
             *target = [2, 80, 0];
+            *payload = bloxgloom_host_api::actions::TerrainRequest {
+                version: terrain_version,
+                request: Request::decode(payload).unwrap(),
+            }
+            .encode()
+            .unwrap();
         }
         let (accepted, reason) = peer.send(&request);
         assert!(accepted, "{reason}");
         // A fresh action cannot re-use a target whose authoritative type changed.
         let mut request = peer.request(0);
-        if let ClientMessage::EntityInteract { target, .. } = &mut request {
+        if let ClientMessage::EntityInteract {
+            target, payload, ..
+        } = &mut request
+        {
             *target = [2, 80, 0];
+            *payload = bloxgloom_host_api::actions::TerrainRequest {
+                version: terrain_version,
+                request: Request::decode(payload).unwrap(),
+            }
+            .encode()
+            .unwrap();
         }
         assert!(!peer.send(&request).0);
     });

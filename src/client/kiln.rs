@@ -39,24 +39,32 @@ impl ClientApp {
         {
             return self.open_inventory_at(hit.block, hit.block_id);
         }
-        let Some(entity) = self.replicas.action_at(hit.block, &self.catalog) else {
+        let entity = self.replicas.action_at(hit.block, &self.catalog);
+        let uses_entity = |action: &bloxgloom_host_api::actions::Action| {
+            !(matches!(action.target, bloxgloom_host_api::actions::Target::Block(_))
+                && action.operation == bloxgloom_host_api::actions::Operation::Gameplay)
+        };
+        if entity.is_none() && choices.iter().any(|action| uses_entity(action)) {
             self.show_status("Target state is still loading");
             return true;
-        };
+        }
         self.action_choices = choices
             .into_iter()
-            .map(|action| actions::ActionChoice {
-                request: bloxgloom_host_api::actions::Request {
-                    key: action.key.clone(),
-                    version: action.version,
-                    slot: self.config.selected_slot as u8,
-                    inventory_revision: self.inventory.revision,
-                    entity: entity.id,
-                    entity_revision: entity.revision,
-                    arguments: vec![],
-                },
-                action,
-                target: hit.block,
+            .map(|action| {
+                let identity = entity.filter(|_| uses_entity(&action));
+                actions::ActionChoice {
+                    request: bloxgloom_host_api::actions::Request {
+                        key: action.key.clone(),
+                        version: action.version,
+                        slot: self.config.selected_slot as u8,
+                        inventory_revision: self.inventory.revision,
+                        entity: identity.map_or(0, |entity| entity.id),
+                        entity_revision: identity.map_or(0, |entity| entity.revision),
+                        arguments: vec![],
+                    },
+                    action,
+                    target: hit.block,
+                }
             })
             .collect();
         self.active_action = (self.action_choices.len() == 1

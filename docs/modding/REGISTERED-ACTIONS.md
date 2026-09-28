@@ -78,9 +78,17 @@ action in the same target context; missing/incompatible references reject the
 catalog before startup. Standard inventory grids/status remain in
 `InventoryScreen`; arbitrary canvas/GPU or scripting widgets are not promised.
 
+Authored gameplay block requests use tag 6, which wraps the versioned action
+request with the observed streamed chunk version. The server requires a match
+against its resident chunk at planning and retains its read fence through
+admission; remove-and-restore of the same block type is still stale. A client
+version cannot authorize an edit. Other targets retain tag 5 or their existing
+identity-fenced envelopes.
+
 Bounds: 256 action definitions, 8 actions per target, 8 widgets per panel, 128-byte
 action keys, 239-byte fixed policy requests, 4 bytes of inventory-control arguments. Requests
-are at most 162 bytes (below the existing 256-byte interaction limit), reject
+are at most 162 bytes normally or 171 bytes with a chunk-version observation
+for gameplay block actions (both below the 256-byte interaction limit), reject
 truncation/trailing bytes before retaining arguments, and discovery scans at most
 the fixed registry capacity. Inventory work touches the 36 host slots and preserves
 the 128-per-stack cap. Text is printable ASCII with per-field lengths.

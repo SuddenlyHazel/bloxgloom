@@ -1,7 +1,9 @@
 //! Registered actions feed the existing receipt/transaction path. The registry
 //! owns effects; client-supplied bytes can only select bounded host operations.
 use super::*;
-use bloxgloom_host_api::actions::{Operation, Request, Target};
+use bloxgloom_host_api::actions::{
+    Operation, Request, TERRAIN_REQUEST_TAG, Target, TerrainRequest,
+};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan(
@@ -15,7 +17,13 @@ pub(super) fn plan(
     tick: TickId,
 ) -> io::Result<CommitAction> {
     let catalog = state.world.catalog_arc();
-    let request = if payload.first() == Some(&bloxgloom_host_api::actions::REQUEST_TAG) {
+    let mut terrain_version = None;
+    let request = if payload.first() == Some(&TERRAIN_REQUEST_TAG) {
+        let observed =
+            TerrainRequest::decode(payload).ok_or_else(|| denied("malformed terrain action"))?;
+        terrain_version = Some(observed.version);
+        observed.request
+    } else if payload.first() == Some(&bloxgloom_host_api::actions::REQUEST_TAG) {
         Request::decode(payload).ok_or_else(|| denied("malformed registered action"))?
     } else {
         // Existing identity-fenced wire requests resolve through the same frozen
@@ -72,13 +80,14 @@ pub(super) fn plan(
             arguments,
         }
     };
-    plan_request(
+    plan_observed_request(
         state,
         client_id,
         profile,
         action_id,
         target,
         request,
+        terrain_version,
         receipt_value,
         tick,
     )
@@ -95,12 +104,42 @@ pub(super) fn plan_request(
     receipt_value: Vec<u8>,
     tick: TickId,
 ) -> io::Result<CommitAction> {
+    plan_observed_request(
+        state,
+        client_id,
+        profile,
+        action_id,
+        target,
+        request,
+        None,
+        receipt_value,
+        tick,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_observed_request(
+    state: &mut State,
+    client_id: u64,
+    profile: u128,
+    action_id: u128,
+    target: [i32; 3],
+    request: Request,
+    terrain_version: Option<u64>,
+    receipt_value: Vec<u8>,
+    tick: TickId,
+) -> io::Result<CommitAction> {
     let catalog = state.world.catalog_arc();
     let action = catalog
         .action(&request.key)
         .ok_or_else(|| denied("unknown registered action"))?;
     if request.version != action.version {
         return Err(denied("unsupported action version"));
+    }
+    if terrain_version.is_some()
+        && !(action.operation == Operation::Gameplay && matches!(action.target, Target::Block(_)))
+    {
+        return Err(denied("terrain fence requires a gameplay block action"));
     }
     let client = state
         .clients
@@ -118,6 +157,7 @@ pub(super) fn plan_request(
                 action_id,
                 target,
                 request: &request,
+                terrain_version,
                 kind: &action.target,
                 receipt_value,
                 tick,

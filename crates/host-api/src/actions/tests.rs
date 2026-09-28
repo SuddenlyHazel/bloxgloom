@@ -56,6 +56,41 @@ fn request_codec_rejects_truncation_trailing_and_oversized_arguments() {
     extra.extend([0; 256]);
     assert!(Request::decode(&extra).is_none());
 }
+
+#[test]
+fn terrain_request_distinguishes_zero_from_missing_and_bounds_nested_payload() {
+    let observed = TerrainRequest {
+        version: 0,
+        request: Request {
+            key: "test:work".into(),
+            version: 1,
+            slot: 0,
+            inventory_revision: 0,
+            entity: 0,
+            entity_revision: 0,
+            arguments: vec![],
+        },
+    };
+    let bytes = observed.encode().unwrap();
+    assert_eq!(TerrainRequest::decode(&bytes), Some(observed.clone()));
+    assert!(Request::decode(&bytes).is_none());
+    assert!(TerrainRequest::decode(&observed.request.encode().unwrap()).is_none());
+    for n in 0..bytes.len() {
+        assert!(TerrainRequest::decode(&bytes[..n]).is_none());
+    }
+    let mut extra = bytes;
+    extra.push(0);
+    assert!(TerrainRequest::decode(&extra).is_none());
+    extra.extend([0; 256]);
+    assert!(TerrainRequest::decode(&extra).is_none());
+    let mut largest = observed;
+    largest.version = u64::MAX;
+    largest.request.key = format!("test:{}", "x".repeat(123));
+    largest.request.arguments = vec![0; 4];
+    let bytes = largest.encode().unwrap();
+    assert_eq!(bytes.len(), 171);
+    assert_eq!(TerrainRequest::decode(&bytes), Some(largest));
+}
 #[test]
 fn composition_bounds_and_fingerprint_cover_every_control() {
     let mut definition = action("test:work");

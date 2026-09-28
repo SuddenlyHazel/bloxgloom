@@ -109,6 +109,69 @@ impl PackageActionProbe {
         self.app.pending_actions[&id].clone()
     }
 
+    pub(crate) fn observe(&mut self, at: [i32; 3]) -> ClientMessage {
+        self.aim(at);
+        self.activate();
+        let key = self.app.package_ui.as_mut().unwrap().take_action().unwrap();
+        self.app.compose_current_package_action(&key).unwrap()
+    }
+
+    pub(crate) fn submit_observed(&mut self, original: &ClientMessage) -> ClientMessage {
+        let ClientMessage::EntityInteract {
+            target, payload, ..
+        } = original
+        else {
+            unreachable!()
+        };
+        let mut observed = TerrainRequest::decode(payload).unwrap();
+        // Isolate the terrain precondition from an unrelated inventory change.
+        observed.request.inventory_revision = self.app.inventory.revision;
+        let action_id = self.app.allocate_action_id().unwrap();
+        self.submit(ClientMessage::EntityInteract {
+            action_id,
+            target: *target,
+            payload: observed.encode().unwrap(),
+        })
+    }
+
+    pub(crate) fn submit_panel_block(&mut self, target: [i32; 3]) -> ClientMessage {
+        self.aim(target);
+        let next = self.app.actions.next_seq;
+        let action_id = action_id(self.app.actions.epoch, next);
+        assert!(self.app.open_aimed_kiln());
+        assert_eq!(self.app.screen, UiScreen::Actions);
+        self.app.action_control(0);
+        assert_eq!(self.app.actions.next_seq, next + 1);
+        self.app.pending_actions[&action_id].clone()
+    }
+
+    pub(crate) fn edit(&mut self, at: [i32; 3], block: BlockId, slot: u8) -> ClientMessage {
+        let action_id = self.app.allocate_action_id().unwrap();
+        self.submit(ClientMessage::Edit {
+            action_id,
+            x: at[0],
+            y: at[1],
+            z: at[2],
+            block,
+            slot,
+        })
+    }
+
+    fn submit(&mut self, message: ClientMessage) -> ClientMessage {
+        let action_id = match &message {
+            ClientMessage::EntityInteract { action_id, .. }
+            | ClientMessage::Edit { action_id, .. } => *action_id,
+            _ => unreachable!(),
+        };
+        self.app
+            .package_ui
+            .as_mut()
+            .unwrap()
+            .action_submitted(action_id);
+        self.app.queue_command(message.clone());
+        message
+    }
+
     pub(crate) fn forged(
         &mut self,
         original: &ClientMessage,
@@ -118,14 +181,19 @@ impl PackageActionProbe {
         let ClientMessage::EntityInteract { payload, .. } = original else {
             unreachable!()
         };
-        let mut request = Request::decode(payload).unwrap();
+        let mut observed = TerrainRequest::decode(payload).unwrap();
+        let request = &mut observed.request;
         request.inventory_revision = self.app.inventory.revision;
-        change(&mut request);
+        change(request);
+        let [x, y, z] = target;
+        // These forgeries isolate other authorization checks from stale terrain;
+        // submit_observed deliberately retains the old version for ABA coverage.
+        observed.version = self.app.chunks[&crate::world::world_to_chunk(x, y, z).0].version;
         let action_id = self.app.allocate_action_id().unwrap();
         let message = ClientMessage::EntityInteract {
             action_id,
             target,
-            payload: request.encode().unwrap(),
+            payload: observed.encode().unwrap(),
         };
         self.app
             .package_ui
@@ -137,12 +205,10 @@ impl PackageActionProbe {
     }
 
     pub(crate) fn result(&mut self, request: &ClientMessage) -> (bool, String) {
-        let ClientMessage::EntityInteract {
-            action_id: expected,
-            ..
-        } = request
-        else {
-            unreachable!()
+        let expected = match request {
+            ClientMessage::EntityInteract { action_id, .. }
+            | ClientMessage::Edit { action_id, .. } => action_id,
+            _ => unreachable!(),
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

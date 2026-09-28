@@ -10,6 +10,38 @@ pub const MAX_TARGET_ACTIONS: usize = 8;
 pub const MAX_WIDGETS: usize = 8;
 // Tags 2/3/4 are the inventory/mobile/anchored identity envelopes.
 pub const REQUEST_TAG: u8 = 5;
+pub const TERRAIN_REQUEST_TAG: u8 = 6;
+
+/// Gameplay block use carries the version of the streamed target chunk. This
+/// is a compare-only precondition, never authority to create or replace terrain.
+/// A distinct tag makes an absent fence different from observed version zero.
+/// Any intervening edit in that chunk invalidates the observation, even if the
+/// target cell is unchanged or restored. Other action kinds keep `Request`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerrainRequest {
+    pub version: u64,
+    pub request: Request,
+}
+impl TerrainRequest {
+    pub fn encode(&self) -> Option<Vec<u8>> {
+        let request = self.request.encode()?;
+        let mut bytes = Vec::with_capacity(9 + request.len());
+        bytes.push(TERRAIN_REQUEST_TAG);
+        bytes.extend(self.version.to_le_bytes());
+        bytes.extend(request);
+        Some(bytes)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        if bytes.first() != Some(&TERRAIN_REQUEST_TAG) {
+            return None;
+        }
+        Some(Self {
+            version: u64::from_le_bytes(bytes.get(1..9)?.try_into().ok()?),
+            request: Request::decode(bytes.get(9..)?)?,
+        })
+    }
+}
 
 /// Shared bounded discovery contract. Hosts additionally resolve all content
 /// references before freezing. Canonical action-key order is precedence, not

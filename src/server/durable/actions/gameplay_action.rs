@@ -18,6 +18,7 @@ pub(super) struct Invocation<'a> {
     pub action_id: u128,
     pub target: [i32; 3],
     pub request: &'a Request,
+    pub terrain_version: Option<u64>,
     pub kind: &'a Target,
     pub receipt_value: Vec<u8>,
     pub tick: TickId,
@@ -30,6 +31,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         action_id,
         target,
         request,
+        terrain_version,
         kind,
         receipt_value,
         tick,
@@ -69,6 +71,15 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             }
             verify_reach(client, target)?;
             let actual = read_target(state, &mut reads, target)?;
+            // read_target captured the authority stamp carried through admission
+            // and confirmed apply. Compare the client's persisted chunk version
+            // on that same resident basis; retries never refresh the observation.
+            let observed =
+                terrain_version.ok_or_else(|| denied("block use needs terrain fence"))?;
+            let chunk_key = world_to_chunk(target[0], target[1], target[2]).0;
+            if state.world.cached_version(chunk_key) != Some(observed) {
+                return Err(denied("block action target changed since observation"));
+            }
             if catalog
                 .state(actual)
                 .and_then(|s| catalog.block_type(s.block_type))
