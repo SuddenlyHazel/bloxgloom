@@ -479,20 +479,21 @@ initial authored UI text/state. Real-listener reconnect/switch tests cover
 that narrow session lifecycle. Connection workers now retire on failure/exit;
 cached reconnect and differently modded switches start with fresh UI, material,
 effect, startup and action state. Join stages/errors are printed to stderr,
-including package-attributed startup failures. GPU/window failures propagate
-instead of looking like successful exits.
+including package-attributed startup failures. The client now opens a window
+first, renders preparing/error states, and offers retry, cancellation and F2
+server switching; the retained join worker cannot install a cancelled session.
+GPU/window failures propagate instead of looking like successful exits.
 
 **Remaining**
 
 - [ ] Expand the narrow downloaded startup host into the documented client
   presentation/replica services and resource registration model, with bounded
   session-scoped callbacks and explicit compatibility/readiness failures.
-- [ ] Present a simple window-visible preparation/error state. Console stage
-  diagnostics exist, but connection setup still waits for its worker **before**
-  creating the window; no in-window retry/switch interface exists.
 - [ ] Complete the remaining client runtime compatibility/readiness checks and
   exercise the whole package flow under mixed live load. Real-listener
-  download, failure, reconnect and cross-server switching are covered; disk
+  download, failure, retry, cancellation, reconnect and cross-server switching
+  are covered; OS DNS/filesystem cancellation is not instantaneous and GPU
+  resource installation still runs synchronously on the window thread. Disk
   caching and elaborate progress UI are **not** prerequisites unless testing
   requires them.
 
@@ -551,7 +552,7 @@ broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **882/882**. That does not close these cross-system checks or verify the
+  **883/883**. That does not close these cross-system checks or verify the
   in-world mod visuals.
 
 ### Explicitly deferred outside the phases
@@ -617,14 +618,14 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed 882/882 after the kiln probe harness
-  fix and join/switch cleanup. Window-visible joining is being reviewed in an
-  isolated worktree and is not counted as landed.
+  latest reviewed 4-thread suite passed **883/883** after window-visible joining
+  was committed.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,
-  and `533571e` retires failed/closed modded client sessions. A commit is a
-  reviewed increment, not a phase acceptance.
+  `533571e` retires failed/closed modded client sessions, and `6c4528b` adds
+  window-visible preparing/error/retry/switch controls. A commit is a reviewed
+  increment, not a phase acceptance.
 
 **Historical increment notes:** the entries below preserve what was known when
 each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
@@ -1154,6 +1155,16 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
   stay live. Focused tests, formatting, strict Clippy and the integrated
   main-tree 4-thread suite (**882/882**) passed. Joining remains synchronous
   before the window, with console—not window-visible—progress and errors.
+- **Phase 5 window-first join slice:** a retained worker performs config load,
+  network/package/catalog/startup work while a simple renderer shows preparation
+  and attributed errors. Enter/mouse retry, Esc cancellation and F2 live server
+  switching retire the old session; a cancelled or expired prepared candidate
+  cannot install its catalog or process authoritative snapshots. Focused real-
+  listener cancellation/retry/cache/switch tests, UI bounds tests, formatting
+  and strict Clippy pass. Preparing/error previews were inspected at 1280×720
+  and 640×360; the 4-thread main-tree suite passed **883/883**. GPU installation
+  remains on the window thread; OS DNS/filesystem calls are not forcibly
+  interruptible.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
