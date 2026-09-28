@@ -436,6 +436,11 @@ harvesting migration are accepted. No phase-level work remains.
   also passes the integrated **892/892** suite; the host still owns candidate
   capture, allocation, inventory credit, despawns, terrain wakes and WAL
   commits. Public policy methods alone do not close drop parity.
+- Terrain-change wake selection is shared host scheduling rather than a
+  drop-specific private decision: the bounded chunk index considers suspended
+  entities and public mobile terrain-wake opt-ins, then the drop's public
+  falling policy rechecks support. Lost hints fall back to suspended rechecks;
+  keep the host selection bounded instead of exposing allocator/index internals.
 - Authenticated `give`/`spawn` console requests use registered actions and
   public Luau gameplay operations (`99e8276`); `help` is client-local text.
   Production `InventoryMove` uses public `move_slots`, preserving capped merges,
