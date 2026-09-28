@@ -4,6 +4,7 @@
 //! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
+use content::DropSize;
 mod runtime;
 
 const MAX_ITEMS: usize = 32;
@@ -39,6 +40,10 @@ impl ClientBundle {
             return Err(invalid());
         }
         let mut writer = Writer(self.bytes[..self.bytes.len() - 4].to_vec());
+        let sized = items.iter().any(|item| item.drop_size != DropSize::Normal);
+        if sized {
+            writer.0[MAGIC.len() - 1] = SIZED_MAGIC[MAGIC.len() - 1];
+        }
         writer.count(1)?;
         let runtime = runtime::Runtime::project(declarations)?;
         let mut items = items.iter().collect::<Vec<_>>();
@@ -93,6 +98,13 @@ impl ClientBundle {
                     writer.field(format!("!{}", item.texture).as_bytes())?;
                 } else {
                     writer.field(item.texture.as_bytes())?;
+                }
+                if sized {
+                    writer.field(&[match item.drop_size {
+                        DropSize::Normal => 0,
+                        DropSize::Small => 1,
+                        DropSize::Large => 2,
+                    }])?;
                 }
             }
             let own = textures
@@ -206,10 +218,15 @@ impl Startup {
     pub(super) fn decode(
         reader: &mut Reader<'_>,
         packages: &BTreeMap<String, ClientPackage>,
+        sized: bool,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
+            if sized {
+                return Err(invalid());
+            }
             return Ok(None);
         }
+        let mut has_nondefault_size = false;
         let mut startup = Self {
             packages: Vec::new(),
             items: Vec::new(),
@@ -246,6 +263,17 @@ impl Startup {
                 let key = reader.text(129)?;
                 let display = reader.text(255)?;
                 let encoded_texture = reader.text(255)?;
+                let drop_size = if sized {
+                    match reader.field(1)? {
+                        [0] => DropSize::Normal,
+                        [1] => DropSize::Small,
+                        [2] => DropSize::Large,
+                        _ => return Err(invalid()),
+                    }
+                } else {
+                    DropSize::Normal
+                };
+                has_nondefault_size |= drop_size != DropSize::Normal;
                 let (sprite, texture) = match encoded_texture.strip_prefix('!') {
                     Some(texture) => (false, texture.to_owned()),
                     None => (true, encoded_texture),
@@ -269,6 +297,7 @@ impl Startup {
                     swatch: [1.0; 4],
                     placeable: None,
                     sprite,
+                    drop_size,
                     components: content::Components::None,
                 });
             }
@@ -356,7 +385,11 @@ impl Startup {
                     .iter_mut()
                     .find(|i| i.key == key)
                     .ok_or_else(|| error(name, format!("block {key} has no placeable item")))?;
-                if item.name != display || item.texture != texture || !item.sprite {
+                if item.name != display
+                    || item.texture != texture
+                    || !item.sprite
+                    || item.drop_size != DropSize::Normal
+                {
                     return Err(error(name, format!("block {key} item does not match")));
                 }
                 item.placeable = Some(key.clone());
@@ -383,6 +416,9 @@ impl Startup {
                     .collect(),
                 requires,
             });
+        }
+        if sized && !has_nondefault_size {
+            return Err(invalid());
         }
         if !startup.textures.is_empty() {
             // PNG decode and dimension/memory checks belong to preparation, not

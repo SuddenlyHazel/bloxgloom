@@ -35,6 +35,7 @@ impl Extension for Content {
             texture: TEXTURE.into(),
             placeable: None,
             sprite: true,
+            drop_size: bloxgloom_host_api::content::DropSize::Normal,
             components: Components::Opaque {
                 version: 2,
                 fingerprint: 0xc011,
@@ -102,6 +103,7 @@ impl Extension for Content {
             texture: TEXTURE.into(),
             placeable: Some(format!("{LAMP}[axis=y,lit=false]")),
             sprite: false,
+            drop_size: bloxgloom_host_api::content::DropSize::Normal,
             components: Components::None,
         })?;
         r.block(Block {
@@ -127,6 +129,7 @@ impl Extension for Content {
             texture: TEXTURE.into(),
             placeable: Some(REED.into()),
             sprite: true,
+            drop_size: bloxgloom_host_api::content::DropSize::Normal,
             components: Components::None,
         })?;
         r.tag(Tag {

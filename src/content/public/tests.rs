@@ -8,6 +8,61 @@ fn fixture() -> Catalog {
 }
 
 #[test]
+fn drop_size_defaults_and_nondefault_identity_survive_remapping() {
+    let mut base = Catalog::builtins();
+    let mut item = Item {
+        key: "test:drop_size".into(),
+        name: "DROP".into(),
+        swatch: [1.0; 4],
+        texture: "bloxgloom:stone".into(),
+        placeable: None,
+        sprite: true,
+        drop_size: DropSize::Normal,
+        components: Components::None,
+    };
+    base.public_item(&item).unwrap();
+    let id = base.item_by_key(&item.key).unwrap();
+    assert_eq!(base.drop_size(id), DropSize::Normal);
+    let original = base
+        .identities()
+        .into_iter()
+        .find(|e| e.0 == b'I' && e.2 == item.key)
+        .unwrap()
+        .3;
+    let mut sized = Catalog::builtins();
+    item.drop_size = DropSize::Large;
+    sized.public_item(&item).unwrap();
+    assert_ne!(sized.fingerprint(), base.fingerprint());
+    assert_ne!(
+        sized
+            .identities()
+            .into_iter()
+            .find(|e| e.0 == b'I' && e.2 == item.key)
+            .unwrap()
+            .3,
+        original
+    );
+    assert!(
+        ContentManifest::from_catalog(&base)
+            .resolve_catalog(&sized)
+            .is_err()
+    );
+    let manifest = ContentManifest::from_catalog(&sized);
+    let resolved = manifest.resolve_catalog(&sized).unwrap();
+    assert_eq!(
+        resolved.drop_size(resolved.item_by_key(&item.key).unwrap()),
+        DropSize::Large
+    );
+    item.drop_size = DropSize::Small;
+    let mut small = Catalog::builtins();
+    small.public_item(&item).unwrap();
+    assert_ne!(small.fingerprint(), sized.fingerprint());
+    assert_eq!(item.drop_size.multiplier(), 0.75);
+    assert_eq!(DropSize::Normal.multiplier(), 1.0);
+    assert_eq!(DropSize::Large.multiplier(), 1.25);
+}
+
+#[test]
 fn public_content_compiles_and_all_metadata_survives_manifest_remapping() {
     let catalog = fixture();
     let state = catalog
@@ -377,6 +432,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             texture: "bloxgloom:stick".into(),
             placeable: None,
             sprite: true,
+            drop_size: bloxgloom_host_api::content::DropSize::Normal,
             components: Components::Opaque {
                 version: 3,
                 fingerprint: 10,
@@ -417,6 +473,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             texture: "bloxgloom:stone".into(),
             placeable: Some("bloxgloom:stone".into()),
             sprite: false,
+            drop_size: bloxgloom_host_api::content::DropSize::Normal,
             components: Components::Opaque {
                 version: 1,
                 fingerprint: 1,

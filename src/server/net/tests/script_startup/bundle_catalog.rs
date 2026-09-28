@@ -5,6 +5,58 @@ use crate::server::client_bundle::{CacheKey, ClientBundle};
 use std::net::Shutdown;
 
 #[test]
+fn drop_size_option_negotiates_verified_catalog_and_explicit_normal_preserves_bundle() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let entry = |option: &str| {
+        format!(
+            "return function(h) h.register_item('demo:token', 'Token', 'bloxgloom:stone'{option}) end"
+        )
+    };
+    fixture.package("demo", CONTENT, &entry(""));
+    let default = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    let default_key = default.client_bundle.as_ref().unwrap().cache_key();
+    let default_identity = default.catalog().fingerprint();
+    assert!(
+        default
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x07")
+    );
+    fixture.package("demo", CONTENT, &entry(", { drop_size = 'normal' }"));
+    let normal = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    assert_eq!(
+        normal.client_bundle.as_ref().unwrap().cache_key(),
+        default_key
+    );
+    assert_eq!(normal.catalog().fingerprint(), default_identity);
+
+    fixture.package("demo", CONTENT, &entry(", { drop_size = 'large' }"));
+    let state = Box::new(fixture.open().unwrap());
+    let server = state.world.catalog_arc();
+    assert_ne!(server.fingerprint(), default_identity);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x08")
+    );
+    let expected = ContentManifest::from_catalog(&server);
+    gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x709).unwrap();
+        assert_eq!(ContentManifest::from_catalog(&client), expected);
+        assert_eq!(
+            client.drop_size(client.item_by_key("demo:token").unwrap()),
+            bloxgloom_host_api::content::DropSize::Large
+        );
+    });
+}
+
+#[test]
 fn item_sprite_option_is_negotiated_and_omission_preserves_default_identity() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();

@@ -426,6 +426,7 @@ impl Catalog {
                     .to_string(),
                 placeable: Some(catalog.state(state).unwrap().key.clone()),
                 sprite: definition.cutout,
+                drop_size: bloxgloom_host_api::content::DropSize::Normal,
                 components: api::Components::Unstructured,
             };
             catalog
@@ -476,6 +477,7 @@ impl Catalog {
                         texture: catalog.texture(TextureId(layer)).unwrap().key.to_string(),
                         placeable: None,
                         sprite: true,
+                        drop_size: bloxgloom_host_api::content::DropSize::Normal,
                         components: api::Components::Unstructured,
                     },
                 )

@@ -157,7 +157,9 @@ mod tests {
         assert_eq!(first_flight.len(), 1);
         assert_eq!(first_flight[0].center, old[0].center);
         assert_eq!(first_flight[0].angle, old[0].angle);
+        assert_eq!(first_flight[0].scale, old[0].scale);
         let mid = animator.visuals(now + Duration::from_millis(200), Vec3::ZERO);
+        assert!(mid[0].scale < first_flight[0].scale);
         assert!(mid[0].center.distance(Vec3::new(0.0, 1.25, 0.0)) < 2.0);
         assert!(
             animator
@@ -190,5 +192,40 @@ mod tests {
         let visual_mid = animator.visuals(now + Duration::from_millis(60), Vec3::ZERO)[0].center;
         let visual_end = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].center;
         assert!(visual_start.y > visual_mid.y && visual_mid.y > visual_end.y);
+    }
+
+    #[test]
+    fn sized_drop_keeps_its_preset_through_pickup_flight_without_changing_motion() {
+        use bloxgloom_host_api::content::{Components, DropSize, Item};
+        let mut catalog = crate::content::Catalog::builtins();
+        catalog
+            .public_item(&Item {
+                key: "test:sized".into(),
+                name: "Sized".into(),
+                swatch: [1.0; 4],
+                texture: "bloxgloom:stone".into(),
+                placeable: None,
+                sprite: true,
+                drop_size: DropSize::Small,
+                components: Components::None,
+            })
+            .unwrap();
+        let now = Instant::now();
+        let mut animator = DropAnimator::new(now);
+        let mut drop = item(2000);
+        drop.item = catalog.item_by_key("test:sized").unwrap();
+        animator.snapshot(vec![drop], now);
+        let live = animator.visuals(now, Vec3::ZERO)[0];
+        assert_eq!(live.presentation_scale(&catalog), live.scale * 0.75);
+        animator.picked_up(vec![drop], now);
+        let first = animator.visuals(now, Vec3::ZERO)[0];
+        assert_eq!(first.center, live.center);
+        assert_eq!(
+            first.presentation_scale(&catalog),
+            live.presentation_scale(&catalog)
+        );
+        let mid = animator.visuals(now + Duration::from_millis(170), Vec3::ZERO)[0];
+        assert_eq!(mid.presentation_scale(&catalog), mid.scale * 0.75);
+        assert!(mid.presentation_scale(&catalog) < first.presentation_scale(&catalog));
     }
 }

@@ -28,6 +28,10 @@ pub(crate) struct VisualDrop {
 }
 
 impl VisualDrop {
+    pub(crate) fn presentation_scale(&self, catalog: &Catalog) -> f32 {
+        self.scale * catalog.drop_size(self.item).multiplier()
+    }
+
     fn light_attributes(&self) -> [f32; 3] {
         let bounce = u32::from(self.light.bounce[0])
             | (u32::from(self.light.bounce[1]) << 8)
@@ -72,6 +76,7 @@ pub(crate) fn mesh_with_catalog(items: &[VisualDrop], catalog: &Catalog) -> Drop
             continue;
         }
         let (sin, cos) = item.angle.sin_cos();
+        let scale = item.presentation_scale(catalog);
         for axis in 0..3 {
             let u = (axis + 1) % 3;
             let v = (axis + 2) % 3;
@@ -84,7 +89,7 @@ pub(crate) fn mesh_with_catalog(items: &[VisualDrop], catalog: &Catalog) -> Drop
                     local[axis] += 0.23 * side as f32;
                     local[u] += (du - 0.5) * 0.46;
                     local[v] += (dv - 0.5) * 0.46;
-                    let local = Vec3::from_array(local) * item.scale;
+                    let local = Vec3::from_array(local) * scale;
                     let position = item.center
                         + Vec3::new(
                             local.x * cos + local.z * sin,
@@ -131,6 +136,7 @@ fn emit_cutout_drop(
     catalog: &Catalog,
 ) {
     let (sin, cos) = item.angle.sin_cos();
+    let scale = item.presentation_scale(catalog);
     let layer = super::material::item_material_layer_for(catalog, item.item, 1, 1) as f32;
     let half_size = if catalog
         .item(item.item)
@@ -152,10 +158,10 @@ fn emit_cutout_drop(
             (1.0, half_size, 1.0, 0.0),
             (0.0, half_size, 0.0, 0.0),
         ] {
-            let x = (start[0] + (end[0] - start[0]) * t) * item.scale;
-            let z = (start[1] + (end[1] - start[1]) * t) * item.scale;
+            let x = (start[0] + (end[0] - start[0]) * t) * scale;
+            let z = (start[1] + (end[1] - start[1]) * t) * scale;
             let position =
-                item.center + Vec3::new(x * cos + z * sin, height * item.scale, -x * sin + z * cos);
+                item.center + Vec3::new(x * cos + z * sin, height * scale, -x * sin + z * cos);
             vertices.extend_from_slice(&[
                 position.x, position.y, position.z, 0.0, 1.0, 0.0, u, v, layer,
             ]);
@@ -285,37 +291,60 @@ mod tests {
 
     #[test]
     fn registered_non_placeable_item_can_choose_cube_or_sprite_drop_mesh() {
-        use bloxgloom_host_api::content::{Components, Item};
+        use bloxgloom_host_api::content::{Components, DropSize, Item};
         let mut catalog = Catalog::builtins();
         let mut declarations = crate::content::declarations::Declarations::default();
         for sprite in [false, true] {
-            declarations
-                .item(Item {
-                    key: format!("test:{}", if sprite { "sprite" } else { "cube" }),
-                    name: "Token".into(),
-                    swatch: [1.0; 4],
-                    texture: "bloxgloom:stone".into(),
-                    placeable: None,
-                    sprite,
-                    components: Components::None,
-                })
-                .unwrap();
+            for (label, size) in [
+                ("small", DropSize::Small),
+                ("normal", DropSize::Normal),
+                ("large", DropSize::Large),
+            ] {
+                declarations
+                    .item(Item {
+                        key: format!("test:{}_{label}", if sprite { "sprite" } else { "cube" }),
+                        name: "Token".into(),
+                        swatch: [1.0; 4],
+                        texture: "bloxgloom:stone".into(),
+                        placeable: None,
+                        sprite,
+                        drop_size: size,
+                        components: Components::None,
+                    })
+                    .unwrap();
+            }
         }
         declarations.install_items_and_tags(&mut catalog).unwrap();
-        for (key, sprite) in [("test:cube", false), ("test:sprite", true)] {
-            let item = catalog.item_by_key(key).unwrap();
-            let mesh = mesh_with_catalog(
-                &[VisualDrop {
-                    item,
-                    center: Vec3::ZERO,
-                    angle: 0.0,
-                    scale: 1.0,
-                    light: LightSample::default(),
-                }],
-                &catalog,
-            );
-            assert_eq!(mesh.cutout_indices.len(), if sprite { 12 } else { 0 });
-            assert_eq!(mesh.opaque_indices.len(), if sprite { 0 } else { 36 });
+        for sprite in [false, true] {
+            let mut widths = Vec::new();
+            for label in ["small", "normal", "large"] {
+                let key = format!("test:{}_{label}", if sprite { "sprite" } else { "cube" });
+                let item = catalog.item_by_key(&key).unwrap();
+                let mesh = mesh_with_catalog(
+                    &[VisualDrop {
+                        item,
+                        center: Vec3::ZERO,
+                        angle: 0.0,
+                        scale: 1.0,
+                        light: LightSample::default(),
+                    }],
+                    &catalog,
+                );
+                assert_eq!(mesh.cutout_indices.len(), if sprite { 12 } else { 0 });
+                assert_eq!(mesh.opaque_indices.len(), if sprite { 0 } else { 36 });
+                let vertices = if sprite {
+                    &mesh.cutout_vertices
+                } else {
+                    &mesh.opaque_vertices
+                };
+                let width = vertices
+                    .chunks_exact(VERTEX_FLOATS)
+                    .map(|vertex| vertex[1].abs())
+                    .fold(0.0_f32, f32::max);
+                widths.push(width);
+            }
+            assert!((widths[0] / widths[1] - 0.75).abs() < 0.0001);
+            assert!((widths[2] / widths[1] - 1.25).abs() < 0.0001);
         }
     }
 }

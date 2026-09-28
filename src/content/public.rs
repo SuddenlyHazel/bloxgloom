@@ -147,6 +147,9 @@ impl Catalog {
             sprite: i.sprite,
         })
         .map_err(|e| error(&i.key, e))?;
+        if i.drop_size != api::DropSize::Normal {
+            self.drop_sizes.insert(i.key.clone(), i.drop_size);
+        }
         if i.components != api::Components::Unstructured {
             self.item_components
                 .insert(i.key.clone(), i.components.clone());

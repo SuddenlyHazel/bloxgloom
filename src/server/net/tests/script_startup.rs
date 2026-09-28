@@ -230,6 +230,16 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
             "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', false) end) end",
             "item options must be a table",
         ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_size = 'huge' }) end) end",
+            "drop_size option",
+        ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_size = 1 }) end) end",
+            "drop_size option",
+        ),
     ];
     for (requires, source, message) in cases {
         let fixture = Fixture::new();

@@ -106,8 +106,28 @@ pub struct Item {
     pub texture: String,
     pub placeable: Option<String>,
     pub sprite: bool,
+    /// Client-only world-drop size; does not affect stack, pickup, or placement rules.
+    pub drop_size: DropSize,
     /// The stack cap is always 128; components cannot override conservation.
     pub components: Components,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DropSize {
+    Small,
+    #[default]
+    Normal,
+    Large,
+}
+
+impl DropSize {
+    pub const fn multiplier(self) -> f32 {
+        match self {
+            Self::Small => 0.75,
+            Self::Normal => 1.0,
+            Self::Large => 1.25,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

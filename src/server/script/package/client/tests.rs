@@ -108,6 +108,41 @@ fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)])
 }
 
 #[test]
+fn sized_item_bundle_requires_canonical_version_and_valid_preset() {
+    let mut writer = header(1);
+    writer.0[MAGIC.len() - 1] = SIZED_MAGIC[MAGIC.len() - 1];
+    package(&mut writer, "demo", None);
+    writer.count(1).unwrap();
+    writer.count(1).unwrap();
+    writer.field(b"bloxgloom:content/v1").unwrap();
+    writer.count(1).unwrap();
+    for field in [b"demo:token".as_slice(), b"Token", b"bloxgloom:stone"] {
+        writer.field(field).unwrap();
+    }
+    let size_offset = writer.0.len();
+    writer.field(&[1]).unwrap();
+    writer.count(0).unwrap(); // textures
+    writer.count(0).unwrap(); // blocks
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    }
+    let verified = ClientBundle::decode_verify(&writer.0, key(&writer.0)).unwrap();
+    let catalog = verified.session_catalog().unwrap();
+    assert_eq!(
+        catalog.drop_size(catalog.item_by_key("demo:token").unwrap()),
+        bloxgloom_host_api::content::DropSize::Small
+    );
+    for value in [0, 3] {
+        let mut altered = writer.0.clone();
+        altered[size_offset + 4] = value;
+        assert!(ClientBundle::decode_verify(&altered, key(&altered)).is_err());
+    }
+    let mut wrong_version = writer.0.clone();
+    wrong_version[MAGIC.len() - 1] = MAGIC[MAGIC.len() - 1];
+    assert!(ClientBundle::decode_verify(&wrong_version, key(&wrong_version)).is_err());
+}
+
+#[test]
 fn metadata_validates_namespace_capability_shape_and_limits_before_compilation() {
     const CONTENT: &str = bloxgloom_host_api::composition::CONTENT;
     let item = ("demo:token", "Token", "bloxgloom:stone");

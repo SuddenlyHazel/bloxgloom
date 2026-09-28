@@ -233,6 +233,7 @@ pub struct Catalog {
         Vec<Option<std::sync::Arc<bloxgloom_host_api::anchored::AnchoredBlockEntity>>>,
     narrow_plants: HashSet<String>,
     item_components: HashMap<String, bloxgloom_host_api::content::Components>,
+    drop_sizes: HashMap<String, bloxgloom_host_api::content::DropSize>,
     pub(crate) composition: composition::Composition,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
@@ -275,6 +276,7 @@ impl Catalog {
             anchored_entities: Vec::new(),
             narrow_plants: HashSet::new(),
             item_components: HashMap::new(),
+            drop_sizes: HashMap::new(),
             composition: composition::Composition::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
@@ -644,6 +646,12 @@ impl Catalog {
         self.items.iter().flatten()
     }
 
+    pub fn drop_size(&self, id: ItemId) -> bloxgloom_host_api::content::DropSize {
+        self.item(id)
+            .and_then(|item| self.drop_sizes.get(item.key.as_ref()).copied())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn item_by_key(&self, key: &str) -> Option<ItemId> {
         self.item_by_key.get(key).copied()
     }
@@ -842,6 +850,15 @@ impl Catalog {
                     add(self.state(state).unwrap().key.as_bytes());
                 }
                 add(&[item.sprite as u8]);
+                let drop_size = self.drop_size(item.id);
+                if drop_size != bloxgloom_host_api::content::DropSize::Normal {
+                    add(b"drop-size/v1");
+                    add(&[match drop_size {
+                        bloxgloom_host_api::content::DropSize::Small => 1,
+                        bloxgloom_host_api::content::DropSize::Normal => unreachable!(),
+                        bloxgloom_host_api::content::DropSize::Large => 2,
+                    }]);
+                }
                 if let Some(icon) = self.item_icon(item.id) {
                     add(&[1, icon.rows.len() as u8]);
                     for row in &icon.rows {

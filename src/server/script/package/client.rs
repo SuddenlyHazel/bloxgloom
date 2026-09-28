@@ -1,5 +1,5 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 7
-//! is an uncompressed little-endian length-prefixed format, not a save or network
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7/8
+//! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
 //! including empty server-only libraries, so dependency validation is complete.
@@ -11,8 +11,9 @@
 //! declaration binds one to a catalog texture; those PNGs are decoded and bounded
 //! on preparation workers before publication.
 //! Separately classified UI assets are validated/prepared by ui::authored before
-//! publication. V7 adds startup cube declarations and changes only the
-//! artifact/cache identity, not wire framing or saves. Old artifacts are
+//! publication. V8 adds a bounded size byte to each item record only when
+//! a non-default drop size is declared; unchanged declarations keep exact V7 bytes.
+//! Neither version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
 use std::collections::BTreeMap;
@@ -26,6 +27,7 @@ use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 mod declarations;
 
 const MAGIC: &[u8] = b"BGCLIENT\x07";
+const SIZED_MAGIC: &[u8] = b"BGCLIENT\x08";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -44,7 +46,8 @@ impl CacheKey {
         &self.0
     }
 
-    /// Domain/version prefix avoids collisions with other future cache formats.
+    /// Cache namespace, independent of the artifact's V7/V8 header. The hash
+    /// includes that header, so distinct bundle versions cannot collide.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
         let mut name = String::from("client-v7-sha256-");
@@ -166,7 +169,8 @@ impl ClientBundle {
             return Err(error("<client-bundle>", "SHA-256 integrity mismatch"));
         }
         let mut reader = Reader(bytes);
-        if reader.take(MAGIC.len())? != MAGIC {
+        let version = reader.take(MAGIC.len())?;
+        if version != MAGIC && version != SIZED_MAGIC {
             return Err(invalid());
         }
         let mut packages = BTreeMap::new();
@@ -254,7 +258,8 @@ impl ClientBundle {
                 },
             );
         }
-        let declarations = declarations::Startup::decode(&mut reader, &packages)?;
+        let declarations =
+            declarations::Startup::decode(&mut reader, &packages, version == SIZED_MAGIC)?;
         if !reader.0.is_empty() {
             return Err(invalid());
         }
