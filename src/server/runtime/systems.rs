@@ -858,7 +858,7 @@ impl SystemRuntime {
         // path regardless of thread scheduling. Publication itself stays
         // behind the one ordered barrier below.
         let writes = build_owner_writes_parallel(validated.patches(), self.worker_count)?;
-        let prepared = self
+        let mut prepared = self
             .durable
             .prepare(&id, writes)
             .map_err(OwnerDurableError::io)?;
@@ -901,6 +901,14 @@ impl SystemRuntime {
                 return Err(error);
             }
         };
+        if let Err(error) = self
+            .durable
+            .prepare_intent_bootstraps(&mut prepared, &outgoing)
+        {
+            self.durable_wakes.cancel_sets(wake_sets);
+            self.durable_wakes.intents.cancel(intents);
+            return Err(error);
+        }
         self.staged_live_wakes += wakes.live().len();
         let mut durables =
             OwnerWaveDurables::new(prepared, tick, wake_sets, durable_served, cursor_change)
@@ -984,12 +992,14 @@ impl SystemRuntime {
                             wake_sets,
                             live_wakes,
                             intents,
+                            prepared,
                             ..
                         },
                     ..
                 } = prepared;
                 self.durable_wakes.cancel_sets(wake_sets);
                 self.durable_wakes.intents.cancel(intents);
+                self.durable.cancel(prepared);
                 self.staged_live_wakes -= live_wakes.len();
                 return Err(io::Error::new(
                     ErrorKind::WouldBlock,

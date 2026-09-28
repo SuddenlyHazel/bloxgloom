@@ -46,10 +46,10 @@ real nonblocking-listener join.
 preimage and routes removal, placement and neighbor decisions through the
 shared gameplay planner. Resulting terrain writes within the declared read
 neighborhood commit atomically with owner bytes, deadline, cursor and wakes;
-players and anchored entities block unsafe placements. A result requiring an
-entity/drop/inventory participant is currently rejected rather than partly
-committed. `fixture:world_writer` verifies one placement and owner state
-recover together from the journal.
+players and anchored entities block unsafe placements. Gameplay-generated
+entity and drop participants commit in that same WAL record; effects that
+cannot be admitted defer the entire owner wave. `fixture:world_writer` verifies
+one placement and owner state recover together from the journal.
 
 `Plan::wakes` can name other registered `(system, owner)` pairs. Each job may
 request at most 32 and a wave at most 2,048. The host validates the destination
@@ -66,10 +66,32 @@ across restart; `fixture:wake_loop` covers refreshing served flags and recovery.
 The owner-world loopback test also installs both declarations together and
 checks the restored destination after a real nonblocking-listener join.
 
-This still does **not** complete world-system parity: atomic terrain **with**
-entity/drop effects, dynamic owner creation/removal, and durable
-cross-owner **payload intent** remain explicit followups, as do public fire propagation
-and delivery. Built-in support removal uses the shared neighbor decision path
-for existing edit producers rather than an owner-system callback.
+For gameplay payloads rather than scheduling hints, an opt-in chunk system with
+declared world reads uses `Behavior::accepts_intents`, receives at most eight
+`IntentDelivery` values in `plan_with_intents`, and sends at most eight bounded
+512-byte payloads through `IntentOutbox`. The host assigns source revision and
+ordinal identities; production shares the source owner's WAL transaction.
+Delivery starts on a later logical tick, and a successful destination plan
+acknowledges its inbox atomically with owner/world/entity changes and forwarded
+messages. Rejection preserves the inbox. Mailboxes hold at most 64 messages per
+destination and 2,048 globally; a wave emits at most 128. Payload delivery is
+not an advisory wake and cannot be shed to relieve queue pressure.
+
+By default a destination must already have an owner state. Opt-in
+`Behavior::intent_bootstrap()` supplies one canonical initial byte template for
+absent chunk owners. The host validates, fingerprints and captures it at
+registration; revision-zero destination state and its mailbox are created in
+the producer's WAL record, even if terrain is unloaded. Existing owner state
+always wins. No creation is visible before receipt, and capacity/WAL pressure
+defers the entire producer. The template cannot depend on destination position;
+the destination's first plan can read its owner and authoritative terrain.
+There is no owner reclamation yet, so the 16,384-cell store-wide limit remains
+a hard cap. Cross-system payloads and entity/profile bootstrap are not bound.
+
+This still does **not** complete world-system parity: native fire propagation
+and delivery have not migrated onto this contract, and Luau owner callbacks do
+not expose these payloads or all generated entity/drop operations. Built-in
+support removal uses the shared neighbor decision path for existing edit
+producers rather than an owner-system callback.
 An entity/profile owner key is an identity, not a grant to mutate that entity or
 player. Callbacks are trusted deterministic Rust functions, not sandboxed plugins.

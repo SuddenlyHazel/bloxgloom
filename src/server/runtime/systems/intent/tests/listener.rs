@@ -5,15 +5,35 @@ use std::net::{TcpListener, TcpStream};
 
 #[test]
 fn durable_intent_chain_runs_through_real_listener_and_recovers_once() {
+    listener_chain(false);
+}
+
+#[test]
+fn durable_intent_bootstrap_chain_runs_through_real_listener_and_recovers_once() {
+    listener_chain(true);
+}
+
+fn listener_chain(bootstrap: bool) {
     let path = save();
     let (observed, completed) = std::sync::mpsc::channel();
     let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
         .with_extension(&Ignitions {
             fanout: 1,
+            bootstrap,
             observed: Some(observed),
         })
         .unwrap();
     let state = Box::new(server_state_with_startup(7, path.clone(), 2, startup).unwrap());
+    if bootstrap {
+        for x in [9, 10] {
+            assert!(
+                state
+                    .system_runtime
+                    .owner_snapshot(&system_id(), owner(x))
+                    .is_none()
+            );
+        }
+    }
     let catalog = state.world.catalog_arc();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -103,7 +123,9 @@ fn durable_intent_chain_runs_through_real_listener_and_recovers_once() {
     if let Err(error) = result {
         std::panic::resume_unwind(error);
     }
-    let mut state = server_state_with_startup(7, path.clone(), 2, super::startup(1)).unwrap();
+    let mut state =
+        server_state_with_startup(7, path.clone(), 2, startup_with_bootstrap(1, bootstrap))
+            .unwrap();
     assert_eq!(
         (value(&state, 8), value(&state, 9), value(&state, 10)),
         (1, 1, 1)

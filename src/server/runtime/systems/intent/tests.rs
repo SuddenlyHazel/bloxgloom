@@ -11,6 +11,7 @@ use bloxgloom_host_api::{Extension, Registrar, RegistrationError, system as api}
 use std::sync::Arc;
 use std::time::Duration;
 
+mod bootstrap;
 mod listener;
 
 const SYSTEM: &str = "test:ignition_intents";
@@ -30,9 +31,13 @@ fn cell(x: i32) -> [i32; 3] {
 #[derive(Clone)]
 struct Ignitions {
     fanout: i32,
+    bootstrap: bool,
     observed: Option<std::sync::mpsc::Sender<()>>,
 }
 impl api::Behavior for Ignitions {
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        self.bootstrap.then_some(&[0])
+    }
     fn accepts_intents(&self) -> bool {
         true
     }
@@ -101,7 +106,12 @@ impl api::Behavior for Ignitions {
 }
 impl Extension for Ignitions {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
-        registrar.owner_system(api::System {
+        registrar.owner_system(self.definition())
+    }
+}
+impl Ignitions {
+    fn definition(&self) -> api::System {
+        api::System {
             key: SYSTEM.into(),
             schema: 1,
             partition: api::Partition::Chunk,
@@ -109,26 +119,45 @@ impl Extension for Ignitions {
             max_jobs_per_tick: 1,
             read_radius_chunks: Some(0),
             after: vec![],
-            seeds: (8..=(8 + self.fanout).max(10))
+            seeds: (8..=if self.bootstrap {
+                8
+            } else {
+                (8 + self.fanout).max(10)
+            })
                 .map(|x| api::Seed {
                     owner: api::Owner::Chunk([x, 6, 0]),
                     data: vec![0],
                 })
                 .collect(),
             behavior: Arc::new(self.clone()),
-        })
+        }
     }
 }
 fn startup(fanout: i32) -> ServerStartup {
+    startup_with_bootstrap(fanout, false)
+}
+fn startup_with_bootstrap(fanout: i32, bootstrap: bool) -> ServerStartup {
     ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
         .with_extension(&Ignitions {
             fanout,
+            bootstrap,
             observed: None,
         })
         .unwrap()
 }
 fn open(path: &std::path::Path, fanout: i32) -> Box<State> {
     Box::new(server_state_with_startup(7, path.to_path_buf(), 2, startup(fanout)).unwrap())
+}
+fn open_with_bootstrap(path: &std::path::Path, fanout: i32, bootstrap: bool) -> Box<State> {
+    Box::new(
+        server_state_with_startup(
+            7,
+            path.to_path_buf(),
+            2,
+            startup_with_bootstrap(fanout, bootstrap),
+        )
+        .unwrap(),
+    )
 }
 fn save() -> std::path::PathBuf {
     static NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -165,6 +194,13 @@ fn stage(
     state: &mut State,
     tick: u64,
 ) -> io::Result<(Option<PendingRegisteredWave>, Vec<ChunkKey>)> {
+    stage_with_in_flight(state, tick, &[])
+}
+fn stage_with_in_flight(
+    state: &mut State,
+    tick: u64,
+    in_flight: &[Vec<StateKey>],
+) -> io::Result<(Option<PendingRegisteredWave>, Vec<ChunkKey>)> {
     let registered = state.phase_plan.system(&system_id()).unwrap().clone();
     let mut missing = vec![];
     let wave = state.system_runtime.stage_registered_wave_with_world(
@@ -174,7 +210,7 @@ fn stage(
         RegisteredWaveInputs {
             effects: &state.effect_kinds,
             durability: &mut state.durability,
-            in_flight: &[],
+            in_flight,
             world: RegisteredWorldInputs {
                 world: Some(&mut state.world),
                 entities: Some(&state.entities),
@@ -189,8 +225,17 @@ fn stage(
 
 #[test]
 fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
+    ignition_chain(false);
+}
+
+#[test]
+fn durable_intent_bootstrap_chain_gates_creation_retry_forwarding_and_restart() {
+    ignition_chain(true);
+}
+
+fn ignition_chain(bootstrap: bool) {
     let path = save();
-    let mut state = open(&path, 1);
+    let mut state = open_with_bootstrap(&path, 1, bootstrap);
     load(&mut state, 8);
     state.durability.rotation_requested = true;
     assert_eq!(
@@ -200,12 +245,28 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
     assert!(state.system_runtime.durable_wakes.intents.staged.is_empty());
     assert_eq!(state.system_runtime.durable_wakes.intents.staged_added, 0);
     assert_eq!(value(&state, 8), 0);
+    if bootstrap {
+        assert!(
+            state
+                .system_runtime
+                .owner_snapshot(&system_id(), owner(9))
+                .is_none()
+        );
+    }
     state.durability.rotation_requested = false;
     let (wave, missing) = stage(&mut state, 4).unwrap();
     assert!(missing.is_empty());
     let wave = wave.unwrap();
     assert!(pending(&state, 9).is_empty());
     assert_eq!(value(&state, 8), 0);
+    if bootstrap {
+        assert!(
+            state
+                .system_runtime
+                .owner_snapshot(&system_id(), owner(9))
+                .is_none()
+        );
+    }
     // Same still-uncommitted producer revision cannot submit a duplicate.
     assert_eq!(
         stage(&mut state, 5).unwrap_err().kind(),
@@ -216,13 +277,27 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
     assert_eq!(identity.revision, 1);
     assert_eq!(pending(&state, 9)[0].produced_tick, 4);
     assert_eq!(value(&state, 8), 1);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_snapshot(&system_id(), owner(9))
+            .unwrap()
+            .0,
+        0
+    );
+    if bootstrap {
+        assert!(
+            stage(&mut state, 4).unwrap().0.is_none(),
+            "bootstrap cannot plan in producing tick"
+        );
+    }
     let (wave, missing) = stage(&mut state, 6).unwrap();
     assert!(wave.is_none());
     assert_eq!(missing, [chunk(9)]);
     assert_eq!(pending(&state, 9)[0].id, identity);
     drop(state);
 
-    let mut state = open(&path, 1);
+    let mut state = open_with_bootstrap(&path, 1, bootstrap);
     assert_eq!(pending(&state, 9)[0].id, identity);
     assert_eq!(value(&state, 9), 0);
     assert!(state.world.cached_chunk(chunk(9)).is_none());
@@ -259,6 +334,14 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
     );
     assert_eq!(pending(&state, 9)[0].id, identity);
     assert!(pending(&state, 10).is_empty());
+    if bootstrap {
+        assert!(
+            state
+                .system_runtime
+                .owner_snapshot(&system_id(), owner(10))
+                .is_none()
+        );
+    }
     assert_eq!(value(&state, 9), 0);
     assert!(state.system_runtime.durable_wakes.intents.staged.is_empty());
     complete_barrier(&mut state, CommitBarrier::AllStaged).unwrap();
@@ -275,7 +358,7 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
     assert_eq!(value(&state, 9), 0);
     drop(state);
 
-    let mut state = open(&path, 1);
+    let mut state = open_with_bootstrap(&path, 1, bootstrap);
     assert_eq!(value(&state, 9), 1);
     assert!(pending(&state, 9).is_empty());
     assert_eq!(pending(&state, 10).len(), 1);
@@ -287,7 +370,7 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
     assert_eq!(value(&state, 10), 1);
     assert!(pending(&state, 10).is_empty());
     drop(state);
-    let mut state = open(&path, 1);
+    let mut state = open_with_bootstrap(&path, 1, bootstrap);
     assert_eq!(
         (value(&state, 8), value(&state, 9), value(&state, 10)),
         (1, 1, 1)
@@ -302,8 +385,17 @@ fn durable_intent_cross_chunk_chain_gates_delivery_ack_cancel_and_restart() {
 
 #[test]
 fn durable_intent_inspection_rotates_past_distinct_unavailable_destinations() {
+    inspection_rotates(false);
+}
+
+#[test]
+fn durable_intent_bootstrap_inspection_rotates_past_unavailable_destinations() {
+    inspection_rotates(true);
+}
+
+fn inspection_rotates(bootstrap: bool) {
     let path = save();
-    let mut state = open(&path, 8);
+    let mut state = open_with_bootstrap(&path, 8, bootstrap);
     load(&mut state, 8);
     load(&mut state, 16);
     let wave = stage(&mut state, 1).unwrap().0.unwrap();
@@ -449,6 +541,7 @@ fn durable_intent_codec_and_public_outbox_fail_closed_without_changing_wakes() {
     let old_fingerprint = declaration.fingerprint_bytes();
     declaration.behavior = Arc::new(Ignitions {
         fanout: 1,
+        bootstrap: false,
         observed: None,
     });
     let enabled_fingerprint = declaration.fingerprint_bytes();

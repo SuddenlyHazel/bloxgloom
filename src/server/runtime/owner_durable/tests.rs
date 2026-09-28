@@ -40,6 +40,75 @@ impl OwnerValueCodec for BytesCodec {
     }
 }
 
+struct MutableTemplateCodec(std::sync::atomic::AtomicBool);
+
+impl OwnerValueCodec for MutableTemplateCodec {
+    fn accepts_intents(&self) -> bool {
+        true
+    }
+
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        Some(if self.0.load(std::sync::atomic::Ordering::Relaxed) {
+            &[2]
+        } else {
+            &[1]
+        })
+    }
+
+    fn decode(&self, payload: &[u8]) -> Result<OwnerData, OwnerCodecError> {
+        BytesCodec.decode(payload)
+    }
+
+    fn encode(&self, value: &OwnerData) -> Result<Vec<u8>, OwnerCodecError> {
+        BytesCodec.encode(value)
+    }
+}
+
+#[test]
+fn intent_bootstrap_template_is_frozen_when_store_is_constructed() {
+    use bloxgloom_host_api::system::{IntentDelivery, IntentId, Owner};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let codec = Arc::new(MutableTemplateCodec(AtomicBool::new(false)));
+    let id = system("test:bootstrap-frozen");
+    let mut store = DurableOwnerStore::new(vec![
+        OwnerSystemConfig::new(id.clone(), codec.clone(), 1, 1, OwnerPartition::Chunk).unwrap(),
+    ])
+    .unwrap();
+    store
+        .insert(&id, chunk(0), OwnerData::new(vec![0u8]))
+        .unwrap();
+    codec.0.store(true, Ordering::Relaxed);
+    let mut wave = store
+        .prepare(
+            &id,
+            vec![OwnerWrite::new(chunk(0), 0, OwnerData::new(vec![3u8]))],
+        )
+        .unwrap();
+    store
+        .prepare_intent_bootstraps(
+            &mut wave,
+            &[(
+                chunk(1),
+                IntentDelivery {
+                    id: IntentId {
+                        source: Owner::Chunk([0, 0, 0]),
+                        revision: 1,
+                        ordinal: 0,
+                    },
+                    produced_tick: 1,
+                    payload: vec![9],
+                },
+            )],
+        )
+        .unwrap();
+    store.commit(wave, receipt()).unwrap();
+    assert_eq!(
+        store.snapshot(&id, chunk(1)).unwrap().1.get::<Vec<u8>>(),
+        Some(&vec![1])
+    );
+}
+
 fn system(name: &str) -> SystemId {
     SystemId::new(name).unwrap()
 }

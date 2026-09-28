@@ -1,6 +1,6 @@
 //! Durable same-system mailboxes, distinct from advisory effects and wake flags.
 //! Mailboxes use a tagged key in the existing owner-wake WAL domain and its
-//! base/tail recovery path. There is one reusable key per existing destination,
+//! base/tail recovery path. There is one reusable key per destination,
 //! not one immortal journal tombstone per message. No side journal/checkpoint.
 use crate::server::journal::{Change, StateKey};
 use crate::server::parallel::{OwnerData, OwnerKey};
@@ -46,10 +46,10 @@ pub(super) fn collect(
                 ));
             }
             let destination = internal_owner(request.destination);
-            if owners.revision(system, destination).is_none() {
+            if !owners.accepts_owner(system, destination) {
                 return Err(io::Error::new(
                     ErrorKind::InvalidInput,
-                    "intent destination must have durable owner state",
+                    "intent destination has the wrong owner partition",
                 ));
             }
             let revision = owners

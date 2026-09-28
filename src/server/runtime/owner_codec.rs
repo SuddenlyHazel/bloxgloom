@@ -56,6 +56,10 @@ pub(in crate::server) trait OwnerValueCodec: Send + Sync + 'static {
         false
     }
 
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        None
+    }
+
     fn decode(&self, payload: &[u8]) -> Result<OwnerData, OwnerCodecError>;
 
     fn encode(&self, value: &OwnerData) -> Result<Vec<u8>, OwnerCodecError>;

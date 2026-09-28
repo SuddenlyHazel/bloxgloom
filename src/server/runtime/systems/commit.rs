@@ -139,6 +139,7 @@ impl SystemRuntime {
     }
 
     fn cancel_owner_commit(&mut self, commit: OwnerCommit) {
+        self.durable.cancel(commit.prepared);
         self.durable_wakes.intents.cancel(commit.intents);
         self.staged_live_wakes -= commit.live_wakes.len();
         self.durable_wakes.cancel_sets(commit.wake_sets);

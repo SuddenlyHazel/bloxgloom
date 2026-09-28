@@ -81,11 +81,28 @@ pub trait Behavior: Send + Sync + 'static {
     fn validate(&self, data: &[u8]) -> Result<(), RegistrationError>;
     fn plan(&self, context: &Context<'_>) -> Result<Plan, RegistrationError>;
 
-    /// Opt into durable same-system messages between existing chunk-owner cells
+    /// Opt into durable same-system messages between chunk-owner cells
     /// with declared world reads. Other partitions are not supported yet.
     /// This capability participates in the system's persisted fingerprint.
     fn accepts_intents(&self) -> bool {
         false
+    }
+
+    /// Optional canonical initial state for previously absent intent destinations.
+    /// This must return the same immutable bytes throughout registration and play;
+    /// the host validates and fingerprints the template at startup. It requires
+    /// `accepts_intents` and declared chunk world reads. Existing cells always win.
+    ///
+    /// The host creates revision-zero state and the inbox in the producer's WAL
+    /// record, even when destination terrain is unloaded. No state is visible on
+    /// rejection or before receipt. Planning waits for a later tick and available
+    /// world reads. No destination-dependent initialization or external side
+    /// effects are permitted; use the first plan's owner/world inputs for those.
+    /// Host owner-capacity and WAL-size limits defer the complete producing plan;
+    /// bootstrap does not evict existing cells to make room.
+    /// `None` preserves the existing requirement that destinations already exist.
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        None
     }
 
     /// All delivered messages are acknowledged atomically with a successful
@@ -230,6 +247,12 @@ impl System {
             return Err(RegistrationError("invalid owner-system declaration".into()));
         }
         let mut seen = std::collections::BTreeSet::new();
+        if let Some(data) = self.behavior.intent_bootstrap() {
+            if !self.behavior.accepts_intents() || data.len() > self.max_state_bytes as usize {
+                return Err(RegistrationError("invalid owner intent bootstrap".into()));
+            }
+            self.behavior.validate(data)?;
+        }
         for seed in &self.seeds {
             let matches = matches!(
                 (self.partition, seed.owner),
@@ -304,6 +327,11 @@ impl System {
         // Preserve byte-for-byte identity for existing payload-free systems.
         if self.behavior.accepts_intents() {
             out.extend(b"owner-intents-v1");
+        }
+        if let Some(data) = self.behavior.intent_bootstrap() {
+            out.extend(b"owner-intent-bootstrap-v1");
+            out.extend((data.len() as u32).to_le_bytes());
+            out.extend(data);
         }
         out
     }

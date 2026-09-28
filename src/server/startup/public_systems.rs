@@ -91,6 +91,10 @@ impl api::WorldRead for OwnerWorldView<'_> {
 #[cfg(test)]
 mod tests;
 impl OwnerValueCodec for Adapter {
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        self.0.behavior.intent_bootstrap()
+    }
+
     fn accepts_intents(&self) -> bool {
         self.0.behavior.accepts_intents()
     }

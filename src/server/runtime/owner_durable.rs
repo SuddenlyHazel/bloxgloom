@@ -29,6 +29,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
+mod bootstrap;
+use bootstrap::PreparedInsert;
+
 /// Fail-closed bound for one owner-wave WAL record. Waves that would exceed
 /// it defer with `WouldBlock` instead of pressing the journal's record
 /// limit; genuine journal validation failures still report `InvalidData`.
@@ -124,10 +127,36 @@ struct CellDescriptor {
     codec_version: u16,
     max_bytes: usize,
     partition: OwnerPartition,
+    /// Capture once so a mutable behavior cannot change future owner creation
+    /// after its startup fingerprint and validation have been established.
+    intent_bootstrap: Option<Vec<u8>>,
+}
+
+impl CellDescriptor {
+    fn from_config(config: OwnerSystemConfig) -> io::Result<Self> {
+        let intent_bootstrap = config.codec.intent_bootstrap().map(ToOwned::to_owned);
+        if let Some(bytes) = &intent_bootstrap
+            && (config.partition != OwnerPartition::Chunk
+                || !config.codec.accepts_intents()
+                || bytes.len() > config.max_bytes
+                || config.codec.decode(bytes).is_err())
+        {
+            return Err(invalid_data("invalid owner intent bootstrap template"));
+        }
+        Ok(Self {
+            codec: config.codec,
+            codec_version: config.codec_version,
+            max_bytes: config.max_bytes,
+            partition: config.partition,
+            intent_bootstrap,
+        })
+    }
 }
 
 /// Barrier-owned durable owner state for every registered system.
 pub(in crate::server) struct DurableOwnerStore {
+    /// Capacity held by prepared/in-flight intent bootstraps, not visible cells.
+    reserved_inserts: usize,
     descriptors: BTreeMap<SystemId, CellDescriptor>,
     cells: BTreeMap<(SystemId, OwnerKey), DurableCell>,
     /// Owners with committed work waiting, updated at commit time only.
@@ -164,25 +193,17 @@ impl DurableOwnerStore {
     pub fn new(configs: Vec<OwnerSystemConfig>) -> io::Result<Self> {
         let mut descriptors = BTreeMap::new();
         for config in configs {
-            if descriptors
-                .insert(
-                    config.system.clone(),
-                    CellDescriptor {
-                        codec: config.codec,
-                        codec_version: config.codec_version,
-                        max_bytes: config.max_bytes,
-                        partition: config.partition,
-                    },
-                )
-                .is_some()
-            {
+            if descriptors.contains_key(&config.system) {
                 return Err(io::Error::other(format!(
                     "duplicate durable owner system {}",
                     config.system.as_str()
                 )));
             }
+            let system = config.system.clone();
+            descriptors.insert(system, CellDescriptor::from_config(config)?);
         }
         Ok(Self {
+            reserved_inserts: 0,
             descriptors,
             cells: BTreeMap::new(),
             active: BTreeSet::new(),
@@ -284,15 +305,9 @@ impl DurableOwnerStore {
                 config.system.as_str()
             )));
         }
-        self.descriptors.insert(
-            config.system,
-            CellDescriptor {
-                codec: config.codec,
-                codec_version: config.codec_version,
-                max_bytes: config.max_bytes,
-                partition: config.partition,
-            },
-        );
+        let system = config.system.clone();
+        self.descriptors
+            .insert(system, CellDescriptor::from_config(config)?);
         Ok(())
     }
 
@@ -467,7 +482,7 @@ impl DurableOwnerStore {
                 owner,
             });
         }
-        if self.cells.len() >= super::systems::MAX_OWNER_VALUES_PER_SYSTEM {
+        if self.cells.len() + self.reserved_inserts >= super::systems::MAX_OWNER_VALUES_PER_SYSTEM {
             return Err(OwnerDurableError::TooManyOwners {
                 system: system.clone(),
             });
@@ -500,7 +515,7 @@ impl DurableOwnerStore {
                 owner,
             });
         }
-        if self.cells.len() >= super::systems::MAX_OWNER_VALUES_PER_SYSTEM {
+        if self.cells.len() + self.reserved_inserts >= super::systems::MAX_OWNER_VALUES_PER_SYSTEM {
             return Err(OwnerDurableError::TooManyOwners {
                 system: system.clone(),
             });
@@ -611,6 +626,7 @@ impl DurableOwnerStore {
             system: system.clone(),
             staged,
             changes,
+            inserts: Vec::new(),
         })
     }
 
@@ -634,6 +650,19 @@ impl DurableOwnerStore {
                 system: prepared.system.clone(),
             }
         })?;
+        // Absent destinations are write dependencies reserved by the shared
+        // admission gate. Recheck all of them before mutating any source cell.
+        for insert in &prepared.inserts {
+            if self
+                .cells
+                .contains_key(&(prepared.system.clone(), insert.owner))
+            {
+                return Err(OwnerDurableError::DuplicateOwner {
+                    system: prepared.system.clone(),
+                    owner: insert.owner,
+                });
+            }
+        }
         for staged in &prepared.staged {
             let cell = self
                 .cells
@@ -671,7 +700,23 @@ impl DurableOwnerStore {
                 }
             }
         }
-        let count = prepared.staged.len();
+        let count = prepared.staged.len() + prepared.inserts.len();
+        self.reserved_inserts -= prepared.inserts.len();
+        for insert in prepared.inserts {
+            let key = (prepared.system.clone(), insert.owner);
+            self.cells.insert(
+                key.clone(),
+                DurableCell {
+                    revision: 0,
+                    value: insert.value,
+                    encoded: insert.encoded,
+                    due_tick: Some(insert.due_tick),
+                },
+            );
+            self.schedule_by_system
+                .insert((key.0.clone(), insert.due_tick, key.1));
+            self.schedule.insert((insert.due_tick, key.0, key.1), ());
+        }
         for staged in prepared.staged {
             let key = (prepared.system.clone(), staged.write.owner);
             if let Some(previous_due) = self.cells.get(&key).and_then(|cell| cell.due_tick) {
@@ -856,11 +901,13 @@ impl DurableOwnerStore {
 }
 
 /// A validated wave with exact WAL changes. The changes borrow nothing: the
-/// caller submits them, waits for the receipt, then calls `commit`.
+/// caller submits them, waits for the receipt, then calls `commit`. Once intent
+/// bootstraps are attached, rejection must call `cancel` to release capacity.
 pub(in crate::server) struct PreparedOwnerWave {
     system: SystemId,
     staged: Vec<StagedWrite>,
     changes: Vec<Change>,
+    inserts: Vec<PreparedInsert>,
 }
 
 impl std::fmt::Debug for PreparedOwnerWave {
