@@ -1,0 +1,182 @@
+//! Headless real-network harness for authored callback -> current aim -> receipt.
+use super::*;
+
+pub(crate) struct PackageActionProbe {
+    app: ClientApp,
+}
+
+impl PackageActionProbe {
+    pub(crate) fn connect(address: &str, profile: u128, path: PathBuf) -> Self {
+        let network = Network::connect(address, 1, profile).unwrap();
+        let mut app = ClientApp::new(network, Config::default(), path);
+        app.config.selected_slot = 0;
+        let ui = app.package_ui.as_mut().unwrap();
+        ui.resize(640, 360, 1.0);
+        ui.tab(false);
+        assert_eq!(ui.event(), Some("uitarget:light"));
+        Self { app }
+    }
+
+    fn read(&mut self, deadline: Instant) -> ServerMessage {
+        let incoming = self
+            .app
+            .network
+            .incoming
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .expect("targeted UI stream deadline");
+        match incoming {
+            Incoming::Message(message) => *message,
+            Incoming::Closed(reason) => panic!("targeted UI connection closed: {reason}"),
+        }
+    }
+
+    pub(crate) fn ready(&mut self, at: [i32; 3], block: BlockId, revision: u64) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.app.actions.epoch == 0
+            || self.app.position != Vec3::new(0.5, 80.0, 0.5)
+            || self.app.inventory.revision != revision
+            || self.app.inventory.slots[0].is_none()
+            || self.app.block_at(at[0], at[1], at[2]) != Some(block)
+        {
+            let message = self.read(deadline);
+            self.app.accept(message);
+            assert!(!self.app.disconnected);
+        }
+    }
+
+    fn aim(&mut self, at: [i32; 3]) {
+        let direction =
+            (Vec3::from_array(at.map(|v| v as f32 + 0.5)) - self.app.camera().position).normalize();
+        self.app.yaw = direction.z.atan2(direction.x);
+        self.app.pitch = direction.y.asin();
+    }
+
+    fn activate(&mut self) {
+        let ui = self.app.package_ui.as_mut().unwrap();
+        ui.activate();
+        ui.wait_for_presentation().unwrap();
+    }
+
+    pub(crate) fn reject_locally(&mut self, at: [i32; 3]) {
+        self.aim(at);
+        let next = self.app.actions.next_seq;
+        self.activate();
+        self.app.pump_package_action();
+        assert_eq!(
+            self.app.actions.next_seq, next,
+            "local failure consumed sequence"
+        );
+        assert!(self.app.pending_actions.is_empty());
+        assert!(self.feedback().starts_with("ACTION NOT SENT:"));
+    }
+
+    pub(crate) fn click(&mut self, before_callback: [i32; 3], current: [i32; 3]) -> ClientMessage {
+        self.aim(before_callback);
+        self.activate();
+        // The callback has completed; a new aim before dispatch must win.
+        self.aim(current);
+        let id = action_id(self.app.actions.epoch, self.app.actions.next_seq);
+        self.app.pump_package_action();
+        assert_eq!(self.feedback(), "WAITING FOR SERVER");
+        self.app.pending_actions[&id].clone()
+    }
+
+    pub(crate) fn forged(
+        &mut self,
+        original: &ClientMessage,
+        target: [i32; 3],
+        change: impl FnOnce(&mut Request),
+    ) -> ClientMessage {
+        let ClientMessage::EntityInteract { payload, .. } = original else {
+            unreachable!()
+        };
+        let mut request = Request::decode(payload).unwrap();
+        request.inventory_revision = self.app.inventory.revision;
+        change(&mut request);
+        let action_id = self.app.allocate_action_id().unwrap();
+        let message = ClientMessage::EntityInteract {
+            action_id,
+            target,
+            payload: request.encode().unwrap(),
+        };
+        self.app
+            .package_ui
+            .as_mut()
+            .unwrap()
+            .action_submitted(action_id);
+        self.app.queue_command(message.clone());
+        message
+    }
+
+    pub(crate) fn result(&mut self, request: &ClientMessage) -> (bool, String) {
+        let ClientMessage::EntityInteract {
+            action_id: expected,
+            ..
+        } = request
+        else {
+            unreachable!()
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let message = self.read(deadline);
+            let result = if let ServerMessage::ActionResult {
+                action_id,
+                accepted,
+                reason,
+            } = &message
+                && action_id == expected
+            {
+                Some((*accepted, reason.clone()))
+            } else {
+                None
+            };
+            self.app.accept(message);
+            assert!(!self.app.disconnected);
+            if let Some(result) = result {
+                return result;
+            }
+        }
+    }
+
+    pub(crate) fn reject_old_session(&mut self, request: &ClientMessage) {
+        let ClientMessage::EntityInteract {
+            action_id: expected,
+            ..
+        } = request
+        else {
+            unreachable!()
+        };
+        assert_ne!((*expected >> 64) as u64, self.app.actions.epoch);
+        assert!(self.app.network.send(request.clone()));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let message = self.read(deadline);
+            if let ServerMessage::ActionResult {
+                action_id,
+                accepted,
+                ..
+            } = message
+                && action_id == *expected
+            {
+                assert!(!accepted);
+                // Deliberately forged old-session traffic isn't an outstanding
+                // UI request. Do not inject its result into the fresh tracker.
+                break;
+            }
+            self.app.accept(message);
+        }
+        assert_eq!(self.app.actions.next_seq, 1);
+        assert!(self.app.pending_actions.is_empty());
+        assert_eq!(self.app.package_ui.as_ref().unwrap().feedback(), None);
+    }
+
+    pub(crate) fn feedback(&self) -> &str {
+        self.app.package_ui.as_ref().unwrap().feedback().unwrap()
+    }
+
+    pub(crate) fn count(&self) -> u16 {
+        self.app.inventory.slots[0]
+            .as_ref()
+            .map_or(0, |stack| stack.count)
+    }
+}

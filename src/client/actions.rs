@@ -23,12 +23,13 @@ impl ClientApp {
             slot,
             &self.inventory,
             self.position.to_array().map(|v| v.floor() as i32),
+            self.aimed_block(),
             1u128 << 64 | 1,
         ) else {
             self.package_ui
                 .as_mut()
                 .unwrap()
-                .action_failed_locally("select a matching item");
+                .action_failed_locally("select a matching item or aim at a matching block");
             return;
         };
         let Some(action_id) = self.allocate_action_id() else {
@@ -170,14 +171,16 @@ impl ClientApp {
     }
 }
 
-// Only compose a registered item/empty action. The script supplies its own key,
-// never an inventory revision, effect, entity identity, or target authority.
+// The script supplies only its owned key. The caller supplies current client
+// selection and a ray hit from streamed chunks, never script target coordinates.
+// Server authorization still owns reach, sight, costs and target validation.
 pub(crate) fn compose_package_action(
     catalog: &crate::content::Catalog,
     key: &str,
     slot: u8,
     inventory: &crate::inventory::Inventory,
-    target: [i32; 3],
+    mut target: [i32; 3],
+    aimed: Option<Hit>,
     action_id: u128,
 ) -> Option<ClientMessage> {
     let action = catalog.action(key)?;
@@ -192,7 +195,15 @@ pub(crate) fn compose_package_action(
                 return None;
             }
         }
-        _ => return None,
+        Target::Block(key) => {
+            let hit = aimed?;
+            let state = catalog.state(hit.block_id)?;
+            if catalog.block_type(state.block_type)?.key != *key {
+                return None;
+            }
+            target = hit.block;
+        }
+        Target::Entity(_) => return None,
     }
     let request = Request {
         key: action.key.clone(),
@@ -209,3 +220,6 @@ pub(crate) fn compose_package_action(
         payload: request.encode()?,
     })
 }
+
+#[cfg(test)]
+pub(crate) mod tests;

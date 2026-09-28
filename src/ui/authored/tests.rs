@@ -73,6 +73,20 @@ fn dynamic(source: &str, side: usize) -> Session {
 }
 
 #[test]
+fn action_callback_cannot_supply_target_or_authorization_claims() {
+    let mut session = dynamic(
+        "return function(_) return {{op='action', key='uidemo:store', target={10000,80,0}, entity=99, entity_revision=999, slot=12, inventory_revision=999, permission=true}} end",
+        1,
+    );
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    // Only the semantic key crosses the presentation boundary. All other
+    // fields are ignored, not forwarded to request composition or the wire.
+    assert_eq!(session.take_action().as_deref(), Some("uidemo:store"));
+    assert!(session.take_action().is_none());
+}
+
+#[test]
 fn worker_dispatches_click_and_input_with_bounded_admission_and_explicit_state() {
     let mut session = Session::new(Arc::clone(sample().ui().unwrap()));
     session.resize(640, 360, 1.0);

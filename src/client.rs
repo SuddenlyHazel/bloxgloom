@@ -252,6 +252,8 @@ impl ActionTracker {
 mod actions;
 #[cfg(test)]
 pub(crate) use actions::compose_package_action;
+#[cfg(test)]
+pub(crate) use actions::tests::PackageActionProbe;
 pub(crate) mod actors;
 mod admin;
 mod entities;

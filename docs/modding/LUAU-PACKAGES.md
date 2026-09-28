@@ -174,8 +174,12 @@ receiving `{sequence,event,value,state,texts}`. It returns up to 16 commands:
 `{op="action",key="uidemo:store"}`. Widget event IDs and action keys must belong
 to the document's package. The worker executes each event in a fresh sandbox;
 it never receives world/inventory/network handles. The client composes only
-registered item/empty gameplay requests using its current slot, inventory
-revision and durable session ID. Server permissions, costs, WAL transactions
-and receipts remain authoritative. UI feedback distinguishes unsent, pending,
-applied and denied requests. Block/entity-targeted controls and arbitrary
-argument schemas are not yet bound. See `fixtures/packages/uidemo/`.
+registered item/empty/block gameplay requests using its current slot,
+inventory revision and session action ID. Block actions use the current ray hit
+from streamed terrain when the callback is dispatched; the UI cannot supply
+coordinates or an entity identity. Server reach, line of sight, target type,
+permissions, costs, WAL transactions and receipts remain authoritative. UI
+feedback distinguishes unsent, pending, applied and denied requests. Entity
+targets and arbitrary argument schemas are not yet bound; same-type block
+replacement has no terrain-revision fence. See `fixtures/packages/uidemo/` and
+`fixtures/ui-target-actions/`.

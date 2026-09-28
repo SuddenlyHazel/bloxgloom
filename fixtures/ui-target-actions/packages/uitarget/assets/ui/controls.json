@@ -1,0 +1,4 @@
+{"version":1,"presentation":{"capability":"local-ui","module":"uitarget:view"},"nodes":[
+  {"id":"root","kind":"panel","style":"uitarget:panel"},
+  {"id":"light","parent":0,"kind":"button","style":"uitarget:button","text":"Light aimed stone: 1 stick [server]","event":"uitarget:light"}
+]}

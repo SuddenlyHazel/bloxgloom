@@ -33,7 +33,7 @@
 //! "ASCII"}, {op:"visible",node:...,value:boolean}, or {op:"state",value:"ASCII"}.
 //! Text/state are <=128 bytes. Only the active document is writable. Hidden
 //! ancestors hide descendants and remove focus, but retain layout space.
-//! An `action` command can request a package-owned registered item/empty action;
+//! An `action` command can request a package-owned registered item/empty/block action;
 //! scripts supply only its bounded key. The client composes the identity-fenced
 //! request from its selected slot and inventory revision, then the server
 //! authorizes/stages the effect and returns a durable action receipt. Host-owned

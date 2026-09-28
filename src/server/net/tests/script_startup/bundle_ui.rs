@@ -4,6 +4,9 @@ use crate::inventory::Stack;
 use bloxgloom_host_api::actions::Request;
 use std::time::Instant;
 
+#[path = "bundle_ui/target_actions.rs"]
+mod target_actions;
+
 // Format-2 fixture copied into an isolated save root; server entry and event
 // handler remain unchanged, while a downloaded startup module imports a shared
 // helper and registers session-only presentation text.
@@ -346,6 +349,7 @@ fn authored_button_reaches_authoritative_receipt_and_durable_inventory() {
                 0,
                 &inventory,
                 [0, 0, 0],
+                None,
                 action_id,
             )
             .unwrap();
@@ -394,6 +398,7 @@ fn authored_button_reaches_authoritative_receipt_and_durable_inventory() {
                     1,
                     &inventory,
                     [0, 0, 0],
+                    None,
                     denied_id,
                 )
                 .unwrap();
@@ -409,6 +414,7 @@ fn authored_button_reaches_authoritative_receipt_and_durable_inventory() {
                     0,
                     &inventory,
                     [0, 0, 0],
+                    None,
                     retry_id,
                 )
                 .unwrap();
