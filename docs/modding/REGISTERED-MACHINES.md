@@ -78,10 +78,13 @@ progress, and production rules; codec tests retain component bytes.
 This is an inventory-machine contract, not the complete arbitrary anchored-entity
 API. Initialization currently uses empty slots/private bytes, placement costs and
 refunds are one item, and projections are inventory plus standard process status.
-Custom state codecs/projections, arbitrary lifecycle callbacks/costs, component
-recipe predicates, multi-input recipes, and arbitrary world edits remain future
-surfaces. Block/state asset registration also remains narrower than the internal
-built-in catalog. Port faces are world-space, with no facing-relative transform.
-Offer selection still uses item identity and port order rather than a public
-opaque component/slot selector. Full capability parity remains in progress in
-the historical `docs/modding/history/MODDING-SURFACE-PLAN.md`.
+Custom state codecs/projections, arbitrary lifecycle callbacks/costs and
+multi-input recipes are not part of this fixed inventory-machine helper. General
+gameplay decisions and owner systems provide composable world edits and entity
+state; machine recipes do support component matching/output. Block/state asset
+registration remains narrower than the internal built-in catalog. Port faces are
+world-space, with no facing-relative transform. `TransferSelection` exposes
+optional source/destination slots, count and an `Any`, exact item or `SameAsSlot`
+stack selector; the host still enforces port permissions and exact components.
+The historical `docs/modding/history/MODDING-SURFACE-PLAN.md` predates these
+additions and is not the current acceptance record.
