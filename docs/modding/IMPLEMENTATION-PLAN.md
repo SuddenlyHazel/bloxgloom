@@ -482,18 +482,25 @@ catalogs, exact in-process byte reuse and package UI/effect/material assets.
 A verified client/shared `client_startup` module executes once per connection
 on a bounded worker before `ContentReady`; its host currently exposes only
 initial authored UI text/state. Real-listener reconnect/switch tests cover
-that narrow session lifecycle.
+that narrow session lifecycle. Connection workers now retire on failure/exit;
+cached reconnect and differently modded switches start with fresh UI, material,
+effect, startup and action state. Join stages/errors are printed to stderr,
+including package-attributed startup failures. GPU/window failures propagate
+instead of looking like successful exits.
 
 **Remaining**
 
 - [ ] Expand the narrow downloaded startup host into the documented client
   presentation/replica services and resource registration model, with bounded
   session-scoped callbacks and explicit compatibility/readiness failures.
-- [ ] Show clear preparation/error status and make disconnect, retry/reconnect
-  and switching differently modded servers reliably retire old resources.
-  Connection setup currently waits for a worker before opening the window.
-- [ ] Exercise those paths over the real listener. Disk caching and elaborate
-  progress UI are **not** prerequisites unless reliability testing requires them.
+- [ ] Present a simple window-visible preparation/error state. Console stage
+  diagnostics exist, but connection setup still waits for its worker **before**
+  creating the window; no in-window retry/switch interface exists.
+- [ ] Complete the remaining client runtime compatibility/readiness checks and
+  exercise the whole package flow under mixed live load. Real-listener
+  download, failure, reconnect and cross-server switching are covered; disk
+  caching and elaborate progress UI are **not** prerequisites unless testing
+  requires them.
 
 #### Phase 6 — authored UI · In progress
 
@@ -550,7 +557,7 @@ broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **879/879**. That does not close these cross-system checks or verify the live
+  **882/882**. That does not close these cross-system checks or verify the live
   fire cue.
 
 Land and review usable increments regularly. A completed slice does not check
@@ -605,12 +612,14 @@ This section exists so compaction or a new session does not restart the design.
   and final mixed-load/release-window verification remain. The live fire visual
   is unverified and parked. The latest successful 4-thread suite passed 879/879;
   a later run reproduced a stale-kiln-revision test race. Its harness now waits
-  for the authoritative replica and the next 879/879 run passed. Isolated
-  join/switch lifecycle work is active and unreviewed, not landed.
+  for the authoritative replica and the next 879/879 run passed. Reviewed
+  join/switch lifecycle cleanup is committed, and the 4-thread suite passed
+  882/882 afterward.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
-  verified package UI with startup state, and `e156f2d` fixes the kiln test
-  harness. A commit is a reviewed increment, not a phase acceptance.
+  verified package UI with startup state, `e156f2d` fixes the kiln test harness,
+  and `533571e` retires failed/closed modded client sessions. A commit is a
+  reviewed increment, not a phase acceptance.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
@@ -1125,6 +1134,17 @@ This section exists so compaction or a new session does not restart the design.
   strict Clippy checks passed, followed by **879/879** on the main-tree 4-thread
   suite. This does not change gameplay authorization or prove the test can
   never fail under other scheduling loads.
+- **Phase 5 session retirement slice:** `Network` closes cloned sockets and
+  queues on failed join or exit so blocked reader/writer workers stop without a
+  window-thread join. Session teardown removes package UI, startup, material,
+  effect and pending actions; results with a stale action epoch fail before UI
+  state changes. Join diagnostics name the preparation stage and propagate
+  window/GPU failures. Real nonblocking listeners cover a failing startup,
+  healthy retry, cached reconnect, switches between combined and UI packages,
+  exact bundle reuse, stale epoch rejection and worker completion while servers
+  stay live. Focused tests, formatting, strict Clippy and the integrated
+  main-tree 4-thread suite (**882/882**) passed. Joining remains synchronous
+  before the window, with console—not window-visible—progress and errors.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
