@@ -1,6 +1,6 @@
 //! Startup-only adapter: bounded Luau declarations become a single public
 //! extension bundle. No VM or partial catalog survives installation. Generation
-//! registrations retain immutable sources, not startup VM callbacks.
+//! and semantic action registrations retain immutable sources, not VM callbacks.
 //!
 //! Opt in via `server-packages <package-root> <address> <save-dir> [max-clients]`.
 //! Add `requires bloxgloom:content/v1` to package.txt, then return an entry like:
@@ -16,6 +16,7 @@
 //! With `requires bloxgloom:generation/v1`, an entry may additionally declare one
 //! `host.register_generator("demo:terrain", 1, "demo:terrain")`. The named own
 //! module returns a function receiving a chunk context (see `generation`).
+//! `bloxgloom:actions/v1` permits one `register_action` declaration (see `gameplay`).
 //!
 //! The bundle records identity:package with public contract version 1. Source
 //! semver is checked exactly during discovery, not persisted or converted to
@@ -37,6 +38,7 @@ pub(in crate::server) struct Declarations {
     packages: Vec<bloxgloom_host_api::composition::Package>,
     items: Vec<Item>,
     generation: Vec<bloxgloom_host_api::generation::Registration>,
+    actions: Vec<super::gameplay::Registration>,
 }
 
 impl Declarations {
@@ -46,6 +48,7 @@ impl Declarations {
         let worker = ScriptWorker::spawn(super::Limits::default())?;
         let mut items = Vec::new();
         let mut generation = Vec::new();
+        let mut actions = Vec::new();
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
         for package in &packages {
@@ -65,6 +68,12 @@ impl Declarations {
                 unreachable!("startup execution")
             };
             items.extend(declarations.items);
+            if let Some(declaration) = declarations.action {
+                actions.push(super::gameplay::registration(
+                    Arc::clone(&snapshot),
+                    declaration,
+                ));
+            }
             if let Some(declaration) = declarations.generation {
                 generation.push(super::generation::registration(
                     Arc::clone(&snapshot),
@@ -76,6 +85,7 @@ impl Declarations {
             packages,
             items,
             generation,
+            actions,
         })
     }
 }
@@ -91,6 +101,10 @@ impl Extension for Declarations {
         for generation in &self.generation {
             registrar.generation_contributor(generation.clone())?;
         }
+        for (action, handler) in &self.actions {
+            registrar.action(action.clone())?;
+            registrar.gameplay_handler(handler.clone())?;
+        }
         Ok(())
     }
 }
@@ -99,6 +113,7 @@ impl Extension for Declarations {
 pub(super) struct Pending {
     items: Vec<Item>,
     pub(super) generation: Option<super::generation::Declaration>,
+    pub(super) action: Option<super::gameplay::Declaration>,
     pub(super) error: Option<&'static str>,
 }
 
@@ -113,6 +128,8 @@ pub(super) fn invoke(
     let capture = Rc::clone(&pending);
     let generation =
         super::generation::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let action =
+        super::gameplay::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let namespace = namespace.to_owned();
     let register = lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
         let mut pending = capture.borrow_mut();
@@ -163,6 +180,7 @@ pub(super) fn invoke(
     let host = lua.create_table()?;
     host.set("register_item", register)?;
     host.set("register_generator", generation)?;
+    host.set("register_action", action)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();

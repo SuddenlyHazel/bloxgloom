@@ -14,6 +14,7 @@
 //! and obey Contributor purity (including not using object identity or table
 //! iteration order for decisions). Restart rediscovers sources; retries reuse
 //! frozen sources and fresh VMs. Persistent failure does not fall back to air.
+use super::values::{integer, text};
 use super::{Invocation, Limits, Program, ScriptInput, package::PackageSnapshot, startup::Pending};
 use bloxgloom_host_api::generation::{Context, Contributor, GenerationError, Output, Registration};
 use mlua::{Function, Lua, Value};
@@ -231,29 +232,4 @@ fn coordinate(value: Value) -> mlua::Result<i64> {
         i64::from(i32::MAX) * 16 + 15,
     )
     .map_err(runtime)
-}
-
-fn integer(value: Value, min: i64, max: i64) -> Result<i64, &'static str> {
-    let value = match value {
-        Value::Integer(v) => v as f64,
-        Value::Number(v) => v,
-        _ => return Err("expected exact integer"),
-    };
-    if !value.is_finite() || value.fract() != 0.0 || value < min as f64 || value > max as f64 {
-        return Err("integer out of bounds");
-    }
-    Ok(value as i64)
-}
-
-fn text(value: Value) -> Result<String, &'static str> {
-    let Value::String(value) = value else {
-        return Err("expected UTF-8 string");
-    };
-    if value.as_bytes().is_empty() || value.as_bytes().len() > 255 {
-        return Err("string must contain 1..=255 bytes");
-    }
-    value
-        .to_str()
-        .map(|s| s.to_owned())
-        .map_err(|_| "invalid UTF-8")
 }

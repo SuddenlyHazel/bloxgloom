@@ -716,6 +716,13 @@ This section exists so compaction or a new session does not restart the design.
   sampling, coordinate hashing and bounded block output. Listener/restart and
   edited-baseline tests passed; revisions remain an author responsibility.
   Gameplay callbacks and other server/client services are still unbound.
+- **Phase 4 semantic gameplay binding:** opt-in Luau packages can register one
+  public `ActionRequested` decision owner and semantic action. Fresh bounded
+  VMs borrow the shared gameplay context for block read/edit and exact-stack
+  same-player transfers; the normal host transaction and request authorization
+  own conflicts, rollback, WAL and replication. Loopback/restart and failure
+  rollback tests pass. Other events, general entity operations and package
+  delivery still require binding; Phase 4 is not complete.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

@@ -1,11 +1,13 @@
 //! Local Luau source execution foundation. Each worker owns its VM exclusively;
 //! no live world state or file handle is exposed to scripts. Startup may collect
-//! bounded public content/generation declarations; gameplay remains unbound.
+//! bounded public declarations. Gameplay borrows only a staged public Context.
 
+mod gameplay;
 mod generation;
 mod imports;
 pub mod package;
 pub(super) mod startup;
+mod values;
 
 use mlua::{Function, Lua, LuaOptions, StdLib, VmState};
 use std::cell::{Cell, RefCell};
@@ -86,7 +88,7 @@ struct Request {
 
 enum Output {
     Integer(i64),
-    Declarations(startup::Pending),
+    Declarations(Box<startup::Pending>),
     Generation(bloxgloom_host_api::generation::Output),
 }
 
@@ -217,6 +219,39 @@ impl Drop for ScriptWorker {
 }
 
 fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, ScriptError> {
+    run_with(&program, limits, |lua, entry| {
+        if let Program::Package {
+            snapshot,
+            entry: key,
+            invocation: Invocation::Startup,
+        } = &program
+        {
+            let package = key.split_once(':').expect("validated entry").0;
+            return startup::invoke(lua, entry, package, snapshot)
+                .map(Box::new)
+                .map(Output::Declarations);
+        }
+        if let Program::Package {
+            invocation: Invocation::Generation(context),
+            ..
+        } = &program
+        {
+            return generation::invoke(lua, entry, *context).map(Output::Generation);
+        }
+        let args = lua.create_table()?;
+        args.set("tick", input.tick)?;
+        args.set("seed", input.seed)?;
+        entry.call(args).map(Output::Integer)
+    })
+}
+
+/// The VM never escapes this call. Gameplay invokes this on the authoritative
+/// server coordinator, borrowing Context via mlua::scope rather than a queue.
+fn run_with<T>(
+    program: &Program,
+    limits: Limits,
+    invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
+) -> Result<T, ScriptError> {
     let id = program.identity();
     let fail = |failure| ScriptError {
         module: id.clone(),
@@ -284,7 +319,7 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
         Ok(VmState::Continue)
     });
 
-    let result = (|| -> mlua::Result<Output> {
+    let result = (|| -> mlua::Result<T> {
         let entry: Function = match &program {
             Program::Source(module) => lua
                 .load(&module.source)
@@ -299,26 +334,7 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
                 lua.unpack(value)?
             }
         };
-        if let Program::Package {
-            snapshot,
-            entry: key,
-            invocation: Invocation::Startup,
-        } = &program
-        {
-            let package = key.split_once(':').expect("validated entry").0;
-            return startup::invoke(&lua, entry, package, snapshot).map(Output::Declarations);
-        }
-        if let Program::Package {
-            invocation: Invocation::Generation(context),
-            ..
-        } = &program
-        {
-            return generation::invoke(&lua, entry, *context).map(Output::Generation);
-        }
-        let args = lua.create_table()?;
-        args.set("tick", input.tick)?;
-        args.set("seed", input.seed)?;
-        entry.call(args).map(Output::Integer)
+        invoke(&lua, entry)
     })();
     if let Some((reason, module)) = exceeded.take() {
         return Err(ScriptError {

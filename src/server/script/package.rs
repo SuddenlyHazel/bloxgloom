@@ -68,9 +68,9 @@
 //! identity in the host error. Initialization interrupts name the active module.
 //!
 //! Explicit development startup also runs entries with a bounded registration
-//! host instead of integer inputs (see the sibling `startup` module). Gameplay
-//! bindings, handles, transaction admission, scheduling and durable
-//! receipts remain unbound. Assets, compatibility negotiation, server/client
+//! host instead of integer inputs (see the sibling `startup` module). Semantic
+//! actions bind the public gameplay Context and existing host transactions;
+//! other events remain unbound. Assets, compatibility negotiation, server/client
 //! declarations, distribution hashes, network/UI and hot reload are not added.
 //! No world/save/wire format changes accompany this local manifest format.
 //! Generation modules can also be registered at startup; their frozen sources
@@ -107,7 +107,7 @@ impl PackageSnapshot {
     pub(super) fn startup_packages(
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
-        use bloxgloom_host_api::composition::{CONTENT, Dependency, GENERATION, Package};
+        use bloxgloom_host_api::composition::{ACTIONS, CONTENT, Dependency, GENERATION, Package};
         self.packages
             .iter()
             .map(|(name, package)| {
@@ -116,7 +116,7 @@ impl PackageSnapshot {
                         .manifest
                         .requires
                         .iter()
-                        .any(|c| c != CONTENT && c != GENERATION)
+                        .any(|c| c != CONTENT && c != GENERATION && c != ACTIONS)
                 {
                     return Err(error(
                         &self.identity(&self.entry(name)?),
@@ -155,6 +155,50 @@ impl PackageSnapshot {
                 .requires
                 .contains(bloxgloom_host_api::composition::GENERATION)
         })
+    }
+
+    pub(super) fn permits_actions(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            p.manifest
+                .requires
+                .contains(bloxgloom_host_api::composition::ACTIONS)
+        })
+    }
+
+    /// Conservative installation identity, persisted as the public handler
+    /// version. Includes every frozen source (including dependency helpers), not
+    /// just the entry. Like catalog fingerprints this is not an authenticity hash.
+    pub(super) fn gameplay_version(&self, entry: &str, revision: u16) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        let mut field = |bytes: &[u8]| {
+            for byte in (bytes.len() as u64).to_le_bytes().iter().chain(bytes) {
+                hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        field(b"luau-action-v1");
+        field(entry.as_bytes());
+        field(&revision.to_le_bytes());
+        field(&(self.packages.len() as u64).to_le_bytes());
+        for (name, package) in &self.packages {
+            field(name.as_bytes());
+            field(package.manifest.version.to_string().as_bytes());
+            field(package.manifest.entry.as_bytes());
+            field(&(package.manifest.dependencies.len() as u64).to_le_bytes());
+            for (name, version) in &package.manifest.dependencies {
+                field(name.as_bytes());
+                field(version.to_string().as_bytes());
+            }
+            field(&(package.manifest.requires.len() as u64).to_le_bytes());
+            for capability in &package.manifest.requires {
+                field(capability.as_bytes());
+            }
+            field(&(package.sources.len() as u64).to_le_bytes());
+            for (module, source) in &package.sources {
+                field(module.as_bytes());
+                field(source.as_bytes());
+            }
+        }
+        hash
     }
 
     /// Read immediate package directories in lexical order. The host must call

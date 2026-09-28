@@ -6,6 +6,8 @@ use crate::server::startup::ServerStartup;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "script_startup/gameplay.rs"]
+mod gameplay;
 #[path = "script_startup/generation.rs"]
 mod generation;
 

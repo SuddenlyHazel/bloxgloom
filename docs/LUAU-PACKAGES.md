@@ -14,6 +14,8 @@ module main scripts/main.luau
 requires bloxgloom:content/v1
 requires bloxgloom:generation/v1
 module terrain scripts/terrain.luau
+requires bloxgloom:actions/v1
+module shift scripts/shift.luau
 ```
 
 `ScriptWorker::execute_package` runs the entry from an immutable discovered
@@ -41,5 +43,17 @@ module returns a chunk function using `seed_lo`/`seed_hi`, chunk coordinates,
 `world_position`, `builtin_terrain_height`, `builtin_base_block`, `random_at`
 and `set_block`. Bump the declared revision whenever its output changes;
 `world.meta` rejects incompatible restarts. Scripts run in fresh bounded VMs
-on generation workers and never write neighboring chunks directly. This is
-not server delivery or a gameplay binding yet.
+on generation workers and never write neighboring chunks directly.
+Local packages may register one semantic action under the actions capability:
+
+```lua
+host.register_action("example:shift", 1, "Shift", "item", "bloxgloom:stick", "example:shift")
+```
+
+Its module returns `function(context, event)`, with scoped `block(x,y,z)`,
+`set_block(x,y,z,state)` and exact-stack `transfer(from_slot,to_slot,count)`
+on the requesting player's inventory. The existing server authorizes targets,
+reach and sessions, and commits successful effects through its shared gameplay
+transaction. Script failures abort that transaction; no Lua state survives
+between retries. See `src/server/script/gameplay.rs` for limits and fields.
+Other gameplay events and remote package delivery remain unfinished.
