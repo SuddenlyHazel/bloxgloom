@@ -22,6 +22,43 @@ impl UiBuilder<'_> {
             TEXT,
             24,
         );
+        if let Some(rect) = layout.rect(UiControl::InventorySearch) {
+            let focused = frame.hovered == Some(UiControl::InventorySearch);
+            self.rounded_panel(
+                rect,
+                [0.055, 0.075, 0.073, 0.95],
+                if focused { GOLD } else { EDGE },
+                self.scale,
+            );
+            let label = if frame.inventory_search.is_empty() {
+                "SEARCH ITEMS"
+            } else {
+                frame.inventory_search
+            };
+            self.text(
+                label,
+                rect.x + 7.0 * self.scale,
+                rect.y + 9.0 * self.scale,
+                0.64,
+                if frame.inventory_search.is_empty() {
+                    MUTED
+                } else {
+                    TEXT
+                },
+                24,
+            );
+            if focused {
+                let chars = label.chars().count() as f32;
+                self.rect(
+                    (rect.x + (7.0 + chars * 18.0 * 0.64) * self.scale)
+                        .min(rect.x + rect.width - 4.0 * self.scale),
+                    rect.y + 8.0 * self.scale,
+                    self.scale,
+                    16.0 * self.scale * 0.64,
+                    GOLD,
+                );
+            }
+        }
         if !compact {
             self.text(
                 "36 SLOTS  /  128 PER STACK",
@@ -32,6 +69,7 @@ impl UiBuilder<'_> {
                 40,
             );
         }
+        let search = frame.inventory_search.to_ascii_lowercase();
         for index in 0..36u8 {
             let Some(rect) = layout.rect(UiControl::InventorySlot(index)) else {
                 continue;
@@ -39,6 +77,14 @@ impl UiBuilder<'_> {
             let selected = frame.inventory_source == Some(index);
             let hotbar = index < 9;
             let hovered = frame.hovered == Some(UiControl::InventorySlot(index));
+            let matches_search = !search.is_empty()
+                && frame.inventory[index as usize]
+                    .as_ref()
+                    .is_some_and(|stack| {
+                        item_name_for(stack.item, catalog)
+                            .to_ascii_lowercase()
+                            .contains(&search)
+                    });
             self.rounded_panel(
                 rect,
                 if selected {
@@ -48,6 +94,8 @@ impl UiBuilder<'_> {
                 },
                 if selected {
                     GOLD
+                } else if matches_search {
+                    [0.76, 0.71, 0.34, 1.0]
                 } else if hovered {
                     [0.65, 0.77, 0.52, 0.95]
                 } else if hotbar {
@@ -88,7 +136,7 @@ impl UiBuilder<'_> {
         let footer = if compact {
             "L: MOVE  R: HALF  Q: DROP  E: CLOSE"
         } else {
-            "SOURCE THEN DEST  /  RIGHT: HALF  /  Q: DROP  /  E: CLOSE"
+            "SEARCH: HIGHLIGHT  /  RIGHT: HALF  /  Q: DROP  /  E: CLOSE"
         };
         self.center_text(
             footer,

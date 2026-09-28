@@ -42,6 +42,7 @@ pub(crate) struct UiRenderer {
     cache_key: Option<UiCacheKey>,
     cached_status: Option<String>,
     cached_admin_input: String,
+    cached_inventory_search: String,
     width: u32,
     height: u32,
 }
@@ -184,6 +185,7 @@ impl UiRenderer {
             cache_key: None,
             cached_status: None,
             cached_admin_input: String::new(),
+            cached_inventory_search: String::new(),
             width: 1,
             height: 1,
         }
@@ -220,6 +222,7 @@ impl UiRenderer {
         if self.cache_key.as_ref() == Some(&key)
             && self.cached_status.as_deref() == frame.status
             && self.cached_admin_input == frame.admin_input
+            && self.cached_inventory_search == frame.inventory_search
         {
             return;
         }
@@ -259,6 +262,11 @@ impl UiRenderer {
         if self.cached_admin_input != frame.admin_input {
             self.cached_admin_input.clear();
             self.cached_admin_input.push_str(frame.admin_input);
+        }
+        if self.cached_inventory_search != frame.inventory_search {
+            self.cached_inventory_search.clear();
+            self.cached_inventory_search
+                .push_str(frame.inventory_search);
         }
     }
 

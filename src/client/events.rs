@@ -55,11 +55,15 @@ impl ApplicationHandler for ClientApp {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as f32, position.y as f32);
-                if self.screen != UiScreen::Playing {
+                if self.screen != UiScreen::Playing
+                    && !(self.screen == UiScreen::Inventory
+                        && self.focused_control == Some(UiControl::InventorySearch))
+                {
                     self.focused_control = self
                         .ui_layout
                         .as_ref()
-                        .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
+                        .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1))
+                        .filter(|control| *control != UiControl::InventorySearch);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -87,6 +91,17 @@ impl ApplicationHandler for ClientApp {
                                 }
                             }
                         }
+                        return;
+                    }
+                    if pressed
+                        && self.screen == UiScreen::Inventory
+                        && self.focused_control == Some(UiControl::InventorySearch)
+                        && !matches!(
+                            code,
+                            KeyCode::Escape | KeyCode::Tab | KeyCode::Enter | KeyCode::NumpadEnter
+                        )
+                    {
+                        self.inventory_search.edit(code, event.text.as_deref());
                         return;
                     }
                     if pressed && !event.repeat {
@@ -219,6 +234,9 @@ impl ApplicationHandler for ClientApp {
                             .ui_layout
                             .as_ref()
                             .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
+                        if self.screen == UiScreen::Inventory && button == MouseButton::Left {
+                            self.focused_control = control;
+                        }
                         if let Some(control) = control {
                             if self.screen == UiScreen::Container
                                 && let UiControl::KilnSlot(slot) = control

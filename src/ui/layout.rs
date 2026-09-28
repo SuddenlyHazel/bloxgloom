@@ -1,5 +1,6 @@
 //! Screen-space control geometry shared by rendering and input.
 
+use super::inventory_search::search_rect;
 use super::types::{SettingId, UiControl, UiRect, UiScreen};
 
 #[derive(Clone, Debug)]
@@ -84,6 +85,7 @@ impl UiLayout {
 
     fn add_inventory(&mut self) {
         let panel = self.inventory_panel();
+        self.push(UiControl::InventorySearch, search_rect(panel, self.scale));
         let compact = panel.height < 380.0 * self.scale;
         let gap = (if compact { 6.0 } else { 8.0 }) * self.scale;
         let size = (if compact { 48.0 } else { 60.0 } * self.scale)

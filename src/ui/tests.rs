@@ -421,6 +421,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Graphics,
         ] {
             let frame = UiFrame {
+                inventory_search: "",
                 action_panel: None,
                 container_screen: None,
                 screen,
@@ -491,4 +492,33 @@ fn registered_composition_controls_share_hit_geometry_and_stay_bounded() {
             }
         }
     }
+}
+
+#[test]
+fn inventory_search_flex_field_is_hittable_and_stays_inside_panel() {
+    for (width, height) in [(1280, 720), (640, 360)] {
+        let layout = UiLayout::new(width, height, 1.0, UiScreen::Inventory);
+        let field = layout.rect(UiControl::InventorySearch).unwrap();
+        let panel = layout.inventory_panel();
+        assert!(field.x >= panel.x && field.x + field.width <= panel.x + panel.width);
+        assert!(field.y >= panel.y && field.y + field.height <= panel.y + panel.height);
+        assert_eq!(
+            layout.hit_test(field.x + field.width / 2.0, field.y + field.height / 2.0),
+            Some(UiControl::InventorySearch)
+        );
+    }
+}
+
+#[test]
+fn inventory_search_only_edits_local_ascii_query() {
+    use winit::keyboard::KeyCode;
+    let mut search = super::InventorySearch::default();
+    search.edit(KeyCode::KeyS, Some("Stone & 星"));
+    assert_eq!(search.text(), "Stone & ");
+    search.edit(KeyCode::Backspace, None);
+    assert_eq!(search.text(), "Stone &");
+    search.edit(KeyCode::Delete, None);
+    assert!(search.text().is_empty());
+    search.edit(KeyCode::KeyA, Some("abcdefghijklmnopqrstuvwxyz"));
+    assert_eq!(search.text(), "abcdefghijklmnopqrst");
 }

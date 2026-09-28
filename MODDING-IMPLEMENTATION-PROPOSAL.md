@@ -380,7 +380,7 @@ support as the final model system.
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
-| 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Planned |
+| 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | In progress |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Planned |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
 
@@ -778,6 +778,13 @@ This section exists so compaction or a new session does not restart the design.
   server callbacks, entity codecs or owner state; generation stays a separate
   saved-world identity. Mixed-package loopback and restart tests pass. Native
   extension serialization, client execution and presentation resources remain.
+- **Phase 6 UI foundation:** chose Taffy for flex layout embedded in the
+  existing wgpu/winit UI rather than Blitz; `docs/UI-FOUNDATION.md` records the
+  tradeoff. A focused, keyboard/focus-driven inventory search is now rendered
+  with Taffy geometry, without altering server inventory state. Inspected the
+  1280×720 and 640×360 `ui-preview` outputs and verified tests, formatting
+  and strict Clippy. Unicode/IME text, mod documents, authored handlers and
+  migration of other panels are still in progress.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

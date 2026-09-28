@@ -5,7 +5,9 @@ use crate::lighting::LightSample;
 use crate::protocol::{ClientMessage, ServerMessage};
 use crate::raycast::{self, Hit};
 use crate::render::{Camera, ChunkMesh, Renderer};
-use crate::ui::{SettingId, UiControl, UiDebug, UiFrame, UiLayout, UiScreen, UiSettings};
+use crate::ui::{
+    InventorySearch, SettingId, UiControl, UiDebug, UiFrame, UiLayout, UiScreen, UiSettings,
+};
 use crate::world::{AIR, BlockId, Chunk, ChunkKey};
 use glam::Vec3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
@@ -305,6 +307,7 @@ struct ClientApp {
     grabbed: bool,
     cursor: (f32, f32),
     focused_control: Option<UiControl>,
+    inventory_search: InventorySearch,
     status: Option<(String, Instant)>,
     effective_view_distance: u8,
     last_fps: f32,
@@ -372,6 +375,7 @@ impl ClientApp {
             grabbed: false,
             cursor: (0.0, 0.0),
             focused_control: None,
+            inventory_search: InventorySearch::default(),
             status: None,
             effective_view_distance,
             last_fps: 0.0,
@@ -546,6 +550,7 @@ impl ClientApp {
         match control {
             UiControl::Action(row) => self.action_control(row),
             UiControl::HotbarSlot(_) => {}
+            UiControl::InventorySearch => {}
             UiControl::InventorySlot(slot) if self.screen == UiScreen::Inventory => {
                 self.inventory_click(slot, false)
             }
@@ -614,8 +619,8 @@ impl ClientApp {
                 .map(UiControl::KilnSlot)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),
-            UiScreen::Inventory => (0..crate::inventory::SLOTS as u8)
-                .map(UiControl::InventorySlot)
+            UiScreen::Inventory => std::iter::once(UiControl::InventorySearch)
+                .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),
             UiScreen::Admin => (0..24u8)
                 .map(UiControl::AdminItem)
@@ -1367,6 +1372,7 @@ impl ClientApp {
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),
             inventory_source: self.inventory_source,
+            inventory_search: self.inventory_search.text(),
             kiln: self.kiln_view(),
             container_screen: self.container_screen(),
             action_panel: self.action_panel(),

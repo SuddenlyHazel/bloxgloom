@@ -30,6 +30,7 @@ pub enum SettingId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UiControl {
     Action(u8),
+    InventorySearch,
     HotbarSlot(u8),
     InventorySlot(u8),
     KilnSlot(u8),
@@ -97,6 +98,7 @@ pub struct UiFrame<'a> {
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
     pub inventory_source: Option<u8>,
+    pub inventory_search: &'a str,
     pub kiln: Option<crate::protocol::workstation::WorkstationView>,
     pub container_screen: Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>,
     pub action_panel: Option<bloxgloom_host_api::actions::Panel>,
@@ -118,6 +120,7 @@ impl Default for UiFrame<'_> {
             selected_slot: 0,
             inventory: std::array::from_fn(|_| None),
             inventory_source: None,
+            inventory_search: "",
             kiln: None,
             container_screen: None,
             action_panel: None,

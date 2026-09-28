@@ -1253,6 +1253,11 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         selected_slot: 1,
         inventory: sample_inventory(),
         inventory_source: (screen == UiScreen::Inventory).then_some(10),
+        inventory_search: if screen == UiScreen::Inventory {
+            "stone"
+        } else {
+            ""
+        },
         action_panel: (screen == UiScreen::Actions).then(action_preview_panel),
         container_screen: (screen == UiScreen::Container).then(|| {
             crate::content::catalog()
@@ -1290,7 +1295,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             UiScreen::Actions => Some(UiControl::Action(2)),
             UiScreen::Container => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing => None,
-            UiScreen::Inventory => Some(UiControl::InventorySlot(10)),
+            UiScreen::Inventory => Some(UiControl::InventorySearch),
             UiScreen::Admin => Some(UiControl::AdminItem(0)),
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
@@ -1301,6 +1306,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        inventory_search: "",
         action_panel: None,
         container_screen: None,
         screen: UiScreen::Settings,
