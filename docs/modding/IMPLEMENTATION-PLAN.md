@@ -523,7 +523,7 @@ to check in this phase.
   the actual host contract and deferred model scope.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
-  rendering/performance comparisons. The latest suite is **845/845**, but that
+  rendering/performance comparisons. The latest suite is **857/857**, but that
   does not close these cross-system checks or verify the live fire cue.
 
 Land and review usable increments regularly. A completed slice does not check
@@ -1022,8 +1022,8 @@ This section exists so compaction or a new session does not restart the design.
   receipt/restart preserve both. The host snapshots the template at owner-store
   construction so mutable behavior cannot change it later. Real listener,
   conflict, capacity, retry, forwarding, recovery and frozen-template tests
-  passed. The integrated suite passed 856/856 before the last focused template
-  regression test was added; strict Clippy and formatting pass. The fixed owner
+  passed. The integrated suite now passes **857/857** with the frozen-template
+  regression test; strict Clippy and formatting pass. The fixed owner
   cap, native fire migration and Luau intent binding remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
