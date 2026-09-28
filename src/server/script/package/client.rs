@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 4
+//! Canonical, client-safe package set, independent of filesystem paths. Version 5
 //! is an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -9,8 +9,9 @@
 //! sender as the bytes is integrity checking, not authentication or signing.
 //! Texture payloads are opaque PNG-classified bytes, NOT decoded/validated images.
 //! Separately classified UI assets are validated/prepared by ui::authored before
-//! publication. V4 changes only the artifact/cache identity, not wire framing or
-//! saves. Old artifacts are rejected; there is no conversion or partial install.
+//! publication. V5 adds bounded material assets and changes only the
+//! artifact/cache identity, not wire framing or saves. Old artifacts are
+//! rejected; there is no conversion or partial install.
 
 use std::collections::BTreeMap;
 
@@ -22,7 +23,7 @@ use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
 mod declarations;
 
-const MAGIC: &[u8] = b"BGCLIENT\x04";
+const MAGIC: &[u8] = b"BGCLIENT\x05";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -44,7 +45,7 @@ impl CacheKey {
     /// Domain/version prefix avoids collisions with other future cache formats.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
-        let mut name = String::from("client-v4-sha256-");
+        let mut name = String::from("client-v5-sha256-");
         for byte in self.0 {
             write!(name, "{byte:02x}").expect("write String");
         }
@@ -74,6 +75,7 @@ pub struct ClientPackage {
     pub textures: BTreeMap<String, Vec<u8>>,
     pub(crate) ui_assets: BTreeMap<String, (u32, Vec<u8>)>,
     pub(crate) effect_assets: BTreeMap<String, (u32, Vec<u8>)>,
+    pub(crate) material_assets: BTreeMap<String, (u32, Vec<u8>)>,
 }
 
 /// Immutable bytes and decoded view, published together only after validation.
@@ -85,11 +87,15 @@ pub struct ClientBundle {
     declarations: Option<declarations::Startup>,
     ui: Option<std::sync::Arc<crate::ui::authored::Resources>>,
     effect: Option<std::sync::Arc<crate::render::effects::Prepared>>,
+    material: Option<std::sync::Arc<crate::render::custom::Source>>,
 }
 
 impl ClientBundle {
     pub(crate) fn effect(&self) -> Option<&std::sync::Arc<crate::render::effects::Prepared>> {
         self.effect.as_ref()
+    }
+    pub(crate) fn material(&self) -> Option<&std::sync::Arc<crate::render::custom::Source>> {
+        self.material.as_ref()
     }
     pub(crate) fn ui(&self) -> Option<&std::sync::Arc<crate::ui::authored::Resources>> {
         self.ui.as_ref()
@@ -198,6 +204,7 @@ impl ClientBundle {
             let mut textures = BTreeMap::new();
             let mut ui_assets = BTreeMap::new();
             let mut effect_assets = BTreeMap::new();
+            let mut material_assets = BTreeMap::new();
             let mut previous = String::new();
             for _ in 0..count {
                 let key = reader.identifier()?;
@@ -205,13 +212,15 @@ impl ClientBundle {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
-                let kind = reader.count(7)? as u32;
+                let kind = reader.count(9)? as u32;
                 if kind == 0 {
                     return Err(invalid());
                 }
                 let asset_limit = match kind {
                     6 => crate::render::effects::MAX_SHADER_BYTES,
                     7 => 1024,
+                    8 => 1024,
+                    9 => crate::render::custom::MAX_SHADER_BYTES,
                     _ => MAX_ASSET_BYTES,
                 };
                 let bytes = reader
@@ -224,8 +233,10 @@ impl ClientBundle {
                     textures.insert(key, bytes.to_vec());
                 } else if kind <= 5 {
                     ui_assets.insert(key, (kind, bytes.to_vec()));
-                } else {
+                } else if kind <= 7 {
                     effect_assets.insert(key, (kind, bytes.to_vec()));
+                } else {
+                    material_assets.insert(key, (kind, bytes.to_vec()));
                 }
             }
             packages.insert(
@@ -237,6 +248,7 @@ impl ClientBundle {
                     textures,
                     ui_assets,
                     effect_assets,
+                    material_assets,
                 },
             );
         }
@@ -257,6 +269,9 @@ impl ClientBundle {
         let effect = crate::render::effects::prepare(&packages)
             .map_err(|message| error("<client-effect>", message))?
             .map(std::sync::Arc::new);
+        let material = crate::render::custom::prepare_assets(&packages)
+            .map_err(|message| error("<client-material>", message))?
+            .map(std::sync::Arc::new);
         Ok(Self {
             bytes: bytes.to_vec(),
             key: expected,
@@ -264,6 +279,7 @@ impl ClientBundle {
             declarations,
             ui,
             effect,
+            material,
         })
     }
 }

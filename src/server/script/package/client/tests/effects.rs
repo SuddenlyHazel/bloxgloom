@@ -31,6 +31,7 @@ fn verified_bundle_prepares_effect_and_rejects_ownership_order_and_shader_failur
     let bytes = bundle(&["sepia"], DESCRIPTOR, SHADER, false);
     let decoded = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
     assert_eq!(decoded.effect().unwrap().owner, "sepia:effect");
+    assert!(decoded.material().is_none());
     assert!(decoded.packages()["sepia"].textures.is_empty());
     assert!(decoded.packages()["sepia"].ui_assets.is_empty());
     for descriptor in [

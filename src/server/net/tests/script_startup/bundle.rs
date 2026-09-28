@@ -54,6 +54,63 @@ fn package_effect_is_prepared_by_real_client_join_before_welcome() {
     });
 }
 
+#[test]
+fn package_material_is_verified_and_resolved_by_real_client_join_before_welcome() {
+    let fixture = fixture();
+    let dir = fixture.0.join("packages/demo");
+    let sample =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages/jade");
+    for path in ["assets/materials/tint.json", "assets/shaders/jade.wgsl"] {
+        std::fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+        std::fs::copy(sample.join(path), dir.join(path)).unwrap();
+    }
+    let effect =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages/sepia");
+    for path in ["assets/shaders/sepia.wgsl", "assets/effects/grade.json"] {
+        std::fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+        std::fs::copy(effect.join(path), dir.join(path)).unwrap();
+    }
+    let manifest = dir.join("package.txt");
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("asset material tint assets/materials/tint.json\nasset material-shader jade assets/shaders/jade.wgsl\nasset shader sepia assets/shaders/sepia.wgsl\nasset effect grade assets/effects/grade.json\n");
+    std::fs::write(manifest, text).unwrap();
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        // The probe uses the real nonblocking reactor and Network::connect;
+        // material resolution happens before ContentReady and Welcome.
+        let bundle = crate::client::connect_bundle_probe(&address.to_string(), 0x7ade)
+            .unwrap()
+            .unwrap();
+        assert_eq!(bundle.material().unwrap().owner, "demo:tint");
+        assert_eq!(bundle.effect().unwrap().owner, "demo:grade");
+    });
+}
+
+#[test]
+fn unresolved_material_texture_refuses_client_join_with_package_identity() {
+    let fixture = fixture();
+    let dir = fixture.0.join("packages/demo");
+    let sample =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages/jade");
+    for path in ["assets/materials/tint.json", "assets/shaders/jade.wgsl"] {
+        std::fs::create_dir_all(dir.join(path).parent().unwrap()).unwrap();
+        std::fs::copy(sample.join(path), dir.join(path)).unwrap();
+    }
+    std::fs::write(
+        dir.join("assets/materials/tint.json"),
+        r#"{"shader":"jade","texture":"demo:missing"}"#,
+    )
+    .unwrap();
+    let manifest = dir.join("package.txt");
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("asset material tint assets/materials/tint.json\nasset material-shader jade assets/shaders/jade.wgsl\n");
+    std::fs::write(manifest, text).unwrap();
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        let error = crate::client::connect_bundle_probe(&address.to_string(), 0x7adf).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("demo:tint"), "{error}");
+    });
+}
+
 fn fragmented(peer: &mut TcpStream, message: &ClientMessage) {
     let mut bytes = Vec::new();
     protocol::write_client(&mut bytes, message).unwrap();

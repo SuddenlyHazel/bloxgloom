@@ -64,6 +64,13 @@ impl ApplicationHandler for ClientApp {
                     Arc::clone(&self.catalog),
                 )) {
                     Ok(mut renderer) => {
+                        if let Some(material) = self.network.package_material()
+                            && let Err(error) = renderer.install_custom_material(material)
+                        {
+                            eprintln!("package material preparation: {error}");
+                            event_loop.exit();
+                            return;
+                        }
                         if let Some(effect) = self.network.package_effect()
                             && let Err(error) = renderer.install_package_effect(effect)
                         {

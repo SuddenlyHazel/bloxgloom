@@ -1,15 +1,138 @@
 //! Bounded fragment-only voxel material customization. Geometry, UVs, camera,
 //! light, emission, alpha cutout and fog remain renderer-owned. Authored code
 //! changes only albedo before the standard light/emission/fog calculation.
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
 use wgpu::naga;
+
+use crate::content::Catalog;
+use crate::server::client_bundle::ClientPackage;
 
 #[cfg(test)]
 mod tests;
 
 pub(crate) const MAX_SHADER_BYTES: usize = 8 * 1024;
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Descriptor {
+    shader: String,
+    texture: String,
+}
+
 #[derive(Debug)]
-#[allow(dead_code)] // Package asset registration is a separate integration task.
+pub(crate) struct Source {
+    pub owner: String,
+    texture: String,
+    shader: String,
+}
+
+/// Prepare exactly one locally owned descriptor and shader across the whole
+/// verified bundle. Independent UI and scene-color effect assets are unaffected.
+pub(crate) fn prepare_assets(
+    packages: &BTreeMap<String, ClientPackage>,
+) -> Result<Option<Source>, String> {
+    let Some(owner) = packages
+        .iter()
+        .find(|(_, package)| !package.material_assets.is_empty())
+        .map(|(name, _)| name)
+    else {
+        return Ok(None);
+    };
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| prepare_assets_inner(packages))
+            .join()
+            .map_err(|_| format!("{owner}: material preparation worker panicked"))?
+    })
+}
+
+fn prepare_assets_inner(
+    packages: &BTreeMap<String, ClientPackage>,
+) -> Result<Option<Source>, String> {
+    let mut result = None;
+    for (package, data) in packages {
+        if data.material_assets.is_empty() {
+            continue;
+        }
+        let fail = |message: &str| format!("{package}: material: {message}");
+        if data.material_assets.len() != 2 || result.is_some() {
+            return Err(fail(
+                "duplicate ownership or orphan material assets (one material per bundle)",
+            ));
+        }
+        let (name, (_, bytes)) = data
+            .material_assets
+            .iter()
+            .find(|(_, (kind, _))| *kind == 8)
+            .ok_or_else(|| fail("missing material descriptor"))?;
+        if bytes.len() > 1024 {
+            return Err(fail("descriptor exceeds 1024 bytes"));
+        }
+        let descriptor: Descriptor =
+            serde_json::from_slice(bytes).map_err(|e| fail(&format!("{name}: {e}")))?;
+        let local = |s: &str| {
+            !s.is_empty()
+                && s.len() <= 64
+                && s.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+        };
+        let (texture_owner, texture_name) = descriptor
+            .texture
+            .split_once(':')
+            .ok_or_else(|| fail("texture must be a namespaced catalog key"))?;
+        if !local(&descriptor.shader)
+            || !local(texture_owner)
+            || !local(texture_name)
+            || (texture_owner != package && texture_owner != "bloxgloom")
+        {
+            return Err(fail(
+                "shader must be local and texture owned by the package or bloxgloom",
+            ));
+        }
+        let (kind, shader) = data
+            .material_assets
+            .get(&descriptor.shader)
+            .ok_or_else(|| fail("missing local material shader"))?;
+        if *kind != 9 || shader.len() > MAX_SHADER_BYTES {
+            return Err(fail("material shader kind or 8 KiB resource limit"));
+        }
+        let owner = format!("{package}:{name}");
+        let shader = std::str::from_utf8(shader).map_err(|e| format!("{owner}: {e}"))?;
+        validate(shader).map_err(|e| format!("{owner}: shader {}: {e}", descriptor.shader))?;
+        result = Some(Source {
+            owner,
+            texture: descriptor.texture,
+            shader: shader.into(),
+        });
+    }
+    Ok(result)
+}
+
+impl Source {
+    /// Resolve only after the connection catalog has matched the server's
+    /// authoritative content manifest. Never persist the transient layer ID.
+    pub(crate) fn resolve(&self, catalog: &Catalog) -> Result<Prepared, String> {
+        let layer = catalog
+            .textures()
+            .iter()
+            .position(|texture| texture.key == self.texture)
+            .ok_or_else(|| {
+                format!(
+                    "{}: texture {} is not registered in the session catalog",
+                    self.owner, self.texture
+                )
+            })?;
+        Ok(Prepared {
+            owner: self.owner.clone(),
+            source: self.shader.clone(),
+            layer: layer as u32,
+        })
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Prepared {
     pub owner: String,
     source: String,
@@ -18,7 +141,7 @@ pub(crate) struct Prepared {
 
 /// Call from asset preparation, not the window thread. The layer is a catalog
 /// texture ID, not a block ID: face-specific art and item sprites share it.
-#[allow(dead_code)] // Invoked by the package registration hook in the next task.
+#[cfg(test)]
 pub(crate) fn prepare(
     owner: &str,
     source: &[u8],
@@ -33,6 +156,7 @@ pub(crate) fn prepare(
     })
 }
 
+#[cfg(test)]
 fn prepare_inner(
     owner: &str,
     source: &[u8],
@@ -80,7 +204,7 @@ fn validate(source: &str) -> Result<(), String> {
         })
     {
         return Err(
-            "expected one pure custom_shade function and no resources, globals or entry points"
+            "expected one pure custom_albedo function and no resources, globals or entry points"
                 .into(),
         );
     }

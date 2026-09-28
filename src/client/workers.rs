@@ -21,12 +21,16 @@ pub(super) enum Incoming {
 pub(super) struct Network {
     // Session-owned immutable artifact, installed before any snapshot is read.
     _bundle: Option<Arc<crate::server::client_bundle::ClientBundle>>,
+    material: Option<crate::render::custom::Prepared>,
     pub(super) incoming: Receiver<Incoming>,
     pub(super) catalog: Arc<Catalog>,
     outgoing: SyncSender<ClientMessage>,
 }
 
 impl Network {
+    pub(super) fn package_material(&self) -> Option<&crate::render::custom::Prepared> {
+        self.material.as_ref()
+    }
     pub(super) fn package_effect(&self) -> Option<&crate::render::effects::Prepared> {
         self._bundle.as_ref()?.effect().map(AsRef::as_ref)
     }
@@ -42,6 +46,7 @@ impl Network {
         let (outgoing, _) = mpsc::sync_channel(1);
         Self {
             _bundle: None,
+            material: None,
             incoming,
             outgoing,
             catalog: Arc::new(crate::content::catalog().clone()),
@@ -78,6 +83,15 @@ impl Network {
             None => Catalog::builtins(),
         };
         let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first, &local)?;
+        let material = bundle
+            .as_ref()
+            .and_then(|bundle| bundle.material())
+            .map(|material| {
+                material
+                    .resolve(&catalog)
+                    .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
+            })
+            .transpose()?;
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
@@ -136,6 +150,7 @@ impl Network {
             .map_err(|_| io::Error::other("network writer stopped"))?;
         Ok(Self {
             _bundle: bundle,
+            material,
             incoming,
             catalog,
             outgoing,

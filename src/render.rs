@@ -142,7 +142,6 @@ pub struct Renderer {
 impl Renderer {
     /// Atomically replace only the two voxel pipelines. Existing camera and
     /// texture groups (also used by avatars) keep their renderer-owned data.
-    #[allow(dead_code)] // Package bundle installation is a separate task.
     pub(crate) fn install_custom_material(
         &mut self,
         prepared: &custom::Prepared,

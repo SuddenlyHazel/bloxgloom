@@ -201,6 +201,8 @@ fn asset_path(kind: &str, path: &str) -> Option<u32> {
         "ui-image" => (5, "assets/ui/", ".png"),
         "shader" => (6, "assets/shaders/", ".wgsl"),
         "effect" => (7, "assets/effects/", ".json"),
+        "material" => (8, "assets/materials/", ".json"),
+        "material-shader" => (9, "assets/shaders/", ".wgsl"),
         _ => return None,
     };
     (public_path(path) && path.starts_with(directory) && path.ends_with(suffix)).then_some(tag)

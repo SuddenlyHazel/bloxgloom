@@ -1,0 +1,7 @@
+format 2
+package jade
+version 1.0.0
+entry main
+module server main server/main.luau
+asset material tint assets/materials/tint.json
+asset material-shader jade assets/shaders/jade.wgsl

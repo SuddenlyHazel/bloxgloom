@@ -21,6 +21,8 @@ before treating a capability as complete.
 - [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):
   one bounded fullscreen scene-color effect, **not** the complete material or
   multi-pass shader surface required by Phase 7.
+- [Jade material example](../../fixtures/material-packages/jade/README.md):
+  package-delivered WGSL albedo for an existing voxel texture layer.
 
 ## Rust extension and host reference
 

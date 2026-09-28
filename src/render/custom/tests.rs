@@ -36,13 +36,14 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
     let catalog = crate::content::Catalog::builtins();
-    let shader = prepare(
-        "test:green-stone",
-        GREEN.as_bytes(),
-        3,
-        catalog.textures().len() as u32,
-    )
-    .unwrap();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages");
+    let bundle = crate::server::PackageSnapshot::discover(&root).unwrap();
+    let shader = bundle
+        .client_bundle()
+        .material()
+        .unwrap()
+        .resolve(&catalog)
+        .unwrap();
     let (opaque, cutout, _, _, _) = pipeline::create_custom_voxel_pipeline(
         &device,
         &queue,

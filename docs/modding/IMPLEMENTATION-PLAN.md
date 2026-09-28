@@ -446,11 +446,12 @@ ship reduced versions of phases 2–8:
    Unicode shaping/IME, clipboard, accessibility or dynamic document building.
    The other built-in interfaces have not yet migrated onto it. The current
    authorized UI request bridge covers only the item/empty slice (item 1).
-7. **Shader/material/effect support is partial.** Package UI images/fonts and
-   one verified WGSL fullscreen scene-color effect now work, but custom voxel/
-   item materials, packaged world textures, typed parameters and multi-pass
-   effect graphs are not supported. Initial renderer setup waits for GPU
-   preparation, rather than reporting asynchronous readiness progress.
+7. **Shader/material/effect support is partial.** Package UI images/fonts, one
+   WGSL fullscreen scene-color effect and one package-delivered voxel albedo
+   shader for a catalog texture layer work. New package-owned world textures,
+   typed parameters, wider geometry/material hooks and multi-pass effect
+   graphs are not supported. Initial renderer setup waits for GPU preparation,
+   rather than reporting asynchronous readiness progress.
 8. **Authoring and integrated verification are incomplete.** The examples do
    not yet cover a real combined gameplay+UI+shader flow; response latency,
    rendering and mixed-load behavior have not received final integrated
@@ -510,8 +511,9 @@ This section exists so compaction or a new session does not restart the design.
   lifecycle. Phase 6 displays authored UI and handles local presentation
   events and can request package-owned item/empty gameplay actions, but lacks
   general targets and server-driven document updates.
-  Phase 7 has a verified single fullscreen effect and a renderer-only custom
-  albedo hook, not package-delivered world materials or effect composition.
+  Phase 7 has a verified single fullscreen effect and a package-delivered
+  single-layer voxel albedo shader, not new world texture registration or
+  general material/effect composition.
 - **Recent reviewed commits:** `279cbcc` adds opt-in Luau LSP IDE guidance;
   `4f141fe` adds the renderer-only WGSL albedo hook. The owner participant
   increment is under review, not yet committed. This plan is not complete.
@@ -902,10 +904,17 @@ This section exists so compaction or a new session does not restart the design.
   function can shade one selected catalog texture layer in the voxel/cutout
   pipeline while the renderer retains lighting, emission, geometry, fog and
   alpha testing. GPU readback checks selected/default tiles, light levels and
-  cutout behavior; a tiny material preview was inspected. This is **not yet a
-  mod-authored material feature**: no verified package declaration, client
-  resource preparation or live session installation connects the hook to a
-  downloaded mod. Phase 7 still needs that integration and broader bindings.
+  cutout behavior; a tiny material preview was inspected. The package
+  integration below turns this previously renderer-only hook into a usable
+  modding slice.
+- **Phase 7 packaged material slice:** format-2 bundles now carry one bounded
+  owned material descriptor and WGSL albedo shader. The client validates the
+  shader off-thread and resolves its namespaced texture key against the
+  handshake's session catalog before `ContentReady`; renderer setup installs
+  the shader or fails with package-attributed errors. A `jade` fixture,
+  GPU readback and nonblocking-listener join tests passed. Bundle format v5
+  separates material from UI/effect assets. New world texture registration,
+  multiple material owners, typed parameters and other geometry remain open.
 - **Phase 2 owner participant increment:** owner-world edits now carry generated
   entity spawns/updates/schedules and drops with owner state, terrain and
   deadline in one WAL record. Entity dependencies and mirror capacity are
