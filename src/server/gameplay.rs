@@ -648,6 +648,7 @@ fn dispatch_neighbors(
     use bloxgloom_host_api::gameplay::{Event, EventKind, RemovalCause, cell_random};
     use std::collections::BTreeSet;
     let mut seen = BTreeSet::new();
+    let mut dispatched_removals = BTreeSet::new();
     let mut processed = std::collections::BTreeMap::new();
     let original_edits: BTreeSet<_> = edits.iter().map(|&(x, y, z, _)| [x, y, z]).collect();
     let targeted = catalog.has_targeted_neighbor_handlers();
@@ -680,6 +681,7 @@ fn dispatch_neighbors(
             seen.insert(changed);
             processed.insert(changed, current.clone());
             if !original_edits.contains(&changed)
+                && !dispatched_removals.contains(&changed)
                 && previous.block_type != "bloxgloom:air"
                 && previous != current
             {
@@ -760,8 +762,11 @@ fn dispatch_neighbors(
                             )
                             .map_err(error)?;
                     }
-                    seen.insert(cell);
-                    processed.insert(cell, after);
+                    // The removal callback ran with its precise support-loss
+                    // cause, but this transition must still notify *its* own
+                    // neighbors on the next pass. Suppress only a duplicate
+                    // generic removal callback, not the propagation.
+                    dispatched_removals.insert(cell);
                 }
             }
         }

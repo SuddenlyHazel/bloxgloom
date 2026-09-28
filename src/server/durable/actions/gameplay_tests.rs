@@ -282,6 +282,7 @@ impl Handler for SoilUse {
     }
 }
 struct FlowerNeighbor;
+struct FlowerRemovalNeighbor;
 impl Handler for FlowerNeighbor {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
         let Event::NeighborChanged {
@@ -297,6 +298,28 @@ impl Handler for FlowerNeighbor {
             return Err(Error::Invalid("wrong support transition".into()));
         }
         context.set_block(*cell, "bloxgloom:air")
+    }
+}
+impl Handler for FlowerRemovalNeighbor {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::NeighborChanged {
+            cell,
+            changed,
+            previous,
+            current,
+        } = event
+        else {
+            return Err(Error::Invalid("not a neighbor decision".into()));
+        };
+        if cell[0] == changed[0] + 1
+            && cell[1] == changed[1]
+            && cell[2] == changed[2]
+            && previous.block_type == "bloxgloom:red_flower"
+            && current.block_type == "bloxgloom:air"
+        {
+            context.set_block(*cell, "bloxgloom:air")?;
+        }
+        Ok(())
     }
 }
 impl Extension for SupportExtension {
@@ -322,6 +345,13 @@ impl Extension for SupportExtension {
             event: EventKind::NeighborChanged,
             target: Some("bloxgloom:red_flower".into()),
             handler: Arc::new(FlowerNeighbor),
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:flower_removal_neighbor".into(),
+            version: 1,
+            event: EventKind::NeighborChanged,
+            target: Some("bloxgloom:sand".into()),
+            handler: Arc::new(FlowerRemovalNeighbor),
         })
     }
 }
@@ -791,13 +821,29 @@ fn semantic_use_neighbor_support_and_harvest_share_one_receipt() {
         .world
         .edit(16, y + 1, 0, crate::world::RED_FLOWER)
         .unwrap();
+    state.world.edit(17, y + 1, 0, crate::world::SAND).unwrap();
     for [x, dy, z] in [[15, 0, 0], [17, 0, 0], [16, -1, 0], [16, 0, -1], [16, 0, 1]] {
+        state.world.get_block(x, y + dy, z).unwrap();
+    }
+    // The chained flower and sand transitions read their own six neighbors.
+    // This unit harness does not run the normal chunk-streaming worker.
+    for [x, dy, z] in [
+        [15, 1, 0],
+        [16, 2, 0],
+        [16, 1, -1],
+        [16, 1, 1],
+        [18, 1, 0],
+        [17, 2, 0],
+        [17, 1, -1],
+        [17, 1, 1],
+    ] {
         state.world.get_block(x, y + dy, z).unwrap();
     }
     settle_live_action(&mut state, 11, command.clone());
     settle_live_action(&mut state, 12, command);
     assert_eq!(state.world.cached_block(16, y, 0), Some(AIR));
     assert_eq!(state.world.cached_block(16, y + 1, 0), Some(AIR));
+    assert_eq!(state.world.cached_block(17, y + 1, 0), Some(AIR));
     let flowers = crate::server::drops::nearby(&state.entities, [16.5, y as f32 + 1.5, 0.5]);
     assert_eq!(
         flowers
@@ -806,6 +852,15 @@ fn semantic_use_neighbor_support_and_harvest_share_one_receipt() {
             .map(|item| item.count)
             .sum::<u16>(),
         1
+    );
+    assert_eq!(
+        flowers
+            .iter()
+            .filter(|item| item.item == crate::items::ItemId::new(crate::world::SAND.get()))
+            .map(|item| item.count)
+            .sum::<u16>(),
+        1,
+        "chained neighbor removal must harvest exactly once"
     );
     drop(peer);
     drop(state);
@@ -816,6 +871,7 @@ fn semantic_use_neighbor_support_and_harvest_share_one_receipt() {
     let mut state = crate::server::server_state_with_startup(23, path.clone(), 8, startup).unwrap();
     assert_eq!(state.world.get_block(16, y, 0).unwrap(), AIR);
     assert_eq!(state.world.get_block(16, y + 1, 0).unwrap(), AIR);
+    assert_eq!(state.world.get_block(17, y + 1, 0).unwrap(), AIR);
     drop(state);
     fs::remove_dir_all(path).unwrap();
 }
