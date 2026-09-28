@@ -155,6 +155,12 @@ impl std::fmt::Debug for DurableOwnerStore {
 }
 
 impl DurableOwnerStore {
+    pub fn accepts_intents(&self, system: &SystemId) -> bool {
+        self.descriptors
+            .get(system)
+            .is_some_and(|descriptor| descriptor.codec.accepts_intents())
+    }
+
     pub fn new(configs: Vec<OwnerSystemConfig>) -> io::Result<Self> {
         let mut descriptors = BTreeMap::new();
         for config in configs {

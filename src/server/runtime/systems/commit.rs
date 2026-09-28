@@ -15,6 +15,7 @@ impl SystemRuntime {
         durability: &mut Durability,
     ) -> io::Result<StagedOwnerCommit> {
         let OwnerWaveDurables {
+            intents,
             prepared,
             tick,
             wake_sets,
@@ -25,6 +26,7 @@ impl SystemRuntime {
             world_action,
         } = durables;
         let mut changes = prepared.changes().to_vec();
+        changes.extend_from_slice(intents.changes());
         changes.extend(wake_sets.changes().iter().cloned());
         changes.extend(self.durable_wakes.stage_clears(&durable_served));
         changes.extend(cursor.iter().cloned());
@@ -32,6 +34,7 @@ impl SystemRuntime {
             changes.extend(action.changes());
         }
         let commit = OwnerCommit {
+            intents,
             prepared,
             wake_sets,
             durable_served,
@@ -42,11 +45,27 @@ impl SystemRuntime {
             world_action,
         };
         let bytes: usize = changes.iter().map(|change| change.after.len()).sum();
-        if bytes > MAX_OWNER_WAVE_BYTES {
+        // Acknowledging a mailbox can shrink its after-value substantially.
+        // Bound retained preimages and key/framing bytes too, before the writer
+        // can turn an oversized (otherwise valid) wave into a fatal rejection.
+        // 64 bytes per header/entry conservatively exceeds the WAL framing;
+        // this is admission accounting, not a second encoder.
+        let wal_bytes = changes.iter().fold(64usize, |bytes, change| {
+            bytes
+                .saturating_add(64)
+                .saturating_add(change.key.domain.len())
+                .saturating_add(change.key.bytes.len())
+                .saturating_add(change.before.len())
+                .saturating_add(change.after.len())
+        });
+        if bytes > MAX_OWNER_WAVE_BYTES || wal_bytes > crate::server::journal::MAX_TRANSACTION_BYTES
+        {
             self.cancel_owner_commit(commit);
             return Err(io::Error::new(
                 ErrorKind::WouldBlock,
-                format!("owner wave of {bytes} bytes exceeds {MAX_OWNER_WAVE_BYTES}"),
+                format!(
+                    "owner wave exceeds byte budget: {bytes} after-value bytes, {wal_bytes} reserved WAL bytes"
+                ),
             ));
         }
         let keys = canonical_key_set(changes.iter());
@@ -79,6 +98,7 @@ impl SystemRuntime {
         receipt: CommitReceipt,
     ) -> io::Result<usize> {
         let OwnerCommit {
+            intents,
             wake_sets,
             durable_served,
             prepared,
@@ -102,6 +122,7 @@ impl SystemRuntime {
             }
         };
         self.durable_wakes.commit_sets(wake_sets);
+        self.durable_wakes.intents.commit(intents)?;
         self.durable_wakes.commit_clears(&durable_served);
         if let Some(cursor) = cursor {
             self.apply_replayed_owner_changes(&[cursor])?;
@@ -118,6 +139,7 @@ impl SystemRuntime {
     }
 
     fn cancel_owner_commit(&mut self, commit: OwnerCommit) {
+        self.durable_wakes.intents.cancel(commit.intents);
         self.staged_live_wakes -= commit.live_wakes.len();
         self.durable_wakes.cancel_sets(commit.wake_sets);
     }

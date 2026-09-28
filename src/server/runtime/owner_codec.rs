@@ -52,6 +52,10 @@ pub(in crate::server) enum OwnerCodecError {
 /// only for WAL change values. `migrate` upgrades a stored payload from one
 /// codec version to another; the default accepts identity only.
 pub(in crate::server) trait OwnerValueCodec: Send + Sync + 'static {
+    fn accepts_intents(&self) -> bool {
+        false
+    }
+
     fn decode(&self, payload: &[u8]) -> Result<OwnerData, OwnerCodecError>;
 
     fn encode(&self, value: &OwnerData) -> Result<Vec<u8>, OwnerCodecError>;

@@ -1,4 +1,8 @@
 //! Transient owner-system effects routed through the registered vocabulary.
+//! The advisory rule below applies only to `EmittedOwnerEffect`. The patch
+//! envelope also carries explicit world edits and durable payload intents;
+//! those are transaction participants and never pass through advisory routing
+//! or its delivery-shedding switch.
 //!
 //! THE RULE: an effect may only cause work to happen SOONER. It must never
 //! cause work to happen that would not otherwise happen. A producer handler
@@ -58,14 +62,14 @@ impl EmittedOwnerEffect {
 }
 
 /// Producer patch payload carrying the durable owner replacement alongside
-/// advisory effect emissions and explicit durable wake requests. The former
-/// route transiently at the barrier; the latter use the existing owner-wake
-/// WAL domain and carry no gameplay payload.
+/// advisory effects, explicit payload-free wakes, world edits, and durable
+/// payload intents. Only advisory effects route transiently at the barrier.
 pub(in crate::server) struct OwnerEffectPatch {
     state: OwnerData,
     effects: Vec<EmittedOwnerEffect>,
     durable_wakes: Vec<(SystemId, OwnerKey)>,
     world_edits: Vec<bloxgloom_host_api::system::BlockEdit>,
+    intents: Vec<bloxgloom_host_api::system::IntentRequest>,
 }
 
 impl OwnerEffectPatch {
@@ -79,6 +83,7 @@ impl OwnerEffectPatch {
             effects,
             durable_wakes: Vec::new(),
             world_edits: Vec::new(),
+            intents: Vec::new(),
         }
     }
 
@@ -110,6 +115,22 @@ impl OwnerEffectPatch {
         patch
             .payload::<OwnerEffectPatch>()
             .map_or(&[], |emission| &emission.world_edits)
+    }
+
+    pub(in crate::server) fn with_intents(
+        mut self,
+        intents: Vec<bloxgloom_host_api::system::IntentRequest>,
+    ) -> Self {
+        self.intents = intents;
+        self
+    }
+
+    pub(in crate::server) fn intents(
+        patch: &OwnerPatch,
+    ) -> &[bloxgloom_host_api::system::IntentRequest] {
+        patch
+            .payload::<Self>()
+            .map_or(&[], |emission| &emission.intents)
     }
 
     /// Actual emitted intent count for wave bound accounting. Plain patches

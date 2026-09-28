@@ -37,6 +37,7 @@ use std::io;
 /// No receipt or reservation is held by the feature runtime.
 #[derive(Debug)]
 pub(in crate::server) struct OwnerCommit {
+    pub intents: super::systems::intent::PreparedIntents,
     pub prepared: PreparedOwnerWave,
     pub wake_sets: PreparedWakeSets,
     pub durable_served: Vec<(SystemId, OwnerKey)>,
@@ -89,6 +90,7 @@ impl std::fmt::Debug for OwnerWorldAction {
 /// capacity is reserved during preparation but hints publish only on receipt,
 /// tagged with their producing tick so later phase barriers cannot cascade.
 pub(in crate::server) struct OwnerWaveDurables {
+    pub intents: super::systems::intent::PreparedIntents,
     pub prepared: PreparedOwnerWave,
     pub tick: TickId,
     pub wake_sets: PreparedWakeSets,
@@ -108,6 +110,7 @@ impl OwnerWaveDurables {
         cursor: Option<Change>,
     ) -> Self {
         Self {
+            intents: Default::default(),
             prepared,
             tick,
             wake_sets,

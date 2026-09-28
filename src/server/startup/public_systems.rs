@@ -91,6 +91,10 @@ impl api::WorldRead for OwnerWorldView<'_> {
 #[cfg(test)]
 mod tests;
 impl OwnerValueCodec for Adapter {
+    fn accepts_intents(&self) -> bool {
+        self.0.behavior.accepts_intents()
+    }
+
     fn decode(&self, bytes: &[u8]) -> Result<OwnerData, OwnerCodecError> {
         if bytes.len() > self.0.max_state_bytes as usize {
             return Err(OwnerCodecError::InvalidData);
@@ -111,9 +115,12 @@ impl SystemHandler for Adapter {
     fn prepare(&self, job: &OwnerJob) -> Result<OwnerPatch, SystemHandlerError> {
         let reject = || SystemHandlerError::Rejected("invalid public owner-system result".into());
         let snapshot = job.snapshot(job.owner()).ok_or_else(reject)?;
-        let data = snapshot
-            .value::<OwnerData>()
-            .and_then(|data| data.get::<Vec<u8>>())
+        let data = snapshot.value::<OwnerData>().ok_or_else(reject)?;
+        let input = data.get::<crate::server::runtime::systems::intent::JobInput>();
+        let inbox = input.map_or(&[][..], |input| input.inbox.as_slice());
+        let data = input
+            .map_or(data, |input| &input.value)
+            .get::<Vec<u8>>()
             .ok_or_else(reject)?;
         let tick = job.key().batch.tick().get();
         let world = job.owner_catalog().map(|catalog| OwnerWorldView {
@@ -127,10 +134,20 @@ impl SystemHandler for Adapter {
             data,
             world: world.as_ref().map(|world| world as &dyn api::WorldRead),
         };
-        let plan =
-            self.0.behavior.plan(&context).map_err(|error| {
-                SystemHandlerError::Rejected(format!("{}: {error}", self.0.key))
-            })?;
+        let mut outbox = api::IntentOutbox::default();
+        let plan = self
+            .0
+            .behavior
+            .plan_with_intents(&context, inbox, &mut outbox)
+            .map_err(|error| SystemHandlerError::Rejected(format!("{}: {error}", self.0.key)))?;
+        let intents = outbox
+            .finish()
+            .map_err(|error| SystemHandlerError::Rejected(error.to_string()))?;
+        if (!intents.is_empty() || !inbox.is_empty()) && !self.0.behavior.accepts_intents() {
+            return Err(SystemHandlerError::Rejected(
+                "owner system has not declared intent support".into(),
+            ));
+        }
         if plan.next_tick <= tick {
             return Err(reject());
         }
@@ -177,17 +194,22 @@ impl SystemHandler for Adapter {
             .collect::<Result<Vec<_>, SystemHandlerError>>()?;
         let state = self.decode(&plan.data).map_err(|_| reject())?;
         let bytes = plan.data.len()
+            + intents
+                .iter()
+                .map(|intent| intent.payload.len() + 64)
+                .sum::<usize>()
             + plan
                 .edits
                 .iter()
                 .map(|edit| edit.before.len() + edit.after.len() + 16)
                 .sum::<usize>();
-        let output = if wakes.is_empty() && plan.edits.is_empty() {
+        let output = if wakes.is_empty() && plan.edits.is_empty() && intents.is_empty() {
             None
         } else {
             Some(
                 OwnerEffectPatch::new(state.clone(), Vec::new())
                     .with_durable_wakes(wakes)
+                    .with_intents(intents)
                     .with_world_edits(plan.edits),
             )
         };

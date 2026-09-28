@@ -80,6 +80,94 @@ pub struct Wake {
 pub trait Behavior: Send + Sync + 'static {
     fn validate(&self, data: &[u8]) -> Result<(), RegistrationError>;
     fn plan(&self, context: &Context<'_>) -> Result<Plan, RegistrationError>;
+
+    /// Opt into durable same-system messages between existing chunk-owner cells
+    /// with declared world reads. Other partitions are not supported yet.
+    /// This capability participates in the system's persisted fingerprint.
+    fn accepts_intents(&self) -> bool {
+        false
+    }
+
+    /// All delivered messages are acknowledged atomically with a successful
+    /// plan's state/world changes. On rejection they remain pending. Delivery
+    /// never runs before the producer's receipt or in its producing tick.
+    /// A callback must account for every input before returning success.
+    /// At most eight messages are delivered per invocation, oldest producing
+    /// tick first, then canonical identity order. Host queue pressure defers
+    /// the complete plan; it never silently drops or truncates the outbox.
+    fn plan_with_intents(
+        &self,
+        context: &Context<'_>,
+        inbox: &[IntentDelivery],
+        _outbox: &mut IntentOutbox,
+    ) -> Result<Plan, RegistrationError> {
+        if !inbox.is_empty() {
+            return Err(RegistrationError(
+                "owner handler does not consume intents".into(),
+            ));
+        }
+        self.plan(context)
+    }
+}
+
+pub const MAX_INTENTS_PER_JOB: usize = 8;
+pub const MAX_INTENT_PAYLOAD_BYTES: usize = 512;
+
+/// Host-assigned identity: retries keep the source revision and ordinal. A
+/// committed producer cannot reuse an identity, including after acknowledgement
+/// and restart. Identities are scoped to one registered system.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct IntentId {
+    pub source: Owner,
+    pub revision: u64,
+    pub ordinal: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntentDelivery {
+    pub id: IntentId,
+    pub produced_tick: u64,
+    pub payload: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IntentRequest {
+    pub destination: Owner,
+    pub payload: Vec<u8>,
+}
+
+/// Bounded before copying payload bytes. A caught send error poisons the whole
+/// output, so an overflowing send never silently commits a partial outbox.
+#[derive(Default)]
+pub struct IntentOutbox {
+    requests: Vec<IntentRequest>,
+    failed: bool,
+}
+impl IntentOutbox {
+    pub fn send(&mut self, destination: Owner, payload: &[u8]) -> Result<(), RegistrationError> {
+        if self.failed
+            || payload.len() > MAX_INTENT_PAYLOAD_BYTES
+            || self.requests.len() >= MAX_INTENTS_PER_JOB
+        {
+            self.failed = true;
+            return Err(RegistrationError(
+                "owner intent outbox exceeds bound".into(),
+            ));
+        }
+        self.requests.push(IntentRequest {
+            destination,
+            payload: payload.to_vec(),
+        });
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<Vec<IntentRequest>, RegistrationError> {
+        if self.failed {
+            Err(RegistrationError("owner intent outbox failed".into()))
+        } else {
+            Ok(self.requests)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -134,6 +222,7 @@ impl System {
                 .any(|key| !valid_key(key) || key == &self.key)
             || self.seeds.len() > 16384
             || (self.read_radius_chunks.is_some() && self.partition != Partition::Chunk)
+            || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
             })
@@ -211,6 +300,10 @@ impl System {
             }
             out.extend((seed.data.len() as u32).to_le_bytes());
             out.extend(&seed.data);
+        }
+        // Preserve byte-for-byte identity for existing payload-free systems.
+        if self.behavior.accepts_intents() {
+            out.extend(b"owner-intents-v1");
         }
         out
     }

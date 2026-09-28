@@ -176,6 +176,7 @@ pub(super) fn open(
     // record must reject the world without touching any save file.
     let owner_store = DurableOwnerStore::recover(owner_configs, &owner_latest)?;
     let wake_store = PendingWakeStore::recover(&wake_latest)?;
+    wake_store.intents.validate_owners(&owner_store)?;
     let mut cursors = BTreeMap::new();
     for (key, value) in &cursor_latest {
         let Some(system_name) = decode_owner_cursor_key(key) else {

@@ -17,6 +17,10 @@
 //! Corruption (bad magic, version, length, checksum) reports `InvalidData` so
 //! the coordinator can stop. Capacity (too many pending wakes) reports
 //! `WouldBlock`: the producing wave defers and retries, and nothing commits.
+//!
+//! The domain also hosts separately tagged payload-mailbox keys, delegated to
+//! `systems::intent`. They do not use flag coalescing, flag serving, or advisory
+//! delivery semantics; their acknowledgements are strict WAL participants.
 
 use super::super::journal::{Change, StateKey};
 use super::super::parallel::OwnerKey;
@@ -151,7 +155,7 @@ fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(ErrorKind::InvalidData, message)
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
+pub(in crate::server::runtime) fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;
     for byte in bytes {
         crc ^= u32::from(*byte);
@@ -182,6 +186,9 @@ fn crc32(bytes: &[u8]) -> u32 {
 /// applies clears in [`PendingWakeStore::apply_replayed`] so receipted clear
 /// records converge.
 pub(in crate::server) struct PendingWakeStore {
+    /// Tagged mailboxes share this domain's WAL/base recovery, not flag
+    /// coalescing or advisory routing. Their receipt/ack semantics are strict.
+    pub intents: super::systems::intent::IntentStore,
     pending: BTreeMap<(SystemId, OwnerKey), u64>,
     staged: BTreeMap<(SystemId, OwnerKey), u64>,
     /// Same-process publication barrier only, bounded by pending flags. WAL
@@ -203,6 +210,7 @@ impl std::fmt::Debug for PendingWakeStore {
 impl PendingWakeStore {
     pub fn new() -> Self {
         Self {
+            intents: Default::default(),
             pending: BTreeMap::new(),
             staged: BTreeMap::new(),
             published: BTreeMap::new(),
@@ -217,6 +225,10 @@ impl PendingWakeStore {
     pub fn recover(latest: &BTreeMap<StateKey, Vec<u8>>) -> io::Result<Self> {
         let mut store = Self::new();
         for (key, value) in latest {
+            if super::systems::intent::is_key(key) {
+                store.intents.recover_value(key, value)?;
+                continue;
+            }
             if key.domain != OWNER_WAKE_DOMAIN {
                 continue;
             }
@@ -442,8 +454,10 @@ impl PendingWakeStore {
     /// Non-wake keys are ignored; the caller filters the transaction's change
     /// set to this domain.
     pub fn apply_replayed(&mut self, changes: &[Change]) -> io::Result<()> {
+        self.intents.apply_replayed(changes)?;
         for change in changes {
-            if change.key.domain != OWNER_WAKE_DOMAIN {
+            if change.key.domain != OWNER_WAKE_DOMAIN || super::systems::intent::is_key(&change.key)
+            {
                 continue;
             }
             let Some((system_name, owner)) = decode_owner_wake_key(&change.key) else {

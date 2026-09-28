@@ -46,6 +46,7 @@ pub(in crate::server) const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
 
 #[path = "systems/commit.rs"]
 mod commit;
+pub(in crate::server) mod intent;
 #[path = "systems/world.rs"]
 mod world;
 
@@ -110,7 +111,8 @@ impl PreparedRegisteredWave {
                 .chain(self.durables.wake_sets.changes().iter())
                 .chain(clear_changes.iter())
                 .chain(self.durables.cursor.iter())
-                .chain(world_changes.iter()),
+                .chain(world_changes.iter())
+                .chain(self.durables.intents.changes().iter()),
         )
     }
 }
@@ -198,6 +200,7 @@ impl SystemRuntime {
                 format!("registered-system worker count must be 1..={MAX_PHASE_WORKERS}"),
             ));
         }
+        durable_wakes.intents.validate_owners(&durable)?;
         Ok(Self {
             executor: None,
             worker_count: workers,
@@ -464,15 +467,29 @@ impl SystemRuntime {
         }
 
         let id = system.id().clone();
-        let ordinary = self.durable.runnable_from(
-            &id,
-            tick.get(),
-            self.next_owner.get(&id).copied(),
-            system.max_jobs_per_tick(),
-        );
+        // A bounded delivery lane gets two out of three turns; the third
+        // retains ordinary/wake service under sustained payload traffic. Its
+        // inspection cursor advances on unavailable/conflicting work too.
+        let intent_owner = if tick.get() % 3 != 1 {
+            self.durable_wakes.intents.next_destination(&id, tick.get())
+        } else {
+            None
+        };
+        let ordinary = if intent_owner.is_some() {
+            Vec::new()
+        } else {
+            self.durable.runnable_from(
+                &id,
+                tick.get(),
+                self.next_owner.get(&id).copied(),
+                system.max_jobs_per_tick(),
+            )
+        };
         // Reserve a slot for ordinary runnable work even when wakes arrive
         // every tick. For a one-job system that slot is the whole wave.
-        let wake_budget = if !ordinary.is_empty() && system.max_jobs_per_tick() == 1 {
+        let wake_budget = if intent_owner.is_some() {
+            0
+        } else if !ordinary.is_empty() && system.max_jobs_per_tick() == 1 {
             usize::from(tick.get() % 3 != 1)
         } else {
             system
@@ -483,7 +500,7 @@ impl SystemRuntime {
         // next tick; leftovers stay staged. Owners that no longer exist are
         // dropped here: a missing destination only costs latency.
         let pending = self.pending_wakes.remove(&id).unwrap_or_default();
-        let mut selected = Vec::new();
+        let mut selected: Vec<_> = intent_owner.into_iter().collect();
         let mut selected_wakes = Vec::new();
         for (owner, produced_tick) in pending {
             if self.durable.revision(&id, owner).is_none() {
@@ -589,7 +606,7 @@ impl SystemRuntime {
             .get(&id)
             .map(|owner| encode_cursor_value(*owner))
             .unwrap_or_default();
-        let cursor_change = (cursor_before != cursor_after)
+        let cursor_change = (intent_owner.is_none() && cursor_before != cursor_after)
             .then(|| Change::new(owner_cursor_key(&id), cursor_before, cursor_after));
 
         let batch = BatchId::new(tick, system.phase(), batch_wave);
@@ -606,12 +623,27 @@ impl SystemRuntime {
         let mut jobs = Vec::with_capacity(selected.len());
         let mut expected = Vec::with_capacity(selected.len());
         let mut terrain_reads = TerrainReads::default();
+        let mut received = Vec::new();
+        let mut received_count = 0;
         for (job_id, owner) in selected.iter().copied().enumerate() {
             let (revision, data) = self.durable.snapshot(&id, owner).ok_or_else(|| {
                 io::Error::other(format!(
                     "registered owner {owner:?} vanished before dispatch"
                 ))
             })?;
+            let inbox = self.durable_wakes.intents.capture(
+                &id,
+                owner,
+                tick.get(),
+                intent::MAX_WAVE_INTENTS - received_count,
+            );
+            let data = if inbox.is_empty() {
+                data
+            } else {
+                received_count += inbox.len();
+                received.push((owner, inbox.clone()));
+                OwnerData::new(intent::JobInput { value: data, inbox })
+            };
             let snapshot = OwnerSnapshot::new(owner, revision, Arc::new(data));
             let key = JobKey::new(batch, owner, job_id as u64, snapshot.revision());
             let mut job = OwnerJob::new(id.clone(), key, vec![snapshot])
@@ -764,6 +796,7 @@ impl SystemRuntime {
             None
         };
         let mut scheduled = Vec::new();
+        let outgoing = intent::collect(&self.durable, &id, validated.patches(), tick.get())?;
         for patch in validated.patches() {
             for (destination, owner) in OwnerEffectPatch::durable_wakes(patch) {
                 if scheduled.len() >= 2_048 {
@@ -857,19 +890,25 @@ impl SystemRuntime {
                     ),
                 )
             })?;
+        let intents = match self
+            .durable_wakes
+            .intents
+            .prepare(&id, &received, &outgoing)
+        {
+            Ok(intents) => intents,
+            Err(error) => {
+                self.durable_wakes.cancel_sets(wake_sets);
+                return Err(error);
+            }
+        };
         self.staged_live_wakes += wakes.live().len();
-        Ok(Some(PreparedRegisteredWave {
-            durables: OwnerWaveDurables::new(
-                prepared,
-                tick,
-                wake_sets,
-                durable_served,
-                cursor_change,
-            )
-            .with_live_wakes(wakes.live().to_vec())
-            .with_terrain_reads(terrain_reads)
-            .with_world_action(world_action),
-        }))
+        let mut durables =
+            OwnerWaveDurables::new(prepared, tick, wake_sets, durable_served, cursor_change)
+                .with_live_wakes(wakes.live().to_vec())
+                .with_terrain_reads(terrain_reads)
+                .with_world_action(world_action);
+        durables.intents = intents;
+        Ok(Some(PreparedRegisteredWave { durables }))
     }
 
     /// Prepares one registered wave and stages it as one main-journal
@@ -944,11 +983,13 @@ impl SystemRuntime {
                         OwnerWaveDurables {
                             wake_sets,
                             live_wakes,
+                            intents,
                             ..
                         },
                     ..
                 } = prepared;
                 self.durable_wakes.cancel_sets(wake_sets);
+                self.durable_wakes.intents.cancel(intents);
                 self.staged_live_wakes -= live_wakes.len();
                 return Err(io::Error::new(
                     ErrorKind::WouldBlock,
