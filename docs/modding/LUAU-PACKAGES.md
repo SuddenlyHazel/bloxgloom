@@ -122,9 +122,19 @@ max_state_bytes, max_jobs_per_tick, read_world, seeds }`. Its module returns a
 function that receives an immutable owner context and returns `(binary_state,
 delay_ticks)`; the context exposes bounded `block`, conditional `edit` and
 durable `wake` methods. The existing owner WAL commits state, deadline, edits
-and wakes together. See `src/server/script/system.rs` for the precise schema,
-limits and semantics. Entity/profile ownership, neighboring reads, atomic
-entity/drop effects, and general script state migration remain unbound.
+and wakes together. With `read_world=true`, adding `accepts_intents=true` makes
+`c.inbox` available as a deeply readonly list of up to eight deliveries with
+source chunk, exact revision/ordinal identity, producing tick and binary
+payload. `c.send(x,y,z,payload)` sends to a chunk owner of the **same system**;
+up to eight sends of 512 bytes each are allowed per invocation. Caught invalid
+or over-budget sends still reject the entire plan. Optional
+`intent_bootstrap="constant binary state"` lets the host atomically create an
+absent destination with that validated state in the producer's WAL record.
+Delivery and acknowledgement occur on later ticks with owner state, edits and
+wakes; no script VM state is persisted. See `src/server/script/system.rs` for
+the precise schema, limits and semantics. Entity/profile ownership,
+neighboring reads, directly authored owner entity/drop effects and general
+script state migration remain unbound.
 
 Package format 2 declares each module as `module server|client|shared <name>
 <side>/<path>.luau` and textures as `asset texture <name>

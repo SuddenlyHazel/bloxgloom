@@ -2,12 +2,15 @@
 //! existing adapter validates the whole wave and the owner WAL receipt applies.
 use super::*;
 use std::cell::Cell;
+mod intents;
 
 pub(super) fn invoke(
     lua: &Lua,
     entry: Function,
     context: &api::Context<'_>,
     max_bytes: usize,
+    inbox: &[api::IntentDelivery],
+    outbox: Option<&mut api::IntentOutbox>,
 ) -> mlua::Result<api::Plan> {
     let api::Owner::Chunk(owner) = context.owner else {
         return Err(mlua::Error::RuntimeError("expected chunk owner".into()));
@@ -21,11 +24,32 @@ pub(super) fn invoke(
     host.set("tick_hi", (context.tick >> 32) as u32)?;
     host.set("revision_lo", context.revision as u32)?;
     host.set("revision_hi", (context.revision >> 32) as u32)?;
+    host.set("inbox", intents::inbox(lua, inbox)?)?;
     let rejected = RefCell::new(None);
     let reads = Cell::new(0usize);
     let edits = RefCell::new(Vec::new());
     let wakes = RefCell::new(Vec::new());
+    let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
+        host.set(
+            "send",
+            scope.create_function(|_, (x, y, z, payload): (Value, Value, Value, Value)| {
+                checked(&rejected, || {
+                    let mut outbox = outbox.borrow_mut();
+                    let outbox = outbox
+                        .as_mut()
+                        .ok_or("system must declare accepts_intents")?;
+                    let destination = api::Owner::Chunk(cell(x, y, z)?);
+                    let Value::String(payload) = payload else {
+                        return Err("intent payload must be a binary string");
+                    };
+                    // The public outbox checks count/byte bounds before copying.
+                    outbox
+                        .send(destination, &payload.as_bytes())
+                        .map_err(|_| "system intent outbox exceeds bound")
+                })
+            })?,
+        )?;
         host.set(
             "block",
             scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {

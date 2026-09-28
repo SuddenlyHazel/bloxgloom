@@ -11,6 +11,8 @@ use crate::world::{AIR, ChunkKey, GLOWSTONE, STONE};
 
 #[path = "system/failures.rs"]
 mod failures;
+#[path = "system/intents.rs"]
+mod intents;
 
 const KEY: ChunkKey = ChunkKey { x: 0, y: 5, z: 0 };
 const REGISTER: &str = r#"return function(h)

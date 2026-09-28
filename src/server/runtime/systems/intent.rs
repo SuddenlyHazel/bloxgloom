@@ -20,6 +20,19 @@ pub(in crate::server) const MAX_WAVE_INTENTS: usize = 128;
 type Address = (SystemId, OwnerKey);
 type Mailbox = Vec<IntentDelivery>;
 
+#[cfg(test)]
+impl super::SystemRuntime {
+    pub(in crate::server) fn intent_inbox_for_test(
+        &self,
+        system: &SystemId,
+        owner: OwnerKey,
+    ) -> Vec<IntentDelivery> {
+        self.durable_wakes
+            .intents
+            .capture(system, owner, u64::MAX, MAX_INTENTS_PER_JOB)
+    }
+}
+
 /// Assign identities only after the complete worker wave passed revision
 /// validation. No callback chooses an ID or targets a foreign system.
 pub(super) fn collect(

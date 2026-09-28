@@ -21,6 +21,16 @@
 //! the planner. Wakes target registered chunk systems; absent owners retain a
 //! bounded pending flag, not an owner creation request.
 //! Script faults fail the existing wave closed (not a silently disabled system).
+//!
+//! Optional `accepts_intents=true` requires `read_world=true`. It exposes a
+//! readonly `c.inbox` (at most 8 deliveries) and `c.send(x,y,z,payload)` (8 sends,
+//! 512 bytes each), targeting only this registered system. Each delivery has
+//! readonly `id={source={x,y,z},revision_lo,revision_hi,ordinal}`, exact
+//! `produced_tick_lo/hi`, and binary `payload`. Successful plans acknowledge the
+//! entire inbox in the same WAL record as bytes, edits, wakes, and outgoing mail.
+//! Caught send errors poison the plan. Optional `intent_bootstrap='bytes'` is a
+//! constant initial state for absent destinations, validated and fingerprinted
+//! by the public contract; it grants neither client nor foreign-system authority.
 mod bindings;
 
 use super::values::{integer, text};
@@ -71,6 +81,15 @@ pub(super) fn declarer(
                 Value::Boolean(false) | Value::Nil => None,
                 _ => return Err("read_world must be boolean"),
             };
+            let accepts_intents = match field(&table, "accepts_intents")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("accepts_intents must be boolean"),
+            };
+            let intent_bootstrap = match field(&table, "intent_bootstrap")? {
+                Value::Nil => None,
+                value => Some(bytes(value, max_bytes)?),
+            };
             let seeds = self::table(field(&table, "seeds")?)?;
             let mut values = Vec::new();
             // Inspect at most 33 entries, rejecting rather than silently dropping
@@ -115,6 +134,8 @@ pub(super) fn declarer(
                     snapshot: Arc::clone(&snapshot),
                     module,
                     max_bytes,
+                    accepts_intents,
+                    intent_bootstrap,
                 }),
             };
             system
@@ -157,8 +178,16 @@ struct ScriptSystem {
     snapshot: Arc<PackageSnapshot>,
     module: String,
     max_bytes: usize,
+    accepts_intents: bool,
+    intent_bootstrap: Option<Vec<u8>>,
 }
 impl api::Behavior for ScriptSystem {
+    fn accepts_intents(&self) -> bool {
+        self.accepts_intents
+    }
+    fn intent_bootstrap(&self) -> Option<&[u8]> {
+        self.intent_bootstrap.as_deref()
+    }
     fn validate(&self, data: &[u8]) -> Result<(), RegistrationError> {
         if data.len() > self.max_bytes {
             return Err(RegistrationError("system state byte limit exceeded".into()));
@@ -166,6 +195,29 @@ impl api::Behavior for ScriptSystem {
         Ok(())
     }
     fn plan(&self, context: &api::Context<'_>) -> Result<api::Plan, RegistrationError> {
+        // A caller without an outbox must not silently discard sends.
+        self.invoke(context, &[], None)
+    }
+    fn plan_with_intents(
+        &self,
+        context: &api::Context<'_>,
+        inbox: &[api::IntentDelivery],
+        outbox: &mut api::IntentOutbox,
+    ) -> Result<api::Plan, RegistrationError> {
+        if !self.accepts_intents && !inbox.is_empty() {
+            return Err(RegistrationError("system does not accept intents".into()));
+        }
+        self.invoke(context, inbox, self.accepts_intents.then_some(outbox))
+    }
+}
+
+impl ScriptSystem {
+    fn invoke(
+        &self,
+        context: &api::Context<'_>,
+        inbox: &[api::IntentDelivery],
+        outbox: Option<&mut api::IntentOutbox>,
+    ) -> Result<api::Plan, RegistrationError> {
         super::run_with(
             &Program::Package {
                 snapshot: Arc::clone(&self.snapshot),
@@ -173,7 +225,7 @@ impl api::Behavior for ScriptSystem {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
-            |lua, entry| bindings::invoke(lua, entry, context, self.max_bytes),
+            |lua, entry| bindings::invoke(lua, entry, context, self.max_bytes, inbox, outbox),
         )
         .map_err(|error| RegistrationError(error.to_string()))
     }
