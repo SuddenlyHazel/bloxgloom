@@ -925,8 +925,7 @@ This section exists so compaction or a new session does not restart the design.
   deadline in one WAL record. Entity dependencies and mirror capacity are
   reserved before admission; receipt-gated apply/publication and restart tests
   protect against partial results. Focused owner tests, strict Clippy and
-  formatting passed. A full-suite response-path test fails in isolation, so
-  final combined verification remains open rather than being declared clean.
+  formatting passed.
 - **Phase 2 durable intent increment:** opt-in Rust chunk-owner systems with
   declared world reads can send bounded same-system payloads to existing owner
   cells. Mailbox production shares the producer's WAL record; a later-tick
@@ -934,8 +933,11 @@ This section exists so compaction or a new session does not restart the design.
   entity effects and forwarding. Receipt gating, cancellation, finite capacity,
   rotation and real nonblocking-listener restart tests passed (six durable
   intent and 98 owner-filter tests). Dynamic destination bootstrap, native fire
-  migration and Luau bindings remain open. The current full suite also has an
-  isolated entity-neighbour test failure, so do not call integration clean.
+  migration and Luau bindings remain open. Two test-harness failures were
+  diagnosed and fixed: an idle mobile probe must retain its inbound sender,
+  and the entity-neighbour test must wait for the destination chunk/retry.
+  The integrated suite now passes **845/845** tests; strict all-target Clippy
+  and formatting checks also pass. Live fire presentation remains unverified.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
