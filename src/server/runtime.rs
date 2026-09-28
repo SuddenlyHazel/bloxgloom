@@ -418,6 +418,7 @@ pub(super) fn tick_with_inputs(
                         world: systems::RegisteredWorldInputs {
                             world: Some(world),
                             entities: Some(entities),
+                            lifecycles: Some(&context.state.lifecycles),
                             players: &players,
                             seed,
                             missing: &mut missing,

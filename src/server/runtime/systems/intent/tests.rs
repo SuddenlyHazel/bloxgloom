@@ -214,6 +214,7 @@ fn stage_with_in_flight(
             world: RegisteredWorldInputs {
                 world: Some(&mut state.world),
                 entities: Some(&state.entities),
+                lifecycles: Some(&state.lifecycles),
                 players: &[],
                 seed: state.seed,
                 missing: &mut missing,

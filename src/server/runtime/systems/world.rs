@@ -11,6 +11,9 @@ use bloxgloom_host_api::gameplay::RemovalCause;
 use std::io::{self, ErrorKind};
 use std::sync::Arc;
 
+#[path = "world/anchored.rs"]
+mod anchored;
+
 pub(super) fn capture(
     world: &mut World,
     reads: &mut TerrainReads,
@@ -69,6 +72,7 @@ pub(super) fn capture(
 pub(super) struct EditInputs<'a> {
     pub world: &'a mut World,
     pub entities: &'a EntityStore,
+    pub lifecycles: Option<&'a crate::server::lifecycle::Registry>,
     pub players: &'a [[f32; 3]],
     pub seed: u64,
     pub tick: u64,
@@ -82,6 +86,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let EditInputs {
         world,
         entities,
+        lifecycles,
         players,
         seed,
         tick,
@@ -93,6 +98,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let mut edits = Vec::new();
     let mut removals = Vec::new();
     let mut owners = Vec::new();
+    let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
     for patch in patches {
@@ -165,6 +171,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 }
             };
             edits.push((x, y, z, after));
+            edit_owners.push((owner, cause));
             if previous != crate::world::AIR {
                 removals.push((previous, edit.cell, cause));
             }
@@ -173,6 +180,26 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     if edits.is_empty() {
         return Ok(None);
     }
+    let radius = radius.expect("edits require a world view");
+    let world_edit = edit_owners
+        .iter()
+        .any(|(_, cause)| *cause == RemovalCause::WorldEdit);
+    let anchored = if world_edit {
+        anchored::expand(anchored::Inputs {
+            world,
+            entities,
+            lifecycles,
+            reads,
+            missing,
+            edits: &mut edits,
+            removals: &mut removals,
+            owners: &edit_owners,
+            radius,
+        })?
+    } else {
+        // Burn retains its existing gameplay dispatch and anchored rejection.
+        anchored::Expansion::default()
+    };
     let mut requested = Vec::new();
     let planned = gameplay::plan_removals(
         world,
@@ -200,14 +227,24 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             missing.push(key);
         }
     }
-    let planned = planned?;
+    let mut planned = planned?;
     if planned.inventory.is_some() || !planned.drop_takes.is_empty() {
         return Err(io::Error::new(
             ErrorKind::Unsupported,
             "owner block edit has no player inventory/pickup participant",
         ));
     }
-    let radius = radius.expect("edits require a world view");
+    if anchored.cells.iter().any(|cell| {
+        edits
+            .iter()
+            .find(|&&(x, y, z, _)| [x, y, z] == *cell)
+            .is_none_or(|edit| !planned.edits.contains(edit))
+    }) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "gameplay handler rewrote an invalidated footprint",
+        ));
+    }
     for &(x, y, z, after) in &planned.edits {
         let (key, _) = crate::world::world_to_chunk(x, y, z);
         if !owners
@@ -219,7 +256,12 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 "gameplay effect escaped the owner read neighborhood",
             ));
         }
-        if entities.anchored_at(EntityCell::new(x, y, z)).is_some() {
+        if world_edit {
+            reads.entities(entities.capture_anchor_dependency(EntityCell::new(x, y, z)))?;
+        }
+        if entities.anchored_at(EntityCell::new(x, y, z)).is_some()
+            && !anchored.cells.contains(&[x, y, z])
+        {
             return Err(io::Error::new(
                 ErrorKind::Unsupported,
                 "owner block edit would orphan an anchored entity",
@@ -240,6 +282,8 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             ));
         }
     }
+    planned.drops.extend(anchored.drops);
+    planned.entity_updates.extend(anchored.despawns);
     // Preflight the shared merge planner's spatial traversal before it collects
     // candidates. Dense pages fail the bounded dependency capture, rather than
     // scanning an arbitrarily large population and truncating afterwards.

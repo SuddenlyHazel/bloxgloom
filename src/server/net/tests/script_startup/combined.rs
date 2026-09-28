@@ -42,6 +42,7 @@ fn grow_once(state: &mut State) {
                 world: RegisteredWorldInputs {
                     world: Some(&mut state.world),
                     entities: Some(&state.entities),
+                    lifecycles: Some(&state.lifecycles),
                     players: &[],
                     seed: state.seed,
                     missing: &mut missing,

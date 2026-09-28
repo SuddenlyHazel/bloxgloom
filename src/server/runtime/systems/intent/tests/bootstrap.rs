@@ -265,6 +265,7 @@ fn durable_intent_bootstrap_prepared_waves_reserve_capacity_across_systems() {
             RegisteredWorldInputs {
                 world: Some(&mut state.world),
                 entities: Some(&state.entities),
+                lifecycles: Some(&state.lifecycles),
                 players: &[],
                 seed: state.seed,
                 missing: &mut vec![],

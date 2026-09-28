@@ -67,6 +67,7 @@ pub(in crate::server) struct RegisteredWaveInputs<'a> {
 pub(in crate::server) struct RegisteredWorldInputs<'a> {
     pub world: Option<&'a mut crate::world::World>,
     pub entities: Option<&'a crate::server::entities::EntityStore>,
+    pub lifecycles: Option<&'a crate::server::lifecycle::Registry>,
     pub players: &'a [[f32; 3]],
     pub seed: u64,
     pub missing: &'a mut Vec<crate::world::ChunkKey>,
@@ -431,6 +432,7 @@ impl SystemRuntime {
         let RegisteredWorldInputs {
             mut world,
             entities,
+            lifecycles,
             players,
             seed,
             missing,
@@ -784,6 +786,7 @@ impl SystemRuntime {
             world::plan_edits(world::EditInputs {
                 world,
                 entities,
+                lifecycles,
                 players,
                 seed,
                 tick: tick.get(),
@@ -953,6 +956,7 @@ impl SystemRuntime {
                 world: RegisteredWorldInputs {
                     world: None,
                     entities: None,
+                    lifecycles: None,
                     players: &[],
                     seed: 0,
                     missing: &mut missing,

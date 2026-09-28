@@ -57,7 +57,6 @@ impl Catalog {
             .enumerate()
             .filter_map(|(id, screen)| screen.as_ref().map(|s| (EntityTypeId(id as u32), s)))
     }
-    #[cfg(test)]
     pub(crate) fn inventory_for_state(&self, state: BlockStateId) -> Option<&Arc<InventoryScreen>> {
         let block = &self.block_type(self.state(state)?.block_type)?.key;
         self.inventory_screens

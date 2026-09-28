@@ -21,10 +21,11 @@ fn capacity_error(error: entities::EntityError) -> io::Error {
 }
 
 pub(in crate::server) fn removal(
-    state: &State,
+    catalog: &std::sync::Arc<crate::content::Catalog>,
+    lifecycles: &crate::server::lifecycle::Registry,
     snapshot: &EntitySnapshot,
+    touched: Option<EntityCell>,
 ) -> io::Result<RemovalParts> {
-    let catalog = state.world.catalog_arc();
     let anchor = snapshot
         .anchor()
         .ok_or_else(|| io::Error::other("not anchored"))?;
@@ -36,7 +37,7 @@ pub(in crate::server) fn removal(
         return Ok((
             adapter.cells(anchor).map_err(io::Error::other)?,
             super::anchored::refund_stacks(
-                &catalog,
+                catalog,
                 d,
                 &snapshot.private_payload,
                 bloxgloom_host_api::anchored::RemovalCause::WorldEdit,
@@ -57,9 +58,8 @@ pub(in crate::server) fn removal(
     let EntityLocation::Anchored { anchor_state, .. } = snapshot.location else {
         unreachable!()
     };
-    let d = state
-        .lifecycles
-        .for_state(&catalog, anchor_state)
+    let d = lifecycles
+        .for_state(catalog, anchor_state)
         .ok_or_else(|| io::Error::other("unregistered anchored invalidation"))?;
     if d.entity != snapshot.entity_type {
         return Err(io::Error::other("wrong lifecycle entity"));
@@ -68,15 +68,29 @@ pub(in crate::server) fn removal(
         .private_payload
         .downcast_ref::<entities::container::ContainerPayload>()
         .ok_or_else(|| io::Error::other("invalid storage payload"))?;
-    let plan = d
-        .definition
-        .plan_place(bloxgloom_host_api::lifecycle::PlacementContext {
-            anchor: [anchor.x, anchor.y, anchor.z],
-            state: &d.definition.anchor_state,
-        })
-        .map_err(io::Error::other)?;
-    let cells = plan
-        .cells
+    let cells = if let Some(touched) = touched {
+        let EntityLocation::Anchored { ref footprint, .. } = snapshot.location else {
+            unreachable!()
+        };
+        let coordinates: Vec<_> = footprint.iter().map(|c| [c.x, c.y, c.z]).collect();
+        d.definition
+            .plan_remove(bloxgloom_host_api::lifecycle::RemovalContext {
+                anchor: [anchor.x, anchor.y, anchor.z],
+                touched: [touched.x, touched.y, touched.z],
+                footprint: &coordinates,
+            })
+            .map_err(io::Error::other)?
+            .cells
+    } else {
+        d.definition
+            .plan_place(bloxgloom_host_api::lifecycle::PlacementContext {
+                anchor: [anchor.x, anchor.y, anchor.z],
+                state: &d.definition.anchor_state,
+            })
+            .map_err(io::Error::other)?
+            .cells
+    };
+    let cells = cells
         .into_iter()
         .zip(&d.states)
         .map(|((c, _), s)| (EntityCell::new(c[0], c[1], c[2]), *s))
@@ -120,7 +134,12 @@ pub(in crate::server) fn plan(
             .entities
             .snapshot(id)
             .ok_or_else(|| io::Error::other("missing invalidated entity"))?;
-        let (cells, stacks) = removal(state, &snapshot)?;
+        let (cells, stacks) = removal(
+            &state.world.catalog_arc(),
+            &state.lifecycles,
+            &snapshot,
+            None,
+        )?;
         for (c, expected) in cells {
             if state.entities.anchored_at(c) != Some(id)
                 || cached_block_or_request(

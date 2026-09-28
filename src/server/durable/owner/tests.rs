@@ -11,6 +11,7 @@ use bloxgloom_host_api::{Extension, Registrar, RegistrationError, gameplay as ap
 use std::sync::Arc;
 use std::time::Duration;
 
+mod anchored;
 mod burn;
 
 const CELL: [i32; 3] = [136, 100, 8];
@@ -201,6 +202,7 @@ fn stage(state: &mut State, tick: u64) -> io::Result<Option<PendingRegisteredWav
             world: RegisteredWorldInputs {
                 world: Some(&mut state.world),
                 entities: Some(&state.entities),
+                lifecycles: Some(&state.lifecycles),
                 players: &[],
                 seed: state.seed,
                 missing: &mut vec![],
