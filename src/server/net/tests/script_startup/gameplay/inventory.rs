@@ -150,9 +150,8 @@ const PICKUP: &str = r#"return function(c,e)
         assert(not c.transfer_inventory(drop,0,'player',0,1)) -- different components
         assert(c.inventory(drop)[1].stack.count == 2)
         assert(c.transfer_inventory(drop,0,'player',2,1))
-        local taken = c.take(drop,0,1)
+        assert(c.collect_drop(drop,1) == 1)
         assert(c.inventory(drop)[1].stack == nil)
-        assert(c.give('player',taken))
     end
 end"#;
 

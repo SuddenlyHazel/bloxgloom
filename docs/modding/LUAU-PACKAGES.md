@@ -123,6 +123,12 @@ an exact move to an empty slot, a bounded partial merge, or a full-stack swap;
 it returns false without changing anything if the move cannot fit or the slot
 permissions deny it. The builtin inventory-move binding uses this same public
 operation and WAL receipt, rather than a separate private item-move branch.
+`collect_drop(entity, max_count)` uses the stock capped, exact-component
+slot-order pickup routing and returns the count actually credited. Supply the
+event's entity-ID table; host inventory access, pickup delay, destination
+filters and transactional validation still apply. A refused destination leaves
+those items available for later slots. This does not select candidates or
+permit a client to claim a pickup based on animation timing.
 `spawn_stack` accepts the exact `{item,count,components}` stack returned by
 `take`, so a script can move a component-bearing item from an inventory to a
 world drop in one authoritative transaction. The builtin drop-stack binding

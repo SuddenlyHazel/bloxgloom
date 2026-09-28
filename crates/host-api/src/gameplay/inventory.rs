@@ -83,6 +83,38 @@ impl<'a> PickupTransfer<'a> {
 }
 
 impl Context<'_> {
+    /// Collect from a host-accessible drop into the authenticated player's
+    /// finite inventory. Returns the exact credited count (possibly zero).
+    /// The host owns candidate range, drop extraction eligibility and commit;
+    /// transfer filters can reject a slot without starving later slots.
+    pub fn collect_drop(&mut self, id: u64, maximum: u16) -> Result<u16, Error> {
+        let player = self
+            .player()
+            .ok_or_else(|| Error::Invalid("pickup needs a player".into()))?;
+        let source = InventoryId::Entity(id);
+        let Some(slot) = self.inventory(source)?.into_iter().next() else {
+            return Ok(0);
+        };
+        let Some(stack) = slot.stack else {
+            return Ok(0);
+        };
+        if !slot.extract {
+            return Ok(0);
+        }
+        let mut routing = PickupTransfer::new(&stack, maximum);
+        let requested = routing.remaining();
+        for (index, destination) in self.inventory(player)?.iter().enumerate() {
+            if routing.remaining() == 0 {
+                break;
+            }
+            let amount = routing.offer(destination);
+            if amount != 0 && self.transfer(source, 0, player, index, amount)? {
+                routing.credited(amount)?;
+            }
+        }
+        Ok(requested - routing.remaining())
+    }
+
     fn load_inventory(&mut self, owner: InventoryId) -> Result<(), Error> {
         if self.inventories.contains_key(&owner) {
             return Ok(());

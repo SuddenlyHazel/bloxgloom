@@ -1,6 +1,7 @@
 //! Dot methods: inventory(owner), give(owner, stack), take(owner, slot, count),
 //! transfer_inventory(from, source, to, destination, count),
-//! move_slots(owner, from, to, count). Slots are zero-based;
+//! move_slots(owner, from, to, count), collect_drop(entity, max_count).
+//! Slots are zero-based;
 //! inventory returns a readonly 1-indexed sequence of {stack, insert, extract}.
 //! A stack is {item, count, components = nil | {version, bytes}}; bytes is a binary
 //! string, never text. Give creates items explicitly; take consumes them. False /
@@ -106,6 +107,18 @@ pub(super) fn install<'scope, 'env: 'scope>(
                 })
             },
         )?,
+    )?;
+    host.set(
+        "collect_drop",
+        scope.create_function(|_, (value, count): (Value, Value)| {
+            checked(rejected, || {
+                let mut context = context.borrow_mut();
+                let InventoryId::Entity(id) = owner(&context, value)? else {
+                    return Err(invalid("collect_drop requires an entity owner"));
+                };
+                context.collect_drop(id, amount(count)?)
+            })
+        })?,
     )?;
     // All captures are scoped borrows; no VM identity survives dispatch/retry.
     Ok(())
