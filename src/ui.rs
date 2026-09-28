@@ -14,6 +14,16 @@ pub(crate) use renderer::UiRenderer;
 pub use types::UiRect;
 pub use types::{SettingId, UiControl, UiDebug, UiFrame, UiScreen, UiSettings};
 
+pub(crate) fn join_action_rect(width: u32, height: u32, scale: f32) -> UiRect {
+    let scale = layout::effective_ui_scale(width, height, scale);
+    UiRect {
+        x: 28.0 * scale,
+        y: height as f32 - 76.0 * scale,
+        width: 250.0 * scale,
+        height: 36.0 * scale,
+    }
+}
+
 #[cfg(test)]
 #[path = "ui/tests.rs"]
 mod tests;

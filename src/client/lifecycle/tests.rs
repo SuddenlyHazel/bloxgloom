@@ -13,8 +13,16 @@ fn read(app: &ClientApp, deadline: Instant) -> ServerMessage {
 }
 
 fn join(address: &str, path: &std::path::Path) -> ClientApp {
-    let network = Network::connect(address, 1, 0x11fec7).unwrap();
-    let mut app = ClientApp::new(network, Config::default(), path.to_owned());
+    let attempt =
+        super::super::join_worker::Attempt::start(address.to_owned(), path.to_owned(), None)
+            .unwrap();
+    let prepared = attempt.wait_for_test().unwrap();
+    let mut app = ClientApp::new(prepared.network, prepared.config, path.to_owned());
+    // A prepared transport can queue messages, but authoritative state has not
+    // been consumed. The desktop shell installs GPU/UI resources before polling.
+    assert!(app.world_seed.is_none());
+    assert!(app.chunks.is_empty());
+    assert_eq!(app.actions.epoch, 0);
     let deadline = Instant::now() + Duration::from_secs(10);
     while app.actions.epoch == 0 {
         let message = read(&app, deadline);
@@ -56,6 +64,16 @@ fn retired(mut app: ClientApp, explicit: bool) {
 }
 
 pub(crate) fn exercise_join_lifecycle(combined: &str, broken: &str, ui: &str, path: PathBuf) {
+    Config {
+        profile: 0x11fec7,
+        view_distance: 1,
+        ..Config::default()
+    }
+    .save(&path)
+    .unwrap();
+    slow_attempt_can_be_cancelled(combined, &path);
+    super::super::join_worker::abandoned_result_retires_transport(combined);
+    super::super::joining::tests::failure_and_retry_dispatch(broken, path.clone());
     let mut first = join(combined, &path);
     let bundle = Arc::clone(first.network.bundle_for_test().unwrap());
     assert!(first.catalog.state_by_key("verdant:jade").is_some());
@@ -115,9 +133,10 @@ pub(crate) fn exercise_join_lifecycle(combined: &str, broken: &str, ui: &str, pa
     retired(reconnect, true);
 
     for _ in 0..2 {
-        let error = Network::connect(broken, 1, 0x11fec7)
-            .err()
-            .expect("startup must fail");
+        let attempt =
+            super::super::join_worker::Attempt::start(broken.to_owned(), path.clone(), None)
+                .unwrap();
+        let error = attempt.wait_for_test().err().expect("startup must fail");
         let message = error.to_string();
         assert!(message.contains(broken), "{message}");
         assert!(message.contains("package client startup"), "{message}");
@@ -183,6 +202,52 @@ pub(crate) fn exercise_join_lifecycle(combined: &str, broken: &str, ui: &str, pa
         bundle.bytes()
     );
     retired(back, true);
+}
+
+fn slow_attempt_can_be_cancelled(address: &str, path: &std::path::Path) {
+    use super::super::join_worker::Attempt;
+    use std::io::Read;
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
+
+    let upstream_address = address.to_owned();
+    let relay = TcpListener::bind("127.0.0.1:0").unwrap();
+    let relay_address = relay.local_addr().unwrap();
+    let (held, holding) = mpsc::sync_channel(1);
+    let relay_worker = std::thread::spawn(move || {
+        let (mut downstream, _) = relay.accept().unwrap();
+        downstream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let mut upstream = TcpStream::connect(upstream_address).unwrap();
+        upstream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let hello = crate::protocol::read_client(&mut downstream).unwrap();
+        crate::protocol::write_client(&mut upstream, &hello).unwrap();
+        // Gate a response from the real production nonblocking listener, rather
+        // than using a fake server as evidence that startup is responsive.
+        let first = crate::protocol::read_server(&mut upstream).unwrap();
+        assert!(matches!(first, ServerMessage::BundleOffer { .. }));
+        held.send(()).unwrap();
+        let mut byte = [0];
+        assert_eq!(
+            downstream.read(&mut byte).unwrap(),
+            0,
+            "cancelled handshake socket retained"
+        );
+    });
+    let mut attempt = Attempt::start(relay_address.to_string(), path.to_owned(), None).unwrap();
+    holding.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(attempt.poll().is_none(), "slow join must remain pending");
+    assert_eq!(attempt.control.label(), "initial handshake");
+    attempt.cancel();
+    let error = attempt
+        .wait_for_test()
+        .err()
+        .expect("cancelled attempt became live");
+    assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+    relay_worker.join().unwrap();
 }
 
 #[test]

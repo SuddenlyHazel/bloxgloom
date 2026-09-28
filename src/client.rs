@@ -119,6 +119,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
+        UiScreen::Joining | UiScreen::JoinFailed => screen,
     }
 }
 
@@ -257,6 +258,8 @@ pub(crate) use actions::tests::PackageActionProbe;
 pub(crate) mod actors;
 mod admin;
 mod entities;
+mod join_worker;
+mod joining;
 mod kiln;
 mod lifecycle;
 #[cfg(test)]
@@ -329,7 +332,6 @@ struct ClientApp {
     last_fps: f32,
     last_p95_ms: f32,
     last_visible_chunks: usize,
-    next_frame: Instant,
     last_frame: Instant,
     next_seq: u64,
     actions: ActionTracker,
@@ -400,7 +402,6 @@ impl ClientApp {
             last_fps: 0.0,
             last_p95_ms: 0.0,
             last_visible_chunks: 0,
-            next_frame: now,
             last_frame: now,
             next_seq: 1,
             actions: ActionTracker::default(),
@@ -637,7 +638,9 @@ impl ClientApp {
                     })
                     .collect()
             }),
-            UiScreen::Playing | UiScreen::Package => Vec::new(),
+            UiScreen::Playing | UiScreen::Package | UiScreen::Joining | UiScreen::JoinFailed => {
+                Vec::new()
+            }
             UiScreen::Container => (0..self.container_screen().map_or(0, |s| s.slots))
                 .map(UiControl::KilnSlot)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
@@ -1537,15 +1540,11 @@ pub fn run_client_with_admin(addr: &str) -> Result<(), Box<dyn std::error::Error
 }
 
 fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config_path = Config::default_path();
-    let mut config = Config::load(&config_path);
-    config.ensure_profile(&config_path)?;
-    let network = Network::connect(addr, config.view_distance, config.profile)?;
-    eprintln!("Server admitted session; preparing window and package GPU resources");
     let event_loop = EventLoop::new()?;
-    let mut app = ClientApp::new(network, config, config_path);
-    app.admin_enabled = admin_enabled;
-    event_loop.run_app(&mut app)?;
+    let mut app = joining::JoinApp::new(addr, admin_enabled);
+    let result = event_loop.run_app(&mut app);
+    app.finish();
+    result?;
     if let Some(error) = app.failure.take() {
         return Err(std::io::Error::other(error).into());
     }

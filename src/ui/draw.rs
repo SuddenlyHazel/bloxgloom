@@ -12,6 +12,7 @@ use super::{
 
 mod actions;
 mod container;
+mod join;
 mod screens;
 
 pub(super) const MAX_UI_VERTICES: usize = 32_768;
@@ -36,9 +37,13 @@ pub(super) struct UiBuilder<'a> {
 
 impl UiBuilder<'_> {
     pub(super) fn draw_frame(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
+        if matches!(frame.screen, UiScreen::Joining | UiScreen::JoinFailed) {
+            self.draw_join(frame);
+            return;
+        }
         self.draw_hud(frame, layout, catalog);
         match frame.screen {
-            UiScreen::Playing | UiScreen::Package => {}
+            UiScreen::Playing | UiScreen::Package | UiScreen::Joining | UiScreen::JoinFailed => {}
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
             UiScreen::Container => self.draw_container(frame, layout, catalog),
             UiScreen::Actions => self.draw_actions(frame, layout),

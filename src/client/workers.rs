@@ -6,7 +6,7 @@ use crate::render::{self, ChunkMesh};
 use crate::world::{Chunk, ChunkKey};
 use std::collections::HashMap;
 use std::io;
-use std::net::{Shutdown, TcpStream};
+use std::net::{Shutdown, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -87,10 +87,25 @@ impl Network {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn connect(addr: &str, view_distance: u8, profile: u128) -> io::Result<Self> {
+        Self::connect_controlled(
+            addr,
+            view_distance,
+            profile,
+            &super::join_worker::Control::default(),
+        )
+    }
+
+    pub(super) fn connect_controlled(
+        addr: &str,
+        view_distance: u8,
+        profile: u128,
+        control: &super::join_worker::Control,
+    ) -> io::Result<Self> {
         let mut stage = "connecting";
         eprintln!("Joining {addr}: {stage}");
-        Self::prepare(addr, view_distance, profile, &mut stage).map_err(|error| {
+        Self::prepare(addr, view_distance, profile, &mut stage, control).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("Join {addr} failed during {stage}: {error}"),
@@ -103,12 +118,25 @@ impl Network {
         view_distance: u8,
         profile: u128,
         stage: &mut &'static str,
+        control: &super::join_worker::Control,
     ) -> io::Result<Self> {
-        let mut socket = TcpStream::connect(addr)?;
+        control.stage("resolving server address")?;
+        // DNS stays off the window thread. Retain at most one resolving attempt;
+        // OS DNS itself is not interruptible, so cancellation waits for it.
+        let mut connected = Err(io::Error::other("no server addresses"));
+        for address in addr.to_socket_addrs()?.take(8) {
+            control.stage("connecting")?;
+            connected = TcpStream::connect_timeout(&address, Duration::from_secs(3));
+            if connected.is_ok() {
+                break;
+            }
+        }
+        let mut socket = connected?;
+        control.attach(&socket)?;
         socket.set_nodelay(true)?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
-        preparing(stage, "initial handshake");
+        preparing(stage, "initial handshake", control)?;
         protocol::write_client(
             &mut socket,
             &ClientMessage::Hello {
@@ -119,7 +147,7 @@ impl Network {
         )?;
         let mut first = protocol::read_server(&mut socket)?;
         let bundle = if let ServerMessage::BundleOffer { identity } = first {
-            preparing(stage, "package download and verification");
+            preparing(stage, "package download and verification", control)?;
             let bundle = super::bundle::install(&mut socket, identity)?;
             // Transfer time does not consume the separate content/Join
             // budget (the receiver narrows OS timeouts to its remaining time).
@@ -130,13 +158,13 @@ impl Network {
         } else {
             None
         };
-        preparing(stage, "catalog negotiation");
+        preparing(stage, "catalog negotiation", control)?;
         let local = match &bundle {
             Some(bundle) => bundle.session_catalog()?,
             None => Catalog::builtins(),
         };
         let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first, &local)?;
-        preparing(stage, "package material resolution");
+        preparing(stage, "package material resolution", control)?;
         let material = bundle
             .as_ref()
             .and_then(|bundle| bundle.material())
@@ -146,12 +174,12 @@ impl Network {
                     .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
             })
             .transpose()?;
-        preparing(stage, "package client startup");
+        preparing(stage, "package client startup", control)?;
         let startup = match &bundle {
             Some(bundle) => super::startup::prepare(Arc::clone(bundle))?,
             None => Default::default(),
         };
-        preparing(stage, "server readiness acknowledgement");
+        preparing(stage, "server readiness acknowledgement", control)?;
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
@@ -167,7 +195,7 @@ impl Network {
         }
         socket.set_read_timeout(None)?;
         socket.set_write_timeout(None)?;
-        preparing(stage, "session transport setup");
+        preparing(stage, "session transport setup", control)?;
         let control = socket.try_clone()?;
         let mut reader = socket.try_clone()?;
         let mut writer = socket;
@@ -286,9 +314,14 @@ impl Drop for Network {
     }
 }
 
-fn preparing(stage: &mut &'static str, next: &'static str) {
+fn preparing(
+    stage: &mut &'static str,
+    next: &'static str,
+    control: &super::join_worker::Control,
+) -> io::Result<()> {
     *stage = next;
     eprintln!("Preparing join: {next}");
+    control.stage(next)
 }
 
 fn receive_content_manifest(

@@ -2,6 +2,41 @@
 use crate::content::Catalog;
 
 #[test]
+fn joining_controls_fit_and_long_failures_keep_geometry_bounded() {
+    let catalog = Catalog::builtins();
+    let error = "package@1.0.0:client_startup failed ".repeat(1000);
+    for (width, height, scale) in [(640, 360, 1.0), (1280, 720, 1.0), (640, 360, 2.0)] {
+        let rect = super::join_action_rect(width, height, scale);
+        assert!(rect.x >= 0.0 && rect.y >= 0.0);
+        assert!(rect.x + rect.width <= width as f32);
+        assert!(rect.y + rect.height <= height as f32);
+        assert!(rect.contains(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5));
+        for screen in [UiScreen::Joining, UiScreen::JoinFailed] {
+            let layout = UiLayout::new(width, height, scale, screen);
+            let frame = UiFrame {
+                screen,
+                status: Some(&error),
+                settings: UiSettings {
+                    scale,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut vertices = Vec::new();
+            UiBuilder {
+                vertices: &mut vertices,
+                width: width as f32,
+                height: height as f32,
+                scale: layout.scale,
+            }
+            .draw_frame(&frame, &layout, &catalog);
+            assert!(vertices.len() < MAX_UI_VERTICES);
+            assert!(!vertices.is_empty());
+        }
+    }
+}
+
+#[test]
 fn maximum_registered_container_layout_and_geometry_stay_bounded() {
     let catalog = Catalog::builtins();
     let screen = std::sync::Arc::new(bloxgloom_host_api::InventoryScreen::storage(

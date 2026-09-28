@@ -111,6 +111,8 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     for (width, height, suffix) in [(1280, 720, "1280x720"), (640, 360, "640x360")] {
         for (screen, name) in [
             (UiScreen::Playing, "playing"),
+            (UiScreen::Joining, "joining"),
+            (UiScreen::JoinFailed, "join-failed"),
             (UiScreen::Inventory, "inventory"),
             (UiScreen::Container, "container"),
             (UiScreen::Actions, "actions"),
@@ -134,6 +136,8 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     }
     for (screen, name) in [
         (UiScreen::Playing, "playing"),
+        (UiScreen::Joining, "joining"),
+        (UiScreen::JoinFailed, "join-failed"),
         (UiScreen::Inventory, "inventory"),
         (UiScreen::Container, "container"),
         (UiScreen::Actions, "actions"),
@@ -1442,7 +1446,16 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         admin_page: 0,
         admin_input: "give bloxgloom:stone 128",
         target,
-        status: (screen == UiScreen::Playing).then_some("E OPENS INVENTORY  /  Q DROPS ITEM"),
+        status: match screen {
+            UiScreen::Joining => {
+                Some("Server: 127.0.0.1:4000\n\npackage download and verification")
+            }
+            UiScreen::JoinFailed => Some(
+                "Server: 127.0.0.1:4000\n\nJoin 127.0.0.1:4000 failed during package client startup: client startup uidemo@1.0.0:client_startup: deliberate join failure",
+            ),
+            UiScreen::Playing => Some("E OPENS INVENTORY  /  Q DROPS ITEM"),
+            _ => None,
+        },
         debug: None,
         settings: UiSettings {
             sensitivity: 0.002,
@@ -1454,6 +1467,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             ..UiSettings::default()
         },
         hovered: match screen {
+            UiScreen::Joining | UiScreen::JoinFailed => None,
             UiScreen::Actions => Some(UiControl::Action(2)),
             UiScreen::Container => Some(UiControl::KilnSlot(1)),
             UiScreen::Playing | UiScreen::Package => None,

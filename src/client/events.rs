@@ -1,6 +1,34 @@
 use super::*;
 
 impl ClientApp {
+    /// Do not drain the network mailbox until this all-or-nothing resource
+    /// installation succeeds. Failure drops the candidate renderer/session.
+    pub(super) fn install_window(&mut self, window: Arc<Window>) -> Result<(), String> {
+        let mut renderer = pollster::block_on(Renderer::new_with_catalog(
+            Arc::clone(&window),
+            Arc::clone(&self.catalog),
+        ))
+        .map_err(|error| format!("renderer initialization: {error}"))?;
+        if let Some(material) = self.network.package_material() {
+            renderer
+                .install_custom_material(material)
+                .map_err(|error| format!("package material GPU preparation: {error}"))?;
+        }
+        if let Some(effect) = self.network.package_effect() {
+            renderer
+                .install_package_effect(effect)
+                .map_err(|error| format!("package effect GPU preparation: {error}"))?;
+        }
+        if let Some(session) = &self.package_ui {
+            renderer.install_package_ui(session.resources());
+        }
+        self.renderer = Some(renderer);
+        self.window = Some(window);
+        self.refresh_layout();
+        self.apply_fullscreen();
+        Ok(())
+    }
+
     // Shared by winit dispatch and focused tests; opening is available from play,
     // not gated behind admin mode or another screen's focused input.
     pub(super) fn package_ui_key(
@@ -48,59 +76,13 @@ impl ClientApp {
     }
 }
 
-impl ApplicationHandler for ClientApp {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
-        }
-        let attributes = Window::default_attributes()
-            .with_title("Bloxgloom")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720));
-        match event_loop.create_window(attributes) {
-            Ok(window) => {
-                let window = Arc::new(window);
-                match pollster::block_on(Renderer::new_with_catalog(
-                    Arc::clone(&window),
-                    Arc::clone(&self.catalog),
-                )) {
-                    Ok(mut renderer) => {
-                        if let Some(material) = self.network.package_material()
-                            && let Err(error) = renderer.install_custom_material(material)
-                        {
-                            self.fail_session(format!("package material GPU preparation: {error}"));
-                            event_loop.exit();
-                            return;
-                        }
-                        if let Some(effect) = self.network.package_effect()
-                            && let Err(error) = renderer.install_package_effect(effect)
-                        {
-                            self.fail_session(format!("package effect GPU preparation: {error}"));
-                            event_loop.exit();
-                            return;
-                        }
-                        if let Some(session) = &self.package_ui {
-                            renderer.install_package_ui(session.resources());
-                        }
-                        self.renderer = Some(renderer);
-                        self.window = Some(window);
-                        self.refresh_layout();
-                        self.apply_fullscreen();
-                        eprintln!("Client ready");
-                    }
-                    Err(error) => {
-                        self.fail_session(format!("renderer initialization: {error}"));
-                        event_loop.exit();
-                    }
-                }
-            }
-            Err(error) => {
-                self.fail_session(format!("window creation: {error}"));
-                event_loop.exit();
-            }
-        }
-    }
-
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+impl ClientApp {
+    pub(super) fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        event: WindowEvent,
+    ) {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
@@ -360,7 +342,12 @@ impl ApplicationHandler for ClientApp {
         }
     }
 
-    fn device_event(&mut self, _: &ActiveEventLoop, _: winit::event::DeviceId, event: DeviceEvent) {
+    pub(super) fn device_event(
+        &mut self,
+        _: &ActiveEventLoop,
+        _: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
         if self.screen == UiScreen::Playing
             && self.grabbed
             && let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
@@ -368,29 +355,5 @@ impl ApplicationHandler for ClientApp {
             self.yaw += dx as f32 * self.config.sensitivity;
             self.pitch = (self.pitch - dy as f32 * self.config.sensitivity).clamp(-1.55, 1.55);
         }
-    }
-
-    fn exiting(&mut self, _: &ActiveEventLoop) {
-        self.retire_session();
-        self.config_writer.request_save(&self.config);
-        self.config_writer.finish();
-    }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if self.disconnected {
-            event_loop.exit();
-            return;
-        }
-        let now = Instant::now();
-        if now >= self.next_frame {
-            if let Some(window) = &self.window {
-                window.request_redraw();
-            }
-            self.next_frame += FRAME;
-            if self.next_frame <= now {
-                self.next_frame = now + FRAME;
-            }
-        }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
     }
 }

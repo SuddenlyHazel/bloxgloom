@@ -169,15 +169,18 @@ inventory or networking authority. `import("dependency:module")` sees only
 client/shared sources in the package and its exact direct dependencies, never
 server-only code. Invalid registration or execution aborts readiness with the
 package/module in the error. Initial presentation state is reset on each join,
-reconnect or server switch; it is not saved gameplay state. Connection setup
-currently waits for this worker before the window opens, so startup is not yet
-an asynchronously displayed progress flow or a general client services API.
-Join preparation reports its current stage and package-attributed failures to
-stderr. A failed join or closed session retires its socket workers and package
-UI/material/effect/startup resources; a fresh invocation can reconnect or join
-a differently modded server without inheriting the old session. There is not
-yet an in-window server switcher or loading screen, and GPU installation still
-occurs after the server acknowledges `ContentReady`.
+reconnect or server switch; it is not saved gameplay state. The client now opens
+its window first and shows a simple preparation stage while one retained join worker
+connects, transfers/verifies packages, negotiates the catalog and runs client
+startup. A failure displays its attributed reason; **Enter** or the button
+retries, **Esc** cancels the active attempt, and **F2** leaves a live session to
+edit the server address and join another. Failed/closed sessions retire socket
+workers and UI/material/effect/startup resources. Cancellation cannot interrupt
+OS DNS/filesystem work immediately, but no replacement worker is admitted until
+the previous attempt finishes. Renderer/GPU installation still runs on the
+window thread after the server acknowledges `ContentReady`, before the client
+processes any authoritative snapshot. There is no persistent disk cache or
+general client services API yet.
 
 An authored `ui-document` may opt into client-only presentation events with
 `"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The

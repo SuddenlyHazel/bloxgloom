@@ -13,6 +13,8 @@ pub enum UiScreen {
     Settings,
     Graphics,
     Package,
+    Joining,
+    JoinFailed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -1,5 +1,5 @@
-//! A desktop invocation owns one session. Joins still complete before the
-//! window opens; retry/switch means a fresh invocation, not an in-window menu.
+//! Each live ClientApp owns one session. The joining shell replaces the entire
+//! app on retry/switch instead of selectively resetting authoritative state.
 //! Never retain package GPU/UI registrations after a failed or closed session.
 use super::*;
 
