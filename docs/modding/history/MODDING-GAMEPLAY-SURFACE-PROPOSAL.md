@@ -1,6 +1,6 @@
 # Proposal: one coherent gameplay API
 
-**Consolidated successor:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md)
+**Consolidated successor:** [current implementation plan](../IMPLEMENTATION-PLAN.md)
 is the single proposal for approval and full implementation. This document is
 retained as design background; use the successor's scope and continuation record.
 

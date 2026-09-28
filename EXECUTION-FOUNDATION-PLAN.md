@@ -2,7 +2,7 @@
 
 ## Goal
 
-Next architecture proposal: [built-in/mod capability parity](MODDING-SURFACE-PLAN.md).
+Historical next architecture proposal: [built-in/mod capability parity](docs/modding/history/MODDING-SURFACE-PLAN.md).
 It defines the complete host surface needed for future mod-created gameplay,
 including lifecycle, client interaction/presentation, and an external-boundary
 proof. It is a proposal; the implementation slices below retain their historical status.
@@ -20,19 +20,19 @@ The execution contract we are working toward:
   host physics, and a durable pause/resume interaction. Production listener,
   worker, client targeting, and recovery verified. **655 tests passed**, strict
   Clippy and formatting passed; release previews inspected. Default save is now
-  `world-v12`. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
+  `world-v12`. See [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md).
 
 - **Done:** registered inventory views/screens and independent container
   persistence. External fixture opens from either block and transfers/reopens
   after restart through the real client/listener. **652 tests passed**, formatting
   and strict Clippy passed, and release UI previews were inspected. Default save is `world-v11`;
-  see [registered inventories](docs/REGISTERED-INVENTORIES.md).
+   see [registered inventories](docs/modding/REGISTERED-INVENTORIES.md).
 
 - **Done:** first public storage-lifecycle surface and external fixture. Chest
   uses the registered lifecycle path; a separately compiled nine-slot/two-cell
   storage block exercises cross-chunk persistence, refunds, conflicts, retries,
-  and the real listener. **647 tests passed**. See [host lifecycle](docs/HOST-LIFECYCLE.md)
-  and the [remaining modding surface plan](MODDING-SURFACE-PLAN.md).
+   and the real listener. **647 tests passed**. See [host lifecycle](docs/modding/HOST-LIFECYCLE.md)
+   and the [historical modding surface plan](docs/modding/history/MODDING-SURFACE-PLAN.md).
 
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.

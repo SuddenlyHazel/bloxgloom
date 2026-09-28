@@ -84,4 +84,4 @@ surfaces. Block/state asset registration also remains narrower than the internal
 built-in catalog. Port faces are world-space, with no facing-relative transform.
 Offer selection still uses item identity and port order rather than a public
 opaque component/slot selector. Full capability parity remains in progress in
-the root `MODDING-SURFACE-PLAN.md`.
+the historical `docs/modding/history/MODDING-SURFACE-PLAN.md`.

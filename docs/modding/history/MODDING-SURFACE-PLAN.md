@@ -1,6 +1,6 @@
 # Plan: built-in/mod capability parity
 
-**Approved implementation plan:** [`MODDING-IMPLEMENTATION-PROPOSAL.md`](MODDING-IMPLEMENTATION-PROPOSAL.md).
+**Historical record; current status:** [approved implementation plan](../IMPLEMENTATION-PLAN.md).
 It consolidates the full host, Luau, package delivery, UI and shader scope into one
 approval and execution plan. The user approved full implementation; Luau/mlua
 selection and inclusion of previously deferred fire migration are now active
@@ -52,7 +52,7 @@ parity for its broader category.
 | Player rules, commands, and bindings | Planned | Audit and expose supported movement/spawn/player-rule hooks and registered commands/actions/bindings |
 | World-drop gameplay and presentation parity | Planned | Move remaining drop policies and presentation capabilities onto accessible contracts |
 | External cross-category integration proof | Done | Independently compiled TallStore, Copperling, Crusher, SignalPost, Copper Lamp/Reed/Etched Chip, knapping action and persistent region clock; broader world-effect proof belongs to planned world-system work |
-| Built-in call-path audit | Done | Category inventory and integration follow-up in docs/MODDING-PARITY-AUDIT.md; remaining privileged paths identified explicitly |
+| Built-in call-path audit | Done | Category inventory and integration follow-up in [the historical parity audit](MODDING-PARITY-AUDIT.md); remaining privileged paths identified explicitly |
 | Close remaining full-parity audit blockers | Planned | Remaining world systems/generation, use/loot event policies, player rules/commands/bindings, world-drop policies and fire migration |
 | Runtime adapter and user-installable mod loader | Planned | Approved Luau/mlua runtime, local packages and module lifecycle are Phase 4; server delivery is Phase 5 |
 | Server-delivered client packages | Planned | Joining a modded server obtains required client/shared scripts and assets, caches matching content, and builds a compatible session catalog before play; Luau/mlua is selected |
@@ -71,7 +71,7 @@ mid-wave drain, independent motion conflict filtering, and reserved command/pick
 capacity. Client workers coalesce superseded jobs and give background work every
 fourth dispatch; geometry/seams have immediate capacity through upload. Bulk
 snapshot backlog is bounded before FIFO admission. See
-[player-response path](docs/PLAYER-RESPONSE-PATH.md) for scope, invariants, tests,
+[player-response path](../../PLAYER-RESPONSE-PATH.md) for scope, invariants, tests,
 and repeatable measurements. Existing world-v14 saves remain compatible.
 
 **702 tests passed** (698 engine + 4 host API), strict workspace Clippy and format
@@ -113,9 +113,9 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   setup 1723.9 ms; 17,292,744 mesh bytes (unchanged); steady CPU/GPU medians
   0.315/0.286 ms. Content-branch baseline was 1709.2 ms setup and
   0.301/0.292 ms CPU/GPU; these small differences do not establish a regression.
-  See [content](docs/REGISTERED-CONTENT.md), [actions](docs/REGISTERED-ACTIONS.md),
-  [anchored behaviors](docs/ANCHORED-BEHAVIORS.md), and
-  [owner systems](docs/REGISTERED-SYSTEMS.md) for supported bounds.
+  See [content](../REGISTERED-CONTENT.md), [actions](../REGISTERED-ACTIONS.md),
+  [anchored behaviors](../ANCHORED-BEHAVIORS.md), and
+  [owner systems](../REGISTERED-SYSTEMS.md) for supported bounds.
 
 - **Registered machine slice implemented:** public scheduled behavior, bounded
   private bytes, registered footprints, item filters, recipes/fuels, named/sided
@@ -123,7 +123,7 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   and Hopper use the generic adapter; their older implementations are test-only
   regression references. The independent Crusher fixture exercises manual input,
   automated feed/extraction, processing, restart, and refunds over the real listener.
-   Default save at that slice: **`world-v13`**. See [registered machines](docs/REGISTERED-MACHINES.md)
+    Default save at that slice: **`world-v13`**. See [registered machines](../REGISTERED-MACHINES.md)
    for supported contracts.
   **659 workspace/all-feature tests passed**, with clean formatting and strict Clippy;
   the release shared-inventory preview was inspected.
@@ -135,20 +135,20 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   compiled Copperling fixture spawns, patrols, pauses on interaction, and recovers
   through the real listener/client paths. **655 tests passed**, strict Clippy and
    formatting passed, and release previews were inspected. The default save
-   at that slice was **`world-v12`**. See [dynamic entities](docs/DYNAMIC-ENTITIES.md).
+    at that slice was **`world-v12`**. See [dynamic entities](../DYNAMIC-ENTITIES.md).
 
 - **Registered inventory slice implemented:** shared inventory-view schema,
   descriptor-based opening/layout/slot access/status widgets, independent bounded
   container snapshots, and a fully usable external fixture through the real client
   and listener. Chest, Hopper, and Kiln use the same screen contracts. Default save
    at that slice was `world-v11`. **652 tests passed**, with clean formatting and strict Clippy;
-  see [registered inventories](docs/REGISTERED-INVENTORIES.md).
+  see [registered inventories](../REGISTERED-INVENTORIES.md).
 
 - **First lifecycle slice implemented:** dependency-free public API crate,
   declarative storage lifecycle registration, Chest migration, and a separate
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
-  **647 tests passed**. See [implementation and limits](docs/HOST-LIFECYCLE.md).
+  **647 tests passed**. See [implementation and limits](../HOST-LIFECYCLE.md).
 - Storage, inventory screens, creatures, machines, bounded anchored callbacks,
   registered content, actions and composed controls are exposed. Owner systems
   currently mutate only their own persistent bytes. The broader world, player,

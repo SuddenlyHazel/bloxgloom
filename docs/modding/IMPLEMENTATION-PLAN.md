@@ -11,8 +11,10 @@ surface and making it usable by mod authors and players. It consolidates the
 previous discussion. Once approved, implement the entire non-deferred scope;
 do not stop after the host API, a runtime experiment, or one demonstration mod.
 
-This document supersedes `MODDING-GAMEPLAY-SURFACE-PROPOSAL.md` as the proposed
-execution plan. `MODDING-SURFACE-PLAN.md` remains the record of work already done.
+This document supersedes [the earlier gameplay proposal](history/MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
+[The earlier surface plan](history/MODDING-SURFACE-PLAN.md) remains a historical
+record of work already done. [Start at the modding index](README.md) for the
+current authoring and reference documents.
 
 ## 1. What approval means
 
@@ -744,7 +746,7 @@ This section exists so compaction or a new session does not restart the design.
   remaining Phase 3 polish before calling that phase complete.
 - **Phase 3 close:** the public generation context now offers host-backed
   bounded terrain-height and base-block samples at absolute coordinates;
-  `docs/GENERATION.md` specifies reproducible seed/salt inputs, lexical
+  `docs/modding/GENERATION.md` specifies reproducible seed/salt inputs, lexical
   contributor ordering, overlap, chunk-local output, and cross-chunk anchor
   ownership. Seam/coordinate tests and strict Clippy pass. The full suite had
   one intermittent receipt-timing failure that passed when rerun alone. Phase
@@ -839,7 +841,7 @@ This section exists so compaction or a new session does not restart the design.
   saved-world identity. Mixed-package loopback and restart tests pass. Native
   extension serialization, client execution and presentation resources remain.
 - **Phase 6 UI foundation:** chose Taffy for flex layout embedded in the
-  existing wgpu/winit UI rather than Blitz; `docs/UI-FOUNDATION.md` records the
+  existing wgpu/winit UI rather than Blitz; `docs/modding/UI-FOUNDATION.md` records the
   tradeoff. A focused, keyboard/focus-driven inventory search is now rendered
   with Taffy geometry, without altering server inventory state. Inspected the
   1280×720 and 640×360 `ui-preview` outputs and verified tests, formatting
