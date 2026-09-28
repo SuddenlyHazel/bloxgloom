@@ -12,6 +12,8 @@ before treating a capability as complete.
   [`uidemo`](../../fixtures/packages/uidemo/) example, manifest, command line,
   and current server/client bindings. Its UI changes are *local only*; buttons
   cannot yet send authoritative server requests.
+- [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
+  currently bound callbacks; runtime validation remains authoritative.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
