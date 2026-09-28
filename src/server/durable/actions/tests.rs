@@ -228,6 +228,45 @@ fn registered_admin_grant_is_exact_and_revision_fenced() {
 }
 
 #[test]
+fn registered_slot_move_keeps_merge_cap_and_full_stack_swap() {
+    let path = temp_save_dir("registered-slot-move");
+    let mut state = server_state(23, path.clone()).unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(crate::items::STICK, 80));
+    inventory.slots[1] = Some(crate::inventory::Stack::new(crate::items::STICK, 120));
+    inventory.slots[2] = Some(crate::inventory::Stack::new(crate::items::STICK, 128));
+    inventory.slots[3] = Some(crate::inventory::Stack::new(crate::items::SEEDS, 5));
+    let _peer = add_test_client(&mut state, [0.5, 80.0, 0.5], inventory.clone());
+    let request = |from, to, count| {
+        edit_request(ClientMessage::InventoryMove {
+            action_id: 1,
+            from,
+            to,
+            count,
+        })
+    };
+    let merged = plan_durable_request(&mut state, &request(0, 1, 20), TickId::new(1))
+        .unwrap()
+        .unwrap()
+        .inventory
+        .unwrap();
+    assert_eq!(merged.slots[0].as_ref().unwrap().count, 72);
+    assert_eq!(merged.slots[1].as_ref().unwrap().count, 128);
+    let swapped = plan_durable_request(&mut state, &request(2, 3, 128), TickId::new(1))
+        .unwrap()
+        .unwrap()
+        .inventory
+        .unwrap();
+    assert_eq!(swapped.slots[2], inventory.slots[3]);
+    assert_eq!(swapped.slots[3], inventory.slots[2]);
+    assert!(plan_durable_request(&mut state, &request(0, 1, 129), TickId::new(1)).is_err());
+    assert!(plan_durable_request(&mut state, &request(0, 2, 1), TickId::new(1)).is_err());
+    assert_eq!(state.clients[&1].inventory, inventory);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn missing_plant_support_requests_its_exact_vertical_neighbor() {
     let path = temp_save_dir("edit-support-prefetch");
     let mut state = server_state(23, path.clone()).unwrap();

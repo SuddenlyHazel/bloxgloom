@@ -2,6 +2,7 @@
 //! scripts and native gameplay receive the same world operations.
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, InventoryId};
 pub(crate) mod admin;
+pub(crate) mod slot_move;
 
 pub(crate) struct Pickup;
 impl bloxgloom_host_api::gameplay::Handler for Pickup {

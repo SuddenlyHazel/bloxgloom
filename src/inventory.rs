@@ -178,6 +178,9 @@ impl Inventory {
     }
 
     /// Transfer an exact amount; a full-stack move onto another item swaps slots.
+    /// Retained for the inventory oracle tests; live moves use the public
+    /// gameplay context and the same WAL-backed registered action path.
+    #[cfg(test)]
     pub fn transfer(&mut self, from: u8, to: u8, amount: u16) -> bool {
         if self.revision == u64::MAX {
             return false;

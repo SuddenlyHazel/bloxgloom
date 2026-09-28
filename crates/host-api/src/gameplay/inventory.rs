@@ -66,6 +66,74 @@ impl Context<'_> {
         Ok(self.inventories[&owner].clone())
     }
 
+    /// Existing player-style slot move: exact move to empty, partial merge up
+    /// to the 128 cap, or full-stack swap with a different item. A rejected
+    /// move leaves every slot unchanged. Entity inventory filters still apply.
+    pub fn move_slots(
+        &mut self,
+        owner: InventoryId,
+        from: usize,
+        to: usize,
+        count: u16,
+    ) -> Result<bool, Error> {
+        self.charge()?;
+        if from == to || !(1..=128).contains(&count) {
+            return Ok(false);
+        }
+        self.load_inventory(owner)?;
+        let mut slots = self.inventories[&owner].clone();
+        let (Some(source), Some(destination)) = (slots.get(from).cloned(), slots.get(to).cloned())
+        else {
+            return Ok(false);
+        };
+        let Some(stack) = source.stack else {
+            return Ok(false);
+        };
+        if !source.extract
+            || !destination.insert
+            || stack.count < count
+            || !self.snapshot.inventory_accepts(owner, to, &stack)
+        {
+            return Ok(false);
+        }
+        let moved = match destination.stack {
+            None => {
+                let mut moved = stack.clone();
+                moved.count = count;
+                slots[to].stack = Some(moved);
+                count
+            }
+            Some(target) if target.matches(&stack) => {
+                let moved = count.min(128 - target.count);
+                if moved == 0 {
+                    return Ok(false);
+                }
+                slots[to].stack.as_mut().unwrap().count += moved;
+                moved
+            }
+            Some(target)
+                if count == stack.count
+                    && destination.extract
+                    && slots[from].insert
+                    && self.snapshot.inventory_accepts(owner, from, &target) =>
+            {
+                slots[from].stack = Some(target);
+                slots[to].stack = Some(stack);
+                self.store_inventory(owner, slots);
+                return Ok(true);
+            }
+            Some(_) => return Ok(false),
+        };
+        let remainder = stack.count - moved;
+        slots[from].stack = (remainder != 0).then(|| {
+            let mut remaining = stack.clone();
+            remaining.count = remainder;
+            remaining
+        });
+        self.store_inventory(owner, slots);
+        Ok(true)
+    }
+
     /// Explicit item creation. False means insufficient capacity, with no
     /// partial insertion. Stack identity includes the exact component payload.
     pub fn give(&mut self, owner: InventoryId, stack: Stack) -> Result<bool, Error> {

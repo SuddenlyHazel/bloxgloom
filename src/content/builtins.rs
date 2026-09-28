@@ -619,6 +619,25 @@ impl Catalog {
                 .expect("builtin admin decision");
         }
         catalog
+            .register_action(bloxgloom_host_api::actions::Action {
+                key: crate::gameplay::slot_move::KEY.into(),
+                version: 1,
+                label: "Move slot".into(),
+                target: bloxgloom_host_api::actions::Target::Empty,
+                operation: bloxgloom_host_api::actions::Operation::Gameplay,
+                panel: None,
+            })
+            .expect("builtin slot move action");
+        catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: crate::gameplay::slot_move::KEY.into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::ActionRequested,
+                target: Some(crate::gameplay::slot_move::KEY.into()),
+                handler: std::sync::Arc::new(crate::gameplay::slot_move::SlotMove),
+            })
+            .expect("builtin slot move decision");
+        catalog
             .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
                 key: "bloxgloom:harvest".into(),
                 version: 1,

@@ -150,15 +150,27 @@ pub(in crate::server) fn plan_durable_request(
                 ClientMessage::InventoryMove {
                     from, to, count, ..
                 } => {
-                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
-                        &inventory,
-                        state.world.catalog(),
-                    )?);
-                    let mut next = inventory;
-                    if !next.transfer(*from, *to, *count) {
-                        return Ok(None);
-                    }
-                    action.inventory = Some(next);
+                    let mut arguments = vec![*from, *to];
+                    arguments.extend(count.to_le_bytes());
+                    return registered::plan_request(
+                        state,
+                        *id,
+                        profile,
+                        action_id,
+                        [0; 3],
+                        bloxgloom_host_api::actions::Request {
+                            key: crate::gameplay::slot_move::KEY.into(),
+                            version: 1,
+                            slot: 0,
+                            inventory_revision,
+                            entity: 0,
+                            entity_revision: 0,
+                            arguments,
+                        },
+                        receipt_value,
+                        tick,
+                    )
+                    .map(Some);
                 }
                 ClientMessage::DropStack { slot, count, .. } => {
                     let Some(stack) = inventory.slots.get(*slot as usize).cloned().flatten() else {

@@ -1,5 +1,6 @@
 //! Dot methods: inventory(owner), give(owner, stack), take(owner, slot, count),
-//! transfer_inventory(from, source, to, destination, count). Slots are zero-based;
+//! transfer_inventory(from, source, to, destination, count),
+//! move_slots(owner, from, to, count). Slots are zero-based;
 //! inventory returns a readonly 1-indexed sequence of {stack, insert, extract}.
 //! A stack is {item, count, components = nil | {version, bytes}}; bytes is a binary
 //! string, never text. Give creates items explicitly; take consumes them. False /
@@ -90,6 +91,18 @@ pub(super) fn install<'scope, 'env: 'scope>(
                         index(destination)?,
                         amount(count)?,
                     )
+                })
+            },
+        )?,
+    )?;
+    host.set(
+        "move_slots",
+        scope.create_function(
+            |_, (value, from, to, count): (Value, Value, Value, Value)| {
+                checked(rejected, || {
+                    let mut context = context.borrow_mut();
+                    let owner = owner(&context, value)?;
+                    context.move_slots(owner, index(from)?, index(to)?, amount(count)?)
                 })
             },
         )?,

@@ -24,6 +24,7 @@ fn send(
         ClientMessage::AdminSpawnEntity { action_id, .. }
         | ClientMessage::Edit { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
+        | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::EntityInteract { action_id, .. } => *action_id,
         _ => panic!(),
     };
@@ -61,8 +62,10 @@ fn console_commands_reject_non_admin_and_recover_grant_over_nonblocking_listener
         state.admin_profile = Some(0xFACE);
         let catalog = state.world.catalog_arc();
         if restarted {
+            let inventory = state.inventory_store.load(0xFACE).unwrap();
+            assert_eq!(inventory.slots[0], None);
             assert_eq!(
-                state.inventory_store.load(0xFACE).unwrap().slots[0],
+                inventory.slots[1],
                 Some(crate::inventory::Stack::new(item, 1))
             );
         }
@@ -115,9 +118,20 @@ fn console_commands_reject_non_admin_and_recover_grant_over_nonblocking_listener
                     until(&mut peer, &mut client, &catalog, |c| {
                         c.item_slot(item).is_some()
                     });
+                    let move_slot = ClientMessage::InventoryMove {
+                        action_id: client.next_id(),
+                        from: 0,
+                        to: 1,
+                        count: 1,
+                    };
+                    assert!(send(&mut peer, &mut client, &catalog, &move_slot));
+                    assert!(send(&mut peer, &mut client, &catalog, &move_slot));
+                    until(&mut peer, &mut client, &catalog, |c| {
+                        c.item_slot(item) == Some(1)
+                    });
                 } else {
                     until(&mut peer, &mut client, &catalog, |c| {
-                        c.item_slot(item).is_some()
+                        c.item_slot(item) == Some(1)
                     });
                 }
                 let _ = peer.shutdown(Shutdown::Both);

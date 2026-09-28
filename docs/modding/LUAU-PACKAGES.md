@@ -117,6 +117,11 @@ Scoped `inventory(owner)`, `give`, `take` and `transfer_inventory` preserve
 exact components and host permissions. Owners are the requesting `"player"`
 or an entity-ID table; arbitrary profiles are not accessible. Client pickup
 animations do not decide ownership. Fallback handlers remain unbound.
+`move_slots(owner, from, to, count)` uses the stock finite-inventory move:
+an exact move to an empty slot, a bounded partial merge, or a full-stack swap;
+it returns false without changing anything if the move cannot fit or the slot
+permissions deny it. The builtin inventory-move binding uses this same public
+operation and WAL receipt, rather than a separate private item-move branch.
 For an authenticated local admin, an action callback can call
 `context.admin_give(item_key, count)` (one stack, 1–128; returns false if the
 whole grant will not fit) or `context.admin_spawn(creature_key)` (one registered
