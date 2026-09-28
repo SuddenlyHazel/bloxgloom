@@ -1,6 +1,7 @@
 //! Voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
 mod avatars;
+pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
 mod material;
@@ -139,6 +140,25 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// Atomically replace only the two voxel pipelines. Existing camera and
+    /// texture groups (also used by avatars) keep their renderer-owned data.
+    #[allow(dead_code)] // Package bundle installation is a separate task.
+    pub(crate) fn install_custom_material(
+        &mut self,
+        prepared: &custom::Prepared,
+    ) -> Result<(), String> {
+        let (opaque, cutout, _, _, _) = pipeline::create_custom_voxel_pipeline(
+            &self.device,
+            &self.queue,
+            post::HDR_FORMAT,
+            &self.catalog,
+            prepared,
+        )?;
+        self.pipeline = opaque;
+        self.cutout_pipeline = cutout;
+        Ok(())
+    }
+
     pub(crate) fn install_package_effect(
         &mut self,
         effect: &effects::Prepared,

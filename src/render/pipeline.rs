@@ -1,3 +1,4 @@
+use super::custom;
 use super::material;
 use super::shader::with_world_sun;
 use super::{DEPTH_FORMAT, VERTEX_FLOATS};
@@ -32,9 +33,72 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
     wgpu::BindGroup,
     wgpu::BindGroup,
 ) {
+    create_voxel_pipeline_source(device, queue, format, catalog, &with_world_sun(SHADER))
+}
+
+/// Prepared on a worker; the renderer still owns vertex geometry, projection,
+/// tile sampling, light, fog, alpha testing and depth state.
+pub(crate) fn create_custom_voxel_pipeline(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    format: wgpu::TextureFormat,
+    catalog: &Catalog,
+    prepared: &custom::Prepared,
+) -> Result<
+    (
+        wgpu::RenderPipeline,
+        wgpu::RenderPipeline,
+        wgpu::Buffer,
+        wgpu::BindGroup,
+        wgpu::BindGroup,
+    ),
+    String,
+> {
+    let source = custom::compose(SHADER, prepared);
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let pipelines = create_voxel_pipeline_source(
+                    device,
+                    queue,
+                    format,
+                    catalog,
+                    &with_world_sun(&source),
+                );
+                pollster::block_on(error_scope.pop()).map_or(Ok(pipelines), |error| {
+                    Err(format!(
+                        "{}: voxel shader pipeline: {error}",
+                        prepared.owner
+                    ))
+                })
+            })
+            .join()
+            .map_err(|_| {
+                format!(
+                    "{}: voxel shader GPU preparation worker panicked",
+                    prepared.owner
+                )
+            })?
+    })
+}
+
+fn create_voxel_pipeline_source(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    format: wgpu::TextureFormat,
+    catalog: &Catalog,
+    source: &str,
+) -> (
+    wgpu::RenderPipeline,
+    wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::BindGroup,
+    wgpu::BindGroup,
+) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(with_world_sun(SHADER).into()),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),

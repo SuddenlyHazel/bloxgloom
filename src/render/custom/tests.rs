@@ -1,0 +1,249 @@
+use super::*;
+
+const GREEN: &str = "fn custom_albedo(albedo: vec3f, uv: vec2f, world_position: vec3f) -> vec3f { return vec3f(0.0, 1.0, 0.0); }";
+
+#[test]
+fn rejects_foreign_resources_unbounded_work_and_invalid_layers_with_owner() {
+    prepare("example:stone", GREEN.as_bytes(), 3, 20).unwrap();
+    for invalid in [
+        GREEN.replace("custom_albedo", "vs_main"),
+        GREEN.replace("return vec3f", "loop {} return vec3f"),
+        GREEN.replace("return vec3f", "discard; return vec3f"),
+        format!("{GREEN}\n@group(0) @binding(0) var image: texture_2d<f32>;"),
+        format!("{GREEN}\n@compute @workgroup_size(1) fn compute() {{}}"),
+        GREEN.replace("vec3f(0.0", "array<vec3f, 1000000>(); vec3f(0.0"),
+    ] {
+        assert!(
+            prepare("example:stone", invalid.as_bytes(), 3, 20)
+                .unwrap_err()
+                .contains("example:stone"),
+            "{invalid}"
+        );
+    }
+    assert!(
+        prepare("example:stone", GREEN.as_bytes(), 20, 20)
+            .unwrap_err()
+            .contains("example:stone")
+    );
+    assert!(prepare("example:stone", &vec![b' '; MAX_SHADER_BYTES + 1], 3, 20).is_err());
+}
+
+#[test]
+fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
+    use crate::render::{VERTEX_FLOATS, pipeline};
+    use wgpu::util::DeviceExt;
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let catalog = crate::content::Catalog::builtins();
+    let shader = prepare(
+        "test:green-stone",
+        GREEN.as_bytes(),
+        3,
+        catalog.textures().len() as u32,
+    )
+    .unwrap();
+    let (opaque, cutout, _, _, _) = pipeline::create_custom_voxel_pipeline(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &catalog,
+        &shader,
+    )
+    .unwrap();
+    // The live renderer retains its original groups when swapping pipelines.
+    let (_, _, camera, camera_group, texture_group) = pipeline::create_voxel_pipeline_with_catalog(
+        &device,
+        &queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &catalog,
+    );
+    queue.write_buffer(
+        &camera,
+        0,
+        bytemuck::cast_slice(&glam::Mat4::IDENTITY.to_cols_array()),
+    );
+
+    // Selected stone in both sky and dark light, and unselected dirt. The
+    // production 12-float vertex layout and indexed draw are unchanged.
+    let mut vertices = Vec::<f32>::new();
+    let mut indices = Vec::<u32>::new();
+    for (x0, x1, y0, y1, layer, sky) in [
+        (-1.0, 0.0, 0.0, 1.0, 3.0, 1.0),
+        (-1.0, 0.0, -1.0, 0.0, 3.0, 0.0),
+        (0.0, 1.0, -1.0, 1.0, 2.0, 1.0),
+    ] {
+        let base = (vertices.len() / VERTEX_FLOATS) as u32;
+        for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
+            vertices
+                .extend_from_slice(&[x, y, 0.5, 0.0, 1.0, 0.0, 0.25, 0.25, layer, sky, 0.0, 0.0]);
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    // Overlay two cutout flower patches in front of the lit custom stone. One
+    // samples transparent alpha, the other opaque alpha; cutout must still
+    // discard exactly as it did before customization.
+    let pixels = crate::render::material::material_tiles_for(&catalog);
+    let leaf = &pixels[12 * 128 * 128 * 4..13 * 128 * 128 * 4];
+    for patch in 0..2 {
+        let texel = leaf
+            .chunks_exact(4)
+            .position(|p| if patch == 0 { p[3] == 0 } else { p[3] >= 128 })
+            .unwrap();
+        let uv = [
+            ((texel % 128) as f32 + 0.5) / 128.0,
+            ((texel / 128) as f32 + 0.5) / 128.0,
+        ];
+        let x0 = -1.0 + patch as f32 * 0.5;
+        let x1 = x0 + 0.5;
+        let base = (vertices.len() / VERTEX_FLOATS) as u32;
+        for (x, y) in [(x0, 0.0), (x1, 0.0), (x1, 1.0), (x0, 1.0)] {
+            vertices
+                .extend_from_slice(&[x, y, 0.25, 0.0, 1.0, 0.0, uv[0], uv[1], 12.0, 1.0, 0.0, 0.0]);
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+    const WIDTH: u32 = 64;
+    const HEIGHT: u32 = 32;
+    let color = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let depth = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: crate::render::DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 256 * u64::from(HEIGHT),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &color.create_view(&Default::default()),
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth.create_view(&Default::default()),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        pass.set_pipeline(&opaque);
+        pass.set_bind_group(0, &camera_group, &[]);
+        pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_vertex_buffer(0, vertices.slice(..));
+        pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+        pass.draw_indexed(0..18, 0, 0..1);
+        pass.set_pipeline(&cutout);
+        pass.draw_indexed(18..30, 0, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(HEIGHT),
+            },
+        },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit(Some(encoder.finish()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| tx.send(result).unwrap());
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: Some(std::time::Duration::from_secs(10)),
+        })
+        .unwrap();
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    let bytes = readback.slice(..).get_mapped_range().unwrap();
+    let left = &bytes[(8 * 256 + 8 * 4)..][..4];
+    let leaf = &bytes[(8 * 256 + 24 * 4)..][..4];
+    let dark = &bytes[(24 * 256 + 16 * 4)..][..4];
+    let right = &bytes[(16 * 256 + 48 * 4)..][..4];
+    assert!(
+        left[1] > 120 && left[0] < 10 && left[2] < 10,
+        "selected custom layer: {left:?}"
+    );
+    assert!(
+        leaf[0] > 0 && leaf[1] < left[1],
+        "opaque cutout leaf must cover custom stone: {leaf:?}"
+    );
+    assert!(
+        dark[1] > 0 && left[1] > dark[1] + 80,
+        "light must remain renderer-owned: {left:?}, {dark:?}"
+    );
+    assert!(
+        right[0] > right[1] && right[1] > right[2] && right[2] > 0,
+        "default dirt layer: {right:?}"
+    );
+    if let Ok(path) = std::env::var("BLOXGLOOM_CUSTOM_PREVIEW") {
+        let file = std::fs::File::create(path).unwrap();
+        let mut png = png::Encoder::new(file, WIDTH, HEIGHT);
+        png.set_color(png::ColorType::Rgba);
+        png.set_depth(png::BitDepth::Eight);
+        png.write_header()
+            .unwrap()
+            .write_image_data(&bytes)
+            .unwrap();
+    }
+}

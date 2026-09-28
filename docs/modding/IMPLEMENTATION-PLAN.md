@@ -875,6 +875,14 @@ This section exists so compaction or a new session does not restart the design.
   prove real package shader execution; conflicting owners and invalid shaders
   fail readiness. This is not custom voxel/item material shading, texture
   registration or a composable multi-effect graph; Phase 7 remains open.
+- **Phase 7 renderer-only material hook:** a bounded WGSL `custom_albedo`
+  function can shade one selected catalog texture layer in the voxel/cutout
+  pipeline while the renderer retains lighting, emission, geometry, fog and
+  alpha testing. GPU readback checks selected/default tiles, light levels and
+  cutout behavior; a tiny material preview was inspected. This is **not yet a
+  mod-authored material feature**: no verified package declaration, client
+  resource preparation or live session installation connects the hook to a
+  downloaded mod. Phase 7 still needs that integration and broader bindings.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
