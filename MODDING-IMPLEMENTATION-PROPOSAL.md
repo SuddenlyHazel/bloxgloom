@@ -428,14 +428,24 @@ This section exists so compaction or a new session does not restart the design.
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. The user now explicitly
   requests one coder subagent at a time, with personal review and commits.
-- **Active phase:** 2 — registered removal, placement, semantic use, entity
-  due callbacks, neighbor/support decisions and automatic pickup use shared
-  gameplay planning. Advisory committed observers and read-only bounded
-  owner-neighborhood world snapshots are available. Durable cross-owner world effects, remaining
-  drop/player/command policy and fire propagation/delivery remain. No Luau,
-  client packages or authored UI is implemented yet.
-- **Last completed work:** existing host slices and response-path hardening,
-  recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
+- **Active work (September 28, 2026):** Phase 3 is done. Phases 2, 4, 5
+  and 6 are in progress; phases 7 and 8 have not started. The current
+  background increment is Phase 6 authored UI document/layout/resource work;
+  its diff is unreviewed and uncommitted. Do not count it as delivered. Phase 2
+  still needs atomic owner entity/drop effects, durable cross-owner payloads,
+  fire migration and remaining native drop/player/command parity. Phase 4 has
+  server-side Luau startup, generation, decisions, entities, inventory and
+  scheduled owner systems, but lacks complete client binding and the remaining
+  gameplay services. Phase 5 transfers and verifies bundles and negotiates the
+  current Luau catalog, but still lacks client script/resource lifecycle and
+  some non-Luau package forms. Phase 6 has a reviewed Taffy inventory-search
+  prototype, not the full authored UI system.
+- **Latest committed increment:** `18481b9` selects Taffy layout and adds a
+  focused inventory search with mouse/keyboard focus. The preceding commits
+  `f8b283c`, `a885160`, `1e1e28e` and `09a9c61` delivered canonical package
+  artifacts, bounded transfer, session sprite catalogs and full current Luau
+  catalog compatibility metadata respectively. No shader/effect increment is
+  committed; this plan is not complete.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
