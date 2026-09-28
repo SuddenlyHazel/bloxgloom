@@ -202,6 +202,14 @@ fn registered_inventory_checks_identity_revision_reach_visibility_and_fences_sig
         "sight outside planner footprint must survive to admission/receipt fences"
     );
     assert_eq!(state.clients[&1].inventory, inventory);
+    for size in [5, 130] {
+        let mut oversized = request.clone();
+        oversized.arguments.resize(size, 0);
+        let error = plan(&mut state, &oversized, [15, 80, 0]).err().unwrap();
+        assert_eq!(error.kind(), ErrorKind::PermissionDenied);
+        assert!(error.to_string().contains("invalid inventory arguments"));
+        assert_eq!(state.clients[&1].inventory, inventory);
+    }
     let mut stale = request.clone();
     stale.entity_revision += 1;
     assert!(plan(&mut state, &stale, [15, 80, 0]).is_err());

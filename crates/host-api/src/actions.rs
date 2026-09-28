@@ -11,6 +11,10 @@ pub const MAX_WIDGETS: usize = 8;
 // Tags 2/3/4 are the inventory/mobile/anchored identity envelopes.
 pub const REQUEST_TAG: u8 = 5;
 pub const TERRAIN_REQUEST_TAG: u8 = 6;
+// EntityInteract carries at most 256 payload bytes. The largest builtin
+// semantic argument is a two-byte count followed by a 128-byte content key.
+const MAX_REQUEST_ARGUMENTS: usize = 130;
+const MAX_INTERACTION_PAYLOAD: usize = 256;
 
 /// Gameplay block use carries the version of the streamed target chunk. This
 /// is a compare-only precondition, never authority to create or replace terrain.
@@ -25,6 +29,9 @@ pub struct TerrainRequest {
 impl TerrainRequest {
     pub fn encode(&self) -> Option<Vec<u8>> {
         let request = self.request.encode()?;
+        if request.len() + 9 > MAX_INTERACTION_PAYLOAD {
+            return None;
+        }
         let mut bytes = Vec::with_capacity(9 + request.len());
         bytes.push(TERRAIN_REQUEST_TAG);
         bytes.extend(self.version.to_le_bytes());
@@ -33,7 +40,7 @@ impl TerrainRequest {
     }
 
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        if bytes.first() != Some(&TERRAIN_REQUEST_TAG) {
+        if bytes.len() > MAX_INTERACTION_PAYLOAD || bytes.first() != Some(&TERRAIN_REQUEST_TAG) {
             return None;
         }
         Some(Self {
@@ -321,12 +328,18 @@ pub struct Request {
     pub inventory_revision: u64,
     pub entity: u64,
     pub entity_revision: u64,
-    /// Only Inventory uses these: direction, container slot, count (LE u16).
+    /// Inventory uses exactly four bytes: direction, container slot, count (LE u16).
+    /// Gameplay actions may use a longer, bounded semantic argument payload.
     pub arguments: Vec<u8>,
 }
 impl Request {
     pub fn encode(&self) -> Option<Vec<u8>> {
-        if !key(&self.key) || self.version == 0 || self.arguments.len() > 4 {
+        // Fixed fields occupy 30 bytes (including the argument length byte).
+        if !key(&self.key)
+            || self.version == 0
+            || self.arguments.len() > MAX_REQUEST_ARGUMENTS
+            || 30 + self.key.len() + self.arguments.len() > MAX_INTERACTION_PAYLOAD
+        {
             return None;
         }
         let mut out = vec![REQUEST_TAG, self.key.len() as u8];
@@ -345,7 +358,11 @@ impl Request {
             return None;
         }
         let n = usize::from(*bytes.get(1)?);
-        if n > 128 || bytes.len() < n + 30 || bytes.len() > n + 34 {
+        if n > 128
+            || bytes.len() < n + 30
+            || bytes.len() > MAX_INTERACTION_PAYLOAD
+            || bytes.len() > n + 30 + MAX_REQUEST_ARGUMENTS
+        {
             return None;
         }
         let key = std::str::from_utf8(&bytes[2..n + 2]).ok()?.to_owned();

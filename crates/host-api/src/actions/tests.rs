@@ -58,6 +58,72 @@ fn request_codec_rejects_truncation_trailing_and_oversized_arguments() {
 }
 
 #[test]
+fn request_codec_preserves_short_argument_encoding() {
+    let mut request = Request {
+        key: "test:work".into(),
+        version: 1,
+        slot: 3,
+        inventory_revision: 9,
+        entity: 0,
+        entity_revision: 0,
+        arguments: vec![],
+    };
+    let mut expected = vec![REQUEST_TAG, 9];
+    expected.extend(b"test:work");
+    expected.extend(1_u16.to_le_bytes());
+    expected.push(3);
+    expected.extend(9_u64.to_le_bytes());
+    expected.extend(0_u64.to_le_bytes());
+    expected.extend(0_u64.to_le_bytes());
+    for count in 0..=4 {
+        request.arguments = (0..count).collect();
+        let mut encoded = expected.clone();
+        encoded.push(count as u8);
+        encoded.extend(&request.arguments);
+        assert_eq!(request.encode(), Some(encoded.clone()));
+        assert_eq!(Request::decode(&encoded), Some(request.clone()));
+    }
+}
+
+#[test]
+fn request_codec_bounds_long_arguments_and_rejects_noncanonical_lengths() {
+    let content_key = format!("test:{}", "x".repeat(123)); // 128-byte content key
+    let mut request = Request {
+        key: format!("test:{}", "a".repeat(91)), // 96-byte action key
+        version: 1,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments: [2_u16.to_le_bytes().as_slice(), content_key.as_bytes()].concat(),
+    };
+    let bytes = request.encode().unwrap();
+    assert_eq!(bytes.len(), 256);
+    assert_eq!(Request::decode(&bytes), Some(request.clone()));
+    for n in 0..bytes.len() {
+        assert!(Request::decode(&bytes[..n]).is_none());
+    }
+    let length_offset = 29 + request.key.len();
+    for length in [0, 129, 131, 255] {
+        let mut malformed = bytes.clone();
+        malformed[length_offset] = length;
+        assert!(Request::decode(&malformed).is_none());
+    }
+    let mut trailing = bytes;
+    trailing.push(0);
+    assert!(Request::decode(&trailing).is_none());
+    request.arguments.push(0);
+    assert!(request.encode().is_none());
+    request.arguments.pop();
+    request.key.push('a');
+    assert!(request.encode().is_none());
+    request.key = "test:spawn".into();
+    request.arguments = content_key.into_bytes();
+    let spawn = request.encode().unwrap();
+    assert_eq!(Request::decode(&spawn), Some(request));
+}
+
+#[test]
 fn terrain_request_distinguishes_zero_from_missing_and_bounds_nested_payload() {
     let observed = TerrainRequest {
         version: 0,
@@ -90,6 +156,36 @@ fn terrain_request_distinguishes_zero_from_missing_and_bounds_nested_payload() {
     let bytes = largest.encode().unwrap();
     assert_eq!(bytes.len(), 171);
     assert_eq!(TerrainRequest::decode(&bytes), Some(largest));
+}
+#[test]
+fn terrain_request_bounds_long_arguments_including_nested_request() {
+    let mut observed = TerrainRequest {
+        version: 1,
+        request: Request {
+            key: format!("test:{}", "a".repeat(82)), // 87-byte action key
+            version: 1,
+            slot: 0,
+            inventory_revision: 0,
+            entity: 0,
+            entity_revision: 0,
+            arguments: vec![b'x'; 130],
+        },
+    };
+    let bytes = observed.encode().unwrap();
+    assert_eq!(bytes.len(), 256);
+    assert_eq!(TerrainRequest::decode(&bytes), Some(observed.clone()));
+    for n in 0..bytes.len() {
+        assert!(TerrainRequest::decode(&bytes[..n]).is_none());
+    }
+    let mut malformed = bytes.clone();
+    malformed[9 + 29 + observed.request.key.len()] = 129;
+    assert!(TerrainRequest::decode(&malformed).is_none());
+    let mut trailing = bytes;
+    trailing.push(0);
+    assert!(TerrainRequest::decode(&trailing).is_none());
+    observed.request.key.push('a');
+    assert!(observed.request.encode().is_some());
+    assert!(observed.encode().is_none());
 }
 #[test]
 fn composition_bounds_and_fingerprint_cover_every_control() {
