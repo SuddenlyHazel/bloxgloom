@@ -20,6 +20,8 @@ denies the request. There is no planting feature in this example. See
 `client/view.luau` for the handler, `server/store.luau` for its authoritative
 policy, and `assets/ui/welcome.json` for widget/event declarations.
 `cargo run -- ui-preview <output-dir>` writes UI previews without joining.
+Pass a package root as a second argument to preview that package's authored UI
+and downloaded client startup state instead of the built-in `uidemo` fixture.
 
 # Package shape
 

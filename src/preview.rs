@@ -170,6 +170,32 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(outputs, (0, 0), PreviewScene::Surface))
 }
 
+/// Render a verified package's authored UI through the production UI renderer.
+/// The client startup worker initializes its session text/state before drawing.
+pub fn render_package_ui_previews(
+    directory: &Path,
+    package_root: &Path,
+) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    let outputs = [(1280, 720), (640, 360)]
+        .into_iter()
+        .map(|(width, height)| PreviewOutput {
+            path: directory.join(format!("package-{width}x{height}.png")),
+            width,
+            height,
+            scale: 1.0,
+            screen: UiScreen::Package,
+            orientation: None,
+        })
+        .collect();
+    pollster::block_on(render_previews_with_packages(
+        outputs,
+        (0, 0),
+        PreviewScene::Surface,
+        Some(package_root),
+    ))
+}
+
 pub fn render_lighting_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
     for (name, lamp, bounced) in [
@@ -447,6 +473,15 @@ async fn render_previews(
     center_chunk: (i32, i32),
     scene: PreviewScene,
 ) -> Result<(), Box<dyn Error>> {
+    render_previews_with_packages(outputs, center_chunk, scene, None).await
+}
+
+async fn render_previews_with_packages(
+    outputs: Vec<PreviewOutput>,
+    center_chunk: (i32, i32),
+    scene: PreviewScene,
+    package_root: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -488,13 +523,20 @@ async fn render_previews(
     let mut package_ui = if authored_preview {
         // Same secure discovery, canonical encoding and verification as a join.
         // All filesystem access and font/image work finish before frame drawing.
-        let snapshot = crate::server::PackageSnapshot::discover(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages"),
-        )
-        .map_err(|error| format!("package UI preview: {error:?}"))?;
-        let resources = Arc::clone(snapshot.client_bundle().ui().ok_or("missing sample UI")?);
+        let default_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages");
+        let snapshot =
+            crate::server::PackageSnapshot::discover(package_root.unwrap_or(&default_root))
+                .map_err(|error| format!("package UI preview: {error:?}"))?;
+        let bundle = Arc::clone(snapshot.client_bundle());
+        let resources = Arc::clone(bundle.ui().ok_or("missing package UI")?);
         ui_renderer.install_package_ui(&device, &queue, &resources);
-        Some(ui::authored::Session::new(resources))
+        Some(match package_root {
+            Some(_) => ui::authored::Session::with_startup(
+                resources,
+                crate::client::startup::prepare(bundle)?,
+            ),
+            None => ui::authored::Session::new(resources),
+        })
     } else {
         None
     };

@@ -27,6 +27,14 @@ receipt-gated WAL path, connects a client without local package installation,
 activates the authored button, then reopens the save to check both world edits,
 the finite inventory cost and owner state. It verifies the material's selected
 catalog texture layer, but it is **not** a release-window visual inspection.
+To render just this package's authored UI (including the downloaded startup
+heading) without opening a game window, run:
+
+```sh
+cargo run -- ui-preview /path/to/output-dir fixtures/combined-mod/packages
+```
+
+The preview does not show jade world geometry or validate live gameplay visuals.
 
 The renderer still supports only one package albedo target and one-state cube
 geometry; this example does not demonstrate imported models, typed shader

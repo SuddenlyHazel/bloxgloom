@@ -200,7 +200,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("ui-preview") => {
             let directory = args.next().unwrap_or_else(|| "ui-previews".to_string());
-            preview::render_ui_previews(std::path::Path::new(&directory))?;
+            if let Some(package_root) = args.next() {
+                preview::render_package_ui_previews(
+                    std::path::Path::new(&directory),
+                    std::path::Path::new(&package_root),
+                )?;
+            } else {
+                preview::render_ui_previews(std::path::Path::new(&directory))?;
+            }
             println!("wrote UI previews to {directory}");
         }
         Some("lighting-preview") => {
