@@ -483,6 +483,11 @@ bounds to placement validation. This does **not** offer mod-selectable rules:
 those need handshake-visible identity and consistent prediction/reconciliation,
 not a server-only tuning knob. Semantic command discovery/rebinding remains
 open.
+**Verified player-state slice:** Rust and Luau gameplay snapshots now
+expose the authenticated actor's captured feet position; non-player events
+receive no player position. This is a read-only state view, not movement or
+appearance rule registration. The real listener/restart action test, 892/892
+suite, formatting and strict Clippy pass.
 
 **Remaining**
 
