@@ -596,21 +596,21 @@ This section exists so compaction or a new session does not restart the design.
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. The user now explicitly
   authorizes parallel, scoped agents with personal review and commits.
-- **Active work (September 28, 2026):** Phases 1 and 3 are done; phases 2 and
-  4–7 are in progress; phase 8 has not started. Phase 2 owner transactions now
-  include entity/drop participants, but cross-owner payloads, fire and other
-  native parity remain. Phase 4 has several server-side Luau callbacks and a
-  local client UI handler, not complete binding parity. Phase 5 transfers
-  bundles and negotiates catalogs, without complete client runtime/cache
-  lifecycle. Phase 6 displays authored UI and handles local presentation
-  events and can request package-owned item/empty gameplay actions, but lacks
-  general targets and server-driven document updates.
-  Phase 7 has a verified single fullscreen effect and a package-delivered
-  single-layer voxel albedo shader, not new world texture registration or
-  general material/effect composition.
-- **Recent reviewed commits:** `279cbcc` adds opt-in Luau LSP IDE guidance;
-  `4f141fe` adds the renderer-only WGSL albedo hook. The owner participant
-  increment is under review, not yet committed. This plan is not complete.
+- **Current work (September 28, 2026):** Phases 1 and 3 are done; phases 2 and
+  4–7 remain in progress, and phase 8 has a working combined package but is not
+  accepted. Durable owner intents/bootstrap, burn-cause edits, Luau radius-one
+  neighborhoods, package cubes/textures, downloaded client startup and
+  authorized item/block UI requests work. Native fire still has its private
+  scheduler; general Luau content/client services, UI migration, richer visuals
+  and final mixed-load/release-window verification remain. The live fire visual
+  is unverified and parked. The latest successful 4-thread suite passed 879/879;
+  a later run reproduced a stale-kiln-revision test race. Its harness now waits
+  for the authoritative replica and the next 879/879 run passed. Isolated
+  join/switch lifecycle work is active and unreviewed, not landed.
+- **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
+  example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
+  verified package UI with startup state, and `e156f2d` fixes the kiln test
+  harness. A commit is a reviewed increment, not a phase acceptance.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
