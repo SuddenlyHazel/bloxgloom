@@ -47,19 +47,10 @@ pub(crate) fn resolve_player_movement<E>(
     Ok(position)
 }
 
-/// The player's 0.6-wide, 1.7-tall hitbox, sampled identically on both sides.
+/// The builtin body is shared with spawn checks and placement validation.
 pub(crate) fn player_collides<E>(
     feet: [f32; 3],
-    mut solid: impl FnMut(i32, i32, i32) -> Result<bool, E>,
+    solid: impl FnMut(i32, i32, i32) -> Result<bool, E>,
 ) -> Result<bool, E> {
-    for x in [feet[0] - 0.3, feet[0] + 0.3] {
-        for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
-            for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if solid(x.floor() as i32, y.floor() as i32, z.floor() as i32)? {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-    Ok(false)
+    bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, solid)
 }

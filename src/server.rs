@@ -801,13 +801,7 @@ fn queue_move(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Resu
 }
 
 fn block_intersects_player(block: [i32; 3], player: [f32; 3]) -> bool {
-    let [x, y, z] = block.map(|n| n as f32);
-    x < player[0] + 0.3
-        && x + 1.0 > player[0] - 0.3
-        && y < player[1] + 1.75
-        && y + 1.0 > player[1] + 0.05
-        && z < player[2] + 0.3
-        && z + 1.0 > player[2] - 0.3
+    bloxgloom_host_api::player::BUILTIN_BODY.intersects_block(block, player)
 }
 
 #[cfg(test)]

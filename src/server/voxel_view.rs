@@ -212,8 +212,8 @@ pub fn resolve_player_movement(
     })
 }
 
-/// Tests the existing player hitbox: 0.6 block wide and 1.7 blocks tall, with
-/// samples at the feet, torso, and head. Missing samples are explicit errors.
+/// Tests the shared builtin body at feet, torso and head sample heights.
+/// Missing samples are explicit errors rather than guessed empty space.
 #[cfg(test)]
 pub fn player_collides(view: &VoxelView, feet: [f32; 3]) -> Result<bool, MissingChunk> {
     crate::physics::player_collides(feet, |x, y, z| {

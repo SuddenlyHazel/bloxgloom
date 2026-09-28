@@ -75,27 +75,25 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
 
 pub(super) fn collides_cached(state: &mut State, feet: [f32; 3]) -> io::Result<Option<bool>> {
     let mut missing = false;
-    for x in [feet[0] - 0.3, feet[0] + 0.3] {
-        for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
-            for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                let cell = [x.floor() as i32, y.floor() as i32, z.floor() as i32];
-                match state.world.cached_block(cell[0], cell[1], cell[2]) {
-                    Some(block)
-                        if state.world.catalog().block_flags(block) & crate::content::SOLID
-                            != 0 =>
-                    {
-                        return Ok(Some(true));
-                    }
-                    Some(_) => {}
-                    None => {
-                        request_missing(state, cell)?;
-                        missing = true;
-                    }
+    let collides =
+        bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, |x, y, z| -> io::Result<bool> {
+            let cell = [x, y, z];
+            match state.world.cached_block(x, y, z) {
+                Some(block) => {
+                    Ok(state.world.catalog().block_flags(block) & crate::content::SOLID != 0)
+                }
+                None => {
+                    request_missing(state, cell)?;
+                    missing = true;
+                    Ok(false)
                 }
             }
-        }
-    }
-    Ok((!missing).then_some(false))
+        })?;
+    Ok(if collides {
+        Some(true)
+    } else {
+        (!missing).then_some(false)
+    })
 }
 
 fn request_missing(state: &mut State, cell: [i32; 3]) -> io::Result<()> {
@@ -106,20 +104,7 @@ fn request_missing(state: &mut State, cell: [i32; 3]) -> io::Result<()> {
 
 pub(super) fn collides(world: &mut World, feet: [f32; 3]) -> io::Result<bool> {
     let catalog = world.catalog_arc();
-    for x in [feet[0] - 0.3, feet[0] + 0.3] {
-        for y in [feet[1] + 0.05, feet[1] + 0.9, feet[1] + 1.75] {
-            for z in [feet[2] - 0.3, feet[2] + 0.3] {
-                if catalog.block_flags(world.get_block(
-                    x.floor() as i32,
-                    y.floor() as i32,
-                    z.floor() as i32,
-                )?) & crate::content::SOLID
-                    != 0
-                {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-    Ok(false)
+    bloxgloom_host_api::player::BUILTIN_BODY.collides(feet, |x, y, z| {
+        Ok(catalog.block_flags(world.get_block(x, y, z)?) & crate::content::SOLID != 0)
+    })
 }

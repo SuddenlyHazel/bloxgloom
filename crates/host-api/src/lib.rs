@@ -13,6 +13,7 @@ pub mod icon;
 pub mod inventory;
 pub mod lifecycle;
 pub mod machine;
+pub mod player;
 pub mod system;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
 pub use lifecycle::{FootprintCell, StorageBlockEntity};
