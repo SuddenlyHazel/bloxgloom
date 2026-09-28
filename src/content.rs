@@ -237,6 +237,7 @@ pub struct Catalog {
     narrow_plants: HashSet<String>,
     item_components: HashMap<String, bloxgloom_host_api::content::Components>,
     drop_sizes: HashMap<String, bloxgloom_host_api::content::DropSize>,
+    drop_animations: HashMap<String, bloxgloom_host_api::content::DropAnimation>,
     pub(crate) composition: composition::Composition,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
@@ -282,6 +283,7 @@ impl Catalog {
             narrow_plants: HashSet::new(),
             item_components: HashMap::new(),
             drop_sizes: HashMap::new(),
+            drop_animations: HashMap::new(),
             composition: composition::Composition::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
@@ -661,6 +663,13 @@ impl Catalog {
             .unwrap_or_default()
     }
 
+    #[inline]
+    pub fn drop_animation(&self, id: ItemId) -> bloxgloom_host_api::content::DropAnimation {
+        self.item(id)
+            .and_then(|item| self.drop_animations.get(item.key.as_ref()).copied())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn item_by_key(&self, key: &str) -> Option<ItemId> {
         self.item_by_key.get(key).copied()
     }
@@ -872,6 +881,11 @@ impl Catalog {
                         bloxgloom_host_api::content::DropSize::Normal => unreachable!(),
                         bloxgloom_host_api::content::DropSize::Large => 2,
                     }]);
+                }
+                let animation = self.drop_animation(item.id);
+                if animation != bloxgloom_host_api::content::DropAnimation::default() {
+                    add(b"drop-animation/v1");
+                    add(&animation.to_bytes());
                 }
                 if let Some(icon) = self.item_icon(item.id) {
                     add(&[1, icon.rows.len() as u8]);

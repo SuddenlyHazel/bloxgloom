@@ -108,6 +108,8 @@ pub struct Item {
     pub sprite: bool,
     /// Client-only world-drop size; does not affect stack, pickup, or placement rules.
     pub drop_size: DropSize,
+    /// Client-only world-drop motion. Server age and pickup events remain authoritative.
+    pub drop_animation: DropAnimation,
     /// The stack cap is always 128; components cannot override conservation.
     pub components: Components,
 }
@@ -127,6 +129,95 @@ impl DropSize {
             Self::Normal => 1.0,
             Self::Large => 1.25,
         }
+    }
+}
+
+/// Bounded presentation parameters: durations in seconds, heights in blocks,
+/// hover/spin speeds in radians/second, and pickup turn in total radians.
+/// Defaults reproduce the builtin pop, hover, spin and pickup flight exactly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DropAnimation {
+    pub pop_duration: f32,
+    pub pop_height: f32,
+    pub hover_amplitude: f32,
+    pub hover_speed: f32,
+    pub spin_speed: f32,
+    pub pickup_duration: f32,
+    pub pickup_arc: f32,
+    pub pickup_turn: f32,
+}
+
+impl Default for DropAnimation {
+    fn default() -> Self {
+        Self {
+            pop_duration: 0.55,
+            pop_height: 0.75,
+            hover_amplitude: 0.07,
+            hover_speed: 2.6,
+            spin_speed: 2.1,
+            pickup_duration: 0.34,
+            pickup_arc: 0.32,
+            pickup_turn: 5.0,
+        }
+    }
+}
+
+impl DropAnimation {
+    pub const BYTE_LEN: usize = 32;
+
+    pub fn valid(self) -> bool {
+        fn bounded(value: f32, min: f32, max: f32) -> bool {
+            value.is_finite()
+                && (min..=max).contains(&value)
+                && !(value == 0.0 && value.is_sign_negative())
+        }
+        bounded(self.pop_duration, 0.05, 4.0)
+            && bounded(self.pop_height, 0.0, 2.0)
+            && bounded(self.hover_amplitude, 0.0, 0.5)
+            && bounded(self.hover_speed, 0.0, 16.0)
+            && bounded(self.spin_speed, 0.0, 20.0)
+            && bounded(self.pickup_duration, 0.05, 4.0)
+            && bounded(self.pickup_arc, 0.0, 2.0)
+            && bounded(self.pickup_turn, 0.0, 20.0)
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::BYTE_LEN] {
+        let mut bytes = [0; Self::BYTE_LEN];
+        for (index, value) in [
+            self.pop_duration,
+            self.pop_height,
+            self.hover_amplitude,
+            self.hover_speed,
+            self.spin_speed,
+            self.pickup_duration,
+            self.pickup_arc,
+            self.pickup_turn,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_bits().to_le_bytes());
+        }
+        bytes
+    }
+
+    pub fn from_bytes(bytes: [u8; Self::BYTE_LEN]) -> Option<Self> {
+        let read = |index: usize| {
+            f32::from_bits(u32::from_le_bytes(
+                bytes[index * 4..index * 4 + 4].try_into().unwrap(),
+            ))
+        };
+        let animation = Self {
+            pop_duration: read(0),
+            pop_height: read(1),
+            hover_amplitude: read(2),
+            hover_speed: read(3),
+            spin_speed: read(4),
+            pickup_duration: read(5),
+            pickup_arc: read(6),
+            pickup_turn: read(7),
+        };
+        animation.valid().then_some(animation)
     }
 }
 

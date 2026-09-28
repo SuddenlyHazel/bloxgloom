@@ -427,6 +427,7 @@ impl Catalog {
                 placeable: Some(catalog.state(state).unwrap().key.clone()),
                 sprite: definition.cutout,
                 drop_size: bloxgloom_host_api::content::DropSize::Normal,
+                drop_animation: Default::default(),
                 components: api::Components::Unstructured,
             };
             catalog
@@ -478,6 +479,7 @@ impl Catalog {
                         placeable: None,
                         sprite: true,
                         drop_size: bloxgloom_host_api::content::DropSize::Normal,
+                        drop_animation: Default::default(),
                         components: api::Components::Unstructured,
                     },
                 )

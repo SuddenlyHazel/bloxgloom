@@ -18,6 +18,7 @@ fn drop_size_defaults_and_nondefault_identity_survive_remapping() {
         placeable: None,
         sprite: true,
         drop_size: DropSize::Normal,
+        drop_animation: Default::default(),
         components: Components::None,
     };
     base.public_item(&item).unwrap();
@@ -60,6 +61,49 @@ fn drop_size_defaults_and_nondefault_identity_survive_remapping() {
     assert_eq!(item.drop_size.multiplier(), 0.75);
     assert_eq!(DropSize::Normal.multiplier(), 1.0);
     assert_eq!(DropSize::Large.multiplier(), 1.25);
+}
+
+#[test]
+fn drop_animation_is_validated_and_remapped_by_item_key() {
+    let mut item = Item {
+        key: "test:animated".into(),
+        name: "Animated".into(),
+        swatch: [1.0; 4],
+        texture: "bloxgloom:stone".into(),
+        placeable: None,
+        sprite: true,
+        drop_size: DropSize::Normal,
+        drop_animation: DropAnimation::default(),
+        components: Components::None,
+    };
+    let mut plain = Catalog::builtins();
+    plain.public_item(&item).unwrap();
+    let original = plain.fingerprint();
+    item.drop_animation.pickup_duration = f32::NAN;
+    assert!(Catalog::builtins().public_item(&item).is_err());
+    item.drop_animation.pickup_duration = 10.0;
+    assert!(Catalog::builtins().public_item(&item).is_err());
+    item.drop_animation.pickup_duration = 0.8;
+    let mut animated = Catalog::builtins();
+    animated.public_item(&item).unwrap();
+    assert_ne!(animated.fingerprint(), original);
+    assert!(
+        ContentManifest::from_catalog(&plain)
+            .resolve_catalog(&animated)
+            .is_err()
+    );
+    let mut remapped = ContentManifest::from_catalog(&animated);
+    let entry = remapped
+        .entries
+        .iter_mut()
+        .find(|e| e.kind == b'I' && e.key == item.key)
+        .unwrap();
+    entry.id += 10;
+    let resolved = remapped.resolve_catalog(&animated).unwrap();
+    assert_eq!(
+        resolved.drop_animation(resolved.item_by_key(&item.key).unwrap()),
+        item.drop_animation
+    );
 }
 
 #[test]
@@ -433,6 +477,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             placeable: None,
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::Opaque {
                 version: 3,
                 fingerprint: 10,
@@ -474,6 +519,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             placeable: Some("bloxgloom:stone".into()),
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::Opaque {
                 version: 1,
                 fingerprint: 1,

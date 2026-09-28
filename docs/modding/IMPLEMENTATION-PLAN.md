@@ -435,8 +435,9 @@ harvesting migration are accepted. No phase-level work remains.
 - Registered anchored reaction removal now stages its complete footprint through
   shared block-removal and neighbor decisions in the same WAL transaction as
   lifecycle refunds and handler drops. A support-loss/receipt/restart regression
-  covers the former bypass; owner-system destruction of anchored footprints
-  remains open and does not count as completed parity.
+  covers the former bypass. Owner-system WorldEdit proposals now expand registered
+  anchored footprints, refund contents and dispatch neighbor decisions in one
+  receipt with retry/restart coverage; native fire remains deferred.
 - Drop falling and support rechecks use a bounded public `FallingContext`
   (`2a238f3`). Production merge-target selection, pickup eligibility and expiry
   decisions now use public policies (`1367b11`). The fill/split count policy
@@ -449,9 +450,11 @@ harvesting migration are accepted. No phase-level work remains.
   falling policy rechecks support. Lost hints fall back to suspended rechecks;
   keep the host selection bounded instead of exposing allocator/index internals.
 - Stock drop meshes resolve item sprite/cube appearance through the negotiated
-  catalog, so registered item art follows the generic pop/spin/pickup-flight
-  path. Authored client-side drop animation/effect overrides are not exposed;
-  that custom presentation surface remains open alongside Phase 7 visuals.
+  catalog. Registered item declarations now include bounded client-only pop,
+  hover, spin and pickup-flight animation parameters; V9/V12 bundles preserve
+  these settings in the verified session catalog, while age/pickup events remain
+  server-owned. Focused custom-item flight and combined player-rule/listener
+  negotiation tests pass. Shader/effect overrides remain Phase 7 work.
 - **Verified pickup routing slice:** the stock pickup handler now calls a
   public exact-component, capped slot-routing decision. A rejected transfer
   keeps its amount available for later slots; eligibility, inventory filters,
@@ -499,13 +502,14 @@ inventory and collision checks; its wire-level choice and
 selected-stack validation remain a native route. Do not replace those
 authority checks with client-supplied action bytes just to remove the branch.
 
-**Player-rule audit:** the fixed public `player::MotionRates` retains the server
-movement budget of 10 blocks/s and client intent rate of 8 blocks/s. The
-builtin `player::Body` supplies the same collision samples to prediction,
-movement and spawn checks, and its bounds to placement validation. This does
-**not** offer mod-selectable rules: those need handshake-visible identity and
-consistent prediction/reconciliation, not a server-only tuning knob. Semantic
-command discovery/rebinding remains open.
+**Player-rule integration:** the default remains a 10-block/s server budget,
+8-block/s client intent and the builtin body/spawn/eye profile. A package can
+select one bounded immutable player-rule contract at startup; the exact key,
+revision and values are persisted in player catalog identity and reconstructed
+from the verified client bundle before Welcome. Collision, prediction, camera,
+movement credit, spawn, reach and all player-overlap checks read the same frozen
+catalog value. A real nonblocking listener tests custom body/rates, join and
+restart; changed or removed selections fail closed.
 
 **Appearance audit:** the server publishes a four-byte cosmetic-only player
 entity payload, but new sessions still create `[0, 0, 0, 0]` and the client
@@ -527,9 +531,9 @@ interaction cap, and inventory controls still require exactly four bytes.
 Real-listener typed-command, permission, malformed-request, receipt and restart
 regressions pass; the integrated root suite **916/916**, host API **30/30**,
 formatting and strict Clippy pass. Follow-up UI work displays negotiated
-signatures and permissions on the non-admin command screen; inspect its preview
-before treating that presentation as verified. A full input-rebinding interface
-is still open beyond config-file editing.
+signatures and permissions on the non-admin command screen; the generated
+640×360 and 1280×720 images were inspected after fixing overlapping rows.
+A full input-rebinding interface is still open beyond config-file editing.
 
 **Verified spawn-search slice:** startup highest-surface and cached
 join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.
@@ -562,12 +566,13 @@ mod-defined command discovery or a rebinding UI.
 **Remaining**
 
 - [ ] Finish the non-fire removal/support audit and complete drop lifecycle
-  parity, including mod-facing client presentation. Motion, merge-target,
+  parity. Motion, merge-target,
   pickup-gate and expiry policies are public; host-owned allocation, inventory
   transfer, entity waking and WAL remain authoritative. Verify remaining
   production routes and item conservation before acceptance.
-- [ ] Expose consistent player spawn/movement/body, state and appearance rules;
-  finish semantic command/input discovery and rebinding. `give`/`spawn` and
+- [ ] Expose mod-selectable player appearance and finish semantic command/input
+  discovery and rebinding. Spawn/movement/body/eye rules and player-state reads
+  are negotiated; `give`/`spawn` and
   inventory/drop bindings use registered actions; `help` is client-local.
 - [ ] Finish the production shared-service audit for storage, machine, creature
   and anchored helpers. Their public startup declarations/behaviors and external

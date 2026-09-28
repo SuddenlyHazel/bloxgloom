@@ -356,9 +356,9 @@ impl ClientApp {
         let entity_registry = EntityClientRegistry::builtins(&catalog);
         Self {
             package_ui: network.package_ui(),
+            drop_animator: DropAnimator::new(now, Arc::clone(&catalog)),
             catalog,
             inventory: Inventory::default(),
-            drop_animator: DropAnimator::new(now),
             fire_animator: FireAnimator::new(),
             actor_animator: actors::ActorAnimator::default(),
             kiln_target: None,

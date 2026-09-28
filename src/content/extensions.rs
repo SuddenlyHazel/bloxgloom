@@ -29,6 +29,7 @@ impl Catalog {
             placeable: Some(definition.key.clone()),
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::Unstructured,
         })
     }

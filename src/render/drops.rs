@@ -309,6 +309,7 @@ mod tests {
                         placeable: None,
                         sprite,
                         drop_size: size,
+                        drop_animation: Default::default(),
                         components: Components::None,
                     })
                     .unwrap();

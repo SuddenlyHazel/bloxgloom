@@ -267,3 +267,36 @@ fn player_rules_compose_with_existing_sized_item_artifacts() {
     assert_eq!(catalog.player_rules(), startup.catalog().player_rules());
     assert_eq!(catalog.fingerprint(), startup.catalog().fingerprint());
 }
+
+#[test]
+fn player_rules_and_drop_animation_share_one_verified_bundle_before_join() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let declaration = source("demo:small", 1, FIELDS).replace(
+        " end",
+        "; h.register_item('demo:token', 'Token', 'bloxgloom:stone', {drop_size='small', drop_animation={pop_height=1.25, pickup_duration=0.6}}) end",
+    );
+    fixture.package("demo", CONTENT, &declaration);
+    let state = Box::new(fixture.open().unwrap());
+    let server = state.world.catalog_arc();
+    let animation = server.drop_animation(server.item_by_key("demo:token").unwrap());
+    assert_eq!(animation.pop_height, 1.25);
+    assert_eq!(animation.pickup_duration, 0.6);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x0c")
+    );
+    gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x902).unwrap();
+        assert_eq!(client.player_rules(), server.player_rules());
+        assert_eq!(client.fingerprint(), server.fingerprint());
+        assert_eq!(
+            client.drop_animation(client.item_by_key("demo:token").unwrap()),
+            animation
+        );
+    });
+}

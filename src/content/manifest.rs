@@ -282,6 +282,7 @@ impl ContentManifest {
         resolved.narrow_plants = local.narrow_plants.clone();
         resolved.item_components = local.item_components.clone();
         resolved.drop_sizes = local.drop_sizes.clone();
+        resolved.drop_animations = local.drop_animations.clone();
         resolved.item_icons = local.item_icons.clone();
         resolved.composition = local.composition.clone();
         for entry in self

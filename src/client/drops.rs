@@ -1,17 +1,19 @@
 //! Presentation-only motion for authoritative world drops and pickup events.
+use crate::content::Catalog;
 use crate::protocol::DroppedItem;
 use crate::render::VisualDrop;
+use bloxgloom_host_api::content::DropAnimation;
 use glam::Vec3;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
-const POP: f32 = 0.55;
-const PICKUP: f32 = 0.34;
 const POSITION_BLEND: f32 = 0.08;
 
 struct PickupFlight {
     start: VisualDrop,
     started: Instant,
+    animation: DropAnimation,
 }
 
 pub(crate) struct DropAnimator {
@@ -19,15 +21,17 @@ pub(crate) struct DropAnimator {
     previous_positions: HashMap<u64, Vec3>,
     snapshot_at: Instant,
     pickups: Vec<PickupFlight>,
+    catalog: Arc<Catalog>,
 }
 
 impl DropAnimator {
-    pub(crate) fn new(now: Instant) -> Self {
+    pub(crate) fn new(now: Instant, catalog: Arc<Catalog>) -> Self {
         Self {
             items: Vec::new(),
             previous_positions: HashMap::new(),
             snapshot_at: now,
             pickups: Vec::new(),
+            catalog,
         }
     }
 
@@ -53,6 +57,7 @@ impl DropAnimator {
 
     pub(crate) fn picked_up(&mut self, items: Vec<DroppedItem>, now: Instant) {
         for item in items {
+            let animation = self.catalog.drop_animation(item.item);
             let start = self
                 .items
                 .iter()
@@ -60,17 +65,18 @@ impl DropAnimator {
                 .map(|live| {
                     let age = live.age_ms as f32 / 1000.0
                         + now.duration_since(self.snapshot_at).as_secs_f32();
-                    let mut visual = live_visual(live, age);
+                    let mut visual = live_visual(live, age, animation);
                     visual.center += self.position_for(live, now) - Vec3::from_array(live.position);
                     visual
                 })
-                .unwrap_or_else(|| live_visual(&item, item.age_ms as f32 / 1000.0));
+                .unwrap_or_else(|| live_visual(&item, item.age_ms as f32 / 1000.0, animation));
             if let Some(live) = self.items.iter_mut().find(|live| live.id == item.id) {
                 live.count = live.count.saturating_sub(item.count);
             }
             self.pickups.push(PickupFlight {
                 start,
                 started: now,
+                animation,
             });
         }
         self.items.retain(|item| item.count > 0);
@@ -80,8 +86,9 @@ impl DropAnimator {
     }
 
     pub(crate) fn visuals(&mut self, now: Instant, player: Vec3) -> Vec<VisualDrop> {
-        self.pickups
-            .retain(|flight| now.duration_since(flight.started).as_secs_f32() < PICKUP);
+        self.pickups.retain(|flight| {
+            now.duration_since(flight.started).as_secs_f32() < flight.animation.pickup_duration
+        });
         let mut result = Vec::with_capacity(self.items.len() + self.pickups.len());
         let elapsed_ms = now
             .duration_since(self.snapshot_at)
@@ -89,19 +96,21 @@ impl DropAnimator {
             .min(u32::MAX as u128);
         for item in &self.items {
             let age = (u128::from(item.age_ms) + elapsed_ms) as f32 / 1000.0;
-            let mut visual = live_visual(item, age);
+            let mut visual = live_visual(item, age, self.catalog.drop_animation(item.item));
             visual.center += self.position_for(item, now) - Vec3::from_array(item.position);
             result.push(visual);
         }
         let target = player + Vec3::new(0.0, 1.25, 0.0);
         for flight in &self.pickups {
-            let t = (now.duration_since(flight.started).as_secs_f32() / PICKUP).clamp(0.0, 1.0);
+            let t = (now.duration_since(flight.started).as_secs_f32()
+                / flight.animation.pickup_duration)
+                .clamp(0.0, 1.0);
             let eased = t * t * (3.0 - 2.0 * t);
             result.push(VisualDrop {
                 item: flight.start.item,
                 center: flight.start.center.lerp(target, eased)
-                    + Vec3::Y * (0.32 * (std::f32::consts::PI * t).sin()),
-                angle: flight.start.angle + t * 5.0,
+                    + Vec3::Y * (flight.animation.pickup_arc * (std::f32::consts::PI * t).sin()),
+                angle: flight.start.angle + t * flight.animation.pickup_turn,
                 scale: flight.start.scale * (1.0 - eased).max(0.03),
                 light: Default::default(),
             });
@@ -110,122 +119,21 @@ impl DropAnimator {
     }
 }
 
-fn live_visual(item: &DroppedItem, age: f32) -> VisualDrop {
+fn live_visual(item: &DroppedItem, age: f32, animation: DropAnimation) -> VisualDrop {
     let phase = (item.id.wrapping_mul(0x9e37_79b9) >> 32) as f32 * 0.000_000_001;
-    let pop = (age / POP).clamp(0.0, 1.0);
+    let pop = (age / animation.pop_duration).clamp(0.0, 1.0);
     let ease = pop * pop * (3.0 - 2.0 * pop);
     let lift = 0.14 * ease
-        + 0.75 * (std::f32::consts::PI * pop).sin()
-        + 0.07 * (age * 2.6 + phase).sin() * ease;
+        + animation.pop_height * (std::f32::consts::PI * pop).sin()
+        + animation.hover_amplitude * (age * animation.hover_speed + phase).sin() * ease;
     VisualDrop {
         item: item.item,
         center: Vec3::from_array(item.position) + Vec3::Y * lift,
-        angle: age * 2.1 + phase,
+        angle: age * animation.spin_speed + phase,
         scale: 0.76 + 0.24 * ease,
         light: Default::default(),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    fn item(age_ms: u32) -> DroppedItem {
-        DroppedItem {
-            id: 7,
-            item: crate::items::ItemId::new(2),
-            count: 4,
-            position: [1.0, 2.0, 3.0],
-            age_ms,
-        }
-    }
-
-    #[test]
-    fn pop_uses_server_age_and_pickup_flies_before_disappearing() {
-        let now = Instant::now();
-        let mut animator = DropAnimator::new(now);
-        animator.snapshot(vec![item(10)], now);
-        let first = animator.visuals(now, Vec3::ZERO);
-        let apex = animator.visuals(now + Duration::from_millis(260), Vec3::ZERO);
-        assert!(apex[0].center.y > first[0].center.y + 0.5);
-        animator.snapshot(vec![item(2000)], now);
-        let old = animator.visuals(now, Vec3::ZERO);
-        assert!(old[0].center.y < apex[0].center.y - 0.4);
-        animator.picked_up(vec![item(2000)], now);
-        let first_flight = animator.visuals(now, Vec3::ZERO);
-        assert_eq!(first_flight.len(), 1);
-        assert_eq!(first_flight[0].center, old[0].center);
-        assert_eq!(first_flight[0].angle, old[0].angle);
-        assert_eq!(first_flight[0].scale, old[0].scale);
-        let mid = animator.visuals(now + Duration::from_millis(200), Vec3::ZERO);
-        assert!(mid[0].scale < first_flight[0].scale);
-        assert!(mid[0].center.distance(Vec3::new(0.0, 1.25, 0.0)) < 2.0);
-        assert!(
-            animator
-                .visuals(now + Duration::from_millis(350), Vec3::ZERO)
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn fresh_snapshot_keeps_spin_phase_for_old_items() {
-        let now = Instant::now();
-        let mut animator = DropAnimator::new(now);
-        animator.snapshot(vec![item(90_000)], now);
-        let before = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].angle;
-        animator.snapshot(vec![item(90_100)], now + Duration::from_millis(100));
-        let after = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].angle;
-        assert!((before - after).abs() < 0.001);
-    }
-
-    #[test]
-    fn moving_drop_blends_between_authoritative_positions() {
-        let now = Instant::now();
-        let mut animator = DropAnimator::new(now);
-        let first = item(2000);
-        animator.snapshot(vec![first], now);
-        let mut next = first;
-        next.position[1] -= 1.0;
-        animator.snapshot(vec![next], now + Duration::from_millis(20));
-        let visual_start = animator.visuals(now + Duration::from_millis(20), Vec3::ZERO)[0].center;
-        let visual_mid = animator.visuals(now + Duration::from_millis(60), Vec3::ZERO)[0].center;
-        let visual_end = animator.visuals(now + Duration::from_millis(100), Vec3::ZERO)[0].center;
-        assert!(visual_start.y > visual_mid.y && visual_mid.y > visual_end.y);
-    }
-
-    #[test]
-    fn sized_drop_keeps_its_preset_through_pickup_flight_without_changing_motion() {
-        use bloxgloom_host_api::content::{Components, DropSize, Item};
-        let mut catalog = crate::content::Catalog::builtins();
-        catalog
-            .public_item(&Item {
-                key: "test:sized".into(),
-                name: "Sized".into(),
-                swatch: [1.0; 4],
-                texture: "bloxgloom:stone".into(),
-                placeable: None,
-                sprite: true,
-                drop_size: DropSize::Small,
-                components: Components::None,
-            })
-            .unwrap();
-        let now = Instant::now();
-        let mut animator = DropAnimator::new(now);
-        let mut drop = item(2000);
-        drop.item = catalog.item_by_key("test:sized").unwrap();
-        animator.snapshot(vec![drop], now);
-        let live = animator.visuals(now, Vec3::ZERO)[0];
-        assert_eq!(live.presentation_scale(&catalog), live.scale * 0.75);
-        animator.picked_up(vec![drop], now);
-        let first = animator.visuals(now, Vec3::ZERO)[0];
-        assert_eq!(first.center, live.center);
-        assert_eq!(
-            first.presentation_scale(&catalog),
-            live.presentation_scale(&catalog)
-        );
-        let mid = animator.visuals(now + Duration::from_millis(170), Vec3::ZERO)[0];
-        assert_eq!(mid.presentation_scale(&catalog), mid.scale * 0.75);
-        assert!(mid.presentation_scale(&catalog) < first.presentation_scale(&catalog));
-    }
-}
+mod tests;

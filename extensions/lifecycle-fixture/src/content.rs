@@ -36,6 +36,7 @@ impl Extension for Content {
             placeable: None,
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::Opaque {
                 version: 2,
                 fingerprint: 0xc011,
@@ -104,6 +105,7 @@ impl Extension for Content {
             placeable: Some(format!("{LAMP}[axis=y,lit=false]")),
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::None,
         })?;
         r.block(Block {
@@ -130,6 +132,7 @@ impl Extension for Content {
             placeable: Some(REED.into()),
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
+            drop_animation: Default::default(),
             components: Components::None,
         })?;
         r.tag(Tag {

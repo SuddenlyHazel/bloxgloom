@@ -4,7 +4,7 @@
 //! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
-use content::DropSize;
+use content::{DropAnimation, DropSize};
 mod runtime;
 
 const MAX_ITEMS: usize = 32;
@@ -42,16 +42,18 @@ impl ClientBundle {
         }
         let mut writer = Writer(self.bytes[..self.bytes.len() - 4].to_vec());
         let sized = items.iter().any(|item| item.drop_size != DropSize::Normal);
-        if sized {
-            writer.0[MAGIC.len() - 1] = SIZED_MAGIC[MAGIC.len() - 1];
-        }
-        if declarations.player_rules.is_some() {
-            writer.0[MAGIC.len() - 1] = if sized {
-                PLAYER_SIZED_MAGIC
-            } else {
-                PLAYER_MAGIC
-            }[MAGIC.len() - 1];
-        }
+        let animated = items
+            .iter()
+            .any(|item| item.drop_animation != DropAnimation::default());
+        let version = match (declarations.player_rules.is_some(), animated, sized) {
+            (false, false, false) => MAGIC,
+            (false, false, true) => SIZED_MAGIC,
+            (false, true, _) => ANIMATED_MAGIC,
+            (true, false, false) => PLAYER_MAGIC,
+            (true, false, true) => PLAYER_SIZED_MAGIC,
+            (true, true, _) => PLAYER_ANIMATED_MAGIC,
+        };
+        writer.0[MAGIC.len() - 1] = version[MAGIC.len() - 1];
         writer.count(1)?;
         let runtime = runtime::Runtime::project(declarations)?;
         let mut items = items.iter().collect::<Vec<_>>();
@@ -107,12 +109,18 @@ impl ClientBundle {
                 } else {
                     writer.field(item.texture.as_bytes())?;
                 }
-                if sized {
+                if sized || animated {
                     writer.field(&[match item.drop_size {
                         DropSize::Normal => 0,
                         DropSize::Small => 1,
                         DropSize::Large => 2,
                     }])?;
+                }
+                if animated {
+                    if !item.drop_animation.valid() {
+                        return Err(invalid());
+                    }
+                    writer.field(&item.drop_animation.to_bytes())?;
                 }
             }
             let own = textures
@@ -248,15 +256,17 @@ impl Startup {
         reader: &mut Reader<'_>,
         packages: &BTreeMap<String, ClientPackage>,
         sized: bool,
+        animated: bool,
         player: bool,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized || player {
+            if sized || animated || player {
                 return Err(invalid());
             }
             return Ok(None);
         }
         let mut has_nondefault_size = false;
+        let mut has_nondefault_animation = false;
         let mut startup = Self {
             player_rules: None,
             packages: Vec::new(),
@@ -305,6 +315,16 @@ impl Startup {
                     DropSize::Normal
                 };
                 has_nondefault_size |= drop_size != DropSize::Normal;
+                let drop_animation = if animated {
+                    let bytes: [u8; DropAnimation::BYTE_LEN] = reader
+                        .field(DropAnimation::BYTE_LEN)?
+                        .try_into()
+                        .map_err(|_| invalid())?;
+                    DropAnimation::from_bytes(bytes).ok_or_else(invalid)?
+                } else {
+                    DropAnimation::default()
+                };
+                has_nondefault_animation |= drop_animation != DropAnimation::default();
                 let (sprite, texture) = match encoded_texture.strip_prefix('!') {
                     Some(texture) => (false, texture.to_owned()),
                     None => (true, encoded_texture),
@@ -329,6 +349,7 @@ impl Startup {
                     placeable: None,
                     sprite,
                     drop_size,
+                    drop_animation,
                     components: content::Components::None,
                 });
             }
@@ -420,6 +441,7 @@ impl Startup {
                     || item.texture != texture
                     || !item.sprite
                     || item.drop_size != DropSize::Normal
+                    || item.drop_animation != DropAnimation::default()
                 {
                     return Err(error(name, format!("block {key} item does not match")));
                 }
@@ -472,7 +494,7 @@ impl Startup {
             selection.validate().map_err(|_| invalid())?;
             startup.player_rules = Some(selection);
         }
-        if sized && !has_nondefault_size {
+        if (sized && !animated && !has_nondefault_size) || (animated && !has_nondefault_animation) {
             return Err(invalid());
         }
         if !startup.textures.is_empty() {

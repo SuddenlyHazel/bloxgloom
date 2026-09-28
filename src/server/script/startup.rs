@@ -254,7 +254,7 @@ pub(super) fn invoke(
                 let key = text(key)?;
                 let name = text(name)?;
                 let texture = text(texture)?;
-                let (sprite, drop_size) = item::options(options)?;
+                let (sprite, drop_size, drop_animation) = item::options(options)?;
                 let Some((owner, local)) = key.split_once(':') else {
                     return Err("item key must be namespaced");
                 };
@@ -282,6 +282,7 @@ pub(super) fn invoke(
                     placeable: None,
                     sprite,
                     drop_size,
+                    drop_animation,
                     components: bloxgloom_host_api::content::Components::None,
                 });
                 Ok(())
@@ -395,6 +396,7 @@ pub(super) fn invoke(
                     placeable: Some(key),
                     sprite: false,
                     drop_size: bloxgloom_host_api::content::DropSize::Normal,
+                    drop_animation: Default::default(),
                     components: Components::None,
                 });
                 Ok(())

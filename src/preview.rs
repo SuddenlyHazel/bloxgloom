@@ -916,7 +916,8 @@ async fn render_previews_with_packages(
         })
         .collect();
         let now = Instant::now();
-        let mut animator = DropAnimator::new(now);
+        let mut animator =
+            DropAnimator::new(now, std::sync::Arc::new(crate::content::catalog().clone()));
         animator.snapshot(items.clone(), now);
         let moment = match phase {
             DropPhase::Pop => now + std::time::Duration::from_millis(250),

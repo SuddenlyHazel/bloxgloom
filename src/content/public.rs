@@ -114,6 +114,9 @@ impl Catalog {
 
     pub(crate) fn public_item_at(&mut self, id: ItemId, i: &api::Item) -> Result<(), Error> {
         validate_display(&i.name, i.swatch)?;
+        if !i.drop_animation.valid() {
+            return Err(Error(format!("{}: invalid drop animation", i.key)));
+        }
         if let api::Components::Opaque {
             version, max_bytes, ..
         } = i.components
@@ -149,6 +152,9 @@ impl Catalog {
         .map_err(|e| error(&i.key, e))?;
         if i.drop_size != api::DropSize::Normal {
             self.drop_sizes.insert(i.key.clone(), i.drop_size);
+        }
+        if i.drop_animation != api::DropAnimation::default() {
+            self.drop_animations.insert(i.key.clone(), i.drop_animation);
         }
         if i.components != api::Components::Unstructured {
             self.item_components

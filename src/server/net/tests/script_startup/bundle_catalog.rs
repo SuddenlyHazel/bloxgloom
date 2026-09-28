@@ -5,6 +5,59 @@ use crate::server::client_bundle::{CacheKey, ClientBundle};
 use std::net::Shutdown;
 
 #[test]
+fn authored_drop_animation_negotiates_and_default_keeps_old_bundle() {
+    use bloxgloom_host_api::content::DropAnimation;
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let entry = |options: &str| {
+        format!(
+            "return function(h) h.register_item('demo:token', 'Token', 'bloxgloom:stone'{options}) end"
+        )
+    };
+    fixture.package("demo", CONTENT, &entry(""));
+    let base = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    let key = base.client_bundle.as_ref().unwrap().cache_key();
+    let fingerprint = base.catalog().fingerprint();
+    fixture.package(
+        "demo",
+        CONTENT,
+        &entry(", { drop_animation = { pickup_duration = 0.34 } }"),
+    );
+    let same = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    assert_eq!(same.client_bundle.as_ref().unwrap().cache_key(), key);
+    assert_eq!(same.catalog().fingerprint(), fingerprint);
+    fixture.package(
+        "demo",
+        CONTENT,
+        &entry(", { drop_animation = { pickup_duration = 0.8, pickup_arc = 1.2 } }"),
+    );
+    let state = Box::new(fixture.open().unwrap());
+    let server = state.world.catalog_arc();
+    assert_ne!(server.fingerprint(), fingerprint);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x09")
+    );
+    let manifest = ContentManifest::from_catalog(&server);
+    gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x70a).unwrap();
+        assert_eq!(ContentManifest::from_catalog(&client), manifest);
+        assert_eq!(
+            client.drop_animation(client.item_by_key("demo:token").unwrap()),
+            DropAnimation {
+                pickup_duration: 0.8,
+                pickup_arc: 1.2,
+                ..Default::default()
+            }
+        );
+    });
+}
+
+#[test]
 fn drop_size_option_negotiates_verified_catalog_and_explicit_normal_preserves_bundle() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();

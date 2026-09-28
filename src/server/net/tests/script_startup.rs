@@ -242,6 +242,21 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
             "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_size = 1 }) end) end",
             "drop_size option",
         ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_animation = { pop_duration = -1 } }) end) end",
+            "invalid drop_animation range",
+        ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_animation = { pickup_arc = 0/0 } }) end) end",
+            "invalid drop_animation range",
+        ),
+        (
+            CONTENT,
+            "return function(h) pcall(function() h.register_item('bad:token', 'Token', 'bloxgloom:stone', { drop_animation = { wobble = 1 } }) end) end",
+            "unknown drop_animation field",
+        ),
     ];
     for (requires, source, message) in cases {
         let fixture = Fixture::new();

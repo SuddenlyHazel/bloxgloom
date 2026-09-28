@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Versions 7/8/10/11
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–12
 //! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -13,8 +13,9 @@
 //! Separately classified UI assets are validated/prepared by ui::authored before
 //! publication. V8 adds a bounded size byte to each item record only when
 //! a non-default drop size is declared; unchanged declarations keep exact V7 bytes.
-//! V10/V11 append the actual selected player contract to V7/V8 respectively;
-//! absent selection retains V7/V8. No version changes wire framing or saves. Artifacts older than V7 are
+//! V9 adds per-item drop animation; V10/V11 append selected player rules to
+//! V7/V8 respectively, and V12 carries both player rules and drop animation.
+//! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
 use std::collections::BTreeMap;
@@ -29,11 +30,12 @@ mod declarations;
 
 const MAGIC: &[u8] = b"BGCLIENT\x07";
 const SIZED_MAGIC: &[u8] = b"BGCLIENT\x08";
+const ANIMATED_MAGIC: &[u8] = b"BGCLIENT\x09";
 // V10/V11 append a single complete player selection to V7/V8 startup data.
-// V9 is reserved for the independent drop-animation artifact format.
 // Undeclared builtin rules retain the exact earlier bundle and catalog identity.
 const PLAYER_MAGIC: &[u8] = b"BGCLIENT\x0a";
 const PLAYER_SIZED_MAGIC: &[u8] = b"BGCLIENT\x0b";
+const PLAYER_ANIMATED_MAGIC: &[u8] = b"BGCLIENT\x0c";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -176,7 +178,16 @@ impl ClientBundle {
         }
         let mut reader = Reader(bytes);
         let version = reader.take(MAGIC.len())?;
-        if ![MAGIC, SIZED_MAGIC, PLAYER_MAGIC, PLAYER_SIZED_MAGIC].contains(&version) {
+        if ![
+            MAGIC,
+            SIZED_MAGIC,
+            ANIMATED_MAGIC,
+            PLAYER_MAGIC,
+            PLAYER_SIZED_MAGIC,
+            PLAYER_ANIMATED_MAGIC,
+        ]
+        .contains(&version)
+        {
             return Err(invalid());
         }
         let mut packages = BTreeMap::new();
@@ -267,8 +278,14 @@ impl ClientBundle {
         let declarations = declarations::Startup::decode(
             &mut reader,
             &packages,
-            version == SIZED_MAGIC || version == PLAYER_SIZED_MAGIC,
-            version == PLAYER_MAGIC || version == PLAYER_SIZED_MAGIC,
+            version == SIZED_MAGIC
+                || version == ANIMATED_MAGIC
+                || version == PLAYER_SIZED_MAGIC
+                || version == PLAYER_ANIMATED_MAGIC,
+            version == ANIMATED_MAGIC || version == PLAYER_ANIMATED_MAGIC,
+            version == PLAYER_MAGIC
+                || version == PLAYER_SIZED_MAGIC
+                || version == PLAYER_ANIMATED_MAGIC,
         )?;
         if !reader.0.is_empty() {
             return Err(invalid());

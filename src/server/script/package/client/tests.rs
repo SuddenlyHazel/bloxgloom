@@ -143,6 +143,50 @@ fn sized_item_bundle_requires_canonical_version_and_valid_preset() {
 }
 
 #[test]
+fn animated_item_bundle_rejects_invalid_and_noncanonical_motion() {
+    use bloxgloom_host_api::content::DropAnimation;
+    let mut writer = header(1);
+    writer.0[MAGIC.len() - 1] = ANIMATED_MAGIC[MAGIC.len() - 1];
+    package(&mut writer, "demo", None);
+    writer.count(1).unwrap();
+    writer.count(1).unwrap();
+    writer.field(b"bloxgloom:content/v1").unwrap();
+    writer.count(1).unwrap();
+    for field in [b"demo:token".as_slice(), b"Token", b"bloxgloom:stone"] {
+        writer.field(field).unwrap();
+    }
+    writer.field(&[0]).unwrap();
+    let motion_offset = writer.0.len() + 4;
+    let animation = DropAnimation {
+        pickup_duration: 0.8,
+        ..Default::default()
+    };
+    writer.field(&animation.to_bytes()).unwrap();
+    writer.count(0).unwrap();
+    writer.count(0).unwrap();
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    }
+    let catalog = ClientBundle::decode_verify(&writer.0, key(&writer.0))
+        .unwrap()
+        .session_catalog()
+        .unwrap();
+    assert_eq!(
+        catalog.drop_animation(catalog.item_by_key("demo:token").unwrap()),
+        animation
+    );
+    for value in [f32::NAN, -1.0, 10.0, 0.34] {
+        let mut invalid = writer.0.clone();
+        invalid[motion_offset + 20..motion_offset + 24]
+            .copy_from_slice(&value.to_bits().to_le_bytes());
+        assert!(ClientBundle::decode_verify(&invalid, key(&invalid)).is_err());
+    }
+    let mut old_version = writer.0.clone();
+    old_version[MAGIC.len() - 1] = SIZED_MAGIC[MAGIC.len() - 1];
+    assert!(ClientBundle::decode_verify(&old_version, key(&old_version)).is_err());
+}
+
+#[test]
 fn metadata_validates_namespace_capability_shape_and_limits_before_compilation() {
     const CONTENT: &str = bloxgloom_host_api::composition::CONTENT;
     let item = ("demo:token", "Token", "bloxgloom:stone");
