@@ -72,7 +72,7 @@ fn discovery_exports_only_classified_frozen_bytes_in_canonical_order() {
     assert_eq!(app.textures["icon"], b"opaque texture");
     assert_eq!(
         bundle.cache_key().cache_name().len(),
-        "client-v2-sha256-".len() + 64
+        "client-v3-sha256-".len() + 64
     );
     fs::write(a.0.join("app/server/main.luau"), "changed private source").unwrap();
     assert_eq!(a.snapshot().client_bundle().cache_key(), bundle.cache_key());

@@ -10,6 +10,7 @@ use crate::world::{self, BlockId};
 mod actions;
 mod anchored;
 mod builtins;
+pub(crate) mod client_metadata;
 pub(crate) mod composition;
 pub(crate) mod creatures;
 pub(crate) mod declarations;
@@ -208,6 +209,8 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    // Negotiated compatibility metadata, never executable registrations.
+    client_metadata: client_metadata::Metadata,
     gameplay_entities:
         HashMap<String, std::sync::Arc<bloxgloom_host_api::gameplay::EntityDefinition>>,
     gameplay_dispatch: HashMap<
@@ -261,6 +264,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            client_metadata: Default::default(),
             gameplay_entities: Default::default(),
             gameplay_handlers: Default::default(),
             gameplay_observers: Default::default(),
@@ -703,6 +707,12 @@ impl Catalog {
     /// Stable save identities, including schema and compiled behavior in each fingerprint.
     pub fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         let mut entries = self.composition.identities();
+        entries.extend(
+            self.client_metadata
+                .identities
+                .iter()
+                .map(|((kind, id), (key, hash))| (*kind, *id, key.as_str(), *hash)),
+        );
         for (id, handler) in &self.gameplay_handlers {
             entries.push((
                 b'G',
@@ -854,6 +864,10 @@ impl Catalog {
                 add(&entity.schema_version.to_le_bytes());
                 add(&entity.schema_fingerprint.to_le_bytes());
                 if let Some(generic) = self.gameplay_entities.get(entity.key.as_ref()) {
+                    add(&generic.max_state_bytes.to_le_bytes());
+                    add(&generic.initial_delay_ticks.unwrap_or(0).to_le_bytes());
+                }
+                if let Some(generic) = self.client_metadata.entities.get(entity.key.as_ref()) {
                     add(&generic.max_state_bytes.to_le_bytes());
                     add(&generic.initial_delay_ticks.unwrap_or(0).to_le_bytes());
                 }

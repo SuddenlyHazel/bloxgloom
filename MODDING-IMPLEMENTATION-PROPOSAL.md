@@ -771,6 +771,13 @@ This section exists so compaction or a new session does not restart the design.
   Real listener joins and modded/plain session switches pass without executing
   downloaded source. Other content registrations fail explicitly rather than
   admitting clients against an incomplete catalog; Phase 5 remains open.
+- **Phase 5 full current Luau catalog metadata:** canonical v3 bundles encode
+  supported semantic actions, gameplay entity schemas and handler/system
+  compatibility identities as bounded, data-only declarations. The client
+  resolves saved numeric IDs and verifies the server manifest without installing
+  server callbacks, entity codecs or owner state; generation stays a separate
+  saved-world identity. Mixed-package loopback and restart tests pass. Native
+  extension serialization, client execution and presentation resources remain.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

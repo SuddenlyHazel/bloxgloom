@@ -228,7 +228,34 @@ impl ContentManifest {
                 .insert(entry.id, observer.clone());
         }
         resolved.gameplay_dispatch = local.gameplay_dispatch.clone();
+        resolved.client_metadata.entities = local.client_metadata.entities.clone();
+        // The exact key/schema comparison above already verified these hashes.
+        // Remap inert identities without inventing executable client callbacks.
+        for entry in self
+            .entries
+            .iter()
+            .filter(|entry| matches!(entry.kind, b'G' | b'Y'))
+        {
+            if local
+                .client_metadata
+                .identities
+                .iter()
+                .any(|((kind, _), (key, _))| *kind == entry.kind && *key == entry.key)
+            {
+                resolved.client_metadata.identities.insert(
+                    (entry.kind, entry.id),
+                    (entry.key.clone(), entry.schema_fingerprint),
+                );
+            }
+        }
         for entry in self.entries.iter().filter(|entry| entry.kind == b'G') {
+            if resolved
+                .client_metadata
+                .identities
+                .contains_key(&(entry.kind, entry.id))
+            {
+                continue;
+            }
             let handler = local
                 .gameplay_handlers
                 .values()
@@ -237,6 +264,13 @@ impl ContentManifest {
             resolved.gameplay_handlers.insert(entry.id, handler.clone());
         }
         for entry in self.entries.iter().filter(|entry| entry.kind == b'Y') {
+            if resolved
+                .client_metadata
+                .identities
+                .contains_key(&(entry.kind, entry.id))
+            {
+                continue;
+            }
             let system = local
                 .owner_systems()
                 .find(|s| s.key == entry.key)

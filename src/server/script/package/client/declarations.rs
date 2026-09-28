@@ -1,9 +1,10 @@
 //! A closed, data-only registration host. Never loads source, image payloads,
 //! callbacks, paths or a VM. Public package requirements are identity metadata,
-//! not permissions granted to the client. Only startup's fixed sprite shape is
-//! representable; other catalog declarations are explicitly unsupported.
+//! not permissions granted to the client. Runtime declarations contribute inert
+//! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
+mod runtime;
 
 const MAX_ITEMS: usize = 32;
 
@@ -11,7 +12,7 @@ const MAX_ITEMS: usize = 32;
 pub(super) struct Startup {
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
-    unsupported: bool,
+    runtime: runtime::Runtime,
 }
 
 impl ClientBundle {
@@ -19,10 +20,10 @@ impl ClientBundle {
     /// final absent-metadata marker is replaced; source/asset bytes stay intact.
     pub(in crate::server::script) fn with_startup(
         &self,
-        packages: &[composition::Package],
-        items: &[content::Item],
-        unsupported: bool,
+        declarations: &crate::server::script::startup::Declarations,
     ) -> Result<Self, ScriptError> {
+        let packages = &declarations.packages;
+        let items = &declarations.items;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
@@ -31,7 +32,7 @@ impl ClientBundle {
         }
         let mut writer = Writer(self.bytes[..self.bytes.len() - 4].to_vec());
         writer.count(1)?;
-        writer.count(usize::from(unsupported))?;
+        let runtime = runtime::Runtime::project(declarations)?;
         let mut items = items.iter().collect::<Vec<_>>();
         items.sort_by(|a, b| a.key.cmp(&b.key));
         for ((name, _), package) in self.packages.iter().zip(packages) {
@@ -63,10 +64,12 @@ impl ClientBundle {
                 writer.field(item.name.as_bytes())?;
                 writer.field(item.texture.as_bytes())?;
             }
+            runtime.encode_package(&mut writer, name)?;
         }
         let key = CacheKey(Sha256::digest(&writer.0).into());
         let result = Self::decode_verify(&writer.0, key)?;
-        if result.declarations.as_ref().unwrap().items.len() != items.len() {
+        let decoded = result.declarations.as_ref().unwrap();
+        if decoded.items.len() != items.len() || decoded.runtime.counts() != runtime.counts() {
             return Err(invalid());
         }
         Ok(result)
@@ -78,12 +81,6 @@ impl ClientBundle {
         let startup = self.declarations.as_ref().ok_or_else(|| {
             std::io::Error::other("client bundle has no startup registration metadata")
         })?;
-        if startup.unsupported {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "unsupported client catalog declarations (only startup sprite items are supported)",
-            ));
-        }
         let mut declarations = crate::content::declarations::Declarations::default();
         let mut compile = || -> Result<_, bloxgloom_host_api::RegistrationError> {
             for package in &startup.packages {
@@ -96,6 +93,7 @@ impl ClientBundle {
             declarations.install_base(&mut catalog)?;
             declarations.install_items_and_tags(&mut catalog)?;
             catalog.refresh_builtin_fuels()?;
+            startup.runtime.install(&mut catalog)?;
             Ok(catalog)
         };
         compile().map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
@@ -113,7 +111,7 @@ impl Startup {
         let mut startup = Self {
             packages: Vec::new(),
             items: Vec::new(),
-            unsupported: reader.count(1)? != 0,
+            runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
             if name == "bloxgloom" {
@@ -166,6 +164,7 @@ impl Startup {
                     components: content::Components::None,
                 });
             }
+            startup.runtime.decode_package(reader, name, &requires)?;
             startup.packages.push(composition::Package {
                 key: format!("{name}:package"),
                 version: 1,

@@ -1,4 +1,5 @@
 use super::*;
+mod runtime;
 
 fn key(bytes: &[u8]) -> CacheKey {
     CacheKey::from_bytes(Sha256::digest(bytes).into())
@@ -86,7 +87,6 @@ fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)])
     let mut writer = header(1);
     package(&mut writer, owner, None);
     writer.count(1).unwrap(); // startup metadata
-    writer.count(0).unwrap(); // supported
     writer.count(requires.len()).unwrap();
     for requirement in requires {
         writer.field(requirement.as_bytes()).unwrap();
@@ -97,6 +97,9 @@ fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)])
             writer.field(field.as_bytes()).unwrap();
         }
     }
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    } // runtime declaration categories
     writer.0
 }
 

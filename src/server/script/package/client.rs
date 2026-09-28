@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 2
+//! Canonical, client-safe package set, independent of filesystem paths. Version 3
 //! is an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -20,10 +20,11 @@ use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
 mod declarations;
 
-const MAGIC: &[u8] = b"BGCLIENT\x02";
+const MAGIC: &[u8] = b"BGCLIENT\x03";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
-/// Two further MiB bound declarative startup metadata (64 * 32 sprite items).
+/// Two further MiB bound declarative startup metadata. Every record category
+/// also has per-package count/string bounds; runtime seeds/state are excluded.
 pub const MAX_BUNDLE_BYTES: usize = MAX_TOTAL_BYTES + 3 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +42,7 @@ impl CacheKey {
     /// Domain/version prefix avoids collisions with other future cache formats.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
-        let mut name = String::from("client-v2-sha256-");
+        let mut name = String::from("client-v3-sha256-");
         for byte in self.0 {
             write!(name, "{byte:02x}").expect("write String");
         }

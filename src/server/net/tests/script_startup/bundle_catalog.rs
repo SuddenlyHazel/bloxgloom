@@ -91,33 +91,13 @@ fn sprite_catalog_restart_remaps_saved_ids_and_switches_without_global_state() {
 }
 
 #[test]
-fn unsupported_gameplay_metadata_fails_before_content_ready() {
-    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
-    let fixture = Fixture::new();
-    fixture.package(
-        "demo",
-        "requires bloxgloom:actions/v1",
-        "return function(h) h.register_entity('demo:counter', 1, 8, 0, nil) end",
-    );
-    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
-        let error = crate::client::connect_catalog_probe(&address.to_string(), 0x704).unwrap_err();
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported client catalog declarations")
-        );
-    });
-}
-
-#[test]
 fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     use sha2::{Digest, Sha256};
     let fixture = Fixture::new();
-    fixture.package("demo", CONTENT, TOKEN);
+    super::bundle_runtime::packages(&fixture);
     gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
-        for mode in 0..3 {
+        for mode in 0..7 {
             // The upstream is the real server; the relay changes either artifact
             // metadata (with/without updating the offered digest) or fingerprint.
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -164,7 +144,35 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
                     let offset = bytes.windows(5).position(|w| w == b"Token").unwrap();
                     bytes[offset] = b'B';
                 }
-                if mode == 1 {
+                if mode == 3 {
+                    let offset = bytes.windows(9).position(|w| w == b"Use Token").unwrap();
+                    bytes[offset] = b'X';
+                }
+                if matches!(mode, 4 | 5) {
+                    let target = if mode == 4 {
+                        b"demo:tick".as_slice()
+                    } else {
+                        b"demo:clock".as_slice()
+                    };
+                    let offset = bytes
+                        .windows(target.len())
+                        .position(|w| w == target)
+                        .unwrap()
+                        + target.len();
+                    bytes[offset] ^= 1; // handler/owner compatibility fingerprint
+                }
+                if mode == 6 {
+                    let target = b"demo:counter";
+                    let offset = bytes
+                        .windows(target.len())
+                        .position(|w| w == target)
+                        .unwrap()
+                        + target.len()
+                        + 4
+                        + 8;
+                    bytes[offset] ^= 1; // entity max_state_bytes is catalog identity too
+                }
+                if mode == 1 || mode >= 3 {
                     identity.key = CacheKey::from_bytes(Sha256::digest(&bytes).into());
                     ClientBundle::decode_verify(&bytes, identity.key).unwrap();
                 }
@@ -241,7 +249,7 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
                     .unwrap_err();
             if mode == 0 {
                 assert!(error.to_string().contains("SHA-256 integrity mismatch"));
-            } else if mode == 1 {
+            } else if mode == 1 || mode >= 3 {
                 assert!(error.to_string().contains("schema or material differs"));
             } else {
                 assert!(error.to_string().contains("fingerprint mismatch"));

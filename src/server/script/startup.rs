@@ -11,7 +11,10 @@
 //! references, a white swatch, no components and the ordinary 128 stack cap.
 //! Keys must belong to the entry package; imported helpers may receive the
 //! callback but gain only that entry's authority. No assets or grants are
-//! registered. Sprite declarations are exported as inert client metadata.
+//! registered. Sprite/action definitions and entity schema metadata are exported
+//! as inert client metadata. Handler/owner-system compatibility hashes do not
+//! export callbacks, owner seeds, codecs, or execution authority; generators
+//! export key/revision only and remain server-executed.
 //! Every dependency entry runs too; library packages can
 //! return a no-op entry and export helpers from other modules.
 //! With `requires bloxgloom:generation/v1`, an entry may additionally declare one
@@ -41,13 +44,13 @@ const MAX_ITEMS_PER_PACKAGE: usize = 32;
 
 pub(in crate::server) struct Declarations {
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
-    packages: Vec<bloxgloom_host_api::composition::Package>,
-    items: Vec<Item>,
-    generation: Vec<bloxgloom_host_api::generation::Registration>,
-    actions: Vec<super::gameplay::Registration>,
-    handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
-    entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
-    systems: Vec<bloxgloom_host_api::system::System>,
+    pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
+    pub(super) items: Vec<Item>,
+    pub(super) generation: Vec<bloxgloom_host_api::generation::Registration>,
+    pub(super) actions: Vec<super::gameplay::Registration>,
+    pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
+    pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
+    pub(super) systems: Vec<bloxgloom_host_api::system::System>,
 }
 
 impl Declarations {
@@ -98,20 +101,8 @@ impl Declarations {
                 ));
             }
         }
-        let client_bundle = snapshot
-            .client_bundle()
-            .with_startup(
-                &packages,
-                &items,
-                !generation.is_empty()
-                    || !actions.is_empty()
-                    || !handlers.is_empty()
-                    || !entities.is_empty()
-                    || !systems.is_empty(),
-            )
-            .map_err(std::io::Error::other)?;
-        Ok(Self {
-            client_bundle: Arc::new(client_bundle),
+        let mut result = Self {
+            client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
             generation,
@@ -119,7 +110,14 @@ impl Declarations {
             handlers,
             entities,
             systems,
-        })
+        };
+        result.client_bundle = Arc::new(
+            snapshot
+                .client_bundle()
+                .with_startup(&result)
+                .map_err(std::io::Error::other)?,
+        );
+        Ok(result)
     }
 }
 
