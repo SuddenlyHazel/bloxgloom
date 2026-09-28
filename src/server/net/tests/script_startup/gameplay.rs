@@ -162,7 +162,7 @@ impl Peer {
     }
 }
 
-fn serve(state: Box<State>, run: impl FnOnce(std::net::SocketAddr)) {
+pub(super) fn serve(state: Box<State>, run: impl FnOnce(std::net::SocketAddr)) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let (stop_tx, stop_rx) = mpsc::sync_channel(1);

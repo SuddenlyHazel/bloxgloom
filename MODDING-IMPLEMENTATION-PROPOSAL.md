@@ -723,6 +723,13 @@ This section exists so compaction or a new session does not restart the design.
   own conflicts, rollback, WAL and replication. Loopback/restart and failure
   rollback tests pass. Other events, general entity operations and package
   delivery still require binding; Phase 4 is not complete.
+- **Phase 4 durable owner-script binding:** opt-in Luau packages can register a
+  bounded chunk-partitioned persistent system with frozen source, byte state,
+  deadline, owner-chunk reads, conditional edits and durable wakes. Fresh VMs
+  run directly on existing owner workers; the existing owner WAL owns state,
+  cursor, effects and recovery. Nonblocking listener/restart and retry tests
+  pass. Entity/profile owners, neighboring reads and other gameplay events
+  remain unbound.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

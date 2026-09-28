@@ -127,7 +127,10 @@ impl SystemHandler for Adapter {
             data,
             world: world.as_ref().map(|world| world as &dyn api::WorldRead),
         };
-        let plan = self.0.behavior.plan(&context).map_err(|_| reject())?;
+        let plan =
+            self.0.behavior.plan(&context).map_err(|error| {
+                SystemHandlerError::Rejected(format!("{}: {error}", self.0.key))
+            })?;
         if plan.next_tick <= tick {
             return Err(reject());
         }

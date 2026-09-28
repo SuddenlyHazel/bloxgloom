@@ -7,6 +7,7 @@ mod generation;
 mod imports;
 pub mod package;
 pub(super) mod startup;
+mod system;
 mod values;
 
 use mlua::{Function, Lua, LuaOptions, StdLib, VmState};
@@ -246,7 +247,8 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
 }
 
 /// The VM never escapes this call. Gameplay invokes this on the authoritative
-/// server coordinator, borrowing Context via mlua::scope rather than a queue.
+/// coordinator; owner systems invoke it on existing owner workers. Both borrow
+/// their public Context via mlua::scope rather than a shared VM or extra queue.
 fn run_with<T>(
     program: &Program,
     limits: Limits,

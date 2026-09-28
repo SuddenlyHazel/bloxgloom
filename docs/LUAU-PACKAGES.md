@@ -16,6 +16,8 @@ requires bloxgloom:generation/v1
 module terrain scripts/terrain.luau
 requires bloxgloom:actions/v1
 module shift scripts/shift.luau
+requires bloxgloom:owner_systems/v1
+module clock scripts/clock.luau
 ```
 
 `ScriptWorker::execute_package` runs the entry from an immutable discovered
@@ -57,3 +59,13 @@ reach and sessions, and commits successful effects through its shared gameplay
 transaction. Script failures abort that transaction; no Lua state survives
 between retries. See `src/server/script/gameplay.rs` for limits and fields.
 Other gameplay events and remote package delivery remain unfinished.
+
+A package with the owner-systems capability can register one persistent chunk
+system with `host.register_system { key, schema, revision, module,
+max_state_bytes, max_jobs_per_tick, read_world, seeds }`. Its module returns a
+function that receives an immutable owner context and returns `(binary_state,
+delay_ticks)`; the context exposes bounded `block`, conditional `edit` and
+durable `wake` methods. The existing owner WAL commits state, deadline, edits
+and wakes together. See `src/server/script/system.rs` for the precise schema,
+limits and semantics. Entity/profile ownership, neighboring reads, atomic
+entity/drop effects, and general script state migration remain unbound.

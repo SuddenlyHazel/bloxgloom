@@ -107,16 +107,16 @@ impl PackageSnapshot {
     pub(super) fn startup_packages(
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
-        use bloxgloom_host_api::composition::{ACTIONS, CONTENT, Dependency, GENERATION, Package};
+        use bloxgloom_host_api::composition::{
+            ACTIONS, CONTENT, Dependency, GENERATION, OWNER_SYSTEMS, Package,
+        };
         self.packages
             .iter()
             .map(|(name, package)| {
                 if name == "bloxgloom"
-                    || package
-                        .manifest
-                        .requires
-                        .iter()
-                        .any(|c| c != CONTENT && c != GENERATION && c != ACTIONS)
+                    || package.manifest.requires.iter().any(|c| {
+                        c != CONTENT && c != GENERATION && c != ACTIONS && c != OWNER_SYSTEMS
+                    })
                 {
                     return Err(error(
                         &self.identity(&self.entry(name)?),
@@ -165,19 +165,37 @@ impl PackageSnapshot {
         })
     }
 
+    pub(super) fn permits_systems(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            p.manifest
+                .requires
+                .contains(bloxgloom_host_api::composition::OWNER_SYSTEMS)
+        })
+    }
+
     /// Conservative installation identity, persisted as the public handler
     /// version. Includes every frozen source (including dependency helpers), not
     /// just the entry. Like catalog fingerprints this is not an authenticity hash.
     pub(super) fn gameplay_version(&self, entry: &str, revision: u16) -> u64 {
+        self.execution_identity(b"luau-action-v1", entry, &revision.to_le_bytes())
+    }
+
+    pub(super) fn system_schema(&self, entry: &str, schema: u32, revision: u16) -> u64 {
+        let mut identity = schema.to_le_bytes().to_vec();
+        identity.extend(revision.to_le_bytes());
+        self.execution_identity(b"luau-owner-system-v1", entry, &identity)
+    }
+
+    fn execution_identity(&self, domain: &[u8], entry: &str, revision: &[u8]) -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut field = |bytes: &[u8]| {
             for byte in (bytes.len() as u64).to_le_bytes().iter().chain(bytes) {
                 hash = (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3);
             }
         };
-        field(b"luau-action-v1");
+        field(domain);
         field(entry.as_bytes());
-        field(&revision.to_le_bytes());
+        field(revision);
         field(&(self.packages.len() as u64).to_le_bytes());
         for (name, package) in &self.packages {
             field(name.as_bytes());

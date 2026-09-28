@@ -17,6 +17,8 @@
 //! `host.register_generator("demo:terrain", 1, "demo:terrain")`. The named own
 //! module returns a function receiving a chunk context (see `generation`).
 //! `bloxgloom:actions/v1` permits one `register_action` declaration (see `gameplay`).
+//! `bloxgloom:owner_systems/v1` permits one persistent chunk `register_system`
+//! declaration (see `system`); plans run on existing owner workers, not this worker.
 //!
 //! The bundle records identity:package with public contract version 1. Source
 //! semver is checked exactly during discovery, not persisted or converted to
@@ -39,6 +41,7 @@ pub(in crate::server) struct Declarations {
     items: Vec<Item>,
     generation: Vec<bloxgloom_host_api::generation::Registration>,
     actions: Vec<super::gameplay::Registration>,
+    systems: Vec<bloxgloom_host_api::system::System>,
 }
 
 impl Declarations {
@@ -49,6 +52,7 @@ impl Declarations {
         let mut items = Vec::new();
         let mut generation = Vec::new();
         let mut actions = Vec::new();
+        let mut systems = Vec::new();
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
         for package in &packages {
@@ -68,6 +72,9 @@ impl Declarations {
                 unreachable!("startup execution")
             };
             items.extend(declarations.items);
+            if let Some(system) = declarations.system {
+                systems.push(system);
+            }
             if let Some(declaration) = declarations.action {
                 actions.push(super::gameplay::registration(
                     Arc::clone(&snapshot),
@@ -86,6 +93,7 @@ impl Declarations {
             items,
             generation,
             actions,
+            systems,
         })
     }
 }
@@ -105,6 +113,9 @@ impl Extension for Declarations {
             registrar.action(action.clone())?;
             registrar.gameplay_handler(handler.clone())?;
         }
+        for system in &self.systems {
+            registrar.owner_system(system.clone())?;
+        }
         Ok(())
     }
 }
@@ -114,6 +125,7 @@ pub(super) struct Pending {
     items: Vec<Item>,
     pub(super) generation: Option<super::generation::Declaration>,
     pub(super) action: Option<super::gameplay::Declaration>,
+    pub(super) system: Option<bloxgloom_host_api::system::System>,
     pub(super) error: Option<&'static str>,
 }
 
@@ -130,6 +142,8 @@ pub(super) fn invoke(
         super::generation::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let action =
         super::gameplay::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let system =
+        super::system::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let namespace = namespace.to_owned();
     let register = lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
         let mut pending = capture.borrow_mut();
@@ -181,6 +195,7 @@ pub(super) fn invoke(
     host.set("register_item", register)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
+    host.set("register_system", system)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();
