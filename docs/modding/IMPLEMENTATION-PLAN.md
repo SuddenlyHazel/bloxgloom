@@ -427,7 +427,9 @@ neighborhood. Opt-in Rust chunk systems can exchange bounded durable payloads.
 Absent chunk destinations can be created with a validated frozen template in the
 producer's WAL record. Public owner edits support burn removal semantics as a
 reusable capability. Parts of support, pickup and scheduling use public hooks,
-but that does not migrate their complete non-fire lifecycles.
+but that does not migrate their complete non-fire lifecycles. Chained neighbor
+changes after a support-loss removal now notify their own neighbors without
+double-dispatching loot (`8140f5e`); the focused WAL/restart/one-drop test passes.
 
 **Remaining**
 
