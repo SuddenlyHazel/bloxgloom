@@ -424,8 +424,10 @@ harvesting migration are accepted. No phase-level work remains.
 **Working:** owner-world edits can atomically include generated entities and
 drops; opt-in Rust chunk systems can exchange bounded durable payloads. Absent
 chunk destinations can be created with a validated frozen template in the
-producer's WAL record. Parts of support, fire ignition, pickup and scheduling
-use public hooks, but that does not migrate their complete lifecycles.
+producer's WAL record. Public owner edits can opt into burn removal semantics,
+including targeted handlers and support loss. Parts of support, fire ignition,
+pickup and scheduling use public hooks, but that does not migrate their
+complete lifecycles.
 
 **Remaining**
 
@@ -1025,6 +1027,15 @@ This section exists so compaction or a new session does not restart the design.
   passed. The integrated suite now passes **857/857** with the frozen-template
   regression test; strict Clippy and formatting pass. The fixed owner
   cap, native fire migration and Luau intent binding remain open.
+- **Phase 2 public burn-cause increment:** an opt-in owner system can declare
+  immutable burn edits, limited to non-air-to-air transitions under captured
+  world reads. The shared removal/neighbor planner applies `RemovalCause::Burn`
+  with loot, support effects, owner state and durable intents in one receipt-
+  gated WAL transaction. Focused retry, lost-receipt/restart, destination
+  bootstrap and rejection tests pass; the isolated agent suite passed 860/860,
+  and integration formatting/strict Clippy and three focused burn tests pass.
+  **Native fire has not been migrated**: frontier computation, message batching,
+  glowstone seeding and replacement of its private scheduler remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
