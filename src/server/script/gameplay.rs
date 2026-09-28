@@ -1,4 +1,4 @@
-//! Semantic action adapter. All effects belong to the public Context overlay;
+//! Gameplay decision adapter. All effects belong to the public Context overlay;
 //! success is still only a candidate for the server's existing WAL transaction.
 //! No script VM/callback or mutable module state survives an invocation.
 //!
@@ -17,8 +17,20 @@
 //! Handler version fingerprints the revision and entire frozen installation,
 //! conservatively including unrelated package sources. content.map rejects any
 //! identity mismatch on restart; this is compatibility, not authenticity. There
-//! is no state migration/hot reload. Other events/entity services remain unbound.
+//! is no state migration/hot reload.
+//!
+//! The same capability permits up to 32 exact decision owners per package:
+//! `h.register_handler("demo:harvest", 1, "BlockRemoved", "bloxgloom:sand", "demo:harvest")`.
+//! Events: BlockRemoved, BlockPlaced, NeighborChanged, EntityTick. No fallback
+//! owners or pickup binding. EntityTick targets must be own-package registered
+//! gameplay entities; entity definitions/schemas are still native declarations.
+//! Event tables and nested blocks/triples are readonly; u64 IDs/random/ticks use
+//! `_lo`/`_hi` u32 halves. See `bindings` for the staged operation signatures.
 mod bindings;
+mod declarations;
+mod events;
+
+pub(super) use declarations::handler_declarer;
 
 use super::values::{integer, text};
 use super::{Invocation, Limits, Program, package::PackageSnapshot, startup::Pending};
@@ -127,7 +139,7 @@ struct ScriptHandler {
 
 impl Handler for ScriptHandler {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
-        // Live call chain is semantic request -> gameplay planner -> Context
+        // Live commands/timers -> gameplay planner -> registered Context
         // dispatch on the server coordinator, never the client/window thread.
         let rejected = RefCell::new(None);
         let result = super::run_with(

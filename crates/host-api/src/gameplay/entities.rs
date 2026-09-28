@@ -96,12 +96,21 @@ impl Context<'_> {
     pub fn entity_state(&mut self, id: u64) -> Result<Option<Vec<u8>>, Error> {
         self.charge()?;
         let owner = self.owner()?.to_owned();
-        if let Some(state) = self.entity_overlay.get(&id) {
+        if let Some((validated_owner, state)) = self.entity_overlay.get(&id) {
+            // A transaction dispatches several decision owners on one overlay.
+            // Cached private bytes (including a staged removal) are not an
+            // authorization token for the next namespace. Reuse the snapshot's
+            // authority; absent IDs can still be read by either namespace.
+            if validated_owner != &owner
+                && let Err(error) = self.snapshot.entity_state(id, &owner)
+            {
+                return self.fail(error);
+            }
             return Ok(state.clone());
         }
         match self.snapshot.entity_state(id, &owner) {
             Ok(state) => {
-                self.entity_overlay.insert(id, state.clone());
+                self.entity_overlay.insert(id, (owner, state.clone()));
                 Ok(state)
             }
             Err(error) => self.fail(error),
@@ -151,7 +160,7 @@ impl Context<'_> {
         {
             return self.fail(error);
         }
-        self.entity_overlay.insert(id, Some(state.into()));
+        self.entity_overlay.insert(id, (owner, Some(state.into())));
         self.plan.entity_changes.insert(
             id,
             EntityChange::Update {
@@ -166,7 +175,7 @@ impl Context<'_> {
         if self.entity_state(id)?.is_none() {
             return Ok(false);
         }
-        self.entity_overlay.insert(id, None);
+        self.entity_overlay.get_mut(&id).expect("captured entity").1 = None;
         self.plan.entity_schedules.remove(&id);
         self.plan
             .entity_changes

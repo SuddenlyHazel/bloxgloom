@@ -1,5 +1,12 @@
 //! Borrowed callbacks are invalidated at scope exit, even if Lua retains one in
 //! a module table/coroutine. Host operation and VM budgets bound all work.
+//! Additional dot methods: spawn_drop(x,y,z,item,count,delay_ms),
+//! spawn_entity(key,x,y,z,binary_state), entity_state(id_lo,id_hi),
+//! update_entity(id_lo,id_hi,binary_state), remove_entity(id_lo,id_hi),
+//! schedule_entity(id_lo,id_hi,delay_ticks_or_nil). State strings are at most
+//! u16::MAX bytes before host copying; the registered schema may be stricter.
+//! IDs are exact nonzero u64s. Delay is 1..100000 ticks; nil suspends. Host
+//! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
 
@@ -10,35 +17,7 @@ pub(super) fn invoke(
     event: &Event,
     rejected: &RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
-    let Event::ActionRequested {
-        action,
-        position,
-        cell,
-        entity,
-        slot,
-        arguments,
-    } = event
-    else {
-        return Err(mlua::Error::RuntimeError("expected ActionRequested".into()));
-    };
-    let fields = lua.create_table()?;
-    fields.set("kind", "ActionRequested")?;
-    fields.set("action", action.as_str())?;
-    fields.set("slot", *slot)?;
-    fields.set("arguments", lua.create_string(arguments)?)?;
-    let position = lua.create_sequence_from(*position)?;
-    position.set_readonly(true);
-    fields.set("position", position)?;
-    if let Some(cell) = cell {
-        let cell = lua.create_sequence_from(*cell)?;
-        cell.set_readonly(true);
-        fields.set("cell", cell)?;
-    }
-    if let Some(entity) = entity {
-        fields.set("entity_lo", *entity as u32)?;
-        fields.set("entity_hi", (*entity >> 32) as u32)?;
-    }
-    fields.set_readonly(true);
+    let fields = events::fields(lua, event)?;
     let host = lua.create_table()?;
     host.set("tick_lo", context.tick() as u32)?;
     host.set("tick_hi", (context.tick() >> 32) as u32)?;
@@ -54,16 +33,7 @@ pub(super) fn invoke(
                     let block = context.borrow_mut().block(cell_at(x, y, z)?)?;
                     Ok(block)
                 })
-                .and_then(|block| {
-                    let value = lua.create_table()?;
-                    value.set("state", block.state)?;
-                    value.set("block_type", block.block_type)?;
-                    value.set("primary_item", block.primary_item)?;
-                    value.set("plant", block.plant)?;
-                    value.set("supports_plant", block.supports_plant)?;
-                    value.set_readonly(true);
-                    Ok(value)
-                })
+                .and_then(|block| events::block(lua, &block))
                 .inspect_err(|error| {
                     // Also latch errors constructing the VM result (e.g. its
                     // memory ceiling), without replacing a retryable host error.
@@ -98,6 +68,82 @@ pub(super) fn invoke(
                 })
             })?,
         )?;
+        host.set(
+            "spawn_drop",
+            scope.create_function(
+                |_, (x, y, z, item, count, delay): (Value, Value, Value, Value, Value, Value)| {
+                    checked(rejected, || {
+                        context.borrow_mut().spawn_drop(
+                            position_at(x, y, z)?,
+                            &text(item).map_err(invalid)?,
+                            integer(count, 1, 128).map_err(invalid)? as u16,
+                            integer(delay, 0, u32::MAX.into()).map_err(invalid)? as u32,
+                        )
+                    })
+                },
+            )?,
+        )?;
+        host.set(
+            "spawn_entity",
+            scope.create_function(
+                |_, (key, x, y, z, state): (Value, Value, Value, Value, Value)| {
+                    checked(rejected, || {
+                        context.borrow_mut().spawn_entity(
+                            &text(key).map_err(invalid)?,
+                            position_at(x, y, z)?,
+                            &state_bytes(state)?.as_bytes(),
+                        )
+                    })
+                },
+            )?,
+        )?;
+        host.set(
+            "entity_state",
+            scope.create_function(|lua, (lo, hi): (Value, Value)| {
+                checked(rejected, || {
+                    context.borrow_mut().entity_state(entity_id(lo, hi)?)
+                })
+                .and_then(|state| state.map(|state| lua.create_string(state)).transpose())
+                .inspect_err(|error| {
+                    rejected
+                        .borrow_mut()
+                        .get_or_insert_with(|| invalid(&error.to_string()));
+                })
+            })?,
+        )?;
+        host.set(
+            "update_entity",
+            scope.create_function(|_, (lo, hi, state): (Value, Value, Value)| {
+                checked(rejected, || {
+                    context
+                        .borrow_mut()
+                        .update_entity(entity_id(lo, hi)?, &state_bytes(state)?.as_bytes())
+                })
+            })?,
+        )?;
+        host.set(
+            "remove_entity",
+            scope.create_function(|_, (lo, hi): (Value, Value)| {
+                checked(rejected, || {
+                    context.borrow_mut().remove_entity(entity_id(lo, hi)?)
+                })
+            })?,
+        )?;
+        host.set(
+            "schedule_entity",
+            scope.create_function(|_, (lo, hi, delay): (Value, Value, Value)| {
+                checked(rejected, || {
+                    let delay = if delay.is_nil() {
+                        None
+                    } else {
+                        Some(integer(delay, 1, 100_000).map_err(invalid)? as u32)
+                    };
+                    context
+                        .borrow_mut()
+                        .schedule_entity(entity_id(lo, hi)?, delay)
+                })
+            })?,
+        )?;
         host.set_readonly(true);
         entry.call::<()>((host, fields))
     })
@@ -125,6 +171,42 @@ fn cell_at(x: Value, y: Value, z: Value) -> Result<Cell, Error> {
         integer(v, i64::from(i32::MIN), i64::from(i32::MAX))
             .map(|v| v as i32)
             .map_err(invalid)
+    };
+    Ok([axis(x)?, axis(y)?, axis(z)?])
+}
+
+fn entity_id(lo: Value, hi: Value) -> Result<u64, Error> {
+    let lo = integer(lo, 0, u32::MAX.into()).map_err(invalid)? as u64;
+    let hi = integer(hi, 0, u32::MAX.into()).map_err(invalid)? as u64;
+    let id = lo | (hi << 32);
+    if id == 0 {
+        return Err(invalid("entity ID must be nonzero"));
+    }
+    Ok(id)
+}
+
+fn state_bytes(value: Value) -> Result<mlua::LuaString, Error> {
+    let Value::String(value) = value else {
+        return Err(invalid("expected binary entity state string"));
+    };
+    if value.as_bytes().len() > usize::from(u16::MAX) {
+        return Err(invalid("entity state byte limit exceeded"));
+    }
+    Ok(value)
+}
+
+fn position_at(x: Value, y: Value, z: Value) -> Result<[f32; 3], Error> {
+    let axis = |v| {
+        let value = match v {
+            Value::Integer(v) => v as f64,
+            Value::Number(v) => v,
+            _ => return Err(invalid("expected numeric position")),
+        };
+        let value = value as f32;
+        if !value.is_finite() {
+            return Err(invalid("position must be finite f32"));
+        }
+        Ok(value)
     };
     Ok([axis(x)?, axis(y)?, axis(z)?])
 }

@@ -60,6 +60,15 @@ transaction. Script failures abort that transaction; no Lua state survives
 between retries. See `src/server/script/gameplay.rs` for limits and fields.
 Other gameplay events and remote package delivery remain unfinished.
 
+Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
+target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
+`NeighborChanged`, or `EntityTick` decisions. These use the same scoped VM and
+transaction; `spawn_drop`, `spawn_entity`, private owned `entity_state`,
+`update_entity`, `remove_entity`, and `schedule_entity` are available where the
+host's public context permits them. Entity schemas must currently be registered
+by native extensions. See `src/server/script/gameplay.rs` for event fields and
+limits. Pickup and fallback handlers remain unbound.
+
 A package with the owner-systems capability can register one persistent chunk
 system with `host.register_system { key, schema, revision, module,
 max_state_bytes, max_jobs_per_tick, read_world, seeds }`. Its module returns a

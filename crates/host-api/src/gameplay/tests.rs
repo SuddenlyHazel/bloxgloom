@@ -16,8 +16,14 @@ impl Snapshot for World {
     fn nearby_entities(&mut self, _: [f32; 3], _: f32) -> Result<Vec<Entity>, Error> {
         Ok(vec![])
     }
-    fn entity_state(&mut self, _: u64, _: &str) -> Result<Option<Vec<u8>>, Error> {
-        Ok(None)
+    fn entity_state(&mut self, id: u64, owner: &str) -> Result<Option<Vec<u8>>, Error> {
+        if id != 1 {
+            return Ok(None);
+        }
+        if owner != "test" {
+            return Err(Error::Invalid("entity is not owned by handler".into()));
+        }
+        Ok(Some(vec![1]))
     }
     fn validate_entity_state(&self, key: &str, _: &str, _: &[u8]) -> Result<(), Error> {
         Err(Error::UnknownContent(key.into()))
@@ -118,6 +124,54 @@ fn writes_capture_preimages_and_reads_see_coalesced_changes() {
     assert_eq!(plan.blocks[&[0; 3]], "test:stone");
     assert_eq!(plan.drops.len(), 1);
     assert_eq!(world.reads, 1);
+}
+
+#[test]
+fn private_entity_overlay_does_not_authorize_the_next_decision_owner() {
+    struct Probe(u8);
+    impl Handler for Probe {
+        fn handle(&self, ctx: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            // Missing state remains readable across namespaces.
+            assert_eq!(ctx.entity_state(2)?, None);
+            if self.0 == 0 {
+                assert_eq!(ctx.entity_state(1)?, Some(vec![1]));
+                ctx.set_block([0; 3], "test:air")?;
+            } else {
+                let error = match self.0 {
+                    1 => ctx.entity_state(1).unwrap_err(),
+                    2 => ctx.remove_entity(1).unwrap_err(),
+                    // Even a no-op update must check the cached state's owner.
+                    _ => ctx.update_entity(1, &[1]).unwrap_err(),
+                };
+                assert_eq!(
+                    error,
+                    Error::Invalid("entity is not owned by handler".into())
+                );
+                // Catching the failure cannot publish the first handler's edit.
+            }
+            Ok(())
+        }
+    }
+    let registration = |key: &str, mode| HandlerRegistration {
+        key: key.into(),
+        version: 1,
+        event: EventKind::EntityTick,
+        target: Some("test:entity".into()),
+        handler: std::sync::Arc::new(Probe(mode)),
+    };
+    let event = Event::EntityTick {
+        entity: 1,
+        position: [0.; 3],
+        tick: 0,
+    };
+    for mode in 1..=3 {
+        let mut world = World { reads: 0 };
+        let mut ctx = Context::new(&mut world, 16);
+        ctx.dispatch(&registration("test:own", 0), &event).unwrap();
+        ctx.dispatch(&registration("foreign:probe", mode), &event)
+            .unwrap();
+        assert!(ctx.finish().is_err());
+    }
 }
 
 #[test]

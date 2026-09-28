@@ -6,6 +6,8 @@ use bloxgloom_host_api::actions::Request;
 
 #[path = "gameplay/authorization.rs"]
 mod authorization;
+#[path = "gameplay/decisions.rs"]
+mod decisions;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";
@@ -132,12 +134,10 @@ impl Peer {
     }
 
     fn send(&mut self, request: &ClientMessage) -> (bool, String) {
-        let ClientMessage::EntityInteract {
-            action_id: expected,
-            ..
-        } = request
-        else {
-            unreachable!()
+        let expected = match request {
+            ClientMessage::EntityInteract { action_id, .. }
+            | ClientMessage::Edit { action_id, .. } => action_id,
+            _ => unreachable!(),
         };
         protocol::write_client(&mut self.stream, request).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);

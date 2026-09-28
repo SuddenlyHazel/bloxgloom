@@ -730,6 +730,13 @@ This section exists so compaction or a new session does not restart the design.
   cursor, effects and recovery. Nonblocking listener/restart and retry tests
   pass. Entity/profile owners, neighboring reads and other gameplay events
   remain unbound.
+- **Phase 4 decision-event binding:** packages may register exact decision
+  handlers for removal, placement, neighbors and entity ticks. Shared scoped
+  operations now include drops and owned entity state/spawn/scheduling, retaining
+  the existing host transaction and WAL. A cross-namespace private-state cache
+  authorization bug found during review was fixed and regression-tested.
+  Loopback/restart, rollback and entity-deadline tests pass. Luau entity schema
+  registration, pickup policy, player services and client presentation remain.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

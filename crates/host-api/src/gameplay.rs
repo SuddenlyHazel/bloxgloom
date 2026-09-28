@@ -103,7 +103,8 @@ pub struct Context<'a> {
     inventories: BTreeMap<InventoryId, Vec<Slot>>,
     handler_namespace: Option<String>,
     handler_key: Option<String>,
-    entity_overlay: BTreeMap<u64, Option<Vec<u8>>>,
+    // Cached state carries the namespace whose access the snapshot validated.
+    entity_overlay: BTreeMap<u64, (String, Option<Vec<u8>>)>,
     plan: Plan,
     remaining: usize,
     failure: Option<Error>,
