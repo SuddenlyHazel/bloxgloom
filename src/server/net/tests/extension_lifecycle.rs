@@ -22,9 +22,12 @@ fn external_owner_world_read_survives_real_listener_join_and_restart() {
     let probe = bloxgloom_lifecycle_fixture::system::WorldProbe {
         observed: Some(Arc::clone(&observed)),
     };
+    let wake_pair = bloxgloom_lifecycle_fixture::system::WakePair;
+    let extensions: [&dyn bloxgloom_host_api::Extension; 2] = [&probe, &wake_pair];
+    let bundle = bloxgloom_host_api::composition::Bundle(&extensions);
     for restarted in [false, true] {
         let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
-            .with_extension(&probe)
+            .with_extension(&bundle)
             .unwrap();
         let state = Box::new(
             crate::server::server_state_with_startup(7, save.clone(), 8, startup).unwrap(),
@@ -39,6 +42,21 @@ fn external_owner_world_read_survives_real_listener_join_and_restart() {
                 .unwrap();
             assert!(revision > 0, "the owner read must commit before shutdown");
             assert_eq!(data, [0], "authoritative air, not procedural fallback");
+            let pair = crate::server::registry::SystemId::new("fixture:wake_pair").unwrap();
+            let target = crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey {
+                x: 9,
+                y: 6,
+                z: 0,
+            });
+            assert_eq!(
+                state
+                    .system_runtime
+                    .owner_value::<Vec<u8>>(&pair, target)
+                    .unwrap()
+                    .1,
+                [1],
+                "the cross-owner wake must be served before restart"
+            );
         }
         let catalog = state.world.catalog_arc();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

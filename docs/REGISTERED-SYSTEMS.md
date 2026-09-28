@@ -50,6 +50,8 @@ payload delivery: the destination must decide its work from its own durable
 state/world reads, not from an advisory observation or wake timing. The
 separately compiled `fixture:wake_pair` proves a one-shot cross-owner wake
 across restart; `fixture:wake_loop` covers refreshing served flags and recovery.
+The owner-world loopback test also installs both declarations together and
+checks the restored destination after a real nonblocking-listener join.
 
 This still does **not** complete world-system parity: neighboring world queries,
 atomic terrain/entity effects, dynamic owner creation/removal, and durable

@@ -627,7 +627,8 @@ This section exists so compaction or a new session does not restart the design.
   now stages one refresh change instead of duplicate clear/set keys. The
   independent `fixture:wake_pair` checks one-shot delivery after restart and
   `fixture:wake_loop` checks same-wave refresh/replay. The focused 42-test
-  wake suite and strict workspace Clippy passed. These flags carry **no
+  wake suite, a combined external owner-read/wake loopback join and restart,
+  and strict workspace Clippy passed. These flags carry **no
   effect payload**; neither fire propagation nor general owner-local world
   writes are migrated by this increment.
 - **Next concrete step:** make owner-local world/entity changes atomic with the
