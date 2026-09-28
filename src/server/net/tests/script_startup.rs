@@ -30,6 +30,8 @@ mod join_lifecycle;
 mod player;
 #[path = "script_startup/system.rs"]
 mod system;
+#[path = "script_startup/tags.rs"]
+mod tags;
 
 struct Fixture(PathBuf);
 impl Fixture {

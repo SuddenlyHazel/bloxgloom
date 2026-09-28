@@ -61,6 +61,8 @@ pub(in crate::server::script) use block::extended as extended_block;
 mod appearance;
 mod item;
 mod player;
+mod tag;
+pub(in crate::server::script) use tag::member_key as tag_member_key;
 
 pub(super) struct PackageTexture {
     pub(super) definition: Texture,
@@ -73,6 +75,7 @@ pub(in crate::server) struct Declarations {
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
     pub(super) items: Vec<Item>,
+    pub(super) tags: Vec<bloxgloom_host_api::content::Tag>,
     pub(super) blocks: Vec<Block>,
     pub(super) textures: Vec<PackageTexture>,
     pub(super) generation: Vec<bloxgloom_host_api::generation::Registration>,
@@ -88,6 +91,7 @@ impl Declarations {
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
         let worker = ScriptWorker::spawn(super::Limits::default())?;
         let mut items = Vec::new();
+        let mut tags = Vec::new();
         let mut blocks = Vec::new();
         let mut textures = Vec::new();
         let mut generation = Vec::new();
@@ -123,6 +127,7 @@ impl Declarations {
                 ));
             }
             items.extend(declarations.items);
+            tags.extend(declarations.tags);
             if let Some(selection) = declarations.appearance
                 && appearance.replace(selection).is_some()
             {
@@ -156,6 +161,7 @@ impl Declarations {
             client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
+            tags,
             blocks,
             textures,
             generation,
@@ -188,6 +194,9 @@ impl Extension for Declarations {
         for item in &self.items {
             registrar.item(item.clone())?;
         }
+        for tag in &self.tags {
+            registrar.tag(tag.clone())?;
+        }
         for generation in &self.generation {
             registrar.generation_contributor(generation.clone())?;
         }
@@ -213,6 +222,7 @@ pub(super) struct Pending {
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
     items: Vec<Item>,
+    tags: Vec<bloxgloom_host_api::content::Tag>,
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
     pub(super) generation: Option<super::generation::Declaration>,
@@ -233,6 +243,7 @@ pub(super) fn invoke(
     let pending = Rc::new(RefCell::new(Pending::default()));
     let player_rules = player::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let appearance = appearance::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
+    let tag = tag::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
     let texture_capture = Rc::clone(&pending);
     let block_capture = Rc::clone(&pending);
@@ -443,6 +454,7 @@ pub(super) fn invoke(
     host.set("register_item", register)?;
     host.set("register_texture", register_texture)?;
     host.set("register_block", register_block)?;
+    host.set("register_tag", tag)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
     host.set("register_handler", handler)?;

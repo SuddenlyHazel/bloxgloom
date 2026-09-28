@@ -4,7 +4,7 @@
 //! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
-use content::{DropAnimation, DropPolicy, DropSize};
+use content::{DropAnimation, DropPolicy, DropSize, TagKind, TagMember};
 mod appearance;
 mod runtime;
 
@@ -19,6 +19,7 @@ pub(super) struct Format {
     pub appearance: bool,
     pub policy: bool,
     pub extended_blocks: bool,
+    pub tags: bool,
 }
 
 #[derive(Debug)]
@@ -27,6 +28,7 @@ pub(super) struct Startup {
     player_rules: Option<crate::content::player::Selection>,
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
+    tags: Vec<content::Tag>,
     textures: Vec<content::Texture>,
     blocks: Vec<content::Block>,
     runtime: runtime::Runtime,
@@ -41,11 +43,13 @@ impl ClientBundle {
     ) -> Result<Self, ScriptError> {
         let packages = &declarations.packages;
         let items = &declarations.items;
+        let tags = &declarations.tags;
         let textures = &declarations.textures;
         let blocks = &declarations.blocks;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
+            || tags.len() > MAX_PACKAGES * 32
             || textures.len() > MAX_PACKAGES * MAX_TEXTURES
             || blocks.len() > MAX_PACKAGES * MAX_BLOCKS
         {
@@ -61,10 +65,14 @@ impl ClientBundle {
         let policy = items
             .iter()
             .any(|item| item.drop_policy != DropPolicy::default());
-        let extended_blocks = blocks
+        let authored_blocks = blocks
             .iter()
             .any(crate::server::script::startup::extended_block);
-        let version = if extended_blocks {
+        let tag_format = !tags.is_empty();
+        let extended_blocks = authored_blocks || tag_format;
+        let version = if tag_format {
+            TAGS_MAGIC
+        } else if extended_blocks {
             BLOCK_OPTIONS_MAGIC
         } else if has_appearance && policy {
             APPEARANCE_POLICY_MAGIC
@@ -95,6 +103,8 @@ impl ClientBundle {
         textures.sort_by(|a, b| a.definition.key.cmp(&b.definition.key));
         let mut blocks = blocks.iter().collect::<Vec<_>>();
         blocks.sort_by(|a, b| a.key.cmp(&b.key));
+        let mut tags = tags.iter().collect::<Vec<_>>();
+        tags.sort_by(|a, b| (a.key.as_str(), a.kind).cmp(&(b.key.as_str(), b.kind)));
         for ((name, _), package) in self.packages.iter().zip(packages) {
             if package.key != format!("{name}:package") || package.version != 1 {
                 return Err(invalid());
@@ -225,6 +235,33 @@ impl ClientBundle {
                     ])?;
                 }
             }
+            if tag_format {
+                let own = tags
+                    .iter()
+                    .filter(|tag| {
+                        tag.key
+                            .split_once(':')
+                            .is_some_and(|(owner, _)| owner == name)
+                    })
+                    .collect::<Vec<_>>();
+                writer.count(own.len())?;
+                for tag in own {
+                    if tag.members.is_empty() || tag.members.len() > 32 {
+                        return Err(invalid());
+                    }
+                    writer.field(tag.key.as_bytes())?;
+                    writer.field(&[match tag.kind {
+                        TagKind::Block => 0,
+                        TagKind::Item => 1,
+                    }])?;
+                    writer.count(tag.members.len())?;
+                    for member in &tag.members {
+                        let (kind, key) = crate::server::script::startup::tag_member_key(member);
+                        writer.field(&[kind])?;
+                        writer.field(key.as_bytes())?;
+                    }
+                }
+            }
             runtime.encode_package(&mut writer, name)?;
         }
         if has_appearance || extended_blocks {
@@ -248,6 +285,7 @@ impl ClientBundle {
         if decoded.items.len() != items.len()
             || decoded.textures.len() != textures.len()
             || decoded.blocks.len() != blocks.len()
+            || decoded.tags.len() != tags.len()
             || decoded.runtime.counts() != runtime.counts()
             || decoded.player_rules != declarations.player_rules
             || decoded.appearance != declarations.appearance
@@ -276,6 +314,9 @@ impl ClientBundle {
                         }
                         for block in &startup.blocks {
                             declarations.block(block.clone())?;
+                        }
+                        for tag in &startup.tags {
+                            declarations.tag(tag.clone())?;
                         }
                         for item in &startup.items {
                             declarations.item(item.clone())?;
@@ -331,10 +372,11 @@ impl Startup {
             appearance,
             policy,
             extended_blocks,
+            tags,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized || animated || player || appearance || policy || extended_blocks {
+            if sized || animated || player || appearance || policy || extended_blocks || tags {
                 return Err(invalid());
             }
             return Ok(None);
@@ -343,11 +385,13 @@ impl Startup {
         let mut has_nondefault_animation = false;
         let mut has_nondefault_policy = false;
         let mut has_extended_block = false;
+        let mut has_tag = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
             packages: Vec::new(),
             items: Vec::new(),
+            tags: Vec::new(),
             textures: Vec::new(),
             blocks: Vec::new(),
             runtime: runtime::Runtime::default(),
@@ -581,6 +625,57 @@ impl Startup {
                 }
                 startup.blocks.push(block);
             }
+            if tags {
+                let count = reader.count(32)?;
+                if count > 0 && !requires.contains(&composition::CONTENT.to_owned()) {
+                    return Err(invalid());
+                }
+                has_tag |= count > 0;
+                let mut previous: Option<(String, TagKind)> = None;
+                for _ in 0..count {
+                    let key = reader.text(129)?;
+                    let kind = match reader.field(1)? {
+                        [0] => TagKind::Block,
+                        [1] => TagKind::Item,
+                        _ => return Err(invalid()),
+                    };
+                    if key
+                        .split_once(':')
+                        .is_none_or(|(owner, local)| owner != name || !identifier(local))
+                        || previous
+                            .as_ref()
+                            .is_some_and(|last| last >= &(key.clone(), kind))
+                    {
+                        return Err(invalid());
+                    }
+                    previous = Some((key.clone(), kind));
+                    let mut members = Vec::new();
+                    for _ in 0..reader.count(32)? {
+                        let member = reader.field(1)?;
+                        let target = reader.text(129)?;
+                        if target
+                            .split_once(':')
+                            .is_none_or(|(owner, local)| !identifier(owner) || !identifier(local))
+                        {
+                            return Err(invalid());
+                        }
+                        members.push(match member {
+                            [0] => TagMember::Definition(target),
+                            [1] => TagMember::Tag(target),
+                            _ => return Err(invalid()),
+                        });
+                    }
+                    if members.is_empty()
+                        || members.windows(2).any(|pair| {
+                            crate::server::script::startup::tag_member_key(&pair[0])
+                                >= crate::server::script::startup::tag_member_key(&pair[1])
+                        })
+                    {
+                        return Err(invalid());
+                    }
+                    startup.tags.push(content::Tag { key, kind, members });
+                }
+            }
             startup.runtime.decode_package(reader, name, &requires)?;
             startup.packages.push(composition::Package {
                 key: format!("{name}:package"),
@@ -634,7 +729,8 @@ impl Startup {
             && ((sized && !animated && !has_nondefault_size)
                 || (animated && !policy && !has_nondefault_animation))
             || (policy && !extended_blocks && !has_nondefault_policy)
-            || (extended_blocks && !has_extended_block)
+            || (extended_blocks && !has_extended_block && !tags)
+            || (tags && !has_tag)
         {
             return Err(invalid());
         }

@@ -623,7 +623,9 @@ Package cubes now also declare bounded one-state side/bottom face textures,
 solid/replaceable flags, emission and RGB reflectance. Non-default definitions
 use a V23 client bundle; explicit defaults retain prior bytes. The exact catalog
 round-trips over a nonblocking listener and changed settings reject the saved
-identity. Entity-target gameplay actions are registered and negotiated, with the
+identity. Item/block tags and nested same-kind members are now authored in Luau,
+canonically negotiated by V24 and rejected on missing/cyclic references. Entity-target
+gameplay actions are registered and negotiated, with the
 existing authenticated target/revision check before handler dispatch. This
 widens authoring but does not complete Phase 4's dynamic content, owner and
 client-presentation services.
@@ -656,10 +658,9 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Widen the initial placeable cube binding to the broader public content
-  surface: useful block properties/material options, creatures, machines,
-  screens and applicable tags/components. One-state opaque cubes are accepted;
-  they do not complete general content authoring.
+- [ ] Widen one-state opaque cubes to multi-state/plant/material content and
+  expose applicable component schemas, creatures, machines and screens as Luau
+  startup declarations. Cube faces/emission and item/block tags are now bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [ ] Bind directly authored owner entity/drop operations and broader owner

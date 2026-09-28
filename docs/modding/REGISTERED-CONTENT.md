@@ -59,6 +59,14 @@ third argument supplies the top texture and the default for other faces.
 Unsupported geometry, state/property combinations and cutout materials still
 require a broader Luau binding; do not mistake this cube shorthand for the
 entire public Rust `Block` contract.
+
+`register_tag(key, "item" | "block", members)` contributes a same-kind tag at
+startup. Each member is a namespaced definition key or a nested
+`"#namespace:tag"`; forward references resolve when the full package set is
+installed. Names are owned by the declaring package, with at most 32 tags and
+32 unique members per package/tag. The catalog rejects missing references,
+wrong kinds and cycles. Tags participate in saved and negotiated identities;
+the V24 bundle carries inert tag declarations, not executable callbacks.
 * Components: `Unstructured` preserves builtin behavior (nonzero version,
   1–1024 opaque bytes), `None` forbids components, and `Opaque` declares a version,
   schema fingerprint, byte maximum and whether a payload is required. The host

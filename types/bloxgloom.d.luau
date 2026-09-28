@@ -3,8 +3,11 @@
 
 export type BloxStartupHost = {
     register_texture: (key: string, declared_asset: string) -> (),
-    register_block: (key: string, name: string, package_texture: string) -> (),
+    register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
     register_item: (key: string, name: string, texture: string) -> (),
+    -- A member is a namespaced definition key or "#namespace:tag".
+    -- At most 32 tags per package and 32 members per tag; cycles fail startup.
+    register_tag: (key: string, kind: "block" | "item", members: {string}) -> (),
     register_generator: (key: string, revision: number, module: string) -> (),
     -- Optional command facet: empty-target only; action key is its name.
     register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block" | "entity", target_key: string?, module: string, command: BloxCommand?) -> (),
@@ -21,6 +24,17 @@ export type BloxStartupHost = {
     -- Appends to builtin skin/shirt/pants indices (6/8/6). Model must be
     -- "bloxgloom:humanoid/v1". No custom geometry or physics are implied.
     register_player_appearance: (key: string, revision: number, model: string, palettes: BloxPlayerAppearance) -> (),
+}
+
+export type BloxBlockOptions = {
+    flammable: boolean?,
+    supports_plant: boolean?,
+    solid: boolean?,
+    replaceable: boolean?,
+    side: string?,
+    bottom: string?,
+    emission: number?, -- 0..15
+    reflectance: {number}?, -- exactly three channels, 0..255
 }
 
 -- All nine fields are required finite numbers; unknown fields are rejected.
