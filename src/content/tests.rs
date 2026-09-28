@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn storage_automation_faces_change_entity_save_and_handshake_identity() {
+    let catalog = crate::server::catalog_with_extension(
+        Catalog::builtins(),
+        &bloxgloom_lifecycle_fixture::TallStore,
+    )
+    .unwrap();
+    let mut all_faces = catalog.clone();
+    all_faces.storage_lifecycles[0].automation_faces =
+        Some(bloxgloom_host_api::machine::FACES.into());
+    let mut restricted = catalog.clone();
+    restricted.storage_lifecycles[0].automation_faces = Some(vec![[0, 1, 0]]);
+    let key = bloxgloom_lifecycle_fixture::KEY;
+    let identity = |catalog: &Catalog| {
+        catalog
+            .identities()
+            .into_iter()
+            .find(|(kind, _, entity, _)| *kind == b'E' && *entity == key)
+            .unwrap()
+            .3
+    };
+    assert_eq!(identity(&catalog), identity(&all_faces));
+    assert_ne!(identity(&catalog), identity(&restricted));
+    assert_eq!(catalog.fingerprint(), all_faces.fingerprint());
+    assert_ne!(catalog.fingerprint(), restricted.fingerprint());
+    let manifest = ContentManifest::from_catalog(&catalog);
+    assert!(manifest.resolve_catalog(&restricted).is_err());
+}
+
+#[test]
 fn wood_axis_compiles_six_face_textures_once() {
     let catalog = Catalog::builtins();
     for (state, cap_axis) in [

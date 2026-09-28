@@ -5,6 +5,8 @@ use crate::RegistrationError;
 pub const MAX_FOOTPRINT: usize = 64;
 // Fits full component-bearing snapshots within the host's 64 KiB entity bound.
 pub const MAX_STORAGE_SLOTS: usize = crate::inventory::MAX_SLOTS;
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Debug)]
 pub struct FootprintCell {
@@ -20,6 +22,9 @@ pub struct StorageBlockEntity {
     pub anchor_state: String,
     pub footprint: Vec<FootprintCell>,
     pub slots: usize,
+    /// Outward cardinal normals accessible to automation. `None` retains the
+    /// existing all-faces behavior for storage declarations.
+    pub automation_faces: Option<Vec<[i32; 3]>>,
 }
 
 /// No mutable world, engine client object, or journal access crosses the API.
@@ -55,6 +60,19 @@ impl StorageBlockEntity {
         if self.slots == 0 || self.slots > MAX_STORAGE_SLOTS {
             return Err(invalid("storage capacity must be 1..=54"));
         }
+        if let Some(faces) = &self.automation_faces {
+            let mut unique = std::collections::BTreeSet::new();
+            if faces.is_empty()
+                || faces.len() > crate::machine::FACES.len()
+                || faces
+                    .iter()
+                    .any(|face| !crate::machine::FACES.contains(face) || !unique.insert(*face))
+            {
+                return Err(invalid(
+                    "storage automation faces must be distinct cardinal normals",
+                ));
+            }
+        }
         if self.footprint.is_empty() || self.footprint.len() > MAX_FOOTPRINT {
             return Err(invalid("footprint must contain 1..=64 cells"));
         }
@@ -72,6 +90,12 @@ impl StorageBlockEntity {
             return Err(invalid("footprint must contain its declared anchor state"));
         }
         Ok(())
+    }
+
+    pub fn allowed_automation_faces(&self) -> &[[i32; 3]] {
+        self.automation_faces
+            .as_deref()
+            .unwrap_or(&crate::machine::FACES)
     }
 
     pub fn plan_place(

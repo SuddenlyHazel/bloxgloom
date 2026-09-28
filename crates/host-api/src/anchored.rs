@@ -103,6 +103,7 @@ impl AnchoredBlockEntity {
             anchor_state: self.anchor_state.clone(),
             footprint: self.footprint.clone(),
             slots: 1,
+            automation_faces: None,
         }
         .validate()?;
         let mut seen = std::collections::BTreeSet::new();

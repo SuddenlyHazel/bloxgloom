@@ -35,7 +35,10 @@ include capacity, references, footprint, and the storage schema identifier.
 
 - Block type, entity type, placeable item, and anchor state by namespaced key.
 - A bounded footprint of relative cells and their expected states.
-- Initial empty storage capacity.
+- Initial empty storage capacity and an optional allowlist of outward cardinal
+  automation faces (`None` preserves access from all six faces). An explicit
+  list must be nonempty, unique and cardinal. Slot insert/extract permissions
+  still come from the registered inventory screen.
 - One-item placement cost, one-item removal refund, and release of all contents.
 
 Placement/removal planning receives immutable coordinate/state/footprint

@@ -20,6 +20,7 @@ pub(in crate::server) fn definition() -> StorageBlockEntity {
         placement_item: "bloxgloom:chest".into(),
         anchor_state: "bloxgloom:chest".into(),
         slots: 27,
+        automation_faces: None,
         footprint: vec![FootprintCell {
             offset: [0; 3],
             state: "bloxgloom:chest".into(),

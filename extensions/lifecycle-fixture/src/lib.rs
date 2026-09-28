@@ -44,6 +44,7 @@ impl Extension for TallStore {
             placement_item: KEY.into(),
             anchor_state: KEY.into(),
             slots: 9,
+            automation_faces: None,
             footprint: vec![
                 FootprintCell {
                     offset: [0, 0, 0],

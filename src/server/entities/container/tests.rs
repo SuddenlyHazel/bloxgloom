@@ -1,6 +1,100 @@
 use super::*;
 
 #[test]
+fn storage_face_allowlist_denies_sides_but_keeps_top_slot_permissions_and_exact_slots() {
+    let catalog = Arc::new(Catalog::builtins());
+    let mut screen = bloxgloom_host_api::InventoryScreen::storage(
+        "test:store",
+        "test:store",
+        "STORE",
+        2,
+        2,
+        vec![[0; 3]],
+    );
+    screen.groups = vec![
+        bloxgloom_host_api::SlotGroup {
+            label: "INPUT".into(),
+            first: 0,
+            count: 1,
+            insert: true,
+            extract: false,
+        },
+        bloxgloom_host_api::SlotGroup {
+            label: "OUTPUT".into(),
+            first: 1,
+            count: 1,
+            insert: false,
+            extract: true,
+        },
+    ];
+    screen.validate().unwrap();
+    let mut declaration = super::super::chest::definition();
+    declaration.automation_faces = Some(vec![[0, 1, 0]]);
+    declaration.validate().unwrap();
+    let port = policy::Port::<ContainerPayload>::for_screen_with_faces(
+        Arc::new(screen),
+        declaration.allowed_automation_faces(),
+    );
+    assert_eq!(port.ports(), vec!["storage"]);
+    for face in [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] {
+        assert!(port.port(0, face).is_none());
+    }
+    assert!(port.port(1, [0, 1, 0]).is_none());
+    let top = port.port(0, [0, 1, 0]).unwrap();
+    let codec = Codec {
+        catalog: catalog.clone(),
+        slots: 2,
+    };
+    let stack = Stack::with_components(crate::items::STICK, 7, 1, vec![3, 5, 8]).unwrap();
+    let original = EntityPayload::new(ContainerPayload {
+        slots: vec![None, Some(stack.clone())],
+    });
+    let bytes = codec.encode(&original).unwrap();
+    let restored = codec.decode(&bytes).unwrap();
+    assert_eq!(codec.encode(&restored).unwrap(), bytes);
+    // The public inventory projection intentionally omits private components;
+    // the authoritative withdrawal below must preserve them exactly.
+    let offers = top.offers(&codec.public_view(&restored).unwrap());
+    assert_eq!(offers.len(), 1);
+    assert_eq!((offers[0].item, offers[0].count), (stack.item, stack.count));
+    assert!(
+        top.at_slot(0)
+            .unwrap()
+            .withdraw(&restored, stack.item, 1, &catalog)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        top.at_slot(1)
+            .unwrap()
+            .deposit(&restored, &stack, &catalog)
+            .unwrap()
+            .is_none()
+    );
+    let (after, taken) = top
+        .withdraw(&restored, stack.item, 1, &catalog)
+        .unwrap()
+        .unwrap();
+    assert_eq!(taken.count, 1);
+    assert_eq!(taken.components, stack.components);
+    let after = top.deposit(&after, &taken, &catalog).unwrap().unwrap();
+    let mut remaining = stack;
+    remaining.count -= 1;
+    let expected = ContainerPayload {
+        slots: vec![Some(taken), Some(remaining)],
+    };
+    assert_eq!(after.downcast_ref::<ContainerPayload>(), Some(&expected));
+    let bytes = codec.encode(&after).unwrap();
+    assert_eq!(
+        codec
+            .decode(&bytes)
+            .unwrap()
+            .downcast_ref::<ContainerPayload>(),
+        Some(&expected)
+    );
+}
+
+#[test]
 fn registered_storage_automation_respects_slot_access_and_agrees_with_discovery() {
     let catalog = Arc::new(Catalog::builtins());
     let mut screen = bloxgloom_host_api::InventoryScreen::storage(
@@ -29,6 +123,7 @@ fn registered_storage_automation_respects_slot_access_and_agrees_with_discovery(
     ];
     screen.validate().unwrap();
     let port = policy::Port::<ContainerPayload>::for_screen(Arc::new(screen));
+    assert!(port.port(0, [1, 0, 0]).is_some());
     let codec = Codec {
         catalog: catalog.clone(),
         slots: 2,

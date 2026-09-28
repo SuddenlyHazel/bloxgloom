@@ -13,6 +13,7 @@ fn public_slots(public: &[u8]) -> Option<Vec<Option<Stack>>> {
 pub(in crate::server::entities) struct Port<P> {
     screen: Option<Arc<bloxgloom_host_api::InventoryScreen>>,
     slot: Option<u8>,
+    faces: Arc<[[i32; 3]]>,
     payload: std::marker::PhantomData<P>,
 }
 impl<P> Port<P> {
@@ -21,13 +22,22 @@ impl<P> Port<P> {
         Self {
             screen: None,
             slot: None,
+            faces: Arc::from(bloxgloom_host_api::machine::FACES.as_slice()),
             payload: std::marker::PhantomData,
         }
     }
+    #[cfg(test)]
     pub fn for_screen(screen: Arc<bloxgloom_host_api::InventoryScreen>) -> Self {
+        Self::for_screen_with_faces(screen, &bloxgloom_host_api::machine::FACES)
+    }
+    pub fn for_screen_with_faces(
+        screen: Arc<bloxgloom_host_api::InventoryScreen>,
+        faces: &[[i32; 3]],
+    ) -> Self {
         Self {
             screen: Some(screen),
             slot: None,
+            faces: Arc::from(faces),
             payload: std::marker::PhantomData,
         }
     }
@@ -67,6 +77,7 @@ impl<P: Slots> EntityTransferPolicy for Port<P> {
             Arc::new(Self {
                 screen: self.screen.clone(),
                 slot: Some(slot),
+                faces: self.faces.clone(),
                 payload: std::marker::PhantomData,
             }) as Arc<dyn EntityTransferPolicy>
         })
@@ -102,10 +113,11 @@ impl<P: Slots> EntityTransferPolicy for Port<P> {
         vec!["storage".into()]
     }
     fn port(&self, index: u8, face: [i32; 3]) -> Option<Arc<dyn EntityTransferPolicy>> {
-        (index == 0 && bloxgloom_host_api::machine::FACES.contains(&face)).then(|| {
+        (index == 0 && self.faces.contains(&face)).then(|| {
             Arc::new(Self {
                 screen: self.screen.clone(),
                 slot: self.slot,
+                faces: self.faces.clone(),
                 payload: std::marker::PhantomData,
             }) as Arc<dyn EntityTransferPolicy>
         })

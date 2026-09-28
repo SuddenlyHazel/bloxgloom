@@ -880,6 +880,20 @@ impl Catalog {
                 if let Some(screen) = self.inventory_screen(entity.id) {
                     add(&screen.fingerprint_bytes());
                 }
+                if let Some(storage) = self.storage_lifecycles.iter().find(|storage| {
+                    storage.entity == entity.key.as_ref()
+                        && storage.allowed_automation_faces().len()
+                            != bloxgloom_host_api::machine::FACES.len()
+                }) {
+                    add(b"storage-automation-faces");
+                    let mut faces = storage.allowed_automation_faces().to_vec();
+                    faces.sort_unstable();
+                    for face in faces {
+                        for coordinate in face {
+                            add(&coordinate.to_le_bytes());
+                        }
+                    }
+                }
                 // Action keys have no numeric save identity. The player contract
                 // fingerprints the complete canonical registry at handshake/load.
                 if entity.key == "bloxgloom:player" {

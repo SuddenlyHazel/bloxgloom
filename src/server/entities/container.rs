@@ -66,11 +66,12 @@ pub(in crate::server) fn register(
     })?;
     builder.register_transfer_policy(
         definition.entity,
-        Arc::new(policy::Port::<ContainerPayload>::for_screen(
+        Arc::new(policy::Port::<ContainerPayload>::for_screen_with_faces(
             catalog
                 .inventory_screen(definition.entity)
                 .cloned()
                 .ok_or(EntityError::InvalidType)?,
+            definition.definition.allowed_automation_faces(),
         )),
     )?;
     builder.register_interaction_policy(
