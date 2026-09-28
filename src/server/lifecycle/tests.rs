@@ -15,15 +15,21 @@ fn generation_registration_is_bounded_and_rejects_duplicate_keys() {
     let mut registration = Registration::default();
     let entry = bloxgloom_host_api::generation::Registration {
         key: "sample:trees".into(),
+        revision: 1,
         contributor: Arc::new(Empty),
     };
     registration.generation_contributor(entry.clone()).unwrap();
+    let mut unversioned = entry.clone();
+    unversioned.key = "sample:unversioned".into();
+    unversioned.revision = 0;
+    assert!(registration.generation_contributor(unversioned).is_err());
     assert!(registration.generation_contributor(entry).is_err());
     assert_eq!(registration.generation.len(), 1);
     assert!(
         registration
             .generation_contributor(bloxgloom_host_api::generation::Registration {
                 key: "invalid".into(),
+                revision: 1,
                 contributor: Arc::new(Empty)
             })
             .is_err()

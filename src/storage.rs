@@ -8,7 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::content::{Catalog, ContentManifest, MAX_MANIFEST_BYTES};
-use crate::world::{BlockId, CHUNK_VOLUME, ChunkKey, TERRAIN_GENERATOR_VERSION};
+use crate::world::{
+    BlockId, CHUNK_VOLUME, ChunkKey, Generator, MAX_GENERATION_IDENTITY_BYTES,
+    TERRAIN_GENERATOR_VERSION,
+};
 
 const MAGIC: &[u8; 4] = b"BGED";
 // BGED v3: magic[4], format u16, terrain generator u16, seed u64,
@@ -22,7 +25,7 @@ const WORLD_META: &str = "world.meta";
 const CONTENT_MAP: &str = "content.map";
 pub(crate) const WORLD_LOCK: &str = ".world.lock";
 pub(crate) const CONVERSION_INCOMPLETE: &str = ".conversion-incomplete";
-const SAVE_FORMAT_VERSION: u16 = 6;
+const SAVE_FORMAT_VERSION: u16 = 7;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -47,11 +50,22 @@ impl Storage {
         Self::with_catalog(root, seed, Arc::new(crate::content::catalog().clone()))
     }
 
+    #[cfg(test)]
     pub fn with_catalog(
         root: impl AsRef<Path>,
         seed: u64,
         catalog: Arc<Catalog>,
     ) -> io::Result<Self> {
+        Self::with_generation(root, seed, catalog, &Generator::default())
+    }
+
+    pub(crate) fn with_generation(
+        root: impl AsRef<Path>,
+        seed: u64,
+        catalog: Arc<Catalog>,
+        generator: &Generator,
+    ) -> io::Result<Self> {
+        let identity = generator.identity();
         catalog
             .validate()
             .map_err(|_| invalid_data("incomplete content catalog"))?;
@@ -68,25 +82,13 @@ impl Storage {
         let metadata_path = root.join(WORLD_META);
         // Reject an incompatible existing world before creating even the lock
         // file. Re-read under the lock below to guard against concurrent edits.
-        match read_world_metadata(&metadata_path) {
+        match read_world_metadata(&metadata_path, &identity) {
             Ok(saved_seed) if saved_seed != seed => {
                 return Err(invalid_data("world directory belongs to another seed"));
             }
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                if root.exists() {
-                    for entry in fs::read_dir(&root)? {
-                        if entry?
-                            .path()
-                            .extension()
-                            .is_some_and(|extension| extension == "bged")
-                        {
-                            return Err(invalid_data(
-                                "old world edits require a supported save format; no automatic upgrade",
-                            ));
-                        }
-                    }
-                }
+                verify_new_world_directory(&root)?;
             }
             Err(error) => return Err(error),
         }
@@ -106,7 +108,7 @@ impl Storage {
                 format!("world is already open by another writer: {error}"),
             )
         })?;
-        let catalog = match read_world_metadata(&metadata_path) {
+        let catalog = match read_world_metadata(&metadata_path, &identity) {
             Ok(saved_seed) => {
                 if saved_seed != seed {
                     return Err(invalid_data("world directory belongs to another seed"));
@@ -114,24 +116,14 @@ impl Storage {
                 resolve_content_map_with(&root, false, &catalog)?
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                for entry in fs::read_dir(&root)? {
-                    let entry = entry?;
-                    if entry
-                        .path()
-                        .extension()
-                        .is_some_and(|extension| extension == "bged")
-                    {
-                        return Err(invalid_data(
-                            "old world edits require a supported save format; no automatic upgrade",
-                        ));
-                    }
-                }
+                verify_new_world_directory(&root)?;
                 let resolved = resolve_content_map_with(&root, true, &catalog)?;
-                let mut bytes = Vec::with_capacity(16);
+                let mut bytes = Vec::with_capacity(16 + identity.len());
                 bytes.extend_from_slice(WORLD_MAGIC);
                 bytes.extend_from_slice(&SAVE_FORMAT_VERSION.to_le_bytes());
                 bytes.extend_from_slice(&TERRAIN_GENERATOR_VERSION.to_le_bytes());
                 bytes.extend_from_slice(&seed.to_le_bytes());
+                bytes.extend_from_slice(&identity);
                 let temp_id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
                 let temp_path = root.join(format!(
                     ".world-meta.{}.{}.tmp",
@@ -337,15 +329,35 @@ impl Storage {
     }
 }
 
-fn read_world_metadata(path: &Path) -> io::Result<u64> {
+/// Without metadata no existing override or WAL can be attributed to this
+/// generator. An interrupted first creation also fails closed; never adopt it.
+fn verify_new_world_directory(root: &Path) -> io::Result<()> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        if entry?.file_name() != WORLD_LOCK {
+            return Err(invalid_data(
+                "world metadata missing from nonempty directory; no automatic upgrade",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_world_metadata(path: &Path, identity: &[u8]) -> io::Result<u64> {
     let mut bytes = Vec::new();
-    File::open(path)?.take(17).read_to_end(&mut bytes)?;
+    File::open(path)?
+        .take((16 + MAX_GENERATION_IDENTITY_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
     if bytes.len() == 14 && &bytes[..4] == WORLD_MAGIC {
         return Err(invalid_data(
             "unsupported old save format; no automatic upgrade",
         ));
     }
-    if bytes.len() != 16 || &bytes[..4] != WORLD_MAGIC {
+    if bytes.len() < 16 || &bytes[..4] != WORLD_MAGIC {
         return Err(invalid_data("invalid world metadata"));
     }
     if u16::from_le_bytes(bytes[4..6].try_into().unwrap()) != SAVE_FORMAT_VERSION {
@@ -355,6 +367,11 @@ fn read_world_metadata(path: &Path) -> io::Result<u64> {
     }
     if u16::from_le_bytes(bytes[6..8].try_into().unwrap()) != TERRAIN_GENERATOR_VERSION {
         return Err(invalid_data("incompatible terrain generator version"));
+    }
+    if &bytes[16..] != identity {
+        return Err(invalid_data(
+            "incompatible generation contributors or revisions",
+        ));
     }
     Ok(u64::from_le_bytes(bytes[8..16].try_into().unwrap()))
 }
@@ -392,7 +409,7 @@ fn resolve_content_map_with(
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             if !new_world {
-                return Err(invalid_data("v6 world is missing content manifest"));
+                return Err(invalid_data("world is missing content manifest"));
             }
             write_content_map(root, &current)?;
             Ok(Arc::new(catalog.clone()))

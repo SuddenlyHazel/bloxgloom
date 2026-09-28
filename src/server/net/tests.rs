@@ -1,6 +1,8 @@
 use super::*;
 #[path = "tests/extension_anchored.rs"]
 mod extension_anchored;
+#[path = "tests/generation.rs"]
+mod generation;
 use crate::server::DEFAULT_VIEW;
 use crate::server::outbound::OutboundTelemetry;
 use crate::server::{INPUT_CAPACITY, run_simulation_ticks};

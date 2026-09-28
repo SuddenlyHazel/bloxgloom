@@ -52,7 +52,10 @@ pub(super) fn state_for(save: &TestSave, seed: u64) -> State {
     server_state(seed, save.path().to_path_buf()).unwrap()
 }
 
-pub(super) fn save_inventory(save: &TestSave, profile: u128, inventory: &Inventory) {
+pub(super) fn save_inventory(save: &TestSave, seed: u64, profile: u128, inventory: &Inventory) {
+    // Fixtures must establish the world's generator identity before adding save
+    // data, just as production startup does. Missing metadata now fails closed.
+    drop(World::new(seed, save.path().to_path_buf()).unwrap());
     let store = InventoryStore::new(save.path()).unwrap();
     store
         .checkpoint_snapshot(

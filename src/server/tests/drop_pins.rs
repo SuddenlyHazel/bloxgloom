@@ -283,7 +283,7 @@ fn pin_thrown_drop_pickup_survives_restart_with_inventory() {
     let profile = 777;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(PIN_STONE, 1));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);

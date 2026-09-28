@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-struct FixedGeneration(&'static str);
+pub(super) struct FixedGeneration(pub(super) &'static str);
 
 impl Contributor for FixedGeneration {
     fn generate(&self, _: GenerationContext, output: &mut Output) -> Result<(), GenerationError> {
@@ -35,10 +35,12 @@ fn composed_generation_is_ordered_and_does_not_change_builtin_baseline() {
     let entries = [
         GenerationRegistration {
             key: "sample:z".into(),
+            revision: 1,
             contributor: Arc::new(FixedGeneration("bloxgloom:stone")),
         },
         GenerationRegistration {
             key: "sample:a".into(),
+            revision: 1,
             contributor: Arc::new(FixedGeneration("bloxgloom:dirt")),
         },
     ];
@@ -65,6 +67,7 @@ fn composed_generation_rejects_unknown_states_and_duplicate_keys() {
     let key = ChunkKey { x: 0, y: 8, z: 0 };
     let unknown = GenerationRegistration {
         key: "sample:unknown".into(),
+        revision: 1,
         contributor: Arc::new(FixedGeneration("sample:missing")),
     };
     assert_eq!(
@@ -82,6 +85,7 @@ fn composed_generation_rejects_unknown_states_and_duplicate_keys() {
             &catalog,
             &[GenerationRegistration {
                 key: "sample:invalid_write".into(),
+                revision: 1,
                 contributor: Arc::new(IgnoredOutOfBounds),
             }],
         ),
@@ -89,7 +93,7 @@ fn composed_generation_rejects_unknown_states_and_duplicate_keys() {
     );
 }
 
-fn test_dir() -> PathBuf {
+pub(super) fn test_dir() -> PathBuf {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

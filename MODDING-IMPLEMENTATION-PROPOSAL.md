@@ -377,7 +377,7 @@ support as the final model system.
 | --- | --- | --- |
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
 | 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | In progress |
-| 3 | Public generation context and migration of existing terrain/vegetation | Planned |
+| 3 | Public generation context and migration of existing terrain/vegetation | In progress |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Planned |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Planned |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Planned |
@@ -664,6 +664,16 @@ This section exists so compaction or a new session does not restart the design.
   failures discard the candidate. Live worlds do not activate contributors
   until authoritative chunk loading, edit baselines and persisted generator
   identity share this composition; Phase 3 remains in progress.
+- **Phase 3 live generation integration:** contributor identities (ordered
+  namespaced key and revision) now live in `world.meta` version 7, with defaults
+  moved to `world-v15` / `world-v15-fixture`. Mismatches fail before changing
+  save data. Authoritative loader, pending snapshots, journal restoration and
+  edit-baseline reconstruction all use the same frozen composed generator;
+  contributor worlds compare edits to their actual generated chunks. The
+  nonblocking-listener restart test observes contributed terrain. Workspace
+  tests (728 application, 10 host API), strict Clippy and format checks passed.
+  Native terrain/vegetation still need migration onto the public contributor
+  contract; the language runtime and package pipeline remain later phases.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

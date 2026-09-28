@@ -14,11 +14,9 @@ mod owner_apply;
 mod palette;
 mod terrain;
 use cache::ChunkCache;
-#[allow(
-    unused_imports,
-    reason = "Opt-in composition awaits persisted generator identities"
-)]
+#[cfg(test)]
 pub use generation::generate_chunk_with_contributors;
+pub(crate) use generation::{Generator, MAX_GENERATION_IDENTITY_BYTES};
 pub(crate) use owner_apply::OwnerApplyReceipt;
 pub use palette::{PaletteView, PalettedBlocks};
 pub use terrain::generate_chunk;
@@ -184,6 +182,7 @@ pub(crate) struct EditBasis {
     chunk: Arc<Chunk>,
     edits: BTreeMap<u16, BlockId>,
     seed: u64,
+    generator: Arc<Generator>,
     storage: Storage,
     catalog: Arc<crate::content::Catalog>,
     revision: Arc<AtomicU64>,
@@ -206,6 +205,9 @@ impl EditBasis {
         let mut after_chunk = (*self.chunk).clone();
         after_chunk.version = 0;
         let mut changed = false;
+        // Contributors have a chunk-only contract: never invent a separate
+        // per-cell implementation. Reconstruct once, lazily, on the edit worker.
+        let mut generated = None;
         for &(cell, block) in edits {
             let index = usize::from(cell);
             if index >= CHUNK_VOLUME
@@ -234,7 +236,18 @@ impl EditBasis {
             }
             changed = true;
             after_chunk.blocks.set(index, block);
-            let baseline = generated_block(x, y, z, self.seed);
+            let baseline = if self.generator.has_contributors() {
+                if generated.is_none() {
+                    generated = Some(self.generator.generate(
+                        self.key,
+                        self.seed,
+                        &self.catalog,
+                    )?);
+                }
+                generated.as_ref().expect("generated baseline").blocks[index]
+            } else {
+                generated_block(x, y, z, self.seed)
+            };
             if block == baseline {
                 after_edits.remove(&cell);
             } else {
@@ -301,6 +314,7 @@ pub struct World {
     seed: u64,
     storage: Storage,
     catalog: Arc<crate::content::Catalog>,
+    generator: Arc<Generator>,
     cache: ChunkCache,
     /// Per-key epochs exist only while asynchronous loads for that key are in flight.
     edit_epochs: HashMap<ChunkKey, u64>,
@@ -331,18 +345,30 @@ impl World {
         max_cached_chunks: usize,
         catalog: Arc<crate::content::Catalog>,
     ) -> io::Result<Self> {
+        Self::with_generation(seed, path, max_cached_chunks, catalog, Vec::new())
+    }
+
+    pub(crate) fn with_generation(
+        seed: u64,
+        path: PathBuf,
+        max_cached_chunks: usize,
+        catalog: Arc<crate::content::Catalog>,
+        contributors: Vec<bloxgloom_host_api::generation::Registration>,
+    ) -> io::Result<Self> {
         if max_cached_chunks == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "cache capacity must be positive",
             ));
         }
-        let storage = Storage::with_catalog(path, seed, catalog)?;
+        let generator = Arc::new(Generator::new(contributors)?);
+        let storage = Storage::with_generation(path, seed, catalog, &generator)?;
         let catalog = storage.catalog_arc();
         Ok(Self {
             seed,
             storage,
             catalog,
+            generator,
             cache: ChunkCache::new(max_cached_chunks),
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
@@ -364,6 +390,7 @@ impl World {
             seed: self.seed,
             storage: self.storage.clone(),
             catalog: Arc::clone(&self.catalog),
+            generator: Arc::clone(&self.generator),
             cache: ChunkCache::new(1),
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
@@ -480,7 +507,7 @@ impl World {
     /// Intended for the loader workers, which keep independent `World` values.
     pub fn load_chunk_uncached(&self, key: ChunkKey) -> io::Result<LoadedChunk> {
         let saved = self.storage.load(key)?;
-        Ok(Self::assemble_loaded_chunk(key, self.seed, saved))
+        self.assemble_loaded_chunk(key, saved)
     }
 
     /// A cloneable storage handle for persistence workers. The caller should
@@ -554,7 +581,7 @@ impl World {
         let saved = self
             .storage
             .decode_snapshot((!snapshot.is_empty()).then_some(snapshot))?;
-        Ok(Self::assemble_loaded_chunk(key, self.seed, saved))
+        self.assemble_loaded_chunk(key, saved)
     }
 
     /// Installs a worker result only when this key is still absent and has not
@@ -618,7 +645,7 @@ impl World {
         let existing = self.storage.read_snapshot(key)?;
         self.storage.decode_snapshot(existing.as_deref())?;
         let saved = self.storage.decode_snapshot(value)?;
-        let loaded = Self::assemble_loaded_chunk(key, self.seed, saved);
+        let loaded = self.assemble_loaded_chunk(key, saved)?;
         self.bump_edit_epoch(key)?;
         self.advance_prepared_revision(key)?;
         if let Err(error) = self.storage.replace_snapshot(key, value) {
@@ -750,6 +777,7 @@ impl World {
             seed: self.seed,
             storage: self.storage.clone(),
             catalog: Arc::clone(&self.catalog),
+            generator: Arc::clone(&self.generator),
             revision,
             expected_revision,
         }))
@@ -905,16 +933,16 @@ impl World {
         Ok(next)
     }
 
-    fn assemble_loaded_chunk(key: ChunkKey, seed: u64, saved: SavedEdits) -> LoadedChunk {
-        let mut chunk = generate_chunk(key, seed);
+    fn assemble_loaded_chunk(&self, key: ChunkKey, saved: SavedEdits) -> io::Result<LoadedChunk> {
+        let mut chunk = self.generator.generate(key, self.seed, &self.catalog)?;
         for (&index, &block) in &saved.blocks {
             chunk.blocks.set(index as usize, block);
         }
         chunk.version = saved.version;
-        LoadedChunk {
+        Ok(LoadedChunk {
             chunk,
             edits: saved.blocks,
-        }
+        })
     }
 
     fn cache_loaded_chunk(&mut self, loaded: LoadedChunk) -> bool {
@@ -928,7 +956,7 @@ impl World {
         }
         let loaded = if let Some(snapshot) = self.pending_snapshots.get(&key) {
             let saved = self.storage.decode_snapshot(snapshot.as_deref())?;
-            Self::assemble_loaded_chunk(key, self.seed, saved)
+            self.assemble_loaded_chunk(key, saved)?
         } else {
             self.load_chunk_uncached(key)?
         };

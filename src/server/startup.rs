@@ -49,10 +49,6 @@ pub(crate) struct ServerStartup {
     systems: Vec<(SystemDescriptor, Arc<dyn SystemHandler>)>,
     owner_codecs: BTreeMap<SystemId, StartupOwnerCodec>,
     owners: Vec<(SystemId, OwnerKey, OwnerData)>,
-    #[allow(
-        dead_code,
-        reason = "Generation activation waits for persistent baseline support"
-    )]
     generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 
@@ -67,6 +63,10 @@ pub(in crate::server) struct StartupOwnerCodec {
 }
 
 impl ServerStartup {
+    pub(super) fn generation(&self) -> Vec<bloxgloom_host_api::generation::Registration> {
+        self.generation.clone()
+    }
+
     /// The development host seam. The package receives only the public registrar.
     #[allow(
         dead_code,

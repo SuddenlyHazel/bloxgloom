@@ -117,11 +117,20 @@ pub struct Registration {
     /// Stable namespaced key, unique among contributors. Order is lexical by key;
     /// later keys overwrite earlier keys at an overlapping cell.
     pub key: String,
+    /// Persisted generation identity. Must be nonzero and must change whenever
+    /// the algorithm, configuration, or state-key choices change its output.
+    /// Native contributors are trusted to honor this and the purity contract.
+    pub revision: u32,
     pub contributor: Arc<dyn Contributor>,
 }
 
 impl Registration {
     pub fn validate(&self) -> Result<(), RegistrationError> {
+        if self.revision == 0 {
+            return Err(RegistrationError(
+                "generation revision must be nonzero".into(),
+            ));
+        }
         let Some((namespace, name)) = self.key.split_once(':') else {
             return Err(RegistrationError(
                 "invalid generation contributor key".into(),

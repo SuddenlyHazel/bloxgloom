@@ -468,8 +468,13 @@ fn server_state_with_startup(
     // because an existing world's manifest may resolve numeric IDs.
     let _ = startup.entity_types_for(Arc::clone(&catalog))?;
     let _ = startup.block_actions_for(&catalog)?;
-    let mut world =
-        World::with_capacity_and_catalog(seed, save_dir.clone(), SERVER_CHUNK_CACHE, catalog)?;
+    let mut world = World::with_generation(
+        seed,
+        save_dir.clone(),
+        SERVER_CHUNK_CACHE,
+        catalog,
+        startup.generation(),
+    )?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let position_store = PositionStore::new(&save_dir)?;
     let catalog = world.catalog_arc();

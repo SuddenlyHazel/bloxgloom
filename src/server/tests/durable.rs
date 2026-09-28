@@ -370,7 +370,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
     let profile = 611;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let stale = state.inventory_store.load(profile).unwrap();
     let mut tick = 1;
@@ -443,7 +443,7 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
     let profile = 42;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
@@ -525,7 +525,7 @@ fn inventory_move_is_wal_gated_exactly_retried_and_recovered() {
     let profile = 73;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
@@ -634,7 +634,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     let profile = 84;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 2));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
@@ -734,7 +734,7 @@ fn pickup_commits_inventory_and_drop_removal_before_restart() {
     let profile = 95;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 1));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
@@ -906,7 +906,7 @@ fn stacking_pickup_and_restart_conserve_every_item() {
     let profile = 1552;
     let mut inventory = Inventory::default();
     inventory.slots[0] = Some(crate::inventory::Stack::new(STONE_ITEM, 100));
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
@@ -949,7 +949,7 @@ fn pickup_leaves_the_exact_uncredited_remainder_after_restart() {
         *slot = Some(crate::inventory::Stack::new(STONE_ITEM, 128));
     }
     inventory.slots[0].as_mut().unwrap().count = 127;
-    save_inventory(&save, profile, &inventory);
+    save_inventory(&save, 7, profile, &inventory);
     let mut state = state_for(&save, 7);
     let mut tick = 1;
     let session = join(&mut state, &mut tick, profile);
