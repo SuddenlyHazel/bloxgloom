@@ -455,7 +455,8 @@ accepted. No phase-level work remains.
 **Working:** bounded local packages register sprite items and simple placeable
 opaque cubes (including own verified PNG textures), semantic actions/decisions,
 entity schemas, generators and chunk systems. Lua callbacks execute server-side
-with source-attributed failures; local UI handlers are available.
+with source-attributed failures; local UI handlers and a downloaded, verified
+client startup module can initialize connection-local authored UI text/state.
 
 **Remaining**
 
@@ -474,21 +475,27 @@ with source-attributed failures; local UI handlers are available.
 
 **Working:** real server-to-client verified bundle transfer, negotiated frozen
 catalogs, exact in-process byte reuse and package UI/effect/material assets.
+A verified client/shared `client_startup` module executes once per connection
+on a bounded worker before `ContentReady`; its host currently exposes only
+initial authored UI text/state. Real-listener reconnect/switch tests cover
+that narrow session lifecycle.
 
 **Remaining**
 
-- [ ] Execute verified downloaded client/shared Luau modules as the session's
-  startup runtime; reject incompatible runtime/dependency/catalog state.
+- [ ] Expand the narrow downloaded startup host into the documented client
+  presentation/replica services and resource registration model, with bounded
+  session-scoped callbacks and explicit compatibility/readiness failures.
 - [ ] Show clear preparation/error status and make disconnect, retry/reconnect
   and switching differently modded servers reliably retire old resources.
+  Connection setup currently waits for a worker before opening the window.
 - [ ] Exercise those paths over the real listener. Disk caching and elaborate
   progress UI are **not** prerequisites unless reliability testing requires them.
 
 #### Phase 6 — authored UI · In progress
 
 **Working:** Taffy-backed verified documents, basic layout/images/fonts/input,
-local Luau event handlers and one client-composed, server-authorized item action
-(`uidemo` transfers a stick).
+local Luau event handlers, downloaded startup text/state and one client-composed,
+server-authorized item action (`uidemo` transfers a stick).
 
 **Remaining**
 
@@ -1036,6 +1043,15 @@ This section exists so compaction or a new session does not restart the design.
   and integration formatting/strict Clippy and three focused burn tests pass.
   **Native fire has not been migrated**: frontier computation, message batching,
   glowstone seeding and replacement of its private scheduler remain open.
+- **Phase 5 downloaded startup slice:** a verified format-2 client/shared
+  `client_startup` module can run once per connection on a bounded Luau worker
+  before `ContentReady`. Exact direct-dependency imports cannot reach server-only
+  source; a narrow presentation host initializes owned authored UI text/state.
+  Startup failure refuses readiness with package/module attribution, and
+  reconnect/switch constructs fresh session state. Focused real-listener,
+  failure, import-visibility and caught-limit tests, formatting and strict
+  Clippy passed; the isolated agent suite passed 861/861. General client
+  services and asynchronous window-visible preparation remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
