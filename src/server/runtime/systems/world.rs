@@ -64,8 +64,8 @@ pub(super) fn capture(
 }
 
 /// Translate public owner proposals through the shared edit/neighbor planner.
-/// Only terrain is supported in this increment: reject any generated entity,
-/// drop or inventory participant rather than committing a partial lifecycle.
+/// Generated entities and drops share the owner's WAL record and receipt. There
+/// is no player actor, so player inventory/pickup effects remain unsupported.
 pub(super) struct EditInputs<'a> {
     pub world: &'a mut World,
     pub entities: &'a EntityStore,
@@ -177,15 +177,10 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         }
     }
     let planned = planned?;
-    if !planned.entity_updates.is_empty()
-        || !planned.entity_spawns.is_empty()
-        || !planned.drops.is_empty()
-        || planned.inventory.is_some()
-        || !planned.drop_takes.is_empty()
-    {
+    if planned.inventory.is_some() || !planned.drop_takes.is_empty() {
         return Err(io::Error::new(
             ErrorKind::Unsupported,
-            "owner block edit needs atomic entity/drop participants",
+            "owner block edit has no player inventory/pickup participant",
         ));
     }
     let radius = i64::from(radius.expect("edits require a world view"));
@@ -217,6 +212,39 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 "owner block edit overlaps a player",
             ));
         }
+    }
+    // Preflight the shared merge planner's spatial traversal before it collects
+    // candidates. Dense pages fail the bounded dependency capture, rather than
+    // scanning an arbitrarily large population and truncating afterwards.
+    for (position, _, _) in &planned.drops {
+        reads.entities(
+            entities
+                .capture_mobile_dependencies(*position, 1.0)
+                .map_err(io::Error::other)?,
+        )?;
+    }
+    let participants = crate::server::drops::plan_stack_spawns_with_extra(
+        entities,
+        &catalog,
+        &planned.drops,
+        planned.entity_spawns,
+        tick,
+        crate::server::drops::unix_ms(),
+    )?;
+    let participants = gameplay::combine_entities(entities, participants, planned.entity_updates)?;
+    // Planning and admission run consecutively on the coordinator, with no
+    // intervening apply. Admission fences every dependency until the receipt;
+    // publication validates again before installing any participant.
+    if !reads.entities_current(entities) {
+        return Err(io::Error::new(
+            ErrorKind::WouldBlock,
+            "stale owner entity read",
+        ));
+    }
+    if let Some(transaction) = &participants {
+        entities
+            .validate_prepared(transaction)
+            .map_err(io::Error::other)?;
     }
     let deltas = planned
         .edits
@@ -255,6 +283,6 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         pickups: Vec::new(),
         fire_seed: None,
         entity_wakes: Vec::new(),
-        entities: None,
+        entities: participants,
     }))
 }

@@ -403,8 +403,8 @@ ship reduced versions of phases 2–8:
    text, visibility and a short string. Even the sample “Plant a seed” button
    changes presentation only; it does not plant anything. It needs an explicit
    authorized server-request bridge, result/receipt handling and a real example.
-2. **Server gameplay parity is incomplete.** Owner systems reject edits that
-   generate entity/drop participants, wakes have no payload, and native fire
+2. **Server gameplay parity is incomplete.** Owner-world transactions now
+   include generated entity/drop participants, but wakes have no payload and native fire
    propagation/delivery, drop motion/merging/expiration, player rules and
    commands still have privileged paths. Shared decisions for some stages do
    not migrate the whole lifecycle.
@@ -481,25 +481,20 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. The user now explicitly
-  requests one coder subagent at a time, with personal review and commits.
-- **Active work (September 28, 2026):** Phase 3 is done. Phases 2, 4, 5
-  6 and 7 are in progress; Phase 8 has not started. Phase 6 now includes
-  a reviewed authored UI document/layout/resource slice; Luau event dispatch,
-  richer controls and built-in panel migration remain. Phase 2
-  still needs atomic owner entity/drop effects, durable cross-owner payloads,
-  fire migration and remaining native drop/player/command parity. Phase 4 has
-  server-side Luau startup, generation, decisions, entities, inventory and
-  scheduled owner systems, but lacks complete client binding and the remaining
-  gameplay services. Phase 5 transfers and verifies bundles and negotiates the
-  current Luau catalog, but still lacks client script/resource lifecycle and
-  some non-Luau package forms. Phase 6 has a reviewed Taffy inventory-search
-  prototype, not the full authored UI system.
-- **Latest committed increment:** `18481b9` selects Taffy layout and adds a
-  focused inventory search with mouse/keyboard focus. The preceding commits
-  `f8b283c`, `a885160`, `1e1e28e` and `09a9c61` delivered canonical package
-  artifacts, bounded transfer, session sprite catalogs and full current Luau
-  catalog compatibility metadata respectively. A bounded single-effect WGSL
-  slice has since landed; this plan is not complete.
+  authorizes parallel, scoped agents with personal review and commits.
+- **Active work (September 28, 2026):** Phases 1 and 3 are done; phases 2 and
+  4–7 are in progress; phase 8 has not started. Phase 2 owner transactions now
+  include entity/drop participants, but cross-owner payloads, fire and other
+  native parity remain. Phase 4 has several server-side Luau callbacks and a
+  local client UI handler, not complete binding parity. Phase 5 transfers
+  bundles and negotiates catalogs, without complete client runtime/cache
+  lifecycle. Phase 6 displays authored UI and handles local presentation
+  events, but cannot yet request gameplay; its request bridge is in flight.
+  Phase 7 has a verified single fullscreen effect and a renderer-only custom
+  albedo hook, not package-delivered world materials or effect composition.
+- **Recent reviewed commits:** `279cbcc` adds opt-in Luau LSP IDE guidance;
+  `4f141fe` adds the renderer-only WGSL albedo hook. The owner participant
+  increment is under review, not yet committed. This plan is not complete.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
@@ -883,6 +878,15 @@ This section exists so compaction or a new session does not restart the design.
   mod-authored material feature**: no verified package declaration, client
   resource preparation or live session installation connects the hook to a
   downloaded mod. Phase 7 still needs that integration and broader bindings.
+- **Phase 2 owner participant increment:** owner-world edits now carry generated
+  entity spawns/updates/schedules and drops with owner state, terrain and
+  deadline in one WAL record. Entity dependencies and mirror capacity are
+  reserved before admission; receipt-gated apply/publication and restart tests
+  protect against partial results. Durable cross-owner payload intent remains
+  unimplemented. Focused owner tests, strict Clippy and formatting passed; a
+  full-suite response-path test failed and reproduced isolated while other
+  client work was concurrently in flight, so final combined verification
+  remains open rather than being declared clean.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
@@ -894,4 +898,5 @@ work lands, and retain the latest verification results and next concrete step.
 Before resuming after compaction, read this document, the continuation record,
 repository guidance, and current git state. Preserve unrelated user work.
 Continue through all approved phases without reopening settled scope or stopping
-at an intermediate milestone. Do not spawn subagents.
+at an intermediate milestone. Parallel agents are now explicitly authorized for
+separate scoped tracks; review and commit each integrated increment personally.

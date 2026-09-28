@@ -71,6 +71,24 @@ fn canonical_key_sets_collapse_duplicates_and_sort() {
     );
 }
 
+#[test]
+fn owner_entity_publication_metadata_does_not_conflict_at_arbitration() {
+    let metadata = key(crate::server::entities::ENTITY_REVISION_DOMAIN, 0);
+    let sets: Vec<_> = [1, 2]
+        .into_iter()
+        .map(|owner| {
+            canonical_key_set(
+                [
+                    Change::new(metadata.clone(), vec![0], vec![1]),
+                    Change::new(key("test:participant", owner), vec![0], vec![1]),
+                ]
+                .iter(),
+            )
+        })
+        .collect();
+    assert_eq!(arbitrate_key_sets(&sets), vec![WaveDisposition::Commit; 2]);
+}
+
 /// Builds one patch per owner over `values`, each carrying a u64
 /// replacement, in stable owner order.
 fn patches_for(values: &[(OwnerKey, u64)]) -> Vec<OwnerPatch> {

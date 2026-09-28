@@ -35,13 +35,14 @@ pub(super) fn apply_committed_action(
 }
 
 /// An owner-state and world edit already share one WAL record; this applies
-/// its block projection at the same receipt without changing the drop-expiry
+/// its block/entity projection at the same receipt without changing the drop-expiry
 /// coordinator's independent queued sweep.
 pub(super) fn apply_committed_owner_world(
     state: &mut State,
     action: CommitAction,
+    entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
-    apply_committed_action_inner(state, action, None, false)
+    apply_committed_action_inner(state, action, entity_permit, false)
 }
 
 fn apply_committed_action_inner(

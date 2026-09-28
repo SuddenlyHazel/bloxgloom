@@ -53,7 +53,8 @@ pub(in crate::server) struct OwnerWorldAction(pub CommitAction);
 
 impl OwnerWorldAction {
     pub fn changes(&self) -> Vec<Change> {
-        self.0
+        let mut changes: Vec<_> = self
+            .0
             .world_edits
             .iter()
             .filter(|edit| edit.changed)
@@ -64,7 +65,11 @@ impl OwnerWorldAction {
                     edit.after_snapshot.clone(),
                 )
             })
-            .collect()
+            .collect();
+        if let Some(entities) = &self.0.entities {
+            changes.extend_from_slice(entities.changes());
+        }
+        changes
     }
 }
 
@@ -197,13 +202,18 @@ pub(in crate::server) fn arbitrate_key_sets(key_sets: &[Vec<StateKey>]) -> Vec<W
     dispositions
 }
 
-/// Collects one wave's full change key set in canonical order for
-/// arbitration. Duplicate keys within one wave are collapsed: a transaction
-/// never touches the same key twice.
+/// Collects one wave's reservable change keys in canonical order for
+/// arbitration. Publication-only entity metadata is chained by admission;
+/// duplicate keys within one wave are collapsed.
 pub(in crate::server) fn canonical_key_set<'a>(
     changes: impl Iterator<Item = &'a Change>,
 ) -> Vec<StateKey> {
-    let set: BTreeSet<StateKey> = changes.map(|change| change.key.clone()).collect();
+    // Publication metadata is chained by the common gate, not reserved. It
+    // must not serialize otherwise disjoint entity participants at arbitration.
+    let set: BTreeSet<StateKey> = changes
+        .filter(|change| change.key.domain != crate::server::entities::ENTITY_REVISION_DOMAIN)
+        .map(|change| change.key.clone())
+        .collect();
     set.into_iter().collect()
 }
 
