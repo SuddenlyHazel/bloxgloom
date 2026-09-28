@@ -1,6 +1,25 @@
-# Local Luau package snapshots (foundation)
+# Local Luau packages (work in progress)
 
-Local package discovery is implemented but **not yet connected to game startup**.
+# Try the UI example
+
+`fixtures/packages/uidemo/` is a runnable package showing the manifest, server
+entry, JSON document/styles, TTF font, PNG image and a client Luau event handler.
+From the repository root, start these in separate terminals using a new save
+directory (do not point the server at a world created with another package set):
+
+```sh
+cargo run --release -- server-packages fixtures/packages 127.0.0.1:4000 ./world-uidemo
+cargo run --release -- client 127.0.0.1:4000
+```
+
+Press **F6** after joining; type in the field, then click the button or focus
+it and press Enter. These changes are **local UI presentation only**: the
+example does not plant a seed or send a server request. See `client/view.luau`
+for the handler and `assets/ui/welcome.json` for the widget/event declarations.
+`cargo run -- ui-preview <output-dir>` writes UI previews without joining.
+
+# Package shape
+
 Place one package directory per identity under a chosen root, containing a UTF-8
 `package.txt` and declared `.luau` files:
 
@@ -58,7 +77,8 @@ on the requesting player's inventory. The existing server authorizes targets,
 reach and sessions, and commits successful effects through its shared gameplay
 transaction. Script failures abort that transaction; no Lua state survives
 between retries. See `src/server/script/gameplay.rs` for limits and fields.
-Other gameplay events and remote package delivery remain unfinished.
+Other gameplay event shapes are still being bound. Client bundle delivery is
+implemented; this action callback runs on the authoritative server.
 
 Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
 target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
@@ -92,16 +112,16 @@ Package format 2 declares each module as `module server|client|shared <name>
 assets/textures/<path>.png`. Format 1 modules stay server-only. The immutable
 client artifact contains client/shared source and declared texture bytes, but
 never server modules or original paths. Its SHA-256 cache key verifies exact
-canonical bytes; it does not authenticate who supplied that key. Package
-client execution and decoded-image limits are separate work. Local package
+canonical bytes; it does not authenticate who supplied that key. General client
+module startup and decoded-image limits for non-UI textures are separate work. Local package
 servers now offer the verified bundle before catalog matching and gameplay
 admission. The client verifies and caches one artifact across reconnects;
 matching bundle bytes alone do not grant client catalog compatibility.
-For current local packages that register only sprite items, canonical bundle
-metadata now constructs a fresh matching session catalog, including saved
-numeric IDs. Downloaded code remains inert. Servers with other scripted
-catalog registrations still reject the client explicitly until those metadata
-types are supported.
+Canonical bundle metadata builds a fresh session catalog for the current Luau
+startup item/action/entity/handler/system identities, including saved numeric
+IDs. Server-only code is not downloaded or executed on clients; only explicitly
+bound client/shared UI presentation modules run there. This is not yet a
+general client module startup or resource API.
 
 An authored `ui-document` may opt into client-only presentation events with
 `"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The
