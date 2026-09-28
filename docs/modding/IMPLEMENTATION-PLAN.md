@@ -450,17 +450,17 @@ accepted. No phase-level work remains.
 
 #### Phase 4 — Luau authoring · In progress
 
-**Working:** bounded local packages register sprite items (including own PNG
-textures), semantic actions/decisions, entity schemas, generators and chunk
-systems. Lua callbacks execute server-side with source-attributed failures;
-local UI handlers are available.
+**Working:** bounded local packages register sprite items and simple placeable
+opaque cubes (including own verified PNG textures), semantic actions/decisions,
+entity schemas, generators and chunk systems. Lua callbacks execute server-side
+with source-attributed failures; local UI handlers are available.
 
 **Remaining**
 
-- [ ] Bind ordinary authored blocks and the broader public content surface:
-  materials, creatures, machines, screens and applicable tags/components.
-  Placeable package-owned cubes are being implemented separately, **not yet
-  reviewed or accepted**.
+- [ ] Widen the initial placeable cube binding to the broader public content
+  surface: useful block properties/material options, creatures, machines,
+  screens and applicable tags/components. One-state opaque cubes are accepted;
+  they do not complete general content authoring.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [ ] Bind owner neighborhood reads, durable payload intents and generated
@@ -499,15 +499,15 @@ local Luau event handlers and one client-composed, server-authorized item action
 
 #### Phase 7 — authored visuals · In progress
 
-**Working:** verified package PNG textures can back sprite items; one WGSL
-albedo shader can shade a selected catalog layer, and one fullscreen scene-color
-effect runs. UI images/fonts also arrive through packages.
+**Working:** verified package PNG textures can back sprites and simple placeable
+world cubes; one WGSL albedo shader can shade their selected catalog layer, and
+one fullscreen scene-color effect runs. UI images/fonts also arrive through
+packages.
 
 **Remaining**
 
-- [ ] Put package textures/materials on package-authored world geometry (pending
-  the separate block-binding review), then widen supported geometry/material
-  inputs and stable shader bindings.
+- [ ] Widen the initial cube/sprite albedo hook to useful supported geometry,
+  material inputs and stable shader bindings beyond one selected texture layer.
 - [ ] Bind typed shader parameters to client presentation and replicated data.
 - [ ] Support explicit effect-pass inputs/outputs, ordering and composition,
   with bounded renderer-owned GPU resources and useful preparation errors.
@@ -984,8 +984,19 @@ This section exists so compaction or a new session does not restart the design.
   texture registration in Luau startup, binds exact verified bytes in client
   bundle v6, and uses `jade:tile` on a package sprite item; listener join,
   identity/remapping, invalid-registration and GPU shading tests passed.
-  Package-authored blocks, multiple material owners, typed parameters and
-  other geometry remain open.
+  Basic package-authored cubes landed in the follow-up below; multiple material
+  owners, typed parameters and broader geometry remain open.
+- **Phase 4 authored cube slice:** format-2 Luau startup now accepts
+  `register_block(key, name, texture)` for a bounded, one-state opaque cube
+  and its same-key placeable item. The package must first register its own
+  declared PNG texture. Client bundle v7 carries the declaration into the
+  verified session catalog; a real nonblocking-listener test places the block,
+  restarts, compares manifest/fingerprint/PNG identity and confirms world-mesh
+  faces select its shader texture layer. Invalid namespace, missing texture,
+  duplicates and over-budget declarations fail before opening a save. Focused
+  tests, formatting and strict Clippy passed on integration; the agent's
+  isolated full suite passed 847/847. This is not property-rich block authoring
+  or a general material/geometry pipeline.
 - **Phase 2 owner participant increment:** owner-world edits now carry generated
   entity spawns/updates/schedules and drops with owner state, terrain and
   deadline in one WAL record. Entity dependencies and mirror capacity are
