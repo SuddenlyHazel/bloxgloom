@@ -91,6 +91,35 @@ fn spawn_merging_onto_partial_stack_never_exceeds_cap() {
 }
 
 #[test]
+fn production_merge_picks_oldest_id_until_it_expires() {
+    let (mut store, catalog) = test_store();
+    let first = spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 10, 1_000)[0];
+    let second = spawn(&mut store, &catalog, [1.5, 0.0, 0.0], 10, 2_000)[0];
+    spawn(&mut store, &catalog, [0.75, 0.0, 0.0], 1, 2_001);
+    assert_eq!(
+        super::super::queries::stack(&store, first).unwrap().count,
+        11
+    );
+    assert_eq!(
+        super::super::queries::stack(&store, second).unwrap().count,
+        10
+    );
+    let refresh = 2_001 + LIFETIME.as_millis() as u64 / 2;
+    spawn(&mut store, &catalog, [1.5, 0.0, 0.0], 1, refresh);
+    let at_expiry = 2_001 + LIFETIME.as_millis() as u64;
+    spawn(&mut store, &catalog, [0.75, 0.0, 0.0], 1, at_expiry);
+    assert_eq!(
+        super::super::queries::stack(&store, first).unwrap().count,
+        11
+    );
+    assert_eq!(
+        super::super::queries::stack(&store, second).unwrap().count,
+        12
+    );
+    assert_eq!(total(&store, [0.75, 0.0, 0.0]), 23);
+}
+
+#[test]
 fn take_applies_partial_and_full_removal() {
     let (mut store, catalog) = test_store();
     let ids = spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 10, 1_000);

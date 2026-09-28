@@ -18,10 +18,7 @@ use crate::server::entities::{
     EntityError, EntityId, EntityLocation, EntityPatch, EntitySpawn, EntityStore,
     PreparedEntityBatch,
 };
-
-fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
-    (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
-}
+use bloxgloom_host_api::entity::{DropLifetime, DropMergeCandidate, DropMergeContext};
 
 /// Plans harvest/drop-stack creation without mutating authoritative state.
 /// Existing merge targets resolve in stable ID order; newly allocated IDs
@@ -120,7 +117,7 @@ pub(in crate::server) fn plan_stack_spawns_with_extra(
         }
         let mut count = stack.count;
         while count > 0 {
-            let target = merge_target(store, &merged, &fresh, *position, stack, now_ms);
+            let target = merge_target(store, &merged, &fresh, *position, stack, now_ms)?;
             if let Some(id) = target {
                 let (entry, from_fresh) = if let Some(entry) = fresh.iter_mut().find(|e| e.id == id)
                 {
@@ -243,9 +240,10 @@ struct PlannedNew {
     delay: Duration,
 }
 
-/// Finds a merge target in stable ID order: live drops first (ascending),
-/// then planned allocations in creation order (whose predicted IDs already
-/// exceed every live ID, matching the historic combined sort).
+/// Capture eligible spatial candidates from the authoritative entity store and
+/// use the public merge policy for identity, age, radius, cap and ID selection.
+/// Newly allocated IDs exceed live IDs, so a single minimum-ID selection keeps
+/// the historic ordering without sorting the captured candidates.
 fn merge_target(
     store: &EntityStore,
     merged: &BTreeMap<EntityId, (Stack, Duration)>,
@@ -253,52 +251,57 @@ fn merge_target(
     position: [f32; 3],
     stack: &Stack,
     now_ms: u64,
-) -> Option<EntityId> {
+) -> io::Result<Option<EntityId>> {
     let min = position.map(|coordinate| coordinate - 1.0);
     let max = position.map(|coordinate| coordinate + 1.0);
-    let mut live: Vec<EntityId> = store.query_mobile_aabb(min, max).unwrap_or_default();
-    live.sort();
-    for id in live {
-        let Some(snapshot) = store.snapshot(id) else {
-            continue;
-        };
+    let live = store.query_mobile_aabb(min, max).map_err(plan_error)?;
+    let live = live.into_iter().filter_map(|id| {
+        let snapshot = store.snapshot(id)?;
         if snapshot.entity_type != DROP_ENTITY_TYPE {
-            continue;
+            return None;
         }
         let EntityLocation::Mobile { position: at } = snapshot.location else {
-            continue;
+            return None;
         };
-        let Some(live_payload) = snapshot.private_payload.downcast_ref::<DropEntityPayload>()
-        else {
-            continue;
-        };
-        // A drop already merged by this plan counts at its merged size with
-        // a refreshed birth; anything else counts at its live size and age.
-        let (current, age_ms) = match merged.get(&id) {
-            Some((stack, _)) => (stack, 0),
-            None => (
-                &live_payload.stack,
-                now_ms.saturating_sub(live_payload.created_unix_ms),
-            ),
-        };
-        if current.item == stack.item
-            && current.components == stack.components
-            && u128::from(age_ms) < LIFETIME.as_millis()
-            && current.count < STACK_LIMIT
-            && distance_sq(at, position) < 1.0
-        {
-            return Some(id);
-        }
-    }
-    fresh
-        .iter()
-        .find(|entry| {
-            entry.stack.item == stack.item
-                && entry.stack.components == stack.components
-                && entry.stack.count < STACK_LIMIT
-                && distance_sq(entry.position, position) < 1.0
+        let payload = snapshot
+            .private_payload
+            .downcast_ref::<DropEntityPayload>()?;
+        // A drop already merged in this plan has a refreshed birth and count.
+        let (current, age_ms) = merged.get(&id).map_or_else(
+            || {
+                (
+                    &payload.stack,
+                    now_ms.saturating_sub(payload.created_unix_ms),
+                )
+            },
+            |(current, _)| (current, 0),
+        );
+        Some(DropMergeCandidate {
+            id: id.get(),
+            position: at,
+            count: current.count,
+            age_ms,
+            same_stack: current.item == stack.item && current.components == stack.components,
         })
-        .map(|entry| entry.id)
+    });
+    let planned = fresh.iter().map(|entry| DropMergeCandidate {
+        id: entry.id.get(),
+        position: entry.position,
+        count: entry.stack.count,
+        age_ms: 0,
+        same_stack: entry.stack.item == stack.item && entry.stack.components == stack.components,
+    });
+    Ok(DropMergeContext {
+        position,
+        radius: 1.0,
+        lifetime_ms: LIFETIME
+            .as_millis()
+            .try_into()
+            .expect("drop lifetime fits u64"),
+        stack_limit: STACK_LIMIT,
+    }
+    .select(live.chain(planned))
+    .and_then(EntityId::new))
 }
 
 /// Plans count transfers out of selected drops. A full removal stages a
@@ -389,7 +392,15 @@ pub(in crate::server) fn plan_expired(
             .payload
             .downcast_ref::<DropEntityPayload>()
             .is_some_and(|payload| {
-                u128::from(now_ms.saturating_sub(payload.created_unix_ms)) >= LIFETIME.as_millis()
+                DropLifetime {
+                    created_ms: payload.created_unix_ms,
+                    now_ms,
+                    lifetime_ms: LIFETIME
+                        .as_millis()
+                        .try_into()
+                        .expect("drop lifetime fits u64"),
+                }
+                .expired()
             });
         if !expired {
             continue;

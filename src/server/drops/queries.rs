@@ -13,6 +13,7 @@ use crate::inventory::Stack;
 use crate::protocol::DroppedItem;
 use crate::server::entities::{EntityId, EntityLocation, EntityStore, MobilePage};
 use crate::world::ChunkKey;
+use bloxgloom_host_api::entity::{DropLifetime, DropPickupContext};
 
 struct LiveDrop {
     id: EntityId,
@@ -58,6 +59,21 @@ fn snapshot_item(drop: &LiveDrop, now_ms: u64) -> DroppedItem {
 
 fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
+}
+
+fn pickup_policy(payload: &DropEntityPayload, now_ms: u64) -> DropPickupContext {
+    DropPickupContext {
+        age_ms: now_ms.saturating_sub(payload.created_unix_ms),
+        delay_ms: payload
+            .pickup_delay
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX),
+        lifetime_ms: LIFETIME
+            .as_millis()
+            .try_into()
+            .expect("drop lifetime fits u64"),
+    }
 }
 
 /// Bounded client-visibility projection: every drop within view range,
@@ -180,10 +196,7 @@ pub(in crate::server) fn pickup_candidates(
     let mut items: Vec<_> = collect_in_aabb(store, min, max)
         .iter()
         .filter(|drop| {
-            let age = u128::from(now_ms.saturating_sub(drop.payload.created_unix_ms));
-            age >= drop.payload.pickup_delay.as_millis()
-                && age < LIFETIME.as_millis()
-                && distance_sq(drop.position, position) <= PICKUP_RANGE_SQ
+            pickup_policy(&drop.payload, now_ms).in_range(position, drop.position, PICKUP_RANGE_SQ)
         })
         .map(|drop| snapshot_item(drop, now_ms))
         .collect();
@@ -203,8 +216,7 @@ pub(in crate::server) fn extractable(store: &EntityStore, id: EntityId) -> bool 
     let Some(drop) = live_drop(store, id) else {
         return false;
     };
-    let age = u128::from(unix_ms().saturating_sub(drop.payload.created_unix_ms));
-    age >= drop.payload.pickup_delay.as_millis() && age < LIFETIME.as_millis()
+    pickup_policy(&drop.payload, unix_ms()).extractable()
 }
 
 /// Airborne drops are exactly the scheduled ones: settled drops suspend off
@@ -230,8 +242,15 @@ pub(in crate::server) fn has_expired(store: &EntityStore, now_ms: u64) -> bool {
                 .payload
                 .downcast_ref::<DropEntityPayload>()
                 .is_some_and(|payload| {
-                    u128::from(now_ms.saturating_sub(payload.created_unix_ms))
-                        >= LIFETIME.as_millis()
+                    DropLifetime {
+                        created_ms: payload.created_unix_ms,
+                        now_ms,
+                        lifetime_ms: LIFETIME
+                            .as_millis()
+                            .try_into()
+                            .expect("drop lifetime fits u64"),
+                    }
+                    .expired()
                 })
     })
 }
