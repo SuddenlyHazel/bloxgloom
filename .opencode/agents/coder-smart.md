@@ -1,7 +1,7 @@
 ---
 description: Implements scoped correctness-sensitive changes in scheduling, transactions, persistence, and concurrent execution
 mode: all
-model: openai/gpt-6-astra#high
+model: openai/gpt-6-astra-fast#high
 permissions:
   - action: edit
     resource: "docs/**"
