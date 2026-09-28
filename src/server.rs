@@ -315,6 +315,19 @@ pub fn run_server(addr: &str, seed: u64, save_dir: PathBuf) -> io::Result<()> {
     run_server_with_limit(addr, seed, save_dir, DEFAULT_CLIENTS)
 }
 
+/// Development-only opt-in; never searches the working directory or save tree.
+pub fn run_server_with_local_packages(
+    addr: &str,
+    seed: u64,
+    save_dir: PathBuf,
+    admission_limit: usize,
+    package_root: &std::path::Path,
+) -> io::Result<()> {
+    let startup = ServerStartup::new(Arc::new(crate::content::catalog().clone()))
+        .with_local_packages(package_root)?;
+    run_server_with_startup(addr, seed, save_dir, admission_limit, startup)
+}
+
 /// Development installation seam shared by local server and client catalogs.
 #[cfg(any(test, feature = "lifecycle-fixture"))]
 pub(crate) fn catalog_with_extension(

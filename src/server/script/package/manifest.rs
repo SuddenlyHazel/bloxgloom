@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::error;
 use crate::server::script::ScriptError;
@@ -8,6 +8,7 @@ pub(super) struct Manifest {
     pub entry: String,
     pub dependencies: BTreeMap<String, String>,
     pub modules: BTreeMap<String, String>,
+    pub requires: BTreeSet<String>,
 }
 
 impl Manifest {
@@ -24,6 +25,7 @@ impl Manifest {
         let mut entry = None;
         let mut dependencies = BTreeMap::new();
         let mut modules = BTreeMap::new();
+        let mut requires = BTreeSet::new();
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
             // Four tokens suffice to reject malformed lines without allocating
             // a token vector proportional to input whitespace.
@@ -66,6 +68,13 @@ impl Manifest {
                         return Err(fail());
                     }
                 }
+                (Some("requires"), Some(value), None, None)
+                    if value.len() <= 255 && requires.len() < 32 =>
+                {
+                    if !requires.insert(value.to_owned()) {
+                        return Err(fail());
+                    }
+                }
                 _ => return Err(fail()),
             }
         }
@@ -78,11 +87,12 @@ impl Manifest {
             entry,
             dependencies,
             modules,
+            requires,
         })
     }
 }
 
-pub(super) fn identifier(value: &str) -> bool {
+pub(in crate::server::script) fn identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
         && value

@@ -1,9 +1,10 @@
 //! Local Luau source execution foundation. Each worker owns its VM exclusively;
-//! no live world state or file handle is exposed to scripts. This is
-//! intentionally not connected to gameplay yet.
+//! no live world state or file handle is exposed to scripts. Startup may collect
+//! bounded public content declarations; gameplay remains intentionally unbound.
 
 mod imports;
 pub mod package;
+pub(super) mod startup;
 
 use mlua::{Function, Lua, LuaOptions, StdLib, VmState};
 use std::cell::{Cell, RefCell};
@@ -79,7 +80,12 @@ impl std::error::Error for ScriptError {}
 struct Request {
     program: Program,
     input: ScriptInput,
-    reply: SyncSender<Result<i64, ScriptError>>,
+    reply: SyncSender<Result<Output, ScriptError>>,
+}
+
+enum Output {
+    Integer(i64),
+    Items(Vec<bloxgloom_host_api::content::Item>),
 }
 
 enum Program {
@@ -87,6 +93,7 @@ enum Program {
     Package {
         snapshot: Arc<package::PackageSnapshot>,
         entry: String,
+        startup: bool,
     },
 }
 
@@ -94,7 +101,9 @@ impl Program {
     fn identity(&self) -> String {
         match self {
             Self::Source(module) => module.id.clone(),
-            Self::Package { snapshot, entry } => snapshot.identity(entry),
+            Self::Package {
+                snapshot, entry, ..
+            } => snapshot.identity(entry),
         }
     }
 }
@@ -136,7 +145,10 @@ impl ScriptWorker {
     }
 
     pub fn execute(&self, module: SourceModule, input: ScriptInput) -> Result<i64, ScriptError> {
-        self.submit(Program::Source(module), input)
+        let Output::Integer(value) = self.submit(Program::Source(module), input)? else {
+            unreachable!("integer execution")
+        };
+        Ok(value)
     }
 
     /// Execute an entry from an immutable snapshot. The same Arc may be reused
@@ -148,10 +160,21 @@ impl ScriptWorker {
         input: ScriptInput,
     ) -> Result<i64, ScriptError> {
         let entry = snapshot.entry(package)?;
-        self.submit(Program::Package { snapshot, entry }, input)
+        let Output::Integer(value) = self.submit(
+            Program::Package {
+                snapshot,
+                entry,
+                startup: false,
+            },
+            input,
+        )?
+        else {
+            unreachable!("integer execution")
+        };
+        Ok(value)
     }
 
-    fn submit(&self, program: Program, input: ScriptInput) -> Result<i64, ScriptError> {
+    fn submit(&self, program: Program, input: ScriptInput) -> Result<Output, ScriptError> {
         let id = program.identity();
         let (reply, receiver) = mpsc::sync_channel(1);
         self.requests
@@ -185,7 +208,7 @@ impl Drop for ScriptWorker {
     }
 }
 
-fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<i64, ScriptError> {
+fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, ScriptError> {
     let id = program.identity();
     let fail = |failure| ScriptError {
         module: id.clone(),
@@ -253,7 +276,7 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<i64, Scri
         Ok(VmState::Continue)
     });
 
-    let result = (|| -> mlua::Result<i64> {
+    let result = (|| -> mlua::Result<Output> {
         let entry: Function = match &program {
             Program::Source(module) => lua
                 .load(&module.source)
@@ -268,10 +291,20 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<i64, Scri
                 lua.unpack(value)?
             }
         };
+        if let Program::Package {
+            snapshot,
+            entry: key,
+            startup: true,
+        } = &program
+        {
+            let package = key.split_once(':').expect("validated entry").0;
+            return startup::invoke(&lua, entry, package, snapshot.permits_content(package))
+                .map(Output::Items);
+        }
         let args = lua.create_table()?;
         args.set("tick", input.tick)?;
         args.set("seed", input.seed)?;
-        entry.call(args)
+        entry.call(args).map(Output::Integer)
     })();
     if let Some((reason, module)) = exceeded.take() {
         return Err(ScriptError {

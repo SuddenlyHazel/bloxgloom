@@ -702,6 +702,13 @@ This section exists so compaction or a new session does not restart the design.
   fresh retry scope. Fourteen focused script tests, strict Clippy and format
   passed; an unrelated full-suite neighbor timing failure needs rechecking.
   No game registration/transaction binding or network delivery is claimed.
+- **Phase 4 local startup binding:** `server-packages` explicitly selects a
+  local root; package entries with `bloxgloom:content/v1` may register bounded
+  namespaced sprite items through the existing public registrar. Source and
+  imports execute on the bounded worker; all declarations validate together
+  before the save opens. The nonblocking listener/restart fixture exercises the
+  frozen catalog and item delivery. No gameplay events, generation scripting,
+  custom assets or network package transfer are bound yet.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

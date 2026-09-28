@@ -11,6 +11,7 @@ version 1.0.0
 entry main
 dependency arithmetic 1.2.0
 module main scripts/main.luau
+requires bloxgloom:content/v1
 ```
 
 `ScriptWorker::execute_package` runs the entry from an immutable discovered
@@ -18,5 +19,18 @@ snapshot in a fresh, sandboxed Luau VM. Modules use `import("arithmetic:operatio
 only their own modules and direct dependencies are visible. Errors name the
 package/version/module. Sources and imports share one execution and memory
 budget. Filesystem access happens only during bounded discovery, off the window
-thread. See `src/server/script/package.rs` for exact syntax, bounds and Unix
-path restrictions. This is not server delivery or a gameplay binding yet.
+thread. For explicit local development, run
+`server-packages <package-root> <address> <save-dir> [max-clients]`. Its startup
+entry receives a registration host instead of tick/seed input:
+
+```lua
+return function(host)
+    host.register_item("example:token", "Token", "bloxgloom:stone")
+end
+```
+
+This currently registers only non-placeable sprite items with existing builtin
+textures. Keys must use their package's namespace; script and registrar errors
+abort startup before opening the save. See `src/server/script/package.rs` and
+`src/server/script/startup.rs` for exact syntax, bounds and Unix path
+restrictions. This is not server delivery or a gameplay binding yet.

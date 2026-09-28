@@ -14,6 +14,7 @@
 //! dependency arithmetic 1.2.0
 //! module main scripts/main.luau
 //! module helper scripts/helper.luau
+//! requires bloxgloom:content/v1
 //! ```
 //!
 //! Declarations are whitespace-separated, one per line; blank lines are allowed.
@@ -29,6 +30,8 @@
 //! are forbidden. Unlisted package files are ignored, not recursively scanned.
 //! Bounds: 64 packages, 32 dependencies and 64 modules per package, 256 modules
 //! total, 16 KiB per manifest, 64 KiB per source, and 4 MiB aggregate file bytes.
+//! Up to 32 distinct `requires` capability strings (255 bytes each) are allowed;
+//! startup, not integer execution, validates which capabilities are supported.
 //! Root paths have at most 4096 bytes/64 components and no parent traversal.
 //!
 //! The secure filesystem backend currently supports Unix only; other platforms
@@ -64,15 +67,15 @@
 //! exported-function errors retain named Luau source tracebacks, with the entry
 //! identity in the host error. Initialization interrupts name the active module.
 //!
-//! This remains a worker foundation, not game startup dispatch. Gameplay and
-//! generation bindings, content registration, handles, transaction admission,
-//! scheduling, durable receipts and save-state integration must still connect to
-//! authoritative host APIs. Assets, compatibility negotiation, server/client
+//! Explicit development startup also runs entries with a bounded registration
+//! host instead of integer inputs (see the sibling `startup` module). Gameplay
+//! and generation bindings, handles, transaction admission, scheduling and durable
+//! receipts remain unbound. Assets, compatibility negotiation, server/client
 //! declarations, distribution hashes, network/UI and hot reload are not added.
 //! No world/save/wire format changes accompany this local manifest format.
 
 mod files;
-mod manifest;
+pub(super) mod manifest;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -97,6 +100,47 @@ struct Package {
 }
 
 impl PackageSnapshot {
+    /// Startup uses the existing public composition contract v1. Source semver
+    /// dependencies are checked exactly by discovery, not squeezed into a u32.
+    pub(super) fn startup_packages(
+        &self,
+    ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
+        use bloxgloom_host_api::composition::{CONTENT, Dependency, Package};
+        self.packages
+            .iter()
+            .map(|(name, package)| {
+                if name == "bloxgloom" || package.manifest.requires.iter().any(|c| c != CONTENT) {
+                    return Err(error(
+                        &self.identity(&self.entry(name)?),
+                        "reserved namespace or unsupported startup capability",
+                    ));
+                }
+                Ok(Package {
+                    key: format!("{name}:package"),
+                    version: 1,
+                    dependencies: package
+                        .manifest
+                        .dependencies
+                        .keys()
+                        .map(|name| Dependency {
+                            package: format!("{name}:package"),
+                            version: 1,
+                        })
+                        .collect(),
+                    requires: package.manifest.requires.iter().cloned().collect(),
+                })
+            })
+            .collect()
+    }
+
+    pub(super) fn permits_content(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            p.manifest
+                .requires
+                .contains(bloxgloom_host_api::composition::CONTENT)
+        })
+    }
+
     /// Read immediate package directories in lexical order. The host must call
     /// this off the window thread. Failure never publishes a partial snapshot.
     pub fn discover(root: &Path) -> Result<Self, ScriptError> {

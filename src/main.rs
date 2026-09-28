@@ -65,6 +65,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 server::run_server(&addr, 0xB10C_6100, save_dir.into())?;
             }
         }
+        Some("server-packages") => {
+            let usage =
+                "usage: server-packages <package-root> <address> <save-dir> [max-clients: 1..=256]";
+            let root = args.next().ok_or(usage)?;
+            let addr = args.next().ok_or(usage)?;
+            let save = args.next().ok_or(usage)?;
+            let limit = args
+                .next()
+                .map(|s| s.parse::<usize>())
+                .transpose()?
+                .unwrap_or(128);
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            server::run_server_with_local_packages(
+                &addr,
+                0xB10C_6100,
+                save.into(),
+                limit,
+                std::path::Path::new(&root),
+            )?;
+        }
         Some("server-perf") => {
             let first = args.next();
             if first.as_deref() == Some("tcp") {

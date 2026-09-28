@@ -3,6 +3,9 @@ use super::*;
 mod extension_anchored;
 #[path = "tests/generation.rs"]
 mod generation;
+#[cfg(unix)]
+#[path = "tests/script_startup.rs"]
+mod script_startup;
 use crate::server::DEFAULT_VIEW;
 use crate::server::outbound::OutboundTelemetry;
 use crate::server::{INPUT_CAPACITY, run_simulation_ticks};

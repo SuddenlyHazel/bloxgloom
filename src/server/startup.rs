@@ -1,8 +1,8 @@
 //! Registration boundary between a world's content map and live server code.
 //!
 //! Built-ins and startup extensions freeze together before storage opens.
-//! This is an internal trusted-native hook, not public mod loading or a
-//! durable owner-state contract.
+//! Native extensions and explicitly selected local Luau packages use the public
+//! registrar; this is not network distribution or a durable script-state contract.
 
 use super::builtins;
 use super::durable::Durability;
@@ -63,15 +63,18 @@ pub(in crate::server) struct StartupOwnerCodec {
 }
 
 impl ServerStartup {
+    /// Explicit local-development root only. All scripts finish and all public
+    /// declarations validate before a replacement startup catalog is published.
+    pub(crate) fn with_local_packages(self, root: &std::path::Path) -> io::Result<Self> {
+        let declarations = super::script::startup::Declarations::discover(root)?;
+        self.with_extension(&declarations)
+    }
+
     pub(super) fn generation(&self) -> Vec<bloxgloom_host_api::generation::Registration> {
         self.generation.clone()
     }
 
     /// The development host seam. The package receives only the public registrar.
-    #[allow(
-        dead_code,
-        reason = "Entry point for explicitly installed extension packages; no dynamic loader yet."
-    )]
     pub(crate) fn with_extension(
         mut self,
         extension: &dyn bloxgloom_host_api::Extension,
