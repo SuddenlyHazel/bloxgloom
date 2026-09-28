@@ -619,10 +619,22 @@ This section exists so compaction or a new session does not restart the design.
   checks the actual startup path. The focused 88-test owner suite, format and
   strict all-feature workspace Clippy passed. This is **not** neighbor/world
   effect access or a public fire scheduler; those are the next work.
-- **Next concrete step:** expose general owner-local scheduled world reads/effects
-  and reusable durable cross-owner intent, then move fire propagation/delivery
-  decisions off the native-only policy. Migrate remaining drops, player rules,
-  commands and helper paths before marking Phase 2 done.
+- **Phase 2 owner-wake increment:** public owner plans may emit bounded
+  `(system, owner)` wakes. The existing wake-flag WAL domain persists them in
+  the producer's owner-state/deadline/cursor record, verifies the destination
+  partition, and serves them later from its normal job budget (including
+  after restart). An owner re-waking a destination whose prior flag it serves
+  now stages one refresh change instead of duplicate clear/set keys. The
+  independent `fixture:wake_pair` checks one-shot delivery after restart and
+  `fixture:wake_loop` checks same-wave refresh/replay. The focused 42-test
+  wake suite and strict workspace Clippy passed. These flags carry **no
+  effect payload**; neither fire propagation nor general owner-local world
+  writes are migrated by this increment.
+- **Next concrete step:** make owner-local world/entity changes atomic with the
+  persisted owner wave, then add durable cross-owner **payload** intent and move
+  fire propagation/delivery decisions off the native-only policy. Migrate
+  remaining drops, player rules, commands and helper paths before marking
+  Phase 2 done.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

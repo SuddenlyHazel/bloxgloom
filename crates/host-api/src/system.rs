@@ -51,6 +51,15 @@ pub struct Plan {
     pub data: Vec<u8>,
     /// Absolute deadline, strictly later than the input tick.
     pub next_tick: u64,
+    /// Durable, bounded invitations for another registered owner to run
+    /// sooner. A wake carries no payload and cannot replace a world effect.
+    pub wakes: Vec<Wake>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Wake {
+    pub system: String,
+    pub owner: Owner,
 }
 
 /// Pure and retryable. Validation runs for seeds, recovered values, and outputs.

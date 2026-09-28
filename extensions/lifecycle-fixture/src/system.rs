@@ -47,6 +47,7 @@ impl Behavior for Clock {
                 .tick
                 .checked_add(50)
                 .ok_or_else(|| RegistrationError("clock exhausted".into()))?,
+            wakes: vec![],
         })
     }
 }
@@ -113,6 +114,81 @@ impl Behavior for Probe {
         Ok(Plan {
             data: vec![value],
             next_tick: context.tick + 2,
+            wakes: vec![],
+        })
+    }
+}
+
+/// Two independent durable owners: the source schedules a dormant destination
+/// once, without sharing state or depending on a transient observer callback.
+pub struct WakePair;
+impl bloxgloom_host_api::Extension for WakePair {
+    fn register(
+        &self,
+        registrar: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), RegistrationError> {
+        registrar.owner_system(pair_definition("fixture:wake_pair", false))
+    }
+}
+pub struct WakeLoop;
+impl bloxgloom_host_api::Extension for WakeLoop {
+    fn register(
+        &self,
+        registrar: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), RegistrationError> {
+        registrar.owner_system(pair_definition("fixture:wake_loop", true))
+    }
+}
+fn pair_definition(key: &str, repeating: bool) -> System {
+    System {
+        key: key.into(),
+        schema: 1,
+        partition: Partition::Chunk,
+        max_state_bytes: 1,
+        max_jobs_per_tick: 2,
+        read_owner_chunk: false,
+        after: vec![],
+        seeds: [8, 9]
+            .into_iter()
+            .map(|x| Seed {
+                owner: Owner::Chunk([x, 6, 0]),
+                data: vec![0],
+            })
+            .collect(),
+        behavior: Arc::new(Pair {
+            key: key.into(),
+            repeating,
+        }),
+    }
+}
+struct Pair {
+    key: String,
+    repeating: bool,
+}
+impl Behavior for Pair {
+    fn validate(&self, data: &[u8]) -> Result<(), RegistrationError> {
+        if !matches!(data, [0] | [1]) {
+            return Err(RegistrationError("wake pair requires one state bit".into()));
+        }
+        Ok(())
+    }
+
+    fn plan(&self, context: &Context<'_>) -> Result<Plan, RegistrationError> {
+        let Owner::Chunk([x, 6, 0]) = context.owner else {
+            return Err(RegistrationError("wake pair owner mismatch".into()));
+        };
+        let wakes = if self.repeating || x == 8 && context.data == [0] {
+            vec![Wake {
+                system: self.key.clone(),
+                owner: Owner::Chunk([if x == 8 { 9 } else { 8 }, 6, 0]),
+            }]
+        } else {
+            vec![]
+        };
+        Ok(Plan {
+            data: vec![u8::from(x == 8 || context.revision > 0)],
+            next_tick: context.tick + 1_000,
+            wakes,
         })
     }
 }

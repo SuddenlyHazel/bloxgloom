@@ -16,6 +16,7 @@ impl api::Behavior for InvalidOutput {
         Ok(api::Plan {
             data: vec![0; if self.oversized { 9 } else { 8 }],
             next_tick: if self.oversized { c.tick + 1 } else { c.tick },
+            wakes: vec![],
         })
     }
 }

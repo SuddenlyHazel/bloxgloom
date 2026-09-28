@@ -58,12 +58,13 @@ impl EmittedOwnerEffect {
 }
 
 /// Producer patch payload carrying the durable owner replacement alongside
-/// that job's effect emissions. The replacement still commits through the
-/// validated owner-wave path; the emissions are routed at the barrier and
-/// never persist.
+/// advisory effect emissions and explicit durable wake requests. The former
+/// route transiently at the barrier; the latter use the existing owner-wake
+/// WAL domain and carry no gameplay payload.
 pub(in crate::server) struct OwnerEffectPatch {
     state: OwnerData,
     effects: Vec<EmittedOwnerEffect>,
+    durable_wakes: Vec<(SystemId, OwnerKey)>,
 }
 
 impl OwnerEffectPatch {
@@ -72,7 +73,25 @@ impl OwnerEffectPatch {
         reason = "Registered owner handlers return state plus wake emissions."
     )]
     pub(in crate::server) fn new(state: OwnerData, effects: Vec<EmittedOwnerEffect>) -> Self {
-        Self { state, effects }
+        Self {
+            state,
+            effects,
+            durable_wakes: Vec::new(),
+        }
+    }
+
+    pub(in crate::server) fn with_durable_wakes(
+        mut self,
+        wakes: Vec<(SystemId, OwnerKey)>,
+    ) -> Self {
+        self.durable_wakes = wakes;
+        self
+    }
+
+    pub(in crate::server) fn durable_wakes(patch: &OwnerPatch) -> &[(SystemId, OwnerKey)] {
+        patch
+            .payload::<OwnerEffectPatch>()
+            .map_or(&[], |emission| &emission.durable_wakes)
     }
 
     /// Actual emitted intent count for wave bound accounting. Plain patches

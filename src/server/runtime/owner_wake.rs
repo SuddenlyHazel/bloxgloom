@@ -337,16 +337,39 @@ impl PendingWakeStore {
     /// re-asserts "due", never queues extra work. Exceeding `limit` live plus
     /// staged flags rejects the whole set with `WouldBlock` before anything
     /// is staged; the producing wave defers and retries.
+    #[cfg(test)]
     pub fn prepare_sets(
         &mut self,
         wakes: &[(SystemId, OwnerKey)],
         wake_tick: u64,
         limit: usize,
     ) -> io::Result<PreparedWakeSets> {
+        self.prepare_sets_with_refresh(wakes, wake_tick, limit, &BTreeSet::new())
+    }
+
+    /// A destination whose old flag is served in this same wave can receive
+    /// another durable wake without emitting both a clear and a set for the
+    /// same journal key. The caller omits refreshed keys from its clears; this
+    /// method stages one old-flag → new-flag change instead.
+    pub fn prepare_sets_with_refresh(
+        &mut self,
+        wakes: &[(SystemId, OwnerKey)],
+        wake_tick: u64,
+        limit: usize,
+        refresh: &BTreeSet<(SystemId, OwnerKey)>,
+    ) -> io::Result<PreparedWakeSets> {
         let mut fresh = Vec::new();
         for (system, owner) in wakes {
             let key = (system.clone(), *owner);
-            if self.pending.contains_key(&key) || self.staged.contains_key(&key) {
+            if self.staged.contains_key(&key) && refresh.contains(&key) {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "owner wake refresh is in flight",
+                ));
+            }
+            if (self.pending.contains_key(&key) && !refresh.contains(&key))
+                || self.staged.contains_key(&key)
+            {
                 continue;
             }
             // `staged` is keyed, so re-scanning `fresh` is the only way to
@@ -356,7 +379,11 @@ impl PendingWakeStore {
             }
             fresh.push(key);
         }
-        if self.pending.len() + self.staged.len() + fresh.len() > limit {
+        let replacements = fresh
+            .iter()
+            .filter(|key| self.pending.contains_key(*key))
+            .count();
+        if self.pending.len() + self.staged.len() + fresh.len() - replacements > limit {
             return Err(io::Error::new(
                 ErrorKind::WouldBlock,
                 format!(

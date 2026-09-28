@@ -151,6 +151,99 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
 }
 
 #[test]
+fn external_owner_can_durably_wake_another_owner_after_restart() {
+    let save = TestSave::new("owner-cross-wake");
+    let startup = || {
+        ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&bloxgloom_lifecycle_fixture::system::WakePair)
+            .unwrap()
+    };
+    let system = crate::server::registry::SystemId::new("fixture:wake_pair").unwrap();
+    let source =
+        crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 8, y: 6, z: 0 });
+    let target =
+        crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 9, y: 6, z: 0 });
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    let mut tick = 1;
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, source)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, target)
+            .unwrap()
+            .1,
+        [0]
+    );
+    assert_eq!(state.system_runtime.durable_wake_count(), 1);
+    drop(state);
+
+    let mut restarted =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(restarted.system_runtime.durable_wake_count(), 1);
+    let mut tick = restarted.durability.recovered_tick + 1;
+    run_empty_tick(&mut restarted, &mut tick);
+    assert_eq!(
+        restarted
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, target)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(restarted.system_runtime.durable_wake_count(), 0);
+    drop(restarted);
+    let recovered = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(
+        recovered
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, source)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(
+        recovered
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, target)
+            .unwrap()
+            .1,
+        [1]
+    );
+    assert_eq!(recovered.system_runtime.durable_wake_count(), 0);
+}
+
+#[test]
+fn public_owner_rewakes_a_served_destination_without_duplicate_wal_keys() {
+    let save = TestSave::new("owner-refresh-wake");
+    let startup = || {
+        ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&bloxgloom_lifecycle_fixture::system::WakeLoop)
+            .unwrap()
+    };
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    let mut tick = 1;
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(state.system_runtime.durable_wake_count(), 2);
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(state.system_runtime.durable_wake_count(), 2);
+    drop(state);
+    let mut recovered =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(recovered.system_runtime.durable_wake_count(), 2);
+    let mut tick = recovered.durability.recovered_tick + 1;
+    run_empty_tick(&mut recovered, &mut tick);
+    assert_eq!(recovered.system_runtime.durable_wake_count(), 2);
+}
+
+#[test]
 fn entity_tick_policy_runs_on_workers_in_durable_coordinator_order() {
     use crate::server::entities::{
         EntityError, EntityPayload, EntitySnapshot, EntitySpawn, EntityTickPlan, EntityTickPolicy,

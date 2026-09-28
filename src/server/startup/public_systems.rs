@@ -3,6 +3,7 @@ use super::*;
 use crate::server::parallel::{OwnerJob, OwnerPatch, OwnerSchedule, PatchUsage};
 use crate::server::registry::{ResourceId, SystemHandlerError};
 use crate::server::runtime::owner_codec::OwnerCodecError;
+use crate::server::runtime::owner_effects::OwnerEffectPatch;
 use crate::server::simulation::Phase;
 use bloxgloom_host_api::system as api;
 
@@ -132,16 +133,38 @@ impl SystemHandler for Adapter {
         if plan.next_tick <= tick {
             return Err(reject());
         }
+        if plan.wakes.len() > 32 {
+            return Err(SystemHandlerError::Rejected(
+                "public owner system exceeds 32 wakes per job".into(),
+            ));
+        }
+        let wakes = plan
+            .wakes
+            .into_iter()
+            .map(|wake| {
+                let system = SystemId::new(wake.system).map_err(|_| {
+                    SystemHandlerError::Rejected("invalid scheduled system key".into())
+                })?;
+                Ok((system, internal_owner(wake.owner)))
+            })
+            .collect::<Result<Vec<_>, SystemHandlerError>>()?;
         let state = self.decode(&plan.data).map_err(|_| reject())?;
-        Ok(OwnerPatch::new(
-            job,
-            state,
-            PatchUsage {
-                writes: 1,
-                effects: 0,
-                estimated_bytes: plan.data.len(),
-            },
-        )
-        .with_schedule(OwnerSchedule::AtTick(plan.next_tick)))
+        let bytes = plan.data.len();
+        let output = if wakes.is_empty() {
+            None
+        } else {
+            Some(OwnerEffectPatch::new(state.clone(), Vec::new()).with_durable_wakes(wakes))
+        };
+        let usage = PatchUsage {
+            writes: 1,
+            effects: 0,
+            estimated_bytes: bytes,
+        };
+        let patch = if let Some(output) = output {
+            OwnerPatch::new(job, output, usage)
+        } else {
+            OwnerPatch::new(job, state, usage)
+        };
+        Ok(patch.with_schedule(OwnerSchedule::AtTick(plan.next_tick)))
     }
 }

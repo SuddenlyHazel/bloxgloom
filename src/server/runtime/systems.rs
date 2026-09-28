@@ -745,6 +745,29 @@ impl SystemRuntime {
                 id.as_str()
             )),
         })?;
+        let mut scheduled = Vec::new();
+        for patch in validated.patches() {
+            for (destination, owner) in OwnerEffectPatch::durable_wakes(patch) {
+                if scheduled.len() >= 2_048 {
+                    return Err(io::Error::new(
+                        ErrorKind::QuotaExceeded,
+                        "owner wake wave exceeds 2048 destinations",
+                    ));
+                }
+                if !self.durable.accepts_owner(destination, *owner) {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        format!(
+                            "registered system {} cannot wake {destination:?} at {owner:?}",
+                            id.as_str()
+                        ),
+                    ));
+                }
+                scheduled.push((destination.clone(), *owner));
+            }
+        }
+        // Every public job emits at most 32; the aggregate cap bounds WAL
+        // space independently of a system's declared owner job count.
         // Effects route and consume at the commit barrier, before anything
         // commits: a routing, bound, or consumer violation rejects the whole
         // wave and defers the producing work. Staged wakes are served from
@@ -793,9 +816,20 @@ impl SystemRuntime {
         // record. A full flag set defers the whole wave before anything
         // commits, like the live set above.
         let wake_limit = MAX_PENDING_OWNER_WAKES.saturating_sub(staged_wakes + wakes.live().len());
+        let refresh: BTreeSet<_> = scheduled
+            .iter()
+            .filter(|wake| durable_served.contains(wake))
+            .cloned()
+            .collect();
+        let durable_served: Vec<_> = durable_served
+            .into_iter()
+            .filter(|wake| !refresh.contains(wake))
+            .collect();
+        let mut durable_to_set = wakes.unloaded().to_vec();
+        durable_to_set.extend(scheduled);
         let wake_sets = self
             .durable_wakes
-            .prepare_sets(wakes.unloaded(), tick.get(), wake_limit)
+            .prepare_sets_with_refresh(&durable_to_set, tick.get(), wake_limit, &refresh)
             .map_err(|error| {
                 io::Error::new(
                     error.kind(),

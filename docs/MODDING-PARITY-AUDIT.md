@@ -28,7 +28,9 @@ General entity due handlers now run on the persisted entity clock, with owned
 state/next due time and shared world/drop effects in one durable transaction.
 Owner-local systems may now capture their authoritative owner chunk for
 read-only worker queries, with unavailable-chunk deferral and WAL read fences;
-this does not yet supply general owner-local world effects or built-in fire.
+they can also durably wake another registered owner to run sooner without
+carrying a payload. This does not yet supply general owner-local world effects
+or built-in fire.
 Read-only committed observers now see public projections off the coordinator.
 Their advisory delivery is bounded, lossy and not replayed; authoritative
 follow-up must use durable decisions/scheduling. Fire and owner-wave commits
@@ -85,8 +87,10 @@ in the root plan:
 - **F7:** public persistent owner systems and an independent region-clock fixture
   now exist, with real-listener restart verification. Opt-in owner-chunk terrain
   reads now run on the existing worker path, with a separate external fixture
-  checking deferred loading, WAL conflict and listener restart. Neighboring
-  queries and atomic world effects remain open. See `docs/REGISTERED-SYSTEMS.md`.
+  checking deferred loading, WAL conflict and listener restart. Bounded public
+  cross-owner wake flags also persist and resume, without delivering payloads.
+  Neighboring queries and atomic world effects remain open. See
+  `docs/REGISTERED-SYSTEMS.md`.
 
 Content/composition and stock-client action discovery are now merged and personally
 reviewed in main. Public state/item/PNG/material/geometry declarations, component

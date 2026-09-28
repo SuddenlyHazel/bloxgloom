@@ -131,6 +131,35 @@ fn prepare_commit_serves_each_destination_once() {
 }
 
 #[test]
+fn a_served_wake_can_be_replaced_in_one_record_without_a_duplicate_key() {
+    let mut store = PendingWakeStore::new();
+    let dest = wake_dest("test:wake_a", OwnerKey::Entity(3));
+    let first = store
+        .prepare_sets(std::slice::from_ref(&dest), 7, 1)
+        .unwrap();
+    store.commit_sets(first);
+    let refresh = BTreeSet::from([dest.clone()]);
+    let replacement = store
+        .prepare_sets_with_refresh(std::slice::from_ref(&dest), 8, 1, &refresh)
+        .unwrap();
+    assert_eq!(replacement.changes().len(), 1);
+    assert_eq!(replacement.changes()[0].before, encode_wake_value(7));
+    assert_eq!(replacement.changes()[0].after, encode_wake_value(8));
+    assert!(store.stage_clears(&[]).is_empty());
+    store.commit_sets(replacement);
+    assert_eq!(store.len(), 1);
+    assert_eq!(store.published_at(&dest.0, dest.1), Some(8));
+    let mut latest = BTreeMap::new();
+    latest.insert(owner_wake_key(&dest.0, dest.1), encode_wake_value(8));
+    assert_eq!(
+        PendingWakeStore::recover(&latest)
+            .unwrap()
+            .flagged_for(&dest.0),
+        vec![(dest.1, 8)]
+    );
+}
+
+#[test]
 fn cancelled_sets_restage_on_retry() {
     let mut store = PendingWakeStore::new();
     let dests = [wake_dest("test:wake_a", OwnerKey::Entity(5))];
