@@ -15,18 +15,30 @@ impl Handler for Admin {
         };
         match action.as_str() {
             GIVE => {
-                let (count, key) = arguments
-                    .split_at_checked(2)
+                let (&length, rest) = arguments
+                    .split_first()
                     .ok_or_else(|| Error::Invalid("invalid grant".into()))?;
+                let (key, count) = rest
+                    .split_at_checked(usize::from(length))
+                    .ok_or_else(|| Error::Invalid("invalid grant".into()))?;
+                let [count] = count else {
+                    return Err(Error::Invalid("invalid grant count".into()));
+                };
                 let key = std::str::from_utf8(key)
                     .map_err(|_| Error::Invalid("invalid item key".into()))?;
-                if !context.admin_give(key, u16::from_le_bytes([count[0], count[1]]))? {
+                if !context.admin_give(key, u16::from(*count))? {
                     return Err(Error::Invalid("grant does not fit".into()));
                 }
                 Ok(())
             }
             SPAWN => {
-                let key = std::str::from_utf8(arguments)
+                let (&length, bytes) = arguments
+                    .split_first()
+                    .ok_or_else(|| Error::Invalid("invalid creature key".into()))?;
+                if bytes.len() != usize::from(length) {
+                    return Err(Error::Invalid("invalid creature key".into()));
+                }
+                let key = std::str::from_utf8(bytes)
                     .map_err(|_| Error::Invalid("invalid creature key".into()))?;
                 context.admin_spawn(key)
             }

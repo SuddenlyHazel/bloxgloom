@@ -13,6 +13,7 @@ pub(super) fn register_probe(catalog: &mut crate::content::Catalog, entity: &str
             target: Target::Entity(entity.into()),
             operation: Operation::EntityRequest(vec![0]),
             panel: None,
+            command: None,
         })
         .unwrap();
 }
@@ -46,6 +47,7 @@ fn action_without_an_authoritative_handler_fails_before_world_creation() {
                 target: Target::Block("bloxgloom:stone".into()),
                 operation: Operation::EntityRequest(vec![0]),
                 panel: None,
+                command: None,
             })
         }
     }

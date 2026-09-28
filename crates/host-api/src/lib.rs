@@ -113,6 +113,9 @@ pub trait Registrar {
             "tags unsupported by this registrar".into(),
         ))
     }
+    /// Register a frozen action, optionally including its typed command
+    /// facet. Command permissions apply to every invocation of that action key,
+    /// not just invocations originating from a command UI.
     fn action(&mut self, _action: actions::Action) -> Result<(), RegistrationError> {
         Err(RegistrationError(
             "actions unsupported by this registrar".into(),

@@ -1,61 +1,85 @@
-//! Local admin menu commands. Parsing is client convenience; the server still
-//! authenticates every grant and commits its inventory change through the WAL.
-//! `help` only displays local command usage; it has no server action or WAL effect.
-
+//! Local aliases/help plus negotiated, schema-driven command requests. Parsing
+//! is convenience only: frozen server descriptors authorize durable dispatch.
 use super::ClientApp;
 use crate::content::Catalog;
 use crate::inventory::STACK_LIMIT;
 use crate::items::ItemId;
 use crate::protocol::ClientMessage;
+use bloxgloom_host_api::actions::{MAX_COMMAND_ARGUMENTS, Request};
+
+#[cfg(test)]
+mod tests;
 
 enum Command {
     Help,
-    Give(ItemId, u16),
-    Spawn(crate::content::EntityTypeId),
+    Registered(Request),
+}
+
+fn registered(catalog: &Catalog, key: &str, values: &[&str]) -> Result<Request, &'static str> {
+    let action = catalog.action(key).ok_or("Unknown command")?;
+    let command = action.command.as_ref().ok_or("Action is not a command")?;
+    let arguments = command
+        .encode_arguments(values)
+        .ok_or("Invalid command arguments")?;
+    catalog
+        .command_arguments(command, &arguments)
+        .ok_or("Unknown item or entity key")?;
+    Ok(Request {
+        key: action.key.clone(),
+        version: action.version,
+        slot: 0,
+        inventory_revision: 0,
+        entity: 0,
+        entity_revision: 0,
+        arguments,
+    })
 }
 
 fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
+    // Bound token traversal/capture even for callers outside the text widget.
+    if input.len() > 1024 {
+        return Err("Command is too long");
+    }
     let mut parts = input.trim().trim_start_matches('/').split_whitespace();
-    match parts.next() {
-        Some("help") if parts.next().is_none() => Ok(Command::Help),
-        Some("spawn") => {
-            let key = parts.next().ok_or("Usage: spawn <entity-key>")?;
-            if parts.next().is_some() {
-                return Err("Usage: spawn <entity-key>");
-            }
-            let key = if key.contains(':') {
-                key.to_owned()
-            } else {
-                format!("bloxgloom:{key}")
-            };
-            catalog
-                .entity_type_id_by_key(&key)
-                .filter(|id| catalog.mobile_entity(*id).is_some())
-                .map(Command::Spawn)
-                .ok_or("Unknown creature")
-        }
-        Some("give") => {
-            let key = parts.next().ok_or("Usage: give <item-key> [1..128]")?;
-            let count = parts
-                .next()
-                .map(str::parse::<u16>)
-                .transpose()
-                .map_err(|_| "Count must be 1..128")?
-                .unwrap_or(STACK_LIMIT);
-            if parts.next().is_some() || !(1..=STACK_LIMIT).contains(&count) {
-                return Err("Usage: give <item-key> [1..128]");
-            }
-            let mut matches = catalog
+    let key = parts.next().ok_or("Enter a command or help")?;
+    let mut values = parts.take(MAX_COMMAND_ARGUMENTS + 1).collect::<Vec<_>>();
+    if values.len() > MAX_COMMAND_ARGUMENTS {
+        return Err("Too many command arguments");
+    }
+    let normalized;
+    let key = match key {
+        "help" if values.is_empty() => return Ok(Command::Help),
+        "give" => {
+            let name = *values.first().ok_or("Usage: give <item-key> [1..128]")?;
+            let mut items = catalog
                 .items()
-                .filter(|item| item.key == key || item.key.rsplit(':').next() == Some(key));
-            let item = matches.next().ok_or("Unknown item key")?.id;
-            if matches.next().is_some() {
+                .filter(|item| item.key == name || item.key.rsplit(':').next() == Some(name));
+            normalized = items.next().ok_or("Unknown item key")?.key.to_string();
+            if items.next().is_some() {
                 return Err("Ambiguous item key; use namespace:key");
             }
-            Ok(Command::Give(item, count))
+            values[0] = &normalized;
+            crate::gameplay::admin::GIVE
         }
-        _ => Err("Commands: give <item-key> [count], spawn mossbun, help"),
-    }
+        "spawn" => {
+            let name = *values.first().ok_or("Usage: spawn <entity-key>")?;
+            normalized = if name.contains(':') {
+                name.into()
+            } else {
+                format!("bloxgloom:{name}")
+            };
+            let entity = catalog
+                .entity_type_id_by_key(&normalized)
+                .ok_or("Unknown creature")?;
+            if catalog.mobile_entity(entity).is_none() {
+                return Err("Unknown creature");
+            }
+            values[0] = &normalized;
+            crate::gameplay::admin::SPAWN
+        }
+        key => key,
+    };
+    registered(catalog, key, &values).map(Command::Registered)
 }
 
 impl ClientApp {
@@ -71,75 +95,45 @@ impl ClientApp {
     }
 
     fn admin_grant(&mut self, item: ItemId, count: u16) {
+        let Some(item) = self.catalog.item(item) else {
+            return;
+        };
+        match registered(
+            &self.catalog,
+            crate::gameplay::admin::GIVE,
+            &[&item.key, &count.to_string()],
+        ) {
+            Ok(request) => self.submit_admin_command(request),
+            Err(message) => self.show_status(message),
+        }
+    }
+
+    fn submit_admin_command(&mut self, mut request: Request) {
+        request.inventory_revision = self.inventory.revision;
+        let Some(payload) = request.encode() else {
+            self.show_status("Invalid command request");
+            return;
+        };
         let Some(action_id) = self.allocate_action_id() else {
             self.show_status("Action session pending or busy");
             return;
         };
-        self.queue_command(ClientMessage::AdminGive {
+        self.queue_command(ClientMessage::EntityInteract {
             action_id,
-            item,
-            count,
+            target: [0; 3],
+            payload,
         });
-        self.show_status("Grant submitted");
+        self.admin_input.clear();
+        self.show_status("Command submitted");
     }
 
     pub(super) fn admin_run(&mut self) {
         match parse(&self.admin_input, &self.catalog) {
-            Ok(Command::Help) => {
-                self.show_status("give namespace:item [1..128] / spawn namespace:entity")
-            }
-            Ok(Command::Give(item, count)) => {
-                self.admin_grant(item, count);
-                self.admin_input.clear();
-            }
-            Ok(Command::Spawn(entity_type)) => {
-                let Some(action_id) = self.allocate_action_id() else {
-                    self.show_status("Action session pending or busy");
-                    return;
-                };
-                self.queue_command(ClientMessage::AdminSpawnEntity {
-                    action_id,
-                    entity_type,
-                });
-                self.admin_input.clear();
-                self.show_status("Creature spawn submitted; needs nearby clear ground");
-            }
+            Ok(Command::Help) => self.show_status(
+                "give namespace:item [1..128] / spawn namespace:entity / namespace:command",
+            ),
+            Ok(Command::Registered(request)) => self.submit_admin_command(request),
             Err(message) => self.show_status(message),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn give_parser_accepts_namespaced_item_and_rejects_invalid_counts() {
-        let catalog = Catalog::builtins();
-        let key = catalog.items().next().unwrap().key.to_string();
-        let Command::Give(item, count) = parse(&format!("/give {key} 12"), &catalog).unwrap()
-        else {
-            panic!("expected give")
-        };
-        assert_eq!(catalog.item(item).unwrap().key, key);
-        assert_eq!(count, 12);
-        assert!(parse(&format!("give {key} 129"), &catalog).is_err());
-        assert!(parse("give madeup:block", &catalog).is_err());
-    }
-
-    #[test]
-    fn mossbun_spawn_is_one_explicit_creature_not_an_inventory_item() {
-        let catalog = Catalog::builtins();
-        assert!(matches!(
-            parse("/spawn mossbun", &catalog),
-            Ok(Command::Spawn(crate::content::MOSSBUN_ENTITY_TYPE))
-        ));
-        assert!(matches!(
-            parse("spawn bloxgloom:mossbun", &catalog),
-            Ok(Command::Spawn(crate::content::MOSSBUN_ENTITY_TYPE))
-        ));
-        assert!(parse("spawn mossbun 100", &catalog).is_err());
-        assert!(parse("spawn madeup", &catalog).is_err());
-        assert!(parse("give mossbun", &catalog).is_err());
     }
 }

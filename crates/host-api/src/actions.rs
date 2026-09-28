@@ -2,8 +2,10 @@
 //! Discovery is a hint, never authorization. The host checks the request against
 //! the actor's current inventory or the target's identity/revision and terrain.
 use crate::RegistrationError;
+mod command;
 #[cfg(test)]
 mod tests;
+pub use command::{Command, CommandArgument, CommandValue, MAX_COMMAND_ARGUMENTS};
 
 pub const MAX_ACTIONS: usize = 256;
 pub const MAX_TARGET_ACTIONS: usize = 8;
@@ -12,8 +14,8 @@ pub const MAX_WIDGETS: usize = 8;
 pub const REQUEST_TAG: u8 = 5;
 pub const TERRAIN_REQUEST_TAG: u8 = 6;
 // EntityInteract carries at most 256 payload bytes. The largest builtin
-// semantic argument is a two-byte count followed by a 128-byte content key.
-const MAX_REQUEST_ARGUMENTS: usize = 130;
+// command argument is a length-prefixed 128-byte key and a one-byte count.
+pub const MAX_REQUEST_ARGUMENTS: usize = 130;
 const MAX_INTERACTION_PAYLOAD: usize = 256;
 
 /// Gameplay block use carries the version of the streamed target chunk. This
@@ -192,6 +194,14 @@ fn key(s: &str) -> bool {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommandPermission {
+    /// Any connected player with a nonzero server session profile.
+    Player,
+    /// Only the server-configured admin profile, never a client claim.
+    Admin,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Action {
     pub key: String,
     pub version: u16,
@@ -199,6 +209,7 @@ pub struct Action {
     pub target: Target,
     pub operation: Operation,
     pub panel: Option<Panel>,
+    pub command: Option<Command>,
 }
 impl Action {
     pub fn validate(&self) -> Result<(), RegistrationError> {
@@ -232,7 +243,14 @@ impl Action {
             (Target::Block(_), Operation::Inventory) => self.panel.is_none(),
             _ => false,
         };
-        if !valid || !operation {
+        let command = self.command.as_ref().is_none_or(|command| {
+            self.target == Target::Empty
+                && self.operation == Operation::Gameplay
+                && command
+                    .max_encoded_len()
+                    .is_some_and(|n| 30 + self.key.len() + n <= MAX_INTERACTION_PAYLOAD)
+        });
+        if !valid || !operation || !command {
             return Err(RegistrationError("unsupported action contract".into()));
         }
         if let Some(panel) = &self.panel {
@@ -310,6 +328,24 @@ impl Action {
                         }
                     }
                 }
+            }
+        }
+        // Non-command identities are unchanged. Commands commit to permission,
+        // ordered types, bounds, defaults, and the canonical encoding version.
+        if let Some(command) = &self.command {
+            out.extend(b"command/v2\0");
+            out.push(match command.permission {
+                CommandPermission::Player => 0,
+                CommandPermission::Admin => 1,
+            });
+            out.push(command.arguments.len() as u8);
+            for argument in &command.arguments {
+                let (kind, bound) = match argument {
+                    CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
+                    CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
+                    CommandArgument::Count { default } => (2, default.unwrap_or(0)),
+                };
+                out.extend([kind, bound]);
             }
         }
         out

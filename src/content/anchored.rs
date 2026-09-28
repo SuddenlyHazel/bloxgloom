@@ -96,6 +96,7 @@ impl Catalog {
             target: bloxgloom_host_api::actions::Target::Block(d.block.clone()),
             operation: bloxgloom_host_api::actions::Operation::EntityRequest(d.interaction.clone()),
             panel: None,
+            command: None,
         });
         self.anchored_entities[id.0 as usize] = Some(d);
         self.anchored_blocks.resize(self.blocks.len(), None);

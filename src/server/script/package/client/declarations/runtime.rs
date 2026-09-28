@@ -7,8 +7,13 @@ use super::*;
 use crate::content::client_metadata::{Entity, Identity};
 use bloxgloom_host_api::{
     RegistrationError,
-    actions::{Action, Operation, Target},
+    actions::{
+        Action, Command, CommandArgument, CommandPermission, MAX_COMMAND_ARGUMENTS, Operation,
+        Target,
+    },
 };
+#[cfg(test)]
+mod tests;
 
 #[derive(Debug, Default)]
 pub(super) struct Runtime {
@@ -44,6 +49,7 @@ impl Runtime {
         }
         let mut result = Self::default();
         for (action, handler) in &d.actions {
+            action.validate().map_err(|_| invalid())?;
             if action.operation != Operation::Gameplay
                 || action.panel.is_some()
                 || matches!(action.target, Target::Entity(_))
@@ -121,11 +127,25 @@ impl Runtime {
             .collect::<Vec<_>>();
         writer.count(actions.len())?;
         for action in actions {
+            action.validate().map_err(|_| invalid())?;
             writer.field(action.key.as_bytes())?;
             writer.count(action.version.into())?;
             writer.field(action.label.as_bytes())?;
             match &action.target {
-                Target::Empty => writer.count(0)?,
+                // New target tags preserve every existing non-command record.
+                // Old decoders reject these rather than dropping authorization
+                // or typed argument metadata. Zero-only tags 3/4 are retired.
+                Target::Empty => writer.count(match &action.command {
+                    None => 0,
+                    Some(Command {
+                        permission: CommandPermission::Player,
+                        ..
+                    }) => 5,
+                    Some(Command {
+                        permission: CommandPermission::Admin,
+                        ..
+                    }) => 6,
+                })?,
                 Target::Item(key) | Target::Block(key) => {
                     writer.count(if matches!(action.target, Target::Item(_)) {
                         1
@@ -135,6 +155,18 @@ impl Runtime {
                     writer.field(key.as_bytes())?;
                 }
                 Target::Entity(_) => return Err(invalid()),
+            }
+            if let Some(command) = &action.command {
+                writer.count(command.arguments.len())?;
+                for argument in &command.arguments {
+                    let (kind, bound) = match argument {
+                        CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
+                        CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
+                        CommandArgument::Count { default } => (2, default.unwrap_or(0)),
+                    };
+                    writer.count(kind)?;
+                    writer.count(usize::from(bound))?;
+                }
             }
         }
         let entities = self
@@ -186,11 +218,39 @@ impl Runtime {
             let key = own_key(reader, name, &mut previous)?;
             let version = reader.count(u16::MAX.into())? as u16;
             let label = reader.text(255)?;
-            let target = match reader.count(2)? {
+            let kind = reader.count(6)?;
+            let target = match kind {
                 0 => Target::Empty,
                 1 => Target::Item(reader.text(255)?),
                 2 => Target::Block(reader.text(255)?),
-                _ => unreachable!(),
+                5 | 6 => Target::Empty,
+                _ => return Err(invalid()),
+            };
+            let command = if kind == 5 || kind == 6 {
+                let count = reader.count(MAX_COMMAND_ARGUMENTS)?;
+                let mut arguments = Vec::with_capacity(count);
+                for _ in 0..count {
+                    let kind = reader.count(2)?;
+                    let bound = reader.count(128)? as u8;
+                    arguments.push(match kind {
+                        0 => CommandArgument::ItemKey { max_bytes: bound },
+                        1 => CommandArgument::EntityKey { max_bytes: bound },
+                        2 => CommandArgument::Count {
+                            default: (bound != 0).then_some(bound),
+                        },
+                        _ => return Err(invalid()),
+                    });
+                }
+                Some(Command {
+                    permission: if kind == 5 {
+                        CommandPermission::Player
+                    } else {
+                        CommandPermission::Admin
+                    },
+                    arguments,
+                })
+            } else {
+                None
             };
             let action = Action {
                 key,
@@ -199,6 +259,7 @@ impl Runtime {
                 target,
                 operation: Operation::Gameplay,
                 panel: None,
+                command,
             };
             action.validate().map_err(|_| invalid())?;
             self.actions.push(action);

@@ -40,6 +40,7 @@ impl Catalog {
             target: bloxgloom_host_api::actions::Target::Block(screen.block.clone()),
             operation: bloxgloom_host_api::actions::Operation::Inventory,
             panel: None,
+            command: None,
         };
         *entry = Some(Arc::new(screen));
         self.register_action(action)?;

@@ -76,6 +76,11 @@ pub(in crate::server) fn plan_durable_request(
                         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unknown creature"))?
                         .key
                         .to_string();
+                    let arguments = registered::encode_command_arguments(
+                        state.world.catalog(),
+                        crate::gameplay::admin::SPAWN,
+                        &[&key],
+                    )?;
                     registered::plan_request(
                         state,
                         *id,
@@ -89,7 +94,7 @@ pub(in crate::server) fn plan_durable_request(
                             inventory_revision,
                             entity: 0,
                             entity_revision: 0,
-                            arguments: key.into_bytes(),
+                            arguments,
                         },
                         receipt_value,
                         tick,
@@ -104,8 +109,11 @@ pub(in crate::server) fn plan_durable_request(
                         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unknown item"))?
                         .key
                         .to_string();
-                    let mut arguments = count.to_le_bytes().to_vec();
-                    arguments.extend(key.bytes());
+                    let arguments = registered::encode_command_arguments(
+                        state.world.catalog(),
+                        crate::gameplay::admin::GIVE,
+                        &[&key, &count.to_string()],
+                    )?;
                     registered::plan_request(
                         state,
                         *id,

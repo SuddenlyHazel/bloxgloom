@@ -6,11 +6,20 @@ export type BloxStartupHost = {
     register_block: (key: string, name: string, package_texture: string) -> (),
     register_item: (key: string, name: string, texture: string) -> (),
     register_generator: (key: string, revision: number, module: string) -> (),
-    register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block", target_key: string?, module: string) -> (),
+    -- Optional command facet: empty-target only; action key is its name.
+    register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block", target_key: string?, module: string, command: BloxCommand?) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
 }
+
+-- Ordered positional schema, at most 8 fields and 130 encoded bytes in total.
+-- Keys: u8 length + namespaced ASCII bytes (3..max_bytes, max_bytes <= 128).
+-- Counts: one byte, 1..128. Defaults make trailing text arguments optional;
+-- wire/event.arguments always includes every field with explicit default values.
+export type BloxCommandArgument = { kind: "item_key" | "entity_key", max_bytes: number }
+    | { kind: "count", default: number? }
+export type BloxCommand = { permission: "Player" | "Admin", arguments: { BloxCommandArgument }? }
 
 export type BloxSystemSeed = { x: number, y: number, z: number, data: string }
 export type BloxSystemDeclaration = {

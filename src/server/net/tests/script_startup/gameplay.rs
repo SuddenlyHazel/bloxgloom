@@ -8,6 +8,8 @@ use bloxgloom_host_api::actions::Request;
 mod authorization;
 #[path = "gameplay/blocks.rs"]
 mod blocks;
+#[path = "gameplay/commands.rs"]
+mod commands;
 #[path = "gameplay/decisions.rs"]
 mod decisions;
 #[path = "gameplay/entities.rs"]
@@ -145,7 +147,9 @@ impl Peer {
     fn send(&mut self, request: &ClientMessage) -> (bool, String) {
         let expected = match request {
             ClientMessage::EntityInteract { action_id, .. }
-            | ClientMessage::Edit { action_id, .. } => action_id,
+            | ClientMessage::Edit { action_id, .. }
+            | ClientMessage::AdminGive { action_id, .. }
+            | ClientMessage::AdminSpawnEntity { action_id, .. } => action_id,
             _ => unreachable!(),
         };
         protocol::write_client_with_catalog(&mut self.stream, request, &self.catalog).unwrap();

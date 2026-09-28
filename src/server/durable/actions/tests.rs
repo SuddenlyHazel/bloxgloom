@@ -200,8 +200,12 @@ fn registered_admin_grant_is_exact_and_revision_fenced() {
         planned.inventory_before.unwrap(),
         InventoryStore::encode_snapshot_with_catalog(&inventory, state.world.catalog()).unwrap()
     );
-    let mut arguments = 1u16.to_le_bytes().to_vec();
-    arguments.extend(state.world.catalog().item(item).unwrap().key.bytes());
+    let arguments = registered::encode_command_arguments(
+        state.world.catalog(),
+        crate::gameplay::admin::GIVE,
+        &[&state.world.catalog().item(item).unwrap().key, "1"],
+    )
+    .unwrap();
     let stale = registered::plan_request(
         &mut state,
         1,

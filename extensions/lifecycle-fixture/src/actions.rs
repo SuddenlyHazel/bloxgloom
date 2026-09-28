@@ -6,6 +6,7 @@ pub fn definition() -> Action {
         key: KEY.into(),
         version: 1,
         label: "KNAP GRAVEL".into(),
+        command: None,
         target: Target::Item("bloxgloom:gravel".into()),
         operation: Operation::Recipe {
             input: "bloxgloom:gravel".into(),

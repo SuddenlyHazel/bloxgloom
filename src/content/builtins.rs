@@ -608,6 +608,23 @@ impl Catalog {
                     target: bloxgloom_host_api::actions::Target::Empty,
                     operation: bloxgloom_host_api::actions::Operation::Gameplay,
                     panel: None,
+                    command: Some(bloxgloom_host_api::actions::Command {
+                        permission: bloxgloom_host_api::actions::CommandPermission::Admin,
+                        arguments: if key == crate::gameplay::admin::GIVE {
+                            vec![
+                                bloxgloom_host_api::actions::CommandArgument::ItemKey {
+                                    max_bytes: 128,
+                                },
+                                bloxgloom_host_api::actions::CommandArgument::Count {
+                                    default: Some(128),
+                                },
+                            ]
+                        } else {
+                            vec![bloxgloom_host_api::actions::CommandArgument::EntityKey {
+                                max_bytes: 128,
+                            }]
+                        },
+                    }),
                 })
                 .expect("builtin admin action");
             catalog
@@ -628,6 +645,7 @@ impl Catalog {
                 target: bloxgloom_host_api::actions::Target::Empty,
                 operation: bloxgloom_host_api::actions::Operation::Gameplay,
                 panel: None,
+                command: None,
             })
             .expect("builtin slot move action");
         catalog
@@ -647,6 +665,7 @@ impl Catalog {
                 target: bloxgloom_host_api::actions::Target::Empty,
                 operation: bloxgloom_host_api::actions::Operation::Gameplay,
                 panel: None,
+                command: None,
             })
             .expect("builtin drop stack action");
         catalog

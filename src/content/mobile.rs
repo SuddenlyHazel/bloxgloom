@@ -51,6 +51,7 @@ impl Catalog {
                 entity.interaction.clone(),
             ),
             panel: None,
+            command: None,
         };
         *slot = Some(entity);
         if !matches!(&action.operation, bloxgloom_host_api::actions::Operation::EntityRequest(bytes) if bytes.is_empty())

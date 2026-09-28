@@ -6,6 +6,8 @@
 //! `h.register_action("demo:shift", 1, "Shift", "item", "bloxgloom:stick", "demo:shift")`.
 //! Arguments are own action key, u16 revision, label, target kind/key, and an
 //! own-package module. Target alternatives are `"block", key` and `"empty", nil`.
+//! An optional seventh argument `{permission = "Player" | "Admin", arguments = {...}}`
+//! adds a bounded typed command facet, only for empty targets. No aliases.
 //! The module returns `function(context, event)`. Dot-call methods are
 //! `block(x,y,z)`, `set_block(x,y,z,state_key)` and `transfer(from_slot,to_slot,count)`
 //! (zero-based requesting-player slots, exact components, count 1..128). A false
@@ -38,7 +40,10 @@ pub(super) use declarations::handler_declarer;
 use super::values::{integer, text};
 use super::{Invocation, Limits, Program, package::PackageSnapshot, startup::Pending};
 use bloxgloom_host_api::{
-    actions::{Action, Operation, Target},
+    actions::{
+        Action, Command, CommandArgument, CommandPermission, MAX_COMMAND_ARGUMENTS, Operation,
+        Target,
+    },
     gameplay::{Context, Error, Event, EventKind, Handler, HandlerRegistration},
 };
 use mlua::{Function, Lua, Value};
@@ -61,13 +66,14 @@ pub(super) fn declarer(
     let namespace = namespace.to_owned();
     lua.create_function(
         move |_,
-              (key, revision, label, kind, target, module): (
+              (key, revision, label, kind, target, module, command): (
             Value,
             Value,
             Value,
             Value,
             Value,
             Value,
+            mlua::Variadic<Value>,
         )| {
             let mut pending = pending.borrow_mut();
             let result = (|| {
@@ -107,6 +113,7 @@ pub(super) fn declarer(
                     target,
                     operation: Operation::Gameplay,
                     panel: None,
+                    command: command_declaration(command)?,
                 };
                 action.validate().map_err(|_| "invalid action contract")?;
                 pending.action = Some(Declaration { action, module });
@@ -118,6 +125,98 @@ pub(super) fn declarer(
             })
         },
     )
+}
+
+fn command_declaration(values: mlua::Variadic<Value>) -> Result<Option<Command>, &'static str> {
+    let value = match values.as_slice() {
+        [] | [Value::Nil] => return Ok(None),
+        [value] => value,
+        _ => return Err("register_action expects at most one command descriptor"),
+    };
+    let Value::Table(table) = value else {
+        return Err("command descriptor must be a table");
+    };
+    if table.metatable().is_some() {
+        return Err("command descriptor must not have a metatable");
+    }
+    // Inspect at most three entries; any third/unknown field is unsupported.
+    // Raw iteration never executes caller-provided indexing metamethods.
+    let mut permission = None;
+    let mut arguments = Vec::new();
+    for pair in table.pairs::<Value, Value>().take(3) {
+        let (key, value) = pair.map_err(|_| "invalid command descriptor")?;
+        match text(key)?.as_str() {
+            "permission" => {
+                permission = Some(match text(value)?.as_str() {
+                    "Player" => CommandPermission::Player,
+                    "Admin" => CommandPermission::Admin,
+                    _ => return Err("command permission must be Player or Admin"),
+                })
+            }
+            "arguments" => arguments = command_schema(value)?,
+            _ => return Err("unsupported command descriptor field"),
+        }
+    }
+    Ok(Some(Command {
+        permission: permission.ok_or("command requires explicit permission")?,
+        arguments,
+    }))
+}
+
+fn command_schema(value: Value) -> Result<Vec<CommandArgument>, &'static str> {
+    let Value::Table(table) = value else {
+        return Err("command arguments must be an array");
+    };
+    if table.metatable().is_some() {
+        return Err("command arguments must not have a metatable");
+    }
+    let mut ordered = vec![None; MAX_COMMAND_ARGUMENTS];
+    let mut count = 0;
+    for pair in table
+        .pairs::<Value, Value>()
+        .take(MAX_COMMAND_ARGUMENTS + 1)
+    {
+        let (index, value) = pair.map_err(|_| "invalid command arguments")?;
+        let index = integer(index, 1, MAX_COMMAND_ARGUMENTS as i64)? as usize - 1;
+        let Value::Table(field) = value else {
+            return Err("command argument must be a table");
+        };
+        if field.metatable().is_some() {
+            return Err("command argument must not have a metatable");
+        }
+        let mut kind = None;
+        let mut max_bytes = None;
+        let mut default = None;
+        for pair in field.pairs::<Value, Value>().take(4) {
+            let (key, value) = pair.map_err(|_| "invalid command argument")?;
+            match text(key)?.as_str() {
+                "kind" => kind = Some(text(value)?),
+                "max_bytes" => max_bytes = Some(integer(value, 3, 128)? as u8),
+                "default" => default = Some(integer(value, 1, 128)? as u8),
+                _ => return Err("unsupported command argument field"),
+            }
+        }
+        let argument = match kind.as_deref() {
+            Some("item_key") if default.is_none() => CommandArgument::ItemKey {
+                max_bytes: max_bytes.ok_or("key requires max_bytes")?,
+            },
+            Some("entity_key") if default.is_none() => CommandArgument::EntityKey {
+                max_bytes: max_bytes.ok_or("key requires max_bytes")?,
+            },
+            Some("count") if max_bytes.is_none() => CommandArgument::Count { default },
+            _ => return Err("invalid command argument kind or fields"),
+        };
+        ordered[index] = Some(argument);
+        count += 1;
+    }
+    if count > MAX_COMMAND_ARGUMENTS || ordered[count..].iter().any(Option::is_some) {
+        return Err("command arguments must be a dense bounded array");
+    }
+    ordered
+        .into_iter()
+        .take(count)
+        .map(|value| value.ok_or("command arguments must be dense"))
+        .collect()
 }
 
 pub(super) fn registration(

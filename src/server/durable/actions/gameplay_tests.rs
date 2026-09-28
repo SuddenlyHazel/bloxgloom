@@ -218,6 +218,7 @@ impl Extension for UseExtension {
             target: Target::Item("bloxgloom:stick".into()),
             operation: Operation::Gameplay,
             panel: None,
+            command: None,
         })?;
         registrar.gameplay_handler(HandlerRegistration {
             key: "test:use_stick".into(),
@@ -233,6 +234,7 @@ impl Extension for UseExtension {
             target: Target::Entity("test:marker".into()),
             operation: Operation::Gameplay,
             panel: None,
+            command: None,
         })?;
         registrar.gameplay_handler(HandlerRegistration {
             key: "test:mark_use".into(),
@@ -255,6 +257,7 @@ impl Extension for UseExtension {
             target: Target::Empty,
             operation: Operation::Gameplay,
             panel: None,
+            command: None,
         })?;
         registrar.gameplay_handler(HandlerRegistration {
             key: "test:collect_drop".into(),
@@ -354,6 +357,7 @@ impl Extension for SupportExtension {
             target: Target::Item("bloxgloom:stick".into()),
             operation: Operation::Gameplay,
             panel: None,
+            command: None,
         })?;
         registrar.gameplay_handler(HandlerRegistration {
             key: "test:remove_soil".into(),

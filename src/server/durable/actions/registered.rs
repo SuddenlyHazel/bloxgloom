@@ -2,8 +2,22 @@
 //! owns effects; client-supplied bytes can only select bounded host operations.
 use super::*;
 use bloxgloom_host_api::actions::{
-    Operation, Request, TERRAIN_REQUEST_TAG, Target, TerrainRequest,
+    CommandPermission, Operation, Request, TERRAIN_REQUEST_TAG, Target, TerrainRequest,
 };
+
+/// Compatibility packets retain their receipt identity but use the same frozen
+/// schema and validation as advertised command requests.
+pub(super) fn encode_command_arguments(
+    catalog: &crate::content::Catalog,
+    key: &str,
+    values: &[&str],
+) -> io::Result<Vec<u8>> {
+    catalog
+        .action(key)
+        .and_then(|action| action.command.as_ref())
+        .and_then(|command| command.encode_arguments(values))
+        .ok_or_else(|| denied("invalid command arguments"))
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan(
@@ -145,6 +159,23 @@ fn plan_observed_request(
         .clients
         .get(&client_id)
         .ok_or_else(|| denied("actor disconnected"))?;
+    if let Some(command) = &action.command {
+        // Applies to all envelopes/UI entry points for this key. The catalog
+        // freezes the permission; profile/admin authority belongs to the server.
+        // Retried planning passes these checks again before invoking any handler.
+        if profile == 0 || client.profile != profile {
+            return Err(denied("command requires an authenticated player"));
+        }
+        if command.permission == CommandPermission::Admin && state.admin_profile != Some(profile) {
+            return Err(denied("command requires admin permission"));
+        }
+        if catalog
+            .command_arguments(command, &request.arguments)
+            .is_none()
+        {
+            return Err(denied("invalid command arguments"));
+        }
+    }
     if client.inventory.revision != request.inventory_revision {
         return Err(denied("stale actor inventory"));
     }

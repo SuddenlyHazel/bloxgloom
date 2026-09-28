@@ -2,8 +2,28 @@
 use super::*;
 use bloxgloom_host_api::{RegistrationError as Error, actions::*};
 use std::sync::Arc;
+#[cfg(test)]
+mod tests;
 
 impl Catalog {
+    /// Decode and resolve every typed reference against this frozen catalog.
+    /// The durable dispatcher calls this before any gameplay handler.
+    pub(crate) fn command_arguments(
+        &self,
+        command: &Command,
+        bytes: &[u8],
+    ) -> Option<Vec<CommandValue>> {
+        let values = command.decode_arguments(bytes)?;
+        values
+            .iter()
+            .all(|value| match value {
+                CommandValue::ItemKey(key) => self.item_by_key(key).is_some(),
+                CommandValue::EntityKey(key) => self.entity_type_id_by_key(key).is_some(),
+                CommandValue::Count(_) => true,
+            })
+            .then_some(values)
+    }
+
     pub(crate) fn register_action(&mut self, action: Action) -> Result<(), Error> {
         action.validate()?;
         if self.entity_type_id_by_key("bloxgloom:player").is_none() {

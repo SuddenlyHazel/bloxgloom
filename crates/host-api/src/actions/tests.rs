@@ -12,6 +12,7 @@ fn action(key: &str) -> Action {
             produce: 1,
         },
         panel: None,
+        command: None,
     }
 }
 #[test]
@@ -239,4 +240,129 @@ fn composed_controls_resolve_forward_references_without_changing_target_context(
     });
     registry.register(bad).unwrap();
     assert!(registry.validate_composition().is_err());
+}
+
+#[test]
+fn command_facets_are_empty_gameplay_only_and_fingerprint_permissions() {
+    let mut definition = action("test:command");
+    definition.command = Some(Command {
+        permission: CommandPermission::Player,
+        arguments: vec![],
+    });
+    assert!(
+        definition.validate().is_err(),
+        "recipes cannot become commands"
+    );
+    definition.operation = Operation::Gameplay;
+    assert!(
+        definition.validate().is_err(),
+        "item targets cannot become commands"
+    );
+    definition.target = Target::Empty;
+    definition.validate().unwrap();
+    let player = definition.fingerprint_bytes();
+    definition.command = Some(Command {
+        permission: CommandPermission::Admin,
+        arguments: vec![],
+    });
+    definition.validate().unwrap();
+    assert_ne!(player, definition.fingerprint_bytes());
+    definition.command = None;
+    assert_ne!(player, definition.fingerprint_bytes());
+    definition.command = Some(Command {
+        permission: CommandPermission::Player,
+        arguments: vec![],
+    });
+    definition.key = format!("test:{}", "a".repeat(124));
+    assert!(
+        definition.validate().is_err(),
+        "command key bound is 128 bytes"
+    );
+    definition.key = "unnamespaced".into();
+    assert!(definition.validate().is_err());
+    definition.key = "test:command".into();
+    let mut registry = Registry::default();
+    registry.register(definition.clone()).unwrap();
+    assert_eq!(
+        registry.discover(&Target::Empty).next().unwrap().as_ref(),
+        &definition
+    );
+    assert!(
+        registry.register(definition).is_err(),
+        "one identity per key"
+    );
+}
+
+#[test]
+fn ordered_command_schema_has_canonical_bounded_arguments_and_identity() {
+    let mut command = Command {
+        permission: CommandPermission::Admin,
+        arguments: vec![
+            CommandArgument::ItemKey { max_bytes: 128 },
+            CommandArgument::Count { default: Some(128) },
+        ],
+    };
+    assert_eq!(command.max_encoded_len(), Some(130));
+    let bytes = command.encode_arguments(&["demo:item"]).unwrap();
+    assert_eq!(bytes, b"\x09demo:item\x80");
+    assert_eq!(
+        command.encode_arguments(&["demo:item", "128"]).unwrap(),
+        bytes
+    );
+    assert_eq!(
+        command.decode_arguments(&bytes),
+        Some(vec![
+            CommandValue::ItemKey("demo:item".into()),
+            CommandValue::Count(128)
+        ])
+    );
+    for bad in [
+        b"\x09demo:item".as_slice(),
+        b"\x09demo:item\0",
+        b"\x09demo:item\x81",
+        b"\x09demo:item\x01x",
+        b"\x09DEMO:item\x01",
+        b"\xffdemo:item\x01",
+    ] {
+        assert!(command.decode_arguments(bad).is_none(), "{bad:?}");
+    }
+    let full_key = format!("x:{}", "a".repeat(126));
+    assert_eq!(command.encode_arguments(&[&full_key]).unwrap().len(), 130);
+    assert!(
+        command
+            .encode_arguments(&[&format!("{full_key}a")])
+            .is_none()
+    );
+    assert!(command.encode_arguments(&["item"]).is_none());
+    assert!(command.encode_arguments(&["demo:item", "0"]).is_none());
+
+    let mut definition = action("test:command");
+    definition.target = Target::Empty;
+    definition.operation = Operation::Gameplay;
+    definition.command = Some(command.clone());
+    definition.validate().unwrap();
+    let identity = definition.fingerprint_bytes();
+    command.arguments[1] = CommandArgument::Count { default: Some(1) };
+    definition.command = Some(command.clone());
+    assert_ne!(identity, definition.fingerprint_bytes());
+    command.arguments[0] = CommandArgument::EntityKey { max_bytes: 128 };
+    definition.command = Some(command.clone());
+    assert_ne!(identity, definition.fingerprint_bytes());
+    definition.key = format!("test:{}", "a".repeat(100));
+    assert!(
+        definition.validate().is_err(),
+        "entire request must fit, not only arguments"
+    );
+
+    command
+        .arguments
+        .push(CommandArgument::Count { default: None });
+    assert!(
+        command.max_encoded_len().is_none(),
+        "optional fields must trail and total must fit"
+    );
+    command.arguments = vec![CommandArgument::Count { default: None }; 9];
+    assert!(command.max_encoded_len().is_none());
+    command.arguments = vec![CommandArgument::Count { default: Some(0) }];
+    assert!(command.max_encoded_len().is_none());
 }
