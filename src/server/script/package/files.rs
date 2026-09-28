@@ -68,6 +68,10 @@ mod platform {
         }
 
         pub fn read(&self, path: &str, limit: usize) -> io::Result<String> {
+            String::from_utf8(self.read_bytes(path, limit)?).map_err(io::Error::other)
+        }
+
+        pub fn read_bytes(&self, path: &str, limit: usize) -> io::Result<Vec<u8>> {
             let mut parts = path.split('/').peekable();
             let mut parent = None;
             while let Some(part) = parts.next() {
@@ -91,7 +95,7 @@ mod platform {
                     if bytes.len() > limit {
                         return Err(io::Error::other("file byte limit exceeded"));
                     }
-                    return String::from_utf8(bytes).map_err(io::Error::other);
+                    return Ok(bytes);
                 }
             }
             Err(io::Error::other("empty file path"))
@@ -116,6 +120,9 @@ mod platform {
             unreachable!()
         }
         pub fn read(&self, _: &str, _: usize) -> io::Result<String> {
+            unreachable!()
+        }
+        pub fn read_bytes(&self, _: &str, _: usize) -> io::Result<Vec<u8>> {
             unreachable!()
         }
     }

@@ -23,6 +23,7 @@ mlua = { version = "0.12.1", features = ["luau", "vendored"] }
 png = "0.18.1"
 polling = "3.11.0"
 pollster = "1.0.1"
+sha2 = "0.10.9"
 wgpu = "30.0.1"
 winit = "0.30.13"
 

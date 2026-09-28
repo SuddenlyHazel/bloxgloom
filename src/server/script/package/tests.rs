@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::*;
 use crate::server::script::{Limits, ScriptInput, ScriptWorker};
 
+mod client;
+
 struct Fixture(PathBuf);
 
 impl Fixture {

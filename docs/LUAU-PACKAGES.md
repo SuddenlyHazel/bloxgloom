@@ -86,3 +86,11 @@ durable `wake` methods. The existing owner WAL commits state, deadline, edits
 and wakes together. See `src/server/script/system.rs` for the precise schema,
 limits and semantics. Entity/profile ownership, neighboring reads, atomic
 entity/drop effects, and general script state migration remain unbound.
+
+Package format 2 declares each module as `module server|client|shared <name>
+<side>/<path>.luau` and textures as `asset texture <name>
+assets/textures/<path>.png`. Format 1 modules stay server-only. The immutable
+client artifact contains client/shared source and declared texture bytes, but
+never server modules or original paths. Its SHA-256 cache key verifies exact
+canonical bytes; it does not authenticate who supplied that key. Package
+transfer, client execution and decoded-image limits are separate work.

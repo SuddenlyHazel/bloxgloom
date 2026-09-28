@@ -750,6 +750,12 @@ This section exists so compaction or a new session does not restart the design.
   the server still enforces delay, distance, conservation and player credit in
   the existing WAL path. Loopback pickup/restart and rollback tests pass.
   General notifications, fallback owners and client presentation remain.
+- **Phase 5 client artifact groundwork:** package format 2 classifies server,
+  client and shared Luau modules and texture assets; format 1 remains server-only.
+  Bounded secure discovery builds deterministic canonical client-only bytes with
+  SHA-256 cache identity and strict decode/verification. Server sources and
+  private save data never enter the artifact. This does not yet deliver packages
+  over the network or execute client scripts.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

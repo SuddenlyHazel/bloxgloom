@@ -1,7 +1,7 @@
 //! Bounded, deterministic local package snapshots. No filesystem access occurs
 //! after discovery, including on retries or imports.
 //!
-//! # Local package format v1
+//! # Local package formats v1 and v2
 //!
 //! The root contains only immediate package directories, named by identity.
 //! Each contains a UTF-8 `package.txt`, for example:
@@ -33,6 +33,39 @@
 //! Up to 32 distinct `requires` capability strings (255 bytes each) are allowed;
 //! startup, not integer execution, validates which capabilities are supported.
 //! Root paths have at most 4096 bytes/64 components and no parent traversal.
+//!
+//! Format 1 is unchanged: every module is server-only and nothing but package
+//! identity/version/direct dependencies enters the client bundle. Format 2 uses
+//! the same singleton, dependency and capability declarations, but replaces
+//! module lines with explicit sides and optionally declares texture assets:
+//!
+//! ```text
+//! format 2
+//! package example
+//! version 1.0.0
+//! entry main
+//! module server main server/main.luau
+//! module client ui client/ui.luau
+//! module shared common shared/common.luau
+//! asset texture icon assets/textures/icon.png
+//! ```
+//!
+//! Format 2 requires each source path to start with its side directory; the
+//! entry must be server or shared. Client modules cannot be imported/executed on
+//! the server. Texture paths must start with `assets/textures/` and end in `.png`.
+//! All format 2 paths obey the existing depth/length/character bounds and forbid
+//! dot-prefixed components. Assets are limited to 64/package, 256 total, and
+//! 256 KiB/file, sharing the 4 MiB aggregate discovery budget with manifests and
+//! all sources. No wildcard, directory asset, arbitrary data or save file type
+//! is supported. PNG is a classification, not image validity/decoded-size proof.
+//! Authors explicitly approve everything in client/shared sources and assets;
+//! this cannot detect secrets deliberately copied/renamed into approved files.
+//!
+//! Discovery also builds a canonical `client::ClientBundle`, containing only
+//! client/shared sources and declared texture bytes, plus package identities and
+//! exact dependencies. Local paths, entries, capabilities and original manifests
+//! are never exported. SHA-256 keys and bounded decode/verify are ready for a
+//! later cache/stream layer; there is no transport or client VM in this slice.
 //!
 //! The secure filesystem backend currently supports Unix only; other platforms
 //! fail closed. Every path component, including root ancestors, is opened with
@@ -70,12 +103,13 @@
 //! Explicit development startup also runs entries with a bounded registration
 //! host instead of integer inputs (see the sibling `startup` module). Semantic
 //! actions bind the public gameplay Context and existing host transactions;
-//! other events remain unbound. Assets, compatibility negotiation, server/client
-//! declarations, distribution hashes, network/UI and hot reload are not added.
+//! other events remain unbound. Asset rendering, compatibility negotiation,
+//! network/UI and hot reload are not added.
 //! No world/save/wire format changes accompany this local manifest format.
 //! Generation modules can also be registered at startup; their frozen sources
 //! run in fresh VMs on loader threads through the public Contributor contract.
 
+pub mod client;
 mod files;
 pub(super) mod manifest;
 
@@ -89,16 +123,20 @@ pub const MAX_PACKAGES: usize = 64;
 pub const MAX_MODULES: usize = 256;
 pub const MAX_SOURCE_BYTES: usize = 64 * 1024;
 pub const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_ASSETS: usize = 256;
+pub const MAX_ASSET_BYTES: usize = 256 * 1024;
 const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 
 /// Private fields prevent mutation or bypassing validation after discovery.
 pub struct PackageSnapshot {
     packages: BTreeMap<String, Package>,
+    client: client::ClientBundle,
 }
 
 struct Package {
     manifest: Manifest,
     sources: BTreeMap<String, String>,
+    assets: BTreeMap<String, Vec<u8>>,
 }
 
 impl PackageSnapshot {
@@ -244,6 +282,7 @@ impl PackageSnapshot {
             .map_err(|e| error("<packages>", e))?;
         let mut packages = BTreeMap::new();
         let mut module_count = 0;
+        let mut asset_count = 0;
         let mut total_bytes = 0usize;
         for name in names {
             if !manifest::identifier(&name) {
@@ -275,7 +314,26 @@ impl PackageSnapshot {
                 total_bytes += source.len();
                 sources.insert(module.clone(), source);
             }
-            packages.insert(name, Package { manifest, sources });
+            asset_count += manifest.assets.len();
+            if asset_count > MAX_ASSETS {
+                return Err(error(&owner, "too many assets in package set"));
+            }
+            let mut assets = BTreeMap::new();
+            for (asset, path) in &manifest.assets {
+                let bytes = directory
+                    .read_bytes(path, MAX_ASSET_BYTES.min(MAX_TOTAL_BYTES - total_bytes))
+                    .map_err(|e| error(&owner, e))?;
+                total_bytes += bytes.len();
+                assets.insert(asset.clone(), bytes);
+            }
+            packages.insert(
+                name,
+                Package {
+                    manifest,
+                    sources,
+                    assets,
+                },
+            );
         }
         for (name, package) in &packages {
             for (dependency, version) in &package.manifest.dependencies {
@@ -290,7 +348,14 @@ impl PackageSnapshot {
                 }
             }
         }
-        Ok(Self { packages })
+        // Build only from the validated immutable snapshot, never reopen files or
+        // serialize a local manifest (which contains server-only paths/entry).
+        let client = client::ClientBundle::from_packages(&packages)?;
+        Ok(Self { packages, client })
+    }
+
+    pub fn client_bundle(&self) -> &client::ClientBundle {
+        &self.client
     }
 
     pub(super) fn entry(&self, package: &str) -> Result<String, ScriptError> {
@@ -312,11 +377,11 @@ impl PackageSnapshot {
 
     pub(super) fn source(&self, key: &str) -> Option<&str> {
         let (package, module) = key.split_once(':')?;
-        self.packages
-            .get(package)?
-            .sources
-            .get(module)
-            .map(String::as_str)
+        let package = self.packages.get(package)?;
+        if package.manifest.sides.get(module) == Some(&manifest::SourceSide::Client) {
+            return None;
+        }
+        package.sources.get(module).map(String::as_str)
     }
 
     /// Imports are `package:module`, never paths. Visibility is lexical to the

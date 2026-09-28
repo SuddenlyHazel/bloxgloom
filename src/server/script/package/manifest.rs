@@ -8,7 +8,16 @@ pub(super) struct Manifest {
     pub entry: String,
     pub dependencies: BTreeMap<String, String>,
     pub modules: BTreeMap<String, String>,
+    pub sides: BTreeMap<String, SourceSide>,
+    pub assets: BTreeMap<String, String>,
     pub requires: BTreeSet<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceSide {
+    Server,
+    Client,
+    Shared,
 }
 
 impl Manifest {
@@ -16,23 +25,32 @@ impl Manifest {
         let fail = || {
             error(
                 directory,
-                "invalid package.txt (format, identity, version, entry, dependency or module declaration)",
+                "invalid package.txt (format, identity, version, entry, dependency, module or asset declaration)",
             )
         };
-        let mut format = false;
+        let mut format = None;
         let mut name = None;
         let mut version = None;
         let mut entry = None;
         let mut dependencies = BTreeMap::new();
         let mut modules = BTreeMap::new();
+        let mut sides = BTreeMap::new();
+        let mut assets = BTreeMap::new();
+        let mut legacy_modules = false;
+        let mut classified_files = false;
         let mut requires = BTreeSet::new();
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            // Four tokens suffice to reject malformed lines without allocating
+            // Five tokens suffice to reject malformed lines without allocating
             // a token vector proportional to input whitespace.
             let mut words = line.split_ascii_whitespace();
             let fields = (words.next(), words.next(), words.next(), words.next());
+            if words.next().is_some() {
+                return Err(fail());
+            }
             match fields {
-                (Some("format"), Some("1"), None, None) if !format => format = true,
+                (Some("format"), Some(value @ ("1" | "2")), None, None) if format.is_none() => {
+                    format = Some(value);
+                }
                 (Some("package"), Some(value), None, None)
                     if name.is_none() && value == directory =>
                 {
@@ -67,6 +85,34 @@ impl Manifest {
                     if modules.insert(key.to_owned(), value.to_owned()).is_some() {
                         return Err(fail());
                     }
+                    sides.insert(key.to_owned(), SourceSide::Server);
+                    legacy_modules = true;
+                }
+                (Some("module"), Some(side), Some(key), Some(path))
+                    if identifier(key) && valid_path(path) && modules.len() < 64 =>
+                {
+                    let kind = match side {
+                        "server" => SourceSide::Server,
+                        "client" => SourceSide::Client,
+                        "shared" => SourceSide::Shared,
+                        _ => return Err(fail()),
+                    };
+                    if !path.starts_with(&format!("{side}/"))
+                        || !public_path(path)
+                        || modules.insert(key.to_owned(), path.to_owned()).is_some()
+                    {
+                        return Err(fail());
+                    }
+                    sides.insert(key.to_owned(), kind);
+                    classified_files = true;
+                }
+                (Some("asset"), Some("texture"), Some(key), Some(path))
+                    if identifier(key) && texture_path(path) && assets.len() < 64 =>
+                {
+                    if assets.insert(key.to_owned(), path.to_owned()).is_some() {
+                        return Err(fail());
+                    }
+                    classified_files = true;
                 }
                 (Some("requires"), Some(value), None, None)
                     if value.len() <= 255 && requires.len() < 32 =>
@@ -79,7 +125,13 @@ impl Manifest {
             }
         }
         let entry = entry.ok_or_else(fail)?;
-        if !format || name.is_none() || !modules.contains_key(&entry) {
+        if format.is_none()
+            || name.is_none()
+            || !modules.contains_key(&entry)
+            || sides.get(&entry) == Some(&SourceSide::Client)
+            || (format == Some("1") && classified_files)
+            || (format == Some("2") && legacy_modules)
+        {
             return Err(fail());
         }
         Ok(Self {
@@ -87,6 +139,8 @@ impl Manifest {
             entry,
             dependencies,
             modules,
+            sides,
+            assets,
             requires,
         })
     }
@@ -100,7 +154,7 @@ pub(in crate::server::script) fn identifier(value: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
-fn valid_version(value: &str) -> bool {
+pub(super) fn valid_version(value: &str) -> bool {
     let mut parts = value.split('.');
     (0..3).all(|_| {
         parts.next().is_some_and(|p| {
@@ -113,8 +167,11 @@ fn valid_version(value: &str) -> bool {
 }
 
 fn valid_path(path: &str) -> bool {
+    path.ends_with(".luau") && bounded_path(path)
+}
+
+fn bounded_path(path: &str) -> bool {
     path.len() <= 240
-        && path.ends_with(".luau")
         && path.split('/').count() <= 8
         && path.split('/').all(|part| {
             !part.is_empty()
@@ -124,4 +181,13 @@ fn valid_path(path: &str) -> bool {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
         })
+}
+
+// Exportable files live in dedicated trees, never save paths or dotfiles.
+fn public_path(path: &str) -> bool {
+    bounded_path(path) && path.split('/').all(|part| !part.starts_with('.'))
+}
+
+fn texture_path(path: &str) -> bool {
+    public_path(path) && path.starts_with("assets/textures/") && path.ends_with(".png")
 }
