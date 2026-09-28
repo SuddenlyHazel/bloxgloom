@@ -56,6 +56,7 @@ entry receives a registration host instead of tick/seed input:
 ```lua
 return function(host)
     host.register_item("example:token", "Token", "bloxgloom:stone")
+    host.register_item("example:stone_token", "Stone Token", "bloxgloom:stone", {sprite=false})
 end
 ```
 
@@ -75,11 +76,13 @@ host.register_block("example:hedge", "Hedge", "example:tile", {flammable=true, s
 The block has one default state, uniform texture, solid opaque cube geometry,
 no special emission/flammability by default, and a same-key placeable item with the normal
 128 stack cap. Registration requires an already registered package-owned
-texture; a normal `register_item` remains a non-placeable sprite. Each package
-may declare at most 32 textures, 32 blocks and 32 items total. Keys must use
+texture; `register_item` remains non-placeable, with a sprite by default. Its
+optional `{sprite=false}` argument selects the existing textured item-cube
+presentation. Unknown or mistyped item options fail startup, even under `pcall`.
+Each package may declare at most 32 textures, 32 blocks and 32 items total. Keys must use
 their package's namespace; script and registrar errors abort startup before
-opening the save. The optional fourth argument currently accepts only the
-boolean `flammable` and `supports_plant` flags. Unknown or mistyped options
+opening the save. For `register_block`, the optional fourth argument accepts
+only the boolean `flammable` and `supports_plant` flags. Unknown or mistyped options
 abort startup; geometry and light values remain at the opaque-cube defaults.
 See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
@@ -230,10 +233,12 @@ to the document's package. The worker executes each event in a fresh sandbox;
 it never receives world/inventory/network handles. The client composes only
 registered item/empty/block gameplay requests using its current slot,
 inventory revision and session action ID. Block actions use the current ray hit
-from streamed terrain when the callback is dispatched; the UI cannot supply
+and observed chunk version from streamed terrain when the callback is dispatched;
+the UI cannot supply
 coordinates or an entity identity. Server reach, line of sight, target type,
 permissions, costs, WAL transactions and receipts remain authoritative. UI
 feedback distinguishes unsent, pending, applied and denied requests. Entity
-targets and arbitrary argument schemas are not yet bound; same-type block
-replacement has no terrain-revision fence. See `fixtures/packages/uidemo/` and
+targets and arbitrary argument schemas are not yet bound. Same-type block
+replacement rejects stale chunk observations and rechecks the server read fence
+at WAL admission. See `fixtures/packages/uidemo/` and
 `fixtures/ui-target-actions/`.

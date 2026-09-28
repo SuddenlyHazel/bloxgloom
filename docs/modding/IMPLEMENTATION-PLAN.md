@@ -472,6 +472,16 @@ harvesting migration are accepted. No phase-level work remains.
   placement/break uses public footprint planning with the existing authoritative
   workstation transaction (`2509896`). Further shared-service parity still
   needs a production audit.
+- Production entity startup enumerates frozen catalog mobile, machine, anchored
+  and container declarations (`src/server/startup.rs`) rather than registering
+  the legacy direct kiln/hopper test types. This narrows the helper audit to
+  remaining live transaction/planning branches; old test-only planners are not
+  evidence of a private production route.
+- **Verified storage-face slice:** `StorageBlockEntity` now declares
+  optional validated cardinal automation faces; the production storage `Port`
+  enforces them, with the existing all-face default. Restricted faces change
+  entity catalog/save identity. Machine face policies were already public;
+  host-owned slot mutation and WAL are not missing policy.
 
 **Verified binding slice:** `DropStack` now uses a registered action to take the
 exact component-bearing stack and spawn its drop in one WAL transaction. Luau
@@ -482,13 +492,31 @@ inventory and collision checks; its wire-level choice and
 selected-stack validation remain a native route. Do not replace those
 authority checks with client-supplied action bytes just to remove the branch.
 
-**Player-rule audit:** the server movement budget is 10 blocks/s while client
-intent uses 8 blocks/s. The fixed public builtin `player::Body` now supplies
-the same collision samples to prediction, movement and spawn checks, and its
-bounds to placement validation. This does **not** offer mod-selectable rules:
-those need handshake-visible identity and consistent prediction/reconciliation,
+**Player-rule audit:** the fixed public `player::MotionRates` retains the server
+movement budget of 10 blocks/s and client intent rate of 8 blocks/s. The
+builtin `player::Body` supplies the same collision samples to prediction,
+movement and spawn checks, and its bounds to placement validation. This does
+**not** offer mod-selectable rules: those need handshake-visible identity and
+consistent prediction/reconciliation,
 not a server-only tuning knob. Semantic command discovery/rebinding remains
 open.
+
+**Verified spawn-search slice:** startup highest-surface and cached
+join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.
+The host still owns authoritative terrain reads, cache misses, collision and
+session admission. A known safe lower surface can still be used when an upper
+chunk is missing; missing terrain is never guessed as empty. This is not a
+mod-selectable spawn rule.
+
+**Integrated verification for these follow-up slices:** the real-listener
+item/catalog negotiation and authored block ABA/panel/restart tests, storage
+face/identity and player-spawn regressions, root suite **902/902** (two threads),
+host API **25/25**, formatting and strict all-target/all-feature Clippy pass.
+The first four-thread integrated run had one load-sensitive Luau `TimeLimit`;
+that unchanged test passed alone and in the clean two-thread suite. The
+generated built-in drop scene was inspected; custom-item cube/sprite selection
+is covered by its mesh regression, not that preview.
+
 **Verified player-state slice:** Rust and Luau gameplay snapshots now
 expose the authenticated actor's captured feet position; non-player events
 receive no player position. This is a read-only state view, not movement or
@@ -539,6 +567,11 @@ Optional bounded `flammable` and `supports_plant` cube flags are verified
 through a real listener/catalog join, restart, invalid-registration regressions,
 the 896/896 suite, formatting and strict Clippy. The rest of the public
 block/material surface remains open.
+An optional `sprite=false` item presentation flag is verified: the server and
+downloaded client negotiate the same frozen item definition; omitted options
+retain the prior default identity. Its existing cube/cutout drop mesh paths are
+covered by a registered-item regression. This does not expose arbitrary item
+geometry or client-side presentation callbacks.
 
 **Remaining**
 
@@ -588,7 +621,10 @@ GPU/window failures propagate instead of looking like successful exits.
 local Luau event handlers and downloaded startup text/state. The client composes
 server-authorized item/empty actions (`uidemo` transfers a stick) and block
 actions from its current streamed-world ray hit (`uitarget` trades a stick for
-a stone-to-glowstone edit), with denial/receipt feedback.
+a stone-to-glowstone edit), with denial/receipt feedback. A same-type block
+observation fence is verified: the client submits its current streamed
+chunk version, and the server compares and retains the authoritative chunk read
+through WAL admission. Entity targets remain open.
 
 **Remaining**
 
@@ -596,8 +632,7 @@ a stone-to-glowstone edit), with denial/receipt feedback.
   text entry/focus (including appropriate clipboard/IME/accessibility behavior).
 - [ ] Extend authorized UI requests beyond the initial block target to entity
   targets, bounded arguments and server-driven updates without giving client
-  handlers authority. Same-type block replacement currently lacks a terrain-
-  revision fence, although the server still checks reach, sight and block type.
+  handlers authority.
 - [ ] Migrate built-in screens onto the same foundation rather than leaving mod
   documents as a second-class overlay.
 
@@ -1198,7 +1233,8 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
   focused integration tests, formatting and strict Clippy pass. The isolated
   agent full suite had a drop-motion timing failure that passed on rerun; the
   main-tree 4-thread integrated run passed **872/872**. Entity targets, argument
-  schemas and a same-type terrain-revision fence remain open.
+  schemas remained open at that increment; the same-type terrain-revision fence
+  is addressed in the later Phase 6 follow-up above.
 - **Phase 8 combined package slice:** `fixtures/combined-mod/` is a single
   format-2 `verdant` package spanning package PNG/cube/WGSL material,
   server-authorized authored UI action with finite stick cost, downloaded client
