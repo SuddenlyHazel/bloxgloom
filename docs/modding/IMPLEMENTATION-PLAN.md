@@ -421,60 +421,45 @@ harvesting migration are accepted. No phase-level work remains.
 
 #### Phase 2 — built-in gameplay parity · In progress
 
-**Working:** owner-world edits can atomically include generated entities and
-drops, including conditional edits inside a declared authoritative one-chunk
-neighborhood. Opt-in Rust chunk systems can exchange bounded durable payloads.
-Absent chunk destinations can be created with a validated frozen template in the
-producer's WAL record. Public owner edits support burn removal semantics as a
-reusable capability. Parts of support, pickup and scheduling use public hooks,
-but that does not migrate their complete non-fire lifecycles. Chained neighbor
-changes after a support-loss removal now notify their own neighbors without
-double-dispatching loot (`8140f5e`); the focused WAL/restart/one-drop test passes.
-An adjacent targeted-handler removal is now distinguished from genuine upward
-support loss (`WorldEdit` versus `SupportLoss`); its focused regression passes
-(`85d4ba4`).
-The drop tick policy now delegates fixed-step falling, collision and support
-rechecks to a bounded public `entity::FallingContext` over captured terrain.
-The integrated main-tree suite passes 884/884, formatting and strict Clippy pass.
-At the `2a238f3` falling increment, spawn/merge/split, pickup eligibility and
-transfer, expiry and terrain-change wake selection remained native paths; that
-increment alone did not meet complete drop parity.
-**New drop policy slice under verification:** production spawn planning now uses
-a public deterministic merge-target policy after host-captured exact stack and
-age inputs. Automatic pickup and script extraction use the same public
-delay/expiry policy; the bounded expiry scanner uses its public lifetime
-predicate. The server still owns candidates, split allocation, inventory
-credit, despawns and WAL commits. Terrain-change wake selection and remaining
-native orchestration are not counted as migrated. The main-tree 4-thread suite
-passes **889/889**, and the public entity-policy unit tests, formatting and
-strict Clippy pass.
-**Player-rule audit:** movement credit is currently server-owned (10 blocks/s
-budget), client intent uses its own 8 blocks/s value, and collision samples
-are shared for prediction but repeated in spawn checks. Public configurable
-movement/body rules therefore require handshake-visible rule identity and
-prediction/reconciliation consistency; do not expose a server-only tuning knob.
-**Helper audit:** storage placement/break already uses `StorageBlockEntity`
-declarations, built-in mossbun registers a public mobile `Behavior`, and
-anchored placement/refunds call the public anchored definition and callbacks.
-The new machine footprint planner closes one remaining private decision, but
-shared service and registered binding parity still needs a production audit;
-do not mark all helpers complete from their registration surfaces alone.
-**Slot-binding slice:** the production `InventoryMove` wire
-request now resolves a registered gameplay action using the public
-`move_slots` operation. It preserves exact empty-slot moves, partial merges to
-the 128 cap and full-stack swaps under finite inventory permissions, with the
-original receipt/WAL path. The focused test, real nonblocking-listener
-retry/restart test and main-tree 890/890 suite pass, as do strict Clippy and
-formatting.
-Client drop-stack and other input bindings have not been migrated by this slice.
-The builtin `give` and `spawn` console requests now resolve registered actions
-and invoke authenticated public gameplay operations, including from Luau;
-`help` is client-local usage text rather than a WAL command. Machine placement
-and break now use the public machine declaration to plan the footprint and
-refund while the shared workstation transaction remains authoritative. These
-new admin and machine increments pass the main-tree 888/888 suite, formatting
-and strict Clippy; broader player
-rules, semantic command discovery/rebinding, and other helper paths remain open.
+**Verified increments (not phase acceptance):**
+
+- Owner-world edits atomically include entities and drops, conditional
+  one-chunk-neighborhood edits, bounded durable intents and absent-destination
+  bootstrap. Public owner edits support burn removal semantics; native fire
+  migration itself remains deferred.
+- Chained support-loss edits notify neighbors without double loot (`8140f5e`),
+  and adjacent targeted edits retain their distinct `WorldEdit` removal cause
+  (`85d4ba4`). Both focused WAL/restart regressions pass.
+- Drop falling and support rechecks use a bounded public `FallingContext`
+  (`2a238f3`). Production merge-target selection, pickup eligibility and expiry
+  decisions now use public policies (`1367b11`). The host still owns candidate
+  capture, capped split allocation, inventory credit, despawns, terrain wakes
+  and WAL commits; a public policy method alone does not close drop parity.
+- Authenticated `give`/`spawn` console requests use registered actions and
+  public Luau gameplay operations (`99e8276`); `help` is client-local text.
+  Production `InventoryMove` uses public `move_slots`, preserving capped merges,
+  swaps and receipts (`80f7ce7`). Its listener retry/restart and main-tree
+  **891/891** tests, formatting and strict Clippy pass.
+- Storage uses `StorageBlockEntity`, built-in mossbun uses public mobile
+  `Behavior`, and anchored placement/refunds call public callbacks. Machine
+  placement/break uses public footprint planning with the existing authoritative
+  workstation transaction (`2509896`). Further shared-service parity still
+  needs a production audit.
+
+**Verified binding slice:** `DropStack` now uses a registered action to take the
+exact component-bearing stack and spawn its drop in one WAL transaction. Luau
+has matching `spawn_stack` authoring; listener/restart, pickup and the 891/891
+main-tree suite pass. The remaining normal `Edit` binding already dispatches
+public removal, placement and neighbor decisions after host reach, terrain,
+inventory and collision checks; its wire-level choice and
+selected-stack validation remain a native route. Do not replace those
+authority checks with client-supplied action bytes just to remove the branch.
+
+**Player-rule audit:** the server movement budget is 10 blocks/s while client
+intent uses 8 blocks/s. Collision samples are shared for prediction but
+repeated in spawn checks. Public configurable movement/body rules need
+handshake-visible identity and consistent prediction/reconciliation, not a
+server-only tuning knob. Semantic command discovery/rebinding remains open.
 
 **Remaining**
 
@@ -601,7 +586,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **890/890**. The user reported the Jade example working live, but that does
+  **891/891**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -667,7 +652,7 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **890/890** after registered slot moves;
+  latest reviewed 4-thread suite passed **891/891** after registered drop stacks;
   strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
