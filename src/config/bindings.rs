@@ -1,6 +1,64 @@
-//! Local physical-key bindings for existing semantic client actions. These
-//! never authorize a server action; the server still validates every request.
+//! Local physical-key bindings for built-in controls and namespaced commands.
+//! These never authorize a server action; the server validates every request.
+use std::collections::BTreeMap;
 use winit::keyboard::KeyCode;
+
+/// Local, server-independent shortcuts. A key is never sufficient authority to
+/// invoke an action: the active session must advertise this namespaced command.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct NamedBindings(pub BTreeMap<String, KeyCode>);
+
+impl NamedBindings {
+    pub fn bind(&mut self, action: &str, key: KeyCode, builtins: Bindings) -> bool {
+        if !valid_action_key(action)
+            || self.0.len() >= 32 && !self.0.contains_key(action)
+            || !allowed_key(key)
+            || builtins.action(key).is_some()
+            || self
+                .0
+                .iter()
+                .any(|(other, bound)| other != action && *bound == key)
+        {
+            return false;
+        }
+        self.0.insert(action.to_owned(), key);
+        true
+    }
+
+    pub fn action(&self, key: KeyCode) -> Option<&str> {
+        self.0
+            .iter()
+            .find_map(|(action, bound)| (*bound == key).then_some(action.as_str()))
+    }
+
+    pub fn sanitized(&self, builtins: Bindings) -> Self {
+        let mut result = Self::default();
+        for (action, key) in &self.0 {
+            result.bind(action, *key, builtins);
+        }
+        result
+    }
+}
+
+fn valid_action_key(action: &str) -> bool {
+    action.len() <= 128
+        && action.split_once(':').is_some_and(|(namespace, name)| {
+            !namespace.is_empty()
+                && !name.is_empty()
+                && namespace.bytes().chain(name.bytes()).all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b'-' | b'.' | b'/')
+                })
+        })
+}
+
+fn allowed_key(key: KeyCode) -> bool {
+    !matches!(
+        key,
+        KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD
+    ) && letter(key).is_some()
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Action {
@@ -43,15 +101,11 @@ impl Bindings {
 
     pub fn valid(self) -> bool {
         let keys = [self.inventory, self.kiln_input, self.kiln_fuel, self.drop];
-        keys.iter().all(|key| {
-            !matches!(
-                key,
-                KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD
-            ) && letter(*key).is_some()
-        }) && keys
-            .iter()
-            .enumerate()
-            .all(|(i, key)| !keys[..i].contains(key))
+        keys.iter().all(|key| allowed_key(*key))
+            && keys
+                .iter()
+                .enumerate()
+                .all(|(i, key)| !keys[..i].contains(key))
     }
 }
 

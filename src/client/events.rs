@@ -135,7 +135,7 @@ impl ClientApp {
                                     for character in value.chars().filter(|character| {
                                         character.is_ascii_graphic() || *character == ' '
                                     }) {
-                                        if self.admin_input.len() < 96 {
+                                        if self.admin_input.len() + character.len_utf8() <= 1024 {
                                             self.admin_input.push(character);
                                         }
                                     }
@@ -163,7 +163,7 @@ impl ClientApp {
                             return;
                         }
                         match code {
-                            KeyCode::F4 if self.admin_enabled => {
+                            KeyCode::F4 => {
                                 self.set_screen(UiScreen::Admin);
                                 return;
                             }
@@ -264,6 +264,32 @@ impl ClientApp {
                                 return;
                             }
                             _ => {}
+                        }
+                        if self.screen == UiScreen::Playing
+                            && let Some(action_key) = self.config.named_bindings.action(code)
+                        {
+                            // Local keys are inert across servers unless this exact
+                            // command contract was advertised by the active catalog.
+                            let action_key = action_key.to_owned();
+                            if let Some(mut message) = super::actions::compose_named_command(
+                                &self.catalog,
+                                &action_key,
+                                self.config.selected_slot as u8,
+                                &self.inventory,
+                                self.position.to_array().map(|v| v.floor() as i32),
+                            ) {
+                                if let Some(action_id) = self.allocate_action_id() {
+                                    if let ClientMessage::EntityInteract { action_id: id, .. } =
+                                        &mut message
+                                    {
+                                        *id = action_id;
+                                    }
+                                    self.queue_command(message);
+                                } else {
+                                    self.show_status("Action session pending or busy");
+                                }
+                            }
+                            return;
                         }
                     }
                     if self.screen != UiScreen::Playing {

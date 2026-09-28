@@ -34,10 +34,41 @@ anchor; item-bound actions similarly precede empty-space actions. Each discovery
 context is independently capped at eight, rather than merging then truncating.
 
 Operations are deliberately host capabilities, not arbitrary mutable callbacks:
-`Recipe`, `EntityRequest`, and `Inventory`. Action registration cannot obtain raw
+`Recipe`, `EntityRequest`, `Inventory`, and `Gameplay`. Action registration cannot obtain raw
 server state, write a journal, move another player's inventory, or bypass entity
-slot permissions. Item harvest/loot, arbitrary world edits, commands and keybinding
-registration remain separate surfaces.
+slot permissions. Gameplay decisions use the public transaction context and
+retain the same WAL and authoritative targeting checks.
+
+## Negotiated commands
+
+An empty-target gameplay action may declare a command facet with `Player` or
+`Admin` permission and up to eight ordered arguments. Supported schemas are
+bounded namespaced item and entity keys, plus counts from 1 through 128. A
+trailing count can supply a text-input default; requests always encode its value.
+Key arguments use one length byte followed by ASCII bytes; counts use one byte.
+The schema and permission are frozen catalog, save, and handshake identity. A
+downloaded client gets only the declaration, not the server handler source.
+
+The command's namespaced action key is its identity, not a client-selected alias.
+The server checks the authenticated profile, exact schema and current catalog
+references before invoking the handler. Forged arguments and denied permissions
+receive ordinary durable rejection receipts; retries never bypass these checks.
+Stock `give` and `spawn` are advertised Admin commands using this path. Their
+legacy packets remain accepted as compatibility adapters into the same registered
+handler; `help` remains local and does not produce a server action.
+
+The command screen is available to all clients. The grant item browser is only
+shown in local admin mode; this display setting never authorizes a grant. A local
+shortcut can use `bind_action.namespace:key=T` in the client config for a
+zero-argument command. It is inert unless the current server advertises that exact
+command; commands requiring arguments must be entered with their arguments.
+
+For example, a package action can register a typed player command with
+`h.register_action('demo:offer', 1, 'Offer', 'empty', nil, 'demo:offer_handler',
+{permission='Player', arguments={{kind='item_key', max_bytes=64},
+{kind='count', default=1}}})`. Its handler receives canonical binary
+`e.arguments` (length-prefixed key followed by a one-byte count); it must use
+the public gameplay context for any actual inventory or world change.
 
 ## Production path and authority
 
@@ -90,9 +121,9 @@ action keys, 239-byte fixed policy requests, 4 bytes of inventory-control argume
 The canonical registered request codec allows up to 130 argument bytes for
 gameplay actions (enough for a two-byte count plus a 128-byte content key),
 but the entire request—including a nine-byte chunk-version wrapper when used—
-must fit the existing 256-byte interaction limit. Longer arguments do not
-authorize a command: argument schemas and permission descriptors are still
-pending. Decoding rejects truncation/trailing bytes before retaining arguments,
+must fit the existing 256-byte interaction limit. The bounded command schema,
+rather than that codec limit, authorizes particular arguments. Decoding rejects
+truncation/trailing bytes before retaining arguments,
 and discovery scans at most the fixed registry capacity. Inventory work touches
 the 36 host slots and preserves the 128-per-stack cap. Text is printable ASCII
 with per-field lengths.

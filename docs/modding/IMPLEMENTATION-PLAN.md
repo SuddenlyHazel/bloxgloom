@@ -514,17 +514,20 @@ needs a negotiated palette/model identity and a profile-owned selection path;
 the existing cosmetic bytes alone are not an authoring contract.
 
 **Command contract audit:** registered gameplay actions already use the WAL and
-authenticated handler path, but their descriptors have no command argument
-schema or permission metadata. The client still parses `give`/`spawn` locally,
-and the four current key bindings are fixed semantic actions. Before migrating
-commands or exposing mod-defined shortcuts, a negotiated command facet must
-validate bounded arguments and server-authenticated permission; local bindings
-must store namespaced action keys and become inert when that command is absent
-on a different server. A verified bounded registered-request codec prerequisite
-now supports up to 130 argument bytes within the existing 256-byte interaction
-cap; inventory controls still require exactly four bytes. The root suite
-**907/907**, host API **28/28**, formatting and strict Clippy pass. This codec
-does not itself define or authorize a command.
+authenticated handler path. A negotiated empty-target command facet now freezes
+`Player`/`Admin` permission and bounded typed argument schema in catalog and
+package identity. Durable dispatch validates both before the handler. Builtin
+`give`/`spawn` use registered `EntityInteract` requests, with their old packets
+retained as compatibility adapters; `help` is client-local. All players can open
+command entry; the grant browser remains local-admin-only, not an authority
+check. Persistent namespaced zero-argument shortcuts require exact session
+discovery and become inert on another server or for a command needing arguments.
+The request codec remains limited to 130 argument bytes within the 256-byte
+interaction cap, and inventory controls still require exactly four bytes.
+Real-listener typed-command, permission, malformed-request, receipt and restart
+regressions pass; the integrated root suite **916/916**, host API **30/30**,
+formatting and strict Clippy pass. Command syntax discovery in the client UI
+and a full input-rebinding interface are still open beyond config-file editing.
 
 **Verified spawn-search slice:** startup highest-surface and cached
 join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.

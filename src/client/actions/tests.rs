@@ -1,6 +1,53 @@
 //! Headless real-network harness for authored callback -> current aim -> receipt.
 use super::*;
 
+#[test]
+fn named_shortcut_is_inert_without_matching_session_command() {
+    use bloxgloom_host_api::actions::{Command, CommandArgument, CommandPermission};
+    let mut catalog = crate::content::Catalog::builtins();
+    let inventory = crate::inventory::Inventory::default();
+    assert!(compose_named_command(&catalog, "demo:wave", 0, &inventory, [0; 3]).is_none());
+    catalog
+        .register_action(Action {
+            key: "demo:wave".into(),
+            version: 1,
+            label: "Wave".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(Command {
+                permission: CommandPermission::Player,
+                arguments: vec![],
+            }),
+        })
+        .unwrap();
+    let request = compose_named_command(&catalog, "demo:wave", 0, &inventory, [1, 2, 3]).unwrap();
+    let ClientMessage::EntityInteract {
+        target, payload, ..
+    } = request
+    else {
+        panic!("expected registered request")
+    };
+    assert_eq!(target, [1, 2, 3]);
+    assert_eq!(Request::decode(&payload).unwrap().key, "demo:wave");
+    assert!(compose_named_command(&catalog, "other:wave", 0, &inventory, [0; 3]).is_none());
+    catalog
+        .register_action(Action {
+            key: "demo:target".into(),
+            version: 1,
+            label: "Target".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(Command {
+                permission: CommandPermission::Player,
+                arguments: vec![CommandArgument::EntityKey { max_bytes: 32 }],
+            }),
+        })
+        .unwrap();
+    assert!(compose_named_command(&catalog, "demo:target", 0, &inventory, [0; 3]).is_none());
+}
+
 pub(crate) struct PackageActionProbe {
     app: ClientApp,
 }

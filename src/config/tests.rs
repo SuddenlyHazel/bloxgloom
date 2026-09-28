@@ -31,12 +31,54 @@ fn config_round_trips_through_explicit_path() {
             drop: winit::keyboard::KeyCode::KeyT,
             ..Bindings::default()
         },
+        named_bindings: NamedBindings::default(),
     };
 
     config.save(&path).unwrap();
 
     assert_eq!(Config::load(&path), config);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn named_shortcuts_round_trip_but_never_bind_movement_or_builtin_keys() {
+    use winit::keyboard::KeyCode;
+    let mut config = Config::default();
+    assert!(
+        config
+            .named_bindings
+            .bind("demo:wave", KeyCode::KeyT, config.bindings)
+    );
+    assert!(
+        !config
+            .named_bindings
+            .bind("demo:other", KeyCode::KeyT, config.bindings)
+    );
+    assert!(
+        !config
+            .named_bindings
+            .bind("demo:walk", KeyCode::KeyW, config.bindings)
+    );
+    assert!(
+        !config
+            .named_bindings
+            .bind("demo:inventory", KeyCode::KeyE, config.bindings)
+    );
+    assert_eq!(
+        config.named_bindings.action(KeyCode::KeyT),
+        Some("demo:wave")
+    );
+    let loaded = parse_config(&config.serialize());
+    assert_eq!(loaded.named_bindings, config.named_bindings);
+    let directory = test_directory("named-shortcut");
+    let path = directory.join("config");
+    config.save(&path).unwrap();
+    assert_eq!(Config::load(&path).named_bindings, config.named_bindings);
+    fs::remove_dir_all(directory).unwrap();
+    let invalid = parse_config(
+        "version=1\nbind_action.demo:wave=W\nbind_action.demo:other=E\nbind_action.fake=Z\n",
+    );
+    assert_eq!(invalid.named_bindings, NamedBindings::default());
 }
 
 #[test]

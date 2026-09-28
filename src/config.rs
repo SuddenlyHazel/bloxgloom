@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
 pub(crate) mod bindings;
-use bindings::Bindings;
+use bindings::{Bindings, NamedBindings};
 
 const CONFIG_VERSION: u32 = 1;
 const MIN_SENSITIVITY: f32 = 0.0002;
@@ -36,6 +36,7 @@ pub struct Config {
     pub debug_hud: bool,
     pub profile: u128,
     pub(crate) bindings: Bindings,
+    pub(crate) named_bindings: NamedBindings,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Default for Config {
             debug_hud: false,
             profile: 0,
             bindings: Bindings::default(),
+            named_bindings: NamedBindings::default(),
         }
     }
 }
@@ -169,11 +171,16 @@ impl Config {
             } else {
                 Bindings::default()
             },
+            named_bindings: self.named_bindings.sanitized(if self.bindings.valid() {
+                self.bindings
+            } else {
+                Bindings::default()
+            }),
         }
     }
 
     fn serialize(&self) -> String {
-        format!(
+        let mut text = format!(
             "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\nbind_inventory={}\nbind_kiln_input={}\nbind_kiln_fuel={}\nbind_drop={}\n",
             self.sensitivity,
             self.fov_degrees,
@@ -192,7 +199,14 @@ impl Config {
             bindings::letter(self.bindings.kiln_input).expect("sanitized kiln input binding"),
             bindings::letter(self.bindings.kiln_fuel).expect("sanitized kiln fuel binding"),
             bindings::letter(self.bindings.drop).expect("sanitized drop binding"),
-        )
+        );
+        for (action, key) in &self.named_bindings.0 {
+            text.push_str(&format!(
+                "bind_action.{action}={}\n",
+                bindings::letter(*key).expect("sanitized named binding")
+            ));
+        }
+        text
     }
 }
 
@@ -210,6 +224,17 @@ fn parse_config(contents: &str) -> Config {
         };
         let key = key.trim();
         let value = value.trim();
+        if let Some(action) = key.strip_prefix("bind_action.") {
+            if config.named_bindings.0.len() >= 32 && !config.named_bindings.0.contains_key(action)
+            {
+                continue;
+            }
+            if let Some(key) = bindings::parse(value) {
+                // Final sanitization also rejects conflicts with built-in keys.
+                config.named_bindings.0.insert(action.to_owned(), key);
+            }
+            continue;
+        }
         match key {
             "bind_inventory" => {
                 if let Some(key) = bindings::parse(value) {

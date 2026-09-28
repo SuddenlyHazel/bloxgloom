@@ -286,5 +286,34 @@ pub(crate) fn compose_package_action(
     })
 }
 
+/// Resolve a persisted local shortcut against this session's negotiated
+/// command contract before allocating a receipt sequence.
+pub(crate) fn compose_named_command(
+    catalog: &crate::content::Catalog,
+    key: &str,
+    slot: u8,
+    inventory: &crate::inventory::Inventory,
+    position: [i32; 3],
+) -> Option<ClientMessage> {
+    let action = catalog.action(key)?;
+    if !action
+        .command
+        .as_ref()
+        .is_some_and(|command| command.arguments.is_empty())
+        || action.target != Target::Empty
+    {
+        return None;
+    }
+    compose_package_action(
+        catalog,
+        key,
+        slot,
+        inventory,
+        position,
+        None,
+        1u128 << 64 | 1,
+    )
+}
+
 #[cfg(test)]
 pub(crate) mod tests;

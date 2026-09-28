@@ -595,16 +595,15 @@ impl ClientApp {
                     UiScreen::Graphics
                 })
             }
-            UiControl::OpenAdmin if self.admin_enabled => self.set_screen(UiScreen::Admin),
-            UiControl::OpenAdmin => {}
-            UiControl::AdminItem(index) if self.screen == UiScreen::Admin => {
+            UiControl::OpenAdmin => self.set_screen(UiScreen::Admin),
+            UiControl::AdminItem(index) if self.screen == UiScreen::Admin && self.admin_enabled => {
                 self.admin_grant_index(index)
             }
             UiControl::AdminItem(_) => {}
-            UiControl::AdminPrev if self.screen == UiScreen::Admin => {
+            UiControl::AdminPrev if self.screen == UiScreen::Admin && self.admin_enabled => {
                 self.admin_page = self.admin_page.saturating_sub(1)
             }
-            UiControl::AdminNext if self.screen == UiScreen::Admin => {
+            UiControl::AdminNext if self.screen == UiScreen::Admin && self.admin_enabled => {
                 let pages = self.catalog.items().count().div_ceil(24).max(1);
                 self.admin_page = (self.admin_page + 1).min(pages - 1);
             }
@@ -648,19 +647,18 @@ impl ClientApp {
             UiScreen::Inventory => std::iter::once(UiControl::InventorySearch)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),
-            UiScreen::Admin => (0..24u8)
-                .map(UiControl::AdminItem)
-                .chain([
-                    UiControl::AdminPrev,
-                    UiControl::AdminNext,
-                    UiControl::AdminRun,
-                ])
-                .collect(),
+            UiScreen::Admin => {
+                let mut controls = Vec::new();
+                if self.admin_enabled {
+                    controls.extend((0..24u8).map(UiControl::AdminItem));
+                    controls.extend([UiControl::AdminPrev, UiControl::AdminNext]);
+                }
+                controls.push(UiControl::AdminRun);
+                controls
+            }
             UiScreen::Pause => {
                 let mut controls = vec![UiControl::Resume, UiControl::OpenSettings];
-                if self.admin_enabled {
-                    controls.push(UiControl::OpenAdmin);
-                }
+                controls.push(UiControl::OpenAdmin);
                 controls.push(UiControl::Exit);
                 controls
             }

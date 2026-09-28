@@ -171,12 +171,10 @@ impl UiBuilder<'_> {
         for (control, label) in [
             (UiControl::Resume, "RESUME"),
             (UiControl::OpenSettings, "SETTINGS"),
-            (UiControl::OpenAdmin, "ADMIN TOOLS"),
+            (UiControl::OpenAdmin, "COMMANDS"),
             (UiControl::Exit, "EXIT GAME"),
         ] {
-            if (control != UiControl::OpenAdmin || frame.admin_enabled)
-                && let Some(rect) = layout.rect(control)
-            {
+            if let Some(rect) = layout.rect(control) {
                 self.button(rect, label, frame.hovered == Some(control), false);
             }
         }

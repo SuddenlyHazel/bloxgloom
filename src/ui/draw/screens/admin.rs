@@ -13,7 +13,7 @@ impl UiBuilder<'_> {
         let panel = layout.admin_panel();
         self.panel(panel);
         self.text(
-            "ADMIN TOOLS",
+            "COMMANDS",
             panel.x + 24.0 * self.scale,
             panel.y + 20.0 * self.scale,
             1.2,
@@ -21,7 +21,11 @@ impl UiBuilder<'_> {
             30,
         );
         self.text(
-            "CLICK AN ITEM TO GRANT 128  /  F4 OR ESC TO CLOSE",
+            if frame.admin_enabled {
+                "CLICK AN ITEM TO GRANT 128  /  F4 OR ESC TO CLOSE"
+            } else {
+                "ENTER A REGISTERED COMMAND  /  F4 OR ESC TO CLOSE"
+            },
             panel.x + 24.0 * self.scale,
             panel.y + 48.0 * self.scale,
             0.62,
@@ -31,7 +35,7 @@ impl UiBuilder<'_> {
         for (index, item) in catalog
             .items()
             .skip(frame.admin_page * 24)
-            .take(24)
+            .take(if frame.admin_enabled { 24 } else { 0 })
             .enumerate()
         {
             let control = UiControl::AdminItem(index as u8);
@@ -103,6 +107,9 @@ impl UiBuilder<'_> {
             (UiControl::AdminNext, "NEXT"),
             (UiControl::AdminRun, "RUN"),
         ] {
+            if !frame.admin_enabled && control != UiControl::AdminRun {
+                continue;
+            }
             if let Some(rect) = layout.rect(control) {
                 self.button(rect, label, frame.hovered == Some(control), false);
             }
@@ -112,13 +119,15 @@ impl UiBuilder<'_> {
             frame.admin_page + 1,
             catalog.items().count().div_ceil(24).max(1)
         );
-        self.text(
-            &page,
-            panel.x + 208.0 * self.scale,
-            panel.y + panel.height - 36.0 * self.scale,
-            0.6,
-            MUTED,
-            25,
-        );
+        if frame.admin_enabled {
+            self.text(
+                &page,
+                panel.x + 208.0 * self.scale,
+                panel.y + panel.height - 36.0 * self.scale,
+                0.6,
+                MUTED,
+                25,
+            );
+        }
     }
 }
