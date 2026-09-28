@@ -221,8 +221,8 @@ Move give/spawn and existing gameplay bindings onto semantic action/command
 definitions with argument schemas, permissions, discovery and rebinding behavior.
 Keep `help` as client-local text generated from those descriptors; it must not
 create a server action or WAL transaction. Use the same transaction operations
-as other handlers. Player-owned persistent
-data remains keyed to stable profiles, not connections.
+as other handlers. Player-owned persistent data remains keyed to stable profiles,
+not connections.
 
 ### World drops
 
@@ -677,17 +677,23 @@ packages.
 Imported custom models and live hot reload remain deferred, not hidden boxes
 to check in this phase.
 
-#### Phase 8 — examples and integrated verification · Planned
+#### Phase 8 — examples and integrated verification · In progress
 
 **Working:** `fixtures/combined-mod/` now gives one runnable `verdant` package
 with a package-textured cube and WGSL albedo, authoritative stick-for-block
 action from authored UI, downloaded client startup text and durable scheduled
-growth. A focused real-listener/restart test passes, and its package UI was
-inspected at 1280×720 and 640×360 through `ui-preview <dir> <package-root>`.
+growth. Focused real-listener/restart tests cover the original single client
+and two simultaneously connected profiles making independent finite-inventory
+actions on separate targets; stale action denials preserve each profile's
+balance and restart recovers both edits, both inventories and owner state. Its
+package UI was inspected at 1280×720 and 640×360 through
+`ui-preview <dir> <package-root>`.
+
 The user reports the Jade example working in the live game; this is a useful
 manual check, not a GPU timing or mixed-load measurement. Cross-server switching
-has automated coverage but the user's live switch test is deferred. Mixed-load
-response and the broader audit are not yet verified.
+has automated coverage but the user's live switch test is deferred. The
+two-profile test is partial concurrency evidence, not a sustained mixed-load
+response or background-progress measurement; those and the broader audit remain open.
 
 - [ ] Ship a runnable combined package with content, gameplay, scheduled work,
   UI and custom visuals; finish reconciling the complete implemented Luau API
@@ -696,8 +702,8 @@ response and the broader audit are not yet verified.
   reconcile docs with the actual host contract and deferred scope.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
-  rendering/performance comparisons. The latest integrated 4-thread suite is
-   **892/892**. The user reported the Jade example working live, but that does
+  rendering/performance comparisons. The latest integrated two-thread suite is
+  **907/907**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
