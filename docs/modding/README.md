@@ -1,18 +1,24 @@
 # Modding: start here
 
 **Current status:** The [implementation plan](IMPLEMENTATION-PLAN.md) is the
-authoritative progress and acceptance record. Only generation (Phase 3) is
-marked done. Other committed increments are useful, but do **not** imply full
-modding support. See its [phase table and end-to-end gap ledger](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
+authoritative progress and acceptance record. Shared core (Phase 1) and
+generation (Phase 3) are marked done. Other committed increments are useful,
+but do **not** imply full modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
 before treating a capability as complete.
 
 ## Try authoring now
 
+- [Combined Jade garden package](../../fixtures/combined-mod/README.md): one
+  runnable Luau package with a placeable textured cube, authorized action,
+  scheduled growth, authored UI, downloaded startup text and WGSL material.
+  It is an integrated example, **not** a claim that all phases are done.
 - [Local Luau packages](LUAU-PACKAGES.md): runnable
   [`uidemo`](../../fixtures/packages/uidemo/) example, manifest, command line,
   and current server/client bindings. Its button now sends an authorized
-  registered action and displays the server's receipt; its text input remains
-  local presentation state.
+   registered action and displays the server's receipt; its text input remains
+   local presentation state.
+- [Targeted authored-UI action](../../fixtures/ui-target-actions/README.md):
+  a client-aimed block request with server-owned reach, cost and receipt.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
   currently bound callbacks; runtime validation remains authoritative.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
