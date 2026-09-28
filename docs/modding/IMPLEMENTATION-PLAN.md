@@ -422,17 +422,17 @@ harvesting migration are accepted. No phase-level work remains.
 #### Phase 2 — built-in gameplay parity · In progress
 
 **Working:** owner-world edits can atomically include generated entities and
-drops; opt-in Rust chunk systems can exchange bounded durable payloads between
-*existing* owner cells. Parts of support, fire ignition, pickup and scheduling
+drops; opt-in Rust chunk systems can exchange bounded durable payloads. Absent
+chunk destinations can be created with a validated frozen template in the
+producer's WAL record. Parts of support, fire ignition, pickup and scheduling
 use public hooks, but that does not migrate their complete lifecycles.
 
 **Remaining**
 
-- [ ] Create absent destination owners atomically with producer intents and
-  recover without orphan state. An isolated implementation is in progress,
-  **not yet reviewed or accepted**.
 - [ ] Move native fire frontier, cross-chunk delivery and scheduling onto the
   shared owner/event path, retaining bounded work, burn cause and WAL recovery.
+  The current store-wide 16,384-owner cap has no reclamation; handle sustained
+  capacity pressure without losing fire work or claiming unlimited spread.
 - [ ] Complete removal/support effects and drop motion, merging, pickup and
   expiration through the public gameplay surface; preserve finite items.
 - [ ] Move player rules, give/spawn/help commands and storage, machine, creature
@@ -1009,12 +1009,22 @@ This section exists so compaction or a new session does not restart the design.
   destination plan atomically acknowledges delivered messages with owner/world/
   entity effects and forwarding. Receipt gating, cancellation, finite capacity,
   rotation and real nonblocking-listener restart tests passed (six durable
-  intent and 98 owner-filter tests). Dynamic destination bootstrap, native fire
-  migration and Luau bindings remain open. Two test-harness failures were
+  intent and 98 owner-filter tests). Native fire migration and Luau bindings
+  remain open. Two test-harness failures were
   diagnosed and fixed: an idle mobile probe must retain its inbound sender,
   and the entity-neighbour test must wait for the destination chunk/retry.
   The integrated suite now passes **845/845** tests; strict all-target Clippy
   and formatting checks also pass. Live fire presentation remains unverified.
+- **Phase 2 destination bootstrap increment:** opt-in Rust chunk systems can
+  supply one validated, fingerprinted initial-state template. Absent intent
+  destinations get revision-zero owner state, a next-tick deadline and their
+  mailbox in the producer's WAL record; rejection releases reservations, and
+  receipt/restart preserve both. The host snapshots the template at owner-store
+  construction so mutable behavior cannot change it later. Real listener,
+  conflict, capacity, retry, forwarding, recovery and frozen-template tests
+  passed. The integrated suite passed 856/856 before the last focused template
+  regression test was added; strict Clippy and formatting pass. The fixed owner
+  cap, native fire migration and Luau intent binding remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
