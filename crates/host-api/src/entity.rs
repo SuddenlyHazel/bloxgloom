@@ -6,7 +6,7 @@ use std::{any::Any, fmt, sync::Arc};
 mod falling;
 pub use falling::{FallingContext, FallingPlan, FallingWorld};
 mod drop_merge;
-pub use drop_merge::{DropMergeCandidate, DropMergeContext};
+pub use drop_merge::{DropMergeCandidate, DropMergeContext, DropStackFill};
 mod drop_pickup;
 pub use drop_pickup::{DropLifetime, DropPickupContext};
 

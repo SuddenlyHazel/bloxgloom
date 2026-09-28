@@ -18,7 +18,9 @@ use crate::server::entities::{
     EntityError, EntityId, EntityLocation, EntityPatch, EntitySpawn, EntityStore,
     PreparedEntityBatch,
 };
-use bloxgloom_host_api::entity::{DropLifetime, DropMergeCandidate, DropMergeContext};
+use bloxgloom_host_api::entity::{
+    DropLifetime, DropMergeCandidate, DropMergeContext, DropStackFill,
+};
 
 /// Plans harvest/drop-stack creation without mutating authoritative state.
 /// Existing merge targets resolve in stable ID order; newly allocated IDs
@@ -133,15 +135,17 @@ pub(in crate::server) fn plan_stack_spawns_with_extra(
                 };
                 debug_assert_eq!(entry.item, stack.item);
                 debug_assert_eq!(entry.components, stack.components);
-                let added = count.min(STACK_LIMIT - entry.count);
-                entry.count += added;
+                let fill = DropStackFill::plan(count, entry.count, STACK_LIMIT)
+                    .ok_or_else(|| invalid("invalid durable drop merge count"))?;
+                entry.count = fill.final_count;
                 if !from_fresh {
                     merged.get_mut(&id).expect("merged slot exists").1 = *pickup_delay;
                 }
-                count -= added;
+                count = fill.remaining;
                 continue;
             }
-            let added = count.min(STACK_LIMIT);
+            let fill = DropStackFill::plan(count, 0, STACK_LIMIT)
+                .ok_or_else(|| invalid("invalid durable drop split count"))?;
             let id = EntityId::new(next_id).ok_or_else(|| invalid("invalid durable drop spawn"))?;
             next_id = next_id
                 .checked_add(1)
@@ -152,12 +156,12 @@ pub(in crate::server) fn plan_stack_spawns_with_extra(
                 position: *position,
                 stack: Stack {
                     item: stack.item,
-                    count: added,
+                    count: fill.final_count,
                     components: stack.components.clone(),
                 },
                 delay: *pickup_delay,
             });
-            count -= added;
+            count = fill.remaining;
         }
     }
     if merged.is_empty() && fresh.is_empty() && extra_spawns.is_empty() {

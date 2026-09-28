@@ -91,6 +91,24 @@ fn spawn_merging_onto_partial_stack_never_exceeds_cap() {
 }
 
 #[test]
+fn production_fill_merges_one_then_splits_remainder_without_loss() {
+    let (mut store, catalog) = test_store();
+    let first = spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 127, 1_000)[0];
+    spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 255, 2_000);
+    let mut counts: Vec<_> = super::super::queries::nearby(&store, [0.0, 0.0, 0.0])
+        .into_iter()
+        .map(|drop| drop.count)
+        .collect();
+    counts.sort_unstable();
+    assert_eq!(counts, vec![126, 128, 128]);
+    assert_eq!(
+        super::super::queries::stack(&store, first).unwrap().count,
+        128
+    );
+    assert_eq!(total(&store, [0.0, 0.0, 0.0]), 382);
+}
+
+#[test]
 fn production_merge_picks_oldest_id_until_it_expires() {
     let (mut store, catalog) = test_store();
     let first = spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 10, 1_000)[0];

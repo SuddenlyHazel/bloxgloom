@@ -21,6 +21,31 @@ pub struct DropMergeContext {
     pub stack_limit: u16,
 }
 
+/// One bounded merge or new-stack allocation decision. The host supplies
+/// authoritative counts and applies the result through its existing WAL batch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DropStackFill {
+    pub added: u16,
+    pub final_count: u16,
+    pub remaining: u16,
+}
+
+impl DropStackFill {
+    /// `current` is zero for a new drop and nonzero for an eligible target.
+    /// Invalid/full inputs never produce a zero-progress plan.
+    pub fn plan(remaining: u16, current: u16, limit: u16) -> Option<Self> {
+        if remaining == 0 || limit == 0 || current >= limit {
+            return None;
+        }
+        let added = remaining.min(limit - current);
+        Some(Self {
+            added,
+            final_count: current + added,
+            remaining: remaining - added,
+        })
+    }
+}
+
 impl DropMergeContext {
     /// Choose the lowest eligible ID even if the captured candidates arrive in
     /// a different order. Equal-radius boundary and expired drops do not merge.
@@ -87,5 +112,23 @@ mod tests {
             Some(5)
         );
         assert_eq!(context.select([candidate(7, 1, 0, false, 0.5)]), None);
+    }
+
+    #[test]
+    fn filling_and_splitting_conserve_items_at_the_stack_cap() {
+        let merged = DropStackFill::plan(255, 127, 128).unwrap();
+        assert_eq!(
+            (merged.added, merged.final_count, merged.remaining),
+            (1, 128, 254)
+        );
+        let first = DropStackFill::plan(merged.remaining, 0, 128).unwrap();
+        let second = DropStackFill::plan(first.remaining, 0, 128).unwrap();
+        assert_eq!(
+            (first.final_count, second.final_count, second.remaining),
+            (128, 126, 0)
+        );
+        assert_eq!(u32::from(merged.added + first.added + second.added), 255);
+        assert_eq!(DropStackFill::plan(1, 128, 128), None);
+        assert_eq!(DropStackFill::plan(0, 0, 128), None);
     }
 }
