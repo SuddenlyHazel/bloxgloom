@@ -35,13 +35,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "world-v15"
     };
     match args.next().as_deref() {
-        None => {
+        None | Some("local") => {
+            let save_dir = args.next().unwrap_or_else(|| default_world.to_owned());
+            if args.next().is_some() {
+                return Err("usage: local [save-dir]".into());
+            }
             let config_path = config::Config::default_path();
             let mut config = config::Config::load(&config_path);
             config.ensure_profile(&config_path)?;
             let (addr, server) = server::start_local_server_with_admin(
                 0xB10C_6100,
-                default_world.into(),
+                save_dir.into(),
                 config.profile,
             )?;
             let client_result = client::run_client_with_admin(&addr.to_string());
@@ -181,6 +185,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("usage: preview [output.png] [world-x] [world-z]".into());
             }
             preview::render_preview(std::path::Path::new(&path), x, z)?;
+            println!("wrote {path}");
+        }
+        Some("fire-preview") => {
+            let path = args.next().unwrap_or_else(|| "fire-preview.png".to_owned());
+            preview::render_fire_preview(std::path::Path::new(&path))?;
             println!("wrote {path}");
         }
         Some("effect-preview") => {

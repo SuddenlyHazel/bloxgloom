@@ -492,3 +492,19 @@ fn sky_basis_tracks_camera_turns_in_world_space() {
     assert!(away_center.dot(sun) < -0.999);
     assert!((facing_data[7] - facing_data[11] * (1280.0 / 720.0)).abs() < 1e-6);
 }
+
+#[test]
+fn fire_streak_mesh_is_bounded_and_rises_before_fading() {
+    let fire = fire::VisualFire {
+        center: Vec3::new(4.5, 9.5, -3.5),
+        age: 0.25,
+    };
+    let mesh = fire::vertices(&[fire; fire::MAX_FIRES + 1]);
+    assert_eq!(mesh.len() * 4, fire::MAX_BYTES as usize);
+    assert!(mesh.chunks_exact(9).all(|vertex| {
+        let position = Vec3::new(vertex[0], vertex[1], vertex[2]);
+        position.distance(fire.center) < 1.2 && (0.0..=1.0).contains(&vertex[8])
+    }));
+    let fading = fire::vertices(&[fire::VisualFire { age: 0.9, ..fire }]);
+    assert!(fading[8] < fire::vertices(&[fire])[8]);
+}

@@ -38,6 +38,22 @@ const MESHER_RESULT_CAPACITY: usize = 64;
 const CLIENT_MESH_RESULT_BATCH: usize = 64;
 const CLIENT_PENDING_UPLOADS: usize = 128;
 
+/// Synthetic committed-burn cue at a cleared tree cell for visual inspection.
+pub fn render_fire_preview(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1000,
+            height: 600,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::Fire,
+    ))
+}
+
 pub fn render_effect_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(
         vec![PreviewOutput {
@@ -397,6 +413,7 @@ enum PreviewScene {
     Hoppers,
     Surface,
     Effect,
+    Fire,
     Vegetation,
     Drops(DropPhase),
     Avatars,
@@ -446,6 +463,7 @@ async fn render_previews(
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
     let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut avatar_renderer = render::AvatarRenderer::new(
         &device,
         render::post::HDR_FORMAT,
@@ -464,7 +482,7 @@ async fn render_previews(
         .iter()
         .any(|output| output.screen == UiScreen::Package);
     // Authored previews are visual verification, not UI preparation benchmarks.
-    if !authored_preview && !matches!(scene, PreviewScene::Effect) {
+    if !authored_preview && !matches!(scene, PreviewScene::Effect | PreviewScene::Fire) {
         measure_ui_prepare(&mut ui_renderer, &queue);
     }
     let mut package_ui = if authored_preview {
@@ -525,6 +543,7 @@ async fn render_previews(
             (target + Vec3::new(9.0, 5.0, 11.0), target)
         }
         PreviewScene::Drops(_)
+        | PreviewScene::Fire
         | PreviewScene::Kilns
         | PreviewScene::Hoppers
         | PreviewScene::Chests
@@ -537,7 +556,9 @@ async fn render_previews(
                 target_height as f32 + 1.0,
                 target_xz.1 as f32 + 0.5,
             );
-            let offset = if matches!(
+            let offset = if matches!(scene, PreviewScene::Fire) {
+                Vec3::new(3.4, 1.8, 4.8)
+            } else if matches!(
                 scene,
                 PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_) | PreviewScene::Block(_)
             ) {
@@ -607,6 +628,27 @@ async fn render_previews(
                 }
             }
         }
+    }
+    if matches!(scene, PreviewScene::Fire) {
+        // The cell has already burned to AIR; do not imply nearby flammable cells are lit.
+        set_preview_block(
+            &mut chunks,
+            target_xz.0,
+            target_height + 1,
+            target_xz.1,
+            world::AIR,
+        );
+        fire_renderer.set(
+            &queue,
+            &[render::VisualFire {
+                center: Vec3::new(
+                    target_xz.0 as f32 + 0.5,
+                    target_height as f32 + 1.5,
+                    target_xz.1 as f32 + 0.5,
+                ),
+                age: 0.28,
+            }],
+        );
     }
     if let PreviewScene::Block(state) = scene {
         set_preview_block(
@@ -1173,6 +1215,9 @@ async fn render_previews(
                 pass.set_vertex_buffer(0, vertices.slice(..));
                 pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..*count, 0, 0..1);
+            }
+            if matches!(scene, PreviewScene::Fire) {
+                fire_renderer.draw(&mut pass);
             }
         }
         post.encode(&device, &queue, &mut encoder, &color_view);

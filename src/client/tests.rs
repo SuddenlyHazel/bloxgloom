@@ -670,3 +670,36 @@ fn client_cache_uses_server_view_radius() {
     ));
     assert!(!chunk_in_view(ChunkKey { x: -10, y: 9, z: 5 }, center, 6));
 }
+
+#[test]
+fn confirmed_fire_visuals_expire_and_are_capped_and_distance_culled() {
+    let now = std::time::Instant::now();
+    let mut animator = super::fire::FireAnimator::new();
+    assert!(animator.visuals(now, Vec3::ZERO, Vec3::X).is_empty());
+    animator.confirmed_burns(&[[2, 3, 4]], now);
+    animator.confirmed_burns(&[[2, 3, 4]], now);
+    assert_eq!(animator.visuals(now, Vec3::ZERO, Vec3::X).len(), 1);
+    assert!(
+        animator
+            .visuals(now, Vec3::splat(500.0), Vec3::X)
+            .is_empty()
+    );
+    for index in 0..200 {
+        animator.confirmed_burns(&[[index, 3, 4]], now);
+    }
+    assert!(
+        animator
+            .visuals(now, Vec3::new(150.0, 3.0, 4.0), Vec3::X)
+            .len()
+            <= 128
+    );
+    assert!(
+        animator
+            .visuals(
+                now + std::time::Duration::from_millis(850),
+                Vec3::ZERO,
+                Vec3::X
+            )
+            .is_empty()
+    );
+}

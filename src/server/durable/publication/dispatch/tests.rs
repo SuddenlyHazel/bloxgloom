@@ -64,6 +64,7 @@ fn effect() -> PublishEffects {
         deltas: Vec::new(),
         entity_commit: None,
         pickups: Vec::new(),
+        fire_bursts: Vec::new(),
     }
 }
 
@@ -262,4 +263,64 @@ fn publication_workers_restore_order_and_close_panicking_batches() {
         vec![Err(()), Ok(3)]
     );
     assert_eq!(workers.run(vec![Box::new(|| 4)]).unwrap(), vec![Ok(4)]);
+}
+
+#[test]
+fn fire_cue_requires_subscription_and_follows_committed_world_frame() {
+    use crate::server::outbound::OutboundFrame;
+    let mut fixture = Fixture::new();
+    let (id, receiver, _peer) = fixture.join(1);
+    publish(&mut fixture.state).unwrap();
+    crate::server::streaming::publish_streams(&mut fixture.state).unwrap();
+    receiver.try_iter().for_each(drop);
+    let key = fixture.state.clients[&id].center;
+    let from = fixture.state.clients[&id].sent_block_versions[&key];
+    let mut change = effect();
+    change.deltas.push(crate::server::durable::BlockDelta {
+        key,
+        version: from + 1,
+        local: [5, 5, 5],
+        block: crate::world::AIR,
+    });
+    let world_cell = [key.x * 16 + 5, key.y * 16 + 5, key.z * 16 + 5];
+    change.fire_bursts = vec![world_cell, [10_000, 80, 10_000]];
+    fixture.state.durability.publish_queue.push(change);
+    publish(&mut fixture.state).unwrap();
+    let messages: Vec<_> = receiver
+        .try_iter()
+        .map(OutboundFrame::into_message)
+        .collect();
+    assert!(
+        matches!(&messages[..], [ServerMessage::WorldCommitPart(_), ServerMessage::FireBursts { cells }] if cells == &[world_cell])
+    );
+}
+
+#[test]
+fn fire_cue_is_dropped_for_backlogged_client_without_disconnect() {
+    let mut fixture = Fixture::new();
+    let (id, receiver, _peer) = fixture.join(1);
+    publish(&mut fixture.state).unwrap();
+    crate::server::streaming::publish_streams(&mut fixture.state).unwrap();
+    receiver.try_iter().for_each(drop);
+    let key = fixture.state.clients[&id].center;
+    for nonce in 0..OUTBOUND_FRAME_CAPACITY / 2 {
+        fixture.state.clients[&id]
+            .sender
+            .try_send(ServerMessage::Pong {
+                nonce: nonce as u64,
+            })
+            .unwrap();
+    }
+    let mut change = effect();
+    change
+        .fire_bursts
+        .push([key.x * 16 + 5, key.y * 16 + 5, key.z * 16 + 5]);
+    fixture.state.durability.publish_queue.push(change);
+    publish(&mut fixture.state).unwrap();
+    assert!(fixture.state.clients.contains_key(&id));
+    assert!(
+        receiver
+            .try_iter()
+            .all(|frame| !matches!(frame.message(), ServerMessage::FireBursts { .. }))
+    );
 }

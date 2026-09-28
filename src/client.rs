@@ -31,7 +31,9 @@ const MAX_INCOMING_PER_FRAME: usize = 32;
 const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
 pub(crate) mod drops;
+mod fire;
 use drops::DropAnimator;
+use fire::FireAnimator;
 mod movement;
 #[cfg(test)]
 pub(crate) use inventory_tests::InventoryProbe;
@@ -279,6 +281,7 @@ struct ClientApp {
     catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
+    fire_animator: FireAnimator,
     actor_animator: actors::ActorAnimator,
     kiln_target: Option<([i32; 3], u64)>,
     kiln_source: Option<u8>,
@@ -348,6 +351,7 @@ impl ClientApp {
             catalog,
             inventory: Inventory::default(),
             drop_animator: DropAnimator::new(now),
+            fire_animator: FireAnimator::new(),
             actor_animator: actors::ActorAnimator::default(),
             kiln_target: None,
             kiln_source: None,
@@ -965,6 +969,9 @@ impl ClientApp {
             ServerMessage::Pickups { items } => {
                 self.drop_animator.picked_up(items, Instant::now());
             }
+            ServerMessage::FireBursts { cells } => {
+                self.fire_animator.confirmed_burns(&cells, Instant::now());
+            }
             ServerMessage::Pong { .. } => {}
         }
     }
@@ -1451,7 +1458,11 @@ impl ClientApp {
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
         }
+        let visual_fire = self
+            .fire_animator
+            .visuals(now, camera.position, camera.direction());
         if let Some(renderer) = &mut self.renderer {
+            renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
             renderer.set_avatars(&visual_avatars);
             renderer.configure_post(

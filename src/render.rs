@@ -4,6 +4,7 @@ mod avatars;
 pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
+pub(crate) mod fire;
 mod material;
 mod mesh;
 mod pipeline;
@@ -33,6 +34,7 @@ use visibility::create_depth;
 pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar};
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
+pub(crate) use fire::VisualFire;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
 pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
@@ -130,6 +132,7 @@ pub struct Renderer {
     drop_cutout_indices: wgpu::Buffer,
     drop_cutout_index_count: u32,
     avatars: avatars::AvatarRenderer,
+    fire: fire::FireRenderer,
     ui: UiRenderer,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
@@ -222,6 +225,7 @@ impl Renderer {
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog);
+        let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let avatars =
             avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer, &catalog);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
@@ -280,6 +284,7 @@ impl Renderer {
             drop_cutout_indices,
             drop_cutout_index_count: 0,
             avatars,
+            fire,
             ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
@@ -339,6 +344,10 @@ impl Renderer {
         }
         self.drop_index_count = meshes.opaque_indices.len() as u32;
         self.drop_cutout_index_count = meshes.cutout_indices.len() as u32;
+    }
+
+    pub(crate) fn set_fire(&mut self, fires: &[VisualFire]) {
+        self.fire.set(&self.queue, fires);
     }
 
     pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {
@@ -612,6 +621,7 @@ impl Renderer {
                 pass.draw_indexed(0..self.drop_cutout_index_count, 0, 0..1);
                 stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
+            stats.drawn_triangles += self.fire.draw(&mut pass);
         }
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &view);

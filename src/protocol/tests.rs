@@ -803,3 +803,38 @@ fn remapped_ids_above_65535_survive_wire_v8() {
         matches!(read_server_with_catalog(bytes.as_slice(), &catalog).unwrap(), ServerMessage::Pickups { items } if items == [drop])
     );
 }
+
+#[test]
+fn committed_fire_cues_round_trip_with_a_strict_cell_bound() {
+    let cells = vec![[i32::MIN, 8, i32::MAX], [2, 80, -3]];
+    let mut wire = Vec::new();
+    write_server(
+        &mut wire,
+        &ServerMessage::FireBursts {
+            cells: cells.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        wire.len(),
+        server_wire_len(&ServerMessage::FireBursts {
+            cells: cells.clone()
+        })
+    );
+    assert!(
+        matches!(read_server(wire.as_slice()).unwrap(), ServerMessage::FireBursts { cells: read } if read == cells)
+    );
+    assert!(write_server(Vec::new(), &ServerMessage::FireBursts { cells: vec![] }).is_err());
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::FireBursts {
+                cells: vec![[0; 3]; MAX_FIRE_BURSTS + 1]
+            }
+        )
+        .is_err()
+    );
+    let mut invalid = wire;
+    invalid[6] = 0; // 4-byte prefix, version, tag, count
+    assert!(read_server(invalid.as_slice()).is_err());
+}

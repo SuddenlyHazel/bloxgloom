@@ -270,6 +270,7 @@ pub(super) struct PublishEffects {
     pub(super) deltas: Vec<BlockDelta>,
     pub(super) entity_commit: Option<EntityCommit>,
     pub(super) pickups: Vec<DroppedItem>,
+    pub(super) fire_bursts: Vec<[i32; 3]>,
 }
 
 #[derive(Clone)]

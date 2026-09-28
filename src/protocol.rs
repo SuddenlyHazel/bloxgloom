@@ -25,6 +25,8 @@ pub const MAX_VIEW_DISTANCE: u8 = 6;
 pub const VERTICAL_VIEW_DISTANCE: i32 = 4;
 const MAX_NAME: usize = 32;
 const BLOCK_COUNT: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+/// At most one source-owner fire wave (32 burns) per cue.
+pub(crate) const MAX_FIRE_BURSTS: usize = 32;
 
 fn valid_action_id(id: u128) -> bool {
     (id >> 64) != 0 && (id as u64) != 0
@@ -176,6 +178,10 @@ pub enum ServerMessage {
     Pickups {
         items: Vec<DroppedItem>,
     },
+    /// Transient visual cue for cells actually burned by a committed server receipt.
+    FireBursts {
+        cells: Vec<[i32; 3]>,
+    },
     Pong {
         nonce: u64,
     },
@@ -230,6 +236,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             }
             ServerMessage::Drops { items, .. } => 8 + 2 + items.len() * DROP_ITEM,
             ServerMessage::Pickups { items } => 2 + items.len() * DROP_ITEM,
+            ServerMessage::FireBursts { cells } => 1 + cells.len() * 12,
             ServerMessage::WorldSnapshotStart(start) => entities::snapshot_start_wire_len(start),
             ServerMessage::EntitySnapshotPage(page) => entities::snapshot_page_wire_len(page),
             ServerMessage::WorldCommitPart(part) => part.wire_len(),
@@ -593,6 +600,18 @@ pub fn write_server_with_catalog(
         ServerMessage::Pickups { items } => {
             out.push(10);
             write_drop_items(&mut out, items, content_catalog)?;
+        }
+        ServerMessage::FireBursts { cells } => {
+            if cells.is_empty() || cells.len() > MAX_FIRE_BURSTS {
+                return Err(invalid("invalid fire burst count"));
+            }
+            out.push(21);
+            out.push(cells.len() as u8);
+            for cell in cells {
+                for coordinate in cell {
+                    out.extend(coordinate.to_le_bytes());
+                }
+            }
         }
         ServerMessage::ContentManifestPart {
             fingerprint,
@@ -1179,6 +1198,17 @@ pub fn read_server_with_catalog(
             identity: bundle::read_identity(&mut c)?,
         },
         20 => bundle::read_part(&mut c)?,
+        21 => {
+            let count = usize::from(c.u8()?);
+            if count == 0 || count > MAX_FIRE_BURSTS {
+                return Err(invalid("invalid fire burst count"));
+            }
+            let mut cells = Vec::with_capacity(count);
+            for _ in 0..count {
+                cells.push([c.i32()?, c.i32()?, c.i32()?]);
+            }
+            ServerMessage::FireBursts { cells }
+        }
         _ => return Err(invalid("unknown server message")),
     };
     c.done()?;

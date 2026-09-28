@@ -895,6 +895,7 @@ fn queue_action_result(state: &mut State, id: u64, action_id: u128, accepted: bo
         deltas: Vec::new(),
         entity_commit: None,
         pickups: Vec::new(),
+        fire_bursts: Vec::new(),
     });
 }
 

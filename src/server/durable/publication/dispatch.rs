@@ -21,6 +21,7 @@ use shared_parts::SharedParts;
 struct Prepared {
     capture: Capture,
     frames: Vec<Arc<SharedMessage>>,
+    fire: Option<Arc<SharedMessage>>,
     revisions: Vec<(ChunkKey, u64, u64)>,
     resync: Vec<ChunkKey>,
 }
@@ -136,6 +137,21 @@ fn prepare(
             }));
         }
     }
+    // Best-effort presentation only. Send after the committed world changes,
+    // only to clients who already have the burned owner subscribed.
+    let fire: Vec<_> = effect
+        .fire_bursts
+        .iter()
+        .copied()
+        .filter(|&[x, y, z]| {
+            capture
+                .sent
+                .contains(&crate::world::world_to_chunk(x, y, z).0)
+        })
+        .take(crate::protocol::MAX_FIRE_BURSTS)
+        .collect();
+    let mut fire =
+        (!fire.is_empty()).then(|| SharedMessage::new(ServerMessage::FireBursts { cells: fire }));
     // A complete group plus its actual reliable replies must fit an empty
     // queue. Otherwise replace all its interested chunks with fresh epochs,
     // retaining action/inventory/pickup replies in their original order.
@@ -143,6 +159,7 @@ fn prepare(
         || frames.iter().map(|f| f.wire_len() as u64).sum::<u64>() > OUTBOUND_CLIENT_BYTE_CAPACITY
     {
         frames.drain(..world_frames);
+        fire = None;
         revisions.clear();
         resync = changes.map_or_else(
             || capture.sent.iter().copied().collect(),
@@ -152,6 +169,7 @@ fn prepare(
     Ok(Prepared {
         capture,
         frames,
+        fire,
         revisions,
         resync,
     })
@@ -161,6 +179,7 @@ fn apply(state: &mut State, prepared: Prepared) {
     let Prepared {
         capture,
         frames,
+        fire,
         revisions,
         resync,
     } = prepared;
@@ -193,6 +212,15 @@ fn apply(state: &mut State, prepared: Prepared) {
     for (key, block, entity) in revisions {
         client.sent_block_versions.insert(key, block);
         client.sent_entity_revisions.insert(key, entity);
+    }
+    // Never disconnect a client or delay reliable replication for optional fire art.
+    if let Some(fire) = fire {
+        let occupancy = client.sender.snapshot();
+        if occupancy.queued_frames < OUTBOUND_FRAME_CAPACITY / 2
+            && occupancy.queued_bytes + (fire.wire_len() as u64) < OUTBOUND_CLIENT_BYTE_CAPACITY / 2
+        {
+            let _ = client.sender.try_send_shared(fire);
+        }
     }
 }
 

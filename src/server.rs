@@ -234,6 +234,7 @@ impl State {
                 deltas,
             }),
             pickups: Vec::new(),
+            fire_bursts: Vec::new(),
         });
         Ok(())
     }

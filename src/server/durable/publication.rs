@@ -230,6 +230,7 @@ fn apply_committed_action_inner(
         deltas: action.deltas,
         entity_commit,
         pickups: action.pickups,
+        fire_bursts: Vec::new(),
     });
     if completed_pickup && let Some(id) = action.client_id {
         state.durability.retry_pickups.remove(&id);
@@ -277,7 +278,9 @@ pub(super) fn publish_committed_fire_after_world(
                 block,
             });
         }
-        state.pending_block_changes.extend(changed_cells);
+        state
+            .pending_block_changes
+            .extend(changed_cells.iter().copied());
         state.durability.publish_queue.push(PublishEffects {
             client_id: None,
             profile: None,
@@ -288,6 +291,10 @@ pub(super) fn publish_committed_fire_after_world(
             deltas,
             entity_commit: None,
             pickups: Vec::new(),
+            fire_bursts: changed_cells
+                .iter()
+                .map(|cell| [cell.x, cell.y, cell.z])
+                .collect(),
         });
     }
     Ok(())
