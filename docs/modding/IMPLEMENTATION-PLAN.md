@@ -535,6 +535,10 @@ neighborhood reads/edits, durable same-system payload intents and optional
 destination bootstrap. Lua callbacks execute server-side with source-attributed
 failures; local UI handlers and a downloaded, verified
 client startup module can initialize connection-local authored UI text/state.
+Optional bounded `flammable` and `supports_plant` cube flags are verified
+through a real listener/catalog join, restart, invalid-registration regressions,
+the 896/896 suite, formatting and strict Clippy. The rest of the public
+block/material surface remains open.
 
 **Remaining**
 

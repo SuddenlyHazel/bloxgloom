@@ -133,6 +133,8 @@ impl ClientBundle {
                 writer.field(block.key.as_bytes())?;
                 writer.field(block.name.as_bytes())?;
                 writer.field(block.textures.top.as_bytes())?;
+                writer
+                    .field(&[u8::from(block.flammable) | (u8::from(block.supports_plant) << 1)])?;
             }
             runtime.encode_package(&mut writer, name)?;
         }
@@ -315,6 +317,13 @@ impl Startup {
                 let key = reader.text(129)?;
                 let display = reader.text(255)?;
                 let texture = reader.text(129)?;
+                let flags = reader.field(1)?;
+                let [flags] = flags else {
+                    return Err(error(name, "invalid startup block flags"));
+                };
+                if flags & !3 != 0 {
+                    return Err(error(name, "invalid startup block flags"));
+                }
                 if key <= previous
                     || key
                         .split_once(':')
@@ -338,9 +347,12 @@ impl Startup {
                 item.placeable = Some(key.clone());
                 item.sprite = false;
                 previous.clone_from(&key);
-                startup
-                    .blocks
-                    .push(crate::server::script::startup::cube(key, display, texture));
+                let mut block =
+                    crate::server::script::startup::cube(key, display, texture, mlua::Value::Nil)
+                        .map_err(|reason| error(name, reason))?;
+                block.flammable = flags & 1 != 0;
+                block.supports_plant = flags & 2 != 0;
+                startup.blocks.push(block);
             }
             startup.runtime.decode_package(reader, name, &requires)?;
             startup.packages.push(composition::Package {

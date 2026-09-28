@@ -39,7 +39,7 @@
 use super::{Invocation, Output, Program, ScriptInput, ScriptWorker, package::PackageSnapshot};
 use bloxgloom_host_api::{
     Extension, Registrar, RegistrationError,
-    content::{Block, BlockState, Components, FaceTextures, Geometry, Item, Material, Texture},
+    content::{Block, Components, Item, Texture},
 };
 use mlua::{Function, Lua, Value};
 use std::cell::RefCell;
@@ -50,25 +50,8 @@ use std::sync::Arc;
 const MAX_ITEMS_PER_PACKAGE: usize = 32;
 const MAX_TEXTURES_PER_PACKAGE: usize = 32;
 const MAX_BLOCKS_PER_PACKAGE: usize = 32;
-
-pub(super) fn cube(key: String, name: String, texture: String) -> Block {
-    Block {
-        key,
-        name,
-        swatch: [1.0; 4],
-        textures: FaceTextures::uniform(texture),
-        geometry: Geometry::Cube,
-        material: Material::Opaque,
-        solid: true,
-        replaceable: false,
-        supports_plant: false,
-        flammable: false,
-        emission: 0,
-        reflectance: [128; 3],
-        properties: vec![],
-        states: vec![BlockState::default()],
-    }
-}
+mod block;
+pub(in crate::server::script) use block::cube;
 
 pub(super) struct PackageTexture {
     pub(super) definition: Texture,
@@ -342,8 +325,8 @@ pub(super) fn invoke(
             mlua::Error::RuntimeError(error.into())
         })
     })?;
-    let register_block =
-        lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
+    let register_block = lua.create_function(
+        move |_, (key, name, texture, options): (Value, Value, Value, Value)| {
             let mut pending = block_capture.borrow_mut();
             let result = (|| {
                 if let Some(error) = pending.error {
@@ -379,9 +362,12 @@ pub(super) fn invoke(
                 {
                     return Err("duplicate startup block or item");
                 }
-                pending
-                    .blocks
-                    .push(cube(key.clone(), name.clone(), texture.clone()));
+                pending.blocks.push(block::cube(
+                    key.clone(),
+                    name.clone(),
+                    texture.clone(),
+                    options,
+                )?);
                 pending.items.push(Item {
                     key: key.clone(),
                     name,
@@ -397,7 +383,8 @@ pub(super) fn invoke(
                 pending.error.get_or_insert(error);
                 mlua::Error::RuntimeError(error.into())
             })
-        })?;
+        },
+    )?;
     let host = lua.create_table()?;
     host.set("register_item", register)?;
     host.set("register_texture", register_texture)?;

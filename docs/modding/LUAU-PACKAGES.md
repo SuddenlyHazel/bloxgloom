@@ -69,15 +69,19 @@ asset texture tile assets/textures/tile.png
 ```lua
 host.register_texture("example:tile", "tile")
 host.register_block("example:brick", "Brick", "example:tile")
+host.register_block("example:hedge", "Hedge", "example:tile", {flammable=true, supports_plant=true})
 ```
 
 The block has one default state, uniform texture, solid opaque cube geometry,
-no special emission/flammability, and a same-key placeable item with the normal
+no special emission/flammability by default, and a same-key placeable item with the normal
 128 stack cap. Registration requires an already registered package-owned
 texture; a normal `register_item` remains a non-placeable sprite. Each package
 may declare at most 32 textures, 32 blocks and 32 items total. Keys must use
 their package's namespace; script and registrar errors abort startup before
-opening the save. See `src/server/script/package.rs` and
+opening the save. The optional fourth argument currently accepts only the
+boolean `flammable` and `supports_plant` flags. Unknown or mistyped options
+abort startup; geometry and light values remain at the opaque-cube defaults.
+See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
 restrictions. With the generation capability, an entry may also call
 `host.register_generator("example:terrain", 1, "example:terrain")`; its named

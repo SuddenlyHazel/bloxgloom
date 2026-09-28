@@ -216,6 +216,52 @@ fn package_cube_joins_places_and_recovers_with_identical_session_catalog() {
 }
 
 #[test]
+fn package_cube_flags_are_frozen_and_old_declaration_keeps_defaults() {
+    let source = |options: &str| {
+        format!(
+            "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'{options}) end"
+        )
+    };
+    let defaults = Fixture::new();
+    package(&defaults, &source(""));
+    let default_state = defaults.open().unwrap();
+    let default_catalog = default_state.world.catalog();
+    let default_block = default_catalog.state_by_key("demo:jade").unwrap();
+    assert_eq!(
+        default_catalog.block_flags(default_block)
+            & (crate::content::FLAMMABLE | crate::content::SUPPORTS_PLANT),
+        0
+    );
+
+    let configured = Fixture::new();
+    package(
+        &configured,
+        &source(", {flammable=true, supports_plant=true}"),
+    );
+    let state = Box::new(configured.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let block = catalog.state_by_key("demo:jade").unwrap();
+    assert_eq!(
+        catalog.block_flags(block) & (crate::content::FLAMMABLE | crate::content::SUPPORTS_PLANT),
+        crate::content::FLAMMABLE | crate::content::SUPPORTS_PLANT
+    );
+    assert_ne!(catalog.fingerprint(), default_catalog.fingerprint());
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let bundle = crate::client::connect_bundle_probe(&address.to_string(), 0xabc1)
+            .unwrap()
+            .unwrap();
+        let joined = bundle.session_catalog().unwrap();
+        assert_eq!(joined.fingerprint(), fingerprint);
+        assert_eq!(joined.block_flags(block), catalog.block_flags(block));
+    });
+    assert_eq!(
+        fingerprint,
+        configured.open().unwrap().world.catalog().fingerprint()
+    );
+}
+
+#[test]
 fn package_cube_rejections_fail_before_world_open() {
     for (source, expected) in [
         (
@@ -245,6 +291,18 @@ fn package_cube_rejections_fail_before_world_open() {
         (
             "h.register_block('demo:jade',string.rep('x',256),'demo:tile')",
             "255 bytes",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{flammable=1})",
+            "boolean",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{madeup=true})",
+            "unknown block option",
+        ),
+        (
+            "pcall(function() h.register_block('demo:jade','Jade','demo:tile',{supports_plant='yes'}) end)",
+            "boolean",
         ),
         (
             "for i=1,33 do h.register_block('demo:jade'..i,'Jade','demo:tile') end",
