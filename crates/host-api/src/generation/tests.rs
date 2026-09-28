@@ -2,10 +2,7 @@ use super::*;
 
 #[test]
 fn context_handles_negative_and_extreme_chunk_coordinates() {
-    let context = Context {
-        seed: 27,
-        chunk: [-1, i32::MIN, i32::MAX],
-    };
+    let context = Context::new(27, [-1, i32::MIN, i32::MAX]);
     assert_eq!(
         context.world_position([15, 0, 15]),
         Ok([-1, i64::from(i32::MIN) * 16, i64::from(i32::MAX) * 16 + 15])
@@ -21,6 +18,14 @@ fn context_handles_negative_and_extreme_chunk_coordinates() {
     let point = [-17, 9, i64::from(i32::MAX) * 16];
     assert_eq!(context.random_at(point, 5), context.random_at(point, 5));
     assert_ne!(context.random_at(point, 5), context.random_at(point, 6));
+    assert_eq!(
+        context.builtin_terrain_height(0, 0),
+        Err(SampleError::Unavailable)
+    );
+    assert_eq!(
+        context.builtin_base_block([i64::MAX, 0, 0]),
+        Err(SampleError::OutOfBounds)
+    );
 }
 
 #[test]

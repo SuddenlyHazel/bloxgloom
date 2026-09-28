@@ -9,13 +9,89 @@ use std::sync::Arc;
 pub const CHUNK_SIZE: i64 = 16;
 pub const MAX_WRITES: usize = 16 * 16 * 16;
 
+/// Host-provided, read-only built-in terrain sampling. Implementations must use
+/// the same seed and terrain rules as the host's chunk generator.
+pub trait TerrainSamples: Send + Sync + std::fmt::Debug {
+    fn height(&self, seed: u64, x: i64, z: i64) -> i64;
+    /// Base terrain only: no trees, plants, registered contributors or edits.
+    fn base_block(&self, seed: u64, position: [i64; 3]) -> &'static str;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SampleError {
+    OutOfBounds,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Context {
     pub seed: u64,
     pub chunk: [i32; 3],
+    samples: Option<&'static dyn TerrainSamples>,
 }
 
+impl PartialEq for Context {
+    fn eq(&self, other: &Self) -> bool {
+        self.seed == other.seed
+            && self.chunk == other.chunk
+            && match (self.samples, other.samples) {
+                (Some(a), Some(b)) => std::ptr::eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+impl Eq for Context {}
+
 impl Context {
+    pub const fn new(seed: u64, chunk: [i32; 3]) -> Self {
+        Self {
+            seed,
+            chunk,
+            samples: None,
+        }
+    }
+
+    /// The host supplies its actual built-in generator; host-api never depends
+    /// on the game crate. Contributors receive a context with these samples.
+    pub const fn with_samples(
+        seed: u64,
+        chunk: [i32; 3],
+        samples: &'static dyn TerrainSamples,
+    ) -> Self {
+        Self {
+            seed,
+            chunk,
+            samples: Some(samples),
+        }
+    }
+
+    /// Height of the built-in terrain column at absolute X/Z, including caves
+    /// only in the base-block query. Valid coordinates are those addressable by
+    /// i32 chunk keys: i32::MIN * 16 through i32::MAX * 16 + 15.
+    pub fn builtin_terrain_height(&self, x: i64, z: i64) -> Result<i64, SampleError> {
+        if !in_world_bounds(x) || !in_world_bounds(z) {
+            return Err(SampleError::OutOfBounds);
+        }
+        Ok(self
+            .samples
+            .ok_or(SampleError::Unavailable)?
+            .height(self.seed, x, z))
+    }
+
+    /// Built-in base terrain state key at absolute XYZ, before decorations,
+    /// extensions or edits. Uses the same coordinate bounds as height samples.
+    pub fn builtin_base_block(&self, position: [i64; 3]) -> Result<&'static str, SampleError> {
+        if position.iter().any(|&axis| !in_world_bounds(axis)) {
+            return Err(SampleError::OutOfBounds);
+        }
+        Ok(self
+            .samples
+            .ok_or(SampleError::Unavailable)?
+            .base_block(self.seed, position))
+    }
+
     /// Absolute coordinates use i64 so even chunks at i32 limits are exact.
     pub fn world_position(&self, local: [i32; 3]) -> Result<[i64; 3], GenerationError> {
         if local
@@ -44,6 +120,11 @@ impl Context {
         }
         value
     }
+}
+
+fn in_world_bounds(coordinate: i64) -> bool {
+    (i64::from(i32::MIN) * CHUNK_SIZE..=i64::from(i32::MAX) * CHUNK_SIZE + CHUNK_SIZE - 1)
+        .contains(&coordinate)
 }
 
 fn mix(mut value: u64) -> u64 {

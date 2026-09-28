@@ -1,7 +1,9 @@
 //! Frozen authoritative composition of builtin and registered contributors.
 use super::{AIR, BlockId, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey};
 use crate::content::Catalog;
-use bloxgloom_host_api::generation::{Context, Contributor, GenerationError, Output, Registration};
+use bloxgloom_host_api::generation::{
+    Context, Contributor, GenerationError, Output, Registration, TerrainSamples,
+};
 use std::collections::BTreeSet;
 use std::io;
 
@@ -91,10 +93,7 @@ fn compose(
     ordered: &[Registration],
 ) -> Result<Chunk, GenerationError> {
     let mut blocks = vec![AIR; CHUNK_VOLUME];
-    let context = Context {
-        seed,
-        chunk: [key.x, key.y, key.z],
-    };
+    let context = Context::with_samples(seed, [key.x, key.y, key.z], &BUILTIN_SAMPLES);
     apply(&Builtin, context, &mut blocks, catalog)?;
     for registration in ordered {
         apply(
@@ -135,6 +134,28 @@ fn apply(
 /// Terrain and vegetation share one bounded output so trees can retain their
 /// original collision rules against the terrain and each other.
 struct Builtin;
+
+#[derive(Debug)]
+struct BuiltinSamples;
+static BUILTIN_SAMPLES: BuiltinSamples = BuiltinSamples;
+
+impl TerrainSamples for BuiltinSamples {
+    fn height(&self, seed: u64, x: i64, z: i64) -> i64 {
+        super::terrain::terrain_height(x, z, seed)
+    }
+
+    fn base_block(&self, seed: u64, [x, y, z]: [i64; 3]) -> &'static str {
+        let block = if y <= i64::from(super::BEDROCK_Y) {
+            super::STONE
+        } else if y > i64::from(super::MAX_GENERATED_HEIGHT) {
+            AIR
+        } else {
+            let column = super::terrain::terrain_column(x, z, seed);
+            super::terrain::generated_block_in_column(x, y, z, column, seed)
+        };
+        builtin_state_key(block).expect("built-in terrain returns registered built-in states")
+    }
+}
 
 impl Contributor for Builtin {
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {

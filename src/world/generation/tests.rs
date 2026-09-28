@@ -30,6 +30,87 @@ fn registrations() -> Vec<Registration> {
     }]
 }
 
+#[test]
+fn builtin_samples_match_base_terrain_on_negative_and_vertical_seams() {
+    let seed = 73;
+    for x in [-17, -16, -1, 0, 15, 16] {
+        for z in [-16, -1, 0, 15, 16] {
+            let context = Context::with_samples(seed, [-1, 1, 0], &BUILTIN_SAMPLES);
+            let column = super::super::terrain::terrain_column(x, z, seed);
+            assert_eq!(context.builtin_terrain_height(x, z), Ok(column.height));
+            for y in [-65, -64, -1, 0, 15, 16, 31, 32, 74, 75] {
+                let expected = if y <= i64::from(super::super::BEDROCK_Y) {
+                    STONE
+                } else if y > i64::from(super::super::MAX_GENERATED_HEIGHT) {
+                    AIR
+                } else {
+                    super::super::terrain::generated_block_in_column(x, y, z, column, seed)
+                };
+                assert_eq!(
+                    context.builtin_base_block([x, y, z]),
+                    Ok(builtin_state_key(expected).unwrap()),
+                    "at {x}, {y}, {z}"
+                );
+            }
+        }
+    }
+    let min = i64::from(i32::MIN) * 16;
+    let max = i64::from(i32::MAX) * 16 + 15;
+    let context = Context::with_samples(seed, [0; 3], &BUILTIN_SAMPLES);
+    assert!(context.builtin_terrain_height(min, max).is_ok());
+    assert_eq!(
+        context.builtin_terrain_height(min - 1, 0),
+        Err(bloxgloom_host_api::generation::SampleError::OutOfBounds)
+    );
+    assert_eq!(
+        context.builtin_base_block([0, max + 1, 0]),
+        Err(bloxgloom_host_api::generation::SampleError::OutOfBounds)
+    );
+}
+
+/// A feature anchored at absolute x=0 deliberately extends into the negative
+/// neighbor. Each destination chunk computes only its own cells from that anchor.
+struct AcrossSeam;
+impl Contributor for AcrossSeam {
+    fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
+        assert!(context.builtin_terrain_height(0, 0).is_ok());
+        assert_eq!(context.builtin_base_block([0, 128, 0]), Ok("bloxgloom:air"));
+        for x in 0..16 {
+            let [absolute_x, _, _] = context.world_position([x, 0, 0])?;
+            if (-1..=0).contains(&absolute_x) {
+                output.set([x, 0, 0], "bloxgloom:glowstone")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn absolute_anchor_feature_is_not_truncated_at_chunk_boundary() {
+    let registration = Registration {
+        key: "example:seam".into(),
+        revision: 1,
+        contributor: Arc::new(AcrossSeam),
+    };
+    let catalog = Catalog::builtins();
+    let left = generate_chunk_with_contributors(
+        ChunkKey { x: -1, y: 8, z: 0 },
+        73,
+        &catalog,
+        std::slice::from_ref(&registration),
+    )
+    .unwrap();
+    let right = generate_chunk_with_contributors(
+        ChunkKey { x: 0, y: 8, z: 0 },
+        73,
+        &catalog,
+        &[registration],
+    )
+    .unwrap();
+    assert_eq!(left.block([15, 0, 0]), Some(super::super::GLOWSTONE));
+    assert_eq!(right.block([0, 0, 0]), Some(super::super::GLOWSTONE));
+}
+
 fn open(path: &Path, contributors: Vec<Registration>) -> io::Result<World> {
     World::with_generation(
         73,

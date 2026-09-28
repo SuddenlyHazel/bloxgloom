@@ -377,7 +377,7 @@ support as the final model system.
 | --- | --- | --- |
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
 | 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | In progress |
-| 3 | Public generation context and migration of existing terrain/vegetation | In progress |
+| 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Planned |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Planned |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Planned |
@@ -682,6 +682,13 @@ This section exists so compaction or a new session does not restart the design.
   per-cell sampling remains a consistency test, not a separate edit baseline.
   Public sampling and documented cross-boundary authoring conventions are
   remaining Phase 3 polish before calling that phase complete.
+- **Phase 3 close:** the public generation context now offers host-backed
+  bounded terrain-height and base-block samples at absolute coordinates;
+  `docs/GENERATION.md` specifies reproducible seed/salt inputs, lexical
+  contributor ordering, overlap, chunk-local output, and cross-chunk anchor
+  ownership. Seam/coordinate tests and strict Clippy pass. The full suite had
+  one intermittent receipt-timing failure that passed when rerun alone. Phase
+  3 covers Rust-native generation; exposing it to Luau and packages is Phase 4.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
