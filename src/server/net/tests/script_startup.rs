@@ -14,6 +14,8 @@ mod bundle_catalog;
 mod bundle_runtime;
 #[path = "script_startup/bundle_ui.rs"]
 mod bundle_ui;
+#[path = "script_startup/combined.rs"]
+mod combined;
 #[path = "script_startup/gameplay.rs"]
 mod gameplay;
 #[path = "script_startup/generation.rs"]

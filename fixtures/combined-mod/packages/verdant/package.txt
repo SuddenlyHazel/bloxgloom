@@ -1,0 +1,19 @@
+format 2
+package verdant
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:actions/v1
+requires bloxgloom:owner_systems/v1
+module server main server/main.luau
+module server plant server/plant.luau
+module server grow server/grow.luau
+module client view client/view.luau
+module client client_startup client/client_startup.luau
+asset texture jade assets/textures/jade.png
+asset material tint assets/materials/tint.json
+asset material-shader jade-shader assets/shaders/jade.wgsl
+asset ui-document controls assets/ui/controls.json
+asset ui-style panel assets/ui/panel.json
+asset ui-style button assets/ui/button.json
+asset ui-font body assets/fonts/body.ttf

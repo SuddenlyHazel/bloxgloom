@@ -7,14 +7,42 @@ pub(crate) struct PackageActionProbe {
 
 impl PackageActionProbe {
     pub(crate) fn connect(address: &str, profile: u128, path: PathBuf) -> Self {
+        Self::connect_for(address, profile, path, "uitarget:light")
+    }
+
+    pub(crate) fn connect_for(address: &str, profile: u128, path: PathBuf, event: &str) -> Self {
         let network = Network::connect(address, 1, profile).unwrap();
         let mut app = ClientApp::new(network, Config::default(), path);
         app.config.selected_slot = 0;
         let ui = app.package_ui.as_mut().unwrap();
         ui.resize(640, 360, 1.0);
         ui.tab(false);
-        assert_eq!(ui.event(), Some("uitarget:light"));
+        assert_eq!(ui.event(), Some(event));
         Self { app }
+    }
+
+    pub(crate) fn title(&self) -> &str {
+        self.app.package_ui.as_ref().unwrap().text_at(1)
+    }
+
+    pub(crate) fn has_downloaded_material_and_startup(&self, package: &str) -> bool {
+        self.app.network.bundle_for_test().is_some_and(|bundle| {
+            bundle.material().is_some()
+                && bundle.packages()[package]
+                    .sources
+                    .contains_key("client_startup")
+                && !bundle.packages()[package].sources.contains_key("plant")
+        })
+    }
+
+    pub(crate) fn selected_material_layer(&self) -> u32 {
+        let bundle = self.app.network.bundle_for_test().unwrap();
+        bundle
+            .material()
+            .unwrap()
+            .resolve(&self.app.catalog)
+            .unwrap()
+            .selected_layer()
     }
 
     fn read(&mut self, deadline: Instant) -> ServerMessage {

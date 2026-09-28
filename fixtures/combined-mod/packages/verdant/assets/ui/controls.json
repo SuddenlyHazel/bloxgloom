@@ -1,0 +1,5 @@
+{"version":1,"presentation":{"capability":"local-ui","module":"verdant:view"},"nodes":[
+  {"id":"root","kind":"panel","style":"verdant:panel"},
+  {"id":"title","parent":0,"kind":"label","style":"verdant:button","text":"Jade garden"},
+  {"id":"plant","parent":0,"kind":"button","style":"verdant:button","text":"Plant in aimed stone: 1 stick","event":"verdant:plant"}
+]}

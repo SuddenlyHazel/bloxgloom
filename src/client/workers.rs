@@ -29,6 +29,10 @@ pub(super) struct Network {
 }
 
 impl Network {
+    #[cfg(test)]
+    pub(crate) fn bundle_for_test(&self) -> Option<&crate::server::client_bundle::ClientBundle> {
+        self._bundle.as_deref()
+    }
     pub(super) fn package_material(&self) -> Option<&crate::render::custom::Prepared> {
         self.material.as_ref()
     }
