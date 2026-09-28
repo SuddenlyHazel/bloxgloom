@@ -441,6 +441,16 @@ harvesting migration are accepted. No phase-level work remains.
   entities and public mobile terrain-wake opt-ins, then the drop's public
   falling policy rechecks support. Lost hints fall back to suspended rechecks;
   keep the host selection bounded instead of exposing allocator/index internals.
+- Stock drop meshes resolve item sprite/cube appearance through the negotiated
+  catalog, so registered item art follows the generic pop/spin/pickup-flight
+  path. Authored client-side drop animation/effect overrides are not exposed;
+  that custom presentation surface remains open alongside Phase 7 visuals.
+- **Verified pickup routing slice:** the stock pickup handler now calls a
+  public exact-component, capped slot-routing decision. A rejected transfer
+  keeps its amount available for later slots; eligibility, inventory filters,
+  player credit checks and atomic drop/inventory WAL ownership remain host-owned.
+  The real listener pickup/restart test, 892/892 suite, formatting and strict
+  Clippy pass.
 - Authenticated `give`/`spawn` console requests use registered actions and
   public Luau gameplay operations (`99e8276`); `help` is client-local text.
   Production `InventoryMove` uses public `move_slots`, preserving capped merges,
