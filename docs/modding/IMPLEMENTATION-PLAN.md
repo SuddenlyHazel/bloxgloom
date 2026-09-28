@@ -2,9 +2,9 @@
 
 **Status: Approved — implementation in progress.**
 
-The user approved full implementation and instructed personal implementation,
-incremental documentation updates and commits, continued execution, no subagents,
-and focused verification without excessive tests or performance-test runs.
+The user approved full implementation and instructed personal review,
+incremental documentation updates and commits, continued execution, scoped
+agents where useful, and focused verification without excessive test ceremony.
 
 This is the single implementation proposal for completing Bloxgloom's modding
 surface and making it usable by mod authors and players. It consolidates the
@@ -25,9 +25,10 @@ Approval authorizes the following decisions and all implementation phases below:
 - Complete a shared gameplay host API, rather than continuing to add unrelated
   specialized extension interfaces.
 - Make built-in gameplay use the same accessible capabilities as mods.
-- **Include migration of built-in fire behavior.** This explicitly brings the
-  previously deferred fire migration into scope so it does not remain a hidden
-  exception to gameplay parity.
+- **Explicit exception to built-in migration:** the original approval included
+  native fire migration, but the user subsequently removed it from Phase 2 and
+  deferred that migration. Existing server-owned fire remains in production;
+  do not claim it uses the public owner contract or block Phase 2 on replacing it.
 - Implement server-delivered client/shared mod packages and assets.
 - Implement authored UI using existing Rust UI infrastructure, with library
   selection delegated to the implementation process described below.
@@ -189,17 +190,16 @@ Unify normal breaking, replacement and support-loss behavior. Keep anchored
 refunds and container contents correctly accounted for. Removal and resulting
 drops/items commit together.
 
-### World behavior, including fire
+### World behavior
 
 Extend owner-local systems with shared world/entity reads and effects. Move
 support behavior and existing entity-independent simulation to the public layer.
 Use the existing world machinery; do not invent crop/growth features merely to
 fill a checklist.
 
-Migrate fire propagation and delivery, including cross-chunk durable intent,
-through the shared surface. Preserve bounded work, frontier recovery, lifecycle
-invalidation, cave/terrain behavior and atomic publication. Fire may require
-reusable host primitives; it must not retain a stronger private gameplay API.
+Native fire propagation and delivery are an explicit deferred exception to
+this migration. Keep the current server-owned behavior working; its private
+frontier is not evidence that other built-in simulation has migrated.
 
 ### World generation
 
@@ -399,7 +399,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | Phase | Work to land | Status |
 | --- | --- | --- |
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
-| 2 | Events, persistent scheduling and remaining world/drop/player/command behavior, including fire; consolidate existing helpers | In progress |
+| 2 | Events, persistent scheduling and remaining non-fire world/drop/player/command behavior; consolidate existing helpers | In progress |
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
@@ -425,26 +425,20 @@ harvesting migration are accepted. No phase-level work remains.
 drops, including conditional edits inside a declared authoritative one-chunk
 neighborhood. Opt-in Rust chunk systems can exchange bounded durable payloads.
 Absent chunk destinations can be created with a validated frozen template in the
-producer's WAL record. Public owner edits can opt into burn removal semantics,
-including targeted handlers and support loss. Parts of support, fire ignition,
-pickup and scheduling use public hooks, but that does not migrate their
-complete lifecycles.
+producer's WAL record. Public owner edits support burn removal semantics as a
+reusable capability. Parts of support, pickup and scheduling use public hooks,
+but that does not migrate their complete non-fire lifecycles.
 
 **Remaining**
 
-- [ ] Move native fire frontier, cross-chunk delivery and scheduling onto the
-  shared owner/event path, retaining bounded work, burn cause and WAL recovery.
-  The current store-wide 16,384-owner cap has no reclamation; handle sustained
-  capacity pressure without losing fire work or claiming unlimited spread.
 - [ ] Complete removal/support effects and drop motion, merging, pickup and
   expiration through the public gameplay surface; preserve finite items.
 - [ ] Move player rules, give/spawn/help commands and storage, machine, creature
   and anchored production helpers off privileged gameplay branches.
 
-**Separate visual note:** the optional committed-burn cue passed synthetic
-checks but was not visible in the user's live fire test. Presentation debugging
-is parked; it is neither proof of fire migration nor a reason to block this
-gameplay work.
+Native fire migration is **deferred outside Phase 2**. Neither its private
+production scheduler nor the unverified optional visual cue counts toward this
+phase's acceptance; see the explicit deferred note below.
 
 #### Phase 3 — generation · Done
 
@@ -552,13 +546,21 @@ broader audit are not yet verified.
 - [ ] Ship a runnable combined package with content, gameplay, scheduled work,
   UI and custom visuals; finish reconciling the complete implemented Luau API
   and local workflow documentation with that example.
-- [ ] Audit for remaining builtin-only production paths and reconcile docs with
-  the actual host contract and deferred model scope.
+- [ ] Audit for remaining non-deferred builtin-only production paths and
+  reconcile docs with the actual host contract and deferred scope.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **882/882**. That does not close these cross-system checks or verify the live
-  fire cue.
+  **882/882**. That does not close these cross-system checks or verify the
+  in-world mod visuals.
+
+### Explicitly deferred outside the phases
+
+Native fire propagation/delivery migration and investigation of its unverified
+optional visual cue are parked by user direction. The existing server-owned fire
+behavior remains active; it is a **disclosed parity exception**, not a completed
+public-system migration. Revisit only on a new scope decision. This exception
+does not reduce any other Phase 2 gameplay, WAL or item-conservation requirement.
 
 Land and review usable increments regularly. A completed slice does not check
 off its phase; conversely, do not defer a listed deliverable because one example
@@ -569,8 +571,9 @@ works. SHA-256 checks bundle bytes against a session offer, not server identity.
 The work is complete when all non-deferred phases are implemented and reviewed,
 and the following are true:
 
-- Ordinary existing gameplay is expressible through the public surface and
-  built-in production paths use it.
+- Ordinary existing non-deferred gameplay is expressible through the public
+  surface and built-in production paths use it. Native fire propagation/delivery
+  is the explicitly deferred exception, not an undisclosed parity claim.
 - A developer can author and run a Luau package without changing engine dispatch
   or recompiling Rust.
 - A client without that package can obtain the required client/shared content
@@ -581,8 +584,9 @@ and the following are true:
   through the supported package and client resource path.
 - New modded behavior preserves responsive movement, edits and interactions under
   the representative mixed workload; background simulation continues progressing.
-- The docs describe the implemented surface and remaining deferred model work
-  accurately. There is no undisclosed fire or other built-in-only gameplay path.
+- The docs describe the implemented surface and deferred work accurately. There
+  is no undisclosed built-in-only gameplay path; native fire is listed explicitly
+  as deferred rather than reported as migrated.
 
 Keep verification practical: meaningful adjacent regression tests for changed
 behavior, real nonblocking-listener join/restart/download checks, and direct
@@ -601,25 +605,30 @@ user approval gate.
 This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
-  including Luau/mlua selection and fire migration. The user now explicitly
-  authorizes parallel, scoped agents with personal review and commits.
+  including Luau/mlua selection. Native fire migration was originally included
+  but has since been removed from Phase 2 and deferred by the user. The user
+  explicitly authorizes parallel, scoped agents with personal review and commits;
+  prefer `coder-fast` and reserve `coder-smart` for unusually difficult work.
 - **Current work (September 28, 2026):** Phases 1 and 3 are done; phases 2 and
   4–7 remain in progress, and phase 8 has a working combined package but is not
   accepted. Durable owner intents/bootstrap, burn-cause edits, Luau radius-one
   neighborhoods, package cubes/textures, downloaded client startup and
   authorized item/block UI requests work. Native fire still has its private
   scheduler; general Luau content/client services, UI migration, richer visuals
-  and final mixed-load/release-window verification remain. The live fire visual
-  is unverified and parked. The latest successful 4-thread suite passed 879/879;
-  a later run reproduced a stale-kiln-revision test race. Its harness now waits
-  for the authoritative replica and the next 879/879 run passed. Reviewed
-  join/switch lifecycle cleanup is committed, and the 4-thread suite passed
-  882/882 afterward.
+  and final mixed-load/release-window verification remain. Native fire migration
+  and its unverified optional visual are deferred, not Phase 2 blockers. The
+  latest reviewed 4-thread suite passed 882/882 after the kiln probe harness
+  fix and join/switch cleanup. Window-visible joining is being reviewed in an
+  isolated worktree and is not counted as landed.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,
   and `533571e` retires failed/closed modded client sessions. A commit is a
   reviewed increment, not a phase acceptance.
+
+**Historical increment notes:** the entries below preserve what was known when
+each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
+
 - **Implementation:** `2674f88` records approval. `c946acf` adds
   `host_api::gameplay::{Context, Snapshot, Plan}` with automatic preimage reads,
   read-your-writes, coalesced block edits, explicit item creation and whole-plan
@@ -1149,13 +1158,14 @@ This section exists so compaction or a new session does not restart the design.
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
   treat the visual as verified. Park presentation debugging for now; it is
-  separate from the confirmed server-side fire spread and the Phase 2 migration
-  of fire propagation/delivery onto the public gameplay contract.
+  separate from the confirmed server-side fire spread. Native fire migration is
+  explicitly deferred outside the phases.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
-- **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
+- **Deferred:** native fire propagation/delivery migration and optional visual
+  investigation; custom model workflow/import; live hot reload; marketplace/CDN
   services; additional language runtimes; new gameplay/engine features not needed
-  for existing capability coverage or the additions specified above.
+  for existing non-deferred capability coverage.
 
 After approval, record it here, update phase status and meaningful decisions as
 work lands, and retain the latest verification results and next concrete step.
