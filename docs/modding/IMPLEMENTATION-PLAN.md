@@ -463,10 +463,15 @@ server-only tuning knob. Semantic command discovery/rebinding remains open.
 
 **Remaining**
 
-- [ ] Complete removal/support effects and drop motion, merging, pickup and
-  expiration through the public gameplay surface; preserve finite items.
-- [ ] Move player rules, give/spawn/help commands and storage, machine, creature
-  and anchored production helpers off privileged gameplay branches.
+- [ ] Finish the non-fire removal/support audit and complete drop lifecycle
+  parity, including mod-facing client presentation. Motion, merge-target,
+  pickup-gate and expiry policies are public; host-owned allocation, inventory
+  transfer, entity waking and WAL remain authoritative. Verify remaining
+  production routes and item conservation before acceptance.
+- [ ] Expose consistent player spawn/movement/body, state and appearance rules;
+  finish semantic command/input discovery and rebinding. `give`/`spawn` and
+  inventory/drop bindings use registered actions; `help` is client-local.
+  Finish auditing storage, machine, creature and anchored shared services.
 
 Native fire migration is **deferred outside Phase 2**. Neither its private
 production scheduler nor the unverified optional visual cue counts toward this
