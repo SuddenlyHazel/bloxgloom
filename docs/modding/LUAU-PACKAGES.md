@@ -74,13 +74,16 @@ host.register_block("example:hedge", "Hedge", "example:tile", {flammable=true, s
 ```
 
 The block has one default state, uniform texture, solid opaque cube geometry,
-no special emission/flammability by default, and a same-key placeable item with the normal
-128 stack cap. Registration requires an already registered package-owned
+no special emission/flammability by default, and a same-key placeable item with
+the normal 128 stack cap. Registration requires an already registered package-owned
 texture; `register_item` remains non-placeable, with a sprite by default. Its
 optional `{sprite=false}` argument selects the existing textured item-cube
-presentation. Unknown or mistyped item options fail startup, even under `pcall`.
-Each package may declare at most 32 textures, 32 blocks and 32 items total. Keys must use
-their package's namespace; script and registrar errors abort startup before
+presentation. `drop_size="small"` or `"large"` selects a bounded client-only
+world-drop size; `"normal"` is the default. This affects cube/sprite drops and
+pickup-flight meshes, not inventory, pickup eligibility, server age, or world
+ownership. Unknown or mistyped item options fail startup, even under `pcall`.
+Each package may declare at most 32 textures, 32 blocks and 32 items total.
+Keys must use their package's namespace; script and registrar errors abort startup before
 opening the save. For `register_block`, the optional fourth argument accepts
 only the boolean `flammable` and `supports_plant` flags. Unknown or mistyped options
 abort startup; geometry and light values remain at the opaque-cube defaults.

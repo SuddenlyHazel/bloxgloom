@@ -217,9 +217,11 @@ state and appearance, and command/input registration. Keep authentication,
 session ownership, authoritative collision and input sequencing in the host.
 Rule changes must be consistent with client prediction and reconciliation.
 
-Move give/spawn/help and existing gameplay bindings onto semantic action/command
+Move give/spawn and existing gameplay bindings onto semantic action/command
 definitions with argument schemas, permissions, discovery and rebinding behavior.
-Use the same transaction operations as other handlers. Player-owned persistent
+Keep `help` as client-local text generated from those descriptors; it must not
+create a server action or WAL transaction. Use the same transaction operations
+as other handlers. Player-owned persistent
 data remains keyed to stable profiles, not connections.
 
 ### World drops
@@ -567,11 +569,32 @@ Optional bounded `flammable` and `supports_plant` cube flags are verified
 through a real listener/catalog join, restart, invalid-registration regressions,
 the 896/896 suite, formatting and strict Clippy. The rest of the public
 block/material surface remains open.
+
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
 retain the prior default identity. Its existing cube/cutout drop mesh paths are
 covered by a registered-item regression. This does not expose arbitrary item
 geometry or client-side presentation callbacks.
+
+**Verified drop-size slice:** public Rust `Item` and Luau item options
+can select small/normal/large world-drop mesh size. The default retains its
+catalog and bundle identity; non-default sizes participate in item save/handshake
+identity and a verified version-8 client bundle. Server-owned age, position,
+pickup/expiry and finite inventory remain unchanged. This is one data-only
+presentation parameter, not general mod-defined drop animation.
+The real-listener catalog negotiation, malformed-bundle and invalid-option
+regressions, root suite **906/906** (two threads), host API **25/25**, formatting
+and strict all-target/all-feature Clippy pass.
+
+For the drop-size rendering slice, the release `perf 300 6` terrain-only check
+against the existing release binary kept normal mesh bytes at 17,292,744 and
+visible triangles at 88,026; scene setup 2353→2394 ms, steady CPU median
+0.322→0.295 ms, GPU median 0.237→0.251 ms. With `bounced`, mesh bytes stayed
+17,500,968 and visible triangles 89,218; setup 2720→2752 ms, CPU median
+0.316→0.308 ms, GPU median 0.287→0.278 ms. These single offscreen runs exclude
+drop presentation and do not measure its frame cost. The release built-in drop
+preview was inspected and looks unchanged; custom size ratios and pickup-flight
+continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
