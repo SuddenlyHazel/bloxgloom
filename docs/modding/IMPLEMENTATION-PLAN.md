@@ -537,8 +537,10 @@ to check in this phase.
 **Working:** `fixtures/combined-mod/` now gives one runnable `verdant` package
 with a package-textured cube and WGSL albedo, authoritative stick-for-block
 action from authored UI, downloaded client startup text and durable scheduled
-growth. A focused real-listener/restart test passes; release-window visuals,
-mixed-load response and the broader audit are not yet verified.
+growth. A focused real-listener/restart test passes, and its package UI was
+inspected at 1280×720 and 640×360 through `ui-preview <dir> <package-root>`.
+In-world jade shading, release-window visuals, mixed-load response and the
+broader audit are not yet verified.
 
 - [ ] Ship a runnable combined package with content, gameplay, scheduled work,
   UI and custom visuals; finish reconciling the complete implemented Luau API
@@ -1098,8 +1100,10 @@ This section exists so compaction or a new session does not restart the design.
   listener test exercises both terrain changes, finite inventory and owner
   recovery; verifies the transferred material resolves to the authored cube's
   catalog texture layer. Formatting, strict Clippy and the integrated 4-thread
-  suite (**873/873**) pass. Live release-window visual checks are pending;
-  this does not close remaining Luau surface, built-in parity, UI or
+  suite (**873/873**) pass. The package UI was inspected in generated 1280×720
+  and 640×360 previews, including its downloaded startup heading; in-world
+  material and release-window visual checks remain pending. This does not
+  close remaining Luau surface, built-in parity, UI or
   shader/effect scope.
 - **Phase 4 Luau neighborhood slice:** `read_radius_chunks=1` captures only
   authoritative 3×3×3 chunk input for a scripted owner. `c.block` and
