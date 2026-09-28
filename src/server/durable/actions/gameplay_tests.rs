@@ -283,6 +283,7 @@ impl Handler for SoilUse {
 }
 struct FlowerNeighbor;
 struct FlowerRemovalNeighbor;
+struct SandNeighborRemoval;
 impl Handler for FlowerNeighbor {
     fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
         let Event::NeighborChanged {
@@ -322,6 +323,28 @@ impl Handler for FlowerRemovalNeighbor {
         Ok(())
     }
 }
+impl Handler for SandNeighborRemoval {
+    fn handle(&self, context: &mut Context<'_>, event: &Event) -> Result<(), Error> {
+        let Event::BlockRemoved {
+            cell,
+            previous,
+            cause,
+            ..
+        } = event
+        else {
+            return Err(Error::Invalid("not a removal decision".into()));
+        };
+        if previous.block_type != "bloxgloom:sand" || *cause != RemovalCause::WorldEdit {
+            return Err(Error::Invalid("adjacent edit is not support loss".into()));
+        }
+        context.spawn_drop(
+            cell.map(|coordinate| coordinate as f32 + 0.5),
+            "bloxgloom:sand",
+            1,
+            250,
+        )
+    }
+}
 impl Extension for SupportExtension {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
         registrar.action(Action {
@@ -352,6 +375,13 @@ impl Extension for SupportExtension {
             event: EventKind::NeighborChanged,
             target: Some("bloxgloom:sand".into()),
             handler: Arc::new(FlowerRemovalNeighbor),
+        })?;
+        registrar.gameplay_handler(HandlerRegistration {
+            key: "test:sand_neighbor_removal".into(),
+            version: 1,
+            event: EventKind::BlockRemoved,
+            target: Some("bloxgloom:sand".into()),
+            handler: Arc::new(SandNeighborRemoval),
         })
     }
 }

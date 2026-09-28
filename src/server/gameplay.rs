@@ -756,7 +756,11 @@ fn dispatch_neighbors(
                                 &Event::BlockRemoved {
                                     cell,
                                     previous: neighbor,
-                                    cause: RemovalCause::SupportLoss,
+                                    cause: if above {
+                                        RemovalCause::SupportLoss
+                                    } else {
+                                        RemovalCause::WorldEdit
+                                    },
                                     random: cell_random(seed, cell, tick),
                                 },
                             )
