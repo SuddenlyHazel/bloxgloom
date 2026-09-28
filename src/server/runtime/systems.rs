@@ -10,6 +10,7 @@
 //! are bounded; arbitrary heap usage inside `Any` payloads is not measured or
 //! sandboxed.
 
+use super::super::durable::TerrainReads;
 use super::super::durable::{CommitBarrier, Durability};
 use super::super::effects::{EffectKindRegistryFrozen, MAX_EFFECTS_PER_BATCH};
 use super::super::journal::{Change, StateKey};
@@ -50,6 +51,16 @@ mod commit;
 /// the destination would do on its own rotation; when it fills, producing
 /// waves defer with `WouldBlock` instead of growing it.
 pub(in crate::server) const MAX_PENDING_OWNER_WAKES: usize = MAX_EFFECTS_PER_BATCH;
+
+/// Shared admission inputs for one owner wave. World capture is optional for
+/// legacy owner-only handlers; production supplies it for public chunk readers.
+pub(in crate::server) struct RegisteredWaveInputs<'a> {
+    pub effects: &'a EffectKindRegistryFrozen,
+    pub durability: &'a mut Durability,
+    pub in_flight: &'a [Vec<StateKey>],
+    pub world: Option<&'a mut crate::world::World>,
+    pub missing: &'a mut Vec<crate::world::ChunkKey>,
+}
 
 /// Admission metadata only. The shared durable queue owns the payload,
 /// receipt and reservations; losing this handle cannot lose accepted work.
@@ -397,6 +408,8 @@ impl SystemRuntime {
         tick: TickId,
         batch_wave: u16,
         effect_kinds: &EffectKindRegistryFrozen,
+        mut world: Option<&mut crate::world::World>,
+        missing: &mut Vec<crate::world::ChunkKey>,
     ) -> io::Result<Option<PreparedRegisteredWave>> {
         if system.is_coordinator_adapter() {
             return Err(io::Error::other(format!(
@@ -450,12 +463,14 @@ impl SystemRuntime {
         // dropped here: a missing destination only costs latency.
         let pending = self.pending_wakes.remove(&id).unwrap_or_default();
         let mut selected = Vec::new();
+        let mut selected_wakes = Vec::new();
         for (owner, produced_tick) in pending {
             if self.durable.revision(&id, owner).is_none() {
                 continue;
             }
             if produced_tick < tick.get() && selected.len() < wake_budget {
                 selected.push(owner);
+                selected_wakes.push((owner, produced_tick));
             } else {
                 self.pending_wakes
                     .entry(id.clone())
@@ -569,6 +584,7 @@ impl SystemRuntime {
         };
         let mut jobs = Vec::with_capacity(selected.len());
         let mut expected = Vec::with_capacity(selected.len());
+        let mut terrain_reads = TerrainReads::default();
         for (job_id, owner) in selected.iter().copied().enumerate() {
             let (revision, data) = self.durable.snapshot(&id, owner).ok_or_else(|| {
                 io::Error::other(format!(
@@ -577,10 +593,65 @@ impl SystemRuntime {
             })?;
             let snapshot = OwnerSnapshot::new(owner, revision, Arc::new(data));
             let key = JobKey::new(batch, owner, job_id as u64, snapshot.revision());
-            let job = OwnerJob::new(id.clone(), key, vec![snapshot])
+            let mut job = OwnerJob::new(id.clone(), key, vec![snapshot])
                 .map_err(|error| io::Error::other(format!("registered owner job: {error:?}")))?;
+            if system.reads_owner_chunk() {
+                let chunk_key = owner.as_chunk().ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidData, "world-reading owner is not a chunk")
+                })?;
+                let world = world.as_deref_mut().ok_or_else(|| {
+                    io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "world-reading owner has no world capture",
+                    )
+                })?;
+                if let Some(chunk) = world.cached_arc_chunk(chunk_key) {
+                    let x = chunk_key
+                        .x
+                        .checked_mul(crate::world::CHUNK_SIZE as i32)
+                        .ok_or_else(|| {
+                            io::Error::new(
+                                ErrorKind::InvalidInput,
+                                "owner chunk outside world coordinates",
+                            )
+                        })?;
+                    let y = chunk_key
+                        .y
+                        .checked_mul(crate::world::CHUNK_SIZE as i32)
+                        .ok_or_else(|| {
+                            io::Error::new(
+                                ErrorKind::InvalidInput,
+                                "owner chunk outside world coordinates",
+                            )
+                        })?;
+                    let z = chunk_key
+                        .z
+                        .checked_mul(crate::world::CHUNK_SIZE as i32)
+                        .ok_or_else(|| {
+                            io::Error::new(
+                                ErrorKind::InvalidInput,
+                                "owner chunk outside world coordinates",
+                            )
+                        })?;
+                    terrain_reads.read(world, x, y, z)?;
+                    job = job.with_owner_chunk(chunk, world.catalog_arc());
+                } else if missing.len() < 8 {
+                    missing.push(chunk_key);
+                }
+            }
             expected.push(key);
             jobs.push(job);
+        }
+        if !missing.is_empty() {
+            // Nothing was dispatched or committed. Preserve live wake hints;
+            // ordinary due owners and durable flags retain their WAL state.
+            for (owner, produced) in selected_wakes {
+                self.pending_wakes
+                    .entry(id.clone())
+                    .or_default()
+                    .insert(owner, produced);
+            }
+            return Ok(None);
         }
 
         if self.executor.is_none() {
@@ -743,7 +814,8 @@ impl SystemRuntime {
                 durable_served,
                 cursor_change,
             )
-            .with_live_wakes(wakes.live().to_vec()),
+            .with_live_wakes(wakes.live().to_vec())
+            .with_terrain_reads(terrain_reads),
         }))
     }
 
@@ -759,6 +831,7 @@ impl SystemRuntime {
     /// staged wave defers with `WouldBlock` and retries after the winner's
     /// receipt. A deferral before the receipt withdraws the staged wake flags
     /// so the retry re-stages from WAL-backed state.
+    #[cfg(test)]
     pub(in crate::server) fn stage_registered_wave(
         &mut self,
         system: &ExecutableSystem,
@@ -768,36 +841,83 @@ impl SystemRuntime {
         durability: &mut Durability,
         in_flight: &[Vec<StateKey>],
     ) -> io::Result<Option<PendingRegisteredWave>> {
-        let prepared = self.prepare_registered_wave(system, tick, batch_wave, effect_kinds)?;
-        let Some(prepared) = prepared else {
-            return Ok(None);
-        };
-        let candidate = prepared.keys(self);
-        let mut sets: Vec<Vec<StateKey>> = in_flight.to_vec();
-        sets.push(candidate);
-        let dispositions = arbitrate_key_sets(&sets);
-        if matches!(dispositions.last(), Some(WaveDisposition::Retry { .. })) {
-            let PreparedRegisteredWave {
-                durables:
-                    OwnerWaveDurables {
-                        wake_sets,
-                        live_wakes,
-                        ..
-                    },
-                ..
-            } = prepared;
-            self.durable_wakes.cancel_sets(wake_sets);
-            self.staged_live_wakes -= live_wakes.len();
-            return Err(io::Error::new(
-                ErrorKind::WouldBlock,
-                format!(
-                    "registered system {} defers: owner key overlaps an in-flight wave",
-                    system.id().as_str()
-                ),
-            ));
+        let mut missing = Vec::new();
+        self.stage_registered_wave_with_world(
+            system,
+            tick,
+            batch_wave,
+            RegisteredWaveInputs {
+                effects: effect_kinds,
+                durability,
+                in_flight,
+                world: None,
+                missing: &mut missing,
+            },
+        )
+    }
+
+    pub(in crate::server) fn stage_registered_wave_with_world(
+        &mut self,
+        system: &ExecutableSystem,
+        tick: TickId,
+        batch_wave: u16,
+        inputs: RegisteredWaveInputs<'_>,
+    ) -> io::Result<Option<PendingRegisteredWave>> {
+        let RegisteredWaveInputs {
+            effects,
+            durability,
+            in_flight,
+            world,
+            missing,
+        } = inputs;
+        let pending_before = self.pending_wakes.get(system.id()).cloned();
+        let result = (|| {
+            let prepared =
+                self.prepare_registered_wave(system, tick, batch_wave, effects, world, missing)?;
+            let Some(prepared) = prepared else {
+                return Ok(None);
+            };
+            let candidate = prepared.keys(self);
+            let mut sets: Vec<Vec<StateKey>> = in_flight.to_vec();
+            sets.push(candidate);
+            let dispositions = arbitrate_key_sets(&sets);
+            if matches!(dispositions.last(), Some(WaveDisposition::Retry { .. })) {
+                let PreparedRegisteredWave {
+                    durables:
+                        OwnerWaveDurables {
+                            wake_sets,
+                            live_wakes,
+                            ..
+                        },
+                    ..
+                } = prepared;
+                self.durable_wakes.cancel_sets(wake_sets);
+                self.staged_live_wakes -= live_wakes.len();
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    format!(
+                        "registered system {} defers: owner key overlaps an in-flight wave",
+                        system.id().as_str()
+                    ),
+                ));
+            }
+            let PreparedRegisteredWave { durables } = prepared;
+            let staged = self.stage_owner_wave(durables, durability)?;
+            Ok(Some(PendingRegisteredWave { staged }))
+        })();
+        if result
+            .as_ref()
+            .is_err_and(|error| error.kind() == ErrorKind::WouldBlock)
+        {
+            match pending_before {
+                Some(wakes) => {
+                    self.pending_wakes.insert(system.id().clone(), wakes);
+                }
+                None => {
+                    self.pending_wakes.remove(system.id());
+                }
+            }
         }
-        let PreparedRegisteredWave { durables } = prepared;
-        let staged = self.stage_owner_wave(durables, durability)?;
-        Ok(Some(PendingRegisteredWave { staged }))
+        result
     }
 }

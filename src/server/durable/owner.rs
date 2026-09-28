@@ -12,7 +12,15 @@ impl Durability {
         changes: Vec<Change>,
         commit: OwnerCommit,
     ) -> Result<CommitBarrier, Box<(StageError, OwnerCommit)>> {
-        let reads = commit.prepared.read_keys();
+        if !commit.terrain_reads.is_current() {
+            return Err(Box::new((StageError::Conflict, commit)));
+        }
+        let reads = commit
+            .prepared
+            .read_keys()
+            .into_iter()
+            .chain(commit.terrain_reads.keys())
+            .collect();
         let mut payload = Some(PendingPayload::Owner(commit));
         match self.try_stage_changes(tick, changes, reads, &mut payload, None) {
             Ok(true) => Ok(CommitBarrier::Through(self.next_id - 1)),

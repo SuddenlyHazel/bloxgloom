@@ -1,6 +1,156 @@
 use super::*;
 
 #[test]
+fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observations() {
+    let save = TestSave::new("owner-world-read");
+    let startup = || {
+        ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&bloxgloom_lifecycle_fixture::system::WorldProbe::default())
+            .unwrap()
+    };
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    let system = crate::server::registry::SystemId::new("fixture:world_probe").unwrap();
+    let owner =
+        crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 8, y: 6, z: 0 });
+    assert_eq!(state.world.cached_block(128, 96, 0), None);
+    let mut tick = 1;
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+    // The first invocation requested, rather than generated or guessed, its
+    // missing authoritative chunk. Subsequent worker jobs read the snapshot.
+    for _ in 0..1_000 {
+        if state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .0
+            > 0
+        {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .0
+            > 0
+    );
+    assert_eq!(state.world.cached_block(128, 96, 0), Some(AIR));
+    // A captured owner-world read reserves its chunk until the WAL receipt.
+    // A concurrent ordinary terrain action must retry; after the owner wave
+    // applies, that same action can be admitted and recovered as a real edit.
+    let registered = state.phase_plan.system(&system).unwrap().clone();
+    let mut missing = Vec::new();
+    let manual_tick = TickId::new(tick + 2);
+    let effect_kinds = Arc::clone(&state.effect_kinds);
+    let wave = state
+        .system_runtime
+        .stage_registered_wave_with_world(
+            &registered,
+            manual_tick,
+            0,
+            crate::server::runtime::systems::RegisteredWaveInputs {
+                effects: &effect_kinds,
+                durability: &mut state.durability,
+                in_flight: &[],
+                world: Some(&mut state.world),
+                missing: &mut missing,
+            },
+        )
+        .unwrap()
+        .expect("due owner read plans a WAL wave");
+    assert!(missing.is_empty());
+    let edit = crate::server::durable::CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        terrain_reads: Default::default(),
+        inventory_before: None,
+        inventory: None,
+        world_edits: state
+            .world
+            .prepare_edits(&[(128, 96, 0, crate::world::SAND)])
+            .unwrap(),
+        deltas: Vec::new(),
+        changed_cells: vec![crate::server::effects::CellCoord::new(128, 96, 0)],
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: None,
+    };
+    assert!(matches!(
+        state.durability.try_stage(manual_tick, &edit, None),
+        Err(crate::server::durable::StageError::Conflict)
+    ));
+    crate::server::durable::complete_barrier(&mut state, wave.barrier()).unwrap();
+    assert!(
+        state
+            .durability
+            .try_stage(manual_tick, &edit, None)
+            .unwrap()
+    );
+    crate::server::durable::complete_barrier(
+        &mut state,
+        crate::server::durable::CommitBarrier::AllStaged,
+    )
+    .unwrap();
+    assert_eq!(
+        state.world.cached_block(128, 96, 0),
+        Some(crate::world::SAND)
+    );
+    tick = manual_tick.get() + 1;
+    for _ in 0..1_000 {
+        if state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1
+            == [1]
+        {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (revision, value) = state
+        .system_runtime
+        .owner_value::<Vec<u8>>(&system, owner)
+        .unwrap();
+    assert!(revision > 1);
+    assert_eq!(value, [1]);
+    drop(state);
+    let restarted = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(restarted.world.cached_block(128, 96, 0), None);
+    // Recovery will consult the authoritative stored snapshot when it loads.
+    let mut restarted = restarted;
+    assert_eq!(
+        restarted.world.get_block(128, 96, 0).unwrap(),
+        crate::world::SAND
+    );
+    assert_eq!(
+        restarted
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+}
+
+#[test]
 fn entity_tick_policy_runs_on_workers_in_durable_coordinator_order() {
     use crate::server::entities::{
         EntityError, EntityPayload, EntitySnapshot, EntitySpawn, EntityTickPlan, EntityTickPolicy,

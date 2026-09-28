@@ -6,6 +6,117 @@ use crate::server::startup::ServerStartup;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[test]
+fn external_owner_world_read_survives_real_listener_join_and_restart() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-owner-world-loopback-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let observed = Arc::new(AtomicBool::new(false));
+    let probe = bloxgloom_lifecycle_fixture::system::WorldProbe {
+        observed: Some(Arc::clone(&observed)),
+    };
+    for restarted in [false, true] {
+        let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&probe)
+            .unwrap();
+        let state = Box::new(
+            crate::server::server_state_with_startup(7, save.clone(), 8, startup).unwrap(),
+        );
+        let system = crate::server::registry::SystemId::new("fixture:world_probe").unwrap();
+        let owner =
+            crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 8, y: 6, z: 0 });
+        if restarted {
+            let (revision, data) = state
+                .system_runtime
+                .owner_value::<Vec<u8>>(&system, owner)
+                .unwrap();
+            assert!(revision > 0, "the owner read must commit before shutdown");
+            assert_eq!(data, [0], "authoritative air, not procedural fallback");
+        }
+        let catalog = state.world.catalog_arc();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop_tx, stop_rx) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || reactor::serve_listener_until(listener, state, stop_rx));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut peer = TcpStream::connect(address).unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            protocol::write_client(
+                &mut peer,
+                &ClientMessage::Hello {
+                    name: "owner-world-probe".into(),
+                    profile: 0x5151,
+                    content_fingerprint: catalog.fingerprint(),
+                },
+            )
+            .unwrap();
+            let (fingerprint, manifest) = receive_content_manifest(&mut peer);
+            assert_eq!(fingerprint, catalog.fingerprint());
+            assert_eq!(
+                manifest,
+                crate::content::ContentManifest::from_catalog(&catalog)
+                    .encode()
+                    .unwrap()
+            );
+            protocol::write_client(&mut peer, &ClientMessage::ContentReady { fingerprint })
+                .unwrap();
+            let mut welcomed = false;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                assert!(Instant::now() < deadline, "loopback join timed out");
+                match protocol::read_server_with_catalog(&mut peer, &catalog).unwrap() {
+                    ServerMessage::Welcome { .. } => welcomed = true,
+                    ServerMessage::ActionSession { .. } if welcomed => break,
+                    _ => {}
+                }
+            }
+            if !restarted {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while !observed.load(Ordering::Acquire) {
+                    assert!(Instant::now() < deadline, "owner chunk never loaded");
+                    thread::sleep(Duration::from_millis(5));
+                }
+                // A subsequent movement ACK crosses the owner wave's phase
+                // barrier: the owner receipt has applied before this frame.
+                protocol::write_client(
+                    &mut peer,
+                    &ClientMessage::Move {
+                        seq: 1,
+                        dx: 0.1,
+                        dy: 0.0,
+                        dz: 0.0,
+                    },
+                )
+                .unwrap();
+                loop {
+                    assert!(Instant::now() < deadline, "movement ACK timed out");
+                    if matches!(
+                        protocol::read_server_with_catalog(&mut peer, &catalog).unwrap(),
+                        ServerMessage::Position { ack_seq: 1, .. }
+                    ) {
+                        break;
+                    }
+                }
+            }
+        }));
+        stop_tx.send(()).unwrap();
+        server.join().unwrap().unwrap();
+        if let Err(panic) = result {
+            let _ = std::fs::remove_dir_all(&save);
+            std::panic::resume_unwind(panic);
+        }
+    }
+    std::fs::remove_dir_all(save).unwrap();
+}
+
 pub(super) fn send(
     peer: &mut TcpStream,
     client: &mut InventoryProbe,

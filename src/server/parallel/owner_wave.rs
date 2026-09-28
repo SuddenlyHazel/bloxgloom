@@ -152,6 +152,8 @@ pub struct OwnerJob {
     system: SystemId,
     key: JobKey,
     snapshots: Vec<OwnerSnapshot>,
+    owner_chunk: Option<Arc<crate::world::Chunk>>,
+    owner_catalog: Option<Arc<crate::content::Catalog>>,
 }
 
 impl OwnerJob {
@@ -180,7 +182,27 @@ impl OwnerJob {
             system,
             key,
             snapshots,
+            owner_chunk: None,
+            owner_catalog: None,
         })
+    }
+
+    pub(in crate::server) fn with_owner_chunk(
+        mut self,
+        chunk: Arc<crate::world::Chunk>,
+        catalog: Arc<crate::content::Catalog>,
+    ) -> Self {
+        self.owner_chunk = Some(chunk);
+        self.owner_catalog = Some(catalog);
+        self
+    }
+
+    pub(in crate::server) fn owner_chunk(&self) -> Option<&crate::world::Chunk> {
+        self.owner_chunk.as_deref()
+    }
+
+    pub(in crate::server) fn owner_catalog(&self) -> Option<&crate::content::Catalog> {
+        self.owner_catalog.as_deref()
     }
 
     pub fn system(&self) -> &SystemId {

@@ -29,6 +29,7 @@ use super::super::simulation::TickId;
 use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
 use super::owner_effects::OwnerEffectPatch;
 use super::owner_wake::PreparedWakeSets;
+use crate::server::durable::TerrainReads;
 use std::collections::BTreeSet;
 use std::io;
 
@@ -42,6 +43,7 @@ pub(in crate::server) struct OwnerCommit {
     pub cursor: Option<Change>,
     pub live_wakes: Vec<(SystemId, OwnerKey)>,
     pub tick: TickId,
+    pub terrain_reads: TerrainReads,
 }
 
 /// Wave-attached durable pieces for one owner commit.
@@ -56,6 +58,7 @@ pub(in crate::server) struct OwnerWaveDurables {
     pub durable_served: Vec<(SystemId, OwnerKey)>,
     pub cursor: Option<Change>,
     pub live_wakes: Vec<(SystemId, OwnerKey)>,
+    pub terrain_reads: TerrainReads,
 }
 
 impl OwnerWaveDurables {
@@ -73,11 +76,17 @@ impl OwnerWaveDurables {
             durable_served,
             cursor,
             live_wakes: Vec::new(),
+            terrain_reads: TerrainReads::default(),
         }
     }
 
     pub fn with_live_wakes(mut self, wakes: Vec<(SystemId, OwnerKey)>) -> Self {
         self.live_wakes = wakes;
+        self
+    }
+
+    pub fn with_terrain_reads(mut self, reads: TerrainReads) -> Self {
+        self.terrain_reads = reads;
         self
     }
 }

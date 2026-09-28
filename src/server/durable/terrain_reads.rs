@@ -3,7 +3,7 @@
 //! race a writer in another chunk while a journal receipt is outstanding.
 use super::*;
 use crate::world::{ChunkReadStamp, World};
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub(in crate::server) struct TerrainReads {
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
     entities: super::super::entities::EntityDependencies,

@@ -427,11 +427,12 @@ This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
   including Luau/mlua selection and fire migration. No subagents.
-- **Active phase:** 2 — removal, placement, registered semantic use and general
-  entity due callbacks share one transaction overlay. Advisory committed
-  observers are available. Durable notifications, support/world/drop/player
-  behavior and fire migration remain. No Luau, client packages or authored UI
-  is implemented yet.
+- **Active phase:** 2 — registered removal, placement, semantic use, entity
+  due callbacks, neighbor/support decisions and automatic pickup use shared
+  gameplay planning. Advisory committed observers and read-only owner-chunk
+  world snapshots are available. Durable cross-owner world effects, remaining
+  drop/player/command policy and fire propagation/delivery remain. No Luau,
+  client packages or authored UI is implemented yet.
 - **Last completed work:** existing host slices and response-path hardening,
   recorded in `MODDING-SURFACE-PLAN.md` and `docs/PLAYER-RESPONSE-PATH.md`.
 - **Implementation:** `2674f88` records approval. `c946acf` adds
@@ -604,6 +605,20 @@ This section exists so compaction or a new session does not restart the design.
   a partial-stack remainder and recovery; strict all-feature workspace Clippy
   and format checks passed. Drop motion, merging, expiration, policy authoring
   and client presentation services are still open.
+- **Phase 2 owner-world-read increment:** chunk-partitioned registered owner
+  systems may opt into an authoritative, immutable owner-chunk snapshot for
+  `Context::block` reads on existing owner workers. Only in-chunk cells are
+  available; a missing chunk requests async loading and defers the whole wave
+  without advancing its durable owner state/deadline/cursor. Captured chunk
+  preimages become shared WAL read reservations until the owner receipt, so a
+  conflicting terrain edit retries and can commit once the owner wave applies.
+  The declaration is fingerprinted only for systems opting in, preserving
+  existing owner-only manifests. At most 64 chunk jobs may opt in per tick.
+  An independently compiled fixture checks missing/air/out-of-scope reads,
+  a conflicting durable edit and restart; a nonblocking-listener join/rejoin
+  checks the actual startup path. The focused 88-test owner suite, format and
+  strict all-feature workspace Clippy passed. This is **not** neighbor/world
+  effect access or a public fire scheduler; those are the next work.
 - **Next concrete step:** expose general owner-local scheduled world reads/effects
   and reusable durable cross-owner intent, then move fire propagation/delivery
   decisions off the native-only policy. Migrate remaining drops, player rules,

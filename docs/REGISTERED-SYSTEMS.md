@@ -2,7 +2,8 @@
 
 `Registrar::owner_system` exposes the existing owner-worker and durable-wave
 runtime through `bloxgloom_host_api::system`. It is entity-independent background
-computation, not a terrain-editing API.
+computation; chunk owners may opt into authoritative read-only terrain, but it
+is not yet a terrain-editing API.
 
 An extension declares a namespaced system, schema fingerprint, partition
 (chunk/entity/profile), state-byte bound, job budget, simulation-phase dependencies,
@@ -27,9 +28,20 @@ continued progress. Additional tests reject oversized outputs, nonadvancing
 deadlines, incompatible manifest schemas, and missing dependencies.
 
 This supplies the persistent-system portion of the external integration proof.
-It does **not** complete the planned world-system parity row: the existing owner
-runtime has no captured terrain/neighbour view or atomic terrain/entity-effect
-interface. Those services, dynamic owner creation/removal, wake subscriptions,
-built-in support behavior, and deferred fire migration remain explicit followups.
+With `read_owner_chunk: true`, a chunk-partitioned system (at most 64 jobs per
+tick) receives `Context::block(cell)` for cells **within its own chunk**. The
+host captures the resident authoritative chunk for the worker, defers the
+entire wave and asynchronously requests missing chunks, and reserves read
+dependencies through WAL admission and receipt. Out-of-owner reads are
+`Unavailable`, not procedural fallback. Read permission and its bound are part
+of the declaration fingerprint; systems not opting in retain their prior
+fingerprint. `fixture:world_probe` independently exercises a missing chunk,
+air read, a conflicting edit, and replay, including a real listener join.
+
+This still does **not** complete world-system parity: neighboring world queries,
+atomic terrain/entity effects, dynamic owner creation/removal, and durable
+cross-owner intent remain explicit followups, as do public fire propagation
+and delivery. Built-in support removal uses the shared neighbor decision path
+for existing edit producers rather than an owner-system callback.
 An entity/profile owner key is an identity, not a grant to mutate that entity or
 player. Callbacks are trusted deterministic Rust functions, not sandboxed plugins.

@@ -21,6 +21,7 @@ impl SystemRuntime {
             durable_served,
             cursor,
             live_wakes,
+            terrain_reads,
         } = durables;
         let mut changes = prepared.changes().to_vec();
         changes.extend(wake_sets.changes().iter().cloned());
@@ -33,6 +34,7 @@ impl SystemRuntime {
             cursor,
             live_wakes,
             tick,
+            terrain_reads,
         };
         let bytes: usize = changes.iter().map(|change| change.after.len()).sum();
         if bytes > MAX_OWNER_WAVE_BYTES {
@@ -78,6 +80,7 @@ impl SystemRuntime {
             cursor,
             live_wakes,
             tick,
+            terrain_reads: _,
         } = commit;
         self.staged_live_wakes -= live_wakes.len();
         let applied = match self.durable.commit(

@@ -13,7 +13,7 @@ pub(super) struct Participants<'a> {
     pub entities: &'a super::entities::EntityStore,
 }
 
-pub(super) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, Error> {
+pub(in crate::server) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, Error> {
     let state = catalog
         .state(id)
         .ok_or_else(|| Error::Host("unknown stored block state".into()))?;

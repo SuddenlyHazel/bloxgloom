@@ -1,7 +1,9 @@
 //! Persistent, owner-local background systems. Callbacks run on immutable input
 //! and return bounded replacement state through the host's atomic owner journal.
-//! This initial contract does not grant terrain reads or world/entity writes.
+//! Chunk owners may opt into a captured authoritative chunk view. Effects are
+//! still a separate capability; reading terrain never grants write authority.
 use crate::RegistrationError;
+use crate::gameplay::{Block, Cell, Error};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -29,6 +31,20 @@ pub struct Context<'a> {
     pub revision: u64,
     pub tick: u64,
     pub data: &'a [u8],
+    /// Available only for systems that declare `read_owner_chunk`.
+    pub world: Option<&'a dyn WorldRead>,
+}
+
+/// Authoritative, bounded world input captured before the owner job starts.
+/// An out-of-scope or unloaded cell is unavailable, never procedural air.
+pub trait WorldRead {
+    fn block(&self, cell: Cell) -> Result<Block, Error>;
+}
+
+impl Context<'_> {
+    pub fn block(&self, cell: Cell) -> Result<Block, Error> {
+        self.world.ok_or(Error::Unavailable(cell))?.block(cell)
+    }
 }
 
 pub struct Plan {
@@ -51,6 +67,10 @@ pub struct System {
     pub partition: Partition,
     pub max_state_bytes: u32,
     pub max_jobs_per_tick: u16,
+    /// Capture the authoritative owner chunk for read-only worker queries.
+    /// Only chunk-partitioned systems with at most 64 jobs per tick may enable
+    /// this (one pinned chunk per selected job). Missing chunks defer the wave.
+    pub read_owner_chunk: bool,
     /// Explicit simulation-phase dependencies, resolved at startup.
     pub after: Vec<String>,
     /// Initial durable owners. Recovered values always win over these seeds.
@@ -90,6 +110,8 @@ impl System {
                 .iter()
                 .any(|key| !valid_key(key) || key == &self.key)
             || self.seeds.len() > 16384
+            || (self.read_owner_chunk && self.partition != Partition::Chunk)
+            || (self.read_owner_chunk && self.max_jobs_per_tick > 64)
         {
             return Err(RegistrationError("invalid owner-system declaration".into()));
         }
@@ -117,7 +139,9 @@ impl System {
             out.extend((s.len() as u32).to_le_bytes());
             out.extend(s.as_bytes());
         }
-        let mut out = vec![1];
+        // Preserve existing declarations' fingerprints; only systems opting
+        // into the new read contract require a new manifest identity.
+        let mut out = vec![if self.read_owner_chunk { 2 } else { 1 }];
         text(&mut out, &self.key);
         out.extend(self.schema.to_le_bytes());
         out.push(match self.partition {

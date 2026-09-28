@@ -393,23 +393,41 @@ pub(super) fn tick_with_inputs(
                 let effect_kinds = Arc::clone(&context.state.effect_kinds);
                 // Split the borrows: the owner wave stages through the
                 // shared durable journal while applying to the runtime store.
-                let (system_runtime, durability) = (
+                let (system_runtime, durability, world) = (
                     &mut context.state.system_runtime,
                     &mut context.state.durability,
+                    &mut context.state.world,
                 );
-                match system_runtime.stage_registered_wave(
+                let mut missing = Vec::new();
+                let result = system_runtime.stage_registered_wave_with_world(
                     &registered,
                     tick,
                     batch_wave,
-                    &effect_kinds,
-                    durability,
-                    &staged_key_sets,
-                ) {
+                    systems::RegisteredWaveInputs {
+                        effects: &effect_kinds,
+                        durability,
+                        in_flight: &staged_key_sets,
+                        world: Some(world),
+                        missing: &mut missing,
+                    },
+                );
+                for key in missing {
+                    let _ = streaming::request_chunk(context.state, key)?;
+                }
+                match result {
                     Ok(Some(wave)) => {
                         staged_key_sets.push(wave.keys().to_vec());
                         barrier = Some(wave.barrier());
                     }
                     Ok(None) => {}
+                    Err(error)
+                        if registered.reads_owner_chunk()
+                            && error.kind() == io::ErrorKind::WouldBlock =>
+                    {
+                        // The wave retained its owner/deadline and did not
+                        // publish a cursor. Retry behind the earlier receipt
+                        // instead of tearing down the coordinator.
+                    }
                     Err(error) => {
                         // The failed wave staged nothing, but earlier waves
                         // are already submitted: drain them so their receipted

@@ -26,7 +26,9 @@ entity requests have not yet been migrated, and the client discovery surface
 does not yet expose arbitrary author-defined action argument schemas.
 General entity due handlers now run on the persisted entity clock, with owned
 state/next due time and shared world/drop effects in one durable transaction.
-This does not yet replace general owner-local world systems or built-in fire.
+Owner-local systems may now capture their authoritative owner chunk for
+read-only worker queries, with unavailable-chunk deferral and WAL read fences;
+this does not yet supply general owner-local world effects or built-in fire.
 Read-only committed observers now see public projections off the coordinator.
 Their advisory delivery is bounded, lossy and not replayed; authoritative
 follow-up must use durable decisions/scheduling. Fire and owner-wave commits
@@ -37,14 +39,14 @@ the public fallback, including its harvest, in the triggering transaction.
 Fire burns now use the same removal/support transaction, including anchored
 footprint refunds and cross-chunk support effects in the fire WAL receipt. The
 fire frontier/propagation and cross-chunk delivery policy remain native-only;
-owner-local world-system, drop and player parity remain open.
+owner-local world effects, remaining drop and player parity remain open.
 World drops are now available as extract-only single-slot entity inventories
 to public gameplay handlers. This shares exact-stack conservation, delay/expiry
-  gating and WAL transactions with other inventories. Automatic pickup now
-  dispatches a registered decision owner over host-eligible, bounded candidates:
-  the built-in transfers exact stacks, and the host requires matching player
-  credit before publishing a confirmed pickup. Candidate selection/delay/radius,
-  merging, motion, expiration and client presentation policy are still native.
+gating and WAL transactions with other inventories. Automatic pickup now
+dispatches a registered decision owner over host-eligible, bounded candidates:
+the built-in transfers exact stacks, and the host requires matching player
+credit before publishing a confirmed pickup. Candidate selection/delay/radius,
+merging, motion, expiration and client presentation policy are still native.
 
 ### Integration follow-up
 
@@ -81,9 +83,10 @@ in the root plan:
   apply; stale plans are rejected after reservations clear. The seam race test is
   `server/durable/actions/support_reads_tests.rs`.
 - **F7:** public persistent owner systems and an independent region-clock fixture
-  now exist, with real-listener restart verification. The supported API is still
-  owner-only; terrain reads/effects and full world-system parity remain open.
-  See `docs/REGISTERED-SYSTEMS.md`.
+  now exist, with real-listener restart verification. Opt-in owner-chunk terrain
+  reads now run on the existing worker path, with a separate external fixture
+  checking deferred loading, WAL conflict and listener restart. Neighboring
+  queries and atomic world effects remain open. See `docs/REGISTERED-SYSTEMS.md`.
 
 Content/composition and stock-client action discovery are now merged and personally
 reviewed in main. Public state/item/PNG/material/geometry declarations, component
@@ -99,7 +102,7 @@ consuming input/fuel. Combined tests and previews are recorded in the root plan.
 
 These close the content, composition, inventory-selector, anchored lifecycle and
 bounded action/UI findings in that integration. Subsequent shared gameplay work
-above covers general harvest and semantic use. World-system reads/effects,
+above covers general harvest and semantic use. World-system effects/neighbors,
 generation, player policy/commands/bindings and world-drop policies remain
 blockers; fire migration is approved and still unfinished, not deferred.
 

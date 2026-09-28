@@ -160,6 +160,7 @@ pub struct SystemDescriptor {
     writes: BTreeSet<ResourceId>,
     after: BTreeSet<SystemId>,
     neighbor_radius: u8,
+    world_read: bool,
     max_jobs_per_tick: usize,
     /// Zero is valid and means this system is not permitted to emit effects.
     max_effects_per_tick: usize,
@@ -182,6 +183,7 @@ impl SystemDescriptor {
             writes: BTreeSet::new(),
             after: BTreeSet::new(),
             neighbor_radius: 0,
+            world_read: false,
             max_jobs_per_tick,
             max_effects_per_tick,
             max_effects_per_job: max_effects_per_tick.min(MAX_EFFECTS_PER_OWNER_JOB),
@@ -216,6 +218,15 @@ impl SystemDescriptor {
     pub const fn neighbor_radius(mut self, radius: u8) -> Self {
         self.neighbor_radius = radius;
         self
+    }
+
+    pub(in crate::server) const fn read_owner_chunk(mut self) -> Self {
+        self.world_read = true;
+        self
+    }
+
+    pub(in crate::server) const fn reads_owner_chunk(&self) -> bool {
+        self.world_read
     }
 
     pub fn id(&self) -> &SystemId {

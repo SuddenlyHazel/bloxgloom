@@ -30,6 +30,9 @@ impl ServerStartup {
             for after in &definition.after {
                 descriptor = descriptor.after(SystemId::new(after).expect("validated dependency"));
             }
+            if definition.read_owner_chunk {
+                descriptor = descriptor.read_owner_chunk();
+            }
             self.systems
                 .push((descriptor, Arc::new(Adapter(definition.clone()))));
             self.register_owner_codec(
@@ -62,6 +65,27 @@ fn public_owner(owner: OwnerKey) -> api::Owner {
     }
 }
 struct Adapter(Arc<api::System>);
+
+struct OwnerChunkView<'a> {
+    chunk: &'a crate::world::Chunk,
+    catalog: &'a crate::content::Catalog,
+}
+impl api::WorldRead for OwnerChunkView<'_> {
+    fn block(
+        &self,
+        cell: bloxgloom_host_api::gameplay::Cell,
+    ) -> Result<bloxgloom_host_api::gameplay::Block, bloxgloom_host_api::gameplay::Error> {
+        let (key, local) = crate::world::world_to_chunk(cell[0], cell[1], cell[2]);
+        if key != self.chunk.key {
+            return Err(bloxgloom_host_api::gameplay::Error::Unavailable(cell));
+        }
+        let id = self
+            .chunk
+            .block(local)
+            .ok_or(bloxgloom_host_api::gameplay::Error::Unavailable(cell))?;
+        crate::server::gameplay::block(self.catalog, id)
+    }
+}
 #[cfg(test)]
 mod tests;
 impl OwnerValueCodec for Adapter {
@@ -90,6 +114,10 @@ impl SystemHandler for Adapter {
             .and_then(|data| data.get::<Vec<u8>>())
             .ok_or_else(reject)?;
         let tick = job.key().batch.tick().get();
+        let world = job
+            .owner_chunk()
+            .zip(job.owner_catalog())
+            .map(|(chunk, catalog)| OwnerChunkView { chunk, catalog });
         let plan = self
             .0
             .behavior
@@ -98,6 +126,7 @@ impl SystemHandler for Adapter {
                 revision: snapshot.revision(),
                 tick,
                 data,
+                world: world.as_ref().map(|world| world as &dyn api::WorldRead),
             })
             .map_err(|_| reject())?;
         if plan.next_tick <= tick {
