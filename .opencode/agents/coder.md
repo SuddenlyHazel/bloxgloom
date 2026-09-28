@@ -3,12 +3,9 @@ description: Implements one scoped code change per task prompt, then reports
 mode: all
 model: openai/gpt-6-sol#high
 permissions:
-  - action: edit
-    resource: "docs/**"
-    effect: deny
-  - action: edit
-    resource: "world-v*/**"
-    effect: deny
+  - action: "*"
+    resource: "*"
+    effect: allow
 ---
 
 You implement exactly one scoped task per session, as given in the task prompt.
