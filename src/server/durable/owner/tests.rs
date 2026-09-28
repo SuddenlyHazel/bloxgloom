@@ -11,6 +11,8 @@ use bloxgloom_host_api::{Extension, Registrar, RegistrationError, gameplay as ap
 use std::sync::Arc;
 use std::time::Duration;
 
+mod burn;
+
 const CELL: [i32; 3] = [136, 100, 8];
 const POSITION: [f32; 3] = [136.5, 100.5, 8.5];
 const KEY: &str = "test:participant_owner";

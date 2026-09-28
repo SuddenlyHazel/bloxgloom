@@ -51,6 +51,16 @@ entity and drop participants commit in that same WAL record; effects that
 cannot be admitted defer the entire owner wave. `fixture:world_writer` verifies
 one placement and owner state recover together from the journal.
 
+An opt-in `Behavior::edit_cause() == EditCause::Burn` uses the shared gameplay
+removal and neighbor planner with `RemovalCause::Burn` for **every** conditional
+edit in that owner system. It requires authoritative chunk reads and only
+allows removal from a non-air block to air. Ordinary `WorldEdit` systems retain
+their existing semantics and fingerprint; the burn declaration changes the
+system's persisted identity. Default harvest does not award burnt blocks, while
+targeted burn handlers and support-loss effects still participate in the same
+owner WAL transaction. This capability does not itself ignite or schedule fire;
+native fire remains the sole production propagator pending its migration.
+
 `Plan::wakes` can name other registered `(system, owner)` pairs. Each job may
 request at most 32 and a wave at most 2,048. The host validates the destination
 partition and journals wake flags together with the producing owner's new

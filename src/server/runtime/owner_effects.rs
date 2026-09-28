@@ -69,6 +69,7 @@ pub(in crate::server) struct OwnerEffectPatch {
     effects: Vec<EmittedOwnerEffect>,
     durable_wakes: Vec<(SystemId, OwnerKey)>,
     world_edits: Vec<bloxgloom_host_api::system::BlockEdit>,
+    edit_cause: bloxgloom_host_api::system::EditCause,
     intents: Vec<bloxgloom_host_api::system::IntentRequest>,
 }
 
@@ -83,6 +84,7 @@ impl OwnerEffectPatch {
             effects,
             durable_wakes: Vec::new(),
             world_edits: Vec::new(),
+            edit_cause: Default::default(),
             intents: Vec::new(),
         }
     }
@@ -104,9 +106,19 @@ impl OwnerEffectPatch {
     pub(in crate::server) fn with_world_edits(
         mut self,
         edits: Vec<bloxgloom_host_api::system::BlockEdit>,
+        cause: bloxgloom_host_api::system::EditCause,
     ) -> Self {
         self.world_edits = edits;
+        self.edit_cause = cause;
         self
+    }
+
+    pub(in crate::server) fn edit_cause(
+        patch: &OwnerPatch,
+    ) -> bloxgloom_host_api::system::EditCause {
+        patch
+            .payload::<Self>()
+            .map_or(Default::default(), |emission| emission.edit_cause)
     }
 
     pub(in crate::server) fn world_edits(

@@ -142,9 +142,21 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             let after = catalog.state_by_key(&edit.after).ok_or_else(|| {
                 io::Error::new(ErrorKind::InvalidInput, "unknown owner edit block state")
             })?;
+            let cause = match OwnerEffectPatch::edit_cause(patch) {
+                bloxgloom_host_api::system::EditCause::WorldEdit => RemovalCause::WorldEdit,
+                bloxgloom_host_api::system::EditCause::Burn => {
+                    if previous == crate::world::AIR || after != crate::world::AIR {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidInput,
+                            "owner burn must remove a non-air block to air",
+                        ));
+                    }
+                    RemovalCause::Burn
+                }
+            };
             edits.push((x, y, z, after));
             if previous != crate::world::AIR {
-                removals.push((previous, edit.cell, RemovalCause::WorldEdit));
+                removals.push((previous, edit.cell, cause));
             }
         }
     }

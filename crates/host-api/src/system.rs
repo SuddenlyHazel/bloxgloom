@@ -69,6 +69,18 @@ pub struct BlockEdit {
     pub after: String,
 }
 
+/// Removal semantics for a system's conditional block edits. Player breaks and
+/// support loss remain host-owned events, not causes a system can impersonate.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EditCause {
+    #[default]
+    WorldEdit,
+    /// Remove a non-air block to air with `gameplay::RemovalCause::Burn`.
+    /// Default harvest yields no loot; targeted removal and neighbor handlers
+    /// still run in the same transaction. The system decides what is flammable.
+    Burn,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Wake {
     pub system: String,
@@ -80,6 +92,16 @@ pub struct Wake {
 pub trait Behavior: Send + Sync + 'static {
     fn validate(&self, data: &[u8]) -> Result<(), RegistrationError>;
     fn plan(&self, context: &Context<'_>) -> Result<Plan, RegistrationError>;
+
+    /// Immutable declaration, fingerprinted at startup. Applies to every edit
+    /// returned by this system, including intent-driven plans. Burn systems
+    /// require chunk world reads and may only remove blocks to air. This does
+    /// not seed or schedule native fire; the owner remains responsible for its
+    /// own durable propagation state. Like `accepts_intents`, this must not vary
+    /// during registration or play. Existing systems keep WorldEdit semantics.
+    fn edit_cause(&self) -> EditCause {
+        EditCause::WorldEdit
+    }
 
     /// Opt into durable same-system messages between chunk-owner cells
     /// with declared world reads. Other partitions are not supported yet.
@@ -240,6 +262,7 @@ impl System {
             || self.seeds.len() > 16384
             || (self.read_radius_chunks.is_some() && self.partition != Partition::Chunk)
             || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
+            || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
             })
@@ -332,6 +355,9 @@ impl System {
             out.extend(b"owner-intent-bootstrap-v1");
             out.extend((data.len() as u32).to_le_bytes());
             out.extend(data);
+        }
+        if self.behavior.edit_cause() == EditCause::Burn {
+            out.extend(b"owner-burn-edits-v1");
         }
         out
     }

@@ -166,10 +166,12 @@ impl SystemHandler for Adapter {
             ));
         }
         let mut edited = std::collections::BTreeSet::new();
+        let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {
             if !matches!(job.owner(), OwnerKey::Chunk(key) if key == crate::world::world_to_chunk(edit.cell[0], edit.cell[1], edit.cell[2]).0)
                 || !edited.insert(edit.cell)
                 || edit.before == edit.after
+                || (edit_cause == api::EditCause::Burn && edit.after != "bloxgloom:air")
                 || edit.before.len() > 128
                 || edit.after.len() > 128
                 || job
@@ -214,7 +216,7 @@ impl SystemHandler for Adapter {
                 OwnerEffectPatch::new(state.clone(), Vec::new())
                     .with_durable_wakes(wakes)
                     .with_intents(intents)
-                    .with_world_edits(plan.edits),
+                    .with_world_edits(plan.edits, edit_cause),
             )
         };
         let usage = PatchUsage {
