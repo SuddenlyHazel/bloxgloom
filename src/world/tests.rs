@@ -1,11 +1,93 @@
 use super::cache::ChunkCache;
 use super::*;
+use bloxgloom_host_api::generation::{
+    Context as GenerationContext, Contributor, GenerationError, Output,
+    Registration as GenerationRegistration,
+};
 use std::fs;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+struct FixedGeneration(&'static str);
+
+impl Contributor for FixedGeneration {
+    fn generate(&self, _: GenerationContext, output: &mut Output) -> Result<(), GenerationError> {
+        output.set([0, 0, 0], self.0)
+    }
+}
+
+struct IgnoredOutOfBounds;
+
+impl Contributor for IgnoredOutOfBounds {
+    fn generate(&self, _: GenerationContext, output: &mut Output) -> Result<(), GenerationError> {
+        let _ = output.set([16, 0, 0], "bloxgloom:stone");
+        Ok(())
+    }
+}
+
+#[test]
+fn composed_generation_is_ordered_and_does_not_change_builtin_baseline() {
+    let catalog = crate::content::Catalog::builtins();
+    let key = ChunkKey { x: -2, y: 8, z: 3 };
+    let entries = [
+        GenerationRegistration {
+            key: "sample:z".into(),
+            contributor: Arc::new(FixedGeneration("bloxgloom:stone")),
+        },
+        GenerationRegistration {
+            key: "sample:a".into(),
+            contributor: Arc::new(FixedGeneration("bloxgloom:dirt")),
+        },
+    ];
+    let forward = generate_chunk_with_contributors(key, 9, &catalog, &entries).unwrap();
+    let backward = generate_chunk_with_contributors(
+        key,
+        9,
+        &catalog,
+        &entries.into_iter().rev().collect::<Vec<_>>(),
+    )
+    .unwrap();
+    assert_eq!(forward, backward);
+    assert_eq!(forward.block([0, 0, 0]), Some(STONE));
+    assert_eq!(
+        generate_chunk(key, 9),
+        generate_chunk_with_contributors(key, 9, &catalog, &[]).unwrap()
+    );
+    assert_eq!(generate_chunk(key, 9).block([0, 0, 0]), Some(AIR));
+}
+
+#[test]
+fn composed_generation_rejects_unknown_states_and_duplicate_keys() {
+    let catalog = crate::content::Catalog::builtins();
+    let key = ChunkKey { x: 0, y: 8, z: 0 };
+    let unknown = GenerationRegistration {
+        key: "sample:unknown".into(),
+        contributor: Arc::new(FixedGeneration("sample:missing")),
+    };
+    assert_eq!(
+        generate_chunk_with_contributors(key, 4, &catalog, std::slice::from_ref(&unknown)),
+        Err(GenerationError::InvalidState("sample:missing".into()))
+    );
+    assert!(matches!(
+        generate_chunk_with_contributors(key, 4, &catalog, &[unknown.clone(), unknown]),
+        Err(GenerationError::Contributor(_))
+    ));
+    assert_eq!(
+        generate_chunk_with_contributors(
+            key,
+            4,
+            &catalog,
+            &[GenerationRegistration {
+                key: "sample:invalid_write".into(),
+                contributor: Arc::new(IgnoredOutOfBounds),
+            }],
+        ),
+        Err(GenerationError::OutOfBounds([16, 0, 0]))
+    );
+}
 
 fn test_dir() -> PathBuf {
     let stamp = SystemTime::now()

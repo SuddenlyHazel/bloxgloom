@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn generation_registration_is_bounded_and_rejects_duplicate_keys() {
+    struct Empty;
+    impl bloxgloom_host_api::generation::Contributor for Empty {
+        fn generate(
+            &self,
+            _: bloxgloom_host_api::generation::Context,
+            _: &mut bloxgloom_host_api::generation::Output,
+        ) -> Result<(), bloxgloom_host_api::generation::GenerationError> {
+            Ok(())
+        }
+    }
+    let mut registration = Registration::default();
+    let entry = bloxgloom_host_api::generation::Registration {
+        key: "sample:trees".into(),
+        contributor: Arc::new(Empty),
+    };
+    registration.generation_contributor(entry.clone()).unwrap();
+    assert!(registration.generation_contributor(entry).is_err());
+    assert_eq!(registration.generation.len(), 1);
+    assert!(
+        registration
+            .generation_contributor(bloxgloom_host_api::generation::Registration {
+                key: "invalid".into(),
+                contributor: Arc::new(Empty)
+            })
+            .is_err()
+    );
+}
+
+#[test]
 fn inventory_screen_metadata_survives_manifest_remapping_and_is_handshake_identity() {
     let mut catalog = Catalog::builtins();
     Registration::install(&bloxgloom_lifecycle_fixture::TallStore, &mut catalog).unwrap();

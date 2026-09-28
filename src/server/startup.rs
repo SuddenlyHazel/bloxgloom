@@ -49,6 +49,11 @@ pub(crate) struct ServerStartup {
     systems: Vec<(SystemDescriptor, Arc<dyn SystemHandler>)>,
     owner_codecs: BTreeMap<SystemId, StartupOwnerCodec>,
     owners: Vec<(SystemId, OwnerKey, OwnerData)>,
+    #[allow(
+        dead_code,
+        reason = "Generation activation waits for persistent baseline support"
+    )]
+    generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 
 /// Value codec for one registered owner system. Values live decoded in the
@@ -79,6 +84,19 @@ impl ServerStartup {
         super::lifecycle::Registry::resolve(&catalog, &storage).map_err(io::Error::other)?;
         self.catalog = Arc::new(catalog);
         self.storage = storage;
+        self.generation.extend(registration.generation);
+        self.generation.sort_by(|a, b| a.key.cmp(&b.key));
+        if self.generation.len() > 256
+            || self
+                .generation
+                .windows(2)
+                .any(|pair| pair[0].key == pair[1].key)
+        {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "duplicate generation contributor or capacity exceeded",
+            ));
+        }
         self.install_public_systems();
         Ok(self)
     }
@@ -143,6 +161,7 @@ impl ServerStartup {
             systems: Vec::new(),
             owner_codecs: BTreeMap::new(),
             owners: Vec::new(),
+            generation: Vec::new(),
         };
         startup.install_public_systems();
         startup

@@ -9,10 +9,16 @@ use std::sync::{Arc, Weak};
 use crate::storage::{SavedEdits, Storage};
 
 mod cache;
+mod generation;
 mod owner_apply;
 mod palette;
 mod terrain;
 use cache::ChunkCache;
+#[allow(
+    unused_imports,
+    reason = "Opt-in composition awaits persisted generator identities"
+)]
+pub use generation::generate_chunk_with_contributors;
 pub(crate) use owner_apply::OwnerApplyReceipt;
 pub use palette::{PaletteView, PalettedBlocks};
 pub use terrain::generate_chunk;

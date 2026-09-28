@@ -426,7 +426,8 @@ user approval gate.
 This section exists so compaction or a new session does not restart the design.
 
 - **Authorization:** approved by the user; all non-deferred phases authorized,
-  including Luau/mlua selection and fire migration. No subagents.
+  including Luau/mlua selection and fire migration. The user now explicitly
+  requests one coder subagent at a time, with personal review and commits.
 - **Active phase:** 2 — registered removal, placement, semantic use, entity
   due callbacks, neighbor/support decisions and automatic pickup use shared
   gameplay planning. Advisory committed observers and read-only bounded
@@ -657,6 +658,12 @@ This section exists so compaction or a new session does not restart the design.
   fire propagation/delivery decisions off the native-only policy. Migrate
   remaining drops, player rules, commands and helper paths before marking
   Phase 2 done.
+- **Phase 3 generation groundwork:** added an opt-in public deterministic
+  generation context, bounded chunk-local writer, validated contributor
+  registration and key-ordered composition over built-in terrain. Contributor
+  failures discard the candidate. Live worlds do not activate contributors
+  until authoritative chunk loading, edit baselines and persisted generator
+  identity share this composition; Phase 3 remains in progress.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

@@ -8,6 +8,7 @@ pub mod composition;
 pub mod content;
 pub mod entity;
 pub mod gameplay;
+pub mod generation;
 pub mod icon;
 pub mod inventory;
 pub mod lifecycle;
@@ -36,6 +37,14 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn generation_contributor(
+        &mut self,
+        _contributor: generation::Registration,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "generation contributors unsupported by this registrar".into(),
+        ))
+    }
     fn gameplay_observer(
         &mut self,
         _observer: gameplay::ObserverRegistration,

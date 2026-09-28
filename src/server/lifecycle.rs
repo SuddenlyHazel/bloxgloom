@@ -22,8 +22,25 @@ pub(crate) struct Registration {
     machines: Vec<bloxgloom_host_api::machine::Machine>,
     actions: Vec<bloxgloom_host_api::actions::Action>,
     systems: Vec<bloxgloom_host_api::system::System>,
+    pub(crate) generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 impl Registrar for Registration {
+    fn generation_contributor(
+        &mut self,
+        contributor: bloxgloom_host_api::generation::Registration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        contributor.validate()?;
+        if self.generation.len() >= 256
+            || self.generation.iter().any(|old| old.key == contributor.key)
+        {
+            return Err(RegistrationError(
+                "duplicate generation contributor or capacity exceeded".into(),
+            ));
+        }
+        self.generation.push(contributor);
+        Ok(())
+    }
     fn gameplay_observer(
         &mut self,
         observer: bloxgloom_host_api::gameplay::ObserverRegistration,
@@ -206,6 +223,7 @@ impl Registration {
             + self.systems.len()
             + self.actions.len()
             + self.icons.len()
+            + self.generation.len()
             >= 4096
         {
             return Err(RegistrationError(
@@ -222,6 +240,7 @@ impl Registration {
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
         registration.systems.sort_by(|a, b| a.key.cmp(&b.key));
+        registration.generation.sort_by(|a, b| a.key.cmp(&b.key));
         registration
             .anchored
             .sort_by(|a, b| a.entity.cmp(&b.entity));
