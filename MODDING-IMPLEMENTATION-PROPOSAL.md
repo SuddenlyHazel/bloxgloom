@@ -694,6 +694,14 @@ This section exists so compaction or a new session does not restart the design.
   Source, interrupt, wall-time and memory limits and module-attributed errors
   are covered by focused tests. It has no game dispatch, imports, save-state
   binding or package discovery yet; it is not a complete scripting adapter.
+- **Phase 4 local package groundwork:** bounded Unix descriptor-relative
+  discovery freezes package manifests and Luau source into immutable snapshots.
+  Imports are restricted to the module's own package and direct declared
+  dependencies, with cycle/depth checks and per-invocation export/failure
+  caching. The existing worker runs these modules within one VM budget and
+  fresh retry scope. Fourteen focused script tests, strict Clippy and format
+  passed; an unrelated full-suite neighbor timing failure needs rechecking.
+  No game registration/transaction binding or network delivery is claimed.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

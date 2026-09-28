@@ -1,12 +1,16 @@
 //! Local Luau source execution foundation. Each worker owns its VM exclusively;
-//! no Lua state, file handle, or host callback is exposed to scripts. This is
-//! intentionally not connected to gameplay or module discovery yet.
+//! no live world state or file handle is exposed to scripts. This is
+//! intentionally not connected to gameplay yet.
+
+mod imports;
+pub mod package;
 
 use mlua::{Function, Lua, LuaOptions, StdLib, VmState};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::io;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc::{self, SyncSender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -47,17 +51,18 @@ impl Default for Limits {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScriptFailure {
     SourceTooLarge,
     InstructionLimit,
     TimeLimit,
     Lua(String),
+    Package(String),
     WorkerStopped,
 }
 
 /// Every failure names the local module responsible, including setup errors.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScriptError {
     pub module: String,
     pub failure: ScriptFailure,
@@ -72,9 +77,26 @@ impl fmt::Display for ScriptError {
 impl std::error::Error for ScriptError {}
 
 struct Request {
-    module: SourceModule,
+    program: Program,
     input: ScriptInput,
     reply: SyncSender<Result<i64, ScriptError>>,
+}
+
+enum Program {
+    Source(SourceModule),
+    Package {
+        snapshot: Arc<package::PackageSnapshot>,
+        entry: String,
+    },
+}
+
+impl Program {
+    fn identity(&self) -> String {
+        match self {
+            Self::Source(module) => module.id.clone(),
+            Self::Package { snapshot, entry } => snapshot.identity(entry),
+        }
+    }
 }
 
 /// Dedicated worker; calls block awaiting their reply and must be submitted
@@ -103,7 +125,7 @@ impl ScriptWorker {
             .name("luau-script".into())
             .spawn(move || {
                 while let Ok(request) = receiver.recv() {
-                    let result = run(request.module, request.input, limits);
+                    let result = run(request.program, request.input, limits);
                     let _ = request.reply.send(result);
                 }
             })?;
@@ -114,7 +136,23 @@ impl ScriptWorker {
     }
 
     pub fn execute(&self, module: SourceModule, input: ScriptInput) -> Result<i64, ScriptError> {
-        let id = module.id.clone();
+        self.submit(Program::Source(module), input)
+    }
+
+    /// Execute an entry from an immutable snapshot. The same Arc may be reused
+    /// for retries; globals and module exports are never reused between calls.
+    pub fn execute_package(
+        &self,
+        snapshot: Arc<package::PackageSnapshot>,
+        package: &str,
+        input: ScriptInput,
+    ) -> Result<i64, ScriptError> {
+        let entry = snapshot.entry(package)?;
+        self.submit(Program::Package { snapshot, entry }, input)
+    }
+
+    fn submit(&self, program: Program, input: ScriptInput) -> Result<i64, ScriptError> {
+        let id = program.identity();
         let (reply, receiver) = mpsc::sync_channel(1);
         self.requests
             .as_ref()
@@ -123,7 +161,7 @@ impl ScriptWorker {
                 failure: ScriptFailure::WorkerStopped,
             })?
             .send(Request {
-                module,
+                program,
                 input,
                 reply,
             })
@@ -147,13 +185,14 @@ impl Drop for ScriptWorker {
     }
 }
 
-fn run(module: SourceModule, input: ScriptInput, limits: Limits) -> Result<i64, ScriptError> {
-    let id = module.id;
+fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<i64, ScriptError> {
+    let id = program.identity();
     let fail = |failure| ScriptError {
         module: id.clone(),
         failure,
     };
-    if module.source.len() > limits.max_source_bytes {
+    if matches!(&program, Program::Source(module) if module.source.len() > limits.max_source_bytes)
+    {
         return Err(fail(ScriptFailure::SourceTooLarge));
     }
 
@@ -164,7 +203,7 @@ fn run(module: SourceModule, input: ScriptInput, limits: Limits) -> Result<i64, 
         .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
     // Luau's base library includes `require`, `print` (native stdout), and
     // `gcinfo` (VM-state-dependent), even without optional libraries.
-    for name in ["require", "print", "gcinfo"] {
+    for name in ["require", "print", "gcinfo", "getfenv", "setfenv"] {
         lua.globals()
             .set(name, mlua::Value::Nil)
             .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
@@ -175,8 +214,17 @@ fn run(module: SourceModule, input: ScriptInput, limits: Limits) -> Result<i64, 
         .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
 
     let deadline = Instant::now() + limits.max_wall_time;
+    let imports = match &program {
+        Program::Package { snapshot, .. } => Some(imports::Imports::new(
+            Arc::clone(snapshot),
+            limits.max_source_bytes,
+        )),
+        Program::Source(_) => None,
+    };
+    let active_imports = imports.clone();
+    let entry_id = id.clone();
     let remaining = Rc::new(Cell::new(limits.max_interrupts));
-    let exceeded = Rc::new(Cell::new(None::<LimitExceeded>));
+    let exceeded = Rc::new(RefCell::new(None::<(LimitExceeded, String)>));
     let status = Rc::clone(&exceeded);
     lua.set_interrupt(move |_| {
         let reason = if Instant::now() >= deadline {
@@ -188,7 +236,16 @@ fn run(module: SourceModule, input: ScriptInput, limits: Limits) -> Result<i64, 
             None
         };
         if let Some(reason) = reason {
-            status.set(Some(reason));
+            let mut status = status.borrow_mut();
+            if status.is_none() {
+                *status = Some((
+                    reason,
+                    active_imports
+                        .as_ref()
+                        .and_then(|imports| imports.active())
+                        .unwrap_or_else(|| entry_id.clone()),
+                ));
+            }
             return Err(mlua::Error::RuntimeError(
                 "script execution limit exceeded".into(),
             ));
@@ -197,22 +254,43 @@ fn run(module: SourceModule, input: ScriptInput, limits: Limits) -> Result<i64, 
     });
 
     let result = (|| -> mlua::Result<i64> {
-        let entry: Function = lua.load(&module.source).set_name(&id).eval()?;
+        let entry: Function = match &program {
+            Program::Source(module) => lua
+                .load(&module.source)
+                .set_name(&id)
+                .set_mode(mlua::chunk::ChunkMode::Text)
+                .eval()?,
+            Program::Package { entry, .. } => {
+                let value = imports
+                    .as_ref()
+                    .expect("package imports")
+                    .load(&lua, entry)?;
+                lua.unpack(value)?
+            }
+        };
         let args = lua.create_table()?;
         args.set("tick", input.tick)?;
         args.set("seed", input.seed)?;
         entry.call(args)
     })();
-    if let Some(reason) = exceeded.take() {
-        return Err(fail(match reason {
-            LimitExceeded::Time => ScriptFailure::TimeLimit,
-            LimitExceeded::Instructions => ScriptFailure::InstructionLimit,
-        }));
+    if let Some((reason, module)) = exceeded.take() {
+        return Err(ScriptError {
+            module,
+            failure: match reason {
+                LimitExceeded::Time => ScriptFailure::TimeLimit,
+                LimitExceeded::Instructions => ScriptFailure::InstructionLimit,
+            },
+        });
     }
     if Instant::now() >= deadline {
         return Err(fail(ScriptFailure::TimeLimit));
     }
-    result.map_err(|error| fail(ScriptFailure::Lua(error.to_string())))
+    result.map_err(|error| {
+        error
+            .downcast_ref::<ScriptError>()
+            .cloned()
+            .unwrap_or_else(|| fail(ScriptFailure::Lua(error.to_string())))
+    })
 }
 
 #[derive(Clone, Copy)]

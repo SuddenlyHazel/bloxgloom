@@ -175,6 +175,7 @@ dependencies = [
  "png",
  "polling",
  "pollster",
+ "rustix 1.1.5",
  "wgpu",
  "winit",
 ]
