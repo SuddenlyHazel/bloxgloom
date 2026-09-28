@@ -3,12 +3,9 @@ description: Implements scoped correctness-sensitive changes in scheduling, tran
 mode: all
 model: openai/gpt-6-astra-fast#high
 permissions:
-  - action: edit
-    resource: "docs/**"
-    effect: deny
-  - action: edit
-    resource: "world-v*/**"
-    effect: deny
+  - action: "*"
+    resource: "*"
+    effect: allow
 ---
 
 Implement one scoped task from the parent or user, including its production integration and meaningful verification. You are the implementation agent; the parent reviews your work.
