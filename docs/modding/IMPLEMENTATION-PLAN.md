@@ -34,7 +34,8 @@ Approval authorizes the following decisions and all implementation phases below:
 - Implement mod-authored shaders, textures, materials, and visual effects.
 - Complete the documentation, examples, local development workflow, and relevant
   correctness/responsiveness checks as part of the implementation.
-- Implement and review the work personally. **No subagents.**
+- Review integrated work personally; scoped parallel agents are now explicitly
+  authorized by the user, with reviewed incremental commits.
 
 Custom imported models and their authoring pipeline remain deferred. Approval
 does not authorize choosing that workflow or building a model importer now.
@@ -55,6 +56,16 @@ A player can join a modded server and receive everything required to play:
 
 Our own game development uses that same gameplay surface. New ordinary gameplay
 features should not require another engine-only dispatch branch.
+
+**Mod authors are peers, not children.** This is an open-source game; the host
+contract is not meant to hide engine ideas or limit authors to toy callbacks.
+Expose the full supported gameplay capabilities, including combined world,
+entity, inventory and scheduled operations. If an ordinary mod needs a missing
+engine operation, add a composable public primitive rather than reserving it
+for built-ins. Scoped handles, authority checks, budgets and WAL transactions
+protect multiplayer ownership, conservation and recovery; they are not a
+pretext for an intentionally weaker mod API. The Rust source and native
+extension path remain available to developers who want to change the engine.
 
 “Complete” means covering the game's existing capabilities and the explicitly
 requested additions in this proposal. It does not mean predicting every future
@@ -275,7 +286,10 @@ client bundle.
 
 1. Negotiate engine/protocol/runtime compatibility and the required package set.
 2. Reuse exact cached packages and transfer missing bytes from the server.
-   Provide bounded transfers, cancellation/retry and visible preparation progress.
+   Keep transfers bounded, cancel cleanly on disconnect and allow a clear
+   reconnect/retry with visible preparing/error status. An in-process exact-byte
+   cache is sufficient for now; disk caching and an elaborate progress UI are
+   not acceptance requirements unless reliability testing demonstrates a need.
 3. Resolve dependencies and package resources, execute startup registration,
    prepare required assets and build the session's frozen catalog/client runtime.
 4. Validate catalog compatibility/readiness, then enter authoritative play.
@@ -416,15 +430,18 @@ ship reduced versions of phases 2–8:
    content/material/block/creature/machine/screen surface from Luau; an
    independently useful ordinary mod still encounters those missing bindings.
 4. **Luau owner/client services are partial.** Scripted owner systems are
-   chunk-scoped and lack neighborhood reads and atomic generated entity/drop
-   effects. Client scripts currently run only a local UI event handler with
-   explicit string state, not general presentation/replica/service callbacks.
+   chunk-scoped and lack neighborhood reads and cross-owner payloads. Owner
+   edits can now atomically carry gameplay-generated entities/drops, but the
+   Luau system plan does not directly express arbitrary entity/drop operations.
+   Client scripts have local UI handlers and a narrow authorized action request,
+   not general presentation/replica/service callbacks.
 5. **Packages are not a complete mod distribution runtime.** Verified bytes
    and current Luau catalog metadata can join, but downloaded client code is
-   not executed as a general startup runtime. Cache retains one in-process
-   bundle, not a persistent package cache; transfer has no user-visible
-   preparation progress or cancellation/retry workflow. SHA-256 verifies bytes
-   against the session offer, not the server's identity.
+   not executed as a general startup runtime. Transfer still needs a clear
+   preparation/error signal and reliable disconnect/reconnect behavior; the
+   existing in-process exact-byte cache is adequate for this milestone unless
+   testing shows otherwise. SHA-256 verifies bytes against the session offer,
+   not the server's identity.
 6. **Authored UI is an initial widget subset.** No scrolling, wrapping,
    Unicode shaping/IME, clipboard, accessibility or dynamic document building.
    The other built-in interfaces have not yet migrated onto it. The current
