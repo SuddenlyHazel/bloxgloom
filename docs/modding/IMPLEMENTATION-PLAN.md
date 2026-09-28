@@ -454,7 +454,8 @@ accepted. No phase-level work remains.
 
 **Working:** bounded local packages register sprite items and simple placeable
 opaque cubes (including own verified PNG textures), semantic actions/decisions,
-entity schemas, generators and chunk systems. Lua callbacks execute server-side
+entity schemas, generators and chunk systems with durable same-system payload
+intents and optional destination bootstrap. Lua callbacks execute server-side
 with source-attributed failures; local UI handlers and a downloaded, verified
 client startup module can initialize connection-local authored UI text/state.
 
@@ -466,8 +467,9 @@ client startup module can initialize connection-local authored UI text/state.
   they do not complete general content authoring.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
-- [ ] Bind owner neighborhood reads, durable payload intents and generated
-  entity/drop operations with the same authority/retry contract as Rust mods.
+- [ ] Bind owner neighborhood reads and directly authored generated entity/drop
+  operations with the same authority/retry contract as Rust mods. Luau intents
+  now work for chunk owners, but reads remain owner-chunk-only.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs.
 
@@ -1052,6 +1054,16 @@ This section exists so compaction or a new session does not restart the design.
   failure, import-visibility and caught-limit tests, formatting and strict
   Clippy passed; the integrated suite now passes **864/864**. General client
   services and asynchronous window-visible preparation remain open.
+- **Phase 4 Luau owner-intent slice:** opt-in scripted chunk systems with world
+  reads accept immutable bounded inboxes and send binary payloads to same-system
+  chunk destinations. A validated constant bootstrap state can create absent
+  owners. Invalid or over-budget sends poison the whole callback even when
+  caught, and exact source revision/ordinal/tick halves survive Luau numeric
+  conversion. Real nonblocking-listener cross-chunk recovery, WAL receipt loss,
+  retry, forwarding, output poisoning and identity tests passed; six focused
+  integration tests, formatting and strict Clippy passed, with 866/866 on the
+  isolated agent suite. Neighborhood reads and directly authored owner entity/
+  drop effects remain unbound, and native fire has not migrated.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
