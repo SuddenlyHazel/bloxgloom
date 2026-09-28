@@ -227,6 +227,7 @@ pub(in crate::server) fn plan_durable_request(
         DurableRequest::Expire => {
             let Some(entities) = crate::server::drops::plan_expired(
                 &state.entities,
+                state.world.catalog(),
                 crate::server::drops::unix_ms(),
                 256,
             )?

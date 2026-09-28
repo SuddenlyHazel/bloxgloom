@@ -401,7 +401,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | Phase | Work to land | Status |
 | --- | --- | --- |
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
-| 2 | Events, persistent scheduling and remaining non-fire world/drop/player/command behavior; consolidate existing helpers | In progress |
+| 2 | Events, persistent scheduling and remaining non-fire world/drop/player/command behavior; consolidate existing helpers | Done (native fire deferred) |
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
@@ -421,7 +421,7 @@ behavior. The full contracts are in §§4–11 and the history is in §14.
 Public read/transaction context, general world/entity/item operations and
 harvesting migration are accepted. No phase-level work remains.
 
-#### Phase 2 — built-in gameplay parity · In progress
+#### Phase 2 — built-in gameplay parity · Done (native fire deferred)
 
 **Verified increments (not phase acceptance):**
 
@@ -511,11 +511,13 @@ movement credit, spawn, reach and all player-overlap checks read the same frozen
 catalog value. A real nonblocking listener tests custom body/rates, join and
 restart; changed or removed selections fail closed.
 
-**Appearance audit:** the server publishes a four-byte cosmetic-only player
-entity payload, but new sessions still create `[0, 0, 0, 0]` and the client
-avatar shader uses fixed skin/shirt/pants palettes. Mod-selectable appearance
-needs a negotiated palette/model identity and a profile-owned selection path;
-the existing cosmetic bytes alone are not an authoring contract.
+**Appearance integration:** one bounded startup declaration appends skin, shirt
+and pants colors without replacing builtin indices. The model identity is frozen
+to the existing humanoid geometry. Appearance contributes to `content.map` and
+the exact V13/V22 client bundle. A local `appearance` command selects negotiated
+indices for the authenticated profile; the server validates, atomically saves
+and replicates the cosmetic payload. Real nonblocking-listener two-client/restart,
+invalid-selection and headless GPU palette regressions pass.
 
 **Command contract audit:** registered gameplay actions already use the WAL and
 authenticated handler path. A negotiated empty-target command facet now freezes
@@ -533,14 +535,18 @@ regressions pass; the integrated root suite **916/916**, host API **30/30**,
 formatting and strict Clippy pass. Follow-up UI work displays negotiated
 signatures and permissions on the non-admin command screen; the generated
 640×360 and 1280×720 images were inspected after fixing overlapping rows.
-A full input-rebinding interface is still open beyond config-file editing.
+The command screen now pages through advertised signatures and has a **BIND
+KEYS** page for builtins and negotiated zero-argument commands; absent-session
+shortcuts stay inert. Binding capture and 640×360/1280×720 rendered previews
+are verified. The `appearance` command is local cosmetic selection, not a
+registered gameplay transaction.
 
 **Verified spawn-search slice:** startup highest-surface and cached
 join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.
 The host still owns authoritative terrain reads, cache misses, collision and
 session admission. A known safe lower surface can still be used when an upper
-chunk is missing; missing terrain is never guessed as empty. This is not a
-mod-selectable spawn rule.
+ chunk is missing; missing terrain is never guessed as empty. This initial
+ fixed-policy increment preceded the later negotiated player rules above.
 
 **Integrated verification for these follow-up slices:** the real-listener
 item/catalog negotiation and authored block ABA/panel/restart tests, storage
@@ -560,25 +566,35 @@ suite, formatting and strict Clippy pass.
 resolve semantic client actions through persistent local config keys
 (`bind_inventory`, `bind_kiln_input`, `bind_kiln_fuel`, `bind_drop`). Only distinct
 non-movement letters are allowed; invalid combinations fall back to defaults.
-The 894/894 suite, formatting and strict Clippy pass. This does not yet expose
-mod-defined command discovery or a rebinding UI.
+ The 894/894 suite, formatting and strict Clippy passed that increment. The
+ later command discovery and in-game rebinding integration is recorded above.
 
-**Remaining**
+**Phase 2 acceptance:** non-fire owner edits, registered actions and entity ticks
+now expand complete anchored footprints in one decision overlay and WAL receipt,
+including final-inventory refunds, support/neighbor decisions, actor reach,
+conflict retry and restart. Drops have startup-frozen per-item motion, collision,
+pickup/merge ranges and lifetime, with a bounded expiry-deadline index rebuilt
+on recovery. Stock defaults and the 128-item cap are unchanged. V20/V21 carry
+drop policies; V22 combines them with appearance and optional player rules.
+Real-listener negotiated drop-policy/lifetime/restart and appearance/profile tests,
+the complete **954/954** root suite, **33/33** host API tests, formatting and
+strict all-target/all-feature Clippy pass. The authored avatar GPU output,
+custom-item pop/hover/pickup previews and both binding UI sizes were inspected.
+The release `perf 300 6` normal/bounced
+scene has 324 nonempty/resident chunks, 17.29/17.50 MB meshes, 88,026/89,218
+visible triangles, CPU steady p50 0.315/0.315 ms and GPU steady p50
+0.233/0.270 ms; this benchmark does not simulate live drop presentation.
 
-- [ ] Finish the non-fire removal/support audit and complete drop lifecycle
-  parity. Motion, merge-target,
-  pickup-gate and expiry policies are public; host-owned allocation, inventory
-  transfer, entity waking and WAL remain authoritative. Verify remaining
-  production routes and item conservation before acceptance.
-- [ ] Expose mod-selectable player appearance and finish semantic command/input
-  discovery and rebinding. Spawn/movement/body/eye rules and player-state reads
-  are negotiated; `give`/`spawn` and
-  inventory/drop bindings use registered actions; `help` is client-local.
-- [ ] Finish the production shared-service audit for storage, machine, creature
-  and anchored helpers. Their public startup declarations/behaviors and external
-  listener fixtures cover representative placement, processing, interaction,
-  refunds and restart, but that evidence alone does not establish complete
-  helper parity.
+**Production-route audit:** startup dispatch is catalog-driven for registered
+storage, machine, anchored and mobile types; legacy direct kiln/hopper planners
+are test-only. Existing external real-listener fixtures cover storage screens,
+component transfers, machine processing, creature movement and restart. The
+shared transaction layer now covers non-fire lifecycle invalidation from
+player edits, owner proposals and generic gameplay action/tick edits; inventory
+transfer and automation continue to use exact-component host-owned WAL plans.
+Allocation, checkpoint indexing and network publication are deliberately host
+services rather than public decisions. This acceptance does not promise arbitrary
+machine codecs, bespoke avatar geometry or Phase 7 shader/effect overrides.
 
 Native fire migration is **deferred outside Phase 2**. Neither its private
 production scheduler nor the unverified optional visual cue counts toward this

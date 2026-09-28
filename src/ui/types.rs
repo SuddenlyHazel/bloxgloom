@@ -41,6 +41,8 @@ pub enum UiControl {
     AdminPrev,
     AdminNext,
     AdminRun,
+    AdminBindings,
+    AdminBindingRow(u8),
     OpenAdmin,
     Resume,
     OpenSettings,
@@ -50,6 +52,12 @@ pub enum UiControl {
     Decrease(SettingId),
     Increase(SettingId),
     ToggleFullscreen,
+}
+
+/// The command screen's display-only binding page uses the existing admin text
+/// channel so preview frames need no additional fields or config access.
+impl UiFrame<'_> {
+    pub(crate) const BINDING_VIEW_PREFIX: &'static str = "\u{1}";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -395,6 +395,7 @@ fn sleeping_expiry_removes_recheck_membership_and_stale_admitted_hint() {
     let mut action = empty_action();
     action.entities = crate::server::drops::plan_expired(
         &state.entities,
+        state.world.catalog(),
         crate::server::drops::unix_ms() + crate::server::drops::LIFETIME.as_millis() as u64,
         256,
     )

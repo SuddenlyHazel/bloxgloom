@@ -44,6 +44,11 @@ ordinary placement selects the unlit state.
   `pickup_turn`). Omitted fields keep the stock animation. These are negotiated
   client presentation only: age and pickup events, item counts, and ownership
   stay server-authoritative. `DropAnimation` is also available to Rust items.
+  `drop_policy` independently sets bounded authoritative `gravity`,
+  `terminal_speed`, collision `radius`, `pickup_range`, `merge_range`, and
+  `lifetime_ms` (1 second–24 hours). Omitted fields retain stock behavior.
+  The policy is part of item save/catalog identity and the verified client
+  metadata, but the server alone decides motion, merges, pickup and expiry.
 * Components: `Unstructured` preserves builtin behavior (nonzero version,
   1–1024 opaque bytes), `None` forbids components, and `Opaque` declares a version,
   schema fingerprint, byte maximum and whether a payload is required. The host

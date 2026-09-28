@@ -38,6 +38,73 @@ impl UiBuilder<'_> {
             TEXT,
             30,
         );
+        let binding_mode = frame.admin_input.starts_with(UiFrame::BINDING_VIEW_PREFIX);
+        if let Some(rect) = layout.rect(UiControl::AdminBindings) {
+            self.button(
+                rect,
+                if binding_mode {
+                    "COMMANDS"
+                } else {
+                    "BIND KEYS"
+                },
+                frame.hovered == Some(UiControl::AdminBindings),
+                false,
+            );
+        }
+        if binding_mode {
+            self.text(
+                "CLICK A ROW, THEN PRESS A FREE LETTER  /  ESC CANCELS",
+                panel.x + 24.0 * self.scale,
+                panel.y + 51.0 * self.scale,
+                0.56,
+                MUTED,
+                70,
+            );
+            for (index, line) in frame.admin_input.split('\n').skip(1).take(8).enumerate() {
+                let control = UiControl::AdminBindingRow(index as u8);
+                if let Some(rect) = layout.rect(control) {
+                    self.rounded_panel(
+                        rect,
+                        [0.055, 0.075, 0.073, 0.95],
+                        if frame.hovered == Some(control) {
+                            GOLD
+                        } else {
+                            EDGE
+                        },
+                        1.0 * self.scale,
+                    );
+                    self.text(
+                        line,
+                        rect.x + 9.0 * self.scale,
+                        rect.y + (rect.height - 8.0 * self.scale) * 0.5,
+                        0.52,
+                        if line.contains("(NOT IN SESSION)") {
+                            MUTED
+                        } else {
+                            TEXT
+                        },
+                        100,
+                    );
+                }
+            }
+            for (control, label) in [
+                (UiControl::AdminPrev, "PREV"),
+                (UiControl::AdminNext, "NEXT"),
+            ] {
+                if let Some(rect) = layout.rect(control) {
+                    self.button(rect, label, frame.hovered == Some(control), false);
+                }
+            }
+            self.text(
+                &format!("PAGE {}", frame.admin_page + 1),
+                panel.x + 208.0 * self.scale,
+                panel.y + panel.height - 36.0 * self.scale,
+                0.6,
+                MUTED,
+                25,
+            );
+            return;
+        }
         self.text(
             if frame.admin_enabled {
                 "CLICK AN ITEM TO GRANT 128  /  F4 OR ESC TO CLOSE"
@@ -91,6 +158,7 @@ impl UiBuilder<'_> {
             for (index, action) in catalog
                 .registered_actions()
                 .filter(|action| action.command.is_some())
+                .skip(frame.admin_page * 8)
                 .take(8)
                 .enumerate()
             {
@@ -142,9 +210,6 @@ impl UiBuilder<'_> {
             (UiControl::AdminNext, "NEXT"),
             (UiControl::AdminRun, "RUN"),
         ] {
-            if !frame.admin_enabled && control != UiControl::AdminRun {
-                continue;
-            }
             if let Some(rect) = layout.rect(control) {
                 self.button(rect, label, frame.hovered == Some(control), false);
             }
@@ -152,17 +217,24 @@ impl UiBuilder<'_> {
         let page = format!(
             "PAGE {} / {}",
             frame.admin_page + 1,
-            catalog.items().count().div_ceil(24).max(1)
+            if frame.admin_enabled {
+                catalog.items().count().div_ceil(24).max(1)
+            } else {
+                catalog
+                    .registered_actions()
+                    .filter(|action| action.command.is_some())
+                    .count()
+                    .div_ceil(8)
+                    .max(1)
+            }
         );
-        if frame.admin_enabled {
-            self.text(
-                &page,
-                panel.x + 208.0 * self.scale,
-                panel.y + panel.height - 36.0 * self.scale,
-                0.6,
-                MUTED,
-                25,
-            );
-        }
+        self.text(
+            &page,
+            panel.x + 208.0 * self.scale,
+            panel.y + panel.height - 36.0 * self.scale,
+            0.6,
+            MUTED,
+            25,
+        );
     }
 }

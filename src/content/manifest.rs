@@ -219,6 +219,7 @@ impl ContentManifest {
         let mut resolved = Catalog::new();
         resolved.player_rules = local.player_rules();
         resolved.player_selection = local.player_selection.clone();
+        resolved.player_appearance = local.player_appearance.clone();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
             let observer = local
                 .gameplay_observers
@@ -283,6 +284,8 @@ impl ContentManifest {
         resolved.item_components = local.item_components.clone();
         resolved.drop_sizes = local.drop_sizes.clone();
         resolved.drop_animations = local.drop_animations.clone();
+        resolved.drop_policies = local.drop_policies.clone();
+        resolved.max_drop_pickup_range = local.max_drop_pickup_range;
         resolved.item_icons = local.item_icons.clone();
         resolved.composition = local.composition.clone();
         for entry in self

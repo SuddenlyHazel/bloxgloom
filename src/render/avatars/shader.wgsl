@@ -20,22 +20,7 @@ struct VertexOutput {
     @location(2) sky: f32,
 };
 
-const SKINS = array<vec3<f32>, 6>(
-    vec3<f32>(0.91, 0.68, 0.49), vec3<f32>(0.75, 0.50, 0.32),
-    vec3<f32>(0.59, 0.37, 0.24), vec3<f32>(0.40, 0.25, 0.18),
-    vec3<f32>(0.97, 0.79, 0.61), vec3<f32>(0.67, 0.43, 0.32),
-);
-const SHIRTS = array<vec3<f32>, 8>(
-    vec3<f32>(0.13, 0.39, 0.69), vec3<f32>(0.70, 0.23, 0.18),
-    vec3<f32>(0.19, 0.55, 0.38), vec3<f32>(0.67, 0.49, 0.17),
-    vec3<f32>(0.42, 0.30, 0.61), vec3<f32>(0.17, 0.57, 0.62),
-    vec3<f32>(0.63, 0.34, 0.45), vec3<f32>(0.38, 0.46, 0.55),
-);
-const PANTS = array<vec3<f32>, 6>(
-    vec3<f32>(0.14, 0.20, 0.35), vec3<f32>(0.22, 0.25, 0.29),
-    vec3<f32>(0.30, 0.25, 0.21), vec3<f32>(0.23, 0.32, 0.26),
-    vec3<f32>(0.34, 0.29, 0.43), vec3<f32>(0.25, 0.33, 0.43),
-);
+// REGISTERED_PALETTES
 
 @vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
@@ -55,10 +40,10 @@ const PANTS = array<vec3<f32>, 6>(
     let world = vec3<f32>(local.x * c + local.z * s, local.y, local.z * c - local.x * s) + input.origin;
     let normal = normalize(vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s));
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
-    var albedo = SKINS[input.cosmetics.x % 6u];
-    if input.part == 1u { albedo = SHIRTS[input.cosmetics.y % 8u]; }
-    if input.part == 2u { albedo = PANTS[input.cosmetics.z % 6u]; }
-    if input.part == 3u { albedo = mix(PANTS[input.cosmetics.z % 6u], vec3<f32>(0.10, 0.08, 0.07), 0.65); }
+    var albedo = SKINS[min(input.cosmetics.x, 31u)];
+    if input.part == 1u { albedo = SHIRTS[min(input.cosmetics.y, 31u)]; }
+    if input.part == 2u { albedo = PANTS[min(input.cosmetics.z, 31u)]; }
+    if input.part == 3u { albedo = mix(PANTS[min(input.cosmetics.z, 31u)], vec3<f32>(0.10, 0.08, 0.07), 0.65); }
     if input.part == 4u { albedo = vec3<f32>(0.025, 0.035, 0.045); }
     if input.part >= 5u { albedo = input.color; }
     let sky = f32(input.light_levels.x) / 15.0;

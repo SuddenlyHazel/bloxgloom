@@ -2,6 +2,8 @@
 
 use super::*;
 
+#[path = "tests/appearance.rs"]
+mod appearance;
 #[path = "tests/clients.rs"]
 mod clients;
 #[path = "tests/common.rs"]

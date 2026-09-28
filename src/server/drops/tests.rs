@@ -33,7 +33,11 @@ pub(super) struct DropWorld {
 }
 
 pub(super) fn drop_world() -> DropWorld {
-    let catalog = Arc::new(Catalog::builtins());
+    drop_world_in(Catalog::builtins())
+}
+
+pub(super) fn drop_world_in(catalog: Catalog) -> DropWorld {
+    let catalog = Arc::new(catalog);
     let mut builder = EntityTypeRegistryBuilder::new(&catalog);
     register_entity_type(&mut builder, Arc::clone(&catalog)).unwrap();
     crate::server::entities::register_player_entity_type(&mut builder).unwrap();
@@ -144,7 +148,8 @@ pub(super) fn take(world: &mut DropWorld, id: EntityId, count: u16) {
 }
 
 pub(super) fn apply_expired(world: &mut DropWorld, limit: usize, now_ms: u64) -> usize {
-    let Some(batch) = planning::plan_expired(&world.store, now_ms, limit).unwrap() else {
+    let Some(batch) = planning::plan_expired(&world.store, &world.catalog, now_ms, limit).unwrap()
+    else {
         return 0;
     };
     let count = batch.entity_ids().len();
@@ -157,7 +162,7 @@ pub(super) fn nearby(world: &DropWorld, position: [f32; 3]) -> Vec<DroppedItem> 
 }
 
 pub(super) fn pickup_candidates(world: &DropWorld, position: [f32; 3]) -> Vec<DroppedItem> {
-    queries::pickup_candidates(&world.store, position)
+    queries::pickup_candidates(&world.store, &world.catalog, position)
 }
 
 pub(super) fn stack(world: &DropWorld, id: EntityId) -> Option<Stack> {
@@ -194,3 +199,4 @@ pub(super) fn stable_items(items: &[DroppedItem]) -> Vec<(u64, ItemId, u16, [f32
 
 mod bounded;
 mod pins;
+mod policy;

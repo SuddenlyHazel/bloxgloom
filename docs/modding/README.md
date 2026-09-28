@@ -1,8 +1,9 @@
 # Modding: start here
 
 **Current status:** The [implementation plan](IMPLEMENTATION-PLAN.md) is the
-authoritative progress and acceptance record. Shared core (Phase 1) and
-generation (Phase 3) are marked done. Other committed increments are useful,
+authoritative progress and acceptance record. Shared core (Phase 1),
+non-fire gameplay parity (Phase 2) and generation (Phase 3) are marked done.
+Other committed increments are useful,
 but do **not** imply full modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
 before treating a capability as complete.
 

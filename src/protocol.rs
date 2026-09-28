@@ -34,6 +34,11 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    /// Select registered skin/shirt/pants indices for this authenticated profile.
+    /// Model zero is the frozen humanoid; clients cannot send RGB or a profile ID.
+    SelectAppearance {
+        palettes: [u8; 3],
+    },
     BundleRequest {
         identity: BundleIdentity,
     },
@@ -300,6 +305,10 @@ pub fn write_client_with_catalog(
         ClientMessage::BundleRequest { identity } => {
             out.push(14);
             bundle::write_identity(&mut out, identity)?;
+        }
+        ClientMessage::SelectAppearance { palettes } => {
+            out.push(16);
+            out.extend_from_slice(palettes);
         }
         ClientMessage::BundleReady { identity } => {
             out.push(15);
@@ -968,6 +977,9 @@ pub fn read_client_with_catalog(
         }
         14 => ClientMessage::BundleRequest {
             identity: bundle::read_identity(&mut c)?,
+        },
+        16 => ClientMessage::SelectAppearance {
+            palettes: [c.u8()?, c.u8()?, c.u8()?],
         },
         15 => ClientMessage::BundleReady {
             identity: bundle::read_identity(&mut c)?,

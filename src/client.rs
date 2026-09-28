@@ -256,6 +256,7 @@ pub(crate) use actions::compose_package_action;
 pub(crate) use actions::tests::PackageActionProbe;
 pub(crate) mod actors;
 mod admin;
+mod appearance;
 mod entities;
 mod join_worker;
 mod joining;
@@ -345,6 +346,9 @@ struct ClientApp {
     admin_enabled: bool,
     admin_input: String,
     admin_page: usize,
+    admin_binding_mode: bool,
+    admin_binding_page: usize,
+    admin_binding_selected: Option<usize>,
 }
 
 impl ClientApp {
@@ -415,6 +419,9 @@ impl ClientApp {
             admin_enabled: false,
             admin_input: String::new(),
             admin_page: 0,
+            admin_binding_mode: false,
+            admin_binding_page: 0,
+            admin_binding_selected: None,
         }
     }
 
@@ -433,6 +440,10 @@ impl ClientApp {
 
     fn set_screen(&mut self, screen: UiScreen) {
         self.screen = screen;
+        if screen != UiScreen::Admin {
+            self.admin_binding_mode = false;
+            self.admin_binding_selected = None;
+        }
         self.keys = Keys::default();
         self.focused_control = None;
         self.inventory_source = None;
@@ -595,10 +606,36 @@ impl ClientApp {
                 })
             }
             UiControl::OpenAdmin => self.set_screen(UiScreen::Admin),
+            UiControl::AdminBindings if self.screen == UiScreen::Admin => {
+                self.admin_binding_mode = !self.admin_binding_mode;
+                self.admin_binding_selected = None;
+                self.focused_control = None;
+            }
+            UiControl::AdminBindings => {}
+            UiControl::AdminItem(_) if self.admin_binding_mode => {}
             UiControl::AdminItem(index) if self.screen == UiScreen::Admin && self.admin_enabled => {
                 self.admin_grant_index(index)
             }
             UiControl::AdminItem(_) => {}
+            UiControl::AdminPrev if self.screen == UiScreen::Admin && self.admin_binding_mode => {
+                self.admin_binding_page = self.admin_binding_page.saturating_sub(1);
+                self.admin_binding_selected = None;
+            }
+            UiControl::AdminNext if self.screen == UiScreen::Admin && self.admin_binding_mode => {
+                let pages = self
+                    .binding_targets()
+                    .len()
+                    .div_ceil(admin::BINDING_ROWS_PER_PAGE);
+                self.admin_binding_page =
+                    (self.admin_binding_page + 1).min(pages.saturating_sub(1));
+                self.admin_binding_selected = None;
+            }
+            UiControl::AdminBindingRow(row)
+                if self.screen == UiScreen::Admin && self.admin_binding_mode =>
+            {
+                self.binding_select(row)
+            }
+            UiControl::AdminBindingRow(_) => {}
             UiControl::AdminPrev if self.screen == UiScreen::Admin && self.admin_enabled => {
                 self.admin_page = self.admin_page.saturating_sub(1)
             }
@@ -606,7 +643,22 @@ impl ClientApp {
                 let pages = self.catalog.items().count().div_ceil(24).max(1);
                 self.admin_page = (self.admin_page + 1).min(pages - 1);
             }
-            UiControl::AdminRun if self.screen == UiScreen::Admin => self.admin_run(),
+            UiControl::AdminPrev if self.screen == UiScreen::Admin => {
+                self.admin_page = self.admin_page.saturating_sub(1);
+            }
+            UiControl::AdminNext if self.screen == UiScreen::Admin => {
+                let pages = self
+                    .catalog
+                    .registered_actions()
+                    .filter(|action| action.command.is_some())
+                    .count()
+                    .div_ceil(8)
+                    .max(1);
+                self.admin_page = (self.admin_page + 1).min(pages - 1);
+            }
+            UiControl::AdminRun if self.screen == UiScreen::Admin && !self.admin_binding_mode => {
+                self.admin_run()
+            }
             UiControl::AdminPrev | UiControl::AdminNext | UiControl::AdminRun => {}
             UiControl::Exit => event_loop.exit(),
             UiControl::Back => self.set_screen(if self.screen == UiScreen::Graphics {
@@ -647,12 +699,21 @@ impl ClientApp {
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
                 .collect(),
             UiScreen::Admin => {
+                if self.admin_binding_mode {
+                    return std::iter::once(UiControl::AdminBindings)
+                        .chain(
+                            (0..admin::BINDING_ROWS_PER_PAGE as u8).map(UiControl::AdminBindingRow),
+                        )
+                        .chain([UiControl::AdminPrev, UiControl::AdminNext])
+                        .collect();
+                }
                 let mut controls = Vec::new();
                 if self.admin_enabled {
                     controls.extend((0..24u8).map(UiControl::AdminItem));
-                    controls.extend([UiControl::AdminPrev, UiControl::AdminNext]);
                 }
+                controls.extend([UiControl::AdminPrev, UiControl::AdminNext]);
                 controls.push(UiControl::AdminRun);
+                controls.push(UiControl::AdminBindings);
                 controls
             }
             UiScreen::Pause => {
@@ -1423,6 +1484,7 @@ impl ClientApp {
         } else {
             self.status.as_ref().map(|(message, _)| message.as_str())
         };
+        let binding_view = self.binding_view();
         let ui = UiFrame {
             package_ui: self.package_ui.as_ref(),
             screen: self.screen,
@@ -1435,8 +1497,12 @@ impl ClientApp {
             action_panel: self.action_panel(),
             kiln_source: self.kiln_source,
             admin_enabled: self.admin_enabled,
-            admin_page: self.admin_page,
-            admin_input: &self.admin_input,
+            admin_page: if self.admin_binding_mode {
+                self.admin_binding_page
+            } else {
+                self.admin_page
+            },
+            admin_input: binding_view.as_deref().unwrap_or(&self.admin_input),
             target,
             status,
             debug: self.config.debug_hud.then_some(UiDebug {

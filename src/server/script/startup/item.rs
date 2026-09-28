@@ -1,18 +1,28 @@
-//! Bounded presentation options for non-placeable startup items.
-use bloxgloom_host_api::content::{DropAnimation, DropSize};
+//! Bounded presentation and authoritative lifecycle options for startup items.
+use bloxgloom_host_api::content::{DropAnimation, DropPolicy, DropSize};
 use mlua::Value;
 
-pub(super) fn options(options: Value) -> Result<(bool, DropSize, DropAnimation), &'static str> {
+pub(super) fn options(
+    options: Value,
+) -> Result<(bool, DropSize, DropAnimation, DropPolicy), &'static str> {
     let table = match options {
-        Value::Nil => return Ok((true, DropSize::Normal, DropAnimation::default())),
+        Value::Nil => {
+            return Ok((
+                true,
+                DropSize::Normal,
+                DropAnimation::default(),
+                DropPolicy::default(),
+            ));
+        }
         Value::Table(table) => table,
         _ => return Err("item options must be a table"),
     };
     let mut sprite = true;
     let mut size = DropSize::Normal;
     let mut animation = DropAnimation::default();
+    let mut policy = DropPolicy::default();
     for (index, pair) in table.pairs::<Value, Value>().enumerate() {
-        if index >= 3 {
+        if index >= 4 {
             return Err("too many item options");
         }
         let (key, value) = pair.map_err(|_| "invalid item option")?;
@@ -72,8 +82,51 @@ pub(super) fn options(options: Value) -> Result<(bool, DropSize, DropAnimation),
                     return Err("invalid drop_animation range");
                 }
             }
+            b"drop_policy" => policy = drop_policy(value)?,
             _ => return Err("unknown item option"),
         }
     }
-    Ok((sprite, size, animation))
+    Ok((sprite, size, animation, policy))
+}
+
+fn drop_policy(value: Value) -> Result<DropPolicy, &'static str> {
+    let Value::Table(fields) = value else {
+        return Err("item drop_policy must be a table");
+    };
+    let mut policy = DropPolicy::default();
+    for (index, field) in fields.pairs::<Value, Value>().enumerate() {
+        if index >= 6 {
+            return Err("too many drop_policy fields");
+        }
+        let (key, value) = field.map_err(|_| "invalid drop_policy field")?;
+        let Value::String(key) = key else {
+            return Err("invalid drop_policy field");
+        };
+        let value = match value {
+            Value::Number(value) => value,
+            Value::Integer(value) => value as f64,
+            _ => return Err("drop_policy fields require numeric values"),
+        };
+        match key.as_bytes().as_ref() {
+            b"gravity" => policy.gravity = value as f32,
+            b"terminal_speed" => policy.terminal_speed = value as f32,
+            b"radius" => policy.radius = value as f32,
+            b"pickup_range" => policy.pickup_range = value as f32,
+            b"merge_range" => policy.merge_range = value as f32,
+            b"lifetime_ms" => {
+                if !value.is_finite()
+                    || !(1_000.0..=86_400_000.0).contains(&value)
+                    || value.fract() != 0.0
+                {
+                    return Err("invalid drop_policy lifetime_ms");
+                }
+                policy.lifetime_ms = value as u64;
+            }
+            _ => return Err("unknown drop_policy field"),
+        }
+    }
+    if !policy.valid() {
+        return Err("invalid drop_policy range");
+    }
+    Ok(policy)
 }

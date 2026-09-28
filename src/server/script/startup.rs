@@ -6,6 +6,11 @@
 //! Add `requires bloxgloom:content/v1` to package.txt, then return an entry like:
 //! `function(host) host.register_item("demo:token", "Token", "bloxgloom:stone") end`.
 //! This host replaces integer inputs only for startup, not execute_package.
+//! The optional fourth item argument accepts `drop_policy={gravity=12,
+//! terminal_speed=4, radius=0.4, pickup_range=5, merge_range=3, lifetime_ms=2000}`.
+//! Missing fields retain stock defaults. These are frozen server gameplay rules,
+//! saved with item identity and mirrored as inert client compatibility metadata;
+//! they never change the 128 stack cap or authorize client-owned pickup timing.
 //!
 //! Each package may declare 32 bounded PNG-backed textures by local asset name
 //! and 32 items with builtin or own registered textures. `register_block(key,
@@ -52,6 +57,7 @@ const MAX_TEXTURES_PER_PACKAGE: usize = 32;
 const MAX_BLOCKS_PER_PACKAGE: usize = 32;
 mod block;
 pub(in crate::server::script) use block::cube;
+mod appearance;
 mod item;
 mod player;
 
@@ -61,6 +67,7 @@ pub(super) struct PackageTexture {
 }
 
 pub(in crate::server) struct Declarations {
+    pub(in crate::server) appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     pub(in crate::server) player_rules: Option<crate::content::player::Selection>,
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
@@ -88,6 +95,7 @@ impl Declarations {
         let mut entities = Vec::new();
         let mut systems = Vec::new();
         let mut player_rules = None;
+        let mut appearance = None;
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
         for package in &packages {
@@ -114,6 +122,13 @@ impl Declarations {
                 ));
             }
             items.extend(declarations.items);
+            if let Some(selection) = declarations.appearance
+                && appearance.replace(selection).is_some()
+            {
+                return Err(std::io::Error::other(
+                    "duplicate appearance across packages",
+                ));
+            }
             blocks.extend(declarations.blocks);
             textures.extend(declarations.textures);
             handlers.extend(declarations.handlers);
@@ -135,6 +150,7 @@ impl Declarations {
             }
         }
         let mut result = Self {
+            appearance,
             player_rules,
             client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
@@ -193,6 +209,7 @@ impl Extension for Declarations {
 
 #[derive(Default)]
 pub(super) struct Pending {
+    appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
     items: Vec<Item>,
     blocks: Vec<Block>,
@@ -214,6 +231,7 @@ pub(super) fn invoke(
     let permits_content = snapshot.permits_content(namespace);
     let pending = Rc::new(RefCell::new(Pending::default()));
     let player_rules = player::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
+    let appearance = appearance::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
     let texture_capture = Rc::clone(&pending);
     let block_capture = Rc::clone(&pending);
@@ -254,7 +272,7 @@ pub(super) fn invoke(
                 let key = text(key)?;
                 let name = text(name)?;
                 let texture = text(texture)?;
-                let (sprite, drop_size, drop_animation) = item::options(options)?;
+                let (sprite, drop_size, drop_animation, drop_policy) = item::options(options)?;
                 let Some((owner, local)) = key.split_once(':') else {
                     return Err("item key must be namespaced");
                 };
@@ -283,6 +301,7 @@ pub(super) fn invoke(
                     sprite,
                     drop_size,
                     drop_animation,
+                    drop_policy,
                     components: bloxgloom_host_api::content::Components::None,
                 });
                 Ok(())
@@ -397,6 +416,7 @@ pub(super) fn invoke(
                     sprite: false,
                     drop_size: bloxgloom_host_api::content::DropSize::Normal,
                     drop_animation: Default::default(),
+                    drop_policy: Default::default(),
                     components: Components::None,
                 });
                 Ok(())
@@ -417,6 +437,7 @@ pub(super) fn invoke(
     host.set("register_system", system)?;
     host.set("register_entity", entity)?;
     host.set("register_player_rules", player_rules)?;
+    host.set("register_player_appearance", appearance)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();

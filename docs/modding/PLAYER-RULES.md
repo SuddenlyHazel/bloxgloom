@@ -27,4 +27,23 @@ Changing or removing the selection on an existing save fails closed; while
 developing an incompatible contract, start a fresh world directory. Without a
 selection the builtin rules and their previous catalog identity remain in use.
 
-Player cosmetic appearance is separate from collision rules.
+Player cosmetic appearance is separate from collision rules. A content package
+may append up to 24 colors per category to the existing skin/shirt/pants palettes:
+
+```luau
+host.register_player_appearance('demo:wardrobe', 1,
+    'bloxgloom:humanoid/v1', {
+        skins = {{0.1, 0.9, 0.2}},
+        shirts = {{0.9, 0.1, 0.2}},
+        pants = {{0.1, 0.2, 0.9}},
+    })
+```
+
+Colors are finite linear RGB in `[0, 1]`; the builtin indices and model remain
+unchanged. The model string is an identity fence, not support for custom geometry.
+The declaration is part of `content.map` and the verified client bundle. In the
+command screen, `appearance <skin> <shirt> <pants>` selects the advertised palette
+indices for your authenticated profile. The server validates them, saves them in
+`players/<profile>.appearance` and replicates the four-byte public cosmetic state;
+it never accepts raw client colors or another profile ID. The local optional
+`BLOXGLOOM_APPEARANCE=skin,shirt,pants` join preference performs the same request.

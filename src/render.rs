@@ -34,6 +34,7 @@ use visibility::create_depth;
 pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar};
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
+pub(crate) use drops::mesh_with_catalog as mesh_dropped_items_with_catalog;
 pub(crate) use fire::VisualFire;
 #[cfg(test)]
 pub use mesh::mesh_chunk;

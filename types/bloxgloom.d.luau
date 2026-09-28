@@ -17,6 +17,10 @@ export type BloxStartupHost = {
     -- removal) refuses an existing world's content.map; pcall cannot suppress
     -- invalid or duplicate declarations. No declaration selects builtin rules.
     register_player_rules: (key: string, revision: number, fields: BloxPlayerRules) -> (),
+    -- One startup owner; up to 24 additional linear RGB colors per list.
+    -- Appends to builtin skin/shirt/pants indices (6/8/6). Model must be
+    -- "bloxgloom:humanoid/v1". No custom geometry or physics are implied.
+    register_player_appearance: (key: string, revision: number, model: string, palettes: BloxPlayerAppearance) -> (),
 }
 
 -- All nine fields are required finite numbers; unknown fields are rejected.
@@ -32,6 +36,12 @@ export type BloxPlayerRules = {
     headroom: number, -- integer 2..128
     max_rise: number, -- integer 1..1024
     eye_height: number, -- foot_inset..head_height
+}
+
+export type BloxPlayerAppearance = {
+    skins: {{number}}?,
+    shirts: {{number}}?,
+    pants: {{number}}?,
 }
 
 -- Ordered positional schema, at most 8 fields and 130 encoded bytes in total.

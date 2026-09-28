@@ -245,6 +245,61 @@ fn metadata_validates_namespace_capability_shape_and_limits_before_compilation()
 }
 
 #[test]
+fn policy_bundle_rejects_invalid_and_noncanonical_gameplay_policy() {
+    use bloxgloom_host_api::content::{DropAnimation, DropPolicy};
+    let mut writer = header(1);
+    writer.0[MAGIC.len() - 1] = POLICY_MAGIC[MAGIC.len() - 1];
+    package(&mut writer, "demo", None);
+    writer.count(1).unwrap();
+    writer.count(1).unwrap();
+    writer.field(b"bloxgloom:content/v1").unwrap();
+    writer.count(1).unwrap();
+    for field in [b"demo:token".as_slice(), b"Token", b"bloxgloom:stone"] {
+        writer.field(field).unwrap();
+    }
+    writer.field(&[0]).unwrap();
+    writer.field(&DropAnimation::default().to_bytes()).unwrap();
+    let offset = writer.0.len() + 4;
+    let policy = DropPolicy {
+        lifetime_ms: 2_000,
+        ..Default::default()
+    };
+    writer.field(&policy.to_bytes()).unwrap();
+    writer.count(0).unwrap();
+    writer.count(0).unwrap();
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    }
+    let catalog = ClientBundle::decode_verify(&writer.0, key(&writer.0))
+        .unwrap()
+        .session_catalog()
+        .unwrap();
+    assert_eq!(
+        catalog.drop_policy(catalog.item_by_key("demo:token").unwrap()),
+        policy
+    );
+    for invalid in [
+        DropPolicy::default(), // noncanonical V20 must not encode all-default policies
+        DropPolicy {
+            lifetime_ms: 0,
+            ..policy
+        },
+        DropPolicy {
+            radius: 10.0,
+            ..policy
+        },
+        DropPolicy {
+            gravity: f32::NAN,
+            ..policy
+        },
+    ] {
+        let mut bytes = writer.0.clone();
+        bytes[offset..offset + DropPolicy::BYTE_LEN].copy_from_slice(&invalid.to_bytes());
+        assert!(ClientBundle::decode_verify(&bytes, key(&bytes)).is_err());
+    }
+}
+
+#[test]
 fn startup_metadata_is_integrity_checked_and_cannot_be_truncated_even_with_new_digest() {
     let bytes = sprite_metadata(
         "demo",

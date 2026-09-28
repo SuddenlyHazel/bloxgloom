@@ -1730,9 +1730,14 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
     assert_eq!(reopened, vec![28, 94, 128]);
     // Expiry removes every drop past its lifetime in one bounded record.
     let far_future = crate::server::drops::unix_ms() + 601_000;
-    let expired = crate::server::drops::plan_expired(&restarted.entities, far_future, 256)
-        .unwrap()
-        .expect("aged drops plan expiry");
+    let expired = crate::server::drops::plan_expired(
+        &restarted.entities,
+        restarted.world.catalog(),
+        far_future,
+        256,
+    )
+    .unwrap()
+    .expect("aged drops plan expiry");
     let permit = restarted
         .durability
         .entity_mirror

@@ -4,7 +4,8 @@
 //! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
-use content::{DropAnimation, DropSize};
+use content::{DropAnimation, DropPolicy, DropSize};
+mod appearance;
 mod runtime;
 
 const MAX_ITEMS: usize = 32;
@@ -13,6 +14,7 @@ const MAX_BLOCKS: usize = 32;
 
 #[derive(Debug)]
 pub(super) struct Startup {
+    appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
@@ -41,17 +43,34 @@ impl ClientBundle {
             return Err(invalid());
         }
         let mut writer = Writer(self.bytes[..self.bytes.len() - 4].to_vec());
-        let sized = items.iter().any(|item| item.drop_size != DropSize::Normal);
-        let animated = items
+        let has_appearance = declarations.appearance.is_some();
+        let sized = has_appearance || items.iter().any(|item| item.drop_size != DropSize::Normal);
+        let animated = has_appearance
+            || items
+                .iter()
+                .any(|item| item.drop_animation != DropAnimation::default());
+        let policy = items
             .iter()
-            .any(|item| item.drop_animation != DropAnimation::default());
-        let version = match (declarations.player_rules.is_some(), animated, sized) {
-            (false, false, false) => MAGIC,
-            (false, false, true) => SIZED_MAGIC,
-            (false, true, _) => ANIMATED_MAGIC,
-            (true, false, false) => PLAYER_MAGIC,
-            (true, false, true) => PLAYER_SIZED_MAGIC,
-            (true, true, _) => PLAYER_ANIMATED_MAGIC,
+            .any(|item| item.drop_policy != DropPolicy::default());
+        let version = if has_appearance && policy {
+            APPEARANCE_POLICY_MAGIC
+        } else if has_appearance {
+            APPEARANCE_MAGIC
+        } else if policy {
+            if declarations.player_rules.is_some() {
+                PLAYER_POLICY_MAGIC
+            } else {
+                POLICY_MAGIC
+            }
+        } else {
+            match (declarations.player_rules.is_some(), animated, sized) {
+                (false, false, false) => MAGIC,
+                (false, false, true) => SIZED_MAGIC,
+                (false, true, _) => ANIMATED_MAGIC,
+                (true, false, false) => PLAYER_MAGIC,
+                (true, false, true) => PLAYER_SIZED_MAGIC,
+                (true, true, _) => PLAYER_ANIMATED_MAGIC,
+            }
         };
         writer.0[MAGIC.len() - 1] = version[MAGIC.len() - 1];
         writer.count(1)?;
@@ -109,18 +128,24 @@ impl ClientBundle {
                 } else {
                     writer.field(item.texture.as_bytes())?;
                 }
-                if sized || animated {
+                if sized || animated || policy {
                     writer.field(&[match item.drop_size {
                         DropSize::Normal => 0,
                         DropSize::Small => 1,
                         DropSize::Large => 2,
                     }])?;
                 }
-                if animated {
+                if animated || policy {
                     if !item.drop_animation.valid() {
                         return Err(invalid());
                     }
                     writer.field(&item.drop_animation.to_bytes())?;
+                }
+                if policy {
+                    if !item.drop_policy.valid() {
+                        return Err(invalid());
+                    }
+                    writer.field(&item.drop_policy.to_bytes())?;
                 }
             }
             let own = textures
@@ -177,11 +202,17 @@ impl ClientBundle {
             }
             runtime.encode_package(&mut writer, name)?;
         }
+        if has_appearance {
+            writer.count(usize::from(declarations.player_rules.is_some()))?;
+        }
         if let Some(selection) = &declarations.player_rules {
             selection.validate().map_err(|_| invalid())?;
             writer.field(selection.key.as_bytes())?;
             writer.field(&selection.revision.to_le_bytes())?;
             writer.field(&selection.rules.canonical_bytes())?;
+        }
+        if let Some(appearance) = &declarations.appearance {
+            appearance::encode(&mut writer, appearance)?;
         }
         let key = CacheKey(Sha256::digest(&writer.0).into());
         let result = Self::decode_verify(&writer.0, key)?;
@@ -191,6 +222,7 @@ impl ClientBundle {
             || decoded.blocks.len() != blocks.len()
             || decoded.runtime.counts() != runtime.counts()
             || decoded.player_rules != declarations.player_rules
+            || decoded.appearance != declarations.appearance
         {
             return Err(invalid());
         }
@@ -225,6 +257,15 @@ impl ClientBundle {
                         declarations.install_items_and_tags(&mut catalog)?;
                         catalog.refresh_builtin_fuels()?;
                         startup.runtime.install(&mut catalog)?;
+                        if let Some(appearance) = &startup.appearance {
+                            catalog
+                                .register_player_appearance(appearance.clone())
+                                .map_err(|error| {
+                                    bloxgloom_host_api::RegistrationError(format!(
+                                        "invalid appearance: {error:?}"
+                                    ))
+                                })?;
+                        }
                         if let Some(selection) = &startup.player_rules {
                             catalog
                                 .select_player_rules(selection.clone())
@@ -258,16 +299,20 @@ impl Startup {
         sized: bool,
         animated: bool,
         player: bool,
+        appearance: bool,
+        policy: bool,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized || animated || player {
+            if sized || animated || player || appearance || policy {
                 return Err(invalid());
             }
             return Ok(None);
         }
         let mut has_nondefault_size = false;
         let mut has_nondefault_animation = false;
+        let mut has_nondefault_policy = false;
         let mut startup = Self {
+            appearance: None,
             player_rules: None,
             packages: Vec::new(),
             items: Vec::new(),
@@ -325,6 +370,18 @@ impl Startup {
                     DropAnimation::default()
                 };
                 has_nondefault_animation |= drop_animation != DropAnimation::default();
+                let drop_policy = if policy {
+                    DropPolicy::from_bytes(
+                        reader
+                            .field(DropPolicy::BYTE_LEN)?
+                            .try_into()
+                            .map_err(|_| invalid())?,
+                    )
+                    .ok_or_else(invalid)?
+                } else {
+                    DropPolicy::default()
+                };
+                has_nondefault_policy |= drop_policy != DropPolicy::default();
                 let (sprite, texture) = match encoded_texture.strip_prefix('!') {
                     Some(texture) => (false, texture.to_owned()),
                     None => (true, encoded_texture),
@@ -350,6 +407,7 @@ impl Startup {
                     sprite,
                     drop_size,
                     drop_animation,
+                    drop_policy,
                     components: content::Components::None,
                 });
             }
@@ -442,6 +500,7 @@ impl Startup {
                     || !item.sprite
                     || item.drop_size != DropSize::Normal
                     || item.drop_animation != DropAnimation::default()
+                    || item.drop_policy != DropPolicy::default()
                 {
                     return Err(error(name, format!("block {key} item does not match")));
                 }
@@ -470,6 +529,11 @@ impl Startup {
                 requires,
             });
         }
+        let player = if appearance {
+            reader.count(1)? == 1
+        } else {
+            player
+        };
         if player {
             let key = reader.text(129)?;
             let revision = u32::from_le_bytes(reader.field(4)?.try_into().map_err(|_| invalid())?);
@@ -494,7 +558,14 @@ impl Startup {
             selection.validate().map_err(|_| invalid())?;
             startup.player_rules = Some(selection);
         }
-        if (sized && !animated && !has_nondefault_size) || (animated && !has_nondefault_animation) {
+        if appearance {
+            startup.appearance = Some(appearance::decode(reader, &startup.packages)?);
+        }
+        if !appearance
+            && ((sized && !animated && !has_nondefault_size)
+                || (animated && !policy && !has_nondefault_animation))
+            || (policy && !has_nondefault_policy)
+        {
             return Err(invalid());
         }
         if !startup.textures.is_empty() {

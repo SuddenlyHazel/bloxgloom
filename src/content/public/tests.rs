@@ -19,6 +19,7 @@ fn drop_size_defaults_and_nondefault_identity_survive_remapping() {
         sprite: true,
         drop_size: DropSize::Normal,
         drop_animation: Default::default(),
+        drop_policy: Default::default(),
         components: Components::None,
     };
     base.public_item(&item).unwrap();
@@ -64,6 +65,89 @@ fn drop_size_defaults_and_nondefault_identity_survive_remapping() {
 }
 
 #[test]
+fn drop_policy_is_validated_fingerprinted_and_remapped() {
+    let mut item = Item {
+        key: "test:policy".into(),
+        name: "Policy".into(),
+        swatch: [1.0; 4],
+        texture: "bloxgloom:stone".into(),
+        placeable: None,
+        sprite: true,
+        drop_size: Default::default(),
+        drop_animation: Default::default(),
+        drop_policy: Default::default(),
+        components: Components::None,
+    };
+    let mut baseline = Catalog::builtins();
+    baseline.public_item(&item).unwrap();
+    for invalid in [
+        DropPolicy {
+            gravity: f32::NAN,
+            ..Default::default()
+        },
+        DropPolicy {
+            radius: 0.5,
+            ..Default::default()
+        },
+        DropPolicy {
+            pickup_range: 9.0,
+            ..Default::default()
+        },
+        DropPolicy {
+            merge_range: -0.0,
+            ..Default::default()
+        },
+        DropPolicy {
+            lifetime_ms: 999,
+            ..Default::default()
+        },
+        DropPolicy {
+            terminal_speed: f32::INFINITY,
+            ..Default::default()
+        },
+    ] {
+        item.drop_policy = invalid;
+        assert!(Catalog::builtins().public_item(&item).is_err());
+        assert!(DropPolicy::from_bytes(invalid.to_bytes()).is_none());
+    }
+    item.drop_policy = DropPolicy {
+        gravity: 12.0,
+        terminal_speed: 4.0,
+        radius: 0.4,
+        pickup_range: 4.0,
+        merge_range: 3.0,
+        lifetime_ms: 2_000,
+    };
+    assert_eq!(
+        DropPolicy::from_bytes(item.drop_policy.to_bytes()),
+        Some(item.drop_policy)
+    );
+    let mut custom = Catalog::builtins();
+    custom.public_item(&item).unwrap();
+    assert_eq!(baseline.max_drop_pickup_range(), 2.25);
+    assert_eq!(custom.max_drop_pickup_range(), 4.0);
+    assert_ne!(baseline.fingerprint(), custom.fingerprint());
+    assert!(
+        ContentManifest::from_catalog(&baseline)
+            .resolve_catalog(&custom)
+            .is_err()
+    );
+    let mut remapped = ContentManifest::from_catalog(&custom);
+    remapped
+        .entries
+        .iter_mut()
+        .find(|e| e.kind == b'I' && e.key == item.key)
+        .unwrap()
+        .id += 10;
+    let resolved = remapped.resolve_catalog(&custom).unwrap();
+    assert_eq!(resolved.max_drop_pickup_range(), 4.0);
+    assert_eq!(
+        resolved.drop_policy(resolved.item_by_key(&item.key).unwrap()),
+        item.drop_policy
+    );
+}
+
+#[test]
 fn drop_animation_is_validated_and_remapped_by_item_key() {
     let mut item = Item {
         key: "test:animated".into(),
@@ -74,6 +158,7 @@ fn drop_animation_is_validated_and_remapped_by_item_key() {
         sprite: true,
         drop_size: DropSize::Normal,
         drop_animation: DropAnimation::default(),
+        drop_policy: Default::default(),
         components: Components::None,
     };
     let mut plain = Catalog::builtins();
@@ -478,6 +563,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::Opaque {
                 version: 3,
                 fingerprint: 10,
@@ -520,6 +606,7 @@ fn required_components_and_registration_capacity_are_enforced_at_public_boundary
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::Opaque {
                 version: 1,
                 fingerprint: 1,

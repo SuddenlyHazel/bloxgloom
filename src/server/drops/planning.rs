@@ -9,8 +9,10 @@ use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
+#[cfg(test)]
+use super::LIFETIME;
 use super::entity::{DROP_ENTITY_TYPE, DropEntityPayload};
-use super::{LIFETIME, invalid};
+use super::invalid;
 use crate::content::Catalog;
 use crate::inventory::{MAX_COMPONENT_BYTES, STACK_LIMIT, Stack};
 use crate::items::ItemId;
@@ -120,7 +122,7 @@ pub(in crate::server) fn plan_stack_spawns_with_extra(
         }
         let mut count = stack.count;
         while count > 0 {
-            let target = merge_target(store, &merged, &fresh, *position, stack, now_ms)?;
+            let target = merge_target(store, catalog, &merged, &fresh, *position, stack, now_ms)?;
             if let Some(id) = target {
                 let (entry, from_fresh) = if let Some(entry) = fresh.iter_mut().find(|e| e.id == id)
                 {
@@ -229,7 +231,10 @@ pub(in crate::server) fn plan_stack_spawns_with_extra(
             transaction
                 .add_dependencies(
                     store
-                        .capture_mobile_dependencies(*position, 1.0)
+                        .capture_mobile_dependencies(
+                            *position,
+                            catalog.drop_policy(stack.item).merge_range,
+                        )
                         .map_err(plan_error)?,
                 )
                 .map_err(plan_error)?;
@@ -251,14 +256,16 @@ struct PlannedNew {
 /// the historic ordering without sorting the captured candidates.
 fn merge_target(
     store: &EntityStore,
+    catalog: &Catalog,
     merged: &BTreeMap<EntityId, (Stack, Duration)>,
     fresh: &[PlannedNew],
     position: [f32; 3],
     stack: &Stack,
     now_ms: u64,
 ) -> io::Result<Option<EntityId>> {
-    let min = position.map(|coordinate| coordinate - 1.0);
-    let max = position.map(|coordinate| coordinate + 1.0);
+    let policy = catalog.drop_policy(stack.item);
+    let min = position.map(|coordinate| coordinate - policy.merge_range);
+    let max = position.map(|coordinate| coordinate + policy.merge_range);
     let live = store.query_mobile_aabb(min, max).map_err(plan_error)?;
     let live = live.into_iter().filter_map(|id| {
         let snapshot = store.snapshot(id)?;
@@ -298,11 +305,8 @@ fn merge_target(
     });
     Ok(DropMergeContext {
         position,
-        radius: 1.0,
-        lifetime_ms: LIFETIME
-            .as_millis()
-            .try_into()
-            .expect("drop lifetime fits u64"),
+        radius: policy.merge_range,
+        lifetime_ms: policy.lifetime_ms,
         stack_limit: STACK_LIMIT,
     }
     .select(live.chain(planned))
@@ -378,37 +382,37 @@ pub(in crate::server) fn plan_take(
         .map(Some)
 }
 
-/// Plans removal of drops past their lifetime, oldest IDs first, bounded to
-/// `limit` per call so one expiry round stays one bounded WAL record.
+/// Plans removal of drops past their lifetime, earliest deadline then ID first.
+/// Both due-index traversal and output are capped at 256 per WAL record.
 pub(in crate::server) fn plan_expired(
     store: &EntityStore,
+    catalog: &Catalog,
     now_ms: u64,
     limit: usize,
 ) -> io::Result<Option<PreparedEntityBatch>> {
     let mut transactions = Vec::new();
-    for record in store.record_values() {
-        if transactions.len() >= limit {
-            break;
-        }
+    for id in store.expired_entities(now_ms, limit.min(256)) {
+        let record = store
+            .snapshot(id)
+            .ok_or_else(|| invalid("expired drop vanished"))?;
         if record.entity_type != DROP_ENTITY_TYPE {
-            continue;
+            return Err(invalid("unexpected entity expiry policy"));
         }
-        let expired = record
-            .payload
+        let payload = record
+            .private_payload
             .downcast_ref::<DropEntityPayload>()
-            .is_some_and(|payload| {
-                DropLifetime {
-                    created_ms: payload.created_unix_ms,
-                    now_ms,
-                    lifetime_ms: LIFETIME
-                        .as_millis()
-                        .try_into()
-                        .expect("drop lifetime fits u64"),
-                }
-                .expired()
-            });
-        if !expired {
-            continue;
+            .ok_or_else(|| invalid("invalid expiring drop"))?;
+        // Recheck the authoritative payload rather than trusting a stale birth
+        // or an independently stored deadline. The prepared despawn carries its
+        // revision through admission and the receipt gate as usual.
+        if !(DropLifetime {
+            created_ms: payload.created_unix_ms,
+            now_ms,
+            lifetime_ms: catalog.drop_policy(payload.stack.item).lifetime_ms,
+        })
+        .expired()
+        {
+            return Err(invalid("drop expiry index disagrees with frozen policy"));
         }
         transactions.push(
             store

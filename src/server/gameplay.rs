@@ -62,7 +62,7 @@ impl Snapshot for WorldSnapshot<'_> {
             .filter(|_| self.actor.is_some())
             .zip(self.entities)
             .is_some_and(|(position, store)| {
-                super::drops::pickup_eligible(store, drop_id, position)
+                super::drops::pickup_eligible(store, self.world.catalog(), drop_id, position)
             })
     }
     fn player_position(&self) -> Option<[f32; 3]> {
@@ -271,6 +271,19 @@ pub(super) fn plan_removals(
     input: OperationInput<'_>,
     participants: Participants<'_>,
 ) -> io::Result<WorldPlan> {
+    plan_with_lifecycles(world, reads, requested, input, participants, None)
+}
+
+/// Action/tick world effects opt into complete anchored lifecycle expansion.
+/// Legacy block/owner/burn callers retain their existing dispatch contracts.
+pub(super) fn plan_with_lifecycles(
+    world: &mut World,
+    reads: &mut TerrainReads,
+    requested: &mut Vec<ChunkKey>,
+    input: OperationInput<'_>,
+    participants: Participants<'_>,
+    lifecycles: Option<&super::lifecycle::Registry>,
+) -> io::Result<WorldPlan> {
     use bloxgloom_host_api::gameplay::{Event, EventKind, cell_random};
     let OperationInput {
         edits,
@@ -413,8 +426,17 @@ pub(super) fn plan_removals(
             io::Error::new(e.kind(), format!("{}: {e}", handler.key))
         })?;
     }
-    dispatch_neighbors(&catalog, &mut context, edits, seed, tick)?;
+    let mut expansion = super::durable::actions::invalidation::gameplay::Expansion::default();
+    dispatch_neighbors(
+        &catalog,
+        &mut context,
+        edits,
+        seed,
+        tick,
+        lifecycles.map(|registry| (&mut expansion, participants.entities, registry)),
+    )?;
     let mut plan = context.finish().map_err(error)?;
+    expansion.validate(&plan)?;
     if let Some(Event::EntityTick { entity, .. }) = &action
         && !matches!(
             plan.entity_changes.get(entity),
@@ -458,6 +480,32 @@ pub(super) fn plan_removals(
             if remaining < before.count {
                 drop_takes.push((id, before.count - remaining));
             }
+        }
+        if let Some(snapshot) = expansion.snapshots.get_mut(&entity_id) {
+            // Validate the staged transfer exactly as for surviving entities,
+            // but refund from its final payload and submit only the despawn.
+            entity_inventory::prepare(&catalog, reads, participants.entities, id, slots.clone())
+                .map_err(error)?;
+            let policy = participants
+                .entities
+                .types()
+                .descriptor(snapshot.entity_type)
+                .map_err(io::Error::other)?
+                .transfer_policy()
+                .ok_or_else(|| io::Error::other("invalidated inventory has no transfer policy"))?;
+            let slots = slots
+                .iter()
+                .map(|slot| {
+                    slot.as_ref()
+                        .map(|stack| inventory::stack(&catalog, stack))
+                        .transpose()
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(error)?;
+            snapshot.private_payload = policy
+                .replace_inventory(&snapshot.private_payload, slots, &catalog)
+                .map_err(io::Error::other)?;
+            continue;
         }
         if let Some(update) =
             entity_inventory::prepare(&catalog, reads, participants.entities, id, slots)
@@ -622,7 +670,7 @@ pub(super) fn plan_removals(
             spawn_tick: tick,
         });
     }
-    let drops = plan
+    let mut drops = plan
         .drops
         .into_iter()
         .map(|drop| {
@@ -645,6 +693,11 @@ pub(super) fn plan_removals(
             ))
         })
         .collect::<io::Result<Vec<_>>>()?;
+    if let Some(lifecycles) = lifecycles {
+        let (refunds, despawns) = expansion.finish(&catalog, lifecycles, participants.entities)?;
+        drops.extend(refunds);
+        entity_updates.extend(despawns);
+    }
     Ok(WorldPlan {
         entity_updates,
         entity_spawns,
@@ -661,11 +714,16 @@ pub(super) fn plan_removals(
 /// including edits created by another handler. Only the upward support path
 /// uses the fallback; targeted handlers observe any of the six adjacent cells.
 fn dispatch_neighbors(
-    catalog: &Catalog,
+    catalog: &std::sync::Arc<Catalog>,
     context: &mut Context<'_>,
     edits: &[Edit],
     seed: u64,
     tick: u64,
+    mut lifecycle: Option<(
+        &mut super::durable::actions::invalidation::gameplay::Expansion,
+        &super::entities::EntityStore,
+        &super::lifecycle::Registry,
+    )>,
 ) -> io::Result<()> {
     use bloxgloom_host_api::gameplay::{Event, EventKind, RemovalCause, cell_random};
     use std::collections::BTreeSet;
@@ -675,6 +733,9 @@ fn dispatch_neighbors(
     let original_edits: BTreeSet<_> = edits.iter().map(|&(x, y, z, _)| [x, y, z]).collect();
     let targeted = catalog.has_targeted_neighbor_handlers();
     loop {
+        if let Some((expansion, store, registry)) = &mut lifecycle {
+            expansion.expand(context, catalog, store, registry, seed, tick)?;
+        }
         let pending: Vec<_> = context
             .staged_block_transitions()
             .into_iter()
@@ -703,6 +764,9 @@ fn dispatch_neighbors(
             seen.insert(changed);
             processed.insert(changed, current.clone());
             if !original_edits.contains(&changed)
+                && !lifecycle
+                    .as_ref()
+                    .is_some_and(|(expansion, _, _)| expansion.cells.contains_key(&changed))
                 && !dispatched_removals.contains(&changed)
                 && previous.block_type != "bloxgloom:air"
                 && previous != current
@@ -769,6 +833,13 @@ fn dispatch_neighbors(
                 context.dispatch(handler, &event).map_err(error)?;
                 let after = context.block(cell).map_err(error)?;
                 if neighbor != after && after.block_type == "bloxgloom:air" {
+                    // Anchored removals are expanded at the next frontier,
+                    // before dispatching their one lifecycle-owned callback.
+                    if lifecycle.is_some()
+                        && context.anchored_entity_at(cell).map_err(error)?.is_some()
+                    {
+                        continue;
+                    }
                     if let Some(removal) =
                         catalog.gameplay_handler(EventKind::BlockRemoved, &neighbor.block_type)
                     {

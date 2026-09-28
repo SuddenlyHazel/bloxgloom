@@ -50,6 +50,8 @@ pub struct EntityRecord {
     pub payload_size: usize,
     pub public_view: Vec<u8>,
     pub next_tick: Option<u64>,
+    /// Rebuilt from the validated payload and frozen codec on load/update.
+    pub expiry_unix_ms: Option<u64>,
 }
 
 impl PartialEq for EntityRecord {
@@ -66,6 +68,7 @@ impl PartialEq for EntityRecord {
             && self.payload_size == other.payload_size
             && self.public_view == other.public_view
             && self.next_tick == other.next_tick
+            && self.expiry_unix_ms == other.expiry_unix_ms
     }
 }
 
@@ -417,6 +420,10 @@ impl EntityStore {
         self.indexes.due(through_tick, maximum)
     }
 
+    pub(in crate::server) fn expired_entities(&self, now_ms: u64, maximum: usize) -> Vec<EntityId> {
+        self.indexes.expired(now_ms, maximum)
+    }
+
     pub fn due_tick_entries(
         &self,
         through_tick: u64,
@@ -595,6 +602,7 @@ impl EntityStore {
                     0
                 },
                 location,
+                expiry_unix_ms: descriptor.expiry_unix_ms(&payload),
                 payload,
                 payload_size,
                 public_view,
@@ -899,6 +907,7 @@ impl EntityStore {
             if encoded != previous {
                 after.payload_size = encoded.len();
                 after.public_view = descriptor.public_view(&payload)?;
+                after.expiry_unix_ms = descriptor.expiry_unix_ms(&payload);
                 after.payload = payload;
             }
         }
@@ -972,6 +981,7 @@ impl EntityStore {
             if encoded != previous {
                 after.payload_size = encoded.len();
                 after.public_view = descriptor.public_view(&payload)?;
+                after.expiry_unix_ms = descriptor.expiry_unix_ms(&payload);
                 after.payload = payload;
             }
         }
@@ -1066,6 +1076,7 @@ impl EntityStore {
             if encoded != previous {
                 after.payload_size = encoded.len();
                 after.public_view = descriptor.public_view(&payload)?;
+                after.expiry_unix_ms = descriptor.expiry_unix_ms(&payload);
                 after.payload = payload;
             }
         }
@@ -1736,6 +1747,7 @@ impl EntityStore {
             || record.schema_fingerprint != descriptor.schema_fingerprint()
             || record.revision == 0
             || !descriptor.tick_policy().validates(record.next_tick)
+            || record.expiry_unix_ms != descriptor.expiry_unix_ms(&record.payload)
         {
             return Err(EntityError::InvalidType);
         }
@@ -2015,6 +2027,7 @@ fn validate_record_with_types(
         || record.schema_fingerprint != descriptor.schema_fingerprint()
         || record.revision == 0
         || !descriptor.tick_policy().validates(record.next_tick)
+        || record.expiry_unix_ms != descriptor.expiry_unix_ms(&record.payload)
     {
         return Err(EntityError::InvalidType);
     }
@@ -2073,7 +2086,8 @@ fn same_durable_fields(
         }
         && left.payload_size == right.payload_size
         && left.public_view == right.public_view
-        && left.next_tick == right.next_tick;
+        && left.next_tick == right.next_tick
+        && left.expiry_unix_ms == right.expiry_unix_ms;
     if !same_fields {
         return Ok(false);
     }

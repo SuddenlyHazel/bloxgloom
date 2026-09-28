@@ -88,6 +88,24 @@ impl Default for Bindings {
 }
 
 impl Bindings {
+    pub fn bind(&mut self, action: Action, key: KeyCode, named: &NamedBindings) -> bool {
+        if !allowed_key(key) || named.action(key).is_some() {
+            return false;
+        }
+        let mut changed = *self;
+        match action {
+            Action::Inventory => changed.inventory = key,
+            Action::KilnInput => changed.kiln_input = key,
+            Action::KilnFuel => changed.kiln_fuel = key,
+            Action::Drop => changed.drop = key,
+        }
+        if !changed.valid() {
+            return false;
+        }
+        *self = changed;
+        true
+    }
+
     pub fn action(self, key: KeyCode) -> Option<Action> {
         [
             (self.inventory, Action::Inventory),

@@ -52,10 +52,20 @@ pub(in crate::server) struct PlayerEntityStore {
 }
 
 impl PlayerEntityStore {
+    #[cfg(test)]
     pub(in crate::server) fn spawn_session(
         &mut self,
         session_id: u64,
         position: [f32; 3],
+    ) -> Result<(EntityId, EntityDelta), EntityError> {
+        self.spawn_session_with_appearance(session_id, position, [0; 4])
+    }
+
+    pub(in crate::server) fn spawn_session_with_appearance(
+        &mut self,
+        session_id: u64,
+        position: [f32; 3],
+        appearance: [u8; 4],
     ) -> Result<(EntityId, EntityDelta), EntityError> {
         if self.by_session.contains_key(&session_id)
             || self.by_session.len() >= MAX_SESSION_PLAYER_ENTITIES
@@ -65,7 +75,8 @@ impl PlayerEntityStore {
         let id = EntityId::for_player_session(session_id).ok_or(EntityError::IdExhausted)?;
         let location = EntityLocation::Mobile { position };
         let owner = location.owner()?;
-        let payload = PlayerEntityPayload::new(0, 0, 0, 0);
+        let [skin, shirt, pants, flags] = appearance;
+        let payload = PlayerEntityPayload::new(skin, shirt, pants, flags);
         let public_view = PlayerPayloadCodec
             .public_view(&EntityPayload::new(payload))
             .map_err(|_| EntityError::CodecRejected)?;
@@ -135,6 +146,40 @@ impl PlayerEntityStore {
                 before_touched_chunks: vec![before.owner.chunk()],
                 view: after,
             }))
+        }
+    }
+
+    pub(in crate::server) fn prepare_appearance(
+        &self,
+        session_id: u64,
+        appearance: [u8; 4],
+    ) -> Result<Option<EntityPublicView>, EntityError> {
+        let before = self
+            .by_session
+            .get(&session_id)
+            .ok_or(EntityError::InvalidTransaction)?;
+        if before.payload == appearance {
+            return Ok(None);
+        }
+        let mut after = before.clone();
+        after.revision = before
+            .revision
+            .checked_add(1)
+            .ok_or(EntityError::RevisionExhausted)?;
+        after.payload = appearance.to_vec();
+        Ok(Some(after))
+    }
+
+    // Called immediately after profile persistence by the sole simulation owner.
+    pub(in crate::server) fn apply_appearance(
+        &mut self,
+        session_id: u64,
+        view: EntityPublicView,
+    ) -> EntityDelta {
+        self.by_session.insert(session_id, view.clone());
+        EntityDelta::Updated {
+            before_touched_chunks: vec![view.owner.chunk()],
+            view,
         }
     }
 

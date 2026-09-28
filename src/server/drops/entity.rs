@@ -73,6 +73,13 @@ struct DropPayloadCodec {
 }
 
 impl EntityPayloadCodec for DropPayloadCodec {
+    fn expiry_unix_ms(&self, payload: &EntityPayload) -> Option<u64> {
+        let payload = payload.downcast_ref::<DropEntityPayload>()?;
+        payload
+            .created_unix_ms
+            .checked_add(self.catalog.drop_policy(payload.stack.item).lifetime_ms)
+    }
+
     fn decode(&self, bytes: &[u8]) -> Result<EntityPayload, EntityCodecError> {
         if bytes.len() < DROP_PAYLOAD_FIXED_BYTES || bytes.len() > MAX_DROP_ENTITY_PAYLOAD_BYTES {
             return Err(EntityCodecError::InvalidData);

@@ -51,6 +51,12 @@ impl UiLayout {
             .map(|hit| hit.control)
     }
 
+    pub(crate) fn binding_hit(&self, x: f32, y: f32) -> Option<UiControl> {
+        (0..8)
+            .map(UiControl::AdminBindingRow)
+            .find(|&control| self.rect(control).is_some_and(|rect| rect.contains(x, y)))
+    }
+
     pub fn rect(&self, control: UiControl) -> Option<UiRect> {
         self.hits
             .iter()
@@ -245,6 +251,27 @@ impl UiLayout {
 
     fn add_admin(&mut self) {
         let panel = self.admin_panel();
+        self.push(
+            UiControl::AdminBindings,
+            UiRect {
+                x: panel.x + panel.width - 145.0 * self.scale,
+                y: panel.y + 14.0 * self.scale,
+                width: 121.0 * self.scale,
+                height: 30.0 * self.scale,
+            },
+        );
+        let binding_pitch = ((panel.height - 140.0 * self.scale) / 8.0).min(44.0 * self.scale);
+        for index in 0..8 {
+            self.push(
+                UiControl::AdminBindingRow(index),
+                UiRect {
+                    x: panel.x + 24.0 * self.scale,
+                    y: panel.y + 78.0 * self.scale + index as f32 * binding_pitch,
+                    width: panel.width - 48.0 * self.scale,
+                    height: binding_pitch - 5.0 * self.scale,
+                },
+            );
+        }
         let gap = 8.0 * self.scale;
         let cell_width = (panel.width - 48.0 * self.scale - 5.0 * gap) / 6.0;
         let cell_height = ((panel.height - 194.0 * self.scale - 3.0 * gap) / 4.0).max(22.0);

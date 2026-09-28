@@ -50,7 +50,7 @@ pub(in crate::server) fn plan(
     let mut reads = TerrainReads::default();
     reads.entities(state.entities.capture_entity_dependency(id))?;
     let mut requested = Vec::new();
-    let plan = crate::server::gameplay::plan_removals(
+    let plan = crate::server::gameplay::plan_with_lifecycles(
         &mut state.world,
         &mut reads,
         &mut requested,
@@ -71,12 +71,12 @@ pub(in crate::server) fn plan(
             admin: false,
             entities: &state.entities,
         },
+        Some(&state.lifecycles),
     );
     for key in requested {
         let _ = request_chunk(state, key);
     }
     let plan = plan?;
-    ensure_no_unhandled_anchor(state, &plan.edits)?;
     let catalog = state.world.catalog_arc();
     for &(x, y, z, block) in &plan.edits {
         if catalog.block_flags(block) & crate::content::SOLID != 0

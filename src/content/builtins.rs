@@ -428,6 +428,7 @@ impl Catalog {
                 sprite: definition.cutout,
                 drop_size: bloxgloom_host_api::content::DropSize::Normal,
                 drop_animation: Default::default(),
+                drop_policy: Default::default(),
                 components: api::Components::Unstructured,
             };
             catalog
@@ -480,6 +481,7 @@ impl Catalog {
                         sprite: true,
                         drop_size: bloxgloom_host_api::content::DropSize::Normal,
                         drop_animation: Default::default(),
+                        drop_policy: Default::default(),
                         components: api::Components::Unstructured,
                     },
                 )

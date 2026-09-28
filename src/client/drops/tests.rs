@@ -78,6 +78,7 @@ fn sized_drop_keeps_its_preset_through_pickup_flight_without_changing_motion() {
             sprite: true,
             drop_size: DropSize::Small,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::None,
         })
         .unwrap();
@@ -124,6 +125,7 @@ fn authored_motion_uses_server_age_and_continues_into_partial_pickup() {
             sprite: true,
             drop_size: DropSize::Normal,
             drop_animation: animation,
+            drop_policy: Default::default(),
             components: Components::None,
         })
         .unwrap();

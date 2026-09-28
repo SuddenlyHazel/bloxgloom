@@ -188,6 +188,25 @@ fn admin_catalog_controls_fit_compact_and_desktop_panels() {
 }
 
 #[test]
+fn binding_rows_fit_above_admin_navigation_at_compact_and_desktop_sizes() {
+    for (width, height) in [(640, 360), (1280, 720)] {
+        let layout = UiLayout::new(width, height, 1.0, UiScreen::Admin);
+        let panel = layout.admin_panel();
+        let bottom = layout.rect(UiControl::AdminPrev).unwrap().y;
+        for index in 0..8 {
+            let rect = layout.rect(UiControl::AdminBindingRow(index)).unwrap();
+            assert!(rect.x >= panel.x && rect.x + rect.width <= panel.x + panel.width);
+            assert!(rect.y >= panel.y && rect.y + rect.height < bottom);
+            assert_eq!(
+                layout.binding_hit(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(UiControl::AdminBindingRow(index))
+            );
+        }
+        assert!(layout.rect(UiControl::AdminBindings).is_some());
+    }
+}
+
+#[test]
 fn world_and_inventory_items_have_distinct_hud_names_and_swatch_colors() {
     let vegetation = [
         (

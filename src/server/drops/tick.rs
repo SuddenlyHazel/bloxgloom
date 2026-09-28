@@ -3,6 +3,7 @@
 //! ordinary revision-checked entity WAL planner, never a separate drop engine.
 
 use super::entity::DropEntityPayload;
+#[cfg(test)]
 use super::{DROP_RADIUS, GRAVITY, TERMINAL_SPEED};
 use crate::content::Catalog;
 use crate::server::entities::{
@@ -49,15 +50,16 @@ impl EntityTickPolicy for DropTickPlanner {
             .downcast_ref::<DropEntityPayload>()
             .ok_or(EntityError::InvalidPayload)?;
         let world = CapturedColumn { view, catalog };
+        let policy = catalog.drop_policy(payload.stack.item);
         let motion = api::FallingContext {
             position,
             vertical_speed: payload.vertical_speed,
             suspended: snapshot.next_tick.is_none(),
             tick: current_tick,
             step_seconds: FIXED_STEP.as_secs_f32(),
-            gravity: GRAVITY,
-            terminal_speed: TERMINAL_SPEED,
-            radius: DROP_RADIUS,
+            gravity: policy.gravity,
+            terminal_speed: policy.terminal_speed,
+            radius: policy.radius,
             world: &world,
         }
         .plan()

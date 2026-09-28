@@ -22,7 +22,8 @@ pub(super) fn plan(
     let profile = client.profile;
     let original = client.inventory.clone();
     let position = client.position();
-    let mut candidates = crate::server::drops::pickup_candidates(&state.entities, position);
+    let mut candidates =
+        crate::server::drops::pickup_candidates(&state.entities, state.world.catalog(), position);
     if candidates.is_empty() {
         return Ok(None);
     }
@@ -37,7 +38,7 @@ pub(super) fn plan(
     reads.entities(
         state
             .entities
-            .capture_mobile_dependencies(position, crate::server::drops::PICKUP_RANGE_SQ.sqrt())
+            .capture_mobile_dependencies(position, state.world.catalog().max_drop_pickup_range())
             .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?,
     )?;
     let event = Event::PickupRequested {

@@ -30,6 +30,7 @@ impl Catalog {
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::Unstructured,
         })
     }

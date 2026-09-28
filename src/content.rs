@@ -9,6 +9,7 @@ use crate::world::{self, BlockId};
 
 mod actions;
 mod anchored;
+pub(crate) mod appearance;
 mod builtins;
 pub(crate) mod client_metadata;
 pub(crate) mod composition;
@@ -210,6 +211,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    player_appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_selection: Option<player::Selection>,
     player_rules: bloxgloom_host_api::player::PlayerRules,
     // Negotiated compatibility metadata, never executable registrations.
@@ -238,6 +240,8 @@ pub struct Catalog {
     item_components: HashMap<String, bloxgloom_host_api::content::Components>,
     drop_sizes: HashMap<String, bloxgloom_host_api::content::DropSize>,
     drop_animations: HashMap<String, bloxgloom_host_api::content::DropAnimation>,
+    drop_policies: HashMap<String, bloxgloom_host_api::content::DropPolicy>,
+    max_drop_pickup_range: f32,
     pub(crate) composition: composition::Composition,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
@@ -269,6 +273,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            player_appearance: None,
             player_selection: None,
             player_rules: bloxgloom_host_api::player::BUILTIN_RULES,
             client_metadata: Default::default(),
@@ -284,6 +289,8 @@ impl Catalog {
             item_components: HashMap::new(),
             drop_sizes: HashMap::new(),
             drop_animations: HashMap::new(),
+            drop_policies: HashMap::new(),
+            max_drop_pickup_range: bloxgloom_host_api::content::DropPolicy::default().pickup_range,
             composition: composition::Composition::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
@@ -613,6 +620,14 @@ impl Catalog {
             .validate()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
         self.validate_player_selection()?;
+        if let Some(appearance) = &self.player_appearance {
+            appearance
+                .validate()
+                .map_err(|_| RegistrationError::InvalidDefinition)?;
+            if self.entity_type_id_by_key("bloxgloom:player").is_none() {
+                return Err(RegistrationError::InvalidDefinition);
+            }
+        }
         self.actions
             .validate_composition()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
@@ -655,6 +670,18 @@ impl Catalog {
 
     pub fn items(&self) -> impl Iterator<Item = &ItemDef> {
         self.items.iter().flatten()
+    }
+
+    pub fn drop_policy(&self, id: ItemId) -> bloxgloom_host_api::content::DropPolicy {
+        self.item(id)
+            .and_then(|item| self.drop_policies.get(item.key.as_ref()).copied())
+            .unwrap_or_default()
+    }
+
+    /// Startup-compiled query envelope, at most eight blocks. Ordinary catalogs
+    /// retain the stock envelope instead of capturing unrelated distant drops.
+    pub fn max_drop_pickup_range(&self) -> f32 {
+        self.max_drop_pickup_range
     }
 
     pub fn drop_size(&self, id: ItemId) -> bloxgloom_host_api::content::DropSize {
@@ -883,6 +910,11 @@ impl Catalog {
                     }]);
                 }
                 let animation = self.drop_animation(item.id);
+                let policy = self.drop_policy(item.id);
+                if policy != bloxgloom_host_api::content::DropPolicy::default() {
+                    add(b"drop-policy/v1");
+                    add(&policy.to_bytes());
+                }
                 if animation != bloxgloom_host_api::content::DropAnimation::default() {
                     add(b"drop-animation/v1");
                     add(&animation.to_bytes());
@@ -942,6 +974,9 @@ impl Catalog {
                 // Action keys have no numeric save identity. The player contract
                 // fingerprints the complete canonical registry at handshake/load.
                 if entity.key == "bloxgloom:player" {
+                    if let Some(appearance) = &self.player_appearance {
+                        add(&appearance.fingerprint_bytes());
+                    }
                     if let Some(selection) = &self.player_selection {
                         add(&selection.fingerprint_bytes());
                     }

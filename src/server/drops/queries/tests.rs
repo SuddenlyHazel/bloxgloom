@@ -46,7 +46,7 @@ fn spawn_direct(
 
 #[test]
 fn pickup_delay_gates_candidates_but_not_visibility() {
-    let (mut store, _catalog) = test_store();
+    let (mut store, catalog) = test_store();
     let born_ms = super::super::unix_ms();
     let delayed = spawn_direct(
         &mut store,
@@ -57,9 +57,9 @@ fn pickup_delay_gates_candidates_but_not_visibility() {
     );
     let gated = spawn_direct(&mut store, [0.5, 0.0, 0.0], 1, born_ms, Duration::ZERO);
     // Wall clock has just passed both births, so only the delay gates.
-    let candidates = pickup_candidates(&store, [0.0, 0.0, 0.0]);
-    assert!(!extractable(&store, delayed));
-    assert!(extractable(&store, gated));
+    let candidates = pickup_candidates(&store, &catalog, [0.0, 0.0, 0.0]);
+    assert!(!extractable(&store, &catalog, delayed));
+    assert!(extractable(&store, &catalog, gated));
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].id, gated.get());
     assert_eq!(nearby(&store, [0.0, 0.0, 0.0]).len(), 2);
@@ -67,7 +67,7 @@ fn pickup_delay_gates_candidates_but_not_visibility() {
 
 #[test]
 fn single_drop_collection_rechecks_range_delay_and_expiry() {
-    let (mut store, _catalog) = test_store();
+    let (mut store, catalog) = test_store();
     let now = super::super::unix_ms();
     let position = [0.0, 0.0, 0.0];
     let ready = spawn_direct(&mut store, position, 1, now, Duration::ZERO);
@@ -79,20 +79,33 @@ fn single_drop_collection_rechecks_range_delay_and_expiry() {
         now.saturating_sub(LIFETIME.as_millis() as u64 + 1),
         Duration::ZERO,
     );
-    assert!(pickup_eligible(&store, ready.get(), [2.25, 0.0, 0.0]));
-    assert!(!pickup_eligible(&store, ready.get(), [2.26, 0.0, 0.0]));
-    assert!(!pickup_eligible(&store, delayed.get(), position));
-    assert!(!pickup_eligible(&store, expired.get(), position));
-    assert!(!pickup_eligible(&store, u64::MAX, position));
+    assert!(pickup_eligible(
+        &store,
+        &catalog,
+        ready.get(),
+        [2.25, 0.0, 0.0]
+    ));
+    assert!(!pickup_eligible(
+        &store,
+        &catalog,
+        ready.get(),
+        [2.26, 0.0, 0.0]
+    ));
+    assert!(!pickup_eligible(&store, &catalog, delayed.get(), position));
+    assert!(!pickup_eligible(&store, &catalog, expired.get(), position));
+    assert!(!pickup_eligible(&store, &catalog, u64::MAX, position));
 }
 
 #[test]
 fn expired_drop_is_visible_but_never_pickable() {
-    let (mut store, _catalog) = test_store();
+    let (mut store, catalog) = test_store();
     // Youth is wall-clock: only a fresh birth is eligible.
     let born_ms = super::super::unix_ms();
     spawn_direct(&mut store, [0.0, 0.0, 0.0], 5, born_ms, Duration::ZERO);
-    assert_eq!(pickup_candidates(&store, [0.0, 0.0, 0.0]).len(), 1);
+    assert_eq!(
+        pickup_candidates(&store, &catalog, [0.0, 0.0, 0.0]).len(),
+        1
+    );
     assert_eq!(nearby(&store, [0.0, 0.0, 0.0]).len(), 1);
     assert!(!has_expired(&store, born_ms + 1_000));
     assert!(has_expired(&store, born_ms + LIFETIME.as_millis() as u64));

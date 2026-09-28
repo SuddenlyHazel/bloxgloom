@@ -4,6 +4,7 @@ use std::fmt;
 
 pub mod actions;
 pub mod anchored;
+pub mod appearance;
 pub mod composition;
 pub mod content;
 pub mod entity;

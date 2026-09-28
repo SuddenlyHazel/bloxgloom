@@ -1,6 +1,7 @@
 //! Authoritative TCP server. The simulation coordinator owns mutable world,
 //! inventory, and drop state; chunk loading and journal fsync run on bounded
 //! workers. Durable actions become visible only after their WAL receipt.
+mod appearance;
 mod block_actions;
 mod builtins;
 mod checkpoint;
@@ -158,6 +159,7 @@ struct State {
     world: World,
     inventory_store: InventoryStore,
     position_store: PositionStore,
+    appearance_store: appearance::Store,
     admin_profile: Option<u128>,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
@@ -498,6 +500,7 @@ fn server_state_with_startup(
     )?;
     let inventory_store = InventoryStore::with_catalog(&save_dir, world.catalog_arc())?;
     let position_store = PositionStore::new(&save_dir)?;
+    let appearance_store = appearance::Store::new(&save_dir)?;
     let catalog = world.catalog_arc();
     let notifications = notifications::Lane::new(&catalog)?;
     let entity_types = startup.entity_types_for(catalog.clone())?;
@@ -545,6 +548,7 @@ fn server_state_with_startup(
         world,
         inventory_store,
         position_store,
+        appearance_store,
         admin_profile: None,
         entities,
         player_entities: PlayerEntityStore::default(),
@@ -637,9 +641,12 @@ fn join_client(
         .checked_add(1)
         .ok_or_else(|| io::Error::other("player ID exhausted"))?;
     let socket = socket.try_clone()?;
+    let appearance = state
+        .appearance_store
+        .load(profile, state.world.catalog())?;
     let (owned_entity_id, spawn_delta) = state
         .player_entities
-        .spawn_session(id, position)
+        .spawn_session_with_appearance(id, position, appearance)
         .map_err(io::Error::other)?;
     let center = world_to_chunk(
         position[0].floor() as i32,
@@ -718,6 +725,7 @@ fn join_client(
 
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {
     match message {
+        ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
         ClientMessage::Hello { .. } => {
             Err(io::Error::new(ErrorKind::InvalidData, "duplicate Hello"))
         }

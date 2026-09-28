@@ -171,10 +171,19 @@ fn spawn_and_take_conserve_total_item_count() {
 fn expired_drops_plan_bounded_despawns() {
     let (mut store, catalog) = test_store();
     spawn(&mut store, &catalog, [0.0, 0.0, 0.0], 7, 1_000);
-    assert!(plan_expired(&store, 2_000, usize::MAX).unwrap().is_none());
-    let batch = plan_expired(&store, 1_000 + LIFETIME.as_millis() as u64 + 1, usize::MAX)
-        .unwrap()
-        .expect("expired drop plans removal");
+    assert!(
+        plan_expired(&store, &catalog, 2_000, usize::MAX)
+            .unwrap()
+            .is_none()
+    );
+    let batch = plan_expired(
+        &store,
+        &catalog,
+        1_000 + LIFETIME.as_millis() as u64 + 1,
+        usize::MAX,
+    )
+    .unwrap()
+    .expect("expired drop plans removal");
     assert_eq!(batch.entity_ids().len(), 1);
     apply(&mut store, batch);
     assert!(super::super::queries::nearby(&store, [0.0, 0.0, 0.0]).is_empty());

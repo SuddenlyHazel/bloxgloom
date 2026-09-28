@@ -19,7 +19,7 @@ pub(super) fn capture(
         let stack = crate::server::drops::stack(store, id).ok_or_else(unavailable)?;
         let mut slots = super::inventory::slots(catalog, &[Some(stack)])?;
         slots[0].insert = false;
-        slots[0].extract = crate::server::drops::extractable(store, id);
+        slots[0].extract = crate::server::drops::extractable(store, catalog, id);
         return Ok(slots);
     }
     let descriptor = store

@@ -3,6 +3,9 @@ use bloxgloom_host_api::actions::{Action, Operation, Request, Target};
 use bloxgloom_host_api::{Extension, Registrar, RegistrationError, gameplay::*};
 use std::sync::Arc;
 
+#[path = "gameplay_anchor_tests.rs"]
+mod gameplay_anchor_tests;
+
 struct HarvestExtension;
 struct UseExtension;
 struct ObservingExtension(std::sync::mpsc::Sender<Committed>);

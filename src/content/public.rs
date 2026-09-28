@@ -114,6 +114,9 @@ impl Catalog {
 
     pub(crate) fn public_item_at(&mut self, id: ItemId, i: &api::Item) -> Result<(), Error> {
         validate_display(&i.name, i.swatch)?;
+        if !i.drop_policy.valid() {
+            return Err(Error(format!("{}: invalid drop policy", i.key)));
+        }
         if !i.drop_animation.valid() {
             return Err(Error(format!("{}: invalid drop animation", i.key)));
         }
@@ -152,6 +155,10 @@ impl Catalog {
         .map_err(|e| error(&i.key, e))?;
         if i.drop_size != api::DropSize::Normal {
             self.drop_sizes.insert(i.key.clone(), i.drop_size);
+        }
+        if i.drop_policy != api::DropPolicy::default() {
+            self.max_drop_pickup_range = self.max_drop_pickup_range.max(i.drop_policy.pickup_range);
+            self.drop_policies.insert(i.key.clone(), i.drop_policy);
         }
         if i.drop_animation != api::DropAnimation::default() {
             self.drop_animations.insert(i.key.clone(), i.drop_animation);

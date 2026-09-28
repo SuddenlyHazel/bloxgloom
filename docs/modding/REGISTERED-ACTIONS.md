@@ -58,12 +58,15 @@ legacy packets remain accepted as compatibility adapters into the same registere
 handler; `help` remains local and does not produce a server action.
 
 The command screen is available to all clients. The grant item browser is only
-shown in local admin mode; this display setting never authorizes a grant. A local
-shortcut can use `bind_action.namespace:key=T` in the client config for a
-zero-argument command. It is inert unless the current server advertises that exact
-command; commands requiring arguments must be entered with their arguments.
-In normal mode the screen lists the active catalog's command keys, argument
-syntax and Admin requirement; `help` also lists active command keys locally.
+shown in local admin mode; this display setting never authorizes a grant. The
+**BIND KEYS** page captures distinct non-movement letters for inventory, kiln,
+drop and advertised zero-argument commands, saves them to the local config, and
+marks bindings absent from the current session inert. A shortcut can also be set
+as `bind_action.namespace:key=T` in the config. Commands requiring arguments must
+be entered with their arguments. The normal command screen pages through the
+active catalog's command keys, argument syntax and Admin requirement; `help`
+also lists active command keys locally. `appearance <skin> <shirt> <pants>` is a
+separate local cosmetic request, not a durable gameplay command.
 
 For example, a package action can register a typed player command with
 `h.register_action('demo:offer', 1, 'Offer', 'empty', nil, 'demo:offer_handler',

@@ -2,6 +2,9 @@
 //! These expose the engine's existing voxel geometry and material capabilities;
 //! arbitrary meshes, partial collision boxes and shaders are not supported.
 
+mod drop_policy;
+pub use drop_policy::DropPolicy;
+
 #[derive(Clone, Debug)]
 pub struct Texture {
     pub key: String,
@@ -110,6 +113,8 @@ pub struct Item {
     pub drop_size: DropSize,
     /// Client-only world-drop motion. Server age and pickup events remain authoritative.
     pub drop_animation: DropAnimation,
+    /// Server-owned falling, pickup, merging and expiry. Frozen with item identity.
+    pub drop_policy: DropPolicy,
     /// The stack cap is always 128; components cannot override conservation.
     pub components: Components,
 }

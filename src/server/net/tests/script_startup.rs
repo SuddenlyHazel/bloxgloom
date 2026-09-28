@@ -6,6 +6,8 @@ use crate::server::startup::ServerStartup;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "script_startup/appearance.rs"]
+mod appearance;
 #[path = "script_startup/bundle.rs"]
 mod bundle;
 #[path = "script_startup/bundle_catalog.rs"]
@@ -16,6 +18,8 @@ mod bundle_runtime;
 mod bundle_ui;
 #[path = "script_startup/combined.rs"]
 mod combined;
+#[path = "script_startup/drop_policy.rs"]
+mod drop_policy;
 #[path = "script_startup/gameplay.rs"]
 mod gameplay;
 #[path = "script_startup/generation.rs"]

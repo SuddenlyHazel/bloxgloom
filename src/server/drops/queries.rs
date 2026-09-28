@@ -7,13 +7,16 @@
 //! pages and reports capacity explicitly, so an impossible view closes only its
 //! observer rather than stopping the coordinator or sending a false empty frame.
 
+#[cfg(test)]
+use super::LIFETIME;
 use super::entity::{DROP_ENTITY_TYPE, DropEntityPayload};
-use super::{LIFETIME, PICKUP_RANGE_SQ, VIEW_RANGE, VIEW_RANGE_SQ, age_ms_now, unix_ms};
+use super::{VIEW_RANGE, VIEW_RANGE_SQ, age_ms_now, unix_ms};
+use crate::content::Catalog;
 use crate::inventory::Stack;
 use crate::protocol::DroppedItem;
 use crate::server::entities::{EntityId, EntityLocation, EntityStore, MobilePage};
 use crate::world::ChunkKey;
-use bloxgloom_host_api::entity::{DropLifetime, DropPickupContext};
+use bloxgloom_host_api::entity::DropPickupContext;
 
 struct LiveDrop {
     id: EntityId,
@@ -61,7 +64,7 @@ fn distance_sq(a: [f32; 3], b: [f32; 3]) -> f32 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
 }
 
-fn pickup_policy(payload: &DropEntityPayload, now_ms: u64) -> DropPickupContext {
+fn pickup_policy(payload: &DropEntityPayload, catalog: &Catalog, now_ms: u64) -> DropPickupContext {
     DropPickupContext {
         age_ms: now_ms.saturating_sub(payload.created_unix_ms),
         delay_ms: payload
@@ -69,10 +72,7 @@ fn pickup_policy(payload: &DropEntityPayload, now_ms: u64) -> DropPickupContext 
             .as_millis()
             .try_into()
             .unwrap_or(u64::MAX),
-        lifetime_ms: LIFETIME
-            .as_millis()
-            .try_into()
-            .expect("drop lifetime fits u64"),
+        lifetime_ms: catalog.drop_policy(payload.stack.item).lifetime_ms,
     }
 }
 
@@ -187,16 +187,24 @@ pub(in crate::server) fn project_nearby(
 /// signal participates.
 pub(in crate::server) fn pickup_candidates(
     store: &EntityStore,
+    catalog: &Catalog,
     position: [f32; 3],
 ) -> Vec<DroppedItem> {
     let now_ms = unix_ms();
-    let radius = PICKUP_RANGE_SQ.sqrt();
+    let radius = catalog.max_drop_pickup_range();
     let min = position.map(|coordinate| coordinate - radius);
     let max = position.map(|coordinate| coordinate + radius);
     let mut items: Vec<_> = collect_in_aabb(store, min, max)
         .iter()
         .filter(|drop| {
-            pickup_policy(&drop.payload, now_ms).in_range(position, drop.position, PICKUP_RANGE_SQ)
+            pickup_policy(&drop.payload, catalog, now_ms).in_range(
+                position,
+                drop.position,
+                catalog
+                    .drop_policy(drop.payload.stack.item)
+                    .pickup_range
+                    .powi(2),
+            )
         })
         .map(|drop| snapshot_item(drop, now_ms))
         .collect();
@@ -213,16 +221,20 @@ pub(in crate::server) fn stack(store: &EntityStore, id: EntityId) -> Option<Stac
 /// server supplies the authenticated actor position and clock, not script data.
 pub(in crate::server) fn pickup_eligible(
     store: &EntityStore,
+    catalog: &Catalog,
     raw_id: u64,
     position: [f32; 3],
 ) -> bool {
     EntityId::new(raw_id)
         .and_then(|id| live_drop(store, id))
         .is_some_and(|drop| {
-            pickup_policy(&drop.payload, unix_ms()).in_range(
+            pickup_policy(&drop.payload, catalog, unix_ms()).in_range(
                 position,
                 drop.position,
-                PICKUP_RANGE_SQ,
+                catalog
+                    .drop_policy(drop.payload.stack.item)
+                    .pickup_range
+                    .powi(2),
             )
         })
 }
@@ -230,11 +242,11 @@ pub(in crate::server) fn pickup_eligible(
 /// The same server-clock eligibility used by ordinary pickup. Inspecting a
 /// drop is allowed earlier; extraction through the shared inventory service is
 /// not, so scripts cannot silently bypass its pickup delay or expiration.
-pub(in crate::server) fn extractable(store: &EntityStore, id: EntityId) -> bool {
+pub(in crate::server) fn extractable(store: &EntityStore, catalog: &Catalog, id: EntityId) -> bool {
     let Some(drop) = live_drop(store, id) else {
         return false;
     };
-    pickup_policy(&drop.payload, unix_ms()).extractable()
+    pickup_policy(&drop.payload, catalog, unix_ms()).extractable()
 }
 
 /// Airborne drops are exactly the scheduled ones: settled drops suspend off
@@ -252,25 +264,9 @@ pub(in crate::server) fn airborne_count(store: &EntityStore) -> usize {
 }
 
 /// True when at least one drop is past its lifetime. The coordinator calls
-/// this through a one-second throttle; the scan exits on the first hit.
+/// this through a one-second throttle; the derived due index inspects one entry.
 pub(in crate::server) fn has_expired(store: &EntityStore, now_ms: u64) -> bool {
-    store.record_values().any(|record| {
-        record.entity_type == DROP_ENTITY_TYPE
-            && record
-                .payload
-                .downcast_ref::<DropEntityPayload>()
-                .is_some_and(|payload| {
-                    DropLifetime {
-                        created_ms: payload.created_unix_ms,
-                        now_ms,
-                        lifetime_ms: LIFETIME
-                            .as_millis()
-                            .try_into()
-                            .expect("drop lifetime fits u64"),
-                    }
-                    .expired()
-                })
-    })
+    !store.expired_entities(now_ms, 1).is_empty()
 }
 
 #[cfg(test)]

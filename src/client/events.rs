@@ -110,7 +110,15 @@ impl ClientApp {
                     self.focused_control = self
                         .ui_layout
                         .as_ref()
-                        .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1))
+                        .and_then(|layout| {
+                            if self.screen == UiScreen::Admin && self.admin_binding_mode {
+                                layout
+                                    .binding_hit(self.cursor.0, self.cursor.1)
+                                    .or_else(|| layout.hit_test(self.cursor.0, self.cursor.1))
+                            } else {
+                                layout.hit_test(self.cursor.0, self.cursor.1)
+                            }
+                        })
                         .filter(|control| *control != UiControl::InventorySearch);
                 }
             }
@@ -124,6 +132,29 @@ impl ClientApp {
                         return;
                     }
                     if pressed && self.screen == UiScreen::Admin {
+                        if self.admin_binding_mode {
+                            if event.repeat {
+                                return;
+                            }
+                            if code == KeyCode::F4 {
+                                self.set_screen(UiScreen::Playing);
+                            } else if code == KeyCode::Escape {
+                                if self.admin_binding_selected.take().is_none() {
+                                    self.set_screen(UiScreen::Playing);
+                                }
+                            } else if self.admin_binding_selected.is_some() {
+                                self.binding_capture(code);
+                            } else if code == KeyCode::Tab {
+                                self.advance_focus(self.shift_down);
+                            } else if matches!(
+                                code,
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space
+                            ) && let Some(control) = self.focused_control
+                            {
+                                self.activate_control(event_loop, control);
+                            }
+                            return;
+                        }
                         match code {
                             KeyCode::Escape | KeyCode::F4 => self.set_screen(UiScreen::Playing),
                             KeyCode::Enter | KeyCode::NumpadEnter => self.admin_run(),
@@ -324,10 +355,15 @@ impl ClientApp {
                         || (button == MouseButton::Right
                             && matches!(self.screen, UiScreen::Inventory | UiScreen::Container))
                     {
-                        let control = self
-                            .ui_layout
-                            .as_ref()
-                            .and_then(|layout| layout.hit_test(self.cursor.0, self.cursor.1));
+                        let control = self.ui_layout.as_ref().and_then(|layout| {
+                            if self.screen == UiScreen::Admin && self.admin_binding_mode {
+                                layout
+                                    .binding_hit(self.cursor.0, self.cursor.1)
+                                    .or_else(|| layout.hit_test(self.cursor.0, self.cursor.1))
+                            } else {
+                                layout.hit_test(self.cursor.0, self.cursor.1)
+                            }
+                        });
                         if self.screen == UiScreen::Inventory && button == MouseButton::Left {
                             self.focused_control = control;
                         }

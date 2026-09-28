@@ -37,6 +37,7 @@ impl Extension for Content {
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::Opaque {
                 version: 2,
                 fingerprint: 0xc011,
@@ -106,6 +107,7 @@ impl Extension for Content {
             sprite: false,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::None,
         })?;
         r.block(Block {
@@ -133,6 +135,7 @@ impl Extension for Content {
             sprite: true,
             drop_size: bloxgloom_host_api::content::DropSize::Normal,
             drop_animation: Default::default(),
+            drop_policy: Default::default(),
             components: Components::None,
         })?;
         r.tag(Tag {

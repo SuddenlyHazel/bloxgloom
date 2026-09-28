@@ -152,7 +152,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         arguments: request.arguments.clone(),
     };
     let mut requested = Vec::new();
-    let plan = crate::server::gameplay::plan_removals(
+    let plan = crate::server::gameplay::plan_with_lifecycles(
         &mut state.world,
         &mut reads,
         &mut requested,
@@ -169,6 +169,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             admin: state.admin_profile == Some(profile),
             entities: &state.entities,
         },
+        Some(&state.lifecycles),
     );
     for key in requested {
         let _ = request_chunk(state, key);
@@ -194,8 +195,21 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         plan.entity_spawns.push(spawn);
         spawn_read_keys.extend(keys);
     }
-    ensure_no_unhandled_anchor(state, &plan.edits)?;
     for &(x, y, z, block) in &plan.edits {
+        // Expanding one touched cell cannot bypass player reach for the rest
+        // of a footprint. Ordinary non-anchor effects keep their existing
+        // gameplay-radius contract. Expansion already fenced these occupants.
+        if state
+            .entities
+            .anchored_at(crate::server::entities::CellCoord::new(x, y, z))
+            .is_some()
+        {
+            verify_reach(
+                &state.clients[&client_id],
+                [x, y, z],
+                catalog.player_rules(),
+            )?;
+        }
         if catalog.block_flags(block) & crate::content::SOLID != 0
             && state.clients.values().any(|client| {
                 block_intersects_player(catalog.player_rules().body(), [x, y, z], client.position())

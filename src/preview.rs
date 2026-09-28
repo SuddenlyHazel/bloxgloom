@@ -117,6 +117,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Container, "container"),
             (UiScreen::Actions, "actions"),
             (UiScreen::Admin, "commands"),
+            (UiScreen::Admin, "commands-bindings"),
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
@@ -373,18 +374,20 @@ pub fn render_drop_animation_previews(directory: &Path) -> Result<(), Box<dyn Er
         ("hover.png", DropPhase::Hover),
         ("pickup.png", DropPhase::Pickup),
     ] {
-        pollster::block_on(render_previews(
-            vec![PreviewOutput {
-                path: directory.join(name),
-                width: 1280,
-                height: 720,
-                scale: 1.0,
-                screen: UiScreen::Playing,
-                orientation: None,
-            }],
-            (0, 0),
-            PreviewScene::Drops(phase),
-        ))?;
+        for name in [name.to_owned(), format!("custom-{name}")] {
+            pollster::block_on(render_previews(
+                vec![PreviewOutput {
+                    path: directory.join(name),
+                    width: 1280,
+                    height: 720,
+                    scale: 1.0,
+                    screen: UiScreen::Playing,
+                    orientation: None,
+                }],
+                (0, 0),
+                PreviewScene::Drops(phase),
+            ))?;
+        }
     }
     Ok(())
 }
@@ -875,6 +878,40 @@ async fn render_previews_with_packages(
     }
 
     let drop_gpu_mesh = if matches!(scene, PreviewScene::Drops(_) | PreviewScene::Cave { .. }) {
+        let custom = outputs[0]
+            .path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("custom-"));
+        let mut drop_catalog = crate::content::catalog().clone();
+        let custom_item = if custom {
+            use bloxgloom_host_api::content::{
+                Components, DropAnimation, DropPolicy, DropSize, Item,
+            };
+            drop_catalog.public_item(&Item {
+                key: "preview:animated-token".into(),
+                name: "Animated token".into(),
+                texture: "bloxgloom:stone".into(),
+                swatch: [1.0; 4],
+                placeable: None,
+                sprite: false,
+                drop_size: DropSize::Large,
+                drop_animation: DropAnimation {
+                    pop_duration: 1.0,
+                    pop_height: 1.5,
+                    hover_amplitude: 0.3,
+                    hover_speed: 4.0,
+                    spin_speed: 7.0,
+                    pickup_duration: 0.8,
+                    pickup_arc: 1.2,
+                    pickup_turn: 8.0,
+                },
+                drop_policy: DropPolicy::default(),
+                components: Components::None,
+            })?;
+            Some(drop_catalog.item_by_key("preview:animated-token").unwrap())
+        } else {
+            None
+        };
         let phase = if let PreviewScene::Drops(phase) = scene {
             phase
         } else {
@@ -882,7 +919,7 @@ async fn render_previews_with_packages(
         };
         let items: Vec<_> = [
             crate::items::ItemId::new(world::RED_FLOWER.get()),
-            crate::items::ItemId::new(world::STONE.get()),
+            custom_item.unwrap_or_else(|| crate::items::ItemId::new(world::STONE.get())),
             crate::items::ItemId::new(
                 if matches!(scene, PreviewScene::Cave { .. }) {
                     world::DIRT
@@ -916,8 +953,7 @@ async fn render_previews_with_packages(
         })
         .collect();
         let now = Instant::now();
-        let mut animator =
-            DropAnimator::new(now, std::sync::Arc::new(crate::content::catalog().clone()));
+        let mut animator = DropAnimator::new(now, std::sync::Arc::new(drop_catalog.clone()));
         animator.snapshot(items.clone(), now);
         let moment = match phase {
             DropPhase::Pop => now + std::time::Duration::from_millis(250),
@@ -942,7 +978,11 @@ async fn render_previews_with_packages(
             });
             visual.light = field.face(local, 1, 0);
         }
-        let meshes = render::mesh_dropped_items(&visuals);
+        let meshes = if custom {
+            render::mesh_dropped_items_with_catalog(&visuals, &drop_catalog)
+        } else {
+            render::mesh_dropped_items(&visuals)
+        };
         let upload = |vertices: &[f32], indices: &[u32]| {
             if indices.is_empty() {
                 return None;
@@ -1132,6 +1172,15 @@ async fn render_previews_with_packages(
             has_target.then_some([target_xz.0, target_height, target_xz.1]),
             output.scale,
         );
+        if output.screen == UiScreen::Admin
+            && output
+                .path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("commands-bindings"))
+        {
+            ui_frame.admin_input = "\u{1}\nInventory  :  E\nKiln input  :  R\nKiln fuel  :  F\nDrop  :  Q\ndemo:wave  :  T\nother:absent  :  Y (NOT IN SESSION)";
+            ui_frame.hovered = Some(UiControl::AdminBindingRow(4));
+        }
         if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) && ui_frame.kiln.is_some()
         {
             let entity = if matches!(scene, PreviewScene::Hoppers) {

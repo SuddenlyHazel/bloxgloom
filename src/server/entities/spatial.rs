@@ -154,6 +154,7 @@ pub struct EntityIndexes {
     pub anchored_cells: BTreeMap<CellCoord, EntityId>,
     pub schedule: BTreeMap<u64, BTreeSet<EntityId>>,
     tick_schedule: BTreeSet<(u64, EntityId)>,
+    expiry_schedule: BTreeSet<(u64, EntityId)>,
     suspended_ticks: BTreeSet<EntityId>,
     tick_types: BTreeSet<EntityTypeId>,
     mobile: MobileSpatialIndex,
@@ -320,6 +321,9 @@ impl EntityIndexes {
         } else if self.tick_types.contains(&record.entity_type) {
             self.suspended_ticks.insert(record.id);
         }
+        if let Some(deadline) = record.expiry_unix_ms {
+            self.expiry_schedule.insert((deadline, record.id));
+        }
         Ok(())
     }
 
@@ -361,6 +365,9 @@ impl EntityIndexes {
             self.tick_schedule.remove(&(next_tick, record.id));
         }
         self.suspended_ticks.remove(&record.id);
+        if let Some(deadline) = record.expiry_unix_ms {
+            self.expiry_schedule.remove(&(deadline, record.id));
+        }
         Ok(())
     }
 
@@ -431,6 +438,17 @@ impl EntityIndexes {
             .collect()
     }
 
+    /// Ordered by deadline, then ID. Prefix traversal and allocation are both
+    /// bounded; a failed/queued WAL action leaves its entries eligible.
+    pub fn expired(&self, now_ms: u64, maximum: usize) -> Vec<EntityId> {
+        self.expiry_schedule
+            .iter()
+            .take_while(|(deadline, _)| *deadline <= now_ms)
+            .take(maximum)
+            .map(|(_, id)| *id)
+            .collect()
+    }
+
     pub fn mobile_query(&self, min: [f32; 3], max: [f32; 3]) -> Result<Vec<EntityId>, EntityError> {
         self.mobile.query(min, max)
     }
@@ -447,6 +465,7 @@ impl EntityIndexes {
             || rebuilt.anchored_cells != self.anchored_cells
             || rebuilt.schedule != self.schedule
             || rebuilt.tick_schedule != self.tick_schedule
+            || rebuilt.expiry_schedule != self.expiry_schedule
             || rebuilt.suspended_ticks != self.suspended_ticks
             || rebuilt.tick_types != self.tick_types
             || rebuilt.mobile != self.mobile
@@ -521,10 +540,12 @@ impl MobileSpatialIndex {
                 for z in i64::from(min.2)..=i64::from(max.2) {
                     let bucket = Bucket(x as i32, y as i32, z as i32);
                     if let Some(bucket_ids) = self.buckets.get(&bucket) {
-                        ids.extend(bucket_ids.iter().copied());
-                        if ids.len() > MAX_QUERY_CANDIDATES {
+                        // Every mobile ID belongs to exactly one bucket. Reject
+                        // before traversing/copying an oversized bucket.
+                        if bucket_ids.len() > MAX_QUERY_CANDIDATES.saturating_sub(ids.len()) {
                             return Err(EntityError::SpatialQueryTooBroad);
                         }
+                        ids.extend(bucket_ids.iter().copied());
                     }
                 }
             }

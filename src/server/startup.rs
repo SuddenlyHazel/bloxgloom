@@ -73,6 +73,11 @@ impl ServerStartup {
         }
         let declarations = super::script::startup::Declarations::discover(root)?;
         let mut startup = self.with_extension(&declarations)?;
+        if let Some(appearance) = &declarations.appearance {
+            Arc::make_mut(&mut startup.catalog)
+                .register_player_appearance(appearance.clone())
+                .map_err(|error| io::Error::other(format!("invalid appearance: {error:?}")))?;
+        }
         if let Some(selection) = &declarations.player_rules {
             let catalog = Arc::make_mut(&mut startup.catalog);
             catalog

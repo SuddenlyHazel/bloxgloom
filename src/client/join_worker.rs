@@ -88,6 +88,7 @@ impl Attempt {
                 config.profile,
                 control,
             )?;
+            super::appearance::apply_environment(&network)?;
             Ok(Prepared { network, config })
         })
     }

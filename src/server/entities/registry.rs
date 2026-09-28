@@ -153,6 +153,12 @@ pub trait EntityPayloadCodec: Send + Sync + 'static {
 
     fn encode(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityCodecError>;
 
+    /// Derived wall-clock deadline, never an independently persisted field.
+    /// Only drop codecs currently opt in; the owner still stages the despawn.
+    fn expiry_unix_ms(&self, _payload: &EntityPayload) -> Option<u64> {
+        None
+    }
+
     fn migrate(
         &self,
         from_version: u16,
@@ -314,6 +320,10 @@ impl EntityTypeDescriptor {
             return Err(EntityError::PayloadTooLarge);
         }
         Ok(encoded)
+    }
+
+    pub fn expiry_unix_ms(&self, payload: &EntityPayload) -> Option<u64> {
+        self.codec.expiry_unix_ms(payload)
     }
 
     pub fn public_view(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityError> {

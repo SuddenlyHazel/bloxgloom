@@ -1,9 +1,12 @@
 //! Shared static actor meshes, drawn with one bounded instance buffer.
 //! Cosmetics and lighting are public presentation state; no profile/inventory data.
 
+mod appearance;
 mod mesh;
+#[cfg(test)]
+mod tests;
 
-use super::{DEPTH_FORMAT, shader::with_world_sun};
+use super::DEPTH_FORMAT;
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 use wgpu::util::DeviceExt;
@@ -59,7 +62,7 @@ impl AvatarRenderer {
         camera_buffer: &wgpu::Buffer,
         catalog: &crate::content::Catalog,
     ) -> Self {
-        let source = with_world_sun(include_str!("avatars/shader.wgsl"));
+        let source = appearance::shader(catalog);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("public avatar shader"),
             source: wgpu::ShaderSource::Wgsl(source.into()),

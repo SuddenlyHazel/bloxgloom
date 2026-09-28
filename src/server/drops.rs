@@ -28,16 +28,19 @@ pub(in crate::server) use queries::{
     airborne_count, extractable, has_expired, pickup_candidates, pickup_eligible, stack,
 };
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::server::entities::EntityDelta;
 
-pub(super) const PICKUP_RANGE_SQ: f32 = 2.25 * 2.25;
 pub(super) const VIEW_RANGE: f32 = 64.0;
 pub(super) const VIEW_RANGE_SQ: f32 = VIEW_RANGE * VIEW_RANGE;
-pub(super) const LIFETIME: Duration = Duration::from_secs(600);
+#[cfg(test)]
+pub(super) const LIFETIME: std::time::Duration = std::time::Duration::from_secs(600);
+#[cfg(test)]
 pub(super) const DROP_RADIUS: f32 = 0.18;
+#[cfg(test)]
 pub(super) const GRAVITY: f32 = 24.0;
+#[cfg(test)]
 pub(super) const TERMINAL_SPEED: f32 = 30.0;
 
 pub(in crate::server) fn unix_ms() -> u64 {

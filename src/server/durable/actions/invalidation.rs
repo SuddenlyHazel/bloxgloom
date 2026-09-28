@@ -6,6 +6,8 @@ use crate::server::entities::{self, CellCoord as EntityCell, EntityLocation, Ent
 use std::collections::BTreeMap;
 type RemovalParts = (Vec<(EntityCell, BlockId)>, Vec<Stack>);
 
+pub(in crate::server) mod gameplay;
+
 fn capacity_error(error: entities::EntityError) -> io::Error {
     let kind = match error {
         entities::EntityError::TransactionTooLarge
@@ -26,6 +28,18 @@ pub(in crate::server) fn removal(
     snapshot: &EntitySnapshot,
     touched: Option<EntityCell>,
 ) -> io::Result<RemovalParts> {
+    Ok((
+        removal_cells(catalog, lifecycles, snapshot, touched)?,
+        removal_refunds(catalog, lifecycles, snapshot)?,
+    ))
+}
+
+fn removal_cells(
+    catalog: &std::sync::Arc<crate::content::Catalog>,
+    lifecycles: &crate::server::lifecycle::Registry,
+    snapshot: &EntitySnapshot,
+    touched: Option<EntityCell>,
+) -> io::Result<Vec<(EntityCell, BlockId)>> {
     let anchor = snapshot
         .anchor()
         .ok_or_else(|| io::Error::other("not anchored"))?;
@@ -34,15 +48,7 @@ pub(in crate::server) fn removal(
             definition: d.clone(),
             catalog: catalog.clone(),
         };
-        return Ok((
-            adapter.cells(anchor).map_err(io::Error::other)?,
-            super::anchored::refund_stacks(
-                catalog,
-                d,
-                &snapshot.private_payload,
-                bloxgloom_host_api::anchored::RemovalCause::WorldEdit,
-            )?,
-        ));
+        return adapter.cells(anchor).map_err(io::Error::other);
     }
     if let Some(d) = catalog.machine(snapshot.entity_type) {
         let adapter = entities::machine::Adapter::new(catalog.clone(), d.clone());
@@ -50,10 +56,7 @@ pub(in crate::server) fn removal(
             .private_payload
             .downcast_ref::<entities::machine::MachinePayload>()
             .ok_or_else(|| io::Error::other("invalid machine payload"))?;
-        let item = catalog.items().find(|i| i.key == d.item).unwrap().id;
-        let mut drops = vec![Stack::new(item, 1)];
-        drops.extend(p.slots.iter().flatten().cloned());
-        return Ok((adapter.cells(anchor, p).map_err(io::Error::other)?, drops));
+        return adapter.cells(anchor, p).map_err(io::Error::other);
     }
     let EntityLocation::Anchored { anchor_state, .. } = snapshot.location else {
         unreachable!()
@@ -64,10 +67,6 @@ pub(in crate::server) fn removal(
     if d.entity != snapshot.entity_type {
         return Err(io::Error::other("wrong lifecycle entity"));
     }
-    let p = snapshot
-        .private_payload
-        .downcast_ref::<entities::container::ContainerPayload>()
-        .ok_or_else(|| io::Error::other("invalid storage payload"))?;
     let cells = if let Some(touched) = touched {
         let EntityLocation::Anchored { ref footprint, .. } = snapshot.location else {
             unreachable!()
@@ -90,14 +89,50 @@ pub(in crate::server) fn removal(
             .map_err(io::Error::other)?
             .cells
     };
-    let cells = cells
+    Ok(cells
         .into_iter()
         .zip(&d.states)
         .map(|((c, _), s)| (EntityCell::new(c[0], c[1], c[2]), *s))
-        .collect();
+        .collect())
+}
+
+fn removal_refunds(
+    catalog: &std::sync::Arc<crate::content::Catalog>,
+    lifecycles: &crate::server::lifecycle::Registry,
+    snapshot: &EntitySnapshot,
+) -> io::Result<Vec<Stack>> {
+    if let Some(d) = catalog.anchored_entity(snapshot.entity_type) {
+        return super::anchored::refund_stacks(
+            catalog,
+            d,
+            &snapshot.private_payload,
+            bloxgloom_host_api::anchored::RemovalCause::WorldEdit,
+        );
+    }
+    if let Some(d) = catalog.machine(snapshot.entity_type) {
+        let p = snapshot
+            .private_payload
+            .downcast_ref::<entities::machine::MachinePayload>()
+            .ok_or_else(|| io::Error::other("invalid machine payload"))?;
+        let item = catalog.items().find(|i| i.key == d.item).unwrap().id;
+        let mut drops = vec![Stack::new(item, 1)];
+        drops.extend(p.slots.iter().flatten().cloned());
+        return Ok(drops);
+    }
+    let EntityLocation::Anchored { anchor_state, .. } = snapshot.location else {
+        return Err(io::Error::other("not anchored"));
+    };
+    let d = lifecycles
+        .for_state(catalog, anchor_state)
+        .filter(|d| d.entity == snapshot.entity_type)
+        .ok_or_else(|| io::Error::other("unregistered anchored refund"))?;
+    let p = snapshot
+        .private_payload
+        .downcast_ref::<entities::container::ContainerPayload>()
+        .ok_or_else(|| io::Error::other("invalid storage payload"))?;
     let mut drops = vec![Stack::new(d.item, 1)];
     drops.extend(p.slots.iter().flatten().cloned());
-    Ok((cells, drops))
+    Ok(drops)
 }
 
 /// Caller supplies a bounded edit batch. At most 32 unique destructions, 2048

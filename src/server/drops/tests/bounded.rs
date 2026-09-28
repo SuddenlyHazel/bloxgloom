@@ -148,3 +148,30 @@ fn motion_is_scheduled_entity_work_never_coordinator_stepping() {
     assert!(store.due_entities(u64::MAX, 64).is_empty());
     assert_eq!(store.len(), 3);
 }
+
+#[test]
+fn expiry_due_prefix_is_capped_and_uncommitted_work_remains_eligible() {
+    let (mut store, catalog) = test_store();
+    fill_chunk(&mut store, 300, 1_000);
+    let now = 601_000;
+    let first = planning::plan_expired(&store, &catalog, now, usize::MAX)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.entity_ids().len(), 256);
+    assert_eq!(store.expired_entities(now, 1), vec![first.entity_ids()[0]]);
+    // A rejected/unsubmitted batch cannot consume the index cursor.
+    assert_eq!(
+        planning::plan_expired(&store, &catalog, now, 1)
+            .unwrap()
+            .unwrap()
+            .entity_ids(),
+        vec![first.entity_ids()[0]]
+    );
+    store.apply_committed(first).unwrap();
+    let rest = planning::plan_expired(&store, &catalog, now, usize::MAX)
+        .unwrap()
+        .unwrap();
+    assert_eq!(rest.entity_ids().len(), 44);
+    store.apply_committed(rest).unwrap();
+    assert!(store.expired_entities(now, 1).is_empty());
+}

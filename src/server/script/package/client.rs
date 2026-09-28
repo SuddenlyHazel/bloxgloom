@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–12
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–22
 //! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -15,6 +15,10 @@
 //! a non-default drop size is declared; unchanged declarations keep exact V7 bytes.
 //! V9 adds per-item drop animation; V10/V11 append selected player rules to
 //! V7/V8 respectively, and V12 carries both player rules and drop animation.
+//! V13 carries item size/animation, explicitly optional player rules, and a
+//! required bounded player appearance record (including the model identity).
+//! V20/V21 add per-item authoritative drop policies without/with player rules;
+//! V22 combines those policies with the V13 appearance record and optional rules.
 //! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
@@ -36,6 +40,12 @@ const ANIMATED_MAGIC: &[u8] = b"BGCLIENT\x09";
 const PLAYER_MAGIC: &[u8] = b"BGCLIENT\x0a";
 const PLAYER_SIZED_MAGIC: &[u8] = b"BGCLIENT\x0b";
 const PLAYER_ANIMATED_MAGIC: &[u8] = b"BGCLIENT\x0c";
+// V13 always includes item size/animation, an optional-player marker, and one
+// required appearance selection. Earlier headers retain their exact grammar.
+const APPEARANCE_MAGIC: &[u8] = b"BGCLIENT\x0d";
+const POLICY_MAGIC: &[u8] = b"BGCLIENT\x14";
+const PLAYER_POLICY_MAGIC: &[u8] = b"BGCLIENT\x15";
+const APPEARANCE_POLICY_MAGIC: &[u8] = b"BGCLIENT\x16";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -185,6 +195,10 @@ impl ClientBundle {
             PLAYER_MAGIC,
             PLAYER_SIZED_MAGIC,
             PLAYER_ANIMATED_MAGIC,
+            APPEARANCE_MAGIC,
+            POLICY_MAGIC,
+            PLAYER_POLICY_MAGIC,
+            APPEARANCE_POLICY_MAGIC,
         ]
         .contains(&version)
         {
@@ -281,11 +295,25 @@ impl ClientBundle {
             version == SIZED_MAGIC
                 || version == ANIMATED_MAGIC
                 || version == PLAYER_SIZED_MAGIC
-                || version == PLAYER_ANIMATED_MAGIC,
-            version == ANIMATED_MAGIC || version == PLAYER_ANIMATED_MAGIC,
+                || version == PLAYER_ANIMATED_MAGIC
+                || version == APPEARANCE_MAGIC
+                || version == POLICY_MAGIC
+                || version == PLAYER_POLICY_MAGIC
+                || version == APPEARANCE_POLICY_MAGIC,
+            version == ANIMATED_MAGIC
+                || version == PLAYER_ANIMATED_MAGIC
+                || version == APPEARANCE_MAGIC
+                || version == POLICY_MAGIC
+                || version == PLAYER_POLICY_MAGIC
+                || version == APPEARANCE_POLICY_MAGIC,
             version == PLAYER_MAGIC
                 || version == PLAYER_SIZED_MAGIC
-                || version == PLAYER_ANIMATED_MAGIC,
+                || version == PLAYER_ANIMATED_MAGIC
+                || version == PLAYER_POLICY_MAGIC,
+            version == APPEARANCE_MAGIC || version == APPEARANCE_POLICY_MAGIC,
+            version == POLICY_MAGIC
+                || version == PLAYER_POLICY_MAGIC
+                || version == APPEARANCE_POLICY_MAGIC,
         )?;
         if !reader.0.is_empty() {
             return Err(invalid());

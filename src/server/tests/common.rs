@@ -322,7 +322,7 @@ pub(super) fn drop_candidates(
     state: &State,
     position: [f32; 3],
 ) -> Vec<crate::protocol::DroppedItem> {
-    crate::server::drops::pickup_candidates(&state.entities, position)
+    crate::server::drops::pickup_candidates(&state.entities, state.world.catalog(), position)
 }
 
 pub(super) fn drop_stack(
