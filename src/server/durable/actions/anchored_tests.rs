@@ -4,6 +4,8 @@ use crate::{
     server::{entities::*, startup::ServerStartup},
 };
 use std::sync::Arc;
+#[path = "reaction_removal_tests.rs"]
+mod reaction_removal_tests;
 const KEY: &str = bloxgloom_lifecycle_fixture::anchored::KEY;
 fn open(path: &std::path::Path) -> State {
     let startup = ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))

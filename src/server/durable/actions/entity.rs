@@ -9,7 +9,7 @@
 use super::prepared_deltas;
 use crate::inventory::InventoryStore;
 use crate::server::State;
-use crate::server::durable::CommitAction;
+use crate::server::durable::{CommitAction, TerrainReads};
 use crate::server::effects::CellCoord as EffectCell;
 use crate::server::entities::{
     AnchorUpdate, CellCoord, EntityBlockStateChange, EntityDependencies, EntityId,
@@ -590,8 +590,9 @@ pub(in crate::server) fn commit_tick_plan(
     } else if plan.anchor_update.is_some() {
         return Err(corrupt("mobile entity planner returned an anchor update"));
     }
-    let (world_edits, changed_cells, _read_chunks, write_coords) =
+    let (mut world_edits, mut changed_cells, _read_chunks, mut write_coords) =
         validate_footprint_plan(state, id, &snapshot.location, &plan.block_states, &catalog)?;
+    let mut terrain_reads = TerrainReads::default();
     let wakes = plan_wakes(
         state,
         &neighbours,
@@ -695,7 +696,22 @@ pub(in crate::server) fn commit_tick_plan(
                 "anchored removal must clear the complete footprint",
             ));
         }
-        entities = super::anchored::refund_removal(state, &snapshot, current_tick, entities)?;
+        let (removal, combined) = plan_reaction_removal(
+            state,
+            &snapshot,
+            current_tick,
+            &write_coords,
+            &mut terrain_reads,
+            entities,
+        )?;
+        world_edits = removal.prepared;
+        changed_cells = removal
+            .edits
+            .iter()
+            .map(|&(x, y, z, _)| CellCoord::new(x, y, z))
+            .collect();
+        write_coords = removal.edits;
+        entities = combined;
     }
     if !plan.lifecycle.spawns.is_empty() {
         entities = super::mobile_lifecycle::spawn_effects(
@@ -724,7 +740,7 @@ pub(in crate::server) fn commit_tick_plan(
         action_id: None,
         receipt_value: None,
         receipt_transition: None,
-        terrain_reads: Default::default(),
+        terrain_reads,
         inventory_before: None,
         inventory: None,
         world_edits,
@@ -738,6 +754,156 @@ pub(in crate::server) fn commit_tick_plan(
         entities: Some(entities),
         entity_wakes: wakes,
     }))
+}
+
+/// Registered reactions retain their lifecycle-owned footprint and refund, but
+/// removal/neighbor decisions share the same overlay as player destruction.
+/// Missing decision inputs defer the whole tick; no despawn or refund is applied
+/// until these reads and every resulting participant pass WAL admission.
+fn plan_reaction_removal(
+    state: &mut State,
+    snapshot: &EntitySnapshot,
+    tick: u64,
+    coords: &[crate::server::gameplay::Edit],
+    reads: &mut TerrainReads,
+    base: PreparedEntityTransaction,
+) -> io::Result<(
+    crate::server::gameplay::WorldPlan,
+    PreparedEntityTransaction,
+)> {
+    let EntityLocation::Anchored {
+        anchor,
+        anchor_state,
+        ..
+    } = snapshot.location
+    else {
+        return Err(corrupt("reaction removal requires an anchor"));
+    };
+    let mut requested = Vec::new();
+    let planned = crate::server::gameplay::plan_removals(
+        &mut state.world,
+        reads,
+        &mut requested,
+        crate::server::gameplay::OperationInput {
+            edits: coords,
+            // Like player anchored removal, dispatch once for the anchor with
+            // lifecycle-owned loot. Generic harvest must not refund each cell.
+            removals: &[(
+                anchor_state,
+                [anchor.x, anchor.y, anchor.z],
+                bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak,
+            )],
+            seed: state.seed,
+            tick,
+            action: None,
+        },
+        crate::server::gameplay::Participants {
+            actor: None,
+            actor_position: None,
+            admin: false,
+            entities: &state.entities,
+        },
+    );
+    for key in requested {
+        let _ = request_chunk(state, key);
+    }
+    let mut planned = planned?;
+    if planned.inventory.is_some()
+        || !planned.admin_spawns.is_empty()
+        || !planned.drop_takes.is_empty()
+    {
+        return Err(permission(
+            "reaction removal returned unsupported actor effects",
+        ));
+    }
+    if coords.iter().any(|edit| !planned.edits.contains(edit)) {
+        return Err(permission("gameplay handler changed the removed footprint"));
+    }
+    let catalog = state.world.catalog_arc();
+    for &(x, y, z, block) in &planned.edits {
+        if state
+            .entities
+            .anchored_at(CellCoord::new(x, y, z))
+            .is_some_and(|id| id != snapshot.id)
+            || (catalog.block_flags(block) & crate::content::SOLID != 0
+                && state.clients.values().any(|client| {
+                    crate::server::block_intersects_player([x, y, z], client.position())
+                }))
+        {
+            return Err(permission(
+                "gameplay edit conflicts with an anchor or player",
+            ));
+        }
+    }
+    let entities = if planned.drops.is_empty() && planned.entity_spawns.is_empty() {
+        super::anchored::refund_removal(state, snapshot, tick, base)?
+    } else {
+        // All new entities must use ONE allocator batch. Preparing the refund
+        // and decision drops separately would reuse IDs (and could also merge
+        // twice into the same existing drop's preimage).
+        let definition = catalog
+            .anchored_entity(snapshot.entity_type)
+            .ok_or_else(|| corrupt("missing reaction removal definition"))?;
+        planned.drops.extend(
+            super::anchored::refund_stacks(
+                &catalog,
+                definition,
+                &snapshot.private_payload,
+                bloxgloom_host_api::anchored::RemovalCause::Reaction,
+            )?
+            .into_iter()
+            .map(|stack| {
+                (
+                    [
+                        anchor.x as f32 + 0.5,
+                        anchor.y as f32 + 0.5,
+                        anchor.z as f32 + 0.5,
+                    ],
+                    stack,
+                    std::time::Duration::from_millis(250),
+                )
+            }),
+        );
+        // Bound the merge candidate pages before the drop planner collects
+        // them. That planner retains the same dependencies through receipt.
+        for (position, _, _) in &planned.drops {
+            state
+                .entities
+                .capture_mobile_dependencies(*position, 1.0)
+                .map_err(|error| {
+                    let kind = if matches!(
+                        error,
+                        crate::server::entities::EntityError::SpatialQueryTooBroad
+                    ) {
+                        ErrorKind::QuotaExceeded
+                    } else {
+                        ErrorKind::InvalidData
+                    };
+                    io::Error::new(kind, error)
+                })?;
+        }
+        let drops = crate::server::drops::plan_stack_spawns_with_extra(
+            &state.entities,
+            &catalog,
+            &planned.drops,
+            std::mem::take(&mut planned.entity_spawns),
+            tick,
+            crate::server::drops::unix_ms(),
+        )?;
+        crate::server::gameplay::combine_entities(
+            &state.entities,
+            Some(base),
+            drops.into_iter().collect(),
+        )?
+        .expect("reaction removal includes a despawn")
+    };
+    let entities = crate::server::gameplay::combine_entities(
+        &state.entities,
+        Some(entities),
+        std::mem::take(&mut planned.entity_updates),
+    )?
+    .expect("reaction removal includes a despawn");
+    Ok((planned, entities))
 }
 
 /// Assembles one atomic cross-entity item transfer as a single WAL batch.

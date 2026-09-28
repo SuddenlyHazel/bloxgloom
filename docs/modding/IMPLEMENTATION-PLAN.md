@@ -432,6 +432,11 @@ harvesting migration are accepted. No phase-level work remains.
 - Chained support-loss edits notify neighbors without double loot (`8140f5e`),
   and adjacent targeted edits retain their distinct `WorldEdit` removal cause
   (`85d4ba4`). Both focused WAL/restart regressions pass.
+- Registered anchored reaction removal now stages its complete footprint through
+  shared block-removal and neighbor decisions in the same WAL transaction as
+  lifecycle refunds and handler drops. A support-loss/receipt/restart regression
+  covers the former bypass; owner-system destruction of anchored footprints
+  remains open and does not count as completed parity.
 - Drop falling and support rechecks use a bounded public `FallingContext`
   (`2a238f3`). Production merge-target selection, pickup eligibility and expiry
   decisions now use public policies (`1367b11`). The fill/split count policy
