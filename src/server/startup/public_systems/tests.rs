@@ -87,7 +87,7 @@ fn owner_declarations_survive_manifest_remap_and_reject_schema_or_dependency_mis
 fn owner_world_read_requires_bounded_chunk_ownership_and_changes_the_manifest() {
     let ordinary = bloxgloom_lifecycle_fixture::system::definition();
     let mut world = ordinary.clone();
-    world.read_owner_chunk = true;
+    world.read_radius_chunks = Some(0);
     assert_ne!(ordinary.fingerprint_bytes(), world.fingerprint_bytes());
     world.partition = api::Partition::Profile;
     assert!(world.validate().is_err());
@@ -96,4 +96,9 @@ fn owner_world_read_requires_bounded_chunk_ownership_and_changes_the_manifest() 
     assert!(world.validate().is_err());
     world.max_jobs_per_tick = 2;
     assert!(world.validate().is_ok());
+    world.read_radius_chunks = Some(1);
+    assert_ne!(world.fingerprint_bytes(), ordinary.fingerprint_bytes());
+    assert!(world.validate().is_ok());
+    world.max_jobs_per_tick = 9;
+    assert!(world.validate().is_err());
 }

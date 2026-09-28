@@ -13,7 +13,7 @@ pub fn definition() -> System {
         partition: Partition::Chunk,
         max_state_bytes: 8,
         max_jobs_per_tick: 2,
-        read_owner_chunk: false,
+        read_radius_chunks: None,
         after: vec![],
         seeds: vec![
             Seed {
@@ -70,17 +70,44 @@ impl bloxgloom_host_api::Extension for WorldProbe {
             partition: Partition::Chunk,
             max_state_bytes: 1,
             max_jobs_per_tick: 1,
-            read_owner_chunk: true,
+            read_radius_chunks: Some(0),
             after: vec![],
             seeds: vec![Seed {
                 owner: Owner::Chunk([8, 6, 0]),
                 data: vec![1],
             }],
-            behavior: Arc::new(Probe(self.observed.clone())),
+            behavior: Arc::new(Probe(self.observed.clone(), false)),
         })
     }
 }
-struct Probe(Option<Arc<AtomicBool>>);
+/// A neighboring-chunk probe with a distinct declaration/fingerprint. Its
+/// initial destination is deliberately outside the player's startup area.
+#[derive(Default)]
+pub struct NeighborProbe {
+    pub observed: Option<Arc<AtomicBool>>,
+}
+impl bloxgloom_host_api::Extension for NeighborProbe {
+    fn register(
+        &self,
+        registrar: &mut dyn bloxgloom_host_api::Registrar,
+    ) -> Result<(), RegistrationError> {
+        registrar.owner_system(System {
+            key: "fixture:neighbor_probe".into(),
+            schema: 1,
+            partition: Partition::Chunk,
+            max_state_bytes: 1,
+            max_jobs_per_tick: 1,
+            read_radius_chunks: Some(1),
+            after: vec![],
+            seeds: vec![Seed {
+                owner: Owner::Chunk([8, 6, 0]),
+                data: vec![1],
+            }],
+            behavior: Arc::new(Probe(self.observed.clone(), true)),
+        })
+    }
+}
+struct Probe(Option<Arc<AtomicBool>>, bool);
 impl Behavior for Probe {
     fn validate(&self, data: &[u8]) -> Result<(), RegistrationError> {
         if data.len() != 1 || data[0] > 1 {
@@ -95,15 +122,21 @@ impl Behavior for Probe {
             return Err(RegistrationError("world probe needs a chunk owner".into()));
         };
         let cell = [x * 16, y * 16, z * 16];
+        let query = [cell[0] + if self.1 { 16 } else { 0 }, cell[1], cell[2]];
         let block = context
-            .block(cell)
+            .block(query)
             .map_err(|error| RegistrationError(error.to_string()))?;
+        if self.1 {
+            context
+                .block([cell[0] - 1, cell[1], cell[2]])
+                .map_err(|error| RegistrationError(error.to_string()))?;
+        }
         if !matches!(
-            context.block([cell[0] + 16, cell[1], cell[2]]),
+            context.block([cell[0] + if self.1 { 32 } else { 16 }, cell[1], cell[2]]),
             Err(bloxgloom_host_api::gameplay::Error::Unavailable(_))
         ) {
             return Err(RegistrationError(
-                "world read escaped the owner chunk".into(),
+                "world read escaped the declared neighborhood".into(),
             ));
         }
         // Negative/air reads are just as authoritative as solid block reads.
@@ -146,7 +179,7 @@ fn pair_definition(key: &str, repeating: bool) -> System {
         partition: Partition::Chunk,
         max_state_bytes: 1,
         max_jobs_per_tick: 2,
-        read_owner_chunk: false,
+        read_radius_chunks: None,
         after: vec![],
         seeds: [8, 9]
             .into_iter()

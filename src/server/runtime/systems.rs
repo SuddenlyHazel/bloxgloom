@@ -6,9 +6,9 @@
 //! replacements from immutable snapshots, and one validated wave commits
 //! through the main journal — staged before-values, one WAL record, apply
 //! only after the receipt — before anything becomes visible. This runtime
-//! assembles no neighbor snapshots. Owner count and declared patch accounting
-//! are bounded; arbitrary heap usage inside `Any` payloads is not measured or
-//! sandboxed.
+//! captures bounded authoritative world neighborhoods for opted-in public
+//! chunk owners. Owner count and declared patch accounting are bounded;
+//! arbitrary heap usage inside `Any` payloads is not measured or sandboxed.
 
 use super::super::durable::TerrainReads;
 use super::super::durable::{CommitBarrier, Durability};
@@ -46,6 +46,8 @@ pub(in crate::server) const MAX_OWNER_VALUES_PER_SYSTEM: usize = 16_384;
 
 #[path = "systems/commit.rs"]
 mod commit;
+#[path = "systems/world.rs"]
+mod world;
 
 /// Bound on staged next-tick owner wakes. The set only schedules work that
 /// the destination would do on its own rotation; when it fills, producing
@@ -436,7 +438,7 @@ impl SystemRuntime {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 format!(
-                    "registered system {} declares unsupported neighbor snapshots",
+                    "registered system {} declares unsupported neighbor owner-state snapshots",
                     system.id().as_str()
                 ),
             ));
@@ -595,48 +597,17 @@ impl SystemRuntime {
             let key = JobKey::new(batch, owner, job_id as u64, snapshot.revision());
             let mut job = OwnerJob::new(id.clone(), key, vec![snapshot])
                 .map_err(|error| io::Error::other(format!("registered owner job: {error:?}")))?;
-            if system.reads_owner_chunk() {
-                let chunk_key = owner.as_chunk().ok_or_else(|| {
-                    io::Error::new(ErrorKind::InvalidData, "world-reading owner is not a chunk")
-                })?;
+            if let Some(radius) = system.world_read_radius() {
                 let world = world.as_deref_mut().ok_or_else(|| {
                     io::Error::new(
                         ErrorKind::InvalidInput,
                         "world-reading owner has no world capture",
                     )
                 })?;
-                if let Some(chunk) = world.cached_arc_chunk(chunk_key) {
-                    let x = chunk_key
-                        .x
-                        .checked_mul(crate::world::CHUNK_SIZE as i32)
-                        .ok_or_else(|| {
-                            io::Error::new(
-                                ErrorKind::InvalidInput,
-                                "owner chunk outside world coordinates",
-                            )
-                        })?;
-                    let y = chunk_key
-                        .y
-                        .checked_mul(crate::world::CHUNK_SIZE as i32)
-                        .ok_or_else(|| {
-                            io::Error::new(
-                                ErrorKind::InvalidInput,
-                                "owner chunk outside world coordinates",
-                            )
-                        })?;
-                    let z = chunk_key
-                        .z
-                        .checked_mul(crate::world::CHUNK_SIZE as i32)
-                        .ok_or_else(|| {
-                            io::Error::new(
-                                ErrorKind::InvalidInput,
-                                "owner chunk outside world coordinates",
-                            )
-                        })?;
-                    terrain_reads.read(world, x, y, z)?;
-                    job = job.with_owner_chunk(chunk, world.catalog_arc());
-                } else if missing.len() < 8 {
-                    missing.push(chunk_key);
+                if let Some(chunks) =
+                    world::capture(world, &mut terrain_reads, owner, radius, missing)?
+                {
+                    job = job.with_world_chunks(chunks, world.catalog_arc());
                 }
             }
             expected.push(key);

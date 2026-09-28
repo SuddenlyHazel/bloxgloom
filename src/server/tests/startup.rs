@@ -151,6 +151,158 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
 }
 
 #[test]
+fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edits() {
+    let save = TestSave::new("owner-neighbor-read");
+    let startup = || {
+        ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+            .with_extension(&bloxgloom_lifecycle_fixture::system::NeighborProbe::default())
+            .unwrap()
+    };
+    let system = crate::server::registry::SystemId::new("fixture:neighbor_probe").unwrap();
+    let owner =
+        crate::server::parallel::OwnerKey::Chunk(crate::world::ChunkKey { x: 8, y: 6, z: 0 });
+    let adjacent = crate::world::ChunkKey { x: 9, y: 6, z: 0 };
+    let cell = (144, 96, 0);
+    let mut state = server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(state.world.cached_block(cell.0, cell.1, cell.2), None);
+    let mut tick = 1;
+    run_empty_tick(&mut state, &mut tick);
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap(),
+        (0, vec![1])
+    );
+    for _ in 0..1_000 {
+        if state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .0
+            > 0
+        {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (revision, value) = state
+        .system_runtime
+        .owner_value::<Vec<u8>>(&system, owner)
+        .unwrap();
+    assert!(
+        revision > 0,
+        "all 27 authoritative chunks must load before dispatch"
+    );
+    assert_eq!(value, [0]);
+    assert_eq!(state.world.cached_block(cell.0, cell.1, cell.2), Some(AIR));
+
+    let registered = state.phase_plan.system(&system).unwrap().clone();
+    let mut missing = Vec::new();
+    let manual_tick = TickId::new(tick + 2);
+    let effects = Arc::clone(&state.effect_kinds);
+    let wave = state
+        .system_runtime
+        .stage_registered_wave_with_world(
+            &registered,
+            manual_tick,
+            0,
+            crate::server::runtime::systems::RegisteredWaveInputs {
+                effects: &effects,
+                durability: &mut state.durability,
+                in_flight: &[],
+                world: Some(&mut state.world),
+                missing: &mut missing,
+            },
+        )
+        .unwrap()
+        .expect("neighbor-read wave staged");
+    assert!(missing.is_empty());
+    assert!(
+        state
+            .durability
+            .reserved
+            .contains(&crate::server::durable::chunk_state_key(adjacent))
+    );
+    let edit = crate::server::durable::CommitAction {
+        client_id: None,
+        profile: None,
+        action_id: None,
+        receipt_value: None,
+        receipt_transition: None,
+        terrain_reads: Default::default(),
+        inventory_before: None,
+        inventory: None,
+        world_edits: state
+            .world
+            .prepare_edits(&[(cell.0, cell.1, cell.2, crate::world::SAND)])
+            .unwrap(),
+        deltas: Vec::new(),
+        changed_cells: vec![crate::server::effects::CellCoord::new(
+            cell.0, cell.1, cell.2,
+        )],
+        pickups: Vec::new(),
+        fire_seed: None,
+        entity_wakes: Vec::new(),
+        entities: None,
+    };
+    assert!(matches!(
+        state.durability.try_stage(manual_tick, &edit, None),
+        Err(crate::server::durable::StageError::Conflict)
+    ));
+    crate::server::durable::complete_barrier(&mut state, wave.barrier()).unwrap();
+    assert!(
+        state
+            .durability
+            .try_stage(manual_tick, &edit, None)
+            .unwrap()
+    );
+    crate::server::durable::complete_barrier(
+        &mut state,
+        crate::server::durable::CommitBarrier::AllStaged,
+    )
+    .unwrap();
+    tick = manual_tick.get() + 1;
+    for _ in 0..1_000 {
+        if state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1
+            == [1]
+        {
+            break;
+        }
+        run_empty_tick(&mut state, &mut tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(
+        state
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+    drop(state);
+    let mut restarted =
+        server_state_with_startup(7, save.path().to_path_buf(), 1, startup()).unwrap();
+    assert_eq!(
+        restarted.world.get_block(cell.0, cell.1, cell.2).unwrap(),
+        crate::world::SAND
+    );
+    assert_eq!(
+        restarted
+            .system_runtime
+            .owner_value::<Vec<u8>>(&system, owner)
+            .unwrap()
+            .1,
+        [1]
+    );
+}
+
+#[test]
 fn external_owner_can_durably_wake_another_owner_after_restart() {
     let save = TestSave::new("owner-cross-wake");
     let startup = || {

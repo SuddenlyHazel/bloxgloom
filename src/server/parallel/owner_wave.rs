@@ -152,7 +152,8 @@ pub struct OwnerJob {
     system: SystemId,
     key: JobKey,
     snapshots: Vec<OwnerSnapshot>,
-    owner_chunk: Option<Arc<crate::world::Chunk>>,
+    /// Canonical chunk-key order; bounded to 27 per opt-in public job.
+    world_chunks: Vec<Arc<crate::world::Chunk>>,
     owner_catalog: Option<Arc<crate::content::Catalog>>,
 }
 
@@ -182,23 +183,23 @@ impl OwnerJob {
             system,
             key,
             snapshots,
-            owner_chunk: None,
+            world_chunks: Vec::new(),
             owner_catalog: None,
         })
     }
 
-    pub(in crate::server) fn with_owner_chunk(
+    pub(in crate::server) fn with_world_chunks(
         mut self,
-        chunk: Arc<crate::world::Chunk>,
+        chunks: Vec<Arc<crate::world::Chunk>>,
         catalog: Arc<crate::content::Catalog>,
     ) -> Self {
-        self.owner_chunk = Some(chunk);
+        self.world_chunks = chunks;
         self.owner_catalog = Some(catalog);
         self
     }
 
-    pub(in crate::server) fn owner_chunk(&self) -> Option<&crate::world::Chunk> {
-        self.owner_chunk.as_deref()
+    pub(in crate::server) fn world_chunks(&self) -> &[Arc<crate::world::Chunk>] {
+        &self.world_chunks
     }
 
     pub(in crate::server) fn owner_catalog(&self) -> Option<&crate::content::Catalog> {

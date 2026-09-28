@@ -31,7 +31,7 @@ pub struct Context<'a> {
     pub revision: u64,
     pub tick: u64,
     pub data: &'a [u8],
-    /// Available only for systems that declare `read_owner_chunk`.
+    /// Available only for systems that declare `read_radius_chunks`.
     pub world: Option<&'a dyn WorldRead>,
 }
 
@@ -76,10 +76,11 @@ pub struct System {
     pub partition: Partition,
     pub max_state_bytes: u32,
     pub max_jobs_per_tick: u16,
-    /// Capture the authoritative owner chunk for read-only worker queries.
-    /// Only chunk-partitioned systems with at most 64 jobs per tick may enable
-    /// this (one pinned chunk per selected job). Missing chunks defer the wave.
-    pub read_owner_chunk: bool,
+    /// Capture the authoritative owner chunk and optional immediate neighbors
+    /// for read-only worker queries. `None` disables world reads; `Some(0)`
+    /// captures only the owner; `Some(1)` captures all 27 surrounding chunks.
+    /// The host bounds the job count and defers missing chunks before dispatch.
+    pub read_radius_chunks: Option<u8>,
     /// Explicit simulation-phase dependencies, resolved at startup.
     pub after: Vec<String>,
     /// Initial durable owners. Recovered values always win over these seeds.
@@ -119,8 +120,10 @@ impl System {
                 .iter()
                 .any(|key| !valid_key(key) || key == &self.key)
             || self.seeds.len() > 16384
-            || (self.read_owner_chunk && self.partition != Partition::Chunk)
-            || (self.read_owner_chunk && self.max_jobs_per_tick > 64)
+            || (self.read_radius_chunks.is_some() && self.partition != Partition::Chunk)
+            || self.read_radius_chunks.is_some_and(|radius| {
+                radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
+            })
         {
             return Err(RegistrationError("invalid owner-system declaration".into()));
         }
@@ -150,7 +153,11 @@ impl System {
         }
         // Preserve existing declarations' fingerprints; only systems opting
         // into the new read contract require a new manifest identity.
-        let mut out = vec![if self.read_owner_chunk { 2 } else { 1 }];
+        let mut out = vec![match self.read_radius_chunks {
+            None => 1,
+            Some(0) => 2,
+            Some(_) => 3,
+        }];
         text(&mut out, &self.key);
         out.extend(self.schema.to_le_bytes());
         out.push(match self.partition {
@@ -160,6 +167,9 @@ impl System {
         });
         out.extend(self.max_state_bytes.to_le_bytes());
         out.extend(self.max_jobs_per_tick.to_le_bytes());
+        if let Some(radius @ 1..) = self.read_radius_chunks {
+            out.push(radius);
+        }
         let mut after = self.after.iter().collect::<Vec<_>>();
         after.sort();
         out.extend((after.len() as u32).to_le_bytes());

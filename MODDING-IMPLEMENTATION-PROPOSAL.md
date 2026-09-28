@@ -429,8 +429,8 @@ This section exists so compaction or a new session does not restart the design.
   including Luau/mlua selection and fire migration. No subagents.
 - **Active phase:** 2 — registered removal, placement, semantic use, entity
   due callbacks, neighbor/support decisions and automatic pickup use shared
-  gameplay planning. Advisory committed observers and read-only owner-chunk
-  world snapshots are available. Durable cross-owner world effects, remaining
+  gameplay planning. Advisory committed observers and read-only bounded
+  owner-neighborhood world snapshots are available. Durable cross-owner world effects, remaining
   drop/player/command policy and fire propagation/delivery remain. No Luau,
   client packages or authored UI is implemented yet.
 - **Last completed work:** existing host slices and response-path hardening,
@@ -631,6 +631,18 @@ This section exists so compaction or a new session does not restart the design.
   and strict workspace Clippy passed. These flags carry **no
   effect payload**; neither fire propagation nor general owner-local world
   writes are migrated by this increment.
+- **Phase 2 owner-neighborhood-read increment:** public chunk systems may opt
+  into a captured read-only 3×3×3 neighborhood (`Some(1)`, at most eight jobs
+  per tick) without changing the manifest identities of existing owner-only
+  or owner-chunk declarations. The whole wave defers while any required chunk
+  is unavailable, with asynchronous requests and no procedural fallback.
+  Every captured chunk is fenced as a shared WAL read through receipt. An
+  independent neighbor fixture verifies missing-chunk deferral, both sides
+  of a seam and out-of-scope reads, an adjacent-chunk edit conflict, and
+  restart. The combined nonblocking-listener/restart test exercises all three
+  external declarations (owner read, neighborhood read and durable wake).
+  The focused 91-test owner suite and strict all-feature Clippy passed.
+  This remains read-only: owner-world **effects** are next.
 - **Next concrete step:** make owner-local world/entity changes atomic with the
   persisted owner wave, then add durable cross-owner **payload** intent and move
   fire propagation/delivery decisions off the native-only policy. Migrate

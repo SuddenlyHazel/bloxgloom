@@ -160,7 +160,7 @@ pub struct SystemDescriptor {
     writes: BTreeSet<ResourceId>,
     after: BTreeSet<SystemId>,
     neighbor_radius: u8,
-    world_read: bool,
+    world_read_radius: Option<u8>,
     max_jobs_per_tick: usize,
     /// Zero is valid and means this system is not permitted to emit effects.
     max_effects_per_tick: usize,
@@ -183,7 +183,7 @@ impl SystemDescriptor {
             writes: BTreeSet::new(),
             after: BTreeSet::new(),
             neighbor_radius: 0,
-            world_read: false,
+            world_read_radius: None,
             max_jobs_per_tick,
             max_effects_per_tick,
             max_effects_per_job: max_effects_per_tick.min(MAX_EFFECTS_PER_OWNER_JOB),
@@ -212,21 +212,21 @@ impl SystemDescriptor {
         self
     }
 
-    /// Declares chunk neighbors read by a chunk-partitioned extension system.
-    /// Built-ins currently use entity/global partitions.
+    /// Declares neighboring owner-state snapshots, not terrain reads. Public
+    /// systems use `read_chunks` for authoritative terrain capture instead.
     #[allow(dead_code)]
     pub const fn neighbor_radius(mut self, radius: u8) -> Self {
         self.neighbor_radius = radius;
         self
     }
 
-    pub(in crate::server) const fn read_owner_chunk(mut self) -> Self {
-        self.world_read = true;
+    pub(in crate::server) const fn read_chunks(mut self, radius: u8) -> Self {
+        self.world_read_radius = Some(radius);
         self
     }
 
-    pub(in crate::server) const fn reads_owner_chunk(&self) -> bool {
-        self.world_read
+    pub(in crate::server) const fn world_read_radius(&self) -> Option<u8> {
+        self.world_read_radius
     }
 
     pub fn id(&self) -> &SystemId {

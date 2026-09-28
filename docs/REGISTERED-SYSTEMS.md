@@ -28,15 +28,18 @@ continued progress. Additional tests reject oversized outputs, nonadvancing
 deadlines, incompatible manifest schemas, and missing dependencies.
 
 This supplies the persistent-system portion of the external integration proof.
-With `read_owner_chunk: true`, a chunk-partitioned system (at most 64 jobs per
-tick) receives `Context::block(cell)` for cells **within its own chunk**. The
-host captures the resident authoritative chunk for the worker, defers the
-entire wave and asynchronously requests missing chunks, and reserves read
-dependencies through WAL admission and receipt. Out-of-owner reads are
-`Unavailable`, not procedural fallback. Read permission and its bound are part
-of the declaration fingerprint; systems not opting in retain their prior
-fingerprint. `fixture:world_probe` independently exercises a missing chunk,
-air read, a conflicting edit, and replay, including a real listener join.
+`read_radius_chunks: Some(0)` gives a chunk-partitioned system (at most 64
+jobs per tick) `Context::block(cell)` within its owner chunk. `Some(1)` allows
+the immediate 3×3×3 chunk neighborhood (at most 8 jobs per tick); `None` grants
+no world read. The host captures **all** required resident authoritative chunks
+for each worker, defers the entire wave and asynchronously requests missing
+chunks, and reserves every captured chunk's read key through WAL admission and
+receipt. Out-of-scope cells are `Unavailable`, never procedural fallback. The
+owner-only and `Some(0)` declaration fingerprints are unchanged; `Some(1)`
+has its own manifest identity. The independent `fixture:world_probe` and
+`fixture:neighbor_probe` exercise missing chunks, authoritative air, scope
+rejection, conflicting same/adjacent-chunk edits, and replay, including a
+real nonblocking-listener join.
 
 `Plan::wakes` can name other registered `(system, owner)` pairs. Each job may
 request at most 32 and a wave at most 2,048. The host validates the destination
@@ -53,8 +56,8 @@ across restart; `fixture:wake_loop` covers refreshing served flags and recovery.
 The owner-world loopback test also installs both declarations together and
 checks the restored destination after a real nonblocking-listener join.
 
-This still does **not** complete world-system parity: neighboring world queries,
-atomic terrain/entity effects, dynamic owner creation/removal, and durable
+This still does **not** complete world-system parity: atomic terrain/entity
+effects, dynamic owner creation/removal, and durable
 cross-owner **payload intent** remain explicit followups, as do public fire propagation
 and delivery. Built-in support removal uses the shared neighbor decision path
 for existing edit producers rather than an owner-system callback.

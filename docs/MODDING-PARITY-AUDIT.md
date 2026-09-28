@@ -26,8 +26,9 @@ entity requests have not yet been migrated, and the client discovery surface
 does not yet expose arbitrary author-defined action argument schemas.
 General entity due handlers now run on the persisted entity clock, with owned
 state/next due time and shared world/drop effects in one durable transaction.
-Owner-local systems may now capture their authoritative owner chunk for
-read-only worker queries, with unavailable-chunk deferral and WAL read fences;
+Owner-local systems may now capture their authoritative owner chunk or immediate
+3×3×3 neighborhood for read-only worker queries, with unavailable-chunk
+deferral and WAL read fences on every captured chunk;
 they can also durably wake another registered owner to run sooner without
 carrying a payload. This does not yet supply general owner-local world effects
 or built-in fire.
@@ -89,8 +90,8 @@ in the root plan:
   reads now run on the existing worker path, with a separate external fixture
   checking deferred loading, WAL conflict and listener restart. Bounded public
   cross-owner wake flags also persist and resume, without delivering payloads.
-  Neighboring queries and atomic world effects remain open. See
-  `docs/REGISTERED-SYSTEMS.md`.
+  Bounded neighbor queries now share the authoritative capture and WAL read
+  fences; atomic world effects remain open. See `docs/REGISTERED-SYSTEMS.md`.
 
 Content/composition and stock-client action discovery are now merged and personally
 reviewed in main. Public state/item/PNG/material/geometry declarations, component

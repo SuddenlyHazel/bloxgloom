@@ -421,7 +421,7 @@ pub(super) fn tick_with_inputs(
                     }
                     Ok(None) => {}
                     Err(error)
-                        if registered.reads_owner_chunk()
+                        if registered.world_read_radius().is_some()
                             && error.kind() == io::ErrorKind::WouldBlock =>
                     {
                         // The wave retained its owner/deadline and did not

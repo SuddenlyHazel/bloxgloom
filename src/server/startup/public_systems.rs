@@ -31,8 +31,8 @@ impl ServerStartup {
             for after in &definition.after {
                 descriptor = descriptor.after(SystemId::new(after).expect("validated dependency"));
             }
-            if definition.read_owner_chunk {
-                descriptor = descriptor.read_owner_chunk();
+            if let Some(radius) = definition.read_radius_chunks {
+                descriptor = descriptor.read_chunks(radius);
             }
             self.systems
                 .push((descriptor, Arc::new(Adapter(definition.clone()))));
@@ -67,21 +67,22 @@ fn public_owner(owner: OwnerKey) -> api::Owner {
 }
 struct Adapter(Arc<api::System>);
 
-struct OwnerChunkView<'a> {
-    chunk: &'a crate::world::Chunk,
+struct OwnerWorldView<'a> {
+    chunks: &'a [Arc<crate::world::Chunk>],
     catalog: &'a crate::content::Catalog,
 }
-impl api::WorldRead for OwnerChunkView<'_> {
+impl api::WorldRead for OwnerWorldView<'_> {
     fn block(
         &self,
         cell: bloxgloom_host_api::gameplay::Cell,
     ) -> Result<bloxgloom_host_api::gameplay::Block, bloxgloom_host_api::gameplay::Error> {
         let (key, local) = crate::world::world_to_chunk(cell[0], cell[1], cell[2]);
-        if key != self.chunk.key {
-            return Err(bloxgloom_host_api::gameplay::Error::Unavailable(cell));
-        }
-        let id = self
-            .chunk
+        let index = self
+            .chunks
+            .binary_search_by_key(&key, |chunk| chunk.key)
+            .map_err(|_| bloxgloom_host_api::gameplay::Error::Unavailable(cell))?;
+        let chunk = &self.chunks[index];
+        let id = chunk
             .block(local)
             .ok_or(bloxgloom_host_api::gameplay::Error::Unavailable(cell))?;
         crate::server::gameplay::block(self.catalog, id)
@@ -115,10 +116,10 @@ impl SystemHandler for Adapter {
             .and_then(|data| data.get::<Vec<u8>>())
             .ok_or_else(reject)?;
         let tick = job.key().batch.tick().get();
-        let world = job
-            .owner_chunk()
-            .zip(job.owner_catalog())
-            .map(|(chunk, catalog)| OwnerChunkView { chunk, catalog });
+        let world = job.owner_catalog().map(|catalog| OwnerWorldView {
+            chunks: job.world_chunks(),
+            catalog,
+        });
         let plan = self
             .0
             .behavior
