@@ -422,8 +422,9 @@ harvesting migration are accepted. No phase-level work remains.
 #### Phase 2 — built-in gameplay parity · In progress
 
 **Working:** owner-world edits can atomically include generated entities and
-drops; opt-in Rust chunk systems can exchange bounded durable payloads. Absent
-chunk destinations can be created with a validated frozen template in the
+drops, including conditional edits inside a declared authoritative one-chunk
+neighborhood. Opt-in Rust chunk systems can exchange bounded durable payloads.
+Absent chunk destinations can be created with a validated frozen template in the
 producer's WAL record. Public owner edits can opt into burn removal semantics,
 including targeted handlers and support loss. Parts of support, fire ignition,
 pickup and scheduling use public hooks, but that does not migrate their
@@ -454,9 +455,10 @@ accepted. No phase-level work remains.
 
 **Working:** bounded local packages register sprite items and simple placeable
 opaque cubes (including own verified PNG textures), semantic actions/decisions,
-entity schemas, generators and chunk systems with durable same-system payload
-intents and optional destination bootstrap. Lua callbacks execute server-side
-with source-attributed failures; local UI handlers and a downloaded, verified
+entity schemas, generators and chunk systems with authoritative radius-one
+neighborhood reads/edits, durable same-system payload intents and optional
+destination bootstrap. Lua callbacks execute server-side with source-attributed
+failures; local UI handlers and a downloaded, verified
 client startup module can initialize connection-local authored UI text/state.
 
 **Remaining**
@@ -467,9 +469,9 @@ client startup module can initialize connection-local authored UI text/state.
   they do not complete general content authoring.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
-- [ ] Bind owner neighborhood reads and directly authored generated entity/drop
-  operations with the same authority/retry contract as Rust mods. Luau intents
-  now work for chunk owners, but reads remain owner-chunk-only.
+- [ ] Bind directly authored owner entity/drop operations and broader owner
+  services with the same authority/retry contract as Rust mods. Chunk systems
+  now have bounded neighborhood reads/edits and durable same-system intents.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs.
 
@@ -1099,6 +1101,16 @@ This section exists so compaction or a new session does not restart the design.
   suite (**873/873**) pass. Live release-window visual checks are pending;
   this does not close remaining Luau surface, built-in parity, UI or
   shader/effect scope.
+- **Phase 4 Luau neighborhood slice:** `read_radius_chunks=1` captures only
+  authoritative 3×3×3 chunk input for a scripted owner. `c.block` and
+  conditional `c.edit` can span that neighborhood; missing terrain defers
+  work, bad preimages and caught out-of-scope calls poison the whole plan,
+  duplicate target cells across jobs reject a wave. `fixtures/neighborhood/`
+  sends a durable intent, then edits a neighboring chunk on a later tick;
+  real-listener/restart, unavailable terrain, read-fence, receipt loss and
+  old-fingerprint tests passed. Five focused integration tests, formatting and
+  strict Clippy passed; the full main-tree run is pending. Native fire and
+  directly authored owner entity/drop operations remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
