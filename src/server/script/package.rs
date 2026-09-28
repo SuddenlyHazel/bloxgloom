@@ -186,6 +186,22 @@ impl PackageSnapshot {
         self.execution_identity(b"luau-owner-system-v1", entry, &identity)
     }
 
+    pub(super) fn entity_schema(
+        &self,
+        key: &str,
+        schema: u16,
+        state_bytes: u16,
+        public_bytes: u16,
+        delay: Option<u32>,
+    ) -> u64 {
+        let mut identity = schema.to_le_bytes().to_vec();
+        identity.extend(state_bytes.to_le_bytes());
+        identity.extend(public_bytes.to_le_bytes());
+        // Zero is not a valid delay, so it unambiguously denotes suspension.
+        identity.extend(delay.unwrap_or(0).to_le_bytes());
+        self.execution_identity(b"luau-entity-fixed-bytes-v1", key, &identity)
+    }
+
     fn execution_identity(&self, domain: &[u8], entry: &str, revision: &[u8]) -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut field = |bytes: &[u8]| {

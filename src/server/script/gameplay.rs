@@ -23,7 +23,7 @@
 //! `h.register_handler("demo:harvest", 1, "BlockRemoved", "bloxgloom:sand", "demo:harvest")`.
 //! Events: BlockRemoved, BlockPlaced, NeighborChanged, EntityTick. No fallback
 //! owners or pickup binding. EntityTick targets must be own-package registered
-//! gameplay entities; entity definitions/schemas are still native declarations.
+//! gameplay entities; `register_entity` supplies fixed-byte schemas (see `entities`).
 //! Event tables and nested blocks/triples are readonly; u64 IDs/random/ticks use
 //! `_lo`/`_hi` u32 halves. See `bindings` for the staged operation signatures.
 mod bindings;

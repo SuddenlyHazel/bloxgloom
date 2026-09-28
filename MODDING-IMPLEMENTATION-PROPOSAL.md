@@ -737,6 +737,13 @@ This section exists so compaction or a new session does not restart the design.
   authorization bug found during review was fixed and regression-tested.
   Loopback/restart, rollback and entity-deadline tests pass. Luau entity schema
   registration, pickup policy, player services and client presentation remain.
+- **Phase 4 Luau entity schemas:** local packages can declare versioned
+  exact-length canonical entity state, bounded public-byte projection and an
+  optional initial due tick through the existing public entity registry. The
+  scheduler now includes only gameplay entities with a registered tick owner;
+  handlerless passive types neither dispatch nor enter due indexes. Loopback
+  spawn, automatic due, suspension, recovery and unauthorized scheduling
+  regressions pass. Structured projection and broader event bindings remain.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

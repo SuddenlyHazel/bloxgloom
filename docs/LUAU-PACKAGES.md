@@ -65,9 +65,12 @@ target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
 `NeighborChanged`, or `EntityTick` decisions. These use the same scoped VM and
 transaction; `spawn_drop`, `spawn_entity`, private owned `entity_state`,
 `update_entity`, `remove_entity`, and `schedule_entity` are available where the
-host's public context permits them. Entity schemas must currently be registered
-by native extensions. See `src/server/script/gameplay.rs` for event fields and
-limits. Pickup and fallback handlers remain unbound.
+host's public context permits them. Register exact-length private entity bytes
+and a bounded public prefix with `host.register_entity(key, schema_version,
+state_bytes, public_prefix_bytes, initial_delay_or_nil)`. An initial delay
+requires an `EntityTick` handler; passive types stay out of the due index.
+See `src/server/script/gameplay.rs` and `src/server/script/entities.rs` for
+details. Pickup and fallback handlers remain unbound.
 
 A package with the owner-systems capability can register one persistent chunk
 system with `host.register_system { key, schema, revision, module,

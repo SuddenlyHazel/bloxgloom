@@ -182,6 +182,7 @@ pub struct EntityTypeDescriptor {
     interaction_policy: Option<Arc<dyn EntityInteractionPolicy>>,
     interaction_read_radius: u8,
     tick_planner: Option<Arc<dyn EntityTickPolicy>>,
+    gameplay_tick_dispatch: bool,
     tick_read_radius: u8,
     interaction_reads_neighbours: bool,
     tick_reads_neighbours: bool,
@@ -430,6 +431,13 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             interaction_policy: None,
             interaction_read_radius: 0,
             tick_planner: None,
+            gameplay_tick_dispatch: self
+                .catalog
+                .gameplay_handler(
+                    bloxgloom_host_api::gameplay::EventKind::EntityTick,
+                    &content_type.key,
+                )
+                .is_some(),
             tick_read_radius: 0,
             interaction_reads_neighbours: false,
             tick_reads_neighbours: false,
@@ -549,7 +557,11 @@ impl EntityTypeRegistry {
     pub fn tickable_types(&self) -> impl Iterator<Item = EntityTypeId> + '_ {
         self.descriptors
             .values()
-            .filter(|descriptor| descriptor.has_tick_planner())
+            // General gameplay types with a registered tick decision dispatch
+            // through gameplay_tick, not a native EntityTickPolicy. Include
+            // those types after recovery or scheduling a manual type, but keep
+            // handlerless passive entities out of both due and suspended lanes.
+            .filter(|descriptor| descriptor.has_tick_planner() || descriptor.gameplay_tick_dispatch)
             .map(EntityTypeDescriptor::id)
     }
 }

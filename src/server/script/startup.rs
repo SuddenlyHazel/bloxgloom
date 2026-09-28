@@ -18,6 +18,7 @@
 //! module returns a function receiving a chunk context (see `generation`).
 //! `bloxgloom:actions/v1` permits one `register_action` declaration (see `gameplay`).
 //! It also permits 32 exact `register_handler` gameplay decision owners.
+//! It permits 32 `register_entity` fixed-byte schemas (see `entities`) as well.
 //! `bloxgloom:owner_systems/v1` permits one persistent chunk `register_system`
 //! declaration (see `system`); plans run on existing owner workers, not this worker.
 //!
@@ -43,6 +44,7 @@ pub(in crate::server) struct Declarations {
     generation: Vec<bloxgloom_host_api::generation::Registration>,
     actions: Vec<super::gameplay::Registration>,
     handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
+    entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     systems: Vec<bloxgloom_host_api::system::System>,
 }
 
@@ -55,6 +57,7 @@ impl Declarations {
         let mut generation = Vec::new();
         let mut actions = Vec::new();
         let mut handlers = Vec::new();
+        let mut entities = Vec::new();
         let mut systems = Vec::new();
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
@@ -76,6 +79,7 @@ impl Declarations {
             };
             items.extend(declarations.items);
             handlers.extend(declarations.handlers);
+            entities.extend(declarations.entities);
             if let Some(system) = declarations.system {
                 systems.push(system);
             }
@@ -98,6 +102,7 @@ impl Declarations {
             generation,
             actions,
             handlers,
+            entities,
             systems,
         })
     }
@@ -124,6 +129,9 @@ impl Extension for Declarations {
         for handler in &self.handlers {
             registrar.gameplay_handler(handler.clone())?;
         }
+        for entity in &self.entities {
+            registrar.gameplay_entity(entity.clone())?;
+        }
         Ok(())
     }
 }
@@ -134,6 +142,7 @@ pub(super) struct Pending {
     pub(super) generation: Option<super::generation::Declaration>,
     pub(super) action: Option<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
+    pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) system: Option<bloxgloom_host_api::system::System>,
     pub(super) error: Option<&'static str>,
 }
@@ -153,6 +162,8 @@ pub(super) fn invoke(
         super::gameplay::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let system =
         super::system::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let entity =
+        super::entities::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let handler = super::gameplay::handler_declarer(
         lua,
         Rc::clone(&pending),
@@ -212,6 +223,7 @@ pub(super) fn invoke(
     host.set("register_action", action)?;
     host.set("register_handler", handler)?;
     host.set("register_system", system)?;
+    host.set("register_entity", entity)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();

@@ -8,6 +8,8 @@ use bloxgloom_host_api::actions::Request;
 mod authorization;
 #[path = "gameplay/decisions.rs"]
 mod decisions;
+#[path = "gameplay/entities.rs"]
+mod entities;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";
