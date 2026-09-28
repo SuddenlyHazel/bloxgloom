@@ -488,6 +488,12 @@ expose the authenticated actor's captured feet position; non-player events
 receive no player position. This is a read-only state view, not movement or
 appearance rule registration. The real listener/restart action test, 892/892
 suite, formatting and strict Clippy pass.
+**Verified local binding slice:** inventory, kiln input/fuel and drop
+resolve semantic client actions through persistent local config keys
+(`bind_inventory`, `bind_kiln_input`, `bind_kiln_fuel`, `bind_drop`). Only distinct
+non-movement letters are allowed; invalid combinations fall back to defaults.
+The 894/894 suite, formatting and strict Clippy pass. This does not yet expose
+mod-defined command discovery or a rebinding UI.
 
 **Remaining**
 

@@ -27,12 +27,26 @@ fn config_round_trips_through_explicit_path() {
         selected_slot: 7,
         debug_hud: true,
         profile: 0x1234,
+        bindings: Bindings {
+            drop: winit::keyboard::KeyCode::KeyT,
+            ..Bindings::default()
+        },
     };
 
     config.save(&path).unwrap();
 
     assert_eq!(Config::load(&path), config);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn binding_conflicts_and_movement_keys_fail_back_to_defaults() {
+    let mut config = parse_config("version=1\nbind_drop=R\n");
+    assert_eq!(config.bindings, Bindings::default());
+    config = parse_config("version=1\nbind_drop=W\n");
+    assert_eq!(config.bindings, Bindings::default());
+    config = parse_config("version=1\nbind_drop=T\n");
+    assert_eq!(config.bindings.drop, winit::keyboard::KeyCode::KeyT);
 }
 
 #[test]

@@ -171,11 +171,16 @@ impl ClientApp {
                                 self.on_escape();
                                 return;
                             }
-                            KeyCode::KeyE => {
+                            key if self.config.bindings.action(key)
+                                == Some(crate::config::bindings::Action::Inventory) =>
+                            {
                                 self.toggle_inventory();
                                 return;
                             }
-                            KeyCode::KeyR if self.screen == UiScreen::Playing => {
+                            key if self.screen == UiScreen::Playing
+                                && self.config.bindings.action(key)
+                                    == Some(crate::config::bindings::Action::KilnInput) =>
+                            {
                                 self.interact_aimed_entity(if self.shift_down {
                                     entities::kiln::TAKE_OUTPUT
                                 } else {
@@ -183,7 +188,10 @@ impl ClientApp {
                                 });
                                 return;
                             }
-                            KeyCode::KeyF if self.screen == UiScreen::Playing => {
+                            key if self.screen == UiScreen::Playing
+                                && self.config.bindings.action(key)
+                                    == Some(crate::config::bindings::Action::KilnFuel) =>
+                            {
                                 self.interact_aimed_entity(if self.shift_down {
                                     entities::kiln::TAKE_FUEL
                                 } else {
@@ -191,8 +199,9 @@ impl ClientApp {
                                 });
                                 return;
                             }
-                            KeyCode::KeyQ
-                                if matches!(
+                            key if self.config.bindings.action(key)
+                                == Some(crate::config::bindings::Action::Drop)
+                                && matches!(
                                     self.screen,
                                     UiScreen::Inventory | UiScreen::Playing
                                 ) =>

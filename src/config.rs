@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
+pub(crate) mod bindings;
+use bindings::Bindings;
 
 const CONFIG_VERSION: u32 = 1;
 const MIN_SENSITIVITY: f32 = 0.0002;
@@ -33,6 +35,7 @@ pub struct Config {
     pub selected_slot: usize,
     pub debug_hud: bool,
     pub profile: u128,
+    pub(crate) bindings: Bindings,
 }
 
 impl Default for Config {
@@ -51,6 +54,7 @@ impl Default for Config {
             selected_slot: 1,
             debug_hud: false,
             profile: 0,
+            bindings: Bindings::default(),
         }
     }
 }
@@ -160,12 +164,17 @@ impl Config {
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
             profile: self.profile,
+            bindings: if self.bindings.valid() {
+                self.bindings
+            } else {
+                Bindings::default()
+            },
         }
     }
 
     fn serialize(&self) -> String {
         format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\nbind_inventory={}\nbind_kiln_input={}\nbind_kiln_fuel={}\nbind_drop={}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
@@ -179,6 +188,10 @@ impl Config {
             self.bloom_strength,
             self.post_processing,
             self.bloom_enabled,
+            bindings::letter(self.bindings.inventory).expect("sanitized inventory binding"),
+            bindings::letter(self.bindings.kiln_input).expect("sanitized kiln input binding"),
+            bindings::letter(self.bindings.kiln_fuel).expect("sanitized kiln fuel binding"),
+            bindings::letter(self.bindings.drop).expect("sanitized drop binding"),
         )
     }
 }
@@ -198,6 +211,26 @@ fn parse_config(contents: &str) -> Config {
         let key = key.trim();
         let value = value.trim();
         match key {
+            "bind_inventory" => {
+                if let Some(key) = bindings::parse(value) {
+                    config.bindings.inventory = key;
+                }
+            }
+            "bind_kiln_input" => {
+                if let Some(key) = bindings::parse(value) {
+                    config.bindings.kiln_input = key;
+                }
+            }
+            "bind_kiln_fuel" => {
+                if let Some(key) = bindings::parse(value) {
+                    config.bindings.kiln_fuel = key;
+                }
+            }
+            "bind_drop" => {
+                if let Some(key) = bindings::parse(value) {
+                    config.bindings.drop = key;
+                }
+            }
             "post_processing" => {
                 if let Ok(enabled) = value.parse::<bool>() {
                     config.post_processing = enabled;

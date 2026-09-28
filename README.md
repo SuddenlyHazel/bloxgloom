@@ -53,6 +53,12 @@ Click the window to capture the mouse. Use WASD to fly horizontally, Space and S
 
 E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select a source slot, then left-click a destination to move its whole stack; right-click the destination to move half. Matching stacks merge up to 128 blocks; moving a full stack onto a different block swaps them. Escape opens the pause menu, where you can resume, change settings, or exit. F3 toggles the debug HUD. The local game also has an admin menu on F4 or the pause menu: click a catalog item to grant a stack of 128, or type `give namespace:item [count]` and press Enter. `help` lists available commands. These grants are authorized and persisted by the local server; dedicated multiplayer servers do not grant admin access by default.
 
+The inventory, Kiln input/fuel, and drop keys can be rebound in the local config
+with `bind_inventory=E`, `bind_kiln_input=R`, `bind_kiln_fuel=F`, and `bind_drop=Q`.
+Use distinct letters other than WASD; invalid combinations revert to the
+defaults. Restart after editing the file. This changes client shortcuts only,
+not server permissions or the package command vocabulary.
+
 **Meet the Mossbun:** stand on an open patch of ground, open the local admin menu with **F4**, type `spawn mossbun`, and press **Enter**. Close the menu to watch your mint-colored, rosy-cheeked little companion wander and pause. Each command spawns one nearby on clear supported ground (at most 16 Mossbuns in the destination chunk; crowded entity pages also reject spawning). They persist across saves/restarts, wander even without connected players, avoid cliffs and solid blocks, and settle if their floor is removed. They do not jump, climb steps, fight, consume items, or spawn naturally. `spawn bloxgloom:mossbun` is equivalent.
 
 Mossbuns now choose nearby destinations and use bounded worker-side A* to walk around obstacles on level ground. Shared creature locomotion handles body clearance, ledges, accelerating gravity, and exact landing; the persisted idle decision timer is separate from support rechecks. Client actor interpolation smooths authoritative updates, with distance-driven paws, smooth turning, idle breathing, airborne stretch, and landing squash. See [creature movement](docs/CREATURE-MOVEMENT.md) for the reusable layers and current navigation capabilities.
