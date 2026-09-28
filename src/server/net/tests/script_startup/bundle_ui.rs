@@ -4,6 +4,190 @@ use crate::inventory::Stack;
 use bloxgloom_host_api::actions::Request;
 use std::time::Instant;
 
+// Format-2 fixture copied into an isolated save root; server entry and event
+// handler remain unchanged, while a downloaded startup module imports a shared
+// helper and registers session-only presentation text.
+fn startup_fixture(source: &str) -> Fixture {
+    let fixture = Fixture::new();
+    let original =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/uidemo");
+    let target = fixture.0.join("packages/uidemo");
+    for file in [
+        "server/main.luau",
+        "server/store.luau",
+        "client/view.luau",
+        "assets/ui/icon.png",
+        "assets/ui/field.json",
+        "assets/ui/icon-style.json",
+        "assets/ui/welcome.json",
+        "assets/ui/panel.json",
+        "assets/ui/button.json",
+        "assets/ui/label.json",
+        "assets/fonts/body.ttf",
+    ] {
+        let path = target.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::copy(original.join(file), path).unwrap();
+    }
+    std::fs::create_dir_all(target.join("shared")).unwrap();
+    std::fs::write(
+        target.join("shared/helper.luau"),
+        "return function() return 'from downloaded shared module' end",
+    )
+    .unwrap();
+    std::fs::write(target.join("client/client_startup.luau"), source).unwrap();
+    let mut manifest = std::fs::read_to_string(original.join("package.txt")).unwrap();
+    manifest.push_str("module client client_startup client/client_startup.luau\nmodule shared helper shared/helper.luau\n");
+    std::fs::write(target.join("package.txt"), manifest).unwrap();
+    fixture
+}
+
+#[test]
+fn downloaded_client_startup_is_session_scoped_across_reconnect_and_switch() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    for (source, expected) in [
+        (
+            "return function(host) host.set_text('uidemo:welcome/title', import('uidemo:helper')()); host.set_state('uidemo:welcome', 'first') end",
+            "from downloaded shared module",
+        ),
+        (
+            "return function(host) host.set_text('uidemo:welcome/title', 'second server') end",
+            "second server",
+        ),
+    ] {
+        let fixture = startup_fixture(source);
+        gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+            for profile in [0xab01, 0xab02] {
+                crate::client::connect_ui_probe(
+                    &address.to_string(),
+                    profile,
+                    |bundle, session| {
+                        assert!(
+                            bundle.packages()["uidemo"]
+                                .sources
+                                .contains_key("client_startup")
+                        );
+                        assert!(!bundle.packages()["uidemo"].sources.contains_key("main"));
+                        assert_eq!(session.text_at(1), expected);
+                        session.next_document();
+                        assert_eq!(session.text_at(1), expected);
+                    },
+                )
+                .unwrap();
+            }
+        });
+    }
+}
+
+#[test]
+fn client_startup_failure_refuses_content_ready_with_package_and_module() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    for source in [
+        "return function(host) host.set_text('uidemo:welcome/title', import('uidemo:main')) end",
+        "return function(host) host.set_text('uidemo:welcome/missing', 'bad') end",
+        "return function(_) while true do end end",
+    ] {
+        let fixture = startup_fixture(source);
+        gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+            let error =
+                crate::client::connect_bundle_probe(&address.to_string(), 0xab03).unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains("uidemo") && message.contains("client_startup"),
+                "{message}"
+            );
+        });
+    }
+}
+
+#[test]
+fn startup_worker_imports_exact_direct_dependencies_with_lexical_visibility() {
+    let fixture = startup_fixture(
+        "return function(host) host.set_text('uidemo:welcome/title', import('helper:public')()) end",
+    );
+    let helper = fixture.0.join("packages/helper");
+    std::fs::create_dir_all(helper.join("server")).unwrap();
+    std::fs::create_dir_all(helper.join("shared")).unwrap();
+    std::fs::write(helper.join("server/main.luau"), "return function(_) end").unwrap();
+    std::fs::write(
+        helper.join("shared/public.luau"),
+        "return function() return 'direct dependency' end",
+    )
+    .unwrap();
+    std::fs::write(helper.join("package.txt"), "format 2\npackage helper\nversion 1.0.0\nentry main\nmodule server main server/main.luau\nmodule shared public shared/public.luau\n").unwrap();
+    let manifest = fixture.0.join("packages/uidemo/package.txt");
+    let original = std::fs::read_to_string(&manifest).unwrap();
+    // Without the exact direct dependency, even a present verified module is inaccessible.
+    let without =
+        crate::server::script::package::PackageSnapshot::discover(&fixture.0.join("packages"))
+            .unwrap();
+    let bundle = Arc::clone(without.client_bundle());
+    let err = crate::client::startup::prepare(bundle)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("uidemo@1.0.0:client_startup") && err.contains("inaccessible"),
+        "{err}"
+    );
+    drop(without);
+    std::fs::write(&manifest, format!("{original}dependency helper 1.0.0\n")).unwrap();
+    let snapshot =
+        crate::server::script::package::PackageSnapshot::discover(&fixture.0.join("packages"))
+            .unwrap();
+    let bundle = Arc::clone(snapshot.client_bundle());
+    let result = crate::client::startup::prepare(Arc::clone(&bundle)).unwrap();
+    assert_eq!(result.texts["uidemo:welcome/title"], "direct dependency");
+    // An exported function uses its defining helper package's imports, not
+    // uidemo's authority; helper cannot import uidemo without its own edge.
+    std::fs::write(
+        helper.join("shared/public.luau"),
+        "return function() return import('uidemo:helper')() end",
+    )
+    .unwrap();
+    let snapshot =
+        crate::server::script::package::PackageSnapshot::discover(&fixture.0.join("packages"))
+            .unwrap();
+    let error = crate::client::startup::prepare(Arc::clone(snapshot.client_bundle()))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("helper@1.0.0:public") && error.contains("inaccessible"),
+        "{error}"
+    );
+    // The previous immutable artifact remains usable after local files change.
+    assert_eq!(
+        crate::client::startup::prepare(bundle).unwrap().texts["uidemo:welcome/title"],
+        "direct dependency"
+    );
+}
+
+#[test]
+fn startup_worker_discards_partial_registration_and_caught_limit() {
+    let fixture = startup_fixture(
+        "return function(host) host.set_text('uidemo:welcome/title', 'partial'); pcall(function() while true do end end) end",
+    );
+    let snapshot =
+        crate::server::script::package::PackageSnapshot::discover(&fixture.0.join("packages"))
+            .unwrap();
+    let error = crate::client::startup::prepare(Arc::clone(snapshot.client_bundle()))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("uidemo@1.0.0:client_startup") && error.contains("limit"),
+        "{error}"
+    );
+    std::fs::write(
+        fixture.0.join("packages/uidemo/client/client_startup.luau"),
+        "return function(host) host.set_text('uidemo:welcome/title', 'new session') end",
+    )
+    .unwrap();
+    let next =
+        crate::server::script::package::PackageSnapshot::discover(&fixture.0.join("packages"))
+            .unwrap();
+    let state = crate::client::startup::prepare(Arc::clone(next.client_bundle())).unwrap();
+    assert_eq!(state.texts["uidemo:welcome/title"], "new session");
+}
+
 #[test]
 fn package_ui_worker_dispatches_on_join_and_resets_on_cached_reconnect() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();

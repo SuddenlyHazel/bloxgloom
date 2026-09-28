@@ -22,6 +22,7 @@ pub(super) struct Network {
     // Session-owned immutable artifact, installed before any snapshot is read.
     _bundle: Option<Arc<crate::server::client_bundle::ClientBundle>>,
     material: Option<crate::render::custom::Prepared>,
+    startup: crate::client::startup::State,
     pub(super) incoming: Receiver<Incoming>,
     pub(super) catalog: Arc<Catalog>,
     outgoing: SyncSender<ClientMessage>,
@@ -35,10 +36,9 @@ impl Network {
         self._bundle.as_ref()?.effect().map(AsRef::as_ref)
     }
     pub(super) fn package_ui(&self) -> Option<crate::ui::authored::Session> {
-        self._bundle
-            .as_ref()?
-            .ui()
-            .map(|resources| crate::ui::authored::Session::new(Arc::clone(resources)))
+        self._bundle.as_ref()?.ui().map(|resources| {
+            crate::ui::authored::Session::with_startup(Arc::clone(resources), self.startup.clone())
+        })
     }
     #[cfg(test)]
     pub(super) fn disconnected_for_test() -> Self {
@@ -47,6 +47,7 @@ impl Network {
         Self {
             _bundle: None,
             material: None,
+            startup: Default::default(),
             incoming,
             outgoing,
             catalog: Arc::new(crate::content::catalog().clone()),
@@ -61,6 +62,7 @@ impl Network {
             Self {
                 _bundle: None,
                 material: None,
+                startup: Default::default(),
                 incoming,
                 outgoing,
                 catalog: Arc::new(crate::content::catalog().clone()),
@@ -108,6 +110,10 @@ impl Network {
                     .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
             })
             .transpose()?;
+        let startup = match &bundle {
+            Some(bundle) => super::startup::prepare(Arc::clone(bundle))?,
+            None => Default::default(),
+        };
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
@@ -167,6 +173,7 @@ impl Network {
         Ok(Self {
             _bundle: bundle,
             material,
+            startup,
             incoming,
             catalog,
             outgoing,

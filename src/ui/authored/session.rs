@@ -25,10 +25,18 @@ pub(crate) struct Session {
     pub(super) action: Option<String>,
     pub(super) in_flight: Option<(u128, u64)>,
     pub(super) feedback: Option<String>,
+    startup: crate::client::startup::State,
 }
 
 impl Session {
     pub(crate) fn new(resources: Arc<Resources>) -> Self {
+        Self::with_startup(resources, Default::default())
+    }
+
+    pub(crate) fn with_startup(
+        resources: Arc<Resources>,
+        startup: crate::client::startup::State,
+    ) -> Self {
         let worker = resources
             .documents
             .iter()
@@ -59,6 +67,7 @@ impl Session {
             action: None,
             in_flight: None,
             feedback: None,
+            startup,
         };
         session.reset();
         session.failure = failure;
@@ -79,6 +88,18 @@ impl Session {
             .iter()
             .map(|n| n.text.clone())
             .collect();
+        for (index, node) in self.resources.documents[self.document]
+            .nodes
+            .iter()
+            .enumerate()
+        {
+            if let Some(text) = self.startup.texts.get(&node.id) {
+                self.texts[index] = text.clone();
+            }
+        }
+        if let Some(value) = self.startup.states.get(&self.document().id) {
+            self.state = value.clone();
+        }
         self.visible = vec![true; self.document().nodes.len()];
         self.focused = None;
         self.rects.clear();
@@ -95,6 +116,17 @@ impl Session {
                 }
             })
             .collect();
+        for (index, node) in self.resources.documents[self.document]
+            .nodes
+            .iter()
+            .enumerate()
+        {
+            if node.kind == Kind::Input
+                && let Some(text) = self.startup.texts.get(&node.id)
+            {
+                self.inputs[index] = text.clone();
+            }
+        }
     }
 
     pub(crate) fn next_document(&mut self) {

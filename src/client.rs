@@ -258,6 +258,7 @@ mod entities;
 mod kiln;
 mod mesh_queue;
 pub(crate) mod presentation;
+pub(crate) mod startup;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};

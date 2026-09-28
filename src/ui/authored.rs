@@ -98,6 +98,26 @@ struct Widget {
 }
 
 impl Resources {
+    pub(crate) fn validate_startup(
+        &self,
+        state: &crate::client::startup::State,
+    ) -> std::result::Result<(), String> {
+        for key in state.texts.keys() {
+            if !self.documents.iter().any(|document| {
+                document.nodes.iter().any(|node| {
+                    node.id == *key && matches!(node.kind, Kind::Label | Kind::Button | Kind::Input)
+                })
+            }) {
+                return Err(format!("client startup {key}: unknown text target"));
+            }
+        }
+        for key in state.states.keys() {
+            if !self.documents.iter().any(|document| document.id == *key) {
+                return Err(format!("client startup {key}: unknown document"));
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn compile(packages: &BTreeMap<String, ClientPackage>) -> Result<Option<Self>> {
         if packages.values().all(|p| p.ui_assets.is_empty()) {
             return Ok(None);

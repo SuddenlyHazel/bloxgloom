@@ -139,9 +139,20 @@ admission. The client verifies and caches one artifact across reconnects;
 matching bundle bytes alone do not grant client catalog compatibility.
 Canonical bundle metadata builds a fresh session catalog for the current Luau
 startup texture/block/item/action/entity/handler/system identities, including saved numeric
-IDs. Server-only code is not downloaded or executed on clients; only explicitly
-bound client/shared UI presentation modules run there. This is not yet a
-general client module startup or resource API.
+IDs. Server-only code is not downloaded or executed on clients. A format-2
+client/shared module named `client_startup` (for example `module client
+client_startup client/client_startup.luau`) runs once per connection on a
+bounded Luau worker **before** `ContentReady`. Its module returns
+`function(host)` and may call `host.set_text("package:document/node", "text")`
+or `host.set_state("package:document", "state")` to initialize its own authored
+UI. The targets must exist in the verified package UI; the host has no world,
+inventory or networking authority. `import("dependency:module")` sees only
+client/shared sources in the package and its exact direct dependencies, never
+server-only code. Invalid registration or execution aborts readiness with the
+package/module in the error. Initial presentation state is reset on each join,
+reconnect or server switch; it is not saved gameplay state. Connection setup
+currently waits for this worker before the window opens, so startup is not yet
+an asynchronously displayed progress flow or a general client services API.
 
 An authored `ui-document` may opt into client-only presentation events with
 `"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The
