@@ -541,8 +541,10 @@ with a package-textured cube and WGSL albedo, authoritative stick-for-block
 action from authored UI, downloaded client startup text and durable scheduled
 growth. A focused real-listener/restart test passes, and its package UI was
 inspected at 1280×720 and 640×360 through `ui-preview <dir> <package-root>`.
-In-world jade shading, release-window visuals, mixed-load response and the
-broader audit are not yet verified.
+The user reports the Jade example working in the live game; this is a useful
+manual check, not a GPU timing or mixed-load measurement. Cross-server switching
+has automated coverage but the user's live switch test is deferred. Mixed-load
+response and the broader audit are not yet verified.
 
 - [ ] Ship a runnable combined package with content, gameplay, scheduled work,
   UI and custom visuals; finish reconciling the complete implemented Luau API
@@ -552,8 +554,8 @@ broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **883/883**. That does not close these cross-system checks or verify the
-  in-world mod visuals.
+  **883/883**. The user reported the Jade example working live, but that does
+  not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
 
@@ -1121,7 +1123,8 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
   catalog texture layer. Formatting, strict Clippy and the integrated 4-thread
   suite (**873/873**) pass. The package UI was inspected in generated 1280×720
   and 640×360 previews, including its downloaded startup heading; in-world
-  material and release-window visual checks remain pending. This does not
+  material and release-window visual checks were pending at this increment;
+  the user later reported the Jade example working live. This does not
   close remaining Luau surface, built-in parity, UI or
   shader/effect scope.
 - **Phase 4 Luau neighborhood slice:** `read_radius_chunks=1` captures only
