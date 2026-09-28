@@ -199,6 +199,7 @@ fn texture_metadata(png: &[u8], texture_key: &str, asset: &str) -> Vec<u8> {
     writer.count(1).unwrap(); // textures
     writer.field(texture_key.as_bytes()).unwrap();
     writer.field(asset.as_bytes()).unwrap();
+    writer.count(0).unwrap(); // startup blocks
     for _ in 0..5 {
         writer.count(0).unwrap();
     } // runtime categories

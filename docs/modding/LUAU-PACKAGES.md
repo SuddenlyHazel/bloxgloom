@@ -57,9 +57,25 @@ return function(host)
 end
 ```
 
-This currently registers only non-placeable sprite items with existing builtin
-textures. Keys must use their package's namespace; script and registrar errors
-abort startup before opening the save. See `src/server/script/package.rs` and
+With package format 2 and `requires bloxgloom:content/v1`, a declared PNG can
+also become a catalog texture and a placeable opaque cube:
+
+```text
+asset texture tile assets/textures/tile.png
+```
+
+```lua
+host.register_texture("example:tile", "tile")
+host.register_block("example:brick", "Brick", "example:tile")
+```
+
+The block has one default state, uniform texture, solid opaque cube geometry,
+no special emission/flammability, and a same-key placeable item with the normal
+128 stack cap. Registration requires an already registered package-owned
+texture; a normal `register_item` remains a non-placeable sprite. Each package
+may declare at most 32 textures, 32 blocks and 32 items total. Keys must use
+their package's namespace; script and registrar errors abort startup before
+opening the save. See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
 restrictions. With the generation capability, an entry may also call
 `host.register_generator("example:terrain", 1, "example:terrain")`; its named
@@ -116,12 +132,13 @@ assets/textures/<path>.png`. Format 1 modules stay server-only. The immutable
 client artifact contains client/shared source and declared texture bytes, but
 never server modules or original paths. Its SHA-256 cache key verifies exact
 canonical bytes; it does not authenticate who supplied that key. General client
-module startup and decoded-image limits for non-UI textures are separate work. Local package
+module startup remains separate work. Registered catalog PNGs are decoded and
+bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
 admission. The client verifies and caches one artifact across reconnects;
 matching bundle bytes alone do not grant client catalog compatibility.
 Canonical bundle metadata builds a fresh session catalog for the current Luau
-startup item/action/entity/handler/system identities, including saved numeric
+startup texture/block/item/action/entity/handler/system identities, including saved numeric
 IDs. Server-only code is not downloaded or executed on clients; only explicitly
 bound client/shared UI presentation modules run there. This is not yet a
 general client module startup or resource API.

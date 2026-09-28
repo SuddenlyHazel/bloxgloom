@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 6
+//! Canonical, client-safe package set, independent of filesystem paths. Version 7
 //! is an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -11,7 +11,7 @@
 //! declaration binds one to a catalog texture; those PNGs are decoded and bounded
 //! on preparation workers before publication.
 //! Separately classified UI assets are validated/prepared by ui::authored before
-//! publication. V6 adds startup texture-to-asset identity and changes only the
+//! publication. V7 adds startup cube declarations and changes only the
 //! artifact/cache identity, not wire framing or saves. Old artifacts are
 //! rejected; there is no conversion or partial install.
 
@@ -25,7 +25,7 @@ use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
 mod declarations;
 
-const MAGIC: &[u8] = b"BGCLIENT\x06";
+const MAGIC: &[u8] = b"BGCLIENT\x07";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -47,7 +47,7 @@ impl CacheKey {
     /// Domain/version prefix avoids collisions with other future cache formats.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
-        let mut name = String::from("client-v6-sha256-");
+        let mut name = String::from("client-v7-sha256-");
         for byte in self.0 {
             write!(name, "{byte:02x}").expect("write String");
         }

@@ -139,6 +139,13 @@ pub(crate) struct Prepared {
     layer: u32,
 }
 
+#[cfg(test)]
+impl Prepared {
+    pub(crate) fn selected_layer(&self) -> u32 {
+        self.layer
+    }
+}
+
 /// Call from asset preparation, not the window thread. The layer is a catalog
 /// texture ID, not a block ID: face-specific art and item sprites share it.
 #[cfg(test)]

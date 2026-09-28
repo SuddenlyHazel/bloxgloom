@@ -31,7 +31,7 @@ fn encode_source(assets: &Assets, source: &[u8], side: usize) -> Vec<u8> {
         count(out, value.len());
         out.extend_from_slice(value);
     }
-    let mut bytes = b"BGCLIENT\x06".to_vec();
+    let mut bytes = b"BGCLIENT\x07".to_vec();
     count(&mut bytes, 2);
     // An exact direct dependency still grants no cross-package UI authority.
     field(&mut bytes, b"other");

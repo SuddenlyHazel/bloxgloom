@@ -100,6 +100,7 @@ fn sprite_metadata(owner: &str, requires: &[&str], items: &[(&str, &str, &str)])
         }
     }
     writer.count(0).unwrap(); // startup textures
+    writer.count(0).unwrap(); // startup blocks
     for _ in 0..5 {
         writer.count(0).unwrap();
     } // runtime declaration categories

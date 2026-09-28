@@ -6,6 +6,8 @@ use bloxgloom_host_api::actions::Request;
 
 #[path = "gameplay/authorization.rs"]
 mod authorization;
+#[path = "gameplay/blocks.rs"]
+mod blocks;
 #[path = "gameplay/decisions.rs"]
 mod decisions;
 #[path = "gameplay/entities.rs"]
@@ -143,7 +145,7 @@ impl Peer {
             | ClientMessage::Edit { action_id, .. } => action_id,
             _ => unreachable!(),
         };
-        protocol::write_client(&mut self.stream, request).unwrap();
+        protocol::write_client_with_catalog(&mut self.stream, request, &self.catalog).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             if let ServerMessage::ActionResult {

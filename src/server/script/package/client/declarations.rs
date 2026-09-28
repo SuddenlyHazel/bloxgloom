@@ -8,12 +8,14 @@ mod runtime;
 
 const MAX_ITEMS: usize = 32;
 const MAX_TEXTURES: usize = 32;
+const MAX_BLOCKS: usize = 32;
 
 #[derive(Debug)]
 pub(super) struct Startup {
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
     textures: Vec<content::Texture>,
+    blocks: Vec<content::Block>,
     runtime: runtime::Runtime,
 }
 
@@ -27,10 +29,12 @@ impl ClientBundle {
         let packages = &declarations.packages;
         let items = &declarations.items;
         let textures = &declarations.textures;
+        let blocks = &declarations.blocks;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
             || textures.len() > MAX_PACKAGES * MAX_TEXTURES
+            || blocks.len() > MAX_PACKAGES * MAX_BLOCKS
         {
             return Err(invalid());
         }
@@ -41,6 +45,8 @@ impl ClientBundle {
         items.sort_by(|a, b| a.key.cmp(&b.key));
         let mut textures = textures.iter().collect::<Vec<_>>();
         textures.sort_by(|a, b| a.definition.key.cmp(&b.definition.key));
+        let mut blocks = blocks.iter().collect::<Vec<_>>();
+        blocks.sort_by(|a, b| a.key.cmp(&b.key));
         for ((name, _), package) in self.packages.iter().zip(packages) {
             if package.key != format!("{name}:package") || package.version != 1 {
                 return Err(invalid());
@@ -59,10 +65,18 @@ impl ClientBundle {
                 .collect::<Vec<_>>();
             writer.count(own.len())?;
             for item in own {
+                let cube = blocks.iter().find(|block| block.key == item.key);
                 if item.swatch != [1.0; 4]
-                    || item.placeable.is_some()
-                    || !item.sprite
                     || item.components != content::Components::None
+                    || match cube {
+                        Some(block) => {
+                            item.placeable.as_deref() != Some(&block.key)
+                                || item.sprite
+                                || item.texture != block.textures.top
+                                || item.name != block.name
+                        }
+                        None => item.placeable.is_some() || !item.sprite,
+                    }
                 {
                     return Err(invalid());
                 }
@@ -105,6 +119,21 @@ impl ClientBundle {
                 writer.field(texture.definition.key.as_bytes())?;
                 writer.field(texture.asset.as_bytes())?;
             }
+            let own = blocks
+                .iter()
+                .filter(|block| {
+                    block
+                        .key
+                        .split_once(':')
+                        .is_some_and(|(owner, _)| owner == name)
+                })
+                .collect::<Vec<_>>();
+            writer.count(own.len())?;
+            for block in own {
+                writer.field(block.key.as_bytes())?;
+                writer.field(block.name.as_bytes())?;
+                writer.field(block.textures.top.as_bytes())?;
+            }
             runtime.encode_package(&mut writer, name)?;
         }
         let key = CacheKey(Sha256::digest(&writer.0).into());
@@ -112,6 +141,7 @@ impl ClientBundle {
         let decoded = result.declarations.as_ref().unwrap();
         if decoded.items.len() != items.len()
             || decoded.textures.len() != textures.len()
+            || decoded.blocks.len() != blocks.len()
             || decoded.runtime.counts() != runtime.counts()
         {
             return Err(invalid());
@@ -135,6 +165,9 @@ impl ClientBundle {
                         }
                         for texture in &startup.textures {
                             declarations.texture(texture.clone())?;
+                        }
+                        for block in &startup.blocks {
+                            declarations.block(block.clone())?;
                         }
                         for item in &startup.items {
                             declarations.item(item.clone())?;
@@ -168,6 +201,7 @@ impl Startup {
             packages: Vec::new(),
             items: Vec::new(),
             textures: Vec::new(),
+            blocks: Vec::new(),
             runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
@@ -271,6 +305,42 @@ impl Startup {
                         ),
                     ));
                 }
+            }
+            let count = reader.count(MAX_BLOCKS)?;
+            if count > 0 && !requires.iter().any(|r| r == composition::CONTENT) {
+                return Err(error(name, "startup blocks require content capability"));
+            }
+            let mut previous = String::new();
+            for _ in 0..count {
+                let key = reader.text(129)?;
+                let display = reader.text(255)?;
+                let texture = reader.text(129)?;
+                if key <= previous
+                    || key
+                        .split_once(':')
+                        .is_none_or(|(owner, local)| owner != name || !identifier(local))
+                    || texture
+                        .split_once(':')
+                        .is_none_or(|(owner, local)| owner != name || !identifier(local))
+                    || display.is_empty()
+                    || !startup.textures.iter().any(|t| t.key == texture)
+                {
+                    return Err(error(name, format!("invalid startup block {key}")));
+                }
+                let item = startup
+                    .items
+                    .iter_mut()
+                    .find(|i| i.key == key)
+                    .ok_or_else(|| error(name, format!("block {key} has no placeable item")))?;
+                if item.name != display || item.texture != texture {
+                    return Err(error(name, format!("block {key} item does not match")));
+                }
+                item.placeable = Some(key.clone());
+                item.sprite = false;
+                previous.clone_from(&key);
+                startup
+                    .blocks
+                    .push(crate::server::script::startup::cube(key, display, texture));
             }
             startup.runtime.decode_package(reader, name, &requires)?;
             startup.packages.push(composition::Package {
