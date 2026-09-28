@@ -19,6 +19,61 @@ pub const BUILTIN_BODY: Body = Body {
     head_height: 1.75,
 };
 
+/// Fixed, shared movement rates. The server budget is deliberately above
+/// predicted input speed to tolerate transport timing; it remains an
+/// authoritative admission limit, not a client-requested rate.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MotionRates {
+    pub intent_blocks_per_second: f32,
+    pub budget_blocks_per_second: f64,
+}
+
+pub const BUILTIN_MOTION: MotionRates = MotionRates {
+    intent_blocks_per_second: 8.0,
+    budget_blocks_per_second: 10.0,
+};
+
+/// Fixed builtin surface-search order for startup and later joins. The host
+/// still reads authoritative terrain, tests collision and requests missing
+/// chunks; this policy never supplies procedural fallback or chooses a world.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnSearch {
+    pub headroom: i32,
+    pub max_rise: i32,
+}
+
+pub const BUILTIN_SPAWN: SpawnSearch = SpawnSearch {
+    headroom: 32,
+    max_rise: 128,
+};
+
+impl SpawnSearch {
+    pub fn ceiling(self, max_generated_height: i32) -> i32 {
+        max_generated_height.saturating_add(self.headroom)
+    }
+
+    /// Startup prefers the highest safe origin surface, including negative Y.
+    pub fn startup_support_levels(
+        self,
+        bedrock_y: i32,
+        max_generated_height: i32,
+    ) -> impl Iterator<Item = i32> {
+        (bedrock_y..self.ceiling(max_generated_height)).rev()
+    }
+
+    /// Returning players first try the original or higher surface, then the
+    /// excavated lower surface. Missing cached terrain is never guessed as air;
+    /// the host may still accept a later known-safe surface.
+    pub fn cached_feet_levels(self, anchor_y: i32, bedrock_y: i32) -> impl Iterator<Item = i32> {
+        (anchor_y..anchor_y.saturating_add(self.max_rise))
+            .chain((bedrock_y.saturating_add(1)..anchor_y).rev())
+    }
+
+    pub fn feet(self, feet_y: i32) -> [f32; 3] {
+        [0.5, feet_y as f32, 0.5]
+    }
+}
+
 impl Body {
     /// Test the same twelve voxel samples used for movement and spawn checks.
     pub fn collides<E>(

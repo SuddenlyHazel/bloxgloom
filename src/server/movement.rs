@@ -20,7 +20,8 @@ pub(super) struct WorkerLoad {
     pub(super) capacity: Duration,
 }
 
-const SPEED_BLOCKS_PER_SECOND: f64 = 10.0;
+const SPEED_BLOCKS_PER_SECOND: f64 =
+    bloxgloom_host_api::player::BUILTIN_MOTION.budget_blocks_per_second;
 const TICK_MILLIS: f64 = 20.0;
 const CREDIT_SCALE: f64 = 1_000_000_000.0;
 // The client sends f32 displacements. A tiny fixed tolerance absorbs f32

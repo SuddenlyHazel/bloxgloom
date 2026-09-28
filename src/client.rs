@@ -22,7 +22,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 const FRAME: Duration = Duration::from_nanos(16_666_667);
-const SPEED: f32 = 8.0;
+const SPEED: f32 = bloxgloom_host_api::player::BUILTIN_MOTION.intent_blocks_per_second;
 // Diagnostic interest-volume bound, not an eviction budget.
 const MAX_CHUNKS: usize = (2 * crate::protocol::MAX_VIEW_DISTANCE as usize + 1).pow(2)
     * (2 * crate::protocol::VERTICAL_VIEW_DISTANCE as usize + 1);

@@ -3,13 +3,11 @@
 
 use super::{State, streaming};
 use crate::world::{BEDROCK_Y, MAX_GENERATED_HEIGHT, World, world_to_chunk};
+use bloxgloom_host_api::player::BUILTIN_SPAWN;
 use std::io::{self, ErrorKind};
 
-const HEADROOM: i32 = 32;
-const MAX_SPAWN_RISE: i32 = 128;
-
 pub(super) fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
-    let ceiling = MAX_GENERATED_HEIGHT + HEADROOM;
+    let ceiling = BUILTIN_SPAWN.ceiling(MAX_GENERATED_HEIGHT);
     let catalog = world.catalog_arc();
     let solid = |block| catalog.block_flags(block) & crate::content::SOLID != 0;
     if solid(world.get_block(0, ceiling, 0)?) {
@@ -18,9 +16,9 @@ pub(super) fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
             "spawn terrain exceeds scan ceiling",
         ));
     }
-    for y in (BEDROCK_Y..ceiling).rev() {
+    for y in BUILTIN_SPAWN.startup_support_levels(BEDROCK_Y, MAX_GENERATED_HEIGHT) {
         if solid(world.get_block(0, y, 0)?) {
-            let position = [0.5, (y + 1) as f32, 0.5];
+            let position = BUILTIN_SPAWN.feet(y + 1);
             if !collides(world, position)? {
                 return Ok(position);
             }
@@ -34,14 +32,14 @@ pub(super) fn spawn_position(world: &mut World) -> io::Result<[f32; 3]> {
 
 /// Rechecks the startup surface, then searches upward and downward after edits.
 /// A missing authoritative chunk never becomes guessed air or ground: its exact
-/// key is requested and the join waits for a later tick.
+/// key is requested; the join waits unless a later candidate is known safe.
 pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
     let start_y = state.spawn_anchor[1] as i32;
     let catalog = state.world.catalog_arc();
     let mut missing = false;
     // Keep the historical preference for the original/upward surface, but
     // mining it must not strand later joins when a safe lower surface exists.
-    for y in (start_y..start_y + MAX_SPAWN_RISE).chain((BEDROCK_Y + 1..start_y).rev()) {
+    for y in BUILTIN_SPAWN.cached_feet_levels(start_y, BEDROCK_Y) {
         let support = match state.world.cached_block(0, y - 1, 0) {
             Some(block) => block,
             None => {
@@ -53,7 +51,7 @@ pub(super) fn spawn_position_cached(state: &mut State) -> io::Result<[f32; 3]> {
         if catalog.block_flags(support) & crate::content::SOLID == 0 {
             continue;
         }
-        let position = [0.5, y as f32, 0.5];
+        let position = BUILTIN_SPAWN.feet(y);
         match collides_cached(state, position)? {
             Some(false) => return Ok(position),
             Some(true) => {}
