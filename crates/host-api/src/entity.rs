@@ -3,6 +3,9 @@
 //! the in-process Rust implementation is not a stable native plugin ABI.
 use std::{any::Any, fmt, sync::Arc};
 
+mod falling;
+pub use falling::{FallingContext, FallingPlan, FallingWorld};
+
 #[derive(Clone)]
 pub struct Payload(Arc<dyn Any + Send + Sync>);
 impl Payload {

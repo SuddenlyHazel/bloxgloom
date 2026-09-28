@@ -4,7 +4,7 @@ use crate::content::{Catalog, EntityTypeId};
 use crate::inventory::Stack;
 use crate::items::ItemId;
 use crate::server::entities::{EntityOwner, EntityView};
-use crate::world::{MAX_GENERATED_HEIGHT, World};
+use crate::world::{ChunkKey, MAX_GENERATED_HEIGHT, World};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 

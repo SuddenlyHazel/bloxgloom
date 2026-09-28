@@ -430,6 +430,15 @@ reusable capability. Parts of support, pickup and scheduling use public hooks,
 but that does not migrate their complete non-fire lifecycles. Chained neighbor
 changes after a support-loss removal now notify their own neighbors without
 double-dispatching loot (`8140f5e`); the focused WAL/restart/one-drop test passes.
+An adjacent targeted-handler removal is now distinguished from genuine upward
+support loss (`WorldEdit` versus `SupportLoss`); its focused regression passes
+(`85d4ba4`).
+The drop tick policy now delegates fixed-step falling, collision and support
+rechecks to a bounded public `entity::FallingContext` over captured terrain.
+The integrated main-tree suite passes 884/884, formatting and strict Clippy pass.
+Spawn/merge/split, pickup eligibility and transfer, expiry and terrain-change
+wake selection still use their existing native paths and do not meet complete
+drop parity.
 
 **Remaining**
 
@@ -556,7 +565,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **883/883**. The user reported the Jade example working live, but that does
+  **884/884**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -622,8 +631,8 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **883/883** after window-visible joining
-  was committed.
+  latest reviewed 4-thread suite passed **884/884** after drop tick integration;
+  strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,

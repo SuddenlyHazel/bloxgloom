@@ -10,6 +10,144 @@
 use super::*;
 use crate::server::entities::EntityId;
 
+#[test]
+fn listener_drop_motion_merge_pickup_and_restart_use_one_durable_path() {
+    use std::net::{TcpListener, TcpStream};
+    let save = TestSave::new(&format!(
+        "drop-listener-motion-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let profile = 0x3434;
+    let mut state = state_for(&save, 7);
+    // Exercise the returning-player position path as well as WAL recovery.
+    state
+        .position_store
+        .save(profile, state.spawn_anchor)
+        .unwrap();
+    let start = [0.5, state.spawn_anchor[1] + 7.0, 0.5];
+    spawn_drop(&mut state, 1, start, PIN_STONE, 80, Duration::ZERO);
+    spawn_drop(&mut state, 1, start, PIN_STONE, 80, Duration::ZERO);
+    assert_eq!(drop_totals(&state, start), (2, 160));
+    let catalog = state.world.catalog_arc();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, stopped) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        crate::server::net::serve_listener_with_stats(
+            listener,
+            Box::new(state),
+            stopped,
+            Arc::new(crate::server::net::TransportStats::default()),
+        )
+    });
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut peer = TcpStream::connect(address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Hello {
+                name: "drop-motion".into(),
+                profile,
+                content_fingerprint: catalog.fingerprint(),
+            },
+        )
+        .unwrap();
+        loop {
+            let ServerMessage::ContentManifestPart {
+                fingerprint,
+                total_len,
+                offset,
+                bytes,
+            } = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap()
+            else {
+                panic!("expected manifest");
+            };
+            assert_eq!(fingerprint, catalog.fingerprint());
+            if offset as usize + bytes.len() == total_len as usize {
+                break;
+            }
+        }
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::ContentReady {
+                fingerprint: catalog.fingerprint(),
+            },
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut positions = std::collections::BTreeSet::new();
+        let mut saw_merge = false;
+        let mut saw_pickup = false;
+        let mut credited = false;
+        while Instant::now() < deadline
+            && !(saw_merge && positions.len() > 1 && saw_pickup && credited)
+        {
+            match protocol::read_server_with_catalog(&mut peer, &catalog) {
+                Ok(ServerMessage::Drops { items, .. }) => {
+                    if items.iter().map(|item| u32::from(item.count)).sum::<u32>() == 160 {
+                        saw_merge |= items.len() == 2
+                            && items.iter().any(|item| item.count == 128)
+                            && items.iter().any(|item| item.count == 32);
+                        if let Some(item) = items.first() {
+                            positions.insert(item.position[1].to_bits());
+                        }
+                    }
+                }
+                Ok(ServerMessage::Pickups { items }) => {
+                    saw_pickup |= items.iter().any(|item| item.item == PIN_STONE);
+                }
+                Ok(ServerMessage::Inventory { slots, .. }) => {
+                    credited |= slots
+                        .iter()
+                        .flatten()
+                        .map(|stack| {
+                            if stack.item == PIN_STONE {
+                                u32::from(stack.count)
+                            } else {
+                                0
+                            }
+                        })
+                        .sum::<u32>()
+                        == 160;
+                }
+                Ok(_) => {}
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
+                Err(error) => panic!("listener read failed: {error}"),
+            }
+        }
+        assert!(saw_merge, "listener did not publish capped merge");
+        assert!(
+            positions.len() > 1,
+            "listener did not publish falling motion"
+        );
+        assert!(saw_pickup, "listener did not send explicit pickup");
+        assert!(credited, "listener did not credit finite inventory");
+        peer
+    }));
+    stop.send(()).unwrap();
+    server.join().unwrap().unwrap();
+    if let Err(error) = result {
+        std::panic::resume_unwind(error);
+    }
+    let restarted = state_for(&save, 7);
+    assert_eq!(drop_totals(&restarted, start).1, 0);
+    let inventory = restarted.inventory_store.load(profile).unwrap();
+    assert_eq!(
+        inventory
+            .slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.item == PIN_STONE)
+            .map(|stack| u32::from(stack.count))
+            .sum::<u32>(),
+        160
+    );
+}
+
 const PIN_STONE: crate::items::ItemId = crate::items::ItemId::new(crate::world::STONE.get());
 
 fn pin_action_id(state: &State, profile: u128, seq: u64) -> u128 {
