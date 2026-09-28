@@ -19,6 +19,8 @@ before treating a capability as complete.
    local presentation state.
 - [Targeted authored-UI action](../../fixtures/ui-target-actions/README.md):
   a client-aimed block request with server-owned reach, cost and receipt.
+- [Neighborhood owner system](../../fixtures/neighborhood/README.md):
+  authoritative cross-chunk reads/edits and a durable intent relay in Luau.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
   currently bound callbacks; runtime validation remains authoritative.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
