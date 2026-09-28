@@ -129,9 +129,16 @@ impl ClientApp {
 
     pub(super) fn admin_run(&mut self) {
         match parse(&self.admin_input, &self.catalog) {
-            Ok(Command::Help) => self.show_status(
-                "give namespace:item [1..128] / spawn namespace:entity / namespace:command",
-            ),
+            Ok(Command::Help) => {
+                let commands = self
+                    .catalog
+                    .registered_actions()
+                    .filter(|action| action.command.is_some())
+                    .map(|action| action.key.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" / ");
+                self.show_status(format!("Commands: {commands}"));
+            }
             Ok(Command::Registered(request)) => self.submit_admin_command(request),
             Err(message) => self.show_status(message),
         }

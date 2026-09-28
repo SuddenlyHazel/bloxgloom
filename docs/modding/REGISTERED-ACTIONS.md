@@ -62,6 +62,8 @@ shown in local admin mode; this display setting never authorizes a grant. A loca
 shortcut can use `bind_action.namespace:key=T` in the client config for a
 zero-argument command. It is inert unless the current server advertises that exact
 command; commands requiring arguments must be entered with their arguments.
+In normal mode the screen lists the active catalog's command keys, argument
+syntax and Admin requirement; `help` also lists active command keys locally.
 
 For example, a package action can register a typed player command with
 `h.register_action('demo:offer', 1, 'Offer', 'empty', nil, 'demo:offer_handler',

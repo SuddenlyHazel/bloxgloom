@@ -1,6 +1,24 @@
 //! Creative catalog and command entry overlay.
 
 use super::*;
+use bloxgloom_host_api::actions::{Action, CommandArgument, CommandPermission};
+
+fn command_signature(action: &Action) -> Option<String> {
+    let command = action.command.as_ref()?;
+    let mut signature = action.key.clone();
+    for argument in &command.arguments {
+        match argument {
+            CommandArgument::ItemKey { .. } => signature.push_str(" <item>"),
+            CommandArgument::EntityKey { .. } => signature.push_str(" <entity>"),
+            CommandArgument::Count { default: Some(_) } => signature.push_str(" [count]"),
+            CommandArgument::Count { default: None } => signature.push_str(" <count>"),
+        }
+    }
+    if command.permission == CommandPermission::Admin {
+        signature.push_str("  (ADMIN)");
+    }
+    Some(signature)
+}
 
 impl UiBuilder<'_> {
     pub(in crate::ui::draw) fn draw_admin(
@@ -68,6 +86,23 @@ impl UiBuilder<'_> {
                 TEXT,
                 13,
             );
+        }
+        if !frame.admin_enabled {
+            for (index, action) in catalog
+                .registered_actions()
+                .filter(|action| action.command.is_some())
+                .take(8)
+                .enumerate()
+            {
+                self.text(
+                    &command_signature(action).expect("filtered command"),
+                    panel.x + 24.0 * self.scale,
+                    panel.y + (86.0 + index as f32 * 20.0) * self.scale,
+                    0.56,
+                    TEXT,
+                    70,
+                );
+            }
         }
         let command_y = panel.y + panel.height - 91.0 * self.scale;
         self.text(

@@ -526,8 +526,10 @@ The request codec remains limited to 130 argument bytes within the 256-byte
 interaction cap, and inventory controls still require exactly four bytes.
 Real-listener typed-command, permission, malformed-request, receipt and restart
 regressions pass; the integrated root suite **916/916**, host API **30/30**,
-formatting and strict Clippy pass. Command syntax discovery in the client UI
-and a full input-rebinding interface are still open beyond config-file editing.
+formatting and strict Clippy pass. Follow-up UI work displays negotiated
+signatures and permissions on the non-admin command screen; inspect its preview
+before treating that presentation as verified. A full input-rebinding interface
+is still open beyond config-file editing.
 
 **Verified spawn-search slice:** startup highest-surface and cached
 join upward-then-downward candidate ordering use a fixed public `player::SpawnSearch`.
