@@ -10,6 +10,65 @@ use crate::{
 use std::sync::Arc;
 #[path = "machine_component_tests.rs"]
 mod components;
+
+#[test]
+fn public_machine_lifecycle_matches_runtime_footprint_and_rejects_stale_removal() {
+    let catalog = Arc::new(crate::content::Catalog::builtins());
+    let machine = catalog.machine(crate::content::KILN_ENTITY_TYPE).unwrap();
+    let anchor = [7, 80, -3];
+    let key = &machine.variants[1].placement_state;
+    let placed = machine.plan_place(anchor, key).unwrap();
+    assert_eq!(placed.variant, 1);
+    assert_eq!(placed.item, machine.item);
+    let adapter = crate::server::entities::machine::Adapter::new(catalog.clone(), machine.clone());
+    let expected = adapter
+        .cells(
+            CellCoord::new(anchor[0], anchor[1], anchor[2]),
+            &MachinePayload::empty(machine.slots, 1),
+        )
+        .unwrap();
+    assert_eq!(
+        placed
+            .cells
+            .iter()
+            .map(|(at, key)| (
+                CellCoord::new(at[0], at[1], at[2]),
+                catalog.state_by_key(key).unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let stored: Vec<_> = placed.cells.iter().map(|(at, _)| *at).collect();
+    let active = machine
+        .plan_remove(anchor, [7, 81, -3], 1, true, &stored)
+        .unwrap();
+    assert_ne!(active.cells, placed.cells);
+    let mut payload = MachinePayload::empty(machine.slots, 1);
+    payload.fuel = 1;
+    assert_eq!(
+        active
+            .cells
+            .iter()
+            .map(|(at, key)| (
+                CellCoord::new(at[0], at[1], at[2]),
+                catalog.state_by_key(key).unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        adapter.cells(CellCoord::new(7, 80, -3), &payload).unwrap()
+    );
+    assert!(
+        machine
+            .plan_remove(anchor, [7, 81, -3], 1, true, &stored[..1])
+            .is_err()
+    );
+    assert!(
+        machine
+            .plan_remove(anchor, [8, 81, -3], 1, true, &stored)
+            .is_err()
+    );
+    assert!(machine.plan_place([0, i32::MAX, 0], key).is_err());
+}
+
 #[test]
 fn registered_machine_ports_reject_wrong_faces_and_forged_destination_without_item_changes() {
     let path = temp_save_dir("machine-port-validation");

@@ -5,6 +5,8 @@ use crate::{FootprintCell, RegistrationError};
 use std::sync::Arc;
 mod components;
 pub use components::{ComponentMatch, ComponentOutput, ComponentValue};
+mod lifecycle;
+pub use lifecycle::LifecyclePlan;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     /// Namespaced allowlist (or `#namespace:item_tag`); empty accepts any item.

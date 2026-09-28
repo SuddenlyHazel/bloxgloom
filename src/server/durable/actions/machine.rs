@@ -6,8 +6,7 @@ use crate::{
         block_actions::{BlockActionContext, BlockCommitBuilder},
         durable::CommitAction,
         entities::{
-            CellCoord, EntityPayload, EntitySpawn,
-            machine::{Adapter, MachinePayload},
+            CellCoord, EntityLocation, EntityPayload, EntitySpawn, machine::MachinePayload,
         },
         simulation::TickId,
     },
@@ -30,20 +29,23 @@ pub(in crate::server) fn place(
         .machines()
         .find(|(_, m)| catalog.block_by_key(&m.block) == Some(block))
         .ok_or_else(invalid)?;
-    let variant = m
-        .variants
-        .iter()
-        .position(|v| catalog.state_by_key(&v.placement_state) == Some(command.block))
-        .ok_or_else(invalid)?;
-    let payload = MachinePayload::empty(m.slots, variant as u8);
+    let key = &catalog.state(command.block).ok_or_else(invalid)?.key;
+    let plan = m
+        .plan_place([command.x, command.y, command.z], key)
+        .map_err(io::Error::other)?;
+    let payload = MachinePayload::empty(m.slots, plan.variant);
     let anchor = CellCoord::new(command.x, command.y, command.z);
-    let adapter = Adapter::new(catalog.clone(), m.clone());
-    let cells = adapter.cells(anchor, &payload).map_err(io::Error::other)?;
-    let item = catalog
-        .items()
-        .find(|i| i.key == m.item)
-        .ok_or_else(invalid)?
-        .id;
+    let cells = plan
+        .cells
+        .into_iter()
+        .map(|(at, key)| {
+            Ok((
+                CellCoord::new(at[0], at[1], at[2]),
+                catalog.state_by_key(&key).ok_or_else(invalid)?,
+            ))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let item = catalog.item_by_key(&plan.item).ok_or_else(invalid)?;
     let spawn = EntitySpawn::Anchored {
         entity_type: id,
         anchor,
@@ -85,14 +87,30 @@ pub(in crate::server) fn remove(
         .downcast_ref::<MachinePayload>()
         .ok_or_else(invalid)?;
     let anchor = snapshot.anchor().ok_or_else(invalid)?;
-    let cells = Adapter::new(catalog.clone(), m.clone())
-        .cells(anchor, p)
+    let EntityLocation::Anchored { ref footprint, .. } = snapshot.location else {
+        return Err(invalid());
+    };
+    let stored: Vec<_> = footprint.iter().map(|c| [c.x, c.y, c.z]).collect();
+    let plan = m
+        .plan_remove(
+            [anchor.x, anchor.y, anchor.z],
+            [command.x, command.y, command.z],
+            p.variant,
+            p.fuel > 0,
+            &stored,
+        )
         .map_err(io::Error::other)?;
-    let item = catalog
-        .items()
-        .find(|i| i.key == m.item)
-        .ok_or_else(invalid)?
-        .id;
+    let cells = plan
+        .cells
+        .into_iter()
+        .map(|(at, key)| {
+            Ok((
+                CellCoord::new(at[0], at[1], at[2]),
+                catalog.state_by_key(&key).ok_or_else(invalid)?,
+            ))
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let item = catalog.item_by_key(&plan.item).ok_or_else(invalid)?;
     let mut drops = vec![Stack::new(item, 1)];
     drops.extend(p.slots.iter().flatten().cloned());
     workstation::remove(
