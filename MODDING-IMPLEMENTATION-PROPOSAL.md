@@ -373,6 +373,13 @@ support as the final model system.
 
 ## 12. Implementation order and deliverables
 
+**Status meanings:** “Done” means the complete phase deliverable works end to
+end against this proposal, not just that one representative increment compiled,
+rendered or was committed. “In progress” includes useful committed slices with
+material missing capability. A commit records reviewed incremental work; it is
+not by itself an acceptance of the phase or the overall plan. The overall task
+is not done until every non-deferred phase and §13 criteria are satisfied.
+
 | Phase | Work to land | Status |
 | --- | --- | --- |
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
@@ -383,6 +390,49 @@ support as the final model system.
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | In progress |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Planned |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
+
+### End-to-end gaps — do not mistake an increment for a completed capability
+
+The following are known material limitations of the committed implementation.
+These are work to finish, not deferred deliverables or implicit approval to
+ship reduced versions of phases 2–8:
+
+1. **Authored UI cannot request gameplay.** Its Luau events edit only local
+   text, visibility and a short string. Even the sample “Plant a seed” button
+   changes presentation only; it does not plant anything. It needs an explicit
+   authorized server-request bridge, result/receipt handling and a real example.
+2. **Server gameplay parity is incomplete.** Owner systems reject edits that
+   generate entity/drop participants, wakes have no payload, and native fire
+   propagation/delivery, drop motion/merging/expiration, player rules and
+   commands still have privileged paths. Shared decisions for some stages do
+   not migrate the whole lifecycle.
+3. **Luau startup content is narrow.** It currently declares sprite items using
+   builtin textures, semantic actions/handlers, bounded entity bytes, chunk
+   generators and chunk-owner systems. It cannot author the full public Rust
+   content/material/block/creature/machine/screen surface from Luau; an
+   independently useful ordinary mod still encounters those missing bindings.
+4. **Luau owner/client services are partial.** Scripted owner systems are
+   chunk-scoped and lack neighborhood reads and atomic generated entity/drop
+   effects. Client scripts currently run only a local UI event handler with
+   explicit string state, not general presentation/replica/service callbacks.
+5. **Packages are not a complete mod distribution runtime.** Verified bytes
+   and current Luau catalog metadata can join, but downloaded client code is
+   not executed as a general startup runtime. Cache retains one in-process
+   bundle, not a persistent package cache; transfer has no user-visible
+   preparation progress or cancellation/retry workflow. SHA-256 verifies bytes
+   against the session offer, not the server's identity.
+6. **Authored UI is an initial widget subset.** No scrolling, wrapping,
+   Unicode shaping/IME, clipboard, accessibility or dynamic document building.
+   The other built-in interfaces have not yet migrated onto it. The current
+   UI event bridge cannot issue authorized game requests (item 1).
+7. **Shaders/materials/effects are not committed yet.** Package UI images and
+   fonts are real, but they are not proof of custom world materials or WGSL
+   effects. Phase 7's first shader increment is under development.
+8. **Authoring and integrated verification are incomplete.** The examples do
+   not yet cover a real combined gameplay+UI+shader flow; response latency,
+   rendering and mixed-load behavior have not received final integrated
+   verification. Recent full-suite runs also exposed intermittent or
+   unresolved unrelated server-test failures; focused tests do not close them.
 
 Land usable increments and commit regularly. Interface evaluation and small
 binding exercises can happen earlier when needed to prevent an awkward public
