@@ -532,14 +532,22 @@ to check in this phase.
 
 #### Phase 8 — examples and integrated verification · Planned
 
+**Working:** `fixtures/combined-mod/` now gives one runnable `verdant` package
+with a package-textured cube and WGSL albedo, authoritative stick-for-block
+action from authored UI, downloaded client startup text and durable scheduled
+growth. A focused real-listener/restart test passes; release-window visuals,
+mixed-load response and the broader audit are not yet verified.
+
 - [ ] Ship a runnable combined package with content, gameplay, scheduled work,
-  UI and custom visuals; document the implemented Luau API and local workflow.
+  UI and custom visuals; finish reconciling the complete implemented Luau API
+  and local workflow documentation with that example.
 - [ ] Audit for remaining builtin-only production paths and reconcile docs with
   the actual host contract and deferred model scope.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
-  rendering/performance comparisons. The latest suite is **864/864**, but that
-  does not close these cross-system checks or verify the live fire cue.
+  rendering/performance comparisons. The latest integrated 4-thread suite is
+  **873/873**. That does not close these cross-system checks or verify the live
+  fire cue.
 
 Land and review usable increments regularly. A completed slice does not check
 off its phase; conversely, do not defer a listed deliverable because one example
@@ -1066,7 +1074,10 @@ This section exists so compaction or a new session does not restart the design.
   conversion. Real nonblocking-listener cross-chunk recovery, WAL receipt loss,
   retry, forwarding, output poisoning and identity tests passed; six focused
   integration tests, formatting and strict Clippy passed, with 866/866 on the
-  isolated agent suite. Neighborhood reads and directly authored owner entity/
+  isolated agent suite and 870/870 on a 4-thread integrated run. One earlier
+  maximally parallel run hit a load-sensitive 50 ms script wall-clock limit in
+  an unrelated 4,100-read budget test; it passed alone. Neighborhood reads and
+  directly authored owner entity/
   drop effects remain unbound, and native fire has not migrated.
 - **Phase 6 targeted UI block-action slice:** an authored UI callback supplies
   only its package-owned action key. The client samples current streamed terrain
@@ -1076,8 +1087,18 @@ This section exists so compaction or a new session does not restart the design.
   a real-listener download, changed aim, denial/retry, reconnect and restart;
   focused integration tests, formatting and strict Clippy pass. The isolated
   agent full suite had a drop-motion timing failure that passed on rerun; the
-  main-tree integrated run is pending. Entity targets, argument schemas and
-  a same-type terrain-revision fence remain open.
+  main-tree 4-thread integrated run passed **872/872**. Entity targets, argument
+  schemas and a same-type terrain-revision fence remain open.
+- **Phase 8 combined package slice:** `fixtures/combined-mod/` is a single
+  format-2 `verdant` package spanning package PNG/cube/WGSL material,
+  server-authorized authored UI action with finite stick cost, downloaded client
+  startup text and a persisted chunk-owner growth deadline. Its focused real-
+  listener test exercises both terrain changes, finite inventory and owner
+  recovery; verifies the transferred material resolves to the authored cube's
+  catalog texture layer. Formatting, strict Clippy and the integrated 4-thread
+  suite (**873/873**) pass. Live release-window visual checks are pending;
+  this does not close remaining Luau surface, built-in parity, UI or
+  shader/effect scope.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
