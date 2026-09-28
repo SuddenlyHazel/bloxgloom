@@ -456,10 +456,12 @@ selected-stack validation remain a native route. Do not replace those
 authority checks with client-supplied action bytes just to remove the branch.
 
 **Player-rule audit:** the server movement budget is 10 blocks/s while client
-intent uses 8 blocks/s. Collision samples are shared for prediction but
-repeated in spawn checks. Public configurable movement/body rules need
-handshake-visible identity and consistent prediction/reconciliation, not a
-server-only tuning knob. Semantic command discovery/rebinding remains open.
+intent uses 8 blocks/s. The fixed public builtin `player::Body` now supplies
+the same collision samples to prediction, movement and spawn checks, and its
+bounds to placement validation. This does **not** offer mod-selectable rules:
+those need handshake-visible identity and consistent prediction/reconciliation,
+not a server-only tuning knob. Semantic command discovery/rebinding remains
+open.
 
 **Remaining**
 
@@ -471,7 +473,11 @@ server-only tuning knob. Semantic command discovery/rebinding remains open.
 - [ ] Expose consistent player spawn/movement/body, state and appearance rules;
   finish semantic command/input discovery and rebinding. `give`/`spawn` and
   inventory/drop bindings use registered actions; `help` is client-local.
-  Finish auditing storage, machine, creature and anchored shared services.
+- [ ] Finish the production shared-service audit for storage, machine, creature
+  and anchored helpers. Their public startup declarations/behaviors and external
+  listener fixtures cover representative placement, processing, interaction,
+  refunds and restart, but that evidence alone does not establish complete
+  helper parity.
 
 Native fire migration is **deferred outside Phase 2**. Neither its private
 production scheduler nor the unverified optional visual cue counts toward this
