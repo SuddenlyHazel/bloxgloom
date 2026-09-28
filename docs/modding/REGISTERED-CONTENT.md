@@ -38,6 +38,12 @@ ordinary placement selects the unlit state.
 * Items: independent namespaced identity, display name/swatch, texture, sprite
   versus block-item cube, and optional exact placement-state reference. Stack
   capacity remains 128. Item actions/harvest policies are separate contracts.
+  Non-placeable Luau items can set `drop_size` (`small`, `normal`, `large`) and
+  `drop_animation` (a table of bounded `pop_duration`, `pop_height`,
+  `hover_amplitude`, `hover_speed`, `spin_speed`, `pickup_duration`, `pickup_arc`,
+  `pickup_turn`). Omitted fields keep the stock animation. These are negotiated
+  client presentation only: age and pickup events, item counts, and ownership
+  stay server-authoritative. `DropAnimation` is also available to Rust items.
 * Components: `Unstructured` preserves builtin behavior (nonzero version,
   1–1024 opaque bytes), `None` forbids components, and `Opaque` declares a version,
   schema fingerprint, byte maximum and whether a payload is required. The host

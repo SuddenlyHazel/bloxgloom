@@ -24,6 +24,8 @@ before treating a capability as complete.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
   currently bound callbacks; runtime validation remains authoritative.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
+- [Player rules](PLAYER-RULES.md): startup-selected, negotiated body, movement,
+  spawn and eye contract.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
 - [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):
