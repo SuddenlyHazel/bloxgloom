@@ -432,9 +432,10 @@ harvesting migration are accepted. No phase-level work remains.
   (`85d4ba4`). Both focused WAL/restart regressions pass.
 - Drop falling and support rechecks use a bounded public `FallingContext`
   (`2a238f3`). Production merge-target selection, pickup eligibility and expiry
-  decisions now use public policies (`1367b11`). The host still owns candidate
-  capture, capped split allocation, inventory credit, despawns, terrain wakes
-  and WAL commits; a public policy method alone does not close drop parity.
+  decisions now use public policies (`1367b11`). The fill/split count policy
+  also passes the integrated **892/892** suite; the host still owns candidate
+  capture, allocation, inventory credit, despawns, terrain wakes and WAL
+  commits. Public policy methods alone do not close drop parity.
 - Authenticated `give`/`spawn` console requests use registered actions and
   public Luau gameplay operations (`99e8276`); `help` is client-local text.
   Production `InventoryMove` uses public `move_slots`, preserving capped merges,
@@ -597,7 +598,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **891/891**. The user reported the Jade example working live, but that does
+   **892/892**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -663,7 +664,7 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **891/891** after registered drop stacks;
+  latest reviewed 4-thread suite passed **892/892** after public drop stack filling;
   strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
