@@ -117,6 +117,15 @@ Scoped `inventory(owner)`, `give`, `take` and `transfer_inventory` preserve
 exact components and host permissions. Owners are the requesting `"player"`
 or an entity-ID table; arbitrary profiles are not accessible. Client pickup
 animations do not decide ownership. Fallback handlers remain unbound.
+For an authenticated local admin, an action callback can call
+`context.admin_give(item_key, count)` (one stack, 1–128; returns false if the
+whole grant will not fit) or `context.admin_spawn(creature_key)` (one registered
+creature at a host-selected supported position). These are denied for ordinary
+players even if a package exposes a button or catches the error with `pcall`;
+they do not accept a script-supplied admin token or spawn coordinates. The
+builtin `give` and `spawn` console commands use these same registered action
+operations and durable receipts. `help` is local console text, not a gameplay
+transaction or mod command registry.
 
 A package with the owner-systems capability can register one persistent chunk
 system with `host.register_system { key, schema, revision, module,

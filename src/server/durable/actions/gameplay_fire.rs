@@ -45,6 +45,7 @@ pub(in crate::server) fn plan(
         },
         crate::server::gameplay::Participants {
             actor: None,
+            admin: false,
             entities: &state.entities,
         },
     );

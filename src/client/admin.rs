@@ -1,5 +1,6 @@
 //! Local admin menu commands. Parsing is client convenience; the server still
 //! authenticates every grant and commits its inventory change through the WAL.
+//! `help` only displays local command usage; it has no server action or WAL effect.
 
 use super::ClientApp;
 use crate::content::Catalog;

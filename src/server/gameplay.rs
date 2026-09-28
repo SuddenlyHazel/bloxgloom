@@ -10,6 +10,7 @@ pub(super) mod inventory;
 
 pub(super) struct Participants<'a> {
     pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    pub admin: bool,
     pub entities: &'a super::entities::EntityStore,
 }
 
@@ -46,6 +47,7 @@ struct WorldSnapshot<'a> {
     reads: &'a mut TerrainReads,
     requested: &'a mut Vec<ChunkKey>,
     actor: Option<(u128, &'a crate::inventory::Inventory)>,
+    admin: bool,
     inventory_read: bool,
     entities: Option<&'a super::entities::EntityStore>,
     tick: u64,
@@ -53,6 +55,9 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn admin(&self) -> bool {
+        self.admin && self.actor.is_some_and(|(profile, _)| profile != 0)
+    }
     fn tick(&self) -> u64 {
         self.tick
     }
@@ -241,6 +246,7 @@ pub(super) struct WorldPlan {
     pub drops: Vec<Spawn>,
     pub inventory: Option<crate::inventory::Inventory>,
     pub drop_takes: Vec<(u64, u16)>,
+    pub admin_spawns: Vec<String>,
 }
 
 /// Invoke decision owners with one shared overlay. Every terrain/drop effect is
@@ -290,6 +296,7 @@ pub(super) fn plan_removals(
         reads,
         requested,
         actor,
+        admin: participants.admin,
         inventory_read: false,
         entities: Some(participants.entities),
         tick,
@@ -632,6 +639,7 @@ pub(super) fn plan_removals(
         drops,
         inventory,
         drop_takes,
+        admin_spawns: plan.admin_spawns,
     })
 }
 

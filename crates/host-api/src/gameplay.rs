@@ -58,6 +58,10 @@ pub trait Snapshot {
     fn tick(&self) -> u64;
     fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
+    /// Server-authenticated admin identity, never derived from request bytes.
+    fn admin(&self) -> bool {
+        false
+    }
     fn entity(&mut self, id: u64) -> Result<Option<Entity>, Error>;
     fn nearby_entities(&mut self, position: [f32; 3], radius: f32) -> Result<Vec<Entity>, Error>;
     fn entity_state(&mut self, id: u64, owner: &str) -> Result<Option<Vec<u8>>, Error>;
@@ -94,6 +98,7 @@ pub struct Plan {
     pub entity_spawns: Vec<EntitySpawn>,
     pub entity_changes: BTreeMap<u64, EntityChange>,
     pub entity_schedules: BTreeMap<u64, Option<u64>>,
+    pub admin_spawns: Vec<String>,
 }
 
 pub struct Context<'a> {
@@ -116,6 +121,31 @@ impl<'a> Context<'a> {
     }
     pub fn player(&self) -> Option<InventoryId> {
         self.snapshot.player().map(InventoryId::Player)
+    }
+    /// Explicit creative grant, gated by the host's authenticated admin session.
+    /// Ordinary `give` remains available to gameplay rewards without admin access.
+    pub fn admin_give(&mut self, item: &str, count: u16) -> Result<bool, Error> {
+        self.charge()?;
+        if !self.snapshot.admin() {
+            return self.fail(Error::Invalid("admin access denied".into()));
+        }
+        let owner = self
+            .player()
+            .ok_or_else(|| Error::Invalid("no player".into()))?;
+        self.give(owner, Stack::new(item, count))
+    }
+    /// Host resolves the creature's registered key and chooses a supported nearby
+    /// position; the handler cannot supply coordinates or allocate an entity ID.
+    pub fn admin_spawn(&mut self, key: &str) -> Result<(), Error> {
+        self.charge()?;
+        if !self.snapshot.admin() {
+            return self.fail(Error::Invalid("admin access denied".into()));
+        }
+        if !self.plan.admin_spawns.is_empty() || key.len() > 128 || !key.is_ascii() {
+            return self.fail(Error::Invalid("invalid admin spawn".into()));
+        }
+        self.plan.admin_spawns.push(key.into());
+        Ok(())
     }
     pub fn new(snapshot: &'a mut dyn Snapshot, operation_budget: usize) -> Self {
         Self {

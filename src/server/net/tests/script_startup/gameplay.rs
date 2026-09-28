@@ -391,6 +391,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
             },
             Participants {
                 actor: Some((PROFILE, &inventory)),
+                admin: false,
                 entities: &state.entities,
             },
         );

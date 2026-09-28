@@ -1,6 +1,7 @@
 //! Built-in gameplay policy. Keep this module on the public host boundary so
 //! scripts and native gameplay receive the same world operations.
 use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, InventoryId};
+pub(crate) mod admin;
 
 pub(crate) struct Pickup;
 impl bloxgloom_host_api::gameplay::Handler for Pickup {

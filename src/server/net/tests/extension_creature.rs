@@ -44,6 +44,94 @@ fn send(
         }
     }
 }
+
+#[test]
+fn console_commands_reject_non_admin_and_recover_grant_over_nonblocking_listener() {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let save = std::env::temp_dir().join(format!(
+        "bloxgloom-admin-tcp-{}-{stamp}",
+        std::process::id()
+    ));
+    let item = crate::items::STICK;
+    for restarted in [false, true] {
+        let mut state = Box::new(crate::server::server_state(7, save.clone()).unwrap());
+        state.admin_profile = Some(0xFACE);
+        let catalog = state.world.catalog_arc();
+        if restarted {
+            assert_eq!(
+                state.inventory_store.load(0xFACE).unwrap().slots[0],
+                Some(crate::inventory::Stack::new(item, 1))
+            );
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop_tx, stop_rx) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || reactor::serve_listener_until(listener, state, stop_rx));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for profile in [0xBAD, 0xFACE] {
+                let mut peer = TcpStream::connect(address).unwrap();
+                peer.set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                protocol::write_client(
+                    &mut peer,
+                    &ClientMessage::Hello {
+                        name: "admin-command".into(),
+                        profile,
+                        content_fingerprint: catalog.fingerprint(),
+                    },
+                )
+                .unwrap();
+                let (fingerprint, _) = receive_content_manifest(&mut peer);
+                protocol::write_client(&mut peer, &ClientMessage::ContentReady { fingerprint })
+                    .unwrap();
+                let mut client =
+                    MobileProbe::new(catalog.clone(), save.join("unused-admin-config"));
+                loop {
+                    let message = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
+                    let ready = matches!(message, ServerMessage::ActionSession { .. });
+                    client.accept(message);
+                    if ready {
+                        break;
+                    }
+                }
+                let grant = ClientMessage::AdminGive {
+                    action_id: client.next_id(),
+                    item,
+                    count: 1,
+                };
+                if profile == 0xBAD {
+                    assert!(!send(&mut peer, &mut client, &catalog, &grant));
+                    let spawn = ClientMessage::AdminSpawnEntity {
+                        action_id: client.next_id(),
+                        entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
+                    };
+                    assert!(!send(&mut peer, &mut client, &catalog, &spawn));
+                } else if !restarted {
+                    assert!(send(&mut peer, &mut client, &catalog, &grant));
+                    assert!(send(&mut peer, &mut client, &catalog, &grant));
+                    until(&mut peer, &mut client, &catalog, |c| {
+                        c.item_slot(item).is_some()
+                    });
+                } else {
+                    until(&mut peer, &mut client, &catalog, |c| {
+                        c.item_slot(item).is_some()
+                    });
+                }
+                let _ = peer.shutdown(Shutdown::Both);
+            }
+        }));
+        stop_tx.send(()).unwrap();
+        server.join().unwrap().unwrap();
+        if let Err(panic) = result {
+            let _ = std::fs::remove_dir_all(&save);
+            std::panic::resume_unwind(panic);
+        }
+    }
+    std::fs::remove_dir_all(save).unwrap();
+}
 #[test]
 fn external_creature_spawns_moves_targets_interacts_and_recovers_over_real_listener() {
     creature_probe(false);

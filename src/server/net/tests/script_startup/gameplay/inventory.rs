@@ -354,6 +354,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
         },
         Participants {
             actor: Some((PROFILE, &inventory)),
+            admin: false,
             entities: &state.entities,
         },
     )

@@ -27,6 +27,29 @@ pub(super) fn invoke(
     // outside the VM as well as by Context, so pcall cannot permit partial apply.
     lua.scope(|scope| {
         super::inventory::install(scope, &host, &context, rejected)?;
+        // These are public host operations, not a script-selected admin token.
+        // Every invocation checks the server-authenticated actor before staging.
+        host.set(
+            "admin_give",
+            scope.create_function(|_, (item, count): (Value, Value)| {
+                checked(rejected, || {
+                    context.borrow_mut().admin_give(
+                        &text(item).map_err(invalid)?,
+                        integer(count, 1, 128).map_err(invalid)? as u16,
+                    )
+                })
+            })?,
+        )?;
+        host.set(
+            "admin_spawn",
+            scope.create_function(|_, key: Value| {
+                checked(rejected, || {
+                    context
+                        .borrow_mut()
+                        .admin_spawn(&text(key).map_err(invalid)?)
+                })
+            })?,
+        )?;
         host.set(
             "block",
             scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {

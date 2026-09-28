@@ -61,6 +61,7 @@ pub(super) fn plan(
         },
         crate::server::gameplay::Participants {
             actor: Some((profile, &original)),
+            admin: false,
             entities: &state.entities,
         },
     );

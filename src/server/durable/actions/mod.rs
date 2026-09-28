@@ -63,9 +63,13 @@ pub(in crate::server) fn plan_durable_request(
                     "profile has a pending durable action",
                 ));
             }
-            let (inventory, position) = {
+            let (inventory, position, inventory_revision) = {
                 let client = state.clients.get(id).expect("client was checked above");
-                (client.inventory.clone(), client.position())
+                (
+                    client.inventory.clone(),
+                    client.position(),
+                    client.inventory.revision,
+                )
             };
             let mut action = CommitAction {
                 client_id: Some(*id),
@@ -86,31 +90,62 @@ pub(in crate::server) fn plan_durable_request(
             };
             match message {
                 ClientMessage::AdminSpawnEntity { entity_type, .. } => {
-                    action.entities = Some(admin::plan_spawn(
+                    let key = state
+                        .world
+                        .catalog()
+                        .entity_type(*entity_type)
+                        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unknown creature"))?
+                        .key
+                        .to_string();
+                    return registered::plan_request(
                         state,
+                        *id,
                         profile,
-                        position,
-                        tick.get(),
-                        *entity_type,
-                    )?);
+                        action_id,
+                        [0; 3],
+                        bloxgloom_host_api::actions::Request {
+                            key: crate::gameplay::admin::SPAWN.into(),
+                            version: 1,
+                            slot: 0,
+                            inventory_revision,
+                            entity: 0,
+                            entity_revision: 0,
+                            arguments: key.into_bytes(),
+                        },
+                        receipt_value,
+                        tick,
+                    )
+                    .map(Some);
                 }
                 ClientMessage::AdminGive { item, count, .. } => {
-                    let Some(next) = admin::plan_grant(
-                        state.admin_profile,
+                    let key = state
+                        .world
+                        .catalog()
+                        .item(*item)
+                        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unknown item"))?
+                        .key
+                        .to_string();
+                    let mut arguments = count.to_le_bytes().to_vec();
+                    arguments.extend(key.bytes());
+                    return registered::plan_request(
+                        state,
+                        *id,
                         profile,
-                        &inventory,
-                        *item,
-                        *count,
-                        state.world.catalog(),
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
-                        &inventory,
-                        state.world.catalog(),
-                    )?);
-                    action.inventory = Some(next);
+                        action_id,
+                        [0; 3],
+                        bloxgloom_host_api::actions::Request {
+                            key: crate::gameplay::admin::GIVE.into(),
+                            version: 1,
+                            slot: 0,
+                            inventory_revision,
+                            entity: 0,
+                            entity_revision: 0,
+                            arguments,
+                        },
+                        receipt_value,
+                        tick,
+                    )
+                    .map(Some);
                 }
                 ClientMessage::InventoryMove {
                     from, to, count, ..
@@ -521,6 +556,7 @@ fn plan_gameplay_removals(
         },
         crate::server::gameplay::Participants {
             actor: Some(actor),
+            admin: false,
             entities: &state.entities,
         },
     );

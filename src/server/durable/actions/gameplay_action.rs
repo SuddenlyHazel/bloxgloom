@@ -154,13 +154,34 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         },
         crate::server::gameplay::Participants {
             actor: Some((profile, &before)),
+            admin: state.admin_profile == Some(profile),
             entities: &state.entities,
         },
     );
     for key in requested {
         let _ = request_chunk(state, key);
     }
-    let plan = plan?;
+    let mut plan = plan?;
+    if !plan.admin_spawns.is_empty() && !plan.edits.is_empty() {
+        // Supported ground is read from authoritative terrain. Do not validate
+        // against a pre-edit world and then commit a conflicting terrain edit.
+        return Err(denied("admin spawn cannot share a terrain edit"));
+    }
+    let admin_spawns = plan
+        .admin_spawns
+        .iter()
+        .map(|key| {
+            let entity_type = catalog
+                .entity_type_id_by_key(key)
+                .ok_or_else(|| denied("unknown creature"))?;
+            admin::validate_spawn(state, profile, position, tick.get(), entity_type)
+        })
+        .collect::<io::Result<Vec<_>>>()?;
+    let mut spawn_read_keys = Vec::new();
+    for (spawn, keys) in admin_spawns {
+        plan.entity_spawns.push(spawn);
+        spawn_read_keys.extend(keys);
+    }
     ensure_no_unhandled_anchor(state, &plan.edits)?;
     for &(x, y, z, block) in &plan.edits {
         if catalog.block_flags(block) & crate::content::SOLID != 0
@@ -172,7 +193,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             return Err(denied("gameplay block overlaps a player"));
         }
     }
-    let entities = crate::server::drops::plan_stack_spawns_with_extra(
+    let mut entities = crate::server::drops::plan_stack_spawns_with_extra(
         &state.entities,
         &catalog,
         &plan.drops,
@@ -180,6 +201,11 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         tick.get(),
         crate::server::drops::unix_ms(),
     )?;
+    if let Some(prepared) = &mut entities {
+        for key in spawn_read_keys {
+            prepared.add_read_key(super::super::chunk_state_key(key));
+        }
+    }
     let entities =
         crate::server::gameplay::combine_entities(&state.entities, entities, plan.entity_updates)?;
     let deltas = prepared_deltas(&plan.edits, &plan.prepared);

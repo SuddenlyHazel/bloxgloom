@@ -75,10 +75,22 @@ impl ClientApp {
             .and_then(|stack| self.catalog.item(stack.item))
             .map(|item| Target::Item(item.key.to_string()))
             .unwrap_or(Target::Empty);
-        let actions: Vec<_> = self.catalog.discover_actions(&target).cloned().collect();
+        // Console commands carry their own validated arguments and menu; do not
+        // offer the argument-less descriptors as generic action buttons.
+        let visible = |action: &&Arc<Action>| {
+            action.key != crate::gameplay::admin::GIVE
+                && action.key != crate::gameplay::admin::SPAWN
+        };
+        let actions: Vec<_> = self
+            .catalog
+            .discover_actions(&target)
+            .filter(visible)
+            .cloned()
+            .collect();
         let actions = if actions.is_empty() {
             self.catalog
                 .discover_actions(&Target::Empty)
+                .filter(visible)
                 .cloned()
                 .collect()
         } else {

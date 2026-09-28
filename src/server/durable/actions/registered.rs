@@ -72,6 +72,30 @@ pub(super) fn plan(
             arguments,
         }
     };
+    plan_request(
+        state,
+        client_id,
+        profile,
+        action_id,
+        target,
+        request,
+        receipt_value,
+        tick,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn plan_request(
+    state: &mut State,
+    client_id: u64,
+    profile: u128,
+    action_id: u128,
+    target: [i32; 3],
+    request: Request,
+    receipt_value: Vec<u8>,
+    tick: TickId,
+) -> io::Result<CommitAction> {
+    let catalog = state.world.catalog_arc();
     let action = catalog
         .action(&request.key)
         .ok_or_else(|| denied("unknown registered action"))?;

@@ -594,6 +594,30 @@ impl Catalog {
         catalog.builtin_inventory_screens();
         catalog.builtin_item_icons();
         catalog.builtin_machines();
+        for (key, label) in [
+            (crate::gameplay::admin::GIVE, "Give"),
+            (crate::gameplay::admin::SPAWN, "Spawn"),
+        ] {
+            catalog
+                .register_action(bloxgloom_host_api::actions::Action {
+                    key: key.into(),
+                    version: 1,
+                    label: label.into(),
+                    target: bloxgloom_host_api::actions::Target::Empty,
+                    operation: bloxgloom_host_api::actions::Operation::Gameplay,
+                    panel: None,
+                })
+                .expect("builtin admin action");
+            catalog
+                .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                    key: key.into(),
+                    version: 1,
+                    event: bloxgloom_host_api::gameplay::EventKind::ActionRequested,
+                    target: Some(key.into()),
+                    handler: std::sync::Arc::new(crate::gameplay::admin::Admin),
+                })
+                .expect("builtin admin decision");
+        }
         catalog
             .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
                 key: "bloxgloom:harvest".into(),

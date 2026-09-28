@@ -166,6 +166,68 @@ fn admin_grant_requires_server_authorization_and_persists_inventory() {
 }
 
 #[test]
+fn registered_admin_grant_is_exact_and_revision_fenced() {
+    let path = temp_save_dir("admin-registered-grant");
+    let mut state = server_state(23, path.clone()).unwrap();
+    let item = state.world.catalog().items().next().unwrap().id;
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(crate::inventory::Stack::new(item, 127));
+    for slot in &mut inventory.slots[1..] {
+        *slot = Some(crate::inventory::Stack::new(item, 128));
+    }
+    let _peer = add_test_client(&mut state, [0.5, 80.0, 0.5], inventory.clone());
+    state.admin_profile = Some(17);
+    let request = |count| {
+        edit_request(ClientMessage::AdminGive {
+            action_id: 1,
+            item,
+            count,
+        })
+    };
+    assert!(plan_durable_request(&mut state, &request(2), TickId::new(1)).is_err());
+    assert_eq!(state.clients[&1].inventory, inventory);
+    let planned = plan_durable_request(&mut state, &request(1), TickId::new(1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        state.clients[&1].inventory, inventory,
+        "planning cannot publish a grant"
+    );
+    let after = planned.inventory.unwrap();
+    assert_eq!(after.slots[0].as_ref().unwrap().count, 128);
+    assert_eq!(after.revision, inventory.revision + 1);
+    assert_eq!(
+        planned.inventory_before.unwrap(),
+        InventoryStore::encode_snapshot_with_catalog(&inventory, state.world.catalog()).unwrap()
+    );
+    let mut arguments = 1u16.to_le_bytes().to_vec();
+    arguments.extend(state.world.catalog().item(item).unwrap().key.bytes());
+    let stale = registered::plan_request(
+        &mut state,
+        1,
+        17,
+        2,
+        [0; 3],
+        bloxgloom_host_api::actions::Request {
+            key: crate::gameplay::admin::GIVE.into(),
+            version: 1,
+            slot: 0,
+            inventory_revision: inventory.revision + 1,
+            entity: 0,
+            entity_revision: 0,
+            arguments,
+        },
+        vec![],
+        TickId::new(1),
+    );
+    assert!(stale.is_err(), "stale actor inventory must not grant items");
+    assert!(plan_durable_request(&mut state, &request(129), TickId::new(1)).is_err());
+    assert_eq!(state.clients[&1].inventory, inventory);
+    drop(state);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn missing_plant_support_requests_its_exact_vertical_neighbor() {
     let path = temp_save_dir("edit-support-prefetch");
     let mut state = server_state(23, path.clone()).unwrap();
