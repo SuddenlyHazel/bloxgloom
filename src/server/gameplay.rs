@@ -57,6 +57,14 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn pickup_eligible(&self, drop_id: u64) -> bool {
+        self.actor_position
+            .filter(|_| self.actor.is_some())
+            .zip(self.entities)
+            .is_some_and(|(position, store)| {
+                super::drops::pickup_eligible(store, drop_id, position)
+            })
+    }
     fn player_position(&self) -> Option<[f32; 3]> {
         self.actor.and(self.actor_position)
     }

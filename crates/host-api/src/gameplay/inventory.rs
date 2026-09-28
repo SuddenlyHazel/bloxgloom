@@ -91,6 +91,9 @@ impl Context<'_> {
         let player = self
             .player()
             .ok_or_else(|| Error::Invalid("pickup needs a player".into()))?;
+        if !self.snapshot.pickup_eligible(id) {
+            return Ok(0);
+        }
         let source = InventoryId::Entity(id);
         let Some(slot) = self.inventory(source)?.into_iter().next() else {
             return Ok(0);

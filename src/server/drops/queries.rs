@@ -209,6 +209,24 @@ pub(in crate::server) fn stack(store: &EntityStore, id: EntityId) -> Option<Stac
     live_drop(store, id).map(|drop| drop.payload.stack)
 }
 
+/// One candidate recheck for the public pickup convenience operation. The
+/// server supplies the authenticated actor position and clock, not script data.
+pub(in crate::server) fn pickup_eligible(
+    store: &EntityStore,
+    raw_id: u64,
+    position: [f32; 3],
+) -> bool {
+    EntityId::new(raw_id)
+        .and_then(|id| live_drop(store, id))
+        .is_some_and(|drop| {
+            pickup_policy(&drop.payload, unix_ms()).in_range(
+                position,
+                drop.position,
+                PICKUP_RANGE_SQ,
+            )
+        })
+}
+
 /// The same server-clock eligibility used by ordinary pickup. Inspecting a
 /// drop is allowed earlier; extraction through the shared inventory service is
 /// not, so scripts cannot silently bypass its pickup delay or expiration.

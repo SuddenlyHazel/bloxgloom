@@ -274,6 +274,10 @@ fn luau_pickup_host_credit_eligibility_permissions_and_caught_errors_rollback() 
             "ineligible drop",
         ),
         (
+            "assert(c.collect_drop({entity_lo=2,entity_hi=0},1)==0); error('out of pickup reach')",
+            "out of pickup reach",
+        ),
+        (
             "assert(c.transfer_inventory(e.drops[1],0,'player',0,1)); error('abort pickup')",
             "abort pickup",
         ),
@@ -351,6 +355,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
         assert(not c.transfer_inventory('player',0,'player',1,2))
         local drop = {entity_lo=1,entity_hi=0}
         assert(not c.inventory(drop)[1].extract)
+        assert(c.collect_drop(drop,1) == 0)
         assert(c.take(drop,0,1) == nil)
         assert(not c.transfer_inventory(drop,0,'player',1,1))
         assert(not c.give(drop,{item='bloxgloom:stick',count=1}))

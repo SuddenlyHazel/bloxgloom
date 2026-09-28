@@ -63,6 +63,11 @@ pub trait Snapshot {
     fn player_position(&self) -> Option<[f32; 3]> {
         None
     }
+    /// Whether this drop is eligible for an automatic pickup by the captured
+    /// actor now. A wider entity-inventory interaction radius is not enough.
+    fn pickup_eligible(&self, _drop_id: u64) -> bool {
+        false
+    }
     /// Server-authenticated admin identity, never derived from request bytes.
     fn admin(&self) -> bool {
         false

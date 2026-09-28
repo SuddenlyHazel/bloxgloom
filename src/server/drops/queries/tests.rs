@@ -66,6 +66,27 @@ fn pickup_delay_gates_candidates_but_not_visibility() {
 }
 
 #[test]
+fn single_drop_collection_rechecks_range_delay_and_expiry() {
+    let (mut store, _catalog) = test_store();
+    let now = super::super::unix_ms();
+    let position = [0.0, 0.0, 0.0];
+    let ready = spawn_direct(&mut store, position, 1, now, Duration::ZERO);
+    let delayed = spawn_direct(&mut store, position, 1, now, Duration::from_secs(60));
+    let expired = spawn_direct(
+        &mut store,
+        position,
+        1,
+        now.saturating_sub(LIFETIME.as_millis() as u64 + 1),
+        Duration::ZERO,
+    );
+    assert!(pickup_eligible(&store, ready.get(), [2.25, 0.0, 0.0]));
+    assert!(!pickup_eligible(&store, ready.get(), [2.26, 0.0, 0.0]));
+    assert!(!pickup_eligible(&store, delayed.get(), position));
+    assert!(!pickup_eligible(&store, expired.get(), position));
+    assert!(!pickup_eligible(&store, u64::MAX, position));
+}
+
+#[test]
 fn expired_drop_is_visible_but_never_pickable() {
     let (mut store, _catalog) = test_store();
     // Youth is wall-clock: only a fresh birth is eligible.

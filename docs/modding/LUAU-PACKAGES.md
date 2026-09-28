@@ -129,6 +129,8 @@ event's entity-ID table; host inventory access, pickup delay, destination
 filters and transactional validation still apply. A refused destination leaves
 those items available for later slots. This does not select candidates or
 permit a client to claim a pickup based on animation timing.
+The convenience operation returns zero for an out-of-range, delayed or expired
+drop even if its entity inventory is otherwise within interaction reach.
 `c.player_position` is a readonly 1-indexed `{x,y,z}` sequence of the
 authenticated actor's server-captured feet position, or nil for non-player
 events. It is not the requested target cell and does not authorize edits or

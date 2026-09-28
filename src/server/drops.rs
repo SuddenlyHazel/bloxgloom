@@ -25,7 +25,7 @@ pub(in crate::server) use planning::{
 #[cfg(test)]
 pub(in crate::server) use queries::nearby;
 pub(in crate::server) use queries::{
-    airborne_count, extractable, has_expired, pickup_candidates, stack,
+    airborne_count, extractable, has_expired, pickup_candidates, pickup_eligible, stack,
 };
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

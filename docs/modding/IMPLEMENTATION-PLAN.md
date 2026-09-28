@@ -456,6 +456,12 @@ harvesting migration are accepted. No phase-level work remains.
   server still selects automatic candidates and validates credits and WAL work.
   Its real listener/restart test and the 892/892 suite, formatting and strict
   Clippy pass.
+- **Verified pickup eligibility follow-up:** `collect_drop` now
+  rechecks the server's public range/delay/expiry policy against the captured
+  actor position. The wider generic entity-inventory interaction radius is not
+  permission to collect a distant drop; generic transfers keep their existing
+  host permissions and transaction validation. The policy and scripted
+  eligibility regressions, 895/895 suite, formatting and strict Clippy pass.
 - Authenticated `give`/`spawn` console requests use registered actions and
   public Luau gameplay operations (`99e8276`); `help` is client-local text.
   Production `InventoryMove` uses public `move_slots`, preserving capped merges,
