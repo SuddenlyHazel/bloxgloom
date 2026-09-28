@@ -407,6 +407,51 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | In progress |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
 
+### Remaining work by phase (living checklist)
+
+This is the short progress view. A checked item means the **phase** is complete,
+not that one increment landed. The detailed contract is in §§4–11, the current
+limitations are below, and completed increments are in §14. Update this list
+when a capability is accepted, not merely when an agent finishes a diff.
+
+- [x] **Phase 1 — shared core:** public read/transaction context, general
+  world/entity/item operations and harvesting migration.
+- [ ] **Phase 2 — built-in gameplay parity:** land durable intent destination
+  bootstrap (currently in progress); migrate native fire frontier, ignition
+  delivery and scheduling onto the public owner/event contract; complete
+  support/removal causes, drop motion/merge/expiration and player rules;
+  migrate give/spawn/help and existing storage/machine/creature/anchored
+  helpers off privileged production paths. Preserve finite inventories,
+  atomic receipts and restart behavior. The live fire *visual* is parked and
+  unverified; it is not evidence of fire migration.
+- [x] **Phase 3 — generation:** public deterministic generation and builtin
+  terrain/vegetation migration.
+- [ ] **Phase 4 — Luau parity:** expose the remaining public content surface
+  (notably authored blocks/materials and relevant entity/machine/screens),
+  combined world/entity/inventory/scheduled operations and owner neighborhood/
+  intent services; add client presentation/replica callbacks. Keep scoped
+  authority, budgets, source-attributed errors and worker execution.
+- [ ] **Phase 5 — packages and joining:** run verified downloaded client/shared
+  Luau as a real session startup runtime; finish preparation/error feedback,
+  clean cancellation/reconnect and switching between different modded servers.
+  The in-process exact-byte cache is sufficient unless testing says otherwise;
+  persistent disk caching is not a prerequisite.
+- [ ] **Phase 6 — authored UI:** add dynamic documents/state, scrolling and
+  usable text/focus behavior; extend client-composed authorized requests beyond
+  item/empty actions to targeted/argument-bearing actions; migrate built-in
+  screens onto the same foundation.
+- [ ] **Phase 7 — visuals:** allow package-authored world blocks to use package
+  textures/materials; extend the current single-layer albedo hook and single
+  fullscreen effect to supported geometry inputs, typed parameters, script-
+  driven presentation and explicitly ordered/composed effect passes. Custom
+  imported models and live hot reload remain deferred.
+- [ ] **Phase 8 — finish and verify:** make one runnable combined gameplay +
+  scheduled work + UI + shader package; document the actual API and local
+  iteration, audit remaining builtin-only paths, exercise real download/join/
+  switch/restart and mixed load, inspect the release game and relevant previews,
+  and run the §13 checks. The latest integrated test suite passes 845/845;
+  that alone does not complete this phase or verify the live fire cue.
+
 ### End-to-end gaps — do not mistake an increment for a completed capability
 
 The following are known material limitations of the committed implementation.
@@ -419,16 +464,17 @@ ship reduced versions of phases 2–8:
    receipt. `uidemo` actually transfers one stick on the server. Block/entity
    targeting, bounded argument schemas, server-driven UI updates and broad
    built-in UI migration remain; the text input is still local-only.
-2. **Server gameplay parity is incomplete.** Owner-world transactions now
-   include generated entity/drop participants, but wakes have no payload and native fire
+2. **Server gameplay parity is incomplete.** Owner-world transactions include
+   generated entity/drop participants and bounded durable payload intents can
+   reach existing chunk owners. Dynamic destination bootstrap, native fire
    propagation/delivery, drop motion/merging/expiration, player rules and
    commands still have privileged paths. Shared decisions for some stages do
    not migrate the whole lifecycle.
 3. **Luau startup content is narrow.** It currently declares sprite items using
-   builtin textures, semantic actions/handlers, bounded entity bytes, chunk
-   generators and chunk-owner systems. It cannot author the full public Rust
-   content/material/block/creature/machine/screen surface from Luau; an
-   independently useful ordinary mod still encounters those missing bindings.
+   builtin or own verified PNG textures, semantic actions/handlers, bounded
+   entity bytes, chunk generators and chunk-owner systems. It cannot author
+   the full public Rust content/material/block/creature/machine/screen surface
+   from Luau; an ordinary mod still encounters those missing bindings.
 4. **Luau owner/client services are partial.** Scripted owner systems are
    chunk-scoped and lack neighborhood reads and cross-owner payloads. Owner
    edits can now atomically carry gameplay-generated entities/drops, but the
@@ -456,8 +502,8 @@ ship reduced versions of phases 2–8:
 8. **Authoring and integrated verification are incomplete.** The examples do
    not yet cover a real combined gameplay+UI+shader flow; response latency,
    rendering and mixed-load behavior have not received final integrated
-   verification. Recent full-suite runs also exposed intermittent or
-   unresolved unrelated server-test failures; focused tests do not close them.
+   verification. The latest full test run passed 845/845 after test-harness
+   fixes, but the optional fire cue failed the user's live visual check.
 
 Land usable increments and commit regularly. Interface evaluation and small
 binding exercises can happen earlier when needed to prevent an awkward public
