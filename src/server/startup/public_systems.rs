@@ -168,7 +168,10 @@ impl SystemHandler for Adapter {
         let mut edited = std::collections::BTreeSet::new();
         let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {
-            if !matches!(job.owner(), OwnerKey::Chunk(key) if key == crate::world::world_to_chunk(edit.cell[0], edit.cell[1], edit.cell[2]).0)
+            // The job view contains exactly the declared captured neighborhood.
+            // Context::block below proves both spatial authority and preimage.
+            if !matches!(job.owner(), OwnerKey::Chunk(_))
+                || self.0.read_radius_chunks.is_none()
                 || !edited.insert(edit.cell)
                 || edit.before == edit.after
                 || (edit_cause == api::EditCause::Burn && edit.after != "bloxgloom:air")

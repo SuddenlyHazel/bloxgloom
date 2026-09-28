@@ -61,7 +61,9 @@ pub(super) fn invoke(
                     context
                         .block(cell(x, y, z)?)
                         .map(|block| block.state)
-                        .map_err(|_| "system world read unavailable or outside owner")
+                        .map_err(
+                            |_| "system world read unavailable or outside declared neighborhood",
+                        )
                 })
                 .and_then(|state| lua.create_string(state))
                 .inspect_err(|_| {
@@ -80,13 +82,21 @@ pub(super) fn invoke(
                         if edits.len() >= 16 {
                             return Err("system edit limit exceeded (16)");
                         }
-                        if context.world.is_none() {
-                            return Err("system edits require read_world");
+                        let cell = cell(x, y, z)?;
+                        let before = text(before)?;
+                        let after = text(after)?;
+                        // Validate against the immutable capture, not live terrain
+                        // or earlier proposals. Even caught errors poison output.
+                        let captured = context.block(cell).map_err(
+                            |_| "system edit unavailable or outside declared neighborhood",
+                        )?;
+                        if captured.state != before {
+                            return Err("system edit before-value differs from capture");
                         }
                         edits.push(api::BlockEdit {
-                            cell: cell(x, y, z)?,
-                            before: text(before)?,
-                            after: text(after)?,
+                            cell,
+                            before,
+                            after,
                         });
                         Ok(())
                     })

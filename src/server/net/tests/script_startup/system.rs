@@ -13,6 +13,24 @@ use crate::world::{AIR, ChunkKey, GLOWSTONE, STONE};
 mod failures;
 #[path = "system/intents.rs"]
 mod intents;
+#[path = "system/neighborhood.rs"]
+mod neighborhood;
+
+#[test]
+fn luau_system_legacy_identity() {
+    let fixture = Fixture::new();
+    fixture.system(REGISTER, SOURCE);
+    let state = fixture.open().unwrap();
+    let manifest = crate::content::ContentManifest::from_catalog(state.world.catalog());
+    let entry = manifest
+        .entries
+        .iter()
+        .find(|e| e.key == "demo:clock" && e.kind == b'Y')
+        .unwrap();
+    // Captured from the pre-neighborhood binding; no opt-in must retain the
+    // old persisted public manifest identity, not merely agree with itself.
+    assert_eq!(entry.schema_fingerprint, 11_737_664_622_596_684_975);
+}
 
 const KEY: ChunkKey = ChunkKey { x: 0, y: 5, z: 0 };
 const REGISTER: &str = r#"return function(h)

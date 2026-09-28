@@ -55,8 +55,9 @@ pub struct Plan {
     /// sooner. A wake carries no payload and cannot replace a world effect.
     pub wakes: Vec<Wake>,
     /// Bounded conditional block transitions. Sources must lie in this
-    /// chunk owner's cells and require a captured world view. The host runs
-    /// removal, placement and neighbor decisions before WAL admission.
+    /// chunk owner's declared read neighborhood and require a captured view.
+    /// The host runs removal, placement and neighbor decisions before WAL admission.
+    /// Duplicate source cells within a job or across its wave are rejected.
     pub edits: Vec<BlockEdit>,
 }
 

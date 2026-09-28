@@ -93,6 +93,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let mut edits = Vec::new();
     let mut removals = Vec::new();
     let mut owners = Vec::new();
+    let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
     for patch in patches {
         let proposals = OwnerEffectPatch::world_edits(patch);
@@ -105,12 +106,12 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 "world edit requires a chunk owner",
             ));
         };
-        if radius.is_none() {
+        let Some(radius) = radius else {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
                 "world edit requires captured terrain",
             ));
-        }
+        };
         owners.push(owner);
         for edit in proposals {
             if edits.len() >= 256 {
@@ -120,10 +121,19 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 ));
             }
             let [x, y, z] = edit.cell;
-            if crate::world::world_to_chunk(x, y, z).0 != owner {
+            let key = crate::world::world_to_chunk(x, y, z).0;
+            if !within_radius(key, owner, radius) {
                 return Err(io::Error::new(
                     ErrorKind::InvalidInput,
-                    "owner edit escaped its chunk",
+                    "owner edit escaped its declared neighborhood",
+                ));
+            }
+            // Overlapping captures do not grant last-worker-wins semantics.
+            // Reject ambiguous multi-owner writes before gameplay or WAL staging.
+            if !edited.insert(edit.cell) {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner wave edits the same cell more than once",
                 ));
             }
             let previous = world.cached_block(x, y, z).ok_or_else(|| {
@@ -195,14 +205,13 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             "owner block edit has no player inventory/pickup participant",
         ));
     }
-    let radius = i64::from(radius.expect("edits require a world view"));
+    let radius = radius.expect("edits require a world view");
     for &(x, y, z, after) in &planned.edits {
         let (key, _) = crate::world::world_to_chunk(x, y, z);
-        if !owners.iter().any(|owner| {
-            (i64::from(key.x) - i64::from(owner.x)).abs() <= radius
-                && (i64::from(key.y) - i64::from(owner.y)).abs() <= radius
-                && (i64::from(key.z) - i64::from(owner.z)).abs() <= radius
-        }) {
+        if !owners
+            .iter()
+            .any(|owner| within_radius(key, *owner, radius))
+        {
             return Err(io::Error::new(
                 ErrorKind::Unsupported,
                 "gameplay effect escaped the owner read neighborhood",
@@ -297,4 +306,11 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         entity_wakes: Vec::new(),
         entities: participants,
     }))
+}
+
+fn within_radius(key: ChunkKey, owner: ChunkKey, radius: u8) -> bool {
+    let radius = i64::from(radius);
+    (i64::from(key.x) - i64::from(owner.x)).abs() <= radius
+        && (i64::from(key.y) - i64::from(owner.y)).abs() <= radius
+        && (i64::from(key.z) - i64::from(owner.z)).abs() <= radius
 }

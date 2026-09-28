@@ -1,18 +1,19 @@
 //! Explicit local `bloxgloom:owner_systems/v1` binding. One chunk system/package:
 //! `h.register_system { key='demo:clock', schema=1, revision=1,
 //! module='demo:clock', max_state_bytes=64, max_jobs_per_tick=2,
-//! read_world=true, seeds={{x=0,y=5,z=0,data=''}} }`.
+//! read_world=true, read_radius_chunks=1, seeds={{x=0,y=5,z=0,data=''}} }`.
 //!
-//! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, owner-chunk capture only.
+//! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
 //! delay is 1..u32::MAX and becomes an absolute durable deadline. Context has
 //! readonly owner[1..3], data, tick_lo/hi and revision_lo/hi (exact u32 halves).
 //! Dot methods: block(x,y,z) -> state key (64 calls),
 //! edit(x,y,z,before,after) (16 conditional edits), wake(system,x,y,z) (32).
 //! Reads see the captured preimage, not earlier proposed edits. Reads/edits
-//! require read_world=true; out-of-owner reads fail, never procedural fallback.
-//! The existing public edit path rejects transitions requiring entity/drop
-//! participants; this binding does not bypass removal/placement/neighbor rules.
+//! require read_world=true; read_radius_chunks defaults to 0 and accepts only
+//! 0 or 1. Out-of-neighborhood reads/edits fail, never procedural fallback.
+//! Shared removal/placement/neighbor planning can generate entity/drop effects;
+//! those effects participate in the same owner WAL record as bytes and edits.
 //!
 //! Frozen sources execute directly on existing owner workers, in a fresh bounded
 //! VM per plan. The public schema fingerprints script schema/revision, module and
@@ -76,11 +77,18 @@ pub(super) fn declarer(
             let revision = integer(field(&table, "revision")?, 1, u16::MAX.into())? as u16;
             let max_bytes = integer(field(&table, "max_state_bytes")?, 1, 4096)? as usize;
             let jobs = integer(field(&table, "max_jobs_per_tick")?, 1, 8)? as u16;
-            let read_radius_chunks = match field(&table, "read_world")? {
+            let mut read_radius_chunks = match field(&table, "read_world")? {
                 Value::Boolean(true) => Some(0),
                 Value::Boolean(false) | Value::Nil => None,
                 _ => return Err("read_world must be boolean"),
             };
+            let radius = field(&table, "read_radius_chunks")?;
+            if !matches!(radius, Value::Nil) {
+                if read_radius_chunks.is_none() {
+                    return Err("read_radius_chunks requires read_world=true");
+                }
+                read_radius_chunks = Some(integer(radius, 0, 1)? as u8);
+            }
             let accepts_intents = match field(&table, "accepts_intents")? {
                 Value::Boolean(value) => value,
                 Value::Nil => false,

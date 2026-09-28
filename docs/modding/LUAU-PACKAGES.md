@@ -118,7 +118,14 @@ animations do not decide ownership. Fallback handlers remain unbound.
 
 A package with the owner-systems capability can register one persistent chunk
 system with `host.register_system { key, schema, revision, module,
-max_state_bytes, max_jobs_per_tick, read_world, seeds }`. Its module returns a
+max_state_bytes, max_jobs_per_tick, read_world, read_radius_chunks, seeds }`.
+With `read_world=true`, `read_radius_chunks=0` (the default) captures the
+owner chunk; `1` captures its 3×3×3 chunk neighborhood. Missing authoritative
+chunks defer the complete job while the host requests bounded loads. Reads and
+conditional edits outside the declared capture fail, even if caught by Luau;
+the client never contributes procedural fallback terrain. Duplicate edit cells
+across jobs reject the complete owner wave. `fixtures/neighborhood/` demonstrates
+a cross-chunk edit after durable intent delivery. Its module returns a
 function that receives an immutable owner context and returns `(binary_state,
 delay_ticks)`; the context exposes bounded `block`, conditional `edit` and
 durable `wake` methods. The existing owner WAL commits state, deadline, edits
@@ -132,9 +139,9 @@ or over-budget sends still reject the entire plan. Optional
 absent destination with that validated state in the producer's WAL record.
 Delivery and acknowledgement occur on later ticks with owner state, edits and
 wakes; no script VM state is persisted. See `src/server/script/system.rs` for
-the precise schema, limits and semantics. Entity/profile ownership,
-neighboring reads, directly authored owner entity/drop effects and general
-script state migration remain unbound.
+the precise schema, limits and semantics. Entity/profile ownership, directly
+authored owner entity/drop effects and general script state migration remain
+unbound.
 
 Package format 2 declares each module as `module server|client|shared <name>
 <side>/<path>.luau` and textures as `asset texture <name>

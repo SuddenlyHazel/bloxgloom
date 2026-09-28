@@ -2,7 +2,9 @@
 -- arguments explicitly; these are not globals or a replacement for host validation.
 
 export type BloxStartupHost = {
-    register_item: (key: string, name: string, builtin_texture: string) -> (),
+    register_texture: (key: string, declared_asset: string) -> (),
+    register_block: (key: string, name: string, package_texture: string) -> (),
+    register_item: (key: string, name: string, texture: string) -> (),
     register_generator: (key: string, revision: number, module: string) -> (),
     register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block", target_key: string?, module: string) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
@@ -19,6 +21,9 @@ export type BloxSystemDeclaration = {
     max_state_bytes: number,
     max_jobs_per_tick: number,
     read_world: boolean?,
+    read_radius_chunks: number?, -- 0 (default) or 1; requires read_world=true
+    accepts_intents: boolean?, -- requires read_world=true
+    intent_bootstrap: string?, -- constant initial bytes for absent destinations
     seeds: { BloxSystemSeed },
 }
 
@@ -82,9 +87,28 @@ export type BloxOwnerContext = {
     tick_hi: number,
     revision_lo: number,
     revision_hi: number,
+    inbox: { BloxOwnerIntentDelivery },
     block: (x: number, y: number, z: number) -> string,
     edit: (x: number, y: number, z: number, before: string, after: string) -> (),
     wake: (system: string, x: number, y: number, z: number) -> (),
+    send: (x: number, y: number, z: number, binary_payload: string) -> (),
+}
+export type BloxOwnerIntentId = {
+    source: BloxTriple,
+    revision_lo: number,
+    revision_hi: number,
+    ordinal: number,
+}
+export type BloxOwnerIntentDelivery = {
+    id: BloxOwnerIntentId,
+    produced_tick_lo: number,
+    produced_tick_hi: number,
+    payload: string,
+}
+
+export type BloxClientStartupHost = {
+    set_text: (owned_document_node: string, ascii_text: string) -> (),
+    set_state: (owned_document: string, ascii_state: string) -> (),
 }
 
 export type BloxUiInput = {
