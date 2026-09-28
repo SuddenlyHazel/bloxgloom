@@ -63,31 +63,10 @@ pub(in crate::server) fn plan_durable_request(
                     "profile has a pending durable action",
                 ));
             }
-            let (inventory, position, inventory_revision) = {
-                let client = state.clients.get(id).expect("client was checked above");
-                (
-                    client.inventory.clone(),
-                    client.position(),
-                    client.inventory.revision,
-                )
-            };
-            let mut action = CommitAction {
-                client_id: Some(*id),
-                profile: Some(profile),
-                action_id: Some(action_id),
-                receipt_value: Some(receipt_value.clone()),
-                receipt_transition: None,
-                terrain_reads: Default::default(),
-                inventory_before: None,
-                inventory: None,
-                world_edits: Vec::new(),
-                deltas: Vec::new(),
-                changed_cells: Vec::new(),
-                pickups: Vec::new(),
-                fire_seed: None,
-                entity_wakes: Vec::new(),
-                entities: None,
-            };
+            let inventory_revision = state.clients[id].inventory.revision;
+            // Keep the wire receipt identity, but resolve stock commands through
+            // the same frozen action registry and gameplay context as packages.
+            // Only edits retain their separate host reach/placement validation.
             match message {
                 ClientMessage::AdminSpawnEntity { entity_type, .. } => {
                     let key = state
@@ -97,7 +76,7 @@ pub(in crate::server) fn plan_durable_request(
                         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "unknown creature"))?
                         .key
                         .to_string();
-                    return registered::plan_request(
+                    registered::plan_request(
                         state,
                         *id,
                         profile,
@@ -115,7 +94,7 @@ pub(in crate::server) fn plan_durable_request(
                         receipt_value,
                         tick,
                     )
-                    .map(Some);
+                    .map(Some)
                 }
                 ClientMessage::AdminGive { item, count, .. } => {
                     let key = state
@@ -127,7 +106,7 @@ pub(in crate::server) fn plan_durable_request(
                         .to_string();
                     let mut arguments = count.to_le_bytes().to_vec();
                     arguments.extend(key.bytes());
-                    return registered::plan_request(
+                    registered::plan_request(
                         state,
                         *id,
                         profile,
@@ -145,14 +124,14 @@ pub(in crate::server) fn plan_durable_request(
                         receipt_value,
                         tick,
                     )
-                    .map(Some);
+                    .map(Some)
                 }
                 ClientMessage::InventoryMove {
                     from, to, count, ..
                 } => {
                     let mut arguments = vec![*from, *to];
                     arguments.extend(count.to_le_bytes());
-                    return registered::plan_request(
+                    registered::plan_request(
                         state,
                         *id,
                         profile,
@@ -170,41 +149,30 @@ pub(in crate::server) fn plan_durable_request(
                         receipt_value,
                         tick,
                     )
-                    .map(Some);
+                    .map(Some)
                 }
                 ClientMessage::DropStack { slot, count, .. } => {
-                    let Some(stack) = inventory.slots.get(*slot as usize).cloned().flatten() else {
-                        return Ok(None);
-                    };
-                    if *count == 0 || *count > stack.count {
-                        return Ok(None);
-                    }
-                    action.inventory_before = Some(InventoryStore::encode_snapshot_with_catalog(
-                        &inventory,
-                        state.world.catalog(),
-                    )?);
-                    let mut next = inventory;
-                    next.slots[*slot as usize] = (*count < stack.count).then(|| {
-                        let mut remainder = stack.clone();
-                        remainder.count -= *count;
-                        remainder
-                    });
-                    next.revision = next.revision.wrapping_add(1);
-                    action.inventory = Some(next);
-                    let mut dropped = stack;
-                    dropped.count = *count;
-                    // The thrown stack leaves the inventory and lands in the
-                    // entity store in one WAL record: either both halves
-                    // commit or neither does.
-                    action.entities = crate::server::drops::plan_spawn_stack(
-                        &state.entities,
-                        &state.world.catalog_arc(),
-                        [position[0], position[1] + 0.8, position[2]],
-                        dropped,
-                        Duration::from_millis(1_500),
-                        tick.get(),
-                        crate::server::drops::unix_ms(),
-                    )?;
+                    let mut arguments = vec![*slot];
+                    arguments.extend(count.to_le_bytes());
+                    registered::plan_request(
+                        state,
+                        *id,
+                        profile,
+                        action_id,
+                        [0; 3],
+                        bloxgloom_host_api::actions::Request {
+                            key: crate::gameplay::drop_stack::KEY.into(),
+                            version: 1,
+                            slot: *slot,
+                            inventory_revision,
+                            entity: 0,
+                            entity_revision: 0,
+                            arguments,
+                        },
+                        receipt_value,
+                        tick,
+                    )
+                    .map(Some)
                 }
                 ClientMessage::Edit {
                     x,
@@ -213,44 +181,39 @@ pub(in crate::server) fn plan_durable_request(
                     block,
                     slot,
                     ..
-                } => {
-                    return plan_block_edit(
-                        state,
-                        tick,
-                        BlockEditCommand {
-                            id: *id,
-                            profile,
-                            action_id,
-                            receipt_value,
-                            x: *x,
-                            y: *y,
-                            z: *z,
-                            block: *block,
-                            slot: *slot,
-                        },
-                    )
-                    .map(Some);
-                }
+                } => plan_block_edit(
+                    state,
+                    tick,
+                    BlockEditCommand {
+                        id: *id,
+                        profile,
+                        action_id,
+                        receipt_value,
+                        x: *x,
+                        y: *y,
+                        z: *z,
+                        block: *block,
+                        slot: *slot,
+                    },
+                )
+                .map(Some),
                 ClientMessage::EntityInteract {
                     action_id,
                     target,
                     payload,
-                } => {
-                    return registered::plan(
-                        state,
-                        *id,
-                        profile,
-                        *action_id,
-                        *target,
-                        payload,
-                        receipt_value,
-                        tick,
-                    )
-                    .map(Some);
-                }
+                } => registered::plan(
+                    state,
+                    *id,
+                    profile,
+                    *action_id,
+                    *target,
+                    payload,
+                    receipt_value,
+                    tick,
+                )
+                .map(Some),
                 _ => unreachable!(),
             }
-            Ok(Some(action))
         }
         DurableRequest::Pickup { id } => gameplay_pickup::plan(state, *id, tick.get()),
         DurableRequest::Expire => {

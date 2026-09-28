@@ -638,6 +638,25 @@ impl Catalog {
             })
             .expect("builtin slot move decision");
         catalog
+            .register_action(bloxgloom_host_api::actions::Action {
+                key: crate::gameplay::drop_stack::KEY.into(),
+                version: 1,
+                label: "Drop stack".into(),
+                target: bloxgloom_host_api::actions::Target::Empty,
+                operation: bloxgloom_host_api::actions::Operation::Gameplay,
+                panel: None,
+            })
+            .expect("builtin drop stack action");
+        catalog
+            .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
+                key: crate::gameplay::drop_stack::KEY.into(),
+                version: 1,
+                event: bloxgloom_host_api::gameplay::EventKind::ActionRequested,
+                target: Some(crate::gameplay::drop_stack::KEY.into()),
+                handler: std::sync::Arc::new(crate::gameplay::drop_stack::DropStack),
+            })
+            .expect("builtin drop stack decision");
+        catalog
             .register_gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
                 key: "bloxgloom:harvest".into(),
                 version: 1,

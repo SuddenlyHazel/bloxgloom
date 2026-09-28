@@ -1,5 +1,51 @@
 use super::*;
 
+#[test]
+fn luau_take_and_spawn_stack_preserve_binary_components_across_receipt_and_restart() {
+    let fixture = Fixture::new();
+    fixture.action(
+        &REGISTER.replace("'item', 'bloxgloom:stick'", "'empty', nil"),
+        "return function(c,e) local s=c.take('player',0,1); assert(s); c.spawn_stack(e.position[1],e.position[2]+0.8,e.position[3],s,60000) end",
+    );
+    let mut state = Box::new(fixture.open().unwrap());
+    prepare(&mut state);
+    let catalog = state.world.catalog_arc();
+    let original = Stack::with_components(
+        catalog.item_by_key("bloxgloom:stick").unwrap(),
+        2,
+        1,
+        vec![0, 255, 3],
+    )
+    .unwrap();
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(original.clone());
+    state.inventory_store.save(PROFILE, &inventory).unwrap();
+    serve(state, |address| {
+        let mut peer = Peer::connect(address, catalog);
+        let request = peer.request(0);
+        assert!(peer.send(&request).0);
+        assert!(peer.send(&request).0, "same receipt cannot throw twice");
+        peer.inventory_at(1);
+    });
+    let state = fixture.open().unwrap();
+    assert_eq!(
+        state.inventory_store.load(PROFILE).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        1
+    );
+    let drops: Vec<_> = state
+        .entities
+        .record_values()
+        .filter(|record| record.entity_type == crate::server::drops::DROP_ENTITY_TYPE)
+        .map(|record| crate::server::drops::stack(&state.entities, record.id).unwrap())
+        .collect();
+    assert_eq!(drops.len(), 1);
+    assert_eq!(drops[0].count, 1);
+    assert_eq!(drops[0].components, original.components);
+}
+
 const SOURCE: &str = r#"return function(c,e)
     local slots = c.inventory('player')
     assert(#slots == 36 and slots[1].insert and slots[1].extract)

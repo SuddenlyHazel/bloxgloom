@@ -104,7 +104,8 @@ implemented; this action callback runs on the authoritative server.
 Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
 target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
 `NeighborChanged`, or `EntityTick` decisions. These use the same scoped VM and
-transaction; `spawn_drop`, `spawn_entity`, private owned `entity_state`,
+transaction; `spawn_drop`, `spawn_stack(x,y,z,stack,delay_ms)`, `spawn_entity`,
+private owned `entity_state`,
 `update_entity`, `remove_entity`, and `schedule_entity` are available where the
 host's public context permits them. Register exact-length private entity bytes
 and a bounded public prefix with `host.register_entity(key, schema_version,
@@ -122,6 +123,11 @@ an exact move to an empty slot, a bounded partial merge, or a full-stack swap;
 it returns false without changing anything if the move cannot fit or the slot
 permissions deny it. The builtin inventory-move binding uses this same public
 operation and WAL receipt, rather than a separate private item-move branch.
+`spawn_stack` accepts the exact `{item,count,components}` stack returned by
+`take`, so a script can move a component-bearing item from an inventory to a
+world drop in one authoritative transaction. The builtin drop-stack binding
+uses the same `take`/`spawn_stack` operations; its 1.5-second pickup delay and
+the eventual pickup animation do not transfer ownership on the client.
 For an authenticated local admin, an action callback can call
 `context.admin_give(item_key, count)` (one stack, 1–128; returns false if the
 whole grant will not fit) or `context.admin_spawn(creature_key)` (one registered

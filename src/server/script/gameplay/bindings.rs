@@ -108,6 +108,20 @@ pub(super) fn invoke(
             )?,
         )?;
         host.set(
+            "spawn_stack",
+            scope.create_function(
+                |_, (x, y, z, stack, delay): (Value, Value, Value, Value, Value)| {
+                    checked(rejected, || {
+                        context.borrow_mut().spawn_stack(
+                            position_at(x, y, z)?,
+                            super::inventory::decode_stack(stack)?,
+                            integer(delay, 0, u32::MAX.into()).map_err(invalid)? as u32,
+                        )
+                    })
+                },
+            )?,
+        )?;
+        host.set(
             "spawn_entity",
             scope.create_function(
                 |_, (key, x, y, z, state): (Value, Value, Value, Value, Value)| {

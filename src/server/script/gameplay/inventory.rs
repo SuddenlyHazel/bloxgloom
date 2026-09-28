@@ -138,7 +138,7 @@ fn amount(value: Value) -> Result<u16, Error> {
     integer(value, 1, 128).map(|n| n as u16).map_err(invalid)
 }
 
-fn decode_stack(value: Value) -> Result<Stack, Error> {
+pub(super) fn decode_stack(value: Value) -> Result<Stack, Error> {
     let Value::Table(table) = value else {
         return Err(invalid("expected stack table"));
     };

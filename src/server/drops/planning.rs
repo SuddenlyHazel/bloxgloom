@@ -24,6 +24,7 @@ use bloxgloom_host_api::entity::{DropLifetime, DropMergeCandidate, DropMergeCont
 /// Existing merge targets resolve in stable ID order; newly allocated IDs
 /// follow the store allocator deterministically. Returns `None` when every
 /// requested count is zero.
+#[cfg(test)]
 pub(in crate::server) fn plan_spawn_stack(
     store: &EntityStore,
     catalog: &Catalog,
