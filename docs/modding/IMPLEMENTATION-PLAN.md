@@ -459,6 +459,14 @@ anchored placement/refunds call the public anchored definition and callbacks.
 The new machine footprint planner closes one remaining private decision, but
 shared service and registered binding parity still needs a production audit;
 do not mark all helpers complete from their registration surfaces alone.
+**Slot-binding slice:** the production `InventoryMove` wire
+request now resolves a registered gameplay action using the public
+`move_slots` operation. It preserves exact empty-slot moves, partial merges to
+the 128 cap and full-stack swaps under finite inventory permissions, with the
+original receipt/WAL path. The focused test, real nonblocking-listener
+retry/restart test and main-tree 890/890 suite pass, as do strict Clippy and
+formatting.
+Client drop-stack and other input bindings have not been migrated by this slice.
 The builtin `give` and `spawn` console requests now resolve registered actions
 and invoke authenticated public gameplay operations, including from Luau;
 `help` is client-local usage text rather than a WAL command. Machine placement
@@ -593,7 +601,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **889/889**. The user reported the Jade example working live, but that does
+  **890/890**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -659,7 +667,7 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **889/889** after drop policy integration;
+  latest reviewed 4-thread suite passed **890/890** after registered slot moves;
   strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
