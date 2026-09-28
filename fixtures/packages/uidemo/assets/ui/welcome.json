@@ -1,8 +1,8 @@
-{"version":1,"nodes":[
+{"version":1,"presentation":{"capability":"local-ui","module":"uidemo:view"},"nodes":[
   {"id":"root","kind":"panel","style":"uidemo:panel"},
   {"id":"title","parent":0,"kind":"label","style":"uidemo:label","text":"Welcome to the garden"},
   {"id":"icon","parent":0,"kind":"image","style":"uidemo:icon-style","image":"uidemo:icon"},
   {"id":"hint","parent":0,"kind":"label","style":"uidemo:label","text":"Name your garden (local only):"},
   {"id":"name","parent":0,"kind":"input","style":"uidemo:field","text":"Moss & stone","event":"uidemo:name-changed"},
-  {"id":"confirm","parent":0,"kind":"button","style":"uidemo:button","text":"Plant a seed [event not bound]","event":"uidemo:plant"}
+  {"id":"confirm","parent":0,"kind":"button","style":"uidemo:button","text":"Plant a seed [local only]","event":"uidemo:plant"}
 ]}

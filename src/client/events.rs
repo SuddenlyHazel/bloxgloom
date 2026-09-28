@@ -34,7 +34,7 @@ impl ClientApp {
                 if let Some(session) = &mut self.package_ui {
                     match code {
                         KeyCode::Tab if !repeat => session.tab(self.shift_down),
-                        // No dispatch: authored event IDs carry no gameplay authority.
+                        KeyCode::Enter | KeyCode::NumpadEnter if !repeat => session.activate(),
                         KeyCode::Enter
                         | KeyCode::NumpadEnter
                         | KeyCode::Tab

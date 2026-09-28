@@ -3,6 +3,7 @@ package uidemo
 version 1.0.0
 entry main
 module server main server/main.luau
+module client view client/view.luau
 asset ui-document welcome assets/ui/welcome.json
 asset ui-style panel assets/ui/panel.json
 asset ui-style label assets/ui/label.json

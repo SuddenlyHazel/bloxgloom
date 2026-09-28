@@ -274,11 +274,35 @@ fn package_ui_key_dispatch_opens_from_play_and_consumes_keys_without_gameplay() 
         assert!(app.package_ui_key(key, Some("q"), false));
         assert_eq!(app.screen, UiScreen::Package);
     }
+    app.package_ui
+        .as_mut()
+        .unwrap()
+        .wait_for_presentation()
+        .unwrap();
+    assert_eq!(
+        app.package_ui.as_ref().unwrap().text_at(1),
+        "Garden: Moss & stoneq"
+    );
+    assert!(app.package_ui_key(KeyCode::Tab, None, false));
+    assert!(app.package_ui_key(KeyCode::Enter, None, false));
+    app.package_ui
+        .as_mut()
+        .unwrap()
+        .wait_for_presentation()
+        .unwrap();
+    assert_eq!(app.package_ui.as_ref().unwrap().text_at(1), "Seed planted!");
     assert!(app.pending_commands.is_empty());
     assert!(!app.keys.forward);
     assert!(app.package_ui_key(KeyCode::Escape, None, false));
     assert_eq!(app.screen, UiScreen::Playing);
     assert!(!app.package_ui_key(KeyCode::KeyE, None, false));
+    // A disconnect while an event is in flight drops the session and its reply
+    // receiver. No completion can resurrect package presentation state.
+    assert!(app.package_ui_key(KeyCode::F6, None, false));
+    assert!(app.package_ui_key(KeyCode::Enter, None, false));
+    app.poll_work();
+    assert!(app.disconnected);
+    assert!(app.package_ui.is_none());
     app.config_writer.finish();
 }
 

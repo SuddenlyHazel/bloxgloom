@@ -24,7 +24,7 @@ impl Session {
         if let Some(id) = self.focused_id() {
             let label = self.event().map_or_else(
                 || id.to_owned(),
-                |event| format!("{id}  /  {event} (UNBOUND)"),
+                |event| format!("{id}  /  {event} ({})", self.event_status()),
             );
             builder.text(
                 &label,
@@ -39,6 +39,9 @@ impl Session {
 
     pub(in crate::ui) fn draw(&self, builder: &mut UiBuilder<'_>) {
         for (index, node) in self.document().nodes.iter().enumerate() {
+            if !self.is_visible(index) {
+                continue;
+            }
             let Some(&rect) = self.rects.get(index) else {
                 continue;
             };
@@ -65,11 +68,7 @@ impl Session {
             }
             if matches!(node.kind, Kind::Label | Kind::Button | Kind::Input) {
                 let font = &self.resources.fonts[node.style.font.as_ref().unwrap()];
-                let text = if node.kind == Kind::Input {
-                    &self.inputs[index]
-                } else {
-                    &node.text
-                };
+                let text = self.text_at(index);
                 let padding = f32::from(node.style.padding) * self.scale;
                 let mut x = rect.x + padding;
                 for byte in text.bytes() {

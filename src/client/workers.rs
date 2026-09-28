@@ -232,6 +232,18 @@ pub(crate) fn connect_bundle_probe(
 }
 
 #[cfg(test)]
+pub(crate) fn connect_ui_probe(
+    address: &str,
+    profile: u128,
+    inspect: impl FnOnce(&crate::server::client_bundle::ClientBundle, &mut crate::ui::authored::Session),
+) -> io::Result<()> {
+    let network = Network::connect(address, 1, profile)?;
+    let mut session = network.package_ui().expect("package UI");
+    inspect(network._bundle.as_ref().unwrap(), &mut session);
+    Ok(())
+}
+
+#[cfg(test)]
 pub(crate) fn connect_catalog_probe(address: &str, profile: u128) -> io::Result<Arc<Catalog>> {
     Ok(Network::connect(address, 1, profile)?.catalog)
 }

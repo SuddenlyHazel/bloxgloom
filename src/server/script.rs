@@ -359,6 +359,15 @@ fn run_with<T>(
     })
 }
 
+/// Client presentation uses the same isolated, instruction/memory/time-bounded
+/// source sandbox, with its own closed input/output adapter and worker.
+pub(crate) fn run_presentation<T>(
+    module: SourceModule,
+    invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
+) -> Result<T, ScriptError> {
+    run_with(&Program::Source(module), Limits::default(), invoke)
+}
+
 #[derive(Clone, Copy)]
 enum LimitExceeded {
     Instructions,

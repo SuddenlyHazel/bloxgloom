@@ -102,3 +102,15 @@ metadata now constructs a fresh matching session catalog, including saved
 numeric IDs. Downloaded code remains inert. Servers with other scripted
 catalog registrations still reject the client explicitly until those metadata
 types are supported.
+
+An authored `ui-document` may opt into client-only presentation events with
+`"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The
+module must be a verified client/shared `.luau` module and return a function
+receiving `{sequence,event,value,state,texts}`. It returns up to 16 commands:
+`{op="text",node="uidemo:welcome/title",value="Hello"}`,
+`{op="visible",node="uidemo:welcome/icon",value=false}`, or
+`{op="state",value="local state"}`. Widget event IDs belong to the document's
+package. The worker executes each event in a fresh sandbox and never exposes
+world/inventory/network handles; state is an explicitly bounded ASCII string.
+Buttons and edited inputs are presentation-only, not a path to gameplay
+actions. See `fixtures/packages/uidemo/` for a runnable local example.

@@ -53,8 +53,16 @@ impl Style {
 #[serde(deny_unknown_fields)]
 pub(super) struct RawDocument {
     version: u8,
+    presentation: Option<Presentation>,
     #[serde(deserialize_with = "bounded_nodes")]
     nodes: Vec<RawNode>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Presentation {
+    capability: String,
+    module: String,
 }
 
 // Reject the 65th node before deserializing/allocating its payload. The flat
@@ -107,6 +115,7 @@ impl RawDocument {
         self,
         owner: &str,
         local: &str,
+        package: &ClientPackage,
         styles: &BTreeMap<String, Style>,
         images: &BTreeMap<String, super::super::UiRect>,
     ) -> Result<Document> {
@@ -160,9 +169,24 @@ impl RawDocument {
                 event: raw.event,
             });
         }
+        let script = self
+            .presentation
+            .map(|binding| {
+                if binding.capability != "local-ui" || !owned(owner, &binding.module) {
+                    return Err(INVALID);
+                }
+                let key = binding.module.split_once(':').ok_or(INVALID)?.1;
+                let source = &package.sources.get(key).ok_or(INVALID)?.source;
+                Ok(std::sync::Arc::new(crate::client::presentation::Script {
+                    module: binding.module,
+                    source: source.clone(),
+                }))
+            })
+            .transpose()?;
         Ok(Document {
             id: format!("{owner}:{local}"),
             nodes,
+            script,
         })
     }
 }

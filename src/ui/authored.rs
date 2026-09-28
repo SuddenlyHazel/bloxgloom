@@ -1,5 +1,5 @@
 //! Closed package UI schema. Only verified bytes enter here, on preparation
-//! threads before publication. No source evaluation, filesystem or host actions.
+//! threads before publication. Drawing never evaluates source or performs I/O.
 //!
 //! Format-2 manifests classify ui-document/ui-style JSON under assets/ui/,
 //! ui-font TTF under assets/fonts/, and ui-image PNG under assets/ui/. Documents
@@ -20,16 +20,35 @@
 //! existing UI renderer clips descendants to ancestors and the viewport. F6
 //! opens/closes; PageDown cycles lexical documents; Tab/ShiftTab/click focuses.
 //! Inputs append/backspace printable ASCII locally. Reconnect resets local state;
-//! close/reopen retains it; document cycling resets it. No event/retry queue.
+//! close/reopen retains it; document cycling resets it and invalidates old replies.
+//!
+//! Optional document `presentation:{capability:"local-ui",module:"package:module"}`
+//! opts into a package-owned verified client/shared module (no imports). A fresh
+//! bounded Luau sandbox runs on the client presentation worker for each button
+//! click/Enter or changed input. It returns a function accepting {sequence,event,
+//! value,state,texts}; texts maps full widget IDs to current ASCII text. Sequence
+//! numbers start at 1 per connection, increase on admission, and survive document
+//! switches. Script globals never survive; `state` is an explicit 128-byte string.
+//! Return a dense array of <=16 commands: {op:"text",node:"package:doc/id",value:
+//! "ASCII"}, {op:"visible",node:...,value:boolean}, or {op:"state",value:"ASCII"}.
+//! Text/state are <=128 bytes. Only the active document is writable. Hidden
+//! ancestors hide descendants and remove focus, but retain layout space.
+//! Results validate atomically; errors are module/event-attributed and disable
+//! handlers until reset. One outstanding event, request and reply queues of one;
+//! busy clicks/edits are rejected (visible BUSY status), never queued for retry.
+//! Local retained dynamic text is bounded by 64 nodes x 128 bytes (plus inputs),
+//! independent of the static 4096-byte resource budget. Disconnect drops worker
+//! channels without waiting on the window thread; late replies cannot enter a
+//! new session. No server messages or world/inventory references enter this API.
 //!
 //! Unsupported: scroll widgets, wrapping, HTML/CSS, dynamic documents, Unicode
 //! shaping/bidi/kerning, IME, selection, clipboard, caret movement, accessibility,
-//! animations and hot reload. Buttons are focusable presentation placeholders;
-//! event IDs are inert and explicitly shown as UNBOUND. No Luau dispatch,
-//! gameplay commands or server state bindings exist in this increment. Fontdue
+//! animations and hot reload. Without the explicit capability, event IDs remain
+//! inert and shown as UNBOUND. No gameplay or server bindings exist. Fontdue
 //! supplies rasterization, not a complete text-editing or shaping stack.
 //! `fixtures/packages/uidemo` is the sample used by ui-preview and loopback tests.
 mod draw;
+mod events;
 mod raster;
 mod schema;
 mod session;
@@ -57,6 +76,7 @@ pub(crate) struct Resources {
 struct Document {
     id: String,
     nodes: Vec<Widget>,
+    script: Option<std::sync::Arc<crate::client::presentation::Script>>,
 }
 
 #[derive(Debug)]
@@ -132,7 +152,7 @@ impl Resources {
                     return Err(INVALID);
                 }
                 let raw: RawDocument = json(bytes)?;
-                let document = raw.resolve(owner, local, &styles, &images)?;
+                let document = raw.resolve(owner, local, package, &styles, &images)?;
                 nodes += document.nodes.len();
                 // Reserve the full capacity of each input, not just initial text.
                 text_bytes += document

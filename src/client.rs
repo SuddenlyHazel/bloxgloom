@@ -253,11 +253,14 @@ mod admin;
 mod entities;
 mod kiln;
 mod mesh_queue;
+pub(crate) mod presentation;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 #[cfg(test)]
-pub(crate) use workers::{connect_bundle_probe, connect_catalog_probe, connect_inventory_probe};
+pub(crate) use workers::{
+    connect_bundle_probe, connect_catalog_probe, connect_inventory_probe, connect_ui_probe,
+};
 
 #[derive(Default)]
 struct Keys {
@@ -992,8 +995,17 @@ impl ClientApp {
                     self.disconnected = true;
                     break;
                 }
-                Err(_) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.disconnected = true;
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
             }
+        }
+        if self.disconnected {
+            self.package_ui = None;
+        } else if let Some(session) = &mut self.package_ui {
+            session.poll_presentation();
         }
         let center = crate::world::world_to_chunk(
             self.position.x.floor() as i32,

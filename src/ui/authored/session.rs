@@ -1,4 +1,4 @@
-//! Bounded local presentation state. No network/gameplay authority or event queue.
+//! Bounded local presentation state. No network/gameplay authority.
 use super::super::UiRect;
 use super::*;
 use std::sync::Arc;
@@ -13,10 +13,28 @@ pub(crate) struct Session {
     pub(super) inputs: Vec<String>,
     pub(super) focused: Option<usize>,
     pub(super) scale: f32,
+    pub(super) texts: Vec<String>,
+    pub(super) visible: Vec<bool>,
+    pub(super) state: String,
+    pub(super) worker: Option<crate::client::presentation::Worker>,
+    pub(super) sequence: u32,
+    pub(super) pending: Option<u32>,
+    pub(super) expected: Option<u32>,
+    pub(super) failure: Option<String>,
 }
 
 impl Session {
     pub(crate) fn new(resources: Arc<Resources>) -> Self {
+        let worker = resources
+            .documents
+            .iter()
+            .any(|d| d.script.is_some())
+            .then(crate::client::presentation::Worker::spawn)
+            .transpose();
+        let (worker, failure) = match worker {
+            Ok(worker) => (worker, None),
+            Err(error) => (None, Some(format!("presentation worker: {error}"))),
+        };
         let mut session = Self {
             resources,
             document: 0,
@@ -25,12 +43,32 @@ impl Session {
             inputs: Vec::new(),
             focused: None,
             scale: 1.0,
+            texts: Vec::new(),
+            visible: Vec::new(),
+            state: String::new(),
+            worker,
+            sequence: 0,
+            pending: None,
+            expected: None,
+            failure: None,
         };
         session.reset();
+        session.failure = failure;
         session
     }
 
     fn reset(&mut self) {
+        // Invalidate an outstanding result without admitting a second job.
+        self.expected = None;
+        self.failure = None;
+        self.state.clear();
+        self.texts = self
+            .document()
+            .nodes
+            .iter()
+            .map(|n| n.text.clone())
+            .collect();
+        self.visible = vec![true; self.document().nodes.len()];
         self.focused = None;
         self.rects.clear();
         self.clips.clear();
@@ -161,7 +199,8 @@ impl Session {
     }
 
     fn focusable(&self, i: usize) -> bool {
-        matches!(self.document().nodes[i].kind, Kind::Button | Kind::Input)
+        self.is_visible(i)
+            && matches!(self.document().nodes[i].kind, Kind::Button | Kind::Input)
             && self
                 .clips
                 .get(i)
@@ -188,6 +227,7 @@ impl Session {
         self.focused = (0..self.document().nodes.len())
             .rev()
             .find(|&i| self.focusable(i) && self.clips[i].contains(x, y));
+        self.activate();
     }
 
     pub(crate) fn edit(&mut self, backspace: bool, text: Option<&str>) {
@@ -197,6 +237,10 @@ impl Session {
         else {
             return;
         };
+        if !self.can_dispatch(i) {
+            return;
+        }
+        let old = self.inputs[i].clone();
         if backspace {
             self.inputs[i].pop();
         } else if let Some(text) = text {
@@ -207,10 +251,12 @@ impl Session {
                 }
             }
         }
+        if self.inputs[i] != old && !self.dispatch(i) {
+            self.inputs[i] = old;
+        }
     }
 
-    /// Reserved package-scoped event identity only. Caller must not turn this into
-    /// a gameplay command; Luau dispatch and permissions are deliberately absent.
+    /// Stable package-scoped authored handler identity, never a gameplay command.
     pub(crate) fn event(&self) -> Option<&str> {
         self.focused
             .and_then(|i| self.document().nodes[i].event.as_deref())

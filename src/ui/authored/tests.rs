@@ -16,6 +16,14 @@ fn sample() -> Arc<ClientBundle> {
 }
 
 fn encode(assets: &Assets) -> Vec<u8> {
+    encode_source(
+        assets,
+        include_bytes!("../../../fixtures/packages/uidemo/client/view.luau"),
+        1,
+    )
+}
+
+fn encode_source(assets: &Assets, source: &[u8], side: usize) -> Vec<u8> {
     fn count(out: &mut Vec<u8>, value: usize) {
         out.extend_from_slice(&(value as u32).to_le_bytes());
     }
@@ -36,7 +44,10 @@ fn encode(assets: &Assets) -> Vec<u8> {
     count(&mut bytes, 1);
     field(&mut bytes, b"other");
     field(&mut bytes, b"1.0.0");
-    count(&mut bytes, 0);
+    count(&mut bytes, 1);
+    field(&mut bytes, b"view");
+    count(&mut bytes, side);
+    field(&mut bytes, source);
     count(&mut bytes, assets.len());
     for (name, (kind, data)) in assets {
         field(&mut bytes, name.as_bytes());
@@ -45,6 +56,127 @@ fn encode(assets: &Assets) -> Vec<u8> {
     }
     count(&mut bytes, 0);
     bytes
+}
+
+fn dynamic(source: &str, side: usize) -> Session {
+    let bundle = sample();
+    let assets = &bundle.packages()["uidemo"].ui_assets;
+    let bytes = encode_source(assets, source.as_bytes(), side);
+    let bundle =
+        ClientBundle::decode_verify(&bytes, CacheKey::from_bytes(Sha256::digest(&bytes).into()))
+            .unwrap();
+    let mut session = Session::new(Arc::clone(bundle.ui().unwrap()));
+    session.resize(640, 360, 1.0);
+    session.tab(false);
+    session.tab(false);
+    session
+}
+
+#[test]
+fn worker_dispatches_click_and_input_with_bounded_admission_and_explicit_state() {
+    let mut session = Session::new(Arc::clone(sample().ui().unwrap()));
+    session.resize(640, 360, 1.0);
+    session.tab(false);
+    session.edit(false, Some("!"));
+    assert_eq!(session.pending, Some(1));
+    // No polling: even a completed-but-unapplied result retains backpressure.
+    session.edit(false, Some("lost"));
+    assert_eq!(session.inputs[4], "Moss & stone!");
+    assert_eq!(session.event_status(), "BUSY: INPUT PAUSED");
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.text_at(1), "Garden: Moss & stone!");
+    let rect = session.clips[5];
+    session.click(rect.x + 1.0, rect.y + 1.0);
+    session.activate(); // Repeated click while pending is rejected, not replayed.
+    assert_eq!(session.sequence, 2);
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.text_at(1), "Seed planted!");
+    assert_eq!(session.state, "planted");
+    assert!(!session.is_visible(3));
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.sequence, 3);
+    assert_eq!(session.text_at(1), "Another seed planted!");
+}
+
+#[test]
+fn switching_document_discards_pending_result_and_resets_state_not_event_sequence() {
+    let mut session = dynamic(
+        include_str!("../../../fixtures/packages/uidemo/client/view.luau"),
+        2,
+    );
+    session.activate();
+    session.next_document();
+    assert_eq!(session.pending, Some(1));
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.text_at(1), "Welcome to the garden");
+    assert_eq!(session.text_at(5), "Plant a seed [local only]");
+    assert!(session.state.is_empty());
+    assert!(session.is_visible(3));
+    session.resize(640, 360, 1.0);
+    session.tab(false);
+    session.tab(false);
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.sequence, 2);
+    assert_eq!(session.text_at(1), "Seed planted!");
+}
+
+#[test]
+fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() {
+    for source in [
+        "return function(i) return {{op='text',node='uidemo:welcome/title',value='partial'}, {op='text',node='other:welcome/title',value='escape'}} end",
+        "return function(i) return {{op='text',node='uidemo:welcome/title',value='partial'}, {op='text',node='uidemo:other/title',value='escape'}} end",
+        "return function(i) return {{op='world',value='stone'}} end",
+        "return function(i) return {{op='visible',node='uidemo:welcome/title',value='false'}} end",
+        "return function(i) return {{op='state',value=42}} end",
+        "return function(i) return {{op='state',value=string.rep('x',129)}} end",
+        "return function(i) return {hidden={op='state',value='bad'}} end",
+        "return function(i) local t={} for n=1,17 do t[n]={op='state',value='bad'} end return t end",
+        "return function(i) error('broken handler') end",
+        "return function(i) while true do end end",
+        "return function(i) return string.rep('x',16000000) end",
+        "return function(i) return require('other:module') end",
+    ] {
+        let mut session = dynamic(source, 1);
+        session.activate();
+        let error = session.wait_for_presentation().unwrap_err();
+        assert!(error.contains("uidemo:view"), "{error}");
+        assert_eq!(session.text_at(1), "Welcome to the garden");
+        assert!(session.state.is_empty());
+        session.activate();
+        assert!(session.pending.is_none());
+        assert_eq!(session.sequence, 1);
+    }
+}
+
+#[test]
+fn shared_handler_has_no_native_authority_and_hidden_ancestor_removes_focus() {
+    let mut session = dynamic(
+        "return function(i) assert(io == nil and os == nil and debug == nil and require == nil and print == nil and getfenv == nil and setfenv == nil and game == nil and world == nil and inventory == nil); assert(i.sequence == 1 and i.event == 'uidemo:plant'); return {{op='visible',node='uidemo:welcome/root',value=false}} end",
+        2,
+    );
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert!(session.focused.is_none());
+    session.tab(false);
+    assert!(session.focused.is_none());
+    assert!(!session.is_visible(5));
+}
+
+#[test]
+fn verified_bundle_requires_explicit_supported_owned_capability_and_module() {
+    let bundle = sample();
+    let assets = &bundle.packages()["uidemo"].ui_assets;
+    for (key, value) in [
+        ("capability", "world"),
+        ("module", "other:view"),
+        ("module", "uidemo:main"),
+        ("module", "uidemo:missing"),
+    ] {
+        let assets = change_json(assets, "welcome", |v| v["presentation"][key] = value.into());
+        assert!(decode(&assets).is_err());
+    }
 }
 
 fn decode(assets: &Assets) -> std::result::Result<ClientBundle, String> {
@@ -72,7 +204,7 @@ fn verified_discovery_freezes_resources_and_tampering_fails_before_publication()
     assert_eq!(resources.fonts["uidemo:body"].len(), 95);
     assert_eq!(resources.images["uidemo:icon"].width, 16.0);
     assert!(resources.pixels.iter().any(|&p| p != 0));
-    assert!(bundle.packages()["uidemo"].sources.is_empty());
+    assert_eq!(bundle.packages()["uidemo"].sources.len(), 1);
     let mut tampered = original.bytes().to_vec();
     let at = tampered.windows(7).position(|s| s == b"Welcome").unwrap();
     tampered[at] = b'w';
@@ -173,6 +305,11 @@ fn verified_bundle_bounds_image_dimensions_font_expansion_and_document_count() {
 #[test]
 fn live_session_uses_taffy_geometry_for_clipped_focus_and_bounded_local_editing() {
     let bundle = sample();
+    // Preserve coverage of legacy, inert documents without opt-in capability.
+    let assets = change_json(&bundle.packages()["uidemo"].ui_assets, "welcome", |v| {
+        v.as_object_mut().unwrap().remove("presentation");
+    });
+    let bundle = decode(&assets).unwrap();
     let mut session = Session::new(Arc::clone(bundle.ui().unwrap()));
     for (width, height, scale) in [(1280, 720, 1.0), (640, 360, 1.0), (640, 360, 2.0)] {
         session.resize(width, height, scale);

@@ -88,6 +88,8 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
             (UiScreen::Package, "package"),
+            (UiScreen::Package, "package-edited"),
+            (UiScreen::Package, "package-planted"),
         ] {
             outputs.push(PreviewOutput {
                 path: directory.join(format!("{name}-{suffix}.png")),
@@ -1052,9 +1054,19 @@ async fn render_previews(
         if output.screen == UiScreen::Package
             && let Some(session) = &mut package_ui
         {
+            session.next_document(); // Sample has one document; reset before each image.
             session.resize(output.width, output.height, output.scale);
             session.click(-1.0, -1.0);
             session.tab(false);
+            let name = output.path.file_name().unwrap().to_string_lossy();
+            if name.starts_with("package-edited") {
+                session.edit(false, Some(" garden"));
+                session.wait_for_presentation()?;
+            } else if name.starts_with("package-planted") {
+                session.tab(false);
+                session.activate();
+                session.wait_for_presentation()?;
+            }
             ui_frame.package_ui = Some(session);
         }
         ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);

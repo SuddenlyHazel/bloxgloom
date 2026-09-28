@@ -805,6 +805,14 @@ This section exists so compaction or a new session does not restart the design.
   No Luau event dispatch, scrolling, Unicode/IME or migration of other built-in
   panels is claimed. Focused tests, strict Clippy and formatting passed; two
   unrelated server tests failed in a full run, one of which passed isolated.
+- **Phase 6 local Luau UI events:** a document may opt into a verified
+  client/shared presentation module. A dedicated bounded worker runs a fresh
+  sandbox VM per button/input event and returns at most 16 typed local text,
+  visibility or string-state changes. One outstanding event, atomic validation,
+  disabled-on-error behavior and reconnect/document reset prevent unbounded
+  queues or stale replies. The uidemo package demonstrates real input/button
+  reactions in inspected dynamic previews. No gameplay command, network API,
+  timer, server authority, imports or general client runtime is bound.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN
