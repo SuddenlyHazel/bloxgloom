@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Version 3
+//! Canonical, client-safe package set, independent of filesystem paths. Version 4
 //! is an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -8,7 +8,9 @@
 //! key from a trusted session/manifest; a hash supplied by the same untrusted
 //! sender as the bytes is integrity checking, not authentication or signing.
 //! Texture payloads are opaque PNG-classified bytes, NOT decoded/validated images.
-//! A future image loader must impose its own decoded-dimension/memory limits.
+//! Separately classified UI assets are validated/prepared by ui::authored before
+//! publication. V4 changes only the artifact/cache identity, not wire framing or
+//! saves. Old artifacts are rejected; there is no conversion or partial install.
 
 use std::collections::BTreeMap;
 
@@ -20,7 +22,7 @@ use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
 mod declarations;
 
-const MAGIC: &[u8] = b"BGCLIENT\x03";
+const MAGIC: &[u8] = b"BGCLIENT\x04";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -42,7 +44,7 @@ impl CacheKey {
     /// Domain/version prefix avoids collisions with other future cache formats.
     pub fn cache_name(&self) -> String {
         use std::fmt::Write;
-        let mut name = String::from("client-v3-sha256-");
+        let mut name = String::from("client-v4-sha256-");
         for byte in self.0 {
             write!(name, "{byte:02x}").expect("write String");
         }
@@ -67,9 +69,10 @@ pub struct ClientPackage {
     pub version: String,
     pub dependencies: BTreeMap<String, String>,
     pub sources: BTreeMap<String, ClientSource>,
-    /// Only `texture` assets are currently supported. Keys are logical names,
-    /// never extraction paths. No filesystem extraction API is provided.
+    /// World textures remain opaque. Keys are logical names, never extraction
+    /// paths. Separately typed UI assets do not enter this map.
     pub textures: BTreeMap<String, Vec<u8>>,
+    pub(crate) ui_assets: BTreeMap<String, (u32, Vec<u8>)>,
 }
 
 /// Immutable bytes and decoded view, published together only after validation.
@@ -79,9 +82,14 @@ pub struct ClientBundle {
     key: CacheKey,
     packages: BTreeMap<String, ClientPackage>,
     declarations: Option<declarations::Startup>,
+    ui: Option<std::sync::Arc<crate::ui::authored::Resources>>,
 }
 
 impl ClientBundle {
+    pub(crate) fn ui(&self) -> Option<&std::sync::Arc<crate::ui::authored::Resources>> {
+        self.ui.as_ref()
+    }
+
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -126,7 +134,7 @@ impl ClientBundle {
             writer.count(package.assets.len())?;
             for (name, bytes) in &package.assets {
                 writer.field(name.as_bytes())?;
-                writer.count(1)?; // texture classification
+                writer.count(package.manifest.asset_kinds[name] as usize)?;
                 writer.field(bytes)?;
             }
         }
@@ -183,15 +191,25 @@ impl ClientBundle {
             let count = reader.count(64.min(MAX_ASSETS - assets))?;
             assets += count;
             let mut textures = BTreeMap::new();
+            let mut ui_assets = BTreeMap::new();
+            let mut previous = String::new();
             for _ in 0..count {
                 let key = reader.identifier()?;
-                ordered(&textures, &key)?;
-                if reader.count(1)? != 1 {
+                if key <= previous {
+                    return Err(invalid());
+                }
+                previous.clone_from(&key);
+                let kind = reader.count(5)? as u32;
+                if kind == 0 {
                     return Err(invalid());
                 }
                 let bytes = reader.field(MAX_ASSET_BYTES.min(MAX_TOTAL_BYTES - payload))?;
                 payload += bytes.len();
-                textures.insert(key, bytes.to_vec());
+                if kind == 1 {
+                    textures.insert(key, bytes.to_vec());
+                } else {
+                    ui_assets.insert(key, (kind, bytes.to_vec()));
+                }
             }
             packages.insert(
                 name,
@@ -200,6 +218,7 @@ impl ClientBundle {
                     dependencies,
                     sources,
                     textures,
+                    ui_assets,
                 },
             );
         }
@@ -214,11 +233,15 @@ impl ClientBundle {
                 }
             }
         }
+        let ui = crate::ui::authored::Resources::compile(&packages)
+            .map_err(|message| error("<client-ui>", message))?
+            .map(std::sync::Arc::new);
         Ok(Self {
             bytes: bytes.to_vec(),
             key: expected,
             packages,
             declarations,
+            ui,
         })
     }
 }

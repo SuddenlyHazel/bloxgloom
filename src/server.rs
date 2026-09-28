@@ -31,6 +31,7 @@ mod runtime;
 // Phase 4 foundation: not dispatched by gameplay yet.
 #[allow(dead_code)]
 mod script;
+pub(crate) use script::package::PackageSnapshot;
 pub(crate) use script::package::client as client_bundle;
 mod simulation;
 mod spawn;

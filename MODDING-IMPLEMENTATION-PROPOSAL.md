@@ -429,9 +429,9 @@ This section exists so compaction or a new session does not restart the design.
   including Luau/mlua selection and fire migration. The user now explicitly
   requests one coder subagent at a time, with personal review and commits.
 - **Active work (September 28, 2026):** Phase 3 is done. Phases 2, 4, 5
-  and 6 are in progress; phases 7 and 8 have not started. The current
-  background increment is Phase 6 authored UI document/layout/resource work;
-  its diff is unreviewed and uncommitted. Do not count it as delivered. Phase 2
+  and 6 are in progress; phases 7 and 8 have not started. Phase 6 now includes
+  a reviewed authored UI document/layout/resource slice; Luau event dispatch,
+  richer controls and built-in panel migration remain. Phase 2
   still needs atomic owner entity/drop effects, durable cross-owner payloads,
   fire migration and remaining native drop/player/command parity. Phase 4 has
   server-side Luau startup, generation, decisions, entities, inventory and
@@ -795,6 +795,16 @@ This section exists so compaction or a new session does not restart the design.
   1280×720 and 640×360 `ui-preview` outputs and verified tests, formatting
   and strict Clippy. Unicode/IME text, mod documents, authored handlers and
   migration of other panels are still in progress.
+- **Phase 6 authored document increment:** verified format-2 bundles now carry
+  package-scoped bounded UI documents, styles, fonts and images. Preparation
+  validates/decodes/rasterizes before window creation; the existing renderer
+  displays Taffy-laid-out panels, text, images, buttons and locally editable
+  inputs. `fixtures/packages/uidemo/` demonstrates the surface; F6, PageDown,
+  Tab and mouse focus are local presentation controls. I inspected desktop and
+  compact `package` preview images; package event IDs are visibly UNBOUND.
+  No Luau event dispatch, scrolling, Unicode/IME or migration of other built-in
+  panels is claimed. Focused tests, strict Clippy and formatting passed; two
+  unrelated server tests failed in a full run, one of which passed isolated.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

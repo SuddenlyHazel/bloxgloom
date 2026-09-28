@@ -1,5 +1,6 @@
 //! Screen-space UI data, hit testing, and the compact GPU overlay renderer.
 
+pub(crate) mod authored;
 mod draw;
 mod inventory_search;
 mod layout;

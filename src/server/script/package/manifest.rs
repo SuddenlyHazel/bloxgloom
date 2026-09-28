@@ -10,6 +10,7 @@ pub(super) struct Manifest {
     pub modules: BTreeMap<String, String>,
     pub sides: BTreeMap<String, SourceSide>,
     pub assets: BTreeMap<String, String>,
+    pub asset_kinds: BTreeMap<String, u32>,
     pub requires: BTreeSet<String>,
 }
 
@@ -36,6 +37,7 @@ impl Manifest {
         let mut modules = BTreeMap::new();
         let mut sides = BTreeMap::new();
         let mut assets = BTreeMap::new();
+        let mut asset_kinds = BTreeMap::new();
         let mut legacy_modules = false;
         let mut classified_files = false;
         let mut requires = BTreeSet::new();
@@ -106,12 +108,13 @@ impl Manifest {
                     sides.insert(key.to_owned(), kind);
                     classified_files = true;
                 }
-                (Some("asset"), Some("texture"), Some(key), Some(path))
-                    if identifier(key) && texture_path(path) && assets.len() < 64 =>
+                (Some("asset"), Some(kind), Some(key), Some(path))
+                    if identifier(key) && asset_path(kind, path).is_some() && assets.len() < 64 =>
                 {
                     if assets.insert(key.to_owned(), path.to_owned()).is_some() {
                         return Err(fail());
                     }
+                    asset_kinds.insert(key.to_owned(), asset_path(kind, path).unwrap());
                     classified_files = true;
                 }
                 (Some("requires"), Some(value), None, None)
@@ -141,6 +144,7 @@ impl Manifest {
             modules,
             sides,
             assets,
+            asset_kinds,
             requires,
         })
     }
@@ -188,6 +192,14 @@ fn public_path(path: &str) -> bool {
     bounded_path(path) && path.split('/').all(|part| !part.starts_with('.'))
 }
 
-fn texture_path(path: &str) -> bool {
-    public_path(path) && path.starts_with("assets/textures/") && path.ends_with(".png")
+fn asset_path(kind: &str, path: &str) -> Option<u32> {
+    let (tag, directory, suffix) = match kind {
+        "texture" => (1, "assets/textures/", ".png"),
+        "ui-document" => (2, "assets/ui/", ".json"),
+        "ui-style" => (3, "assets/ui/", ".json"),
+        "ui-font" => (4, "assets/fonts/", ".ttf"),
+        "ui-image" => (5, "assets/ui/", ".png"),
+        _ => return None,
+    };
+    (public_path(path) && path.starts_with(directory) && path.ends_with(suffix)).then_some(tag)
 }

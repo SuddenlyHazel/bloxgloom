@@ -12,6 +12,7 @@ pub enum UiScreen {
     Pause,
     Settings,
     Graphics,
+    Package,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -94,6 +95,7 @@ pub struct UiDebug {
 /// Values needed to draw a frame. Borrow status text to avoid per-frame string allocation.
 #[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
+    pub(crate) package_ui: Option<&'a super::authored::Session>,
     pub screen: UiScreen,
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
@@ -116,6 +118,7 @@ pub struct UiFrame<'a> {
 impl Default for UiFrame<'_> {
     fn default() -> Self {
         Self {
+            package_ui: None,
             screen: UiScreen::Playing,
             selected_slot: 0,
             inventory: std::array::from_fn(|_| None),

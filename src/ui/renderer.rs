@@ -36,6 +36,9 @@ pub(crate) struct UiRenderer {
     catalog: Arc<Catalog>,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
+    bind_layout: wgpu::BindGroupLayout,
+    package_bind_group: Option<wgpu::BindGroup>,
+    package_start: usize,
     vertex_buffer: wgpu::Buffer,
     vertices: Vec<UiVertex>,
     layout: Option<UiLayout>,
@@ -179,6 +182,9 @@ impl UiRenderer {
             catalog,
             pipeline,
             bind_group,
+            bind_layout,
+            package_bind_group: None,
+            package_start: 0,
             vertex_buffer,
             vertices: Vec::with_capacity(MAX_UI_VERTICES),
             layout: None,
@@ -219,7 +225,8 @@ impl UiRenderer {
             settings: frame.settings,
             hovered: frame.hovered,
         };
-        if self.cache_key.as_ref() == Some(&key)
+        if frame.screen != UiScreen::Package
+            && self.cache_key.as_ref() == Some(&key)
             && self.cached_status.as_deref() == frame.status
             && self.cached_admin_input == frame.admin_input
             && self.cached_inventory_search == frame.inventory_search
@@ -250,10 +257,23 @@ impl UiRenderer {
             scale,
         };
         builder.draw_frame(frame, layout, &self.catalog);
+        if frame.screen == UiScreen::Package
+            && let Some(session) = frame.package_ui
+        {
+            session.draw_chrome(&mut builder);
+        }
+        self.package_start = builder.vertices.len();
+        if frame.screen == UiScreen::Package
+            && self.package_bind_group.is_some()
+            && let Some(session) = frame.package_ui
+        {
+            session.draw(&mut builder);
+        }
         if self.vertices.len() > MAX_UI_VERTICES {
             self.vertices
                 .truncate(MAX_UI_VERTICES - MAX_UI_VERTICES % 6);
         }
+        self.package_start = self.package_start.min(self.vertices.len());
         if !self.vertices.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
         }
@@ -277,6 +297,56 @@ impl UiRenderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..self.vertices.len() as u32, 0..1);
+        pass.draw(0..self.package_start as u32, 0..1);
+        if let Some(group) = &self.package_bind_group
+            && self.package_start < self.vertices.len()
+        {
+            pass.set_bind_group(0, group, &[]);
+            pass.draw(self.package_start as u32..self.vertices.len() as u32, 0..1);
+        }
+    }
+
+    pub(crate) fn install_package_ui(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &super::authored::Resources,
+    ) {
+        let texture = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("verified package UI atlas"),
+                size: wgpu::Extent3d {
+                    width: super::authored::ATLAS_SIZE as u32,
+                    height: super::authored::ATLAS_SIZE as u32,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &resources.pixels,
+        );
+        let view = texture.create_view(&Default::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+        self.package_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("verified package UI"),
+            layout: &self.bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        }));
+        self.cache_key = None;
     }
 }

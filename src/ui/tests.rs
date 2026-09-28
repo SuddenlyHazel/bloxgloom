@@ -421,6 +421,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             UiScreen::Graphics,
         ] {
             let frame = UiFrame {
+                package_ui: None,
                 inventory_search: "",
                 action_panel: None,
                 container_screen: None,

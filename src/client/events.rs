@@ -1,5 +1,53 @@
 use super::*;
 
+impl ClientApp {
+    // Shared by winit dispatch and focused tests; opening is available from play,
+    // not gated behind admin mode or another screen's focused input.
+    pub(super) fn package_ui_key(
+        &mut self,
+        code: KeyCode,
+        text: Option<&str>,
+        repeat: bool,
+    ) -> bool {
+        if code == KeyCode::F6 && self.package_ui.is_some() {
+            if !repeat {
+                self.set_screen(if self.screen == UiScreen::Package {
+                    UiScreen::Playing
+                } else {
+                    UiScreen::Package
+                });
+            }
+            return true;
+        }
+        if self.screen != UiScreen::Package {
+            return false;
+        }
+        match code {
+            KeyCode::Escape => self.set_screen(UiScreen::Playing),
+            KeyCode::PageDown if !repeat => {
+                if let Some(session) = &mut self.package_ui {
+                    session.next_document();
+                }
+                self.refresh_layout();
+            }
+            _ => {
+                if let Some(session) = &mut self.package_ui {
+                    match code {
+                        KeyCode::Tab if !repeat => session.tab(self.shift_down),
+                        // No dispatch: authored event IDs carry no gameplay authority.
+                        KeyCode::Enter
+                        | KeyCode::NumpadEnter
+                        | KeyCode::Tab
+                        | KeyCode::PageDown => {}
+                        _ => session.edit(code == KeyCode::Backspace, text),
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
 impl ApplicationHandler for ClientApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
@@ -15,7 +63,10 @@ impl ApplicationHandler for ClientApp {
                     Arc::clone(&window),
                     Arc::clone(&self.catalog),
                 )) {
-                    Ok(renderer) => {
+                    Ok(mut renderer) => {
+                        if let Some(session) = &self.package_ui {
+                            renderer.install_package_ui(session.resources());
+                        }
                         self.renderer = Some(renderer);
                         self.window = Some(window);
                         self.refresh_layout();
@@ -72,6 +123,9 @@ impl ApplicationHandler for ClientApp {
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if pressed && self.package_ui_key(code, event.text.as_deref(), event.repeat) {
+                        return;
+                    }
                     if pressed && self.screen == UiScreen::Admin {
                         match code {
                             KeyCode::Escape | KeyCode::F4 => self.set_screen(UiScreen::Playing),
@@ -225,6 +279,14 @@ impl ApplicationHandler for ClientApp {
                 button,
                 ..
             } => {
+                if self.screen == UiScreen::Package {
+                    if button == MouseButton::Left
+                        && let Some(session) = &mut self.package_ui
+                    {
+                        session.click(self.cursor.0, self.cursor.1);
+                    }
+                    return;
+                }
                 if self.screen != UiScreen::Playing {
                     if button == MouseButton::Left
                         || (button == MouseButton::Right

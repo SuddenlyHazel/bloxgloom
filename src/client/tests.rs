@@ -246,6 +246,43 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
 }
 
 #[test]
+fn package_ui_key_dispatch_opens_from_play_and_consumes_keys_without_gameplay() {
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join(format!("bloxgloom-package-ui-{}.toml", std::process::id())),
+    );
+    assert!(!app.package_ui_key(KeyCode::F6, None, false));
+    let snapshot = crate::server::PackageSnapshot::discover(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages"),
+    )
+    .unwrap();
+    app.package_ui = Some(crate::ui::authored::Session::new(Arc::clone(
+        snapshot.client_bundle().ui().unwrap(),
+    )));
+    assert!(app.package_ui_key(KeyCode::F6, None, false));
+    assert_eq!(app.screen, UiScreen::Package);
+    app.package_ui.as_mut().unwrap().resize(640, 360, 1.0);
+    assert!(app.package_ui_key(KeyCode::F6, None, true));
+    assert_eq!(app.screen, UiScreen::Package);
+    assert!(app.package_ui_key(KeyCode::Tab, None, false));
+    assert_eq!(
+        app.package_ui.as_ref().unwrap().focused_id(),
+        Some("uidemo:welcome/name")
+    );
+    for key in [KeyCode::KeyW, KeyCode::KeyE, KeyCode::KeyQ, KeyCode::Enter] {
+        assert!(app.package_ui_key(key, Some("q"), false));
+        assert_eq!(app.screen, UiScreen::Package);
+    }
+    assert!(app.pending_commands.is_empty());
+    assert!(!app.keys.forward);
+    assert!(app.package_ui_key(KeyCode::Escape, None, false));
+    assert_eq!(app.screen, UiScreen::Playing);
+    assert!(!app.package_ui_key(KeyCode::KeyE, None, false));
+    app.config_writer.finish();
+}
+
+#[test]
 fn lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently() {
     use crate::world::{AIR, GLOWSTONE, STONE};
 

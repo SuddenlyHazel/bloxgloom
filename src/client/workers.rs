@@ -27,6 +27,12 @@ pub(super) struct Network {
 }
 
 impl Network {
+    pub(super) fn package_ui(&self) -> Option<crate::ui::authored::Session> {
+        self._bundle
+            .as_ref()?
+            .ui()
+            .map(|resources| crate::ui::authored::Session::new(Arc::clone(resources)))
+    }
     #[cfg(test)]
     pub(super) fn disconnected_for_test() -> Self {
         let (_, incoming) = mpsc::sync_channel(1);

@@ -33,7 +33,7 @@ impl UiLayout {
         };
         layout.add_hotbar();
         match screen {
-            UiScreen::Playing => {}
+            UiScreen::Playing | UiScreen::Package => {}
             UiScreen::Inventory => layout.add_inventory(),
             UiScreen::Container | UiScreen::Actions => {}
             UiScreen::Admin => layout.add_admin(),

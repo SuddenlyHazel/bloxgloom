@@ -87,6 +87,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
+            (UiScreen::Package, "package"),
         ] {
             outputs.push(PreviewOutput {
                 path: directory.join(format!("{name}-{suffix}.png")),
@@ -107,6 +108,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
+        (UiScreen::Package, "package"),
     ] {
         outputs.push(PreviewOutput {
             path: directory.join(format!("{name}-640x360-scale2.png")),
@@ -440,7 +442,26 @@ async fn render_previews(
         FORMAT,
         std::sync::Arc::new(crate::content::catalog().clone()),
     );
-    measure_ui_prepare(&mut ui_renderer, &queue);
+    let authored_preview = outputs
+        .iter()
+        .any(|output| output.screen == UiScreen::Package);
+    // Authored previews are visual verification, not UI preparation benchmarks.
+    if !authored_preview {
+        measure_ui_prepare(&mut ui_renderer, &queue);
+    }
+    let mut package_ui = if authored_preview {
+        // Same secure discovery, canonical encoding and verification as a join.
+        // All filesystem access and font/image work finish before frame drawing.
+        let snapshot = crate::server::PackageSnapshot::discover(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages"),
+        )
+        .map_err(|error| format!("package UI preview: {error:?}"))?;
+        let resources = Arc::clone(snapshot.client_bundle().ui().ok_or("missing sample UI")?);
+        ui_renderer.install_package_ui(&device, &queue, &resources);
+        Some(ui::authored::Session::new(resources))
+    } else {
+        None
+    };
     let center_x = center_chunk.0 * 16;
     let center_z = center_chunk.1 * 16;
     let camera_xz = (center_x + 40, center_z + 16);
@@ -1028,6 +1049,14 @@ async fn render_previews(
             });
             ui_frame.container_screen = Some(screen);
         }
+        if output.screen == UiScreen::Package
+            && let Some(session) = &mut package_ui
+        {
+            session.resize(output.width, output.height, output.scale);
+            session.click(-1.0, -1.0);
+            session.tab(false);
+            ui_frame.package_ui = Some(session);
+        }
         ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         let bytes_per_row = output.width * 4;
         let padded_bytes_per_row = bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
@@ -1249,6 +1278,7 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
+        package_ui: None,
         screen,
         selected_slot: 1,
         inventory: sample_inventory(),
@@ -1294,7 +1324,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         hovered: match screen {
             UiScreen::Actions => Some(UiControl::Action(2)),
             UiScreen::Container => Some(UiControl::KilnSlot(1)),
-            UiScreen::Playing => None,
+            UiScreen::Playing | UiScreen::Package => None,
             UiScreen::Inventory => Some(UiControl::InventorySearch),
             UiScreen::Admin => Some(UiControl::AdminItem(0)),
             UiScreen::Pause => Some(UiControl::Resume),
@@ -1306,6 +1336,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        package_ui: None,
         inventory_search: "",
         action_panel: None,
         container_screen: None,

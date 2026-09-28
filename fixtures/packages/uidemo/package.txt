@@ -1,0 +1,13 @@
+format 2
+package uidemo
+version 1.0.0
+entry main
+module server main server/main.luau
+asset ui-document welcome assets/ui/welcome.json
+asset ui-style panel assets/ui/panel.json
+asset ui-style label assets/ui/label.json
+asset ui-style field assets/ui/field.json
+asset ui-style button assets/ui/button.json
+asset ui-style icon-style assets/ui/icon-style.json
+asset ui-font body assets/fonts/body.ttf
+asset ui-image icon assets/ui/icon.png

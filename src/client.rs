@@ -113,6 +113,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         | UiScreen::Inventory
         | UiScreen::Container
         | UiScreen::Admin
+        | UiScreen::Package
         | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
@@ -269,6 +270,7 @@ struct Keys {
 }
 
 struct ClientApp {
+    package_ui: Option<crate::ui::authored::Session>,
     catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
@@ -337,6 +339,7 @@ impl ClientApp {
         let config_writer = ConfigWriter::new(&config, config_path);
         let entity_registry = EntityClientRegistry::builtins(&catalog);
         Self {
+            package_ui: network.package_ui(),
             catalog,
             inventory: Inventory::default(),
             drop_animator: DropAnimator::new(now),
@@ -434,6 +437,9 @@ impl ClientApp {
     fn refresh_layout(&mut self) {
         if let Some(window) = &self.window {
             let size = window.inner_size();
+            if let Some(session) = &mut self.package_ui {
+                session.resize(size.width, size.height, self.config.scale);
+            }
             self.ui_layout = Some(
                 UiLayout::new(size.width, size.height, self.config.scale, self.screen)
                     .with_container(self.container_screen().as_deref())
@@ -614,7 +620,7 @@ impl ClientApp {
                     })
                     .collect()
             }),
-            UiScreen::Playing => Vec::new(),
+            UiScreen::Playing | UiScreen::Package => Vec::new(),
             UiScreen::Container => (0..self.container_screen().map_or(0, |s| s.slots))
                 .map(UiControl::KilnSlot)
                 .chain((0..crate::inventory::SLOTS as u8).map(UiControl::InventorySlot))
@@ -1368,6 +1374,7 @@ impl ClientApp {
             self.status.as_ref().map(|(message, _)| message.as_str())
         };
         let ui = UiFrame {
+            package_ui: self.package_ui.as_ref(),
             screen: self.screen,
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),

@@ -138,6 +138,10 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
+        self.ui
+            .install_package_ui(&self.device, &self.queue, resources);
+    }
     pub async fn new_with_catalog(
         window: Arc<Window>,
         catalog: Arc<Catalog>,

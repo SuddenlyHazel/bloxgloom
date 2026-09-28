@@ -38,7 +38,7 @@ impl UiBuilder<'_> {
     pub(super) fn draw_frame(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
         self.draw_hud(frame, layout, catalog);
         match frame.screen {
-            UiScreen::Playing => {}
+            UiScreen::Playing | UiScreen::Package => {}
             UiScreen::Inventory => self.draw_inventory(frame, layout, catalog),
             UiScreen::Container => self.draw_container(frame, layout, catalog),
             UiScreen::Actions => self.draw_actions(frame, layout),
@@ -319,7 +319,7 @@ impl UiBuilder<'_> {
         self.rect(rect.x + rect.width - t, rect.y, t, rect.height, border);
     }
 
-    fn rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) {
+    pub(in crate::ui) fn rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) {
         if width <= 0.0 || height <= 0.0 || self.vertices.len() + 6 > MAX_UI_VERTICES {
             return;
         }
@@ -339,7 +339,7 @@ impl UiBuilder<'_> {
         );
     }
 
-    fn text(
+    pub(in crate::ui) fn text(
         &mut self,
         text: &str,
         x: f32,
@@ -385,7 +385,7 @@ impl UiBuilder<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glyph(
+    pub(in crate::ui) fn glyph(
         &mut self,
         x: f32,
         y: f32,
@@ -520,8 +520,7 @@ fn vs_main(input: VertexIn) -> VertexOut {
 @fragment
 fn fs_main(input: VertexOut) -> @location(0) vec4<f32> {
     if input.textured > 0.5 {
-        let alpha = textureSample(font_atlas, font_sampler, input.uv).a;
-        return vec4<f32>(input.color.rgb, input.color.a * alpha);
+        return input.color * textureSample(font_atlas, font_sampler, input.uv);
     }
     return input.color;
 }
