@@ -439,6 +439,14 @@ The integrated main-tree suite passes 884/884, formatting and strict Clippy pass
 Spawn/merge/split, pickup eligibility and transfer, expiry and terrain-change
 wake selection still use their existing native paths and do not meet complete
 drop parity.
+The builtin `give` and `spawn` console requests now resolve registered actions
+and invoke authenticated public gameplay operations, including from Luau;
+`help` is client-local usage text rather than a WAL command. Machine placement
+and break now use the public machine declaration to plan the footprint and
+refund while the shared workstation transaction remains authoritative. These
+new admin and machine increments pass the main-tree 888/888 suite, formatting
+and strict Clippy; broader player
+rules, semantic command discovery/rebinding, and other helper paths remain open.
 
 **Remaining**
 
@@ -565,7 +573,7 @@ response and the broader audit are not yet verified.
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated 4-thread suite is
-  **884/884**. The user reported the Jade example working live, but that does
+  **888/888**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases
@@ -631,7 +639,7 @@ This section exists so compaction or a new session does not restart the design.
   scheduler; general Luau content/client services, UI migration, richer visuals
   and final mixed-load/release-window verification remain. Native fire migration
   and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **884/884** after drop tick integration;
+  latest reviewed 4-thread suite passed **888/888** after admin/machine integration;
   strict Clippy and formatting also pass.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
