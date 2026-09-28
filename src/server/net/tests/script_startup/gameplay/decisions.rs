@@ -320,7 +320,7 @@ fn luau_decisions_registration_ownership_bounds_and_source_identity() {
         "h.register_handler('demo:removed',0,'BlockRemoved','bloxgloom:sand','demo:action')",
         "h.register_handler('demo:removed',1,'BlockRemoved',nil,'demo:action')",
         "h.register_handler('demo:removed',1,'BlockRemoved','bloxgloom:stick','demo:action')",
-        "h.register_handler('demo:removed',1,'PickupRequested','bloxgloom:drop','demo:action')",
+        "h.register_handler('demo:removed',1,'PickupRequested','bloxgloom:stick','demo:action')",
         "h.register_handler('demo:removed',1,'EntityTick','foreign:marker','demo:action')",
         "h.register_handler('demo:removed',1,'EntityTick','demo:missing','demo:action')",
         "h.register_handler('demo:removed',1,'BlockRemoved','bloxgloom:sand','demo:missing')",

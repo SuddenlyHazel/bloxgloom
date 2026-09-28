@@ -744,6 +744,12 @@ This section exists so compaction or a new session does not restart the design.
   handlerless passive types neither dispatch nor enter due indexes. Loopback
   spawn, automatic due, suspension, recovery and unauthorized scheduling
   regressions pass. Structured projection and broader event bindings remain.
+- **Phase 4 Luau inventory/pickup binding:** scoped public inventory read,
+  give/take and exact component-preserving transfer are available to decision
+  scripts. `PickupRequested` receives the host's bounded eligible candidates;
+  the server still enforces delay, distance, conservation and player credit in
+  the existing WAL path. Loopback pickup/restart and rollback tests pass.
+  General notifications, fallback owners and client presentation remain.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

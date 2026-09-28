@@ -100,10 +100,27 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
             fields.set("tick_lo", *tick as u32)?;
             fields.set("tick_hi", (*tick >> 32) as u32)?;
         }
-        Event::PickupRequested { .. } => {
-            return Err(mlua::Error::RuntimeError(
-                "unsupported gameplay event".into(),
-            ));
+        Event::PickupRequested { position, drops } => {
+            // Production candidate admission already limits this to 32. Check
+            // before allocating VM copies as well, rather than taking a prefix.
+            if drops.len() > 32 {
+                return Err(mlua::Error::RuntimeError(
+                    "pickup candidate limit exceeded".into(),
+                ));
+            }
+            fields.set("kind", "PickupRequested")?;
+            fields.set("position", triple(lua, *position)?)?;
+            let candidates = lua.create_table()?;
+            for (index, &(id, count)) in drops.iter().enumerate() {
+                let candidate = lua.create_table()?;
+                candidate.set("entity_lo", id as u32)?;
+                candidate.set("entity_hi", (id >> 32) as u32)?;
+                candidate.set("count", count)?;
+                candidate.set_readonly(true);
+                candidates.raw_set(index + 1, candidate)?;
+            }
+            candidates.set_readonly(true);
+            fields.set("drops", candidates)?;
         }
     }
     fields.set_readonly(true);

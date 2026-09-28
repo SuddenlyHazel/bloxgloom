@@ -21,14 +21,17 @@
 //!
 //! The same capability permits up to 32 exact decision owners per package:
 //! `h.register_handler("demo:harvest", 1, "BlockRemoved", "bloxgloom:sand", "demo:harvest")`.
-//! Events: BlockRemoved, BlockPlaced, NeighborChanged, EntityTick. No fallback
-//! owners or pickup binding. EntityTick targets must be own-package registered
-//! gameplay entities; `register_entity` supplies fixed-byte schemas (see `entities`).
+//! Events: BlockRemoved, BlockPlaced, NeighborChanged, EntityTick, PickupRequested
+//! (target `bloxgloom:drop`). No fallback owners. EntityTick targets must be
+//! own-package registered gameplay entities; `register_entity` supplies fixed-byte
+//! schemas (see `entities`). Pickup supplies readonly `drops` entries with exact
+//! entity ID halves and eligible counts; only the host chooses those candidates.
 //! Event tables and nested blocks/triples are readonly; u64 IDs/random/ticks use
-//! `_lo`/`_hi` u32 halves. See `bindings` for the staged operation signatures.
+//! `_lo`/`_hi` u32 halves. See `bindings` and `inventory` for staged operations.
 mod bindings;
 mod declarations;
 mod events;
+mod inventory;
 
 pub(super) use declarations::handler_declarer;
 

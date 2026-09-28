@@ -10,6 +10,8 @@ mod authorization;
 mod decisions;
 #[path = "gameplay/entities.rs"]
 mod entities;
+#[path = "gameplay/inventory.rs"]
+mod inventory;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";

@@ -39,6 +39,7 @@ pub(in crate::server::script) fn handler_declarer(
                     "BlockPlaced" => EventKind::BlockPlaced,
                     "NeighborChanged" => EventKind::NeighborChanged,
                     "EntityTick" => EventKind::EntityTick,
+                    "PickupRequested" => EventKind::PickupRequested,
                     _ => return Err("unsupported gameplay event"),
                 };
                 let target = text(target)?;

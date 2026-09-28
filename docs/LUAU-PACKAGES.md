@@ -70,7 +70,12 @@ and a bounded public prefix with `host.register_entity(key, schema_version,
 state_bytes, public_prefix_bytes, initial_delay_or_nil)`. An initial delay
 requires an `EntityTick` handler; passive types stay out of the due index.
 See `src/server/script/gameplay.rs` and `src/server/script/entities.rs` for
-details. Pickup and fallback handlers remain unbound.
+details. `PickupRequested` can also be registered for the exact
+`bloxgloom:drop` target; its event lists server-eligible drop candidates.
+Scoped `inventory(owner)`, `give`, `take` and `transfer_inventory` preserve
+exact components and host permissions. Owners are the requesting `"player"`
+or an entity-ID table; arbitrary profiles are not accessible. Client pickup
+animations do not decide ownership. Fallback handlers remain unbound.
 
 A package with the owner-systems capability can register one persistent chunk
 system with `host.register_system { key, schema, revision, module,

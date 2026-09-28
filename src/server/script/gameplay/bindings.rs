@@ -26,6 +26,7 @@ pub(super) fn invoke(
     // script tables or allocates an unbounded Rust string. Errors are latched
     // outside the VM as well as by Context, so pcall cannot permit partial apply.
     lua.scope(|scope| {
+        super::inventory::install(scope, &host, &context, rejected)?;
         host.set(
             "block",
             scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {
@@ -149,7 +150,7 @@ pub(super) fn invoke(
     })
 }
 
-fn checked<T>(
+pub(super) fn checked<T>(
     rejected: &RefCell<Option<Error>>,
     operation: impl FnOnce() -> Result<T, Error>,
 ) -> mlua::Result<T> {
@@ -162,7 +163,7 @@ fn checked<T>(
     })
 }
 
-fn invalid(message: &str) -> Error {
+pub(super) fn invalid(message: &str) -> Error {
     Error::Invalid(message.into())
 }
 
@@ -175,7 +176,7 @@ fn cell_at(x: Value, y: Value, z: Value) -> Result<Cell, Error> {
     Ok([axis(x)?, axis(y)?, axis(z)?])
 }
 
-fn entity_id(lo: Value, hi: Value) -> Result<u64, Error> {
+pub(super) fn entity_id(lo: Value, hi: Value) -> Result<u64, Error> {
     let lo = integer(lo, 0, u32::MAX.into()).map_err(invalid)? as u64;
     let hi = integer(hi, 0, u32::MAX.into()).map_err(invalid)? as u64;
     let id = lo | (hi << 32);
