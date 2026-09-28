@@ -1,6 +1,6 @@
 //! Built-in gameplay policy. Keep this module on the public host boundary so
 //! scripts and native gameplay receive the same world operations.
-use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, InventoryId};
+use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, InventoryId, PickupTransfer};
 pub(crate) mod admin;
 pub(crate) mod drop_stack;
 pub(crate) mod slot_move;
@@ -29,26 +29,14 @@ impl bloxgloom_host_api::gameplay::Handler for Pickup {
             if !slot.extract {
                 continue;
             }
-            let mut remaining = count.min(stack.count);
-            for (index, destination) in context.inventory(player)?.into_iter().enumerate() {
-                if remaining == 0 {
+            let mut routing = PickupTransfer::new(&stack, count);
+            for (index, destination) in context.inventory(player)?.iter().enumerate() {
+                if routing.remaining() == 0 {
                     break;
                 }
-                if !destination.insert {
-                    continue;
-                }
-                let capacity = match destination.stack {
-                    Some(other)
-                        if other.item == stack.item && other.components == stack.components =>
-                    {
-                        128 - other.count
-                    }
-                    None => 128,
-                    _ => 0,
-                };
-                let amount = remaining.min(capacity);
+                let amount = routing.offer(destination);
                 if amount != 0 && context.transfer(source, 0, player, index, amount)? {
-                    remaining -= amount;
+                    routing.credited(amount)?;
                 }
             }
         }

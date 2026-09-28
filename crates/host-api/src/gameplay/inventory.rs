@@ -39,6 +39,49 @@ pub struct Slot {
     pub extract: bool,
 }
 
+/// Routing for one eligible pickup candidate. A failed host transfer leaves
+/// `remaining` unchanged so later slots can still receive those items.
+pub struct PickupTransfer<'a> {
+    source: &'a Stack,
+    remaining: u16,
+}
+
+impl<'a> PickupTransfer<'a> {
+    pub fn new(source: &'a Stack, maximum: u16) -> Self {
+        Self {
+            source,
+            remaining: maximum.min(source.count).min(128),
+        }
+    }
+
+    pub fn remaining(&self) -> u16 {
+        self.remaining
+    }
+
+    /// Propose a bounded exact-component transfer into one destination slot.
+    /// Host permissions and filters are checked again by `Context::transfer`.
+    pub fn offer(&self, slot: &Slot) -> u16 {
+        if !slot.insert {
+            return 0;
+        }
+        let capacity = match &slot.stack {
+            Some(other) if other.matches(self.source) && other.count <= 128 => 128 - other.count,
+            None => 128,
+            _ => 0,
+        };
+        self.remaining.min(capacity)
+    }
+
+    /// Call only after an exact host transfer succeeds.
+    pub fn credited(&mut self, amount: u16) -> Result<(), Error> {
+        if amount == 0 || amount > self.remaining {
+            return Err(Error::Invalid("pickup credited more than available".into()));
+        }
+        self.remaining -= amount;
+        Ok(())
+    }
+}
+
 impl Context<'_> {
     fn load_inventory(&mut self, owner: InventoryId) -> Result<(), Error> {
         if self.inventories.contains_key(&owner) {

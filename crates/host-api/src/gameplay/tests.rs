@@ -1,5 +1,53 @@
 use super::*;
 
+#[test]
+fn pickup_routing_respects_components_cap_and_failed_destination() {
+    let source = Stack {
+        item: "test:gem".into(),
+        count: 12,
+        components: Some(Components {
+            version: 1,
+            bytes: vec![0, 255],
+        }),
+    };
+    let partial = Slot {
+        stack: Some(Stack {
+            count: 125,
+            ..source.clone()
+        }),
+        insert: true,
+        extract: true,
+    };
+    let different = Slot {
+        stack: Some(Stack {
+            components: None,
+            ..source.clone()
+        }),
+        insert: true,
+        extract: true,
+    };
+    let empty = Slot {
+        stack: None,
+        insert: true,
+        extract: true,
+    };
+    let mut routing = PickupTransfer::new(&source, 20);
+    assert_eq!(routing.offer(&different), 0);
+    assert_eq!(routing.offer(&partial), 3);
+    // Rejected by a host-side filter: later slots can still take all 12.
+    assert_eq!(routing.offer(&empty), 12);
+    routing.credited(12).unwrap();
+    assert_eq!(routing.remaining(), 0);
+    assert_eq!(routing.offer(&partial), 0);
+    assert!(routing.credited(1).is_err());
+
+    let mut success = PickupTransfer::new(&source, 12);
+    success.credited(success.offer(&partial)).unwrap();
+    assert_eq!(success.offer(&empty), 9);
+    success.credited(9).unwrap();
+    assert_eq!(success.remaining(), 0);
+}
+
 struct World {
     reads: usize,
 }
