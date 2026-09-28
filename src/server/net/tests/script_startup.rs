@@ -6,6 +6,9 @@ use crate::server::startup::ServerStartup;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "script_startup/generation.rs"]
+mod generation;
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {

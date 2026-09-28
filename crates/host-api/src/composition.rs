@@ -10,6 +10,7 @@ pub const ANCHORED_ENTITIES: &str = "bloxgloom:anchored_entities/v1";
 pub const ACTIONS: &str = "bloxgloom:actions/v1";
 pub const OWNER_SYSTEMS: &str = "bloxgloom:owner_systems/v1";
 pub const ITEM_ICONS: &str = "bloxgloom:item_icons/v1";
+pub const GENERATION: &str = "bloxgloom:generation/v1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Dependency {

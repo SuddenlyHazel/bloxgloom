@@ -120,6 +120,7 @@ impl Composition {
                     api::ACTIONS,
                     api::OWNER_SYSTEMS,
                     api::ITEM_ICONS,
+                    api::GENERATION,
                 ]
                 .contains(&c.as_str())
                 {

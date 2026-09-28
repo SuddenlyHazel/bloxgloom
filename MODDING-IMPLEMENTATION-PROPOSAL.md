@@ -709,6 +709,13 @@ This section exists so compaction or a new session does not restart the design.
   before the save opens. The nonblocking listener/restart fixture exercises the
   frozen catalog and item delivery. No gameplay events, generation scripting,
   custom assets or network package transfer are bound yet.
+- **Phase 4 Luau generation binding:** local packages with an explicit
+  `bloxgloom:generation/v1` capability can register one chunk contributor
+  with a stable key/revision. Frozen source executes in a fresh bounded VM on
+  each authoritative loader/edit worker, using exact seed halves, world/terrain
+  sampling, coordinate hashing and bounded block output. Listener/restart and
+  edited-baseline tests passed; revisions remain an author responsibility.
+  Gameplay callbacks and other server/client services are still unbound.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** custom model workflow/import; live hot reload; marketplace/CDN

@@ -1,7 +1,8 @@
 //! Local Luau source execution foundation. Each worker owns its VM exclusively;
 //! no live world state or file handle is exposed to scripts. Startup may collect
-//! bounded public content declarations; gameplay remains intentionally unbound.
+//! bounded public content/generation declarations; gameplay remains unbound.
 
+mod generation;
 mod imports;
 pub mod package;
 pub(super) mod startup;
@@ -85,7 +86,8 @@ struct Request {
 
 enum Output {
     Integer(i64),
-    Items(Vec<bloxgloom_host_api::content::Item>),
+    Declarations(startup::Pending),
+    Generation(bloxgloom_host_api::generation::Output),
 }
 
 enum Program {
@@ -93,8 +95,14 @@ enum Program {
     Package {
         snapshot: Arc<package::PackageSnapshot>,
         entry: String,
-        startup: bool,
+        invocation: Invocation,
     },
+}
+
+enum Invocation {
+    Integer,
+    Startup,
+    Generation(bloxgloom_host_api::generation::Context),
 }
 
 impl Program {
@@ -164,7 +172,7 @@ impl ScriptWorker {
             Program::Package {
                 snapshot,
                 entry,
-                startup: false,
+                invocation: Invocation::Integer,
             },
             input,
         )?
@@ -294,12 +302,18 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
         if let Program::Package {
             snapshot,
             entry: key,
-            startup: true,
+            invocation: Invocation::Startup,
         } = &program
         {
             let package = key.split_once(':').expect("validated entry").0;
-            return startup::invoke(&lua, entry, package, snapshot.permits_content(package))
-                .map(Output::Items);
+            return startup::invoke(&lua, entry, package, snapshot).map(Output::Declarations);
+        }
+        if let Program::Package {
+            invocation: Invocation::Generation(context),
+            ..
+        } = &program
+        {
+            return generation::invoke(&lua, entry, *context).map(Output::Generation);
         }
         let args = lua.create_table()?;
         args.set("tick", input.tick)?;

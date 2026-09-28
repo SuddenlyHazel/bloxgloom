@@ -12,6 +12,8 @@ entry main
 dependency arithmetic 1.2.0
 module main scripts/main.luau
 requires bloxgloom:content/v1
+requires bloxgloom:generation/v1
+module terrain scripts/terrain.luau
 ```
 
 `ScriptWorker::execute_package` runs the entry from an immutable discovered
@@ -33,4 +35,11 @@ This currently registers only non-placeable sprite items with existing builtin
 textures. Keys must use their package's namespace; script and registrar errors
 abort startup before opening the save. See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
-restrictions. This is not server delivery or a gameplay binding yet.
+restrictions. With the generation capability, an entry may also call
+`host.register_generator("example:terrain", 1, "example:terrain")`; its named
+module returns a chunk function using `seed_lo`/`seed_hi`, chunk coordinates,
+`world_position`, `builtin_terrain_height`, `builtin_base_block`, `random_at`
+and `set_block`. Bump the declared revision whenever its output changes;
+`world.meta` rejects incompatible restarts. Scripts run in fresh bounded VMs
+on generation workers and never write neighboring chunks directly. This is
+not server delivery or a gameplay binding yet.

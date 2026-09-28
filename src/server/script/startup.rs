@@ -1,5 +1,6 @@
 //! Startup-only adapter: bounded Luau declarations become a single public
-//! extension bundle. No VM, callback, or partial catalog survives installation.
+//! extension bundle. No VM or partial catalog survives installation. Generation
+//! registrations retain immutable sources, not startup VM callbacks.
 //!
 //! Opt in via `server-packages <package-root> <address> <save-dir> [max-clients]`.
 //! Add `requires bloxgloom:content/v1` to package.txt, then return an entry like:
@@ -12,13 +13,17 @@
 //! callback but gain only that entry's authority. No assets, grants or client
 //! loading are provided. Every dependency entry runs too; library packages can
 //! return a no-op entry and export helpers from other modules.
+//! With `requires bloxgloom:generation/v1`, an entry may additionally declare one
+//! `host.register_generator("demo:terrain", 1, "demo:terrain")`. The named own
+//! module returns a function receiving a chunk context (see `generation`).
 //!
 //! The bundle records identity:package with public contract version 1. Source
 //! semver is checked exactly during discovery, not persisted or converted to
 //! the public u32 version. Retry/restart rediscovers sources and uses fresh VMs;
-//! failed startup publishes nothing and never opens the world. Existing catalog
+//! failed declaration collection publishes nothing and never opens the world.
+//! Generator execution failures are reported later by chunk loading. Existing catalog
 //! identity/reconciliation and client compatibility checks remain authoritative.
-use super::{Output, Program, ScriptInput, ScriptWorker, package::PackageSnapshot};
+use super::{Invocation, Output, Program, ScriptInput, ScriptWorker, package::PackageSnapshot};
 use bloxgloom_host_api::{Extension, Registrar, RegistrationError, content::Item};
 use mlua::{Function, Lua, Value};
 use std::cell::RefCell;
@@ -31,6 +36,7 @@ const MAX_ITEMS_PER_PACKAGE: usize = 32;
 pub(in crate::server) struct Declarations {
     packages: Vec<bloxgloom_host_api::composition::Package>,
     items: Vec<Item>,
+    generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 
 impl Declarations {
@@ -39,6 +45,7 @@ impl Declarations {
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
         let worker = ScriptWorker::spawn(super::Limits::default())?;
         let mut items = Vec::new();
+        let mut generation = Vec::new();
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
         for package in &packages {
@@ -49,17 +56,27 @@ impl Declarations {
                     Program::Package {
                         snapshot: Arc::clone(&snapshot),
                         entry,
-                        startup: true,
+                        invocation: Invocation::Startup,
                     },
                     ScriptInput { tick: 0, seed: 0 },
                 )
                 .map_err(std::io::Error::other)?;
-            let Output::Items(declarations) = output else {
+            let Output::Declarations(declarations) = output else {
                 unreachable!("startup execution")
             };
-            items.extend(declarations);
+            items.extend(declarations.items);
+            if let Some(declaration) = declarations.generation {
+                generation.push(super::generation::registration(
+                    Arc::clone(&snapshot),
+                    declaration,
+                ));
+            }
         }
-        Ok(Self { packages, items })
+        Ok(Self {
+            packages,
+            items,
+            generation,
+        })
     }
 }
 
@@ -71,24 +88,31 @@ impl Extension for Declarations {
         for item in &self.items {
             registrar.item(item.clone())?;
         }
+        for generation in &self.generation {
+            registrar.generation_contributor(generation.clone())?;
+        }
         Ok(())
     }
 }
 
 #[derive(Default)]
-struct Pending {
+pub(super) struct Pending {
     items: Vec<Item>,
-    error: Option<&'static str>,
+    pub(super) generation: Option<super::generation::Declaration>,
+    pub(super) error: Option<&'static str>,
 }
 
 pub(super) fn invoke(
     lua: &Lua,
     entry: Function,
     namespace: &str,
-    permits_content: bool,
-) -> mlua::Result<Vec<Item>> {
+    snapshot: &Arc<PackageSnapshot>,
+) -> mlua::Result<Pending> {
+    let permits_content = snapshot.permits_content(namespace);
     let pending = Rc::new(RefCell::new(Pending::default()));
     let capture = Rc::clone(&pending);
+    let generation =
+        super::generation::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let namespace = namespace.to_owned();
     let register = lua.create_function(move |_, (key, name, texture): (Value, Value, Value)| {
         let mut pending = capture.borrow_mut();
@@ -138,13 +162,14 @@ pub(super) fn invoke(
     })?;
     let host = lua.create_table()?;
     host.set("register_item", register)?;
+    host.set("register_generator", generation)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();
     if let Some(error) = pending.error {
         return Err(mlua::Error::RuntimeError(error.into()));
     }
-    Ok(std::mem::take(&mut pending.items))
+    Ok(std::mem::take(&mut *pending))
 }
 
 fn text(value: Value) -> Result<String, &'static str> {

@@ -69,10 +69,12 @@
 //!
 //! Explicit development startup also runs entries with a bounded registration
 //! host instead of integer inputs (see the sibling `startup` module). Gameplay
-//! and generation bindings, handles, transaction admission, scheduling and durable
+//! bindings, handles, transaction admission, scheduling and durable
 //! receipts remain unbound. Assets, compatibility negotiation, server/client
 //! declarations, distribution hashes, network/UI and hot reload are not added.
 //! No world/save/wire format changes accompany this local manifest format.
+//! Generation modules can also be registered at startup; their frozen sources
+//! run in fresh VMs on loader threads through the public Contributor contract.
 
 mod files;
 pub(super) mod manifest;
@@ -105,11 +107,17 @@ impl PackageSnapshot {
     pub(super) fn startup_packages(
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
-        use bloxgloom_host_api::composition::{CONTENT, Dependency, Package};
+        use bloxgloom_host_api::composition::{CONTENT, Dependency, GENERATION, Package};
         self.packages
             .iter()
             .map(|(name, package)| {
-                if name == "bloxgloom" || package.manifest.requires.iter().any(|c| c != CONTENT) {
+                if name == "bloxgloom"
+                    || package
+                        .manifest
+                        .requires
+                        .iter()
+                        .any(|c| c != CONTENT && c != GENERATION)
+                {
                     return Err(error(
                         &self.identity(&self.entry(name)?),
                         "reserved namespace or unsupported startup capability",
@@ -138,6 +146,14 @@ impl PackageSnapshot {
             p.manifest
                 .requires
                 .contains(bloxgloom_host_api::composition::CONTENT)
+        })
+    }
+
+    pub(super) fn permits_generation(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            p.manifest
+                .requires
+                .contains(bloxgloom_host_api::composition::GENERATION)
         })
     }
 
