@@ -67,10 +67,11 @@ machines as well as custom anchored entities. Accepted failures remain quarantin
 until replay; unaccepted conflicts retain the original fire frontier for retry.
 This is lifecycle integration, not the deferred fire-system API migration.
 
-The internal `durable::actions::invalidation::plan` is the same bounded destruction
-assembler for future authoritative system edit paths. It only accepts AIR edits;
-callers must combine its action and their own state in one admission/receipt path,
-as fire does. Merely calling it and committing the producer separately is unsafe.
+The shared footprint/refund assembly is also used by non-fire owner-system
+`WorldEdit` proposals. One touched cell expands the complete registered footprint
+before neighbor decisions; despawn, contents, refunds and owner progress enter the
+same admission/receipt. Fire still has its separate bounded AIR-only invalidation
+assembler. Committing producer progress separately from removal remains unsafe.
 
 ## Bounds and limits
 
