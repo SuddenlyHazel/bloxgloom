@@ -496,15 +496,19 @@ that narrow session lifecycle.
 #### Phase 6 — authored UI · In progress
 
 **Working:** Taffy-backed verified documents, basic layout/images/fonts/input,
-local Luau event handlers, downloaded startup text/state and one client-composed,
-server-authorized item action (`uidemo` transfers a stick).
+local Luau event handlers and downloaded startup text/state. The client composes
+server-authorized item/empty actions (`uidemo` transfers a stick) and block
+actions from its current streamed-world ray hit (`uitarget` trades a stick for
+a stone-to-glowstone edit), with denial/receipt feedback.
 
 **Remaining**
 
 - [ ] Support useful dynamic documents/state, scrolling, wrapping and robust
   text entry/focus (including appropriate clipboard/IME/accessibility behavior).
-- [ ] Extend authorized UI requests to block/entity targets, bounded arguments
-  and server-driven updates without giving client handlers authority.
+- [ ] Extend authorized UI requests beyond the initial block target to entity
+  targets, bounded arguments and server-driven updates without giving client
+  handlers authority. Same-type block replacement currently lacks a terrain-
+  revision fence, although the server still checks reach, sight and block type.
 - [ ] Migrate built-in screens onto the same foundation rather than leaving mod
   documents as a second-class overlay.
 
@@ -1064,6 +1068,16 @@ This section exists so compaction or a new session does not restart the design.
   integration tests, formatting and strict Clippy passed, with 866/866 on the
   isolated agent suite. Neighborhood reads and directly authored owner entity/
   drop effects remain unbound, and native fire has not migrated.
+- **Phase 6 targeted UI block-action slice:** an authored UI callback supplies
+  only its package-owned action key. The client samples current streamed terrain
+  at dispatch, rejecting absent/wrong blocks before allocating an action ID;
+  the server checks target, reach, sight, current inventory/cost and commits
+  world/inventory effects through WAL. `fixtures/ui-target-actions/` demonstrates
+  a real-listener download, changed aim, denial/retry, reconnect and restart;
+  focused integration tests, formatting and strict Clippy pass. The isolated
+  agent full suite had a drop-motion timing failure that passed on rerun; the
+  main-tree integrated run is pending. Entity targets, argument schemas and
+  a same-type terrain-revision fence remain open.
 - **Fire presentation check:** a short, optional cue for committed burns was
   committed with focused tests and an inspected synthetic preview, but the
   user's live glowstone-beside-tree test showed **no visible fire**. Do not
