@@ -172,6 +172,12 @@ package/module in the error. Initial presentation state is reset on each join,
 reconnect or server switch; it is not saved gameplay state. Connection setup
 currently waits for this worker before the window opens, so startup is not yet
 an asynchronously displayed progress flow or a general client services API.
+Join preparation reports its current stage and package-attributed failures to
+stderr. A failed join or closed session retires its socket workers and package
+UI/material/effect/startup resources; a fresh invocation can reconnect or join
+a differently modded server without inheriting the old session. There is not
+yet an in-window server switcher or loading screen, and GPU installation still
+occurs after the server acknowledges `ContentReady`.
 
 An authored `ui-document` may opt into client-only presentation events with
 `"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The

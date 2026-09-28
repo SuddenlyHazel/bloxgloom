@@ -10,7 +10,7 @@ mod target_actions;
 // Format-2 fixture copied into an isolated save root; server entry and event
 // handler remain unchanged, while a downloaded startup module imports a shared
 // helper and registers session-only presentation text.
-fn startup_fixture(source: &str) -> Fixture {
+pub(super) fn startup_fixture(source: &str) -> Fixture {
     let fixture = Fixture::new();
     let original =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages/uidemo");

@@ -20,6 +20,8 @@ mod combined;
 mod gameplay;
 #[path = "script_startup/generation.rs"]
 mod generation;
+#[path = "script_startup/join_lifecycle.rs"]
+mod join_lifecycle;
 #[path = "script_startup/system.rs"]
 mod system;
 

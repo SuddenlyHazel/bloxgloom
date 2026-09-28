@@ -67,14 +67,14 @@ impl ApplicationHandler for ClientApp {
                         if let Some(material) = self.network.package_material()
                             && let Err(error) = renderer.install_custom_material(material)
                         {
-                            eprintln!("package material preparation: {error}");
+                            self.fail_session(format!("package material GPU preparation: {error}"));
                             event_loop.exit();
                             return;
                         }
                         if let Some(effect) = self.network.package_effect()
                             && let Err(error) = renderer.install_package_effect(effect)
                         {
-                            eprintln!("package effect preparation: {error}");
+                            self.fail_session(format!("package effect GPU preparation: {error}"));
                             event_loop.exit();
                             return;
                         }
@@ -85,15 +85,16 @@ impl ApplicationHandler for ClientApp {
                         self.window = Some(window);
                         self.refresh_layout();
                         self.apply_fullscreen();
+                        eprintln!("Client ready");
                     }
                     Err(error) => {
-                        eprintln!("renderer initialization: {error:?}");
+                        self.fail_session(format!("renderer initialization: {error}"));
                         event_loop.exit();
                     }
                 }
             }
             Err(error) => {
-                eprintln!("window creation: {error}");
+                self.fail_session(format!("window creation: {error}"));
                 event_loop.exit();
             }
         }
@@ -370,6 +371,7 @@ impl ApplicationHandler for ClientApp {
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
+        self.retire_session();
         self.config_writer.request_save(&self.config);
         self.config_writer.finish();
     }

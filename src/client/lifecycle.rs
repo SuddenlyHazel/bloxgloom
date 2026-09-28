@@ -1,0 +1,34 @@
+//! A desktop invocation owns one session. Joins still complete before the
+//! window opens; retry/switch means a fresh invocation, not an in-window menu.
+//! Never retain package GPU/UI registrations after a failed or closed session.
+use super::*;
+
+impl ClientApp {
+    pub(super) fn retire_session(&mut self) {
+        self.disconnected = true;
+        self.network.retire();
+        self.package_ui = None;
+        // Renderer owns the package UI textures, material and effect pipelines.
+        // A later session constructs a new renderer against its frozen catalog.
+        self.renderer = None;
+        self.pending_commands.clear();
+        self.pending_actions.clear();
+        self.deferred_actions.clear();
+        self.actions = ActionTracker::default();
+        self.action_choices.clear();
+        self.active_action = None;
+    }
+
+    pub(super) fn fail_session(&mut self, reason: impl Into<String>) {
+        let reason = reason.into();
+        eprintln!("Client session failed: {reason}");
+        // Preserve the first failure rather than replacing it with queue closure.
+        if self.failure.is_none() {
+            self.failure = Some(reason);
+        }
+        self.retire_session();
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests;

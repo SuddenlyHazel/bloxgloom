@@ -258,6 +258,9 @@ pub(crate) mod actors;
 mod admin;
 mod entities;
 mod kiln;
+mod lifecycle;
+#[cfg(test)]
+pub(crate) use lifecycle::tests::exercise_join_lifecycle;
 mod mesh_queue;
 pub(crate) mod presentation;
 pub(crate) mod startup;
@@ -337,6 +340,7 @@ struct ClientApp {
     last_report: Instant,
     frame_ms: Vec<f32>,
     disconnected: bool,
+    failure: Option<String>,
     admin_enabled: bool,
     admin_input: String,
     admin_page: usize,
@@ -407,6 +411,7 @@ impl ClientApp {
             last_report: now,
             frame_ms: Vec::with_capacity(512),
             disconnected: false,
+            failure: None,
             admin_enabled: false,
             admin_input: String::new(),
             admin_page: 0,
@@ -720,6 +725,9 @@ impl ClientApp {
     }
 
     fn queue_command(&mut self, message: ClientMessage) {
+        if self.disconnected {
+            return;
+        }
         if let ClientMessage::Edit {
             action_id, x, y, z, ..
         } = &message
@@ -744,8 +752,7 @@ impl ClientApp {
             if self.pending_commands.len() < 128 {
                 self.pending_commands.push_back(message);
             } else {
-                eprintln!("client command backlog exceeded limit; disconnecting");
-                self.disconnected = true;
+                self.fail_session("client command backlog exceeded limit");
             }
         }
     }
@@ -803,12 +810,14 @@ impl ClientApp {
     }
 
     fn accept(&mut self, message: ServerMessage) {
+        if self.disconnected {
+            return;
+        }
         match message {
             ServerMessage::ContentManifestPart { .. }
             | ServerMessage::BundleOffer { .. }
             | ServerMessage::BundlePart { .. } => {
-                self.disconnected = true;
-                self.show_status("Unexpected content manifest after handshake");
+                self.fail_session("Unexpected content manifest after handshake");
             }
             ServerMessage::Welcome { id, seed } => {
                 self.world_seed = Some(seed);
@@ -816,8 +825,7 @@ impl ClientApp {
             }
             ServerMessage::OwnedEntity { id } => {
                 if self.owned_entity_id.is_some_and(|old| old != id) {
-                    self.disconnected = true;
-                    self.show_status("Conflicting owned entity identity");
+                    self.fail_session("Conflicting owned entity identity");
                 } else {
                     self.owned_entity_id = Some(id);
                 }
@@ -831,8 +839,7 @@ impl ClientApp {
                     .actions
                     .install_fresh_session(epoch, next_seq, acked_seq)
                 {
-                    eprintln!("action session: {error}");
-                    self.disconnected = true;
+                    self.fail_session(format!("action session: {error}"));
                 }
             }
             ServerMessage::Position { ack_seq, x, y, z } => {
@@ -918,6 +925,13 @@ impl ClientApp {
                 accepted,
                 reason,
             } => {
+                let acknowledgement = match self.actions.terminal_result(action_id) {
+                    Ok(acknowledgement) => acknowledgement,
+                    Err(error) => {
+                        self.fail_session(format!("action result: {error}"));
+                        return;
+                    }
+                };
                 if let Some(ui) = &mut self.package_ui {
                     ui.action_result(action_id, accepted, &reason);
                 }
@@ -937,16 +951,11 @@ impl ClientApp {
                 }
                 self.pending_actions.remove(&action_id);
                 self.deferred_actions.remove(&action_id);
-                match self.actions.terminal_result(action_id) {
-                    Ok(Some(through_seq)) => self.queue_command(ClientMessage::ActionAck {
+                if let Some(through_seq) = acknowledgement {
+                    self.queue_command(ClientMessage::ActionAck {
                         epoch: self.actions.epoch,
                         through_seq,
-                    }),
-                    Ok(None) => {}
-                    Err(error) => {
-                        eprintln!("action result: {error}");
-                        self.disconnected = true;
-                    }
+                    });
                 }
             }
             ServerMessage::ActionDeferred { action_id } => {
@@ -980,6 +989,9 @@ impl ClientApp {
     }
 
     fn poll_work(&mut self) {
+        if self.disconnected {
+            return;
+        }
         let now = Instant::now();
         let due: Vec<_> = self
             .deferred_actions
@@ -1006,19 +1018,18 @@ impl ClientApp {
             match self.network.incoming.try_recv() {
                 Ok(Incoming::Message(message)) => self.accept(*message),
                 Ok(Incoming::Closed(reason)) => {
-                    eprintln!("disconnected: {reason}");
-                    self.disconnected = true;
+                    self.fail_session(format!("disconnected: {reason}"));
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.disconnected = true;
+                    self.fail_session("server connection closed");
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
             }
         }
         if self.disconnected {
-            self.package_ui = None;
+            return;
         } else if let Some(session) = &mut self.package_ui {
             session.poll_presentation();
         }
@@ -1387,6 +1398,9 @@ impl ClientApp {
         let dt = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.poll_work();
+        if self.disconnected {
+            return;
+        }
         self.validate_kiln_screen();
         self.move_player(dt);
         let camera = self.camera();
@@ -1527,10 +1541,14 @@ fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::
     let mut config = Config::load(&config_path);
     config.ensure_profile(&config_path)?;
     let network = Network::connect(addr, config.view_distance, config.profile)?;
+    eprintln!("Server admitted session; preparing window and package GPU resources");
     let event_loop = EventLoop::new()?;
     let mut app = ClientApp::new(network, config, config_path);
     app.admin_enabled = admin_enabled;
     event_loop.run_app(&mut app)?;
+    if let Some(error) = app.failure.take() {
+        return Err(std::io::Error::other(error).into());
+    }
     Ok(())
 }
 

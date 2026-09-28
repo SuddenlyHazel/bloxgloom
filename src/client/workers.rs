@@ -6,7 +6,7 @@ use crate::render::{self, ChunkMesh};
 use crate::world::{Chunk, ChunkKey};
 use std::collections::HashMap;
 use std::io;
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
@@ -19,6 +19,10 @@ pub(super) enum Incoming {
 }
 
 pub(super) struct Network {
+    // Closing channel senders alone cannot wake a reader blocked in socket I/O.
+    socket: Option<TcpStream>,
+    #[cfg(test)]
+    stopped: Option<Receiver<()>>,
     // Session-owned immutable artifact, installed before any snapshot is read.
     _bundle: Option<Arc<crate::server::client_bundle::ClientBundle>>,
     material: Option<crate::render::custom::Prepared>,
@@ -30,8 +34,10 @@ pub(super) struct Network {
 
 impl Network {
     #[cfg(test)]
-    pub(crate) fn bundle_for_test(&self) -> Option<&crate::server::client_bundle::ClientBundle> {
-        self._bundle.as_deref()
+    pub(crate) fn bundle_for_test(
+        &self,
+    ) -> Option<&Arc<crate::server::client_bundle::ClientBundle>> {
+        self._bundle.as_ref()
     }
     pub(super) fn package_material(&self) -> Option<&crate::render::custom::Prepared> {
         self.material.as_ref()
@@ -49,6 +55,9 @@ impl Network {
         let (_, incoming) = mpsc::sync_channel(1);
         let (outgoing, _) = mpsc::sync_channel(1);
         Self {
+            socket: None,
+            #[cfg(test)]
+            stopped: None,
             _bundle: None,
             material: None,
             startup: Default::default(),
@@ -64,6 +73,9 @@ impl Network {
         let (outgoing, _) = mpsc::sync_channel(1);
         (
             Self {
+                socket: None,
+                #[cfg(test)]
+                stopped: None,
                 _bundle: None,
                 material: None,
                 startup: Default::default(),
@@ -76,10 +88,27 @@ impl Network {
     }
 
     pub(super) fn connect(addr: &str, view_distance: u8, profile: u128) -> io::Result<Self> {
+        let mut stage = "connecting";
+        eprintln!("Joining {addr}: {stage}");
+        Self::prepare(addr, view_distance, profile, &mut stage).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("Join {addr} failed during {stage}: {error}"),
+            )
+        })
+    }
+
+    fn prepare(
+        addr: &str,
+        view_distance: u8,
+        profile: u128,
+        stage: &mut &'static str,
+    ) -> io::Result<Self> {
         let mut socket = TcpStream::connect(addr)?;
         socket.set_nodelay(true)?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
+        preparing(stage, "initial handshake");
         protocol::write_client(
             &mut socket,
             &ClientMessage::Hello {
@@ -90,6 +119,7 @@ impl Network {
         )?;
         let mut first = protocol::read_server(&mut socket)?;
         let bundle = if let ServerMessage::BundleOffer { identity } = first {
+            preparing(stage, "package download and verification");
             let bundle = super::bundle::install(&mut socket, identity)?;
             // Transfer time does not consume the separate content/Join
             // budget (the receiver narrows OS timeouts to its remaining time).
@@ -100,11 +130,13 @@ impl Network {
         } else {
             None
         };
+        preparing(stage, "catalog negotiation");
         let local = match &bundle {
             Some(bundle) => bundle.session_catalog()?,
             None => Catalog::builtins(),
         };
         let (content_fingerprint, catalog) = receive_content_manifest(&mut socket, first, &local)?;
+        preparing(stage, "package material resolution");
         let material = bundle
             .as_ref()
             .and_then(|bundle| bundle.material())
@@ -114,10 +146,12 @@ impl Network {
                     .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
             })
             .transpose()?;
+        preparing(stage, "package client startup");
         let startup = match &bundle {
             Some(bundle) => super::startup::prepare(Arc::clone(bundle))?,
             None => Default::default(),
         };
+        preparing(stage, "server readiness acknowledgement");
         protocol::write_client(
             &mut socket,
             &ClientMessage::ContentReady {
@@ -133,6 +167,8 @@ impl Network {
         }
         socket.set_read_timeout(None)?;
         socket.set_write_timeout(None)?;
+        preparing(stage, "session transport setup");
+        let control = socket.try_clone()?;
         let mut reader = socket.try_clone()?;
         let mut writer = socket;
         let reader_catalog = Arc::clone(&catalog);
@@ -142,46 +178,94 @@ impl Network {
             .send(Incoming::Message(Box::new(first)))
             .map_err(|_| io::Error::other("network incoming queue closed"))?;
         let (outgoing, outgoing_rx) = mpsc::sync_channel(256);
-        thread::spawn(move || {
-            loop {
-                match protocol::read_server_with_catalog(&mut reader, &reader_catalog) {
-                    Ok(message) => {
-                        if incoming_tx
-                            .send(Incoming::Message(Box::new(message)))
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        let _ = incoming_tx.try_send(Incoming::Closed(error.to_string()));
-                        break;
-                    }
-                }
-            }
-        });
-        thread::spawn(move || {
-            for message in outgoing_rx {
-                if protocol::write_client_with_catalog(&mut writer, &message, &writer_catalog)
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
-        outgoing
-            .send(ClientMessage::SetView {
-                radius: view_distance,
-            })
-            .map_err(|_| io::Error::other("network writer stopped"))?;
-        Ok(Self {
+        #[cfg(test)]
+        let (stopped_tx, stopped) = mpsc::channel();
+        #[cfg(test)]
+        let reader_stopped = stopped_tx.clone();
+        // Own cleanup before spawning: if either OS thread cannot be created,
+        // the socket/channels still close and any already-started worker wakes.
+        let network = Self {
+            socket: Some(control),
+            #[cfg(test)]
+            stopped: Some(stopped),
             _bundle: bundle,
             material,
             startup,
             incoming,
             catalog,
             outgoing,
-        })
+        };
+        thread::Builder::new()
+            .name("client-network-reader".into())
+            .spawn(move || {
+                loop {
+                    match protocol::read_server_with_catalog(&mut reader, &reader_catalog) {
+                        Ok(message) => {
+                            if incoming_tx
+                                .send(Incoming::Message(Box::new(message)))
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        Err(error) => {
+                            let _ = incoming_tx.try_send(Incoming::Closed(error.to_string()));
+                            break;
+                        }
+                    }
+                }
+                #[cfg(test)]
+                {
+                    drop(reader_catalog);
+                    let _ = reader_stopped.send(());
+                }
+            })?;
+        thread::Builder::new()
+            .name("client-network-writer".into())
+            .spawn(move || {
+                for message in outgoing_rx {
+                    if protocol::write_client_with_catalog(&mut writer, &message, &writer_catalog)
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                // A writer failure must also wake the reader so the window thread
+                // learns that the connection is unusable instead of retrying forever.
+                let _ = writer.shutdown(Shutdown::Both);
+                #[cfg(test)]
+                {
+                    drop(writer_catalog);
+                    let _ = stopped_tx.send(());
+                }
+            })?;
+        network
+            .outgoing
+            .send(ClientMessage::SetView {
+                radius: view_distance,
+            })
+            .map_err(|_| io::Error::other("network writer stopped"))?;
+        Ok(network)
+    }
+
+    /// Idempotent, non-waiting retirement. Shutdown wakes OS reads/writes;
+    /// replacing both channels also wakes workers blocked on a full/empty queue.
+    pub(super) fn retire(&mut self) {
+        if let Some(socket) = self.socket.take() {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
+        let (_, incoming) = mpsc::sync_channel(1);
+        self.incoming = incoming;
+        let (outgoing, _) = mpsc::sync_channel(1);
+        self.outgoing = outgoing;
+        self._bundle = None;
+        self.material = None;
+        self.startup = Default::default();
+    }
+
+    #[cfg(test)]
+    pub(super) fn take_worker_completion(&mut self) -> Option<Receiver<()>> {
+        self.stopped.take()
     }
 
     pub(super) fn send(&self, message: ClientMessage) -> bool {
@@ -194,6 +278,17 @@ impl Network {
             Err(TrySendError::Disconnected(_)) => false,
         }
     }
+}
+
+impl Drop for Network {
+    fn drop(&mut self) {
+        self.retire();
+    }
+}
+
+fn preparing(stage: &mut &'static str, next: &'static str) {
+    *stage = next;
+    eprintln!("Preparing join: {next}");
 }
 
 fn receive_content_manifest(
@@ -290,7 +385,7 @@ pub(crate) fn connect_ui_probe(
 
 #[cfg(test)]
 pub(crate) fn connect_catalog_probe(address: &str, profile: u128) -> io::Result<Arc<Catalog>> {
-    Ok(Network::connect(address, 1, profile)?.catalog)
+    Ok(Arc::clone(&Network::connect(address, 1, profile)?.catalog))
 }
 
 #[cfg(test)]
@@ -316,7 +411,7 @@ pub(crate) fn connect_inventory_probe(
                             .flatten()
                             .any(|stack| stack.item == expected && stack.count == 128)
                     );
-                    return Ok(network.catalog);
+                    return Ok(Arc::clone(&network.catalog));
                 }
             }
             Incoming::Closed(error) => panic!("closed before inventory: {error}"),
