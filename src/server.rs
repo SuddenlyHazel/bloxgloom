@@ -28,6 +28,9 @@ mod perf;
 mod position_store;
 mod registry;
 mod runtime;
+// Phase 4 foundation: not dispatched by gameplay yet.
+#[allow(dead_code)]
+mod script;
 mod simulation;
 mod spawn;
 mod startup;
