@@ -197,8 +197,13 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
     use sha2::{Digest, Sha256};
     let fixture = Fixture::new();
     super::bundle_runtime::packages(&fixture);
+    fixture.package(
+        "rules",
+        CONTENT,
+        &super::player::source("rules:small", 1, super::player::FIELDS),
+    );
     gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
-        for mode in 0..7 {
+        for mode in 0..9 {
             // The upstream is the real server; the relay changes either artifact
             // metadata (with/without updating the offered digest) or fingerprint.
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -273,9 +278,21 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
                         + 8;
                     bytes[offset] ^= 1; // entity max_state_bytes is catalog identity too
                 }
+                if mode == 7 {
+                    let offset = bytes.len() - 40 + 20;
+                    bytes[offset..offset + 4].copy_from_slice(&0.6f32.to_le_bytes());
+                }
+                if mode == 8 {
+                    let offset = bytes.len() - 40;
+                    bytes[offset..offset + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+                }
                 if mode == 1 || mode >= 3 {
                     identity.key = CacheKey::from_bytes(Sha256::digest(&bytes).into());
-                    ClientBundle::decode_verify(&bytes, identity.key).unwrap();
+                    if mode == 8 {
+                        assert!(ClientBundle::decode_verify(&bytes, identity.key).is_err());
+                    } else {
+                        ClientBundle::decode_verify(&bytes, identity.key).unwrap();
+                    }
                 }
                 protocol::write_server(&mut downstream, &ServerMessage::BundleOffer { identity })
                     .unwrap();
@@ -289,7 +306,7 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
                             &ServerMessage::BundlePart { offset: 0, bytes },
                         )
                         .unwrap();
-                        if mode == 0 {
+                        if mode == 0 || mode == 8 {
                             assert!(
                                 protocol::read_client(&mut downstream).is_err(),
                                 "tampered bytes acknowledged"
@@ -350,6 +367,8 @@ fn production_network_rejects_tampered_metadata_and_exact_manifest_mismatch() {
                     .unwrap_err();
             if mode == 0 {
                 assert!(error.to_string().contains("SHA-256 integrity mismatch"));
+            } else if mode == 8 {
+                assert!(error.to_string().contains("invalid"), "{error}");
             } else if mode == 1 || mode >= 3 {
                 assert!(error.to_string().contains("schema or material differs"));
             } else {

@@ -1,6 +1,6 @@
 //! Player body geometry shared by authoritative movement, spawn selection,
 //! placement checks, and client prediction. Rules are validated immutable values;
-//! the host currently installs only the builtin selection in its frozen catalog.
+//! the host freezes the selected contract before opening a world.
 
 /// One immutable player contract. Accessors return copies, never mutable fields.
 /// Validation preserves the bounds assumed by the twelve-sample collision shape,
@@ -29,6 +29,50 @@ pub const BUILTIN_RULES: PlayerRules = PlayerRules {
 };
 
 impl PlayerRules {
+    /// Canonical fixed-size representation used by package negotiation and save
+    /// identity. Includes every field, without platform-dependent padding.
+    pub fn canonical_bytes(self) -> [u8; 40] {
+        let mut bytes = [0; 40];
+        for (index, value) in [
+            self.body.half_width,
+            self.body.foot_inset,
+            self.body.middle_height,
+            self.body.head_height,
+            self.motion.intent_blocks_per_second,
+            self.eye_height,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[24..32].copy_from_slice(&self.motion.budget_blocks_per_second.to_le_bytes());
+        bytes[32..36].copy_from_slice(&self.spawn.headroom.to_le_bytes());
+        bytes[36..40].copy_from_slice(&self.spawn.max_rise.to_le_bytes());
+        bytes
+    }
+
+    pub fn from_canonical_bytes(bytes: [u8; 40]) -> Result<Self, InvalidPlayerRules> {
+        let float = |offset| f32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        Self::new(
+            Body {
+                half_width: float(0),
+                foot_inset: float(4),
+                middle_height: float(8),
+                head_height: float(12),
+            },
+            MotionRates {
+                intent_blocks_per_second: float(16),
+                budget_blocks_per_second: f64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+            },
+            SpawnSearch {
+                headroom: i32::from_le_bytes(bytes[32..36].try_into().unwrap()),
+                max_rise: i32::from_le_bytes(bytes[36..40].try_into().unwrap()),
+            },
+            float(20),
+        )
+    }
+
     pub fn new(
         body: Body,
         motion: MotionRates,

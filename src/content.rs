@@ -25,6 +25,7 @@ mod manifest;
 mod mobile;
 mod observers;
 mod owner_systems;
+pub(crate) mod player;
 mod public;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
@@ -209,8 +210,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
-    // Builtin-only until startup selection and negotiated identity are implemented
-    // together. No setter: a catalog cannot advertise one contract and run another.
+    player_selection: Option<player::Selection>,
     player_rules: bloxgloom_host_api::player::PlayerRules,
     // Negotiated compatibility metadata, never executable registrations.
     client_metadata: client_metadata::Metadata,
@@ -268,6 +268,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            player_selection: None,
             player_rules: bloxgloom_host_api::player::BUILTIN_RULES,
             client_metadata: Default::default(),
             gameplay_entities: Default::default(),
@@ -609,11 +610,7 @@ impl Catalog {
         self.player_rules
             .validate()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
-        if self.player_rules != bloxgloom_host_api::player::BUILTIN_RULES {
-            // Custom selection must land together with save/wire identity and
-            // verified client reconstruction, not as an implicit local override.
-            return Err(RegistrationError::InvalidDefinition);
-        }
+        self.validate_player_selection()?;
         self.actions
             .validate_composition()
             .map_err(|_| RegistrationError::InvalidDefinition)?;
@@ -931,6 +928,9 @@ impl Catalog {
                 // Action keys have no numeric save identity. The player contract
                 // fingerprints the complete canonical registry at handshake/load.
                 if entity.key == "bloxgloom:player" {
+                    if let Some(selection) = &self.player_selection {
+                        add(&selection.fingerprint_bytes());
+                    }
                     for action in self.actions.values() {
                         add(&action.fingerprint_bytes());
                     }

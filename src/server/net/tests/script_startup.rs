@@ -22,6 +22,8 @@ mod gameplay;
 mod generation;
 #[path = "script_startup/join_lifecycle.rs"]
 mod join_lifecycle;
+#[path = "script_startup/player.rs"]
+mod player;
 #[path = "script_startup/system.rs"]
 mod system;
 

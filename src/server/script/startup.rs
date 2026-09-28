@@ -53,6 +53,7 @@ const MAX_BLOCKS_PER_PACKAGE: usize = 32;
 mod block;
 pub(in crate::server::script) use block::cube;
 mod item;
+mod player;
 
 pub(super) struct PackageTexture {
     pub(super) definition: Texture,
@@ -60,6 +61,7 @@ pub(super) struct PackageTexture {
 }
 
 pub(in crate::server) struct Declarations {
+    pub(in crate::server) player_rules: Option<crate::content::player::Selection>,
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
     pub(super) items: Vec<Item>,
@@ -85,6 +87,7 @@ impl Declarations {
         let mut handlers = Vec::new();
         let mut entities = Vec::new();
         let mut systems = Vec::new();
+        let mut player_rules = None;
         // At most 64 packages * 32 items, in lexical package order. Each entry
         // gets a fresh VM; completion timing cannot affect assignment order.
         for package in &packages {
@@ -103,6 +106,13 @@ impl Declarations {
             let Output::Declarations(declarations) = output else {
                 unreachable!("startup execution")
             };
+            if let Some(selection) = declarations.player_rules
+                && player_rules.replace(selection).is_some()
+            {
+                return Err(std::io::Error::other(
+                    "duplicate player rules selection across packages",
+                ));
+            }
             items.extend(declarations.items);
             blocks.extend(declarations.blocks);
             textures.extend(declarations.textures);
@@ -125,6 +135,7 @@ impl Declarations {
             }
         }
         let mut result = Self {
+            player_rules,
             client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
@@ -182,6 +193,7 @@ impl Extension for Declarations {
 
 #[derive(Default)]
 pub(super) struct Pending {
+    player_rules: Option<crate::content::player::Selection>,
     items: Vec<Item>,
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
@@ -201,6 +213,7 @@ pub(super) fn invoke(
 ) -> mlua::Result<Pending> {
     let permits_content = snapshot.permits_content(namespace);
     let pending = Rc::new(RefCell::new(Pending::default()));
+    let player_rules = player::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
     let texture_capture = Rc::clone(&pending);
     let block_capture = Rc::clone(&pending);
@@ -401,6 +414,7 @@ pub(super) fn invoke(
     host.set("register_handler", handler)?;
     host.set("register_system", system)?;
     host.set("register_entity", entity)?;
+    host.set("register_player_rules", player_rules)?;
     host.set_readonly(true);
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();

@@ -218,6 +218,7 @@ impl ContentManifest {
 
         let mut resolved = Catalog::new();
         resolved.player_rules = local.player_rules();
+        resolved.player_selection = local.player_selection.clone();
         for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
             let observer = local
                 .gameplay_observers

@@ -73,6 +73,17 @@ impl ServerStartup {
         }
         let declarations = super::script::startup::Declarations::discover(root)?;
         let mut startup = self.with_extension(&declarations)?;
+        if let Some(selection) = &declarations.player_rules {
+            let catalog = Arc::make_mut(&mut startup.catalog);
+            catalog
+                .select_player_rules(selection.clone())
+                .map_err(|error| {
+                    io::Error::other(format!("invalid player rules selection: {error:?}"))
+                })?;
+            catalog.validate().map_err(|error| {
+                io::Error::other(format!("invalid selected catalog: {error:?}"))
+            })?;
+        }
         startup.client_bundle = Some(Arc::clone(&declarations.client_bundle));
         Ok(startup)
     }

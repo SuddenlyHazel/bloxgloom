@@ -13,6 +13,7 @@ const MAX_BLOCKS: usize = 32;
 
 #[derive(Debug)]
 pub(super) struct Startup {
+    player_rules: Option<crate::content::player::Selection>,
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
     textures: Vec<content::Texture>,
@@ -43,6 +44,13 @@ impl ClientBundle {
         let sized = items.iter().any(|item| item.drop_size != DropSize::Normal);
         if sized {
             writer.0[MAGIC.len() - 1] = SIZED_MAGIC[MAGIC.len() - 1];
+        }
+        if declarations.player_rules.is_some() {
+            writer.0[MAGIC.len() - 1] = if sized {
+                PLAYER_SIZED_MAGIC
+            } else {
+                PLAYER_MAGIC
+            }[MAGIC.len() - 1];
         }
         writer.count(1)?;
         let runtime = runtime::Runtime::project(declarations)?;
@@ -161,6 +169,12 @@ impl ClientBundle {
             }
             runtime.encode_package(&mut writer, name)?;
         }
+        if let Some(selection) = &declarations.player_rules {
+            selection.validate().map_err(|_| invalid())?;
+            writer.field(selection.key.as_bytes())?;
+            writer.field(&selection.revision.to_le_bytes())?;
+            writer.field(&selection.rules.canonical_bytes())?;
+        }
         let key = CacheKey(Sha256::digest(&writer.0).into());
         let result = Self::decode_verify(&writer.0, key)?;
         let decoded = result.declarations.as_ref().unwrap();
@@ -168,6 +182,7 @@ impl ClientBundle {
             || decoded.textures.len() != textures.len()
             || decoded.blocks.len() != blocks.len()
             || decoded.runtime.counts() != runtime.counts()
+            || decoded.player_rules != declarations.player_rules
         {
             return Err(invalid());
         }
@@ -202,6 +217,20 @@ impl ClientBundle {
                         declarations.install_items_and_tags(&mut catalog)?;
                         catalog.refresh_builtin_fuels()?;
                         startup.runtime.install(&mut catalog)?;
+                        if let Some(selection) = &startup.player_rules {
+                            catalog
+                                .select_player_rules(selection.clone())
+                                .map_err(|error| {
+                                    bloxgloom_host_api::RegistrationError(format!(
+                                        "invalid player rules: {error:?}"
+                                    ))
+                                })?;
+                        }
+                        catalog.validate().map_err(|error| {
+                            bloxgloom_host_api::RegistrationError(format!(
+                                "invalid client catalog: {error:?}"
+                            ))
+                        })?;
                         Ok(catalog)
                     };
                     compile().map_err(|error| {
@@ -219,15 +248,17 @@ impl Startup {
         reader: &mut Reader<'_>,
         packages: &BTreeMap<String, ClientPackage>,
         sized: bool,
+        player: bool,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized {
+            if sized || player {
                 return Err(invalid());
             }
             return Ok(None);
         }
         let mut has_nondefault_size = false;
         let mut startup = Self {
+            player_rules: None,
             packages: Vec::new(),
             items: Vec::new(),
             textures: Vec::new(),
@@ -416,6 +447,30 @@ impl Startup {
                     .collect(),
                 requires,
             });
+        }
+        if player {
+            let key = reader.text(129)?;
+            let revision = u32::from_le_bytes(reader.field(4)?.try_into().map_err(|_| invalid())?);
+            let rules = bloxgloom_host_api::player::PlayerRules::from_canonical_bytes(
+                reader.field(40)?.try_into().map_err(|_| invalid())?,
+            )
+            .map_err(|_| invalid())?;
+            let (owner, local) = key.split_once(':').ok_or_else(invalid)?;
+            if !identifier(local)
+                || !startup.packages.iter().any(|package| {
+                    package.key == format!("{owner}:package")
+                        && package.requires.iter().any(|r| r == composition::CONTENT)
+                })
+            {
+                return Err(invalid());
+            }
+            let selection = crate::content::player::Selection {
+                key,
+                revision,
+                rules,
+            };
+            selection.validate().map_err(|_| invalid())?;
+            startup.player_rules = Some(selection);
         }
         if sized && !has_nondefault_size {
             return Err(invalid());

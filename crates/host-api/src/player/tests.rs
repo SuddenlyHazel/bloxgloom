@@ -14,6 +14,23 @@ fn immutable_rules_preserve_builtin_contract() {
 }
 
 #[test]
+fn canonical_rules_round_trip_and_reject_nonfinite_fields() {
+    let bytes = BUILTIN_RULES.canonical_bytes();
+    assert_eq!(
+        PlayerRules::from_canonical_bytes(bytes).unwrap(),
+        BUILTIN_RULES
+    );
+    for offset in [0, 4, 8, 12, 16, 20] {
+        let mut malformed = bytes;
+        malformed[offset..offset + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(PlayerRules::from_canonical_bytes(malformed).is_err());
+    }
+    let mut malformed = bytes;
+    malformed[24..32].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(PlayerRules::from_canonical_bytes(malformed).is_err());
+}
+
+#[test]
 fn rules_reject_invalid_geometry_rates_search_and_eye() {
     for body in [
         Body {

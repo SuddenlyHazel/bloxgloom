@@ -40,6 +40,89 @@ fn unnegotiated_player_override_is_rejected_not_reconstructed_as_builtin() {
 }
 
 #[test]
+fn selected_player_identity_commits_key_revision_and_every_compiled_field() {
+    use crate::content::player::Selection;
+    use bloxgloom_host_api::player::{BUILTIN_RULES, PlayerRules};
+    let selection = Selection {
+        key: "demo:player".into(),
+        revision: 1,
+        rules: BUILTIN_RULES,
+    };
+    let mut local = Catalog::builtins();
+    let builtin_identity = local.fingerprint();
+    local.select_player_rules(selection.clone()).unwrap();
+    assert_ne!(
+        local.fingerprint(),
+        builtin_identity,
+        "explicit selections are identities even with builtin values"
+    );
+    let manifest = ContentManifest::from_catalog(&local);
+    let bytes = manifest.encode().unwrap();
+    let mut saved = ContentManifest::decode(&bytes).unwrap();
+    let (resolved, changed) = saved.resolve_world_catalog(&local).unwrap();
+    assert!(!changed);
+    assert_eq!(resolved.fingerprint(), local.fingerprint());
+    assert_eq!(resolved.player_rules(), local.player_rules());
+    assert!(local.select_player_rules(selection.clone()).is_err());
+    let mut alternatives = vec![Catalog::builtins()];
+    for (offset, value) in [
+        (0, 0.4f32),
+        (4, 0.1),
+        (8, 1.0),
+        (12, 1.8),
+        (16, 7.0),
+        (20, 1.5),
+    ] {
+        let mut bytes = BUILTIN_RULES.canonical_bytes();
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        let mut candidate = Catalog::builtins();
+        candidate
+            .select_player_rules(Selection {
+                rules: PlayerRules::from_canonical_bytes(bytes).unwrap(),
+                ..selection.clone()
+            })
+            .unwrap();
+        alternatives.push(candidate);
+    }
+    for (offset, bytes) in [
+        (24, 11f64.to_le_bytes().to_vec()),
+        (32, 33i32.to_le_bytes().to_vec()),
+        (36, 129i32.to_le_bytes().to_vec()),
+    ] {
+        let mut encoded = BUILTIN_RULES.canonical_bytes();
+        encoded[offset..offset + bytes.len()].copy_from_slice(&bytes);
+        let mut candidate = Catalog::builtins();
+        candidate
+            .select_player_rules(Selection {
+                rules: PlayerRules::from_canonical_bytes(encoded).unwrap(),
+                ..selection.clone()
+            })
+            .unwrap();
+        alternatives.push(candidate);
+    }
+    for changed in [
+        Selection {
+            key: "demo:other".into(),
+            ..selection.clone()
+        },
+        Selection {
+            revision: 2,
+            ..selection
+        },
+    ] {
+        let mut candidate = Catalog::builtins();
+        candidate.select_player_rules(changed).unwrap();
+        alternatives.push(candidate);
+    }
+    for candidate in alternatives {
+        assert_ne!(candidate.fingerprint(), local.fingerprint());
+        assert!(manifest.resolve_catalog(&candidate).is_err());
+        assert!(saved.clone().resolve_world_catalog(&candidate).is_err());
+        assert_eq!(saved.encode().unwrap(), bytes);
+    }
+}
+
+#[test]
 fn manifest_round_trips_wide_ids_and_rejects_corruption() {
     let manifest = ContentManifest {
         entries: vec![

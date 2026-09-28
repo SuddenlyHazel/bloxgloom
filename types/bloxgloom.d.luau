@@ -11,6 +11,27 @@ export type BloxStartupHost = {
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
+    -- Requires content/v1. Exactly one selection across the entire package set;
+    -- key belongs to this package, revision is an integer in 1..4294967295.
+    -- Immutable for this world/session. Any change (including key/revision or
+    -- removal) refuses an existing world's content.map; pcall cannot suppress
+    -- invalid or duplicate declarations. No declaration selects builtin rules.
+    register_player_rules: (key: string, revision: number, fields: BloxPlayerRules) -> (),
+}
+
+-- All nine fields are required finite numbers; unknown fields are rejected.
+-- Geometry/input/eye values compile to f32; budget remains f64. Exact compiled
+-- values are delivered to clients before Welcome and fingerprinted in saves.
+export type BloxPlayerRules = {
+    half_width: number, -- 0.125..0.5
+    foot_inset: number, -- 0..0.25
+    middle_height: number, -- above foot_inset, gap <= 1
+    head_height: number, -- above middle_height, gap <= 1, at most 2
+    intent_blocks_per_second: number, -- at least 0.1, at most budget
+    budget_blocks_per_second: number, -- at most 16
+    headroom: number, -- integer 2..128
+    max_rise: number, -- integer 1..1024
+    eye_height: number, -- foot_inset..head_height
 }
 
 -- Ordered positional schema, at most 8 fields and 130 encoded bytes in total.
