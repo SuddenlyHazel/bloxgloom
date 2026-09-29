@@ -1,0 +1,1 @@
+{"version":2,"shader":"surface_shader","targets":["prism:tile","bloxgloom:stone"],"textures":["prism:tile","bloxgloom:stone"],"vertex_offset":0.04,"parameters":[{"name":"tint","kind":"color","default":[0.2,0.8,1,1]}]}

@@ -3,6 +3,23 @@ use super::*;
 const GREEN: &str = "fn custom_albedo(albedo: vec3f, uv: vec2f, world_position: vec3f) -> vec3f { return vec3f(0.0, 1.0, 0.0); }";
 
 #[test]
+fn helpers_cannot_hide_exponential_shader_work() {
+    let mut source = "fn h0(v: f32) -> f32 { return sin(v); }\n".to_owned();
+    for i in 1..7 {
+        source.push_str(&format!(
+            "fn h{i}(v:f32)->f32 {{ return h{p}(v)+h{p}(v)+h{p}(v)+h{p}(v); }}\n",
+            p = i - 1
+        ));
+    }
+    source.push_str("fn material_fragment(input:BgSurface)->BgSurface { var result=input; result.albedo.x=h6(input.uv.x); return result; }");
+    assert!(
+        shader::validate(&source)
+            .unwrap_err()
+            .contains("finite work")
+    );
+}
+
+#[test]
 fn rejects_foreign_resources_unbounded_work_and_invalid_layers_with_owner() {
     prepare("example:stone", GREEN.as_bytes(), 3, 20).unwrap();
     for invalid in [
@@ -30,6 +47,15 @@ fn rejects_foreign_resources_unbounded_work_and_invalid_layers_with_owner() {
 
 #[test]
 fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
+    gpu_preview(false);
+}
+
+#[test]
+fn gpu_version_two_hooks_use_multiple_materials_and_runtime_parameters() {
+    gpu_preview(true);
+}
+
+fn gpu_preview(extended: bool) {
     use crate::render::{VERTEX_FLOATS, pipeline};
     use wgpu::util::DeviceExt;
     let instance = wgpu::Instance::default();
@@ -51,13 +77,45 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
         .get() as f32;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/material-packages");
     let bundle = crate::server::PackageSnapshot::discover(&root).unwrap();
-    let shader = bundle
+    let mut shader = bundle
         .client_bundle()
         .material()
         .unwrap()
         .resolve(&catalog)
         .unwrap();
-    let (opaque, cutout, _, _, _) = pipeline::create_custom_voxel_pipeline(
+    if extended {
+        shader.materials[0].version = 2;
+        shader.materials[0].parameters =
+            serde_json::from_str(r#"[{"name":"tint","kind":"color","default":[1,0,0,1]}]"#)
+                .unwrap();
+        shader.materials[0].textures.push(2);
+        shader.materials[0].shader = r#"
+fn tint() -> vec4f { return material_parameter(0u); }
+fn material_vertex(input: BgVertex) -> BgVertex {
+    var result = input;
+    result.position.x += 0.02 * sin(material_time());
+    return result;
+}
+fn material_fragment(input: BgSurface) -> BgSurface {
+    var result = input;
+    let detail = material_texture(input.uv, 1u);
+    result.albedo = tint() + detail * 0.0;
+    return result;
+}"#
+        .into();
+        shader.materials[0].vertex_offset = 0.02;
+        shader::validate(&shader.materials[0].shader).unwrap();
+        shader.materials.push(Material {
+            owner: "jade:dirt".into(),
+            layers: vec![2],
+            textures: vec![2],
+            parameters: vec![],
+            version: 2,
+            vertex_offset: 0.0,
+            shader: "fn material_fragment(input: BgSurface) -> BgSurface { return input; }".into(),
+        });
+    }
+    let ((opaque, cutout, _, _, _), mut gpu) = pipeline::create_custom_voxel_pipeline(
         &device,
         &queue,
         wgpu::TextureFormat::Rgba8Unorm,
@@ -65,6 +123,17 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
         &shader,
     )
     .unwrap();
+    if extended {
+        assert!(
+            gpu.set(
+                &shader.materials[0].owner,
+                "tint",
+                &crate::render::parameters::Value::Vector(vec![0.0, 1.0, 0.0, 1.0])
+            )
+            .unwrap()
+        );
+    }
+    gpu.update(&queue);
     // The live renderer retains its original groups when swapping pipelines.
     let (_, _, camera, camera_group, texture_group) = pipeline::create_voxel_pipeline_with_catalog(
         &device,
@@ -188,6 +257,7 @@ fn gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry() {
         pass.set_pipeline(&opaque);
         pass.set_bind_group(0, &camera_group, &[]);
         pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_bind_group(2, &gpu.group, &[]);
         pass.set_vertex_buffer(0, vertices.slice(..));
         pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(12..18, 0, 0..1);

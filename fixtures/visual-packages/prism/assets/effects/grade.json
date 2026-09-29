@@ -1,0 +1,1 @@
+{"version":2,"shader":"grade_shader","inputs":["bloxgloom:scene_color"],"output":"prism:graded","scale":2,"order":20}

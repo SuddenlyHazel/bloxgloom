@@ -122,6 +122,29 @@ fn replica_module_cannot_write_another_packages_document() {
 }
 
 #[test]
+fn replica_parameters_belong_to_handler_package_independent_of_open_document() {
+    let mut parameters = crate::render::parameters::State::default();
+    let definition =
+        serde_json::from_str(r#"{"name":"gain","kind":"float","default":0,"min":0,"max":1}"#)
+            .unwrap();
+    parameters.register("other:surface", &[definition]).unwrap();
+    let startup = crate::client::startup::State {
+        parameters,
+        replica: Some(Arc::new(crate::client::presentation::Script {
+            module: "other@1.0.0:replica".into(),
+            source: "return function(_) return {{op='parameter',resource='other:surface',name='gain',value=0.5}} end".into(),
+        })),
+        ..Default::default()
+    };
+    let mut session = Session::with_startup(Arc::clone(sample().ui().unwrap()), startup);
+    session.replica_event("replica:inventory", "revision=1".into());
+    session.wait_for_presentation().unwrap();
+    let updates = session.take_parameters();
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].resource, "other:surface");
+}
+
+#[test]
 fn worker_dispatches_click_and_input_with_bounded_admission_and_explicit_state() {
     let mut session = Session::new(Arc::clone(sample().ui().unwrap()));
     session.resize(640, 360, 1.0);

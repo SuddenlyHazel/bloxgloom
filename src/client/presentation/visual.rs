@@ -26,10 +26,18 @@ pub(crate) struct VisualSession {
     anchor_positions: BTreeMap<u64, [f32; 3]>,
     effects: EffectBuffer,
     failure: Option<String>,
+    parameters: crate::render::parameters::State,
 }
 
 impl VisualSession {
+    #[cfg(test)]
     pub(crate) fn new(script: Arc<Script>) -> std::io::Result<Self> {
+        Self::with_parameters(script, Default::default())
+    }
+    pub(crate) fn with_parameters(
+        script: Arc<Script>,
+        parameters: crate::render::parameters::State,
+    ) -> std::io::Result<Self> {
         Ok(Self {
             script,
             worker: Worker::spawn()?,
@@ -43,6 +51,7 @@ impl VisualSession {
             anchor_positions: BTreeMap::new(),
             effects: EffectBuffer::default(),
             failure: None,
+            parameters,
         })
     }
 
@@ -182,6 +191,11 @@ impl VisualSession {
         }
         self.pending = None;
         let result = reply.result.and_then(|commands| {
+            for command in &commands {
+                if let Command::Parameter(update) = command {
+                    self.parameters.check(self.owner(), update)?;
+                }
+            }
             if !reply.replica
                 || !(reply.entity_batch || reply.anchor_batch)
                 || commands.iter().any(|command| !match command {
@@ -200,6 +214,7 @@ impl VisualSession {
                             && (0.05..=0.5).contains(size)
                             && (100..=2000).contains(lifetime_ms)
                     }
+                    Command::Parameter(_) => true,
                     _ => false,
                 })
             {
@@ -220,6 +235,12 @@ impl VisualSession {
                     Command::Ember(id, offset) => embers.push((id, offset)),
                     Command::Spark(id, offset, color, size, lifetime_ms) => {
                         sparks.push((id, offset, color, size, lifetime_ms))
+                    }
+                    Command::Parameter(update) => {
+                        let owner = self.owner().to_owned();
+                        self.parameters
+                            .apply(&owner, &[update])
+                            .expect("validated parameter batch");
                     }
                     _ => unreachable!("validated visual command"),
                 }
@@ -245,6 +266,10 @@ impl VisualSession {
             }
             Err(error) => self.failure = Some(error),
         }
+    }
+
+    pub(crate) fn take_parameters(&mut self) -> Vec<crate::render::parameters::Update> {
+        self.parameters.take_updates()
     }
 
     pub(crate) fn visual_pose(&self, id: u64) -> Option<[f32; 3]> {

@@ -19,6 +19,7 @@ pub(crate) struct State {
     pub(crate) texts: BTreeMap<String, String>,
     pub(crate) states: BTreeMap<String, String>,
     pub(crate) replica: Option<Arc<crate::client::presentation::Script>>,
+    pub(crate) parameters: crate::render::parameters::State,
 }
 
 pub(crate) fn prepare(bundle: Arc<ClientBundle>) -> io::Result<State> {
@@ -37,7 +38,10 @@ pub(crate) fn prepare(bundle: Arc<ClientBundle>) -> io::Result<State> {
 }
 
 fn run(bundle: Arc<ClientBundle>) -> Result<State, String> {
-    let mut state = State::default();
+    let mut state = State {
+        parameters: bundle.parameter_state()?,
+        ..Default::default()
+    };
     for (owner, package) in bundle.packages() {
         if package.sources.contains_key("client_startup") {
             let entry = format!("{owner}:client_startup");
@@ -102,7 +106,10 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
     });
     let cached = Rc::new(RefCell::new(BTreeMap::<String, mlua::RegistryKey>::new()));
     let stack = Rc::new(RefCell::new(Vec::new()));
-    let registrations = Rc::new(RefCell::new(State::default()));
+    let registrations = Rc::new(RefCell::new(State {
+        parameters: state.parameters.clone(),
+        ..Default::default()
+    }));
     let result = (|| -> mlua::Result<()> {
         let value = load(&lua, Arc::clone(&bundle), entry, &cached, &stack)?;
         let function: mlua::Function = lua.unpack(value)?;
@@ -181,6 +188,25 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
                 Ok(())
             })?,
         )?;
+        let parameters = Rc::clone(&registrations);
+        let parameter_owner = entry.split_once(':').unwrap().0.to_owned();
+        host.set(
+            "set_parameter",
+            lua.create_function(
+                move |_, (resource, name, value): (mlua::LuaString, mlua::LuaString, Value)| {
+                    let update = crate::render::parameters::Update {
+                        resource: ascii(resource, 129)?,
+                        name: ascii(name, 64)?,
+                        value: crate::client::presentation::parameters::decode(value)?,
+                    };
+                    parameters
+                        .borrow_mut()
+                        .parameters
+                        .apply(&parameter_owner, &[update])
+                        .map_err(mlua::Error::RuntimeError)
+                },
+            )?,
+        )?;
         function.call::<()>(host)
     })();
     if exceeded.get() || Instant::now() >= deadline {
@@ -204,6 +230,7 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
     state.texts.extend(output.texts.clone());
     state.states.extend(output.states.clone());
     state.replica = output.replica.clone().or_else(|| state.replica.take());
+    state.parameters = output.parameters.clone();
     Ok(())
 }
 

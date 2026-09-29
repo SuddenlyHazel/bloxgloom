@@ -1,0 +1,15 @@
+format 2
+package prism
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+module server main server/main.luau
+module client client_startup client/startup.luau
+module client replica client/replica.luau
+asset texture tile assets/textures/tile.png
+asset material surface assets/materials/surface.json
+asset material-shader surface_shader assets/shaders/surface.wgsl
+asset effect grade assets/effects/grade.json
+asset effect mix assets/effects/mix.json
+asset shader grade_shader assets/shaders/grade.wgsl
+asset shader mix_shader assets/shaders/mix.wgsl

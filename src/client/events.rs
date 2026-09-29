@@ -3,22 +3,19 @@ use super::*;
 impl ClientApp {
     /// Do not drain the network mailbox until this all-or-nothing resource
     /// installation succeeds. Failure drops the candidate renderer/session.
-    pub(super) fn install_window(&mut self, window: Arc<Window>) -> Result<(), String> {
+    pub(super) fn begin_window_install(
+        &mut self,
+        window: Arc<Window>,
+    ) -> Result<crate::render::Preparation, String> {
         let mut renderer = pollster::block_on(Renderer::new_with_catalog(
             Arc::clone(&window),
             Arc::clone(&self.catalog),
         ))
         .map_err(|error| format!("renderer initialization: {error}"))?;
-        if let Some(material) = self.network.package_material() {
-            renderer
-                .install_custom_material(material)
-                .map_err(|error| format!("package material GPU preparation: {error}"))?;
-        }
-        if let Some(effect) = self.network.package_effect() {
-            renderer
-                .install_package_effect(effect)
-                .map_err(|error| format!("package effect GPU preparation: {error}"))?;
-        }
+        let preparation = renderer.prepare_package_visuals(
+            self.network.package_material(),
+            self.network.package_effect(),
+        )?;
         if let Some(session) = &self.package_ui {
             renderer.install_package_ui(session.resources());
         }
@@ -27,6 +24,18 @@ impl ClientApp {
         self.window = Some(window);
         self.refresh_layout();
         self.apply_fullscreen();
+        Ok(preparation)
+    }
+
+    pub(super) fn finish_window_install(
+        &mut self,
+        ready: crate::render::ReadyVisuals,
+    ) -> Result<(), String> {
+        let renderer = self.renderer.as_mut().unwrap();
+        renderer.commit_package_visuals(ready);
+        for update in self.network.package_parameter_updates() {
+            renderer.set_visual_parameter(&update)?;
+        }
         Ok(())
     }
 

@@ -6,8 +6,12 @@ mod drops;
 pub(crate) mod effects;
 pub(crate) mod fire;
 pub(crate) mod game_ui;
+mod hooks;
 mod material;
 mod mesh;
+pub(crate) mod parameters;
+mod preparation;
+pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};
 mod pipeline;
 pub(crate) mod post;
 mod shader;
@@ -41,8 +45,8 @@ pub(crate) use game_ui::Intent as GameUiIntent;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
 pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
-pub(crate) use pipeline::create_voxel_pipeline;
 pub(crate) use pipeline::create_voxel_pipeline_with_catalog;
+pub(crate) use pipeline::{create_custom_voxel_pipeline, create_voxel_pipeline};
 pub(crate) use sky::{create_sky_pipeline, sky_camera_data};
 pub(crate) use target::{create_target_pipeline, target_outline_vertices};
 pub(crate) use visibility::{chunk_visible, view_projection};
@@ -124,6 +128,7 @@ pub struct Renderer {
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
     texture_group: wgpu::BindGroup,
+    material_gpu: Option<custom::Gpu>,
     target_pipeline: wgpu::RenderPipeline,
     target_camera_buffer: wgpu::Buffer,
     target_camera_group: wgpu::BindGroup,
@@ -146,29 +151,22 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    /// Atomically replace only the two voxel pipelines. Existing camera and
-    /// texture groups (also used by avatars) keep their renderer-owned data.
-    pub(crate) fn install_custom_material(
+    pub(crate) fn set_visual_parameter(
         &mut self,
-        prepared: &custom::Prepared,
+        update: &parameters::Update,
     ) -> Result<(), String> {
-        let (opaque, cutout, _, _, _) = pipeline::create_custom_voxel_pipeline(
-            &self.device,
-            &self.queue,
-            post::HDR_FORMAT,
-            &self.catalog,
-            prepared,
-        )?;
-        self.pipeline = opaque;
-        self.cutout_pipeline = cutout;
-        Ok(())
-    }
-
-    pub(crate) fn install_package_effect(
-        &mut self,
-        effect: &effects::Prepared,
-    ) -> Result<(), String> {
-        self.post.install_effect(&self.device, effect)
+        if let Some(gpu) = &mut self.material_gpu
+            && gpu.set(&update.resource, &update.name, &update.value)?
+        {
+            return Ok(());
+        }
+        if self.post.set_parameter(update)? {
+            return Ok(());
+        }
+        Err(format!(
+            "{}: visual parameter resource not installed",
+            update.resource
+        ))
     }
     pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
         self.game_ui.install_package_ui(resources);
@@ -291,6 +289,7 @@ impl Renderer {
             camera_buffer,
             camera_group,
             texture_group,
+            material_gpu: None,
             target_pipeline,
             target_camera_buffer,
             target_camera_group,
@@ -528,6 +527,9 @@ impl Renderer {
             0,
             bytemuck::cast_slice(&view_projection.to_cols_array()),
         );
+        if let Some(gpu) = &mut self.material_gpu {
+            gpu.update(&self.queue);
+        }
         if let Some(target) = ui_frame.target {
             self.queue.write_buffer(
                 &self.target_camera_buffer,
@@ -597,8 +599,15 @@ impl Renderer {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
             pass.set_bind_group(1, &self.texture_group, &[]);
+            if let Some(gpu) = &self.material_gpu {
+                pass.set_bind_group(2, &gpu.group, &[]);
+            }
             for (key, mesh) in &self.meshes {
-                if !chunk_visible(view_projection, *key) {
+                if !visibility::chunk_visible_padded(
+                    view_projection,
+                    *key,
+                    self.material_gpu.as_ref().map_or(0.0, custom::Gpu::padding),
+                ) {
                     continue;
                 }
                 if let Some(opaque) = &mesh.opaque {
@@ -617,8 +626,17 @@ impl Renderer {
             }
             stats.drawn_triangles += self.avatars.draw(&mut pass);
             pass.set_pipeline(&self.cutout_pipeline);
+            pass.set_bind_group(0, &self.camera_group, &[]);
+            pass.set_bind_group(1, &self.texture_group, &[]);
+            if let Some(gpu) = &self.material_gpu {
+                pass.set_bind_group(2, &gpu.group, &[]);
+            }
             for (key, mesh) in &self.meshes {
-                if !chunk_visible(view_projection, *key) {
+                if !visibility::chunk_visible_padded(
+                    view_projection,
+                    *key,
+                    self.material_gpu.as_ref().map_or(0.0, custom::Gpu::padding),
+                ) {
                     continue;
                 }
                 if let Some(cutout) = &mesh.cutout {

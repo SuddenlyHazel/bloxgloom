@@ -6,7 +6,6 @@ pub(super) struct Targets {
     pub bloom: [wgpu::TextureView; 2],
     pub groups: [wgpu::BindGroup; 3],
     pub composite_group: wgpu::BindGroup,
-    pub filtered: Option<wgpu::TextureView>,
 }
 
 impl Targets {
@@ -17,7 +16,7 @@ impl Targets {
         layout: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
         settings: &wgpu::Buffer,
-        effect: bool,
+        effect: Option<&mut crate::render::effects::Effect>,
     ) -> Self {
         let texture = |label, width, height| {
             device
@@ -39,8 +38,12 @@ impl Targets {
                 .create_view(&Default::default())
         };
         let scene = texture("linear HDR scene", width.max(1), height.max(1));
-        let filtered =
-            effect.then(|| texture("package filtered scene", width.max(1), height.max(1)));
+        let color = if let Some(effect) = effect {
+            effect.resize(device, &scene);
+            effect.output()
+        } else {
+            &scene
+        };
         let bloom = [
             texture(
                 "bloom A",
@@ -78,7 +81,6 @@ impl Targets {
             })
         };
         // Each filter binds only its source, never the current attachment.
-        let color = filtered.as_ref().unwrap_or(&scene);
         let groups = [
             group(color, color),
             group(&bloom[0], &bloom[0]),
@@ -90,7 +92,6 @@ impl Targets {
             bloom,
             groups,
             composite_group,
-            filtered,
         }
     }
 }

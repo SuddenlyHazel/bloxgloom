@@ -147,6 +147,20 @@ pub struct ClientBundle {
 }
 
 impl ClientBundle {
+    pub(crate) fn parameter_state(&self) -> Result<crate::render::parameters::State, String> {
+        let mut state = crate::render::parameters::State::default();
+        if let Some(source) = &self.material {
+            for material in &source.materials {
+                state.register(&material.owner, &material.parameters)?;
+            }
+        }
+        if let Some(effect) = &self.effect {
+            for pass in &effect.passes {
+                state.register(&pass.owner, pass.parameters())?;
+            }
+        }
+        Ok(state)
+    }
     pub(crate) fn effect(&self) -> Option<&std::sync::Arc<crate::render::effects::Prepared>> {
         self.effect.as_ref()
     }
@@ -307,8 +321,8 @@ impl ClientBundle {
                 }
                 let asset_limit = match kind {
                     6 => crate::render::effects::MAX_SHADER_BYTES,
-                    7 => 1024,
-                    8 => 1024,
+                    7 => crate::render::effects::MAX_DESCRIPTOR_BYTES,
+                    8 => crate::render::custom::MAX_DESCRIPTOR_BYTES,
                     9 => crate::render::custom::MAX_SHADER_BYTES,
                     _ => MAX_ASSET_BYTES,
                 };

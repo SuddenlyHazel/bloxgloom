@@ -1538,6 +1538,21 @@ impl ClientApp {
         }
         self.validate_kiln_screen();
         self.move_player(dt);
+        let mut parameter_updates = self
+            .package_ui
+            .as_mut()
+            .map_or_else(Vec::new, |ui| ui.take_parameters());
+        if let Some(visual) = &mut self.visual_session {
+            parameter_updates.extend(visual.take_parameters());
+        }
+        if let Some(renderer) = &mut self.renderer {
+            for update in &parameter_updates {
+                if let Err(error) = renderer.set_visual_parameter(update) {
+                    self.fail_session(&error);
+                    return;
+                }
+            }
+        }
         let camera = self.camera();
         if self.status.as_ref().is_some_and(|(_, until)| now > *until) {
             self.status = None;

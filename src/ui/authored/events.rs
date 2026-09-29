@@ -277,20 +277,32 @@ impl Session {
             return;
         }
         let result = reply.result.and_then(|commands| {
+            let owner = self.document().id.split_once(':').unwrap().0.to_owned();
+            let parameter_owner = if reply.replica {
+                self.replica_owner().unwrap_or("")
+            } else {
+                &owner
+            }
+            .to_owned();
+            for command in &commands {
+                if let Command::Parameter(update) = command {
+                    self.parameters.check(&parameter_owner, update)?;
+                }
+            }
             // Validate the whole batch before modifying anything. Target IDs must
             // name this exact document, not even another document of this package.
-            let owner = self.document().id.split_once(':').unwrap().0;
             let valid = commands.iter().all(|c| match c {
                 Command::State(_) => true,
+                Command::Parameter(_) => true,
                 Command::Text(id, _) => {
-                    (!reply.replica || self.replica_owner() == Some(owner))
+                    (!reply.replica || self.replica_owner() == Some(owner.as_str()))
                         && self.document().nodes.iter().any(|n| {
                             n.id == *id
                                 && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
                         })
                 }
                 Command::Visible(id, _) => {
-                    (!reply.replica || self.replica_owner() == Some(owner))
+                    (!reply.replica || self.replica_owner() == Some(owner.as_str()))
                         && self.document().nodes.iter().any(|n| n.id == *id)
                 }
                 Command::Action(key, _) if !reply.replica => key
@@ -350,6 +362,11 @@ impl Session {
             for command in commands {
                 match command {
                     Command::State(value) => self.state = value,
+                    Command::Parameter(update) => {
+                        self.parameters
+                            .apply(&parameter_owner, &[update])
+                            .expect("validated parameter batch");
+                    }
                     Command::Text(id, value) => {
                         let i = self
                             .document()
@@ -397,6 +414,10 @@ impl Session {
             eprintln!("client presentation event {}: {error}", reply.sequence);
             self.failure = Some(error);
         }
+    }
+
+    pub(crate) fn take_parameters(&mut self) -> Vec<crate::render::parameters::Update> {
+        self.parameters.take_updates()
     }
 
     pub(crate) fn text_at(&self, i: usize) -> &str {

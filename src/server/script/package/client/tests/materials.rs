@@ -4,6 +4,45 @@ const SHADER: &str =
     include_str!("../../../../../../fixtures/material-packages/jade/assets/shaders/jade.wgsl");
 const DESCRIPTOR: &str = r#"{"shader":"jade","texture":"bloxgloom:stone"}"#;
 
+#[test]
+fn version_two_material_verifies_hooks_parameters_and_negotiated_layers() {
+    let descriptor = r#"{"version":2,"shader":"jade","targets":["bloxgloom:stone","bloxgloom:dirt"],"textures":["bloxgloom:stone","bloxgloom:dirt"],"parameters":[{"name":"gain","kind":"float","default":0.5,"min":0,"max":1}],"vertex_offset":0.1}"#;
+    let shader = "fn material_fragment(input: BgSurface) -> BgSurface { var result=input; result.albedo=material_texture(input.uv,1u)*material_parameter(0u).x; return result; }";
+    let bytes = bundle(&["jade"], descriptor, shader, false);
+    let verified = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+    let catalog = crate::content::Catalog::builtins();
+    let material = verified.material().unwrap().resolve(&catalog).unwrap();
+    assert_eq!(material.materials[0].layers, vec![3, 2]);
+    let mut state = verified.parameter_state().unwrap();
+    state
+        .apply(
+            "jade",
+            &[crate::render::parameters::Update {
+                resource: "jade:tint".into(),
+                name: "gain".into(),
+                value: crate::render::parameters::Value::Scalar(0.75),
+            }],
+        )
+        .unwrap();
+    for descriptor in [
+        descriptor.replace("\"version\":2", "\"version\":3"),
+        descriptor.replace("\"vertex_offset\":0.1", "\"vertex_offset\":0.3"),
+        descriptor.replace("\"default\":0.5", "\"default\":2"),
+        descriptor.replace("bloxgloom:dirt", "other:dirt"),
+    ] {
+        let bad = bundle(&["jade"], &descriptor, shader, false);
+        assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
+    }
+    for shader in [
+        shader.replace("return result;", "loop {} return result;"),
+        shader.replace("BgSurface", "BgVertex"),
+        format!("{shader}\n@group(3) @binding(0) var<uniform> foreign:vec4f;"),
+    ] {
+        let bad = bundle(&["jade"], descriptor, &shader, false);
+        assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
+    }
+}
+
 fn bundle(packages: &[&str], descriptor: &str, shader: &str, extra: bool) -> Vec<u8> {
     let mut writer = header(packages.len());
     for package in packages {
@@ -36,7 +75,7 @@ fn material_bundle_verifies_key_ownership_limits_and_catalog_readiness() {
         .unwrap()
         .resolve(&crate::content::Catalog::builtins())
         .unwrap();
-    assert_eq!(resolved.owner, "jade:tint");
+    assert_eq!(resolved.materials[0].owner, "jade:tint");
     for descriptor in [
         DESCRIPTOR.replace("bloxgloom:stone", "other:stone"),
         DESCRIPTOR.replace("bloxgloom:stone", "jade:missing"),
@@ -95,7 +134,7 @@ fn format_two_fixture_discovers_and_resolves_material_without_effect_or_ui() {
     )
     .unwrap();
     let catalog = verified.session_catalog().unwrap();
-    assert_eq!(verified.material().unwrap().owner, "jade:tint");
+    assert_eq!(verified.material().unwrap().materials[0].owner, "jade:tint");
     assert!(verified.effect().is_none() && verified.ui().is_none());
     assert_eq!(
         verified.packages()["jade"].textures["tile"],
@@ -173,7 +212,7 @@ fn material_effect_and_ui_assets_coexist_in_canonical_bundle() {
     let bundle = ClientBundle::decode_verify(&writer.0, key(&writer.0)).unwrap();
     assert!(bundle.ui().is_some());
     assert_eq!(bundle.effect().unwrap().owner, "jade:grade");
-    assert_eq!(bundle.material().unwrap().owner, "jade:tint");
+    assert_eq!(bundle.material().unwrap().materials[0].owner, "jade:tint");
     bundle
         .material()
         .unwrap()

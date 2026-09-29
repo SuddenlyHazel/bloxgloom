@@ -4,6 +4,45 @@ const SHADER: &str =
     include_str!("../../../fixtures/effect-packages/sepia/assets/shaders/sepia.wgsl");
 
 #[test]
+fn composed_resources_require_exact_direct_dependencies() {
+    use crate::server::client_bundle::ClientPackage;
+    let package = |output: &str, input: &str, final_output: bool, dependencies| {
+        ClientPackage {
+        version: "1.0.0".into(), dependencies, sources: BTreeMap::new(), textures: BTreeMap::new(),
+        ui_assets: BTreeMap::new(), material_assets: BTreeMap::new(),
+        effect_assets: BTreeMap::from([
+            ("pass".into(),(7,format!(r#"{{"version":2,"shader":"shader","inputs":["{input}"],"output":"{output}","final":{final_output}}}"#).into_bytes())),
+            ("shader".into(),(6,b"fn effect_fragment(uv:vec2f)->vec4f { return effect_input(uv,0u); }".to_vec())),
+        ]),
+    }
+    };
+    let mut packages = BTreeMap::from([
+        (
+            "base".into(),
+            package("base:color", SCENE, false, BTreeMap::new()),
+        ),
+        (
+            "shade".into(),
+            package(
+                "shade:color",
+                "base:color",
+                true,
+                BTreeMap::from([("base".into(), "1.0.0".into())]),
+            ),
+        ),
+    ]);
+    let prepared = prepare(&packages).unwrap().unwrap();
+    assert_eq!(prepared.passes[0].owner, "base:pass");
+    assert_eq!(prepared.passes[1].owner, "shade:pass");
+    packages.get_mut("shade").unwrap().dependencies.clear();
+    assert!(
+        prepare(&packages)
+            .unwrap_err()
+            .contains("exact direct dependency")
+    );
+}
+
+#[test]
 fn fragment_contract_rejects_unbounded_work_and_foreign_bindings() {
     validate(SHADER).unwrap();
     for shader in [
@@ -24,7 +63,20 @@ fn fragment_contract_rejects_unbounded_work_and_foreign_bindings() {
 
 #[test]
 fn verified_example_gpu_pass_survives_resize_and_grades_scene() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages");
+    gpu_preview(false);
+}
+
+#[test]
+fn version_two_graph_composes_declared_inputs_and_parameters_on_gpu() {
+    gpu_preview(true);
+}
+
+fn gpu_preview(extended: bool) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if extended {
+        "fixtures/visual-packages"
+    } else {
+        "fixtures/effect-packages"
+    });
     let snapshot = crate::server::PackageSnapshot::discover(&root).unwrap();
     let prepared = snapshot.client_bundle().effect().unwrap();
     let instance = wgpu::Instance::default();
@@ -35,6 +87,14 @@ fn verified_example_gpu_pass_survives_resize_and_grades_scene() {
     post.install_effect(&device, prepared).unwrap();
     post.resize(&device, 1, 1);
     post.resize(&device, 7, 5);
+    if extended {
+        post.set_parameter(&crate::render::parameters::Update {
+            resource: "prism:mix".into(),
+            name: "strength".into(),
+            value: crate::render::parameters::Value::Scalar(1.0),
+        })
+        .unwrap();
+    }
     post.configure(&queue, false, 1.0, 0.0);
     let output = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("effect behavioral output"),

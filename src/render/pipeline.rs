@@ -5,6 +5,14 @@ use super::{DEPTH_FORMAT, VERTEX_FLOATS};
 use crate::content::Catalog;
 use wgpu::util::DeviceExt;
 
+pub(crate) type VoxelPipelines = (
+    wgpu::RenderPipeline,
+    wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::BindGroup,
+    wgpu::BindGroup,
+);
+
 const VERTEX_STRIDE: u64 = VERTEX_FLOATS as u64 * 4;
 
 pub(crate) fn create_voxel_pipeline(
@@ -33,7 +41,18 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
     wgpu::BindGroup,
     wgpu::BindGroup,
 ) {
-    create_voxel_pipeline_source(device, queue, format, catalog, &with_world_sun(SHADER))
+    let source = format!(
+        "{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
+        custom::TYPES
+    );
+    create_voxel_pipeline_source(
+        device,
+        queue,
+        format,
+        catalog,
+        &with_world_sun(&source),
+        None,
+    )
 }
 
 /// Prepared on a worker; the renderer still owns vertex geometry, projection,
@@ -44,42 +63,35 @@ pub(crate) fn create_custom_voxel_pipeline(
     format: wgpu::TextureFormat,
     catalog: &Catalog,
     prepared: &custom::Prepared,
-) -> Result<
-    (
-        wgpu::RenderPipeline,
-        wgpu::RenderPipeline,
-        wgpu::Buffer,
-        wgpu::BindGroup,
-        wgpu::BindGroup,
-    ),
-    String,
-> {
-    let source = custom::compose(SHADER, prepared);
+) -> Result<(VoxelPipelines, custom::Gpu), String> {
+    let source = format!("{}\n{}\n{SHADER}", custom::TYPES, custom::compose(prepared));
+    let owners = prepared
+        .materials
+        .iter()
+        .map(|m| m.owner.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     std::thread::scope(|scope| {
         scope
             .spawn(|| {
                 let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let gpu = custom::Gpu::new(device, prepared);
                 let pipelines = create_voxel_pipeline_source(
                     device,
                     queue,
                     format,
                     catalog,
                     &with_world_sun(&source),
+                    Some(&gpu.layout),
                 );
-                pollster::block_on(error_scope.pop()).map_or(Ok(pipelines), |error| {
-                    Err(format!(
-                        "{}: voxel shader pipeline: {error}",
-                        prepared.owner
-                    ))
-                })
+                if let Some(error) = pollster::block_on(error_scope.pop()) {
+                    Err(format!("{owners}: material GPU preparation: {error}"))
+                } else {
+                    Ok((pipelines, gpu))
+                }
             })
             .join()
-            .map_err(|_| {
-                format!(
-                    "{}: voxel shader GPU preparation worker panicked",
-                    prepared.owner
-                )
-            })?
+            .map_err(|_| format!("{owners}: material GPU preparation worker panicked"))?
     })
 }
 
@@ -89,6 +101,7 @@ fn create_voxel_pipeline_source(
     format: wgpu::TextureFormat,
     catalog: &Catalog,
     source: &str,
+    visual_layout: Option<&wgpu::BindGroupLayout>,
 ) -> (
     wgpu::RenderPipeline,
     wgpu::RenderPipeline,
@@ -246,9 +259,13 @@ fn create_voxel_pipeline_source(
             },
         ],
     });
+    let mut layouts = vec![Some(&camera_layout), Some(&texture_layout)];
+    if let Some(visual) = visual_layout {
+        layouts.push(Some(visual));
+    }
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("voxel pipeline layout"),
-        bind_group_layouts: &[Some(&camera_layout), Some(&texture_layout)],
+        bind_group_layouts: &layouts,
         immediate_size: 0,
     });
     let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32];
@@ -303,60 +320,4 @@ fn create_voxel_pipeline_source(
     )
 }
 
-const SHADER: &str = r#"
-struct Camera { view_projection: mat4x4<f32> };
-@group(0) @binding(0) var<uniform> camera: Camera;
-struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-    @location(3) layer: f32,
-    @location(4) light_levels: vec2<f32>,
-    @location(5) bounce_packed: f32,
-};
-struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-    @location(1) light: vec3<f32>,
-    @location(2) @interpolate(flat) layer: i32,
-    @location(3) distance: f32,
-    @location(4) sky_level: f32,
-};
-@group(1) @binding(0) var material: texture_2d_array<f32>;
-@group(1) @binding(1) var material_sampler: sampler;
-@group(1) @binding(2) var<storage, read> material_emission: array<f32>;
-@vertex fn vs_main(input: VertexInput) -> VertexOutput {
-    var output: VertexOutput;
-    output.position = camera.view_projection * vec4<f32>(input.position, 1.0);
-    let sunlight = max(dot(input.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
-    let sky = input.light_levels.x;
-    let glow = input.light_levels.y;
-    let encoded = u32(input.bounce_packed);
-    let bounce = vec3<f32>(f32(encoded & 255u), f32((encoded >> 8u) & 255u), f32((encoded >> 16u) & 255u)) / 255.0;
-    output.light = vec3<f32>(0.012, 0.015, 0.022)
-        + sky * (vec3<f32>(0.31, 0.40, 0.53)
-            + sunlight * vec3<f32>(0.77, 0.66, 0.47))
-        + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
-        + bounce * 1.35;
-    output.uv = input.uv;
-    output.layer = i32(input.layer);
-    output.distance = output.position.w;
-    output.sky_level = sky;
-    return output;
-}
-fn shade(input: VertexOutput, albedo: vec3<f32>) -> vec4<f32> {
-    let fog = smoothstep(38.0, 135.0, input.distance);
-    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
-    let emission = albedo * material_emission[u32(input.layer)];
-    return vec4<f32>(mix(albedo * input.light + emission, fog_sky, fog), 1.0);
-}
-@fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo = textureSample(material, material_sampler, input.uv, input.layer).rgb;
-    return shade(input, albedo);
-}
-@fragment fn fs_cutout(input: VertexOutput) -> @location(0) vec4<f32> {
-    let texel = textureSample(material, material_sampler, input.uv, input.layer);
-    if texel.a < 0.5 { discard; }
-    return shade(input, texel.rgb);
-}
-"#;
+const SHADER: &str = include_str!("pipeline.wgsl");

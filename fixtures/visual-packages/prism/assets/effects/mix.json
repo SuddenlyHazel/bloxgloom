@@ -1,0 +1,1 @@
+{"version":2,"shader":"mix_shader","inputs":["prism:graded","bloxgloom:scene_color"],"output":"prism:color","after":["prism:grade"],"order":0,"final":true,"parameters":[{"name":"strength","kind":"float","default":0.25,"min":0,"max":1}]}

@@ -1,47 +1,75 @@
-//! One bounded, renderer-scheduled scene-color effect. No package GPU commands.
-use std::collections::BTreeMap;
-
+//! Declarative, finite scene-color graphs. Packages never submit GPU commands.
+use super::parameters::{self, Definition};
 use crate::server::client_bundle::ClientPackage;
 use serde::Deserialize;
-use wgpu::naga;
-
+use std::collections::{BTreeMap, BTreeSet};
 mod gpu;
+mod graph;
+mod legacy;
+mod shader;
 pub(super) use gpu::Effect;
+#[cfg(test)]
+use legacy::validate;
 #[cfg(test)]
 mod tests;
 
+pub(crate) const MAX_DESCRIPTOR_BYTES: usize = 4096;
 pub(crate) const MAX_SHADER_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_PASSES: usize = 8;
+pub(crate) const SCENE: &str = "bloxgloom:scene_color";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Descriptor {
+struct Descriptor {
+    #[serde(default = "version_one")]
+    version: u8,
     shader: String,
-    stage: Stage,
+    stage: Option<Stage>,
+    #[serde(default)]
     order: u8,
+    #[serde(default)]
+    inputs: Vec<String>,
+    output: Option<String>,
+    #[serde(default)]
+    after: Vec<String>,
+    #[serde(default, rename = "final")]
+    final_output: bool,
+    #[serde(default = "version_one")]
+    scale: u8,
+    #[serde(default)]
+    parameters: Vec<Definition>,
 }
-
-#[derive(Debug, Deserialize)]
+fn version_one() -> u8 {
+    1
+}
+#[derive(Debug, Clone, Deserialize)]
 enum Stage {
     #[serde(rename = "scene_color")]
     SceneColor,
 }
-
-#[derive(Debug)]
-pub(crate) struct Prepared {
+#[derive(Debug, Clone)]
+pub(crate) struct Pass {
     pub owner: String,
-    pub descriptor: Descriptor,
+    descriptor: Descriptor,
     source: String,
 }
+#[derive(Debug, Clone)]
+pub(crate) struct Prepared {
+    #[cfg(test)]
+    pub owner: String,
+    pub passes: Vec<Pass>,
+    final_index: usize,
+}
+impl Pass {
+    pub(crate) fn parameters(&self) -> &[Definition] {
+        &self.descriptor.parameters
+    }
+}
 
-/// Runs the parser/validator on a preparation worker, including local bundle
-/// publication. Cached bundles retain this verified immutable preparation.
 pub(crate) fn prepare(
     packages: &BTreeMap<String, ClientPackage>,
 ) -> Result<Option<Prepared>, String> {
-    if packages
-        .values()
-        .all(|package| package.effect_assets.is_empty())
-    {
+    if packages.values().all(|p| p.effect_assets.is_empty()) {
         return Ok(None);
     }
     std::thread::scope(|scope| {
@@ -51,167 +79,107 @@ pub(crate) fn prepare(
             .map_err(|_| "effect preparation worker panicked".to_owned())?
     })
 }
-
 fn prepare_inner(packages: &BTreeMap<String, ClientPackage>) -> Result<Option<Prepared>, String> {
-    let mut result = None;
+    let mut passes = Vec::new();
     for (package, data) in packages {
-        if data.effect_assets.is_empty() {
-            continue;
-        }
-        let fail = |message: &str| format!("{package}: {message}");
-        // Exactly one descriptor and its exclusively owned local shader. This
-        // also bounds validation, retained source, pipelines and pass count.
-        if data.effect_assets.len() != 2 || result.is_some() {
-            return Err(fail(
-                "scene_color slot has duplicate ownership or orphan assets (maximum one effect per bundle)",
-            ));
-        }
-        let (name, (_, bytes)) = data
+        let mut used = BTreeSet::new();
+        for (name, (_, bytes)) in data
             .effect_assets
             .iter()
-            .find(|(_, (kind, _))| *kind == 7)
-            .ok_or_else(|| fail("missing effect descriptor"))?;
-        if bytes.len() > 1024 {
-            return Err(fail("effect descriptor exceeds 1024 bytes"));
-        }
-        let descriptor: Descriptor =
-            serde_json::from_slice(bytes).map_err(|e| fail(&format!("effect {name}: {e}")))?;
-        if descriptor.order != 0 || descriptor.shader.len() > 64 {
-            return Err(fail(
-                "scene_color order must be 0; shader must be a local asset key",
-            ));
-        }
-        let (kind, source) = data
-            .effect_assets
-            .get(&descriptor.shader)
-            .ok_or_else(|| fail("missing local shader"))?;
-        if *kind != 6 || source.len() > MAX_SHADER_BYTES {
-            return Err(fail("shader kind or 16 KiB resource limit"));
-        }
-        let source = std::str::from_utf8(source).map_err(|_| fail("shader is not UTF-8"))?;
-        validate(source).map_err(|e| fail(&format!("shader {}: {e}", descriptor.shader)))?;
-        result = Some(Prepared {
-            owner: format!("{package}:{name}"),
-            descriptor,
-            source: source.to_owned(),
-        });
-    }
-    Ok(result)
-}
-
-fn validate(source: &str) -> Result<(), String> {
-    let module = naga::front::wgsl::parse_str(source).map_err(|e| e.emit_to_string(source))?;
-    // Disallow large aggregate types before validation/backend lowering; a tiny
-    // source declaration must not request a gigantic local array or struct.
-    if module.types.iter().any(|(_, ty)| {
-        !matches!(
-            ty.inner,
-            naga::TypeInner::Scalar(_)
-                | naga::TypeInner::Vector { .. }
-                | naga::TypeInner::Matrix { .. }
-                | naga::TypeInner::Image { .. }
-                | naga::TypeInner::Sampler { .. }
-        )
-    }) {
-        return Err("only scalar/vector/matrix and fixed resource types are allowed".into());
-    }
-    naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::empty(),
-    )
-    .validate(&module)
-    .map_err(|e| e.to_string())?;
-    if module.entry_points.len() != 1
-        || !module.functions.is_empty()
-        || module.global_variables.len() != 3
-        || !module.overrides.is_empty()
-        || module.types.len() > 64
-        || module.global_expressions.len() > 128
-    {
-        return Err("shader resource/entrypoint limit exceeded".into());
-    }
-    let entry = &module.entry_points[0];
-    let vec4 = |ty| {
-        matches!(
-            module.types[ty].inner,
-            naga::TypeInner::Vector {
-                size: naga::VectorSize::Quad,
-                scalar: naga::Scalar {
-                    kind: naga::ScalarKind::Float,
-                    width: 4
+            .filter(|(_, (kind, _))| *kind == 7)
+        {
+            let owner = format!("{package}:{name}");
+            let fail = |e: String| format!("{owner}: effect: {e}");
+            if passes.len() == MAX_PASSES || bytes.len() > MAX_DESCRIPTOR_BYTES {
+                return Err(fail("effect count or descriptor limit exceeded".into()));
+            }
+            let mut descriptor: Descriptor =
+                serde_json::from_slice(bytes).map_err(|e| fail(e.to_string()))?;
+            if !parameters::identifier(&descriptor.shader) {
+                return Err(fail("shader must be a local asset key".into()));
+            }
+            let (kind, source) = data
+                .effect_assets
+                .get(&descriptor.shader)
+                .ok_or_else(|| fail("missing local shader".into()))?;
+            if *kind != 6 || source.len() > MAX_SHADER_BYTES {
+                return Err(fail("shader kind or 16 KiB resource limit".into()));
+            }
+            let source =
+                std::str::from_utf8(source).map_err(|_| fail("shader is not UTF-8".into()))?;
+            used.insert(descriptor.shader.clone());
+            match descriptor.version {
+                1 => {
+                    if bytes.len() > 1024
+                        || descriptor.stage.is_none()
+                        || descriptor.order != 0
+                        || !descriptor.inputs.is_empty()
+                        || descriptor.output.is_some()
+                        || !descriptor.after.is_empty()
+                        || descriptor.final_output
+                        || descriptor.scale != 1
+                        || !descriptor.parameters.is_empty()
+                    {
+                        return Err(fail(
+                            "legacy scene_color descriptor requires stage and order 0 only".into(),
+                        ));
+                    }
+                    legacy::validate(source).map_err(fail)?;
+                    descriptor.inputs.push(SCENE.into());
+                    descriptor.output = Some(owner.clone());
+                    descriptor.final_output = true;
                 }
-            }
-        )
-    };
-    if entry.name != "fs_main"
-        || entry.stage != naga::ShaderStage::Fragment
-        || entry.function.arguments.len() != 1
-        || !matches!(
-            entry.function.arguments[0].binding,
-            Some(naga::Binding::BuiltIn(naga::BuiltIn::Position { .. }))
-        )
-        || !vec4(entry.function.arguments[0].ty)
-        || entry.function.result.as_ref().is_none_or(|r| {
-            !vec4(r.ty) || !matches!(r.binding, Some(naga::Binding::Location { location: 0, .. }))
-        })
-        || entry.function.expressions.len() > 512
-        || entry.function.local_variables.len() > 32
-    {
-        return Err("expected only fs_main(@builtin(position) vec4f) -> @location(0) vec4f; expression limit 512".into());
-    }
-    let mut seen = [false; 3];
-    for (_, global) in module.global_variables.iter() {
-        let Some(binding) = global.binding.as_ref() else {
-            return Err("only fixed bound resources allowed".into());
-        };
-        if binding.group != 0 || binding.binding > 2 || seen[binding.binding as usize] {
-            return Err("binding allowlist: group 0 bindings 0,1,2 exactly once".into());
-        }
-        seen[binding.binding as usize] = true;
-        let valid = match binding.binding {
-            0 => {
-                global.space == naga::AddressSpace::Handle
-                    && matches!(
-                        module.types[global.ty].inner,
-                        naga::TypeInner::Image {
-                            dim: naga::ImageDimension::D2,
-                            arrayed: false,
-                            class: naga::ImageClass::Sampled {
-                                kind: naga::ScalarKind::Float,
-                                multi: false
-                            }
+                2 => {
+                    if descriptor.stage.is_some()
+                        || descriptor.inputs.is_empty()
+                        || descriptor.inputs.len() > 2
+                        || descriptor.output.is_none()
+                        || descriptor.after.len() > MAX_PASSES
+                        || !matches!(descriptor.scale, 1 | 2 | 4)
+                    {
+                        return Err(fail(
+                            "version 2 requires one/two inputs, an output, and scale 1, 2 or 4"
+                                .into(),
+                        ));
+                    }
+                    let output = descriptor.output.as_ref().unwrap();
+                    if output
+                        .split_once(':')
+                        .is_none_or(|(p, local)| p != package || !parameters::identifier(local))
+                    {
+                        return Err(fail("output must belong to this package".into()));
+                    }
+                    for resource in descriptor.inputs.iter().chain(&descriptor.after) {
+                        if resource == SCENE && descriptor.inputs.contains(resource) {
+                            continue;
                         }
-                    )
+                        if resource.split_once(':').is_none_or(|(p, local)| {
+                            !parameters::identifier(local)
+                                || (p != package && !data.dependencies.contains_key(p))
+                        }) {
+                            return Err(fail(format!(
+                                "{resource}: resource must belong to this package or an exact direct dependency"
+                            )));
+                        }
+                    }
+                    parameters::defaults(&descriptor.parameters).map_err(fail)?;
+                    shader::validate(source).map_err(fail)?;
+                }
+                _ => return Err(fail("unsupported effect contract version".into())),
             }
-            1 => {
-                global.space == naga::AddressSpace::Handle
-                    && matches!(
-                        module.types[global.ty].inner,
-                        naga::TypeInner::Sampler { comparison: false }
-                    )
-            }
-            2 => global.space == naga::AddressSpace::Uniform && vec4(global.ty),
-            _ => false,
-        };
-        if !valid {
-            return Err(
-                "binding type mismatch (scene texture, filtering sampler, vec4f time/size)".into(),
-            );
+            passes.push(Pass {
+                owner,
+                descriptor,
+                source: source.into(),
+            });
+        }
+        if data
+            .effect_assets
+            .iter()
+            .any(|(key, (kind, _))| *kind == 6 && !used.contains(key))
+        {
+            return Err(format!("{package}: orphan effect shader"));
         }
     }
-    // Straight-line fragments only: no loops, nested control flow, calls,
-    // discard, storage writes or atomics. Math and texture sampling remain useful.
-    if entry.function.body.len() > 128
-        || entry.function.body.iter().any(|s| {
-            !matches!(
-                s,
-                naga::Statement::Emit(_)
-                    | naga::Statement::Return { .. }
-                    | naga::Statement::Store { .. }
-            )
-        })
-    {
-        return Err("only straight-line fragment math is allowed (128 statement limit)".into());
-    }
-    Ok(())
+    graph::prepare(passes).map(Some)
 }

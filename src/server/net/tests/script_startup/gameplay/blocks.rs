@@ -181,7 +181,7 @@ fn package_cube_joins_places_and_recovers_with_identical_session_catalog() {
             );
             let material = bundle.material().unwrap().resolve(&joined).unwrap();
             let layer = joined.block(block).unwrap().textures.side.get() as f32;
-            assert_eq!(material.owner, "demo:tint");
+            assert_eq!(material.materials[0].owner, "demo:tint");
             assert_eq!(material.selected_layer() as f32, layer);
             // World geometry, not an item sprite, carries the shader-selected layer.
             let mut chunk = Chunk {

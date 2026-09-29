@@ -5,6 +5,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 mod visual;
 pub(crate) use visual::VisualSession;
 mod effects;
+pub(crate) mod parameters;
 pub(crate) use effects::EffectBuffer;
 #[cfg(test)]
 #[path = "presentation/tests.rs"]
@@ -63,6 +64,7 @@ pub(crate) enum Command {
     Visible(String, bool),
     State(String),
     Action(String, Vec<u8>),
+    Parameter(crate::render::parameters::Update),
     /// A client-only offset applied after authoritative pose reconstruction.
     Visual(u64, [f32; 3]),
     /// Client-only RGB multiplier for an offered entity's rendered model.
@@ -206,6 +208,11 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             let command: mlua::Table = output.raw_get(index)?;
             let op = text(&command, "op", 16)?;
             commands.push(match op.as_str() {
+                "parameter" => Command::Parameter(crate::render::parameters::Update {
+                    resource: text(&command, "resource", 129)?,
+                    name: text(&command, "name", 64)?,
+                    value: parameters::decode(command.raw_get("value")?)?,
+                }),
                 "text" => Command::Text(
                     text(&command, "node", 194)?,
                     display_text(&command, "value", 128)?,

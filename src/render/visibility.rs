@@ -35,9 +35,14 @@ pub(super) fn create_depth(device: &wgpu::Device, width: u32, height: u32) -> wg
 }
 
 pub(crate) fn chunk_visible(matrix: Mat4, key: ChunkKey) -> bool {
+    chunk_visible_padded(matrix, key, 0.0)
+}
+
+pub(super) fn chunk_visible_padded(matrix: Mat4, key: ChunkKey, padding: f32) -> bool {
     let n = CHUNK_SIZE as f32;
     let min = Vec3::new(key.x as f32 * n, key.y as f32 * n, key.z as f32 * n);
-    let max = min + Vec3::splat(n);
+    let max = min + Vec3::splat(n + padding);
+    let min = min - Vec3::splat(padding);
     // Reject only when all corners lie outside one clip plane. This avoids any
     // dependence on matrix row/column extraction conventions.
     let corners = [

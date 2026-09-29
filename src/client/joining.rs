@@ -9,6 +9,7 @@ pub(super) struct JoinApp {
     renderer: Option<Renderer>,
     live: Option<ClientApp>,
     attempt: Option<Attempt>,
+    installing: Option<Installing>,
     prior_writer: Option<ConfigWriter>,
     address: String,
     config_path: PathBuf,
@@ -19,6 +20,12 @@ pub(super) struct JoinApp {
     next_frame: Instant,
 }
 
+struct Installing {
+    candidate: ClientApp,
+    preparation: crate::render::Preparation,
+    cancelled: bool,
+}
+
 impl JoinApp {
     pub(super) fn new(address: &str, admin_enabled: bool) -> Self {
         Self {
@@ -26,6 +33,7 @@ impl JoinApp {
             renderer: None,
             live: None,
             attempt: None,
+            installing: None,
             prior_writer: None,
             address: address.chars().take(256).collect(),
             config_path: Config::default_path(),
@@ -51,7 +59,7 @@ impl JoinApp {
     }
 
     fn start(&mut self) {
-        if self.attempt.is_some() || self.live.is_some() {
+        if self.attempt.is_some() || self.installing.is_some() || self.live.is_some() {
             return;
         }
         self.first_frame = false;
@@ -67,7 +75,12 @@ impl JoinApp {
     }
 
     fn action(&mut self) {
-        if let Some(attempt) = &mut self.attempt {
+        if let Some(installing) = &mut self.installing {
+            installing.cancelled = true;
+            installing
+                .candidate
+                .fail_session("Join cancelled during GPU preparation");
+        } else if let Some(attempt) = &mut self.attempt {
             attempt.cancel();
         } else {
             self.start();
@@ -96,30 +109,61 @@ impl JoinApp {
                     self.error = Some(error.to_string().chars().take(2048).collect());
                 }
                 Ok(prepared) => {
-                    // Retire the bootstrap surface before configuring the live
-                    // one. GPU creation remains on the window thread; no network,
-                    // config writes, package execution, light or mesh work does.
+                    // The candidate owns the surface while its package shaders
+                    // compile asynchronously. No snapshots are drained yet.
                     self.renderer = None;
                     let mut candidate =
                         ClientApp::new(prepared.network, prepared.config, self.config_path.clone());
                     candidate.admin_enabled = self.admin_enabled;
-                    match candidate.install_window(Arc::clone(self.window.as_ref().unwrap())) {
-                        Ok(()) => {
-                            candidate.show_status("F2: leave session / change server");
-                            self.window.as_ref().unwrap().set_title("Bloxgloom");
-                            self.error = None;
-                            self.live = Some(candidate);
+                    match candidate.begin_window_install(Arc::clone(self.window.as_ref().unwrap()))
+                    {
+                        Ok(preparation) => {
+                            self.renderer = candidate.renderer.take();
+                            self.installing = Some(Installing {
+                                candidate,
+                                preparation,
+                                cancelled: false,
+                            });
                         }
                         Err(error) => {
                             candidate.fail_session(&error);
-                            // A failed GPU install still created a config worker.
-                            // Serialize its retirement before the next retry
-                            // loads the same settings file.
                             self.prior_writer = Some(candidate.config_writer);
                             self.error = Some(error);
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn poll_installation(&mut self) {
+        let ready = self
+            .installing
+            .as_mut()
+            .and_then(|installing| installing.preparation.poll());
+        let Some(ready) = ready else {
+            return;
+        };
+        let mut installing = self.installing.take().unwrap();
+        installing.candidate.renderer = self.renderer.take();
+        let result = if installing.cancelled {
+            Err("Join cancelled during GPU preparation".into())
+        } else {
+            ready.and_then(|ready| installing.candidate.finish_window_install(ready))
+        };
+        match result {
+            Ok(()) => {
+                installing
+                    .candidate
+                    .show_status("F2: leave session / change server");
+                self.window.as_ref().unwrap().set_title("Bloxgloom");
+                self.error = None;
+                self.live = Some(installing.candidate);
+            }
+            Err(error) => {
+                installing.candidate.fail_session(&error);
+                self.prior_writer = Some(installing.candidate.config_writer);
+                self.error = Some(error);
             }
         }
     }
@@ -131,6 +175,11 @@ impl JoinApp {
         }
         self.renderer = None;
         self.window = None;
+        if let Some(mut installing) = self.installing.take() {
+            installing.candidate.fail_session("Window closed");
+            installing.preparation.finish();
+            self.prior_writer = Some(installing.candidate.config_writer);
+        }
         if let Some(attempt) = self.attempt.take() {
             attempt.finish();
         }
@@ -141,6 +190,7 @@ impl JoinApp {
 
     fn draw(&mut self, event_loop: &ActiveEventLoop) {
         self.poll();
+        self.poll_installation();
         if let Some(live) = &mut self.live {
             live.frame();
             return;
@@ -150,10 +200,17 @@ impl JoinApp {
             event_loop.exit();
             return;
         }
-        let stage = self
-            .attempt
-            .as_ref()
-            .map_or("starting", |a| a.control.label());
+        let stage = if let Some(installing) = &self.installing {
+            if installing.cancelled {
+                "cancelling; waiting for GPU preparation"
+            } else {
+                "package shader GPU preparation"
+            }
+        } else {
+            self.attempt
+                .as_ref()
+                .map_or("starting", |a| a.control.label())
+        };
         let text = self.error.as_deref().unwrap_or(stage);
         let frame = UiFrame {
             screen: if self.error.is_some() {
@@ -178,7 +235,9 @@ impl JoinApp {
         }
         for intent in self.renderer.as_mut().unwrap().take_game_ui_intents() {
             match intent {
-                crate::render::GameUiIntent::JoinAddress(address) if self.attempt.is_none() => {
+                crate::render::GameUiIntent::JoinAddress(address)
+                    if self.attempt.is_none() && self.installing.is_none() =>
+                {
                     self.address = address
                         .chars()
                         .filter(|character| character.is_ascii_graphic())
@@ -249,13 +308,13 @@ impl ApplicationHandler for JoinApp {
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.physical_key {
-                    PhysicalKey::Code(KeyCode::Escape) => {
-                        if let Some(attempt) = &mut self.attempt {
-                            attempt.cancel();
-                        }
+                    PhysicalKey::Code(KeyCode::Escape)
+                        if self.attempt.is_some() || self.installing.is_some() =>
+                    {
+                        self.action();
                     }
                     PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter)
-                        if !event.repeat && self.attempt.is_none() =>
+                        if !event.repeat && self.attempt.is_none() && self.installing.is_none() =>
                     {
                         self.start()
                     }
@@ -303,6 +362,10 @@ impl ApplicationHandler for JoinApp {
     fn exiting(&mut self, _: &ActiveEventLoop) {
         if let Some(attempt) = &mut self.attempt {
             attempt.cancel();
+        }
+        if let Some(installing) = &mut self.installing {
+            installing.cancelled = true;
+            installing.candidate.fail_session("Window closed");
         }
         self.retire_live("Window closed".into());
         self.renderer = None;

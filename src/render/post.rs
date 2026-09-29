@@ -26,7 +26,6 @@ pub(crate) struct PostProcess {
     enabled: bool,
     bloom_strength: f32,
     effect: Option<super::effects::Effect>,
-    filtered: Option<wgpu::TextureView>,
 }
 
 impl PostProcess {
@@ -86,7 +85,7 @@ impl PostProcess {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let targets =
-            targets::Targets::new(device, width, height, &layout, &sampler, &settings, false);
+            targets::Targets::new(device, width, height, &layout, &sampler, &settings, None);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("HDR and bloom shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("post.wgsl").into()),
@@ -140,7 +139,6 @@ impl PostProcess {
             bloom_strength: 0.12,
             composite_group: targets.composite_group,
             effect: None,
-            filtered: None,
         }
     }
 
@@ -152,13 +150,12 @@ impl PostProcess {
             &self.layout,
             &self.sampler,
             &self.settings,
-            self.effect.is_some(),
+            self.effect.as_mut(),
         );
         self.scene = targets.scene;
         self.bloom = targets.bloom;
         self.groups = targets.groups;
         self.composite_group = targets.composite_group;
-        self.filtered = targets.filtered;
     }
 
     pub(crate) fn install_effect(
@@ -167,10 +164,27 @@ impl PostProcess {
         prepared: &super::effects::Prepared,
     ) -> Result<(), String> {
         let effect = super::effects::Effect::prepare(device, prepared)?;
+        self.install_prepared_effect(device, effect);
+        Ok(())
+    }
+
+    pub(super) fn install_prepared_effect(
+        &mut self,
+        device: &wgpu::Device,
+        effect: super::effects::Effect,
+    ) {
         self.effect = Some(effect);
         let size = self.scene.texture().size();
         self.resize(device, size.width, size.height);
-        Ok(())
+    }
+
+    pub(crate) fn set_parameter(
+        &mut self,
+        update: &super::parameters::Update,
+    ) -> Result<bool, String> {
+        self.effect.as_mut().map_or(Ok(false), |effect| {
+            effect.set(&update.resource, &update.name, &update.value)
+        })
     }
 
     pub fn configure(
@@ -203,13 +217,13 @@ impl PostProcess {
 
     pub fn encode(
         &self,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         output: &wgpu::TextureView,
     ) {
-        if let (Some(effect), Some(target)) = (&self.effect, &self.filtered) {
-            effect.encode(device, queue, encoder, &self.scene, target);
+        if let Some(effect) = &self.effect {
+            effect.encode(queue, encoder);
         }
         let mut draw = |label,
                         pipeline: &wgpu::RenderPipeline,

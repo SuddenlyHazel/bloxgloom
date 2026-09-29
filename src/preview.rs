@@ -1,6 +1,8 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
 mod block;
+mod visuals;
+pub use visuals::render_visual_previews;
 mod egui_ui;
 pub use block::render_block_preview;
 pub use egui_ui::render_egui_previews;
@@ -510,7 +512,7 @@ async fn render_previews_with_packages(
         .await?;
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
-    let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
+    let (mut pipeline, mut cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut avatar_renderer = render::AvatarRenderer::new(
@@ -554,20 +556,20 @@ async fn render_previews_with_packages(
     } else {
         None
     };
-    let package_effect = if matches!(scene, PreviewScene::Effect) {
-        let snapshot = crate::server::PackageSnapshot::discover(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages"),
-        )
-        .map_err(|error| format!("effect preview: {error:?}"))?;
-        Some(Arc::clone(
-            snapshot
-                .client_bundle()
-                .effect()
-                .ok_or("missing sample effect")?,
-        ))
-    } else {
-        None
-    };
+    let default_effect_root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/effect-packages");
+    let mut visual_resources =
+        if package_root.is_some() && !authored_preview || matches!(scene, PreviewScene::Effect) {
+            Some(visuals::Resources::prepare(
+                &device,
+                &queue,
+                package_root.unwrap_or(&default_effect_root),
+                &mut pipeline,
+                &mut cutout_pipeline,
+            )?)
+        } else {
+            None
+        };
     let center_x = center_chunk.0 * 16;
     let center_z = center_chunk.1 * 16;
     let camera_xz = (center_x + 40, center_z + 16);
@@ -1281,8 +1283,14 @@ async fn render_previews_with_packages(
             mapped_at_creation: false,
         });
         let mut post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
-        if let Some(effect) = &package_effect {
-            post.install_effect(&device, effect)?;
+        if let Some(resources) = &mut visual_resources {
+            if let Some(effect) = &resources.effect {
+                post.install_effect(&device, effect)?;
+            }
+            resources.apply_effect_updates(&mut post)?;
+            if let Some(gpu) = &mut resources.material {
+                gpu.update(&queue);
+            }
         }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("preview commands"),
@@ -1315,6 +1323,9 @@ async fn render_previews_with_packages(
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
             pass.set_bind_group(1, &texture_group, &[]);
+            if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
+                pass.set_bind_group(2, &gpu.group, &[]);
+            }
             for (opaque, _) in &gpu_meshes {
                 if let Some((vertices, indices, count)) = opaque {
                     pass.set_vertex_buffer(0, vertices.slice(..));
@@ -1331,6 +1342,11 @@ async fn render_previews_with_packages(
             }
             avatar_renderer.draw(&mut pass);
             pass.set_pipeline(&cutout_pipeline);
+            pass.set_bind_group(0, &camera_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
+            if let Some(gpu) = visual_resources.as_ref().and_then(|r| r.material.as_ref()) {
+                pass.set_bind_group(2, &gpu.group, &[]);
+            }
             for (_, cutout) in &gpu_meshes {
                 if let Some((vertices, indices, count)) = cutout {
                     pass.set_vertex_buffer(0, vertices.slice(..));

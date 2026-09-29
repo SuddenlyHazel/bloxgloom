@@ -39,6 +39,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             && arguments.len() == 5))
     {
         server::package_catalog_for_preview(catalog, std::path::Path::new(&arguments[3]))?
+    } else if arguments
+        .first()
+        .is_some_and(|command| command == "visual-preview")
+        && arguments.len() == 4
+    {
+        server::package_catalog_for_preview(catalog, std::path::Path::new(&arguments[2]))?
     } else {
         catalog
     };
@@ -227,6 +233,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let path = args.next().unwrap_or_else(|| "fire-preview.png".to_owned());
             preview::render_fire_preview(std::path::Path::new(&path))?;
             println!("wrote {path}");
+        }
+        Some("visual-preview") => {
+            let directory = args
+                .next()
+                .ok_or("usage: visual-preview <output-dir> <package-root> <state-key>")?;
+            let root = args.next().ok_or("missing package root")?;
+            let state = args.next().ok_or("missing state key")?;
+            if args.next().is_some() {
+                return Err("too many visual-preview arguments".into());
+            }
+            preview::render_visual_previews(
+                std::path::Path::new(&directory),
+                std::path::Path::new(&root),
+                &state,
+            )?;
         }
         Some("effect-preview") => {
             let path = args

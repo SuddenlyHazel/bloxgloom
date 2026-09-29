@@ -40,6 +40,8 @@ mod system;
 mod tags;
 #[path = "script_startup/visual.rs"]
 mod visual;
+#[path = "script_startup/visual_contracts.rs"]
+mod visual_contracts;
 
 struct Fixture(PathBuf);
 impl Fixture {

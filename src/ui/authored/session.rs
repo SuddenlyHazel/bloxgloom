@@ -36,6 +36,7 @@ pub(crate) struct Session {
     pub(super) replica_previous: Vec<u64>,
     pub(super) anchor_previous: Vec<u64>,
     pub(super) startup: crate::client::startup::State,
+    pub(super) parameters: crate::render::parameters::State,
 }
 
 impl Session {
@@ -82,6 +83,7 @@ impl Session {
             effects: Default::default(),
             replica_previous: Vec::new(),
             anchor_previous: Vec::new(),
+            parameters: startup.parameters.clone(),
             startup,
         };
         session.reset();

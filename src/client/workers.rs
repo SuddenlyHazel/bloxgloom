@@ -42,6 +42,9 @@ impl Network {
     pub(super) fn package_material(&self) -> Option<&crate::render::custom::Prepared> {
         self.material.as_ref()
     }
+    pub(super) fn package_parameter_updates(&self) -> Vec<crate::render::parameters::Update> {
+        self.startup.parameters.clone().take_updates()
+    }
     pub(super) fn package_effect(&self) -> Option<&crate::render::effects::Prepared> {
         self._bundle.as_ref()?.effect().map(AsRef::as_ref)
     }
@@ -63,7 +66,10 @@ impl Network {
         if bundle.ui().is_some_and(|ui| ui.owns_document(owner)) {
             return None;
         }
-        match crate::client::presentation::VisualSession::new(Arc::clone(script)) {
+        match crate::client::presentation::VisualSession::with_parameters(
+            Arc::clone(script),
+            self.startup.parameters.clone(),
+        ) {
             Ok(session) => Some(session),
             Err(error) => {
                 eprintln!("visual presentation worker unavailable: {error}");

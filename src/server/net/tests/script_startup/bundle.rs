@@ -95,7 +95,7 @@ fn package_material_is_verified_and_resolved_by_real_client_join_before_welcome(
         let bundle = crate::client::connect_bundle_probe(&address.to_string(), 0x7ade)
             .unwrap()
             .unwrap();
-        assert_eq!(bundle.material().unwrap().owner, "demo:tint");
+        assert_eq!(bundle.material().unwrap().materials[0].owner, "demo:tint");
         assert_eq!(bundle.effect().unwrap().owner, "demo:grade");
         let catalog = bundle.session_catalog().unwrap();
         let item = catalog.item_by_key("demo:token").unwrap();
