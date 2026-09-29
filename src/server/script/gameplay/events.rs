@@ -126,3 +126,6 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
     fields.set_readonly(true);
     Ok(fields)
 }
+
+#[cfg(test)]
+mod tests;

@@ -636,8 +636,8 @@ One real-listener Luau action now verifies item consumption, block change,
 component-preserving drop creation, entity creation/update and durable scheduling
 on the same WAL receipt, including caught-error rollback, deduplication and
 restart. The mobile query also filters spatial-index bucket candidates by exact
-radius after capturing dependencies. Broader event context and specialized
-owner services still prevent checking off the combined surface as complete.
+radius after capturing dependencies. The combined decision and removal
+contexts still need a contract-wide acceptance audit.
 One-state cutout cubes/crossed plants and cutout texture declarations now use a
 V25 client bundle; defaults retain older bytes. A real listener negotiates the
 same plant/cutout selection and restart identity.
@@ -664,21 +664,27 @@ reads. Removal decisions and WAL admission stay host-owned; native fire
 migration is still deferred.
 Chunk owners may now declare `creates_drops=true` and stage up to 16 validated
 item drops at captured cell centers. Direct drops merge or allocate through the
-server planner and commit with owner state/edits in one WAL receipt. Direct
-owner entity operations and broader services remain open.
+server planner and commit with owner state/edits in one WAL receipt.
 Chunk owners may also declare `creates_entities=true` and stage up to 16
 package-owned general entity spawns at captured cells. The host validates the
 registered schema and terrain, allocates IDs, and commits spawns with owner state
 through the same receipt. `reads_entities=true` captures bounded package-owned
 mobile entity state and fences complete neighborhood entity pages. With separate
 `mutates_entities=true` authority, conditional state updates and removals check
-captured revisions and commit with the owner state through one receipt. Richer
-owner services remain open.
+captured revisions and commit with the owner state through one receipt.
 Entity and profile owner partitions now accept exact two/four-word Luau seed
 IDs and expose immutable `owner_kind` plus ID words to callbacks. Their
 partition-specific wakes commit through the same owner WAL. Real-listener
 catalog joins, next-tick wakes, restart identity and invalid declaration tests
 cover both; default chunk identities remain byte-for-byte unchanged.
+Owner callbacks now expose the captured public `Block` descriptor through
+bounded `block_info(x,y,z)` while keeping `block(x,y,z)` as the state-key
+shortcut. A caught unavailable read rejects the whole plan. The public owner
+contract audit maps Context owner/revision/tick/data/world and entity views,
+Plan state/deadline/wakes/edits/drops/entity effects, and Behavior capability
+flags/intents to Luau bindings. Existing real-listener and WAL tests cover
+partitions, conditional edits, direct drops/entities, retries and recovery;
+the descriptor test covers the remaining read field.
 Luau `register_creature` now declares bounded server tick logic, a host-owned
 locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
 the client without sending the server callback or private creature bytes. A
@@ -778,6 +784,22 @@ drop presentation and do not measure its frame cost. The release built-in drop
 preview was inspected and looks unchanged; custom size ratios and pickup-flight
 continuity are covered by mesh/animator regressions, not that preview.
 
+The public gameplay contract was audited against the Luau binding. `Context`
+reads (`block`, inventory, entity/public and owned state, nearby/anchored
+entities, actor position, tick and deterministic random) and effects (world
+edits, finite inventory moves/give/take/transfer/collect, exact stack drops,
+entity spawn/update/removal/schedule and authenticated admin operations) are
+bound. `dispatch`, `finish`, and staged transition enumeration remain host
+coordinator operations. `Event` exposes every field for ActionRequested,
+BlockRemoved, BlockPlaced, NeighborChanged, EntityTick and PickupRequested;
+all six public `RemovalCause` values preserve their exact names and random
+words. The composed real-listener action test proves world, entity, inventory,
+drop and schedule effects share one retryable receipt. A burn-owner removal
+decision test now proves its cause, captured preimage, staged air view, drop
+effect and owner state share one WAL receipt, including caught-error rollback
+and restart. The event audit test covers the other removal-cause names and
+readonly nested fields.
+
 **Remaining**
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
@@ -786,14 +808,15 @@ continuity are covered by mesh/animator regressions, not that preview.
   status screens are bound; richer interactions and authored visual acceptance
   remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.
-- [ ] Expose combined world/entity/inventory/scheduled transactions and the
+- [x] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
-- [ ] Bind directly authored owner entity/drop operations and broader owner
+- [x] Bind directly authored owner entity/drop operations and broader owner
   services with the same authority/retry contract as Rust mods. Chunk systems
   now have bounded neighborhood reads/edits, entity capture/update/removal,
   direct entity/drop creation, durable same-system intents, and exact-word
-  entity/profile owner partitions with durable wakes. Broader owner services
-  remain open.
+  entity/profile owner partitions with durable wakes and complete public block
+  descriptors. The Luau caps are lower than public maximums; the host still
+  validates and commits every staged effect.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
   owned UI callbacks, bounded mobile pose offsets, presentation-window changes

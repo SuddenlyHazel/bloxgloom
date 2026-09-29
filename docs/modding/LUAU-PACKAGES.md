@@ -129,6 +129,11 @@ transaction; `spawn_drop`, `spawn_stack(x,y,z,stack,delay_ms)`, `spawn_entity`,
 private owned `entity_state`,
 `update_entity`, `remove_entity`, and `schedule_entity` are available where the
 host's public context permits them.
+`BlockRemoved` supplies the exact `cause` name (`Break`, `Replacement`,
+`SupportLoss`, `WorldEdit`, `Burn`, or `AnchoredBreak`), immutable `previous`
+block descriptor and exact `random_lo`/`random_hi` words. The callback reads
+staged block results through `c.block` while the host keeps the original
+preimage and all decision effects in one receipt.
 `entity(id_lo,id_hi)` returns a readonly public projection (ID, type, position,
 optional anchor and binary public data), not owned private bytes.
 `nearby_entities(x,y,z,radius)` captures mobile query dependencies, filters
@@ -231,7 +236,7 @@ the client never contributes procedural fallback terrain. Duplicate edit cells
 across jobs reject the complete owner wave. `fixtures/neighborhood/` demonstrates
 a cross-chunk edit after durable intent delivery. Its module returns a
 function that receives an immutable owner context and returns `(binary_state,
-delay_ticks)`; the context exposes bounded `block`, conditional `edit` and
+delay_ticks)`; the context exposes bounded `block`, `block_info`, conditional `edit` and
 durable `wake` methods. The existing owner WAL commits state, deadline, edits
 and wakes together. With `read_world=true`, adding `accepts_intents=true` makes
 `c.inbox` available as a deeply readonly list of up to eight deliveries with
@@ -246,6 +251,9 @@ wakes; no script VM state is persisted. See `src/server/script/system.rs` for
 the precise schema, limits and semantics. Direct chunk-owner entity/drop
 effects are bound with explicit declared capabilities. General script state
 migration remains unbound.
+`c.block(x,y,z)` returns the captured state key; `c.block_info(x,y,z)` returns
+the immutable public descriptor `{state,block_type,primary_item,plant,supports_plant}`.
+The methods share a 64-read budget and the same unavailable-read failure rule.
 
 Package format 2 declares each module as `module server|client|shared <name>
 <side>/<path>.luau` and textures as `asset texture <name>

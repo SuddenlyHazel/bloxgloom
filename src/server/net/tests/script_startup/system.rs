@@ -9,6 +9,8 @@ use crate::server::{
 };
 use crate::world::{AIR, ChunkKey, GLOWSTONE, STONE};
 
+#[path = "system/decisions.rs"]
+mod decisions;
 #[path = "system/failures.rs"]
 mod failures;
 #[path = "system/intents.rs"]
@@ -86,6 +88,39 @@ fn luau_burn_owner_uses_host_removal_semantics_and_persists_receipt() {
     invalid.system("return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,edit_cause='burn',seeds={{x=0,y=5,z=0,data='x'}}} end", SOURCE);
     assert!(invalid.open().is_err());
     assert!(!invalid.0.join("save/content.map").exists());
+}
+
+#[test]
+fn luau_owner_block_info_uses_captured_public_fields_and_restarts() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) local block=c.block_info(2,80,0); assert(block.state=='bloxgloom:stone' and block.block_type=='bloxgloom:stone' and block.primary_item=='bloxgloom:stone'); assert(type(block.plant)=='boolean' and type(block.supports_plant)=='boolean'); assert(not pcall(function() block.state='forged' end)); assert(c.block(2,80,0)==block.state); c.edit(2,80,0,block.state,'bloxgloom:glowstone'); return 'done',10000 end",
+    );
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.edit(2, 80, 0, STONE).unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    commit(&mut state, "demo:clock", 1);
+    assert_eq!(state.world.cached_block(2, 80, 0), Some(GLOWSTONE));
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x548).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+    });
+    let restored = fixture.open().unwrap();
+    assert_eq!(restored.world.catalog().fingerprint(), fingerprint);
+    assert_eq!(value(&restored, "demo:clock"), (1, b"done".to_vec()));
+    assert_eq!(restored.world.cached_block(2, 80, 0), Some(GLOWSTONE));
+
+    let bad = Fixture::new();
+    bad.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) pcall(function() c.block_info(1600,80,0) end); return 'bad',10000 end",
+    );
+    let mut state = bad.open().unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    assert!(stage(&mut state, "demo:clock", 1).is_err());
+    assert_eq!(value(&state, "demo:clock"), (0, b"new".to_vec()));
 }
 
 #[test]

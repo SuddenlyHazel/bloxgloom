@@ -80,24 +80,34 @@ pub(super) fn invoke(
         host.set(
             "block",
             scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {
-                checked(&rejected, || {
-                    if reads.get() >= 64 {
-                        return Err("system read limit exceeded (64)");
-                    }
-                    reads.set(reads.get() + 1);
-                    context
-                        .block(cell(x, y, z)?)
-                        .map(|block| block.state)
-                        .map_err(
-                            |_| "system world read unavailable or outside declared neighborhood",
-                        )
-                })
-                .and_then(|state| lua.create_string(state))
-                .inspect_err(|_| {
-                    rejected
-                        .borrow_mut()
-                        .get_or_insert("system world read failed");
-                })
+                checked(&rejected, || read_block(context, &reads, x, y, z))
+                    .and_then(|block| lua.create_string(block.state))
+                    .inspect_err(|_| {
+                        rejected
+                            .borrow_mut()
+                            .get_or_insert("system world read failed");
+                    })
+            })?,
+        )?;
+        host.set(
+            "block_info",
+            scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {
+                checked(&rejected, || read_block(context, &reads, x, y, z))
+                    .and_then(|block| {
+                        let value = lua.create_table()?;
+                        value.set("state", block.state)?;
+                        value.set("block_type", block.block_type)?;
+                        value.set("primary_item", block.primary_item)?;
+                        value.set("plant", block.plant)?;
+                        value.set("supports_plant", block.supports_plant)?;
+                        value.set_readonly(true);
+                        Ok(value)
+                    })
+                    .inspect_err(|_| {
+                        rejected
+                            .borrow_mut()
+                            .get_or_insert("system world read failed");
+                    })
             })?,
         )?;
         host.set(
@@ -325,6 +335,22 @@ pub(super) fn invoke(
             })
         })
     })
+}
+
+fn read_block(
+    context: &api::Context<'_>,
+    reads: &Cell<usize>,
+    x: Value,
+    y: Value,
+    z: Value,
+) -> Result<bloxgloom_host_api::gameplay::Block, &'static str> {
+    if reads.get() >= 64 {
+        return Err("system read limit exceeded (64)");
+    }
+    reads.set(reads.get() + 1);
+    context
+        .block(cell(x, y, z)?)
+        .map_err(|_| "system world read unavailable or outside declared neighborhood")
 }
 
 fn push_wake(
