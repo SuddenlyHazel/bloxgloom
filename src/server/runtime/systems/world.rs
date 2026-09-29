@@ -4,7 +4,7 @@
 use super::{OwnerEffectPatch, OwnerKey, OwnerPatch, TerrainReads};
 use crate::server::durable::{BlockDelta, CommitAction};
 use crate::server::effects::CellCoord;
-use crate::server::entities::{CellCoord as EntityCell, EntityStore};
+use crate::server::entities::{CellCoord as EntityCell, EntitySnapshot, EntityStore};
 use crate::server::gameplay::{self, OperationInput, Participants};
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, World};
 use bloxgloom_host_api::gameplay::RemovalCause;
@@ -13,6 +13,65 @@ use std::sync::Arc;
 
 #[path = "world/anchored.rs"]
 mod anchored;
+
+/// Capture complete entity pages alongside terrain so a worker can inspect
+/// package-owned private state without racing a concurrent spawn or update.
+pub(super) fn capture_entities(
+    entities: &EntityStore,
+    catalog: &crate::content::Catalog,
+    chunks: &[Arc<Chunk>],
+    system_key: &str,
+    reads: &mut TerrainReads,
+) -> io::Result<Vec<EntitySnapshot>> {
+    let keys = chunks.iter().map(|chunk| chunk.key);
+    reads.entities(
+        entities
+            .capture_dependencies(keys.clone(), 128)
+            .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?,
+    )?;
+    let namespace = system_key.split_once(':').map_or("", |(owner, _)| owner);
+    let mut snapshots = Vec::new();
+    let mut captured_bytes = 0usize;
+    for key in keys {
+        if let Some(page) = entities.chunk_pages().get(&key) {
+            for entity_id in &page.entity_ids {
+                let snapshot = entities.snapshot(*entity_id).ok_or_else(|| {
+                    io::Error::new(ErrorKind::WouldBlock, "captured owner entity vanished")
+                })?;
+                let entity_key = catalog
+                    .entity_type(snapshot.entity_type)
+                    .ok_or_else(|| io::Error::other("unknown captured entity type"))?
+                    .key
+                    .as_ref();
+                if entity_key
+                    .split_once(':')
+                    .is_some_and(|(owner, _)| owner == namespace)
+                    && matches!(
+                        &snapshot.location,
+                        crate::server::entities::EntityLocation::Mobile { .. }
+                    )
+                    && catalog.gameplay_entity(entity_key).is_some()
+                {
+                    let state_bytes = snapshot
+                        .private_payload
+                        .downcast_ref::<Vec<u8>>()
+                        .ok_or_else(|| io::Error::other("invalid captured entity payload"))?;
+                    captured_bytes = captured_bytes.saturating_add(state_bytes.len());
+                    if captured_bytes > 65_536 {
+                        return Err(io::Error::new(
+                            ErrorKind::WouldBlock,
+                            "owner entity capture exceeds 64 KiB",
+                        ));
+                    }
+                    snapshots.push(snapshot);
+                }
+            }
+        }
+    }
+    snapshots.sort_by_key(|snapshot| snapshot.id);
+    snapshots.dedup_by_key(|snapshot| snapshot.id);
+    Ok(snapshots)
+}
 
 pub(super) fn capture(
     world: &mut World,

@@ -34,6 +34,9 @@ impl ServerStartup {
             if let Some(radius) = definition.read_radius_chunks {
                 descriptor = descriptor.read_chunks(radius);
             }
+            if definition.behavior.reads_entities() {
+                descriptor = descriptor.read_world_entities();
+            }
             self.systems
                 .push((descriptor, Arc::new(Adapter(definition.clone()))));
             self.register_owner_codec(
@@ -69,9 +72,14 @@ struct Adapter(Arc<api::System>);
 
 struct OwnerWorldView<'a> {
     chunks: &'a [Arc<crate::world::Chunk>],
+    entities: Option<Vec<api::OwnedEntity>>,
     catalog: &'a crate::content::Catalog,
 }
 impl api::WorldRead for OwnerWorldView<'_> {
+    fn entities(&self) -> Option<&[api::OwnedEntity]> {
+        self.entities.as_deref()
+    }
+
     fn block(
         &self,
         cell: bloxgloom_host_api::gameplay::Cell,
@@ -127,9 +135,36 @@ impl SystemHandler for Adapter {
             .get::<Vec<u8>>()
             .ok_or_else(reject)?;
         let tick = job.key().batch.tick().get();
-        let world = job.owner_catalog().map(|catalog| OwnerWorldView {
-            chunks: job.world_chunks(),
-            catalog,
+        let world = job.owner_catalog().map(|catalog| {
+            let namespace = self.0.key.split_once(':').map_or("", |(owner, _)| owner);
+            let entities = job.world_entities().map(|snapshots| {
+                snapshots
+                    .iter()
+                    .filter_map(|snapshot| {
+                        let definition = catalog.entity_type(snapshot.entity_type)?;
+                        if definition.key.split_once(':')?.0 != namespace {
+                            return None;
+                        }
+                        let crate::server::entities::EntityLocation::Mobile { position } =
+                            &snapshot.location
+                        else {
+                            return None;
+                        };
+                        Some(api::OwnedEntity {
+                            id: snapshot.id.get(),
+                            revision: snapshot.revision,
+                            key: definition.key.to_string(),
+                            position: *position,
+                            state: snapshot.private_payload.downcast_ref::<Vec<u8>>()?.clone(),
+                        })
+                    })
+                    .collect()
+            });
+            OwnerWorldView {
+                chunks: job.world_chunks(),
+                entities,
+                catalog,
+            }
         });
         let context = api::Context {
             owner: public_owner(job.owner()),

@@ -32,6 +32,25 @@ pub(super) fn invoke(
     host.set("revision_lo", context.revision as u32)?;
     host.set("revision_hi", (context.revision >> 32) as u32)?;
     host.set("inbox", intents::inbox(lua, inbox)?)?;
+    if let Some(entities) = context.entities() {
+        let list = lua.create_table_with_capacity(entities.len(), 0)?;
+        for (index, entity) in entities.iter().enumerate() {
+            let value = lua.create_table()?;
+            value.set("id_lo", entity.id as u32)?;
+            value.set("id_hi", (entity.id >> 32) as u32)?;
+            value.set("revision_lo", entity.revision as u32)?;
+            value.set("revision_hi", (entity.revision >> 32) as u32)?;
+            value.set("key", entity.key.as_str())?;
+            let position = lua.create_sequence_from(entity.position)?;
+            position.set_readonly(true);
+            value.set("position", position)?;
+            value.set("state", lua.create_string(&entity.state)?)?;
+            value.set_readonly(true);
+            list.raw_set(index + 1, value)?;
+        }
+        list.set_readonly(true);
+        host.set("entities", list)?;
+    }
     let rejected = RefCell::new(None);
     let reads = Cell::new(0usize);
     let edits = RefCell::new(Vec::new());

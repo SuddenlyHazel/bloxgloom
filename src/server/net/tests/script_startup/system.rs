@@ -213,6 +213,31 @@ fn luau_owner_general_entity_spawn_shares_receipt_and_restarts() {
 }
 
 #[test]
+fn luau_owner_entity_capture_is_immutable_and_restarts() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_entity('demo:marker',1,1,1,nil); h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,reads_entities=true,creates_entities=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) if c.data == 'new' then assert(#c.entities == 0); c.spawn_entity('demo:marker',2,80,0,'x'); return 'read',1 end assert(#c.entities == 1); local e=c.entities[1]; assert(e.key == 'demo:marker' and e.state == 'x' and e.revision_lo == 1 and e.id_lo > 0); assert(e.position[1] == 2.5); assert(not pcall(function() e.state='bad' end)); assert(not pcall(function() e.position[1]=99 end)); return 'done',10000 end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\nrequires bloxgloom:actions/v1\n"),
+    )
+    .unwrap();
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.get_chunk(KEY).unwrap();
+    commit(&mut state, "demo:clock", 1);
+    assert_eq!(value(&state, "demo:clock"), (1, b"read".to_vec()));
+    commit(&mut state, "demo:clock", 2);
+    assert_eq!(value(&state, "demo:clock"), (2, b"done".to_vec()));
+    drop(state);
+    let restored = fixture.open().unwrap();
+    assert_eq!(value(&restored, "demo:clock"), (2, b"done".to_vec()));
+}
+
+#[test]
 fn luau_owner_entity_spawn_rejects_obstructed_cell_without_partial_state() {
     let fixture = Fixture::new();
     fixture.system(

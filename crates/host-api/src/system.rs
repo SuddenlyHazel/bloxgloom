@@ -39,12 +39,32 @@ pub struct Context<'a> {
 /// An out-of-scope or unloaded cell is unavailable, never procedural air.
 pub trait WorldRead {
     fn block(&self, cell: Cell) -> Result<Block, Error>;
+
+    /// Bounded, immutable snapshots of package-owned mobile entities in the
+    /// declared chunk neighborhood. `None` means this was not declared.
+    fn entities(&self) -> Option<&[OwnedEntity]> {
+        None
+    }
 }
 
 impl Context<'_> {
     pub fn block(&self, cell: Cell) -> Result<Block, Error> {
         self.world.ok_or(Error::Unavailable(cell))?.block(cell)
     }
+
+    pub fn entities(&self) -> Option<&[OwnedEntity]> {
+        self.world.and_then(WorldRead::entities)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OwnedEntity {
+    pub id: u64,
+    pub revision: u64,
+    pub key: String,
+    pub position: [f32; 3],
+    /// Canonical private bytes, visible only to the declaring package.
+    pub state: Vec<u8>,
 }
 
 pub struct Plan {
@@ -131,6 +151,12 @@ pub trait Behavior: Send + Sync + 'static {
     }
 
     fn creates_entities(&self) -> bool {
+        false
+    }
+
+    /// Capture at most 128 entities and fence the complete neighborhood's
+    /// entity pages until the owner receipt. Dense pages defer the whole job.
+    fn reads_entities(&self) -> bool {
         false
     }
 
@@ -295,6 +321,7 @@ impl System {
             || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_drops() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_entities() && self.read_radius_chunks.is_none())
+            || (self.behavior.reads_entities() && self.read_radius_chunks.is_none())
             || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
@@ -397,6 +424,9 @@ impl System {
         }
         if self.behavior.creates_entities() {
             out.extend(b"owner-entity-spawns-v1");
+        }
+        if self.behavior.reads_entities() {
+            out.extend(b"owner-entity-reads-v1");
         }
         out
     }

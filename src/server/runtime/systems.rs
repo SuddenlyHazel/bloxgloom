@@ -661,6 +661,22 @@ impl SystemRuntime {
                     world::capture(world, &mut terrain_reads, owner, radius, missing)?
                 {
                     job = job.with_world_chunks(chunks, world.catalog_arc());
+                    if system.world_entity_reads() {
+                        let entities = entities.ok_or_else(|| {
+                            io::Error::new(
+                                ErrorKind::InvalidInput,
+                                "owner entity capture unavailable",
+                            )
+                        })?;
+                        let snapshots = world::capture_entities(
+                            entities,
+                            world.catalog(),
+                            job.world_chunks(),
+                            id.as_str(),
+                            &mut terrain_reads,
+                        )?;
+                        job = job.with_world_entities(snapshots);
+                    }
                 }
             }
             expected.push(key);
