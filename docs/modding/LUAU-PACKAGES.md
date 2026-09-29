@@ -377,7 +377,10 @@ client_startup client/client_startup.luau`) runs once per connection on a
 bounded Luau worker **before** `ContentReady`. Its module returns
 `function(host)` and may call `host.set_text("package:document/node", "text")`
 or `host.set_state("package:document", "state")` to initialize its own authored
-UI. The targets must exist in the verified package UI; the host has no world,
+UI. `host.set_parameter(resource, name, value)` initializes a declared owned
+material/effect parameter; presentation callbacks can return `parameter` commands
+to update it from local UI or public replicas. See [authored visuals](AUTHORED-VISUALS.md)
+for typed values, shader hooks and effect graphs. The targets must exist in the verified package UI; the host has no world,
 inventory or networking authority. `import("dependency:module")` sees only
 client/shared sources in the package and its exact direct dependencies, never
 server-only code. Invalid registration or execution aborts readiness with the
@@ -390,9 +393,10 @@ retries, **Esc** cancels the active attempt, and **F2** leaves a live session to
 edit the server address and join another. Failed/closed sessions retire socket
 workers and UI/material/effect/startup resources. Cancellation cannot interrupt
 OS DNS/filesystem work immediately, but no replacement worker is admitted until
-the previous attempt finishes. Renderer/GPU installation still runs on the
-window thread after the server acknowledges `ContentReady`, before the client
-processes any authoritative snapshot. There is no persistent disk cache or
+the previous attempt finishes. The window creates the candidate renderer after the server acknowledges
+`ContentReady`; package shader compilation then runs asynchronously while
+joining progress remains responsive. The candidate admits snapshots only after
+every material/effect pipeline succeeds. There is no persistent disk cache or
 general client services API yet.
 
 An authored `ui-document` may opt into client-only presentation events with

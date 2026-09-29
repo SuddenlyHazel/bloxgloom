@@ -1,10 +1,10 @@
 # Modding: start here
 
 **Current status:** The [implementation plan](IMPLEMENTATION-PLAN.md) is the
-authoritative progress and acceptance record. Shared core (Phase 1),
-non-fire gameplay parity (Phase 2) and generation (Phase 3) are marked done.
-Other committed increments are useful,
-but do **not** imply full modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
+authoritative progress and acceptance record. Phases 1–4, authored UI (Phase 6)
+and authored visuals (Phase 7) are marked done. Packages/joining (Phase 5) and
+integrated verification (Phase 8) remain open; committed increments do **not**
+imply full modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
 before treating a capability as complete.
 
 ## Try authoring now
@@ -30,10 +30,12 @@ before treating a capability as complete.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
 - [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):
-  one bounded fullscreen scene-color effect, **not** the complete material or
-  multi-pass shader surface required by Phase 7.
+  the compatible version-1 fullscreen scene-color effect.
 - [Jade material example](../../fixtures/material-packages/jade/README.md):
   package-delivered WGSL albedo for an existing voxel texture layer.
+
+- [Authored visuals](AUTHORED-VISUALS.md): versioned material hooks, typed Luau
+  parameters, effect graphs, and the runnable Prism example.
 
 ## Rust extension and host reference
 

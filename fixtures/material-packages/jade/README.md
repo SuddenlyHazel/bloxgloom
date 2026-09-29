@@ -18,7 +18,9 @@ thread and resolves the namespaced texture against the exact session catalog
 before acknowledging content readiness. Shader/pipeline failure aborts client
 setup rather than silently substituting the default material.
 
-Current limit: one material target per bundle. This fixture only registers an
+This legacy descriptor selects one texture. Version-2 descriptors support
+multiple materials/targets, texture inputs and typed parameters; see
+[authored visuals](../../../docs/modding/AUTHORED-VISUALS.md). This fixture only registers an
 item sprite; a package can also call `host.register_block` with its registered
 PNG to create a one-state opaque placeable cube using the same texture. This
 package does not provide arbitrary mesh shaders or live shader reload.

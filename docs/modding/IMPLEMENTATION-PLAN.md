@@ -400,7 +400,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Done |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Done |
-| 7 | WGSL shader/material/effect registration and package-delivered visual resources | In progress |
+| 7 | WGSL shader/material/effect registration and package-delivered visual resources | Done |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
 
 ### Remaining work by phase (living checklist)
@@ -980,8 +980,8 @@ inspected through headless previews for this phase.
 **Working:** real server-to-client verified bundle transfer, negotiated frozen
 catalogs, exact in-process byte reuse and package UI/effect/material assets.
 A verified client/shared `client_startup` module executes once per connection
-on a bounded worker before `ContentReady`; its host currently exposes only
-initial authored UI text/state. Real-listener reconnect/switch tests cover
+on a bounded worker before `ContentReady`; its host initializes authored UI
+text/state, registers a bounded replica handler, and sets owned visual parameters. Real-listener reconnect/switch tests cover
 that narrow session lifecycle. Connection workers now retire on failure/exit;
 cached reconnect and differently modded switches start with fresh UI, material,
 effect, startup and action state. Join stages/errors are printed to stderr,
@@ -998,8 +998,10 @@ GPU/window failures propagate instead of looking like successful exits.
 - [ ] Complete the remaining client runtime compatibility/readiness checks and
   exercise the whole package flow under mixed live load. Real-listener
   download, failure, retry, cancellation, reconnect and cross-server switching
-  are covered; OS DNS/filesystem cancellation is not instantaneous and GPU
-  resource installation still runs synchronously on the window thread. Disk
+  are covered; OS DNS/filesystem cancellation is not instantaneous. Phase 7
+  makes package shader compilation asynchronous with a retained candidate;
+  window/surface setup and the final resource installation remain on the window
+  thread. Disk
   caching and elaborate progress UI are **not** prerequisites unless testing
   requires them.
 
@@ -1032,23 +1034,70 @@ window acceptance claim was not made.
 - [x] Migrate built-in screens and authored documents onto the same live egui
   renderer and input path.
 
-#### Phase 7 — authored visuals · In progress
+#### Phase 7 — authored visuals · Done
 
-**Working:** verified package PNG textures can back sprites and simple placeable
-world cubes; one WGSL albedo shader can shade their selected catalog layer, and
-one fullscreen scene-color effect runs. UI images/fonts also arrive through
-packages.
+**Landed:** version-2 package materials expose stable world-space vertex and
+surface hooks, multiple target layers/texture inputs, and typed parameters.
+They run on opaque/cutout voxel faces, crossed foliage, cube drops and item
+sprites/crosses. The built-in voxel material uses identity hooks through the
+same shader contract; version-1 Jade/sepia resources remain supported.
+Downloaded startup, local UI and public replica callbacks update owned
+parameters through session-scoped, atomic validation and bounded GPU uniforms.
 
-**Remaining**
+Declared effect graphs have explicit inputs/outputs, dependency ordering,
+composition and exactly one final output before built-in bloom/display mapping.
+At most eight passes share a 64 MiB intermediate attachment budget, with a
+2048-pixel maximum extent and cached input groups. Missing resources, cycles,
+foreign references, ownership conflicts, invalid types and shader/GPU failures
+retain preparation context. Package pipelines compile asynchronously while the
+join shell remains responsive; one retained candidate installs only after all
+pipelines succeed and retires before another attempt is admitted.
 
-- [ ] Widen the initial cube/sprite albedo hook to useful supported geometry,
+**Completed**
+
+- [x] Widen the initial cube/sprite albedo hook to useful supported geometry,
   material inputs and stable shader bindings beyond one selected texture layer.
-- [ ] Bind typed shader parameters to client presentation and replicated data.
-- [ ] Support explicit effect-pass inputs/outputs, ordering and composition,
+- [x] Bind typed shader parameters to client presentation and replicated data.
+- [x] Support explicit effect-pass inputs/outputs, ordering and composition,
   with bounded renderer-owned GPU resources and useful preparation errors.
 
-Imported custom models and live hot reload remain deferred, not hidden boxes
-to check in this phase.
+The runnable `fixtures/visual-packages/prism` package combines materials, two
+composed passes, startup parameters, and an owned creature whose installed
+public replica drives a parameter. Real nonblocking-listener tests verify
+negotiation, exact per-server catalogs, switch/reconnect/reset, source-attributed
+failure and restart identity. GPU tests cover legacy compatibility, multiple
+materials, runtime values, lighting/cutout preservation, graph composition,
+resize, finite resources and attributed backend failure. Shader helper work is
+bounded after expanding calls, preventing compact exponential programs.
+The final root suite passed **1,059/1,059**; formatting and strict
+all-target/all-feature Clippy passed.
+
+`visual-preview /tmp/bloxgloom-phase7-previews fixtures/visual-packages prism:stone`
+generated material and composition images through production meshes, lighting,
+material pipelines and post-processing. Both images were inspected. These are
+headless acceptance images; no live-window visual acceptance claim is made.
+
+Release `perf 300 6` and `perf 300 6 bounced` compared baseline with isolated
+final runs on Apple M1 Pro/Metal, 1280×720. Scene setup is excluded from frame
+samples; CPU submission and GPU timestamps are measured separately:
+
+| Metric | Normal baseline | Normal final | Bounced baseline | Bounced final |
+| --- | ---: | ---: | ---: | ---: |
+| Scene setup (ms) | 2314.0 | 2295.5 | 2752.5 | 2657.1 |
+| Mesh bytes | 17,292,744 | 17,292,744 | 17,500,968 | 17,500,968 |
+| Visible triangles | 88,026 | 88,026 | 89,218 | 89,218 |
+| Steady CPU p50/p95 (ms) | 0.316 / 0.444 | 0.301 / 0.581 | 0.350 / 0.749 | 0.326 / 0.588 |
+| Steady GPU p50/p95 (ms) | 0.274 / 0.332 | 0.259 / 0.527 | 0.290 / 0.584 | 0.238 / 0.426 |
+
+Medians decreased; normal p95 increased and short-run tails varied. These
+terrain-only measurements exclude authored shaders/effects, live presentation,
+networking and present, so they do not establish an authored-effect frame budget.
+The resource/work bounds and package GPU behavior have separate regressions.
+
+See [authored visuals](AUTHORED-VISUALS.md) for exact limits and authoring APIs.
+Imported custom models and live hot reload remain deferred. Actor cuboids keep
+their existing pose/tint interface, and UI icons keep their UI renderer; those
+paths do not expose the voxel material hooks.
 
 #### Phase 8 — examples and integrated verification · In progress
 

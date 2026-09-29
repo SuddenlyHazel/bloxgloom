@@ -9,7 +9,9 @@ Use the parent `effect-packages` directory as the server's package root, or run:
 v4 ClientBundle framing. Older clients reject these tags; existing packages,
 save files and wire framing are unchanged.
 
-This increment allows one effect per bundle, owning `scene_color` at order 0.
+This fixture uses the compatible version-1 contract, with one final
+`scene_color` effect at order 0. [Version 2](../../../docs/modding/AUTHORED-VISUALS.md)
+adds composable passes, typed parameters and declared inputs/outputs.
 Duplicate slot ownership, orphan assets, unknown descriptor fields, other
 stages/orders and foreign shader references fail preparation. The renderer
 draws one fullscreen triangle after world geometry, before bloom/display
@@ -24,8 +26,8 @@ and returning location 0 `vec4f`. Required group-0 bindings are:
 * 2: uniform `vec4f`: elapsed local seconds, reserved zero, width, height
 
 Time is presentation-only and restarts at GPU preparation. Resize preserves
-the pipeline and refreshes dimensions and attachments. One additional RGBA16F
-viewport attachment is allocated. No read/write attachment aliasing occurs.
+the pipeline and refreshes dimensions and attachments. A renderer-owned RGBA16F
+attachment is allocated within the graph resolution/memory budget. No read/write attachment aliasing occurs.
 
 Limits: 16 KiB WGSL, 1 KiB descriptor, 64 IR types, 128 global expressions,
 512 fragment expressions, 32 locals, 128 straight-line statements, three fixed
@@ -35,6 +37,6 @@ Existing package count and aggregate byte limits also apply.
 
 Verified bundle decode runs Naga preparation on a scoped worker; GPU compilation
 runs on a scoped worker with a validation error scope and package-attributed
-errors. Results publish only after success. Initial renderer setup currently
-waits for GPU preparation; this is not asynchronous loading UI or hot reload.
-Failure exits setup rather than silently dropping an authored effect.
+errors. Results publish only after success. The live join shell polls GPU preparation while displaying progress; all
+package pipelines must succeed before the session becomes live. Failure returns
+to the retry screen with the resource context. Live reload remains deferred.
