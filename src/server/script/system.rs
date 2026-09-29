@@ -3,6 +3,8 @@
 //! module='demo:clock', max_state_bytes=64, max_jobs_per_tick=2,
 //! read_world=true, read_radius_chunks=1, seeds={{x=0,y=5,z=0,data=''}} }`.
 //! Optional `after={'other:system'}` is a bounded, startup-resolved phase edge.
+//! Optional `edit_cause='burn'` opts world-read systems into host-owned burn
+//! removal semantics; it does not install the deferred native fire owner.
 //!
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
@@ -78,6 +80,16 @@ pub(super) fn declarer(
             let revision = integer(field(&table, "revision")?, 1, u16::MAX.into())? as u16;
             let max_bytes = integer(field(&table, "max_state_bytes")?, 1, 4096)? as usize;
             let jobs = integer(field(&table, "max_jobs_per_tick")?, 1, 8)? as u16;
+            let edit_cause = match field(&table, "edit_cause")? {
+                Value::Nil => api::EditCause::WorldEdit,
+                Value::String(value) if value.as_bytes().as_ref() == b"world_edit" => {
+                    api::EditCause::WorldEdit
+                }
+                Value::String(value) if value.as_bytes().as_ref() == b"burn" => {
+                    api::EditCause::Burn
+                }
+                _ => return Err("edit_cause must be world_edit or burn"),
+            };
             let mut read_radius_chunks = match field(&table, "read_world")? {
                 Value::Boolean(true) => Some(0),
                 Value::Boolean(false) | Value::Nil => None,
@@ -186,6 +198,7 @@ pub(super) fn declarer(
                     max_bytes,
                     accepts_intents,
                     intent_bootstrap,
+                    edit_cause,
                 }),
             };
             system
@@ -230,8 +243,12 @@ struct ScriptSystem {
     max_bytes: usize,
     accepts_intents: bool,
     intent_bootstrap: Option<Vec<u8>>,
+    edit_cause: api::EditCause,
 }
 impl api::Behavior for ScriptSystem {
+    fn edit_cause(&self) -> api::EditCause {
+        self.edit_cause
+    }
     fn accepts_intents(&self) -> bool {
         self.accepts_intents
     }

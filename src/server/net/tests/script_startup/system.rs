@@ -57,6 +57,34 @@ fn luau_system_legacy_identity() {
 }
 
 const KEY: ChunkKey = ChunkKey { x: 0, y: 5, z: 0 };
+
+#[test]
+fn luau_burn_owner_uses_host_removal_semantics_and_persists_receipt() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,edit_cause='burn',seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) if c.data == 'new' then local old=c.block(2,80,0); assert(old == 'bloxgloom:stone'); c.edit(2,80,0,old,'bloxgloom:air') end return 'done',10000 end",
+    );
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.edit(2, 80, 0, STONE).unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    commit(&mut state, "demo:clock", 1);
+    assert_eq!(state.world.cached_block(2, 80, 0), Some(AIR));
+    assert_eq!(value(&state, "demo:clock"), (1, b"done".to_vec()));
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x530).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+    });
+    let mut restored = fixture.open().unwrap();
+    assert_eq!(restored.world.get_block(2, 80, 0).unwrap(), AIR);
+    assert_eq!(value(&restored, "demo:clock"), (1, b"done".to_vec()));
+    drop(restored);
+    let invalid = Fixture::new();
+    invalid.system("return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,edit_cause='burn',seeds={{x=0,y=5,z=0,data='x'}}} end", SOURCE);
+    assert!(invalid.open().is_err());
+    assert!(!invalid.0.join("save/content.map").exists());
+}
 const REGISTER: &str = r#"return function(h)
     h.register_system { key='demo:clock', schema=1, revision=1, module='demo:clock',
         max_state_bytes=64, max_jobs_per_tick=2, read_world=true,

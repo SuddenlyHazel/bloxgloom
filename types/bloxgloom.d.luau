@@ -102,6 +102,7 @@ export type BloxSystemDeclaration = {
     accepts_intents: boolean?, -- requires read_world=true
     intent_bootstrap: string?, -- constant initial bytes for absent destinations
     after: {string}?, -- up to 16 existing system keys; startup rejects cycles
+    edit_cause: ("world_edit" | "burn")?, -- burn requires read_world=true; only air removals
     seeds: { BloxSystemSeed },
 }
 
