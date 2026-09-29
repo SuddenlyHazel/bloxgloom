@@ -8,7 +8,12 @@ use std::cell::{Cell, RefCell};
 
 pub(super) struct LifecycleRequest {
     pub despawn: bool,
-    pub spawns: Vec<[f32; 3]>,
+    pub spawns: Vec<SpawnRequest>,
+}
+
+pub(super) struct SpawnRequest {
+    pub key: Option<String>,
+    pub position: [f32; 3],
 }
 
 pub(super) struct TickResult {
@@ -195,34 +200,72 @@ fn parse_lifecycle(value: Value, origin: [f32; 3]) -> mlua::Result<LifecycleRequ
                     "creature spawns must be a dense list of at most four",
                 ));
             }
-            let mut positions = Vec::with_capacity(count);
+            let mut requests = Vec::with_capacity(count);
             for index in 1..=count {
                 let Value::Table(point) = spawns.raw_get::<Value>(index)? else {
-                    return Err(invalid("creature spawn position must be a sequence"));
+                    return Err(invalid("creature spawn must be a table"));
                 };
-                if point.metatable().is_some()
-                    || point.raw_len() != 3
-                    || point.clone().pairs::<Value, Value>().count() != 3
-                {
-                    return Err(invalid(
-                        "creature spawn position must have three coordinates",
-                    ));
-                }
-                let position = [
-                    coordinate(point.raw_get(1)?)?,
-                    coordinate(point.raw_get(2)?)?,
-                    coordinate(point.raw_get(3)?)?,
-                ];
+                let request = parse_spawn(point)?;
+                let position = request.position;
                 if (0..3).any(|axis| (position[axis] - origin[axis]).abs() > 8.0) {
                     return Err(invalid("creature spawn position exceeds local bound"));
                 }
-                positions.push(position);
+                requests.push(request);
             }
-            positions
+            requests
         }
         _ => return Err(invalid("creature spawns must be a dense list")),
     };
     Ok(LifecycleRequest { despawn, spawns })
+}
+
+fn parse_spawn(point: mlua::Table) -> mlua::Result<SpawnRequest> {
+    if point.metatable().is_some() {
+        return Err(invalid("creature spawn metatable forbidden"));
+    }
+    let (key, coordinates) = if point.raw_len() == 3 {
+        if point.clone().pairs::<Value, Value>().count() != 3 {
+            return Err(invalid(
+                "creature spawn position must have three coordinates",
+            ));
+        }
+        (None, point)
+    } else {
+        for pair in point.clone().pairs::<Value, Value>() {
+            let (field, _) = pair?;
+            if !matches!(field, Value::String(ref s) if s.as_bytes().as_ref() == b"key" || s.as_bytes().as_ref() == b"position")
+            {
+                return Err(invalid("unknown creature spawn field"));
+            }
+        }
+        let Value::String(key) = point.raw_get::<Value>("key")? else {
+            return Err(invalid("creature spawn key required"));
+        };
+        let key = key.to_str()?.to_owned();
+        if key.len() > 129 {
+            return Err(invalid("creature spawn key too long"));
+        }
+        let Value::Table(position) = point.raw_get::<Value>("position")? else {
+            return Err(invalid("creature spawn position required"));
+        };
+        if position.metatable().is_some()
+            || position.raw_len() != 3
+            || position.clone().pairs::<Value, Value>().count() != 3
+        {
+            return Err(invalid(
+                "creature spawn position must have three coordinates",
+            ));
+        }
+        (Some(key), position)
+    };
+    Ok(SpawnRequest {
+        key,
+        position: [
+            coordinate(coordinates.raw_get(1)?)?,
+            coordinate(coordinates.raw_get(2)?)?,
+            coordinate(coordinates.raw_get(3)?)?,
+        ],
+    })
 }
 
 fn guarded<T>(

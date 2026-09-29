@@ -100,6 +100,81 @@ fn mod_admin_spawn_and_drop_share_one_allocator_and_restart() {
 }
 
 #[test]
+fn luau_creature_replaces_itself_with_another_authored_type_over_real_listener() {
+    let fixture = Fixture::new();
+    let parent = "h.register_creature{key='demo:parent',module='demo:creature',schema=1,revision=1,max_state_bytes=16,initial_state='parent',interval=1,read_radius=1,body={half_width=0.25,height=0.7,speed=1.0},model={{min={-0.2,0,-0.2},max={0.2,0.7,0.2},color={0.2,0.8,0.3}}}}";
+    let child = "h.register_creature{key='demo:child',module='demo:creature',schema=1,revision=1,max_state_bytes=16,initial_state='child',interval=1,read_radius=1,body={half_width=0.25,height=0.7,speed=1.0},model={{min={-0.2,0,-0.2},max={0.2,0.7,0.2},color={0.2,0.8,0.3}}}}";
+    let register = REGISTER
+        .replace("'item', 'bloxgloom:stick'", "'empty', nil")
+        .replace(" end", &format!("; {parent}; {child} end"));
+    fixture.action(
+        &register,
+        "return function(c,e) c.admin_spawn('demo:parent') end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}requires bloxgloom:content/v1\nrequires bloxgloom:mobile_entities/v1\nmodule creature creature.luau\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        fixture.0.join("packages/demo/creature.luau"),
+        "return function(c) if c.data == 'parent' then return 'done',10,nil,nil,{despawn=true,spawns={{key='demo:child',position={c.position[1]+1,c.position[2],c.position[3]}}}} end return c.data,10,nil,nil end",
+    ).unwrap();
+    let mut state = Box::new(fixture.open().unwrap());
+    state.admin_profile = Some(PROFILE);
+    state.spawn_anchor = [0.5, 80.0, 0.5];
+    for x in -8..=8 {
+        for z in -8..=8 {
+            for y in 79..=83 {
+                state
+                    .world
+                    .edit(x, y, z, if y == 79 { crate::world::STONE } else { AIR })
+                    .unwrap();
+            }
+        }
+    }
+    let catalog = state.world.catalog_arc();
+    let parent_id = catalog.entity_type_id_by_key("demo:parent").unwrap();
+    let child_id = catalog.entity_type_id_by_key("demo:child").unwrap();
+    serve(state, |address| {
+        let mut peer = Peer::connect(address, catalog);
+        let request = peer.request(0);
+        let (accepted, reason) = peer.send(&request);
+        assert!(accepted, "{reason}");
+        assert!(
+            peer.send(&request).0,
+            "retry must not spawn a second parent"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    });
+    let state = fixture.open().unwrap();
+    let entities = state
+        .entities
+        .query_mobile_aabb([-8.0, 79.0, -8.0], [8.0, 83.0, 8.0])
+        .unwrap();
+    let mut parents = 0;
+    let mut children = 0;
+    for id in entities {
+        let snapshot = state.entities.snapshot(id).unwrap();
+        if snapshot.entity_type == parent_id {
+            parents += 1;
+        }
+        if snapshot.entity_type == child_id {
+            children += 1;
+            let definition = state.world.catalog().mobile_entity(child_id).unwrap();
+            let bytes = definition
+                .behavior
+                .encode(&snapshot.private_payload)
+                .unwrap();
+            assert_eq!(&bytes[12..], b"child");
+        }
+    }
+    assert_eq!((parents, children), (0, 1));
+}
+
+#[test]
 fn luau_action_block_targets_keep_real_reach_sight_and_identity_checks() {
     let fixture = Fixture::new();
     fixture.action(

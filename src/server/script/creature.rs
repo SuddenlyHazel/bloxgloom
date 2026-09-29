@@ -159,6 +159,24 @@ impl Behavior for ScriptCreature {
             eprintln!("creature {} tick rejected: {error}", self.module);
             Error::InvalidState
         })?;
+        let owner = self.key.split_once(':').ok_or(Error::InvalidState)?.0;
+        let spawns = result
+            .lifecycle
+            .spawns
+            .into_iter()
+            .map(|request| {
+                let key = request.key.unwrap_or_else(|| self.key.clone());
+                if key.split_once(':').map(|parts| parts.0) != Some(owner) {
+                    return Err(Error::InvalidState);
+                }
+                let state = snapshot.creature_initial(&key).ok_or(Error::InvalidState)?;
+                Ok(api::Spawn {
+                    key,
+                    position: request.position,
+                    state,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let movement = context
             .world
             .advance(context.position, state.velocity, result.target)?;
@@ -175,16 +193,7 @@ impl Behavior for ScriptCreature {
         }
         plan.state = Some(Payload::new(state));
         plan.lifecycle.despawn = result.lifecycle.despawn;
-        plan.lifecycle.spawns = result
-            .lifecycle
-            .spawns
-            .into_iter()
-            .map(|position| api::Spawn {
-                key: self.key.clone(),
-                position,
-                state: self.initial(),
-            })
-            .collect();
+        plan.lifecycle.spawns = spawns;
         plan.position = (movement.position != context.position).then_some(movement.position);
         plan.next_tick = Some(
             context

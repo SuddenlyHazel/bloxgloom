@@ -189,6 +189,9 @@ impl Declarations {
             creatures,
             machines,
         };
+        snapshot
+            .install_creature_initials(&result.creatures)
+            .map_err(std::io::Error::other)?;
         result.client_bundle = Arc::new(
             snapshot
                 .client_bundle()

@@ -314,6 +314,8 @@ fn luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change() {
         "return function(c) return 'bad',2,nil,nil,{spawns={{c.position[1]+9,c.position[2],c.position[3]}}} end",
         "return function(c) return 'bad',2,nil,nil,{spawns={{1,2,3},{1,2,3},{1,2,3},{1,2,3},{1,2,3}}} end",
         "return function(c) return 'bad',2,nil,nil,{despawn=1} end",
+        "return function(c) return 'bad',2,nil,nil,{spawns={{key='demo:missing',position={2.5,80,0.5}}}} end",
+        "return function(c) return 'bad',2,nil,nil,{spawns={{key='bloxgloom:mossbun',position={2.5,80,0.5}}}} end",
     ] {
         let fixture = Fixture::new();
         package(&fixture, REGISTER);
@@ -408,4 +410,59 @@ fn luau_creature_neighbour_policy_negotiates_and_reads_bounded_public_views() {
     )
     .unwrap();
     assert!(fixture.open().is_err());
+}
+
+#[test]
+fn luau_creature_spawns_another_declared_type_with_its_own_initial_state() {
+    let fixture = Fixture::new();
+    let child = "h.register_creature{key='demo:child',module='demo:tick',schema=1,revision=1,max_state_bytes=8,initial_state='child',interval=1,body={half_width=0.25,height=0.7,speed=1.0},model={{min={-0.2,0.0,-0.2},max={0.2,0.7,0.2},color={0.2,0.8,0.3}}}}";
+    package(
+        &fixture,
+        &REGISTER.replace(" end", &format!("; {child} end")),
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/tick.luau"),
+        "return function(c) if c.data == 'new' then return 'parent',2,nil,nil,{despawn=true,spawns={{key='demo:child',position={c.position[1]+1,c.position[2],c.position[3]}}}} end return c.data,2,nil,nil end",
+    ).unwrap();
+    let state = fixture.open().unwrap();
+    let catalog = state.world.catalog();
+    let parent = catalog
+        .mobile_entity(catalog.entity_type_id_by_key("demo:sproutling").unwrap())
+        .unwrap();
+    let child = catalog
+        .mobile_entity(catalog.entity_type_id_by_key("demo:child").unwrap())
+        .unwrap();
+    let initial = parent.behavior.initial();
+    let context = api::Context {
+        id: 1,
+        tick: 1,
+        next_tick: Some(1),
+        position: [2.5, 80.0, 0.5],
+        state: &initial,
+        world: &Flat,
+        neighbours: &[],
+    };
+    let plan = parent.behavior.tick(&context).unwrap();
+    assert!(plan.lifecycle.despawn);
+    assert_eq!(plan.lifecycle.spawns[0].key, "demo:child");
+    assert_eq!(
+        child
+            .behavior
+            .encode(&plan.lifecycle.spawns[0].state)
+            .unwrap(),
+        child.behavior.encode(&child.behavior.initial()).unwrap()
+    );
+    assert_eq!(
+        &child
+            .behavior
+            .encode(&plan.lifecycle.spawns[0].state)
+            .unwrap()[12..],
+        b"child"
+    );
+    let fingerprint = catalog.fingerprint();
+    drop(state);
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
 }

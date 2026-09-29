@@ -691,9 +691,13 @@ Creature ticks now have bounded `solid`, `clear`, `grounded`, and `walk_edge`
 world reads alongside routing. These use captured host terrain and locomotion
 services; a failed read rejects the whole tick even if script code catches the
 Lua error. A tick may also return a fifth lifecycle table with `despawn` and
-up to four bounded same-type spawn positions. The host validates spawn terrain
+up to four bounded spawn positions, defaulting to the same type. The host validates spawn terrain
 and commits the parent transition and children in one entity WAL transaction.
-Cross-type creature spawns remain open.
+Creature lifecycle can now select another creature declared by the same package,
+using its registered initial state. Startup resolves bounded templates before
+world installation; missing or foreign types reject the tick. A real-listener
+admin spawn, tick replacement, receipt retry, and restart verify the parent
+despawn and one child with its own private state on the production path.
 Optional `reads_neighbours` and `wakes_on_terrain_change` creature policies now
 negotiate in V37. The callback receives the coordinator's bounded, immutable
 public neighbour list with exact ID words, key, position, and public bytes.

@@ -117,7 +117,7 @@ pub(super) mod manifest;
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use super::{ScriptError, ScriptFailure};
 use manifest::Manifest;
@@ -134,6 +134,9 @@ const MAX_MANIFEST_BYTES: usize = 16 * 1024;
 pub struct PackageSnapshot {
     packages: BTreeMap<String, Package>,
     client: Arc<client::ClientBundle>,
+    /// Installed once after all startup entries finish, before the catalog is
+    /// published. Tick workers only read these exact registered templates.
+    creature_initials: OnceLock<BTreeMap<String, bloxgloom_host_api::entity::Payload>>,
 }
 
 struct Package {
@@ -143,6 +146,26 @@ struct Package {
 }
 
 impl PackageSnapshot {
+    pub(super) fn install_creature_initials(
+        &self,
+        creatures: &[bloxgloom_host_api::entity::MobileEntity],
+    ) -> Result<(), ScriptError> {
+        let initials = creatures
+            .iter()
+            .map(|creature| (creature.key.clone(), creature.behavior.initial()))
+            .collect();
+        self.creature_initials
+            .set(initials)
+            .map_err(|_| error("<creatures>", "creature templates already installed"))
+    }
+
+    pub(super) fn creature_initial(
+        &self,
+        key: &str,
+    ) -> Option<bloxgloom_host_api::entity::Payload> {
+        self.creature_initials.get()?.get(key).cloned()
+    }
+
     /// Startup uses the existing public composition contract v1. Source semver
     /// dependencies are checked exactly by discovery, not squeezed into a u32.
     pub(super) fn startup_packages(
@@ -409,7 +432,11 @@ impl PackageSnapshot {
         // Build only from the validated immutable snapshot, never reopen files or
         // serialize a local manifest (which contains server-only paths/entry).
         let client = Arc::new(client::ClientBundle::from_packages(&packages)?);
-        Ok(Self { packages, client })
+        Ok(Self {
+            packages,
+            client,
+            creature_initials: OnceLock::new(),
+        })
     }
 
     pub fn client_bundle(&self) -> &Arc<client::ClientBundle> {

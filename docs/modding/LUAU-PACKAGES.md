@@ -194,7 +194,9 @@ authoritative movement directly.
 The tick returns `(binary_state, delay, target_x, target_z)` and may add a fifth
 `{despawn=true, spawns={{x,y,z}, ...}}` result. Each position is an absolute
 feet position within eight blocks of the parent, with at most four children.
-Children use the same creature declaration and its initial private state.
+Children use the same creature declaration and its initial private state unless
+an entry uses `{key='package:other',position={x,y,z}}` to select another creature
+declared by that package. The child starts with its own registered initial state.
 The host checks terrain and commits the parent and children atomically; invalid
 lifecycle data rejects the tick.
 `register_creature` may set `reads_neighbours=true` to capture the host's bounded
