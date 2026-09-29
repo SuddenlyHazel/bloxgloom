@@ -256,6 +256,47 @@ fn v34_combines_recipe_lists_and_creature_options_in_one_client_catalog() {
 }
 
 #[test]
+fn v37_combines_creature_read_policy_with_machine_descriptor() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let source = REGISTER.replace(
+        "h.register_entity('demo:marker'",
+        "h.register_creature{key='demo:sproutling',module='demo:critter',schema=1,revision=1,max_state_bytes=8,interval=1,reads_neighbours=true,body={half_width=0.25,height=0.7,speed=1.0},model={{min={-0.2,0.0,-0.2},max={0.2,0.7,0.2},color={0.2,0.8,0.3}}}}; h.register_entity('demo:marker'",
+    );
+    package(&fixture, &source);
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(&manifest, format!("{text}requires bloxgloom:mobile_entities/v1\nmodule server critter server/critter.luau\n")).unwrap();
+    std::fs::write(
+        fixture.0.join("packages/demo/server/critter.luau"),
+        "return function(c) return c.data,10,nil,nil end",
+    )
+    .unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x25")
+    );
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x546).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let machine = client
+            .machine(client.entity_type_id_by_key("demo:press_machine").unwrap())
+            .unwrap();
+        assert_eq!(machine.process.as_ref().unwrap().recipes.len(), 1);
+        let creature = client
+            .mobile_entity(client.entity_type_id_by_key("demo:sproutling").unwrap())
+            .unwrap();
+        assert!(creature.reads_neighbours);
+    });
+}
+
+#[test]
 fn luau_machine_ports_and_transfer_work_negotiate_and_restart() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();

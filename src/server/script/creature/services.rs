@@ -35,6 +35,21 @@ pub(super) fn invoke(
     let position = lua.create_sequence_from(context.position)?;
     position.set_readonly(true);
     host.set("position", position)?;
+    let neighbours = lua.create_table()?;
+    for (index, neighbour) in context.neighbours.iter().enumerate() {
+        let record = lua.create_table()?;
+        record.set("id_lo", neighbour.id as u32)?;
+        record.set("id_hi", (neighbour.id >> 32) as u32)?;
+        record.set("key", neighbour.key)?;
+        let position = lua.create_sequence_from(neighbour.position)?;
+        position.set_readonly(true);
+        record.set("position", position)?;
+        record.set("public", lua.create_string(neighbour.public)?)?;
+        record.set_readonly(true);
+        neighbours.raw_set(index + 1, record)?;
+    }
+    neighbours.set_readonly(true);
+    host.set("neighbours", neighbours)?;
     let calls = Cell::new(0u8);
     let routes = Cell::new(0u8);
     let rejected = RefCell::new(None);

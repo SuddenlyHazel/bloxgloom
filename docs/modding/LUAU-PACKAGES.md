@@ -197,6 +197,11 @@ feet position within eight blocks of the parent, with at most four children.
 Children use the same creature declaration and its initial private state.
 The host checks terrain and commits the parent and children atomically; invalid
 lifecycle data rejects the tick.
+`register_creature` may set `reads_neighbours=true` to capture the host's bounded
+public entity view. Tick callbacks then receive `c.neighbours`, a read-only list
+of `{id_lo,id_hi,key,position,public}` records; private neighbour state is never
+included. `wakes_on_terrain_change=false` disables automatic terrain wakes.
+Both declaration options participate in save and client catalog identity.
 
 A package with the owner-systems capability can register one persistent system
 with `host.register_system { key, schema, revision, module, partition,

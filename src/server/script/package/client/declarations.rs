@@ -33,6 +33,7 @@ pub(super) struct Format {
     pub screen_layout: bool,
     pub creatures: bool,
     pub creature_options: bool,
+    pub creature_policy: bool,
     pub machines: bool,
     pub machine_recipes: bool,
     pub machine_ports: bool,
@@ -120,6 +121,9 @@ impl ClientBundle {
             creature.animation != bloxgloom_host_api::entity::Animation::default()
                 || !creature.interaction.is_empty()
         });
+        let creature_policy = creatures
+            .iter()
+            .any(|creature| creature.reads_neighbours || !creature.wakes_on_terrain_change);
         let storage_format = !storage.is_empty() || creature_format;
         let state_texture_format = blocks
             .iter()
@@ -140,7 +144,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if machine_footprints {
+        let version = if creature_policy {
+            CREATURE_POLICY_MAGIC
+        } else if machine_footprints {
             MACHINE_FOOTPRINT_MAGIC
         } else if machine_ports {
             MACHINE_PORTS_MAGIC
@@ -388,17 +394,22 @@ impl ClientBundle {
                     &mut writer,
                     name,
                     creatures,
-                    creature_options || machine_recipes || machine_ports || machine_footprints,
+                    creature_options
+                        || machine_recipes
+                        || machine_ports
+                        || machine_footprints
+                        || creature_policy,
+                    creature_policy,
                 )?;
             }
-            if machine_format || creature_options {
+            if machine_format || creature_options || creature_policy {
                 machine::encode(
                     &mut writer,
                     name,
                     machines,
-                    machine_recipes || machine_ports || machine_footprints,
-                    machine_ports || machine_footprints,
-                    machine_footprints,
+                    machine_recipes || machine_ports || machine_footprints || creature_policy,
+                    machine_ports || machine_footprints || creature_policy,
+                    machine_footprints || creature_policy,
                 )?;
             }
         }
@@ -548,6 +559,7 @@ impl Startup {
             screen_layout,
             creatures,
             creature_options,
+            creature_policy,
             machines,
             machine_recipes,
             machine_ports,
@@ -570,6 +582,7 @@ impl Startup {
                 || screen_layout
                 || creatures
                 || creature_options
+                || creature_policy
                 || machines
                 || machine_recipes
                 || machine_ports
@@ -592,6 +605,7 @@ impl Startup {
         let mut has_screen_layout = false;
         let mut has_creatures = false;
         let mut has_creature_options = false;
+        let mut has_creature_policy = false;
         let mut has_machines = false;
         let mut has_machine_recipes = false;
         let mut has_machine_ports = false;
@@ -982,12 +996,16 @@ impl Startup {
                 startup.storage.extend(decoded);
             }
             if creatures {
-                let decoded = creature::decode(reader, name, &requires, creature_options)?;
+                let decoded =
+                    creature::decode(reader, name, &requires, creature_options, creature_policy)?;
                 has_creatures |= !decoded.is_empty();
                 has_creature_options |= decoded.iter().any(|creature| {
                     creature.animation != bloxgloom_host_api::entity::Animation::default()
                         || !creature.interaction.is_empty()
                 });
+                has_creature_policy |= decoded
+                    .iter()
+                    .any(|creature| creature.reads_neighbours || !creature.wakes_on_terrain_change);
                 startup.creatures.extend(decoded);
             }
             if machines {
@@ -1084,7 +1102,8 @@ impl Startup {
             || (machines && !has_machines && !creature_options)
             || (machine_recipes && !has_machine_recipes && !machine_ports && !machine_footprints)
             || (machine_ports && !has_machine_ports && !machine_footprints)
-            || (machine_footprints && !has_machine_footprints)
+            || (machine_footprints && !has_machine_footprints && !creature_policy)
+            || (creature_policy && !has_creature_policy)
         {
             return Err(invalid());
         }

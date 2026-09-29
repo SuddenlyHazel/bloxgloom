@@ -9,6 +9,7 @@ pub(super) fn encode(
     owner: &str,
     declarations: &[MobileEntity],
     options: bool,
+    policy: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -25,8 +26,7 @@ pub(super) fn encode(
         if creature.max_state_bytes < 13
             || creature.max_state_bytes > 268
             || creature.max_public_bytes != 5
-            || creature.reads_neighbours
-            || !creature.wakes_on_terrain_change
+            || (!policy && (creature.reads_neighbours || !creature.wakes_on_terrain_change))
             || (!options && !creature.interaction.is_empty())
             || creature.model.len() > 16
             || (!options && creature.animation != Animation::default())
@@ -71,6 +71,10 @@ pub(super) fn encode(
             }
             writer.field(&creature.interaction)?;
         }
+        if policy {
+            writer.field(&[u8::from(creature.reads_neighbours)
+                | (u8::from(creature.wakes_on_terrain_change) << 1)])?;
+        }
     }
     Ok(())
 }
@@ -80,6 +84,7 @@ pub(super) fn decode(
     owner: &str,
     requires: &[String],
     options: bool,
+    policy: bool,
 ) -> Result<Vec<MobileEntity>, ScriptError> {
     let mut result: Vec<MobileEntity> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -153,6 +158,17 @@ pub(super) fn decode(
         } else {
             Vec::new()
         };
+        let (reads_neighbours, wakes_on_terrain_change) = if policy {
+            let [flags] = reader.field(1)? else {
+                return Err(invalid());
+            };
+            if flags & !3 != 0 {
+                return Err(invalid());
+            }
+            (flags & 1 != 0, flags & 2 != 0)
+        } else {
+            (false, true)
+        };
         let creature = MobileEntity {
             key,
             schema_version,
@@ -162,8 +178,8 @@ pub(super) fn decode(
             body,
             interval,
             read_radius: *read_radius,
-            reads_neighbours: false,
-            wakes_on_terrain_change: true,
+            reads_neighbours,
+            wakes_on_terrain_change,
             model,
             animation,
             interaction,

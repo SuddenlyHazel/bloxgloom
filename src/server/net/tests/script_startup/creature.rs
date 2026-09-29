@@ -220,6 +220,8 @@ fn luau_creature_interaction_and_animation_negotiate_and_keep_private_state() {
 fn luau_creature_options_reject_invalid_bounds_before_save_creation() {
     for declaration in [
         REGISTER.replace("model={{", "animation={stride_rate=41},model={{"),
+        REGISTER.replace("model={{", "reads_neighbours=1,model={{"),
+        REGISTER.replace("model={{", "wakes_on_terrain_change='no',model={{"),
         REGISTER.replace(
             "model={{",
             &format!("interaction='{}',model={{{{", "x".repeat(129)),
@@ -333,4 +335,77 @@ fn luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change() {
         assert!(creature.behavior.tick(&context).is_err());
         assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
     }
+}
+
+#[test]
+fn luau_creature_neighbour_policy_negotiates_and_reads_bounded_public_views() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let register = REGISTER.replace(
+        "interval=1,body=",
+        "interval=1,reads_neighbours=true,wakes_on_terrain_change=false,body=",
+    );
+    package(&fixture, &register);
+    std::fs::write(
+        fixture.0.join("packages/demo/tick.luau"),
+        "return function(c) assert(#c.neighbours == 1); local n=c.neighbours[1]; assert(n.id_lo == 9 and n.id_hi == 2 and n.key == 'demo:sproutling' and n.public == 'pose' and n.position[1] == 3); return 'seen',2,nil,nil end",
+    ).unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let id = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
+    let creature = catalog.mobile_entity(id).unwrap();
+    assert!(creature.reads_neighbours);
+    assert!(!creature.wakes_on_terrain_change);
+    let initial = creature.behavior.initial();
+    let neighbours = [api::Neighbour {
+        id: (2u64 << 32) | 9,
+        key: "demo:sproutling",
+        position: [3.0, 80.0, 0.5],
+        public: b"pose",
+    }];
+    let context = api::Context {
+        id: 1,
+        tick: 1,
+        next_tick: Some(1),
+        position: [2.5, 80.0, 0.5],
+        state: &initial,
+        world: &Flat,
+        neighbours: &neighbours,
+    };
+    let plan = creature.behavior.tick(&context).unwrap();
+    assert_eq!(
+        &creature
+            .behavior
+            .encode(plan.state.as_ref().unwrap())
+            .unwrap()[12..],
+        b"seen"
+    );
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x25")
+    );
+    let fingerprint = catalog.fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x545).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let descriptor = client
+            .mobile_entity(client.entity_type_id_by_key("demo:sproutling").unwrap())
+            .unwrap();
+        assert!(descriptor.reads_neighbours);
+        assert!(!descriptor.wakes_on_terrain_change);
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/main.luau"),
+        register.replace("reads_neighbours=true", "reads_neighbours=false"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
 }

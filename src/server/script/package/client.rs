@@ -74,6 +74,7 @@ const CREATURE_OPTIONS_MAGIC: &[u8] = b"BGCLIENT\x21";
 const MACHINE_RECIPES_MAGIC: &[u8] = b"BGCLIENT\x22";
 const MACHINE_PORTS_MAGIC: &[u8] = b"BGCLIENT\x23";
 const MACHINE_FOOTPRINT_MAGIC: &[u8] = b"BGCLIENT\x24";
+const CREATURE_POLICY_MAGIC: &[u8] = b"BGCLIENT\x25";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -241,6 +242,7 @@ impl ClientBundle {
             MACHINE_RECIPES_MAGIC,
             MACHINE_PORTS_MAGIC,
             MACHINE_FOOTPRINT_MAGIC,
+            CREATURE_POLICY_MAGIC,
         ]
         .contains(&version)
         {
@@ -356,7 +358,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 animated: version == ANIMATED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
                     || version == APPEARANCE_MAGIC
@@ -376,7 +379,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 player: version == PLAYER_MAGIC
                     || version == PLAYER_SIZED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
@@ -398,7 +402,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 extended_blocks: version == BLOCK_OPTIONS_MAGIC
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
@@ -412,7 +417,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 tags: version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
@@ -425,7 +431,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 visual_blocks: version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
@@ -437,7 +444,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 block_states: version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
@@ -448,7 +456,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 components: version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
@@ -458,7 +467,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 state_textures: version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
@@ -467,7 +477,8 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 storage: version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
@@ -475,34 +486,44 @@ impl ClientBundle {
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 screen_layout: version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 creatures: version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 creature_options: version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 machines: version == MACHINE_MAGIC
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
                 machine_recipes: version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
-                    || version == MACHINE_FOOTPRINT_MAGIC,
-                machine_ports: version == MACHINE_PORTS_MAGIC || version == MACHINE_FOOTPRINT_MAGIC,
-                machine_footprints: version == MACHINE_FOOTPRINT_MAGIC,
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
+                machine_ports: version == MACHINE_PORTS_MAGIC
+                    || version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
+                machine_footprints: version == MACHINE_FOOTPRINT_MAGIC
+                    || version == CREATURE_POLICY_MAGIC,
+                creature_policy: version == CREATURE_POLICY_MAGIC,
             },
         )?;
         if !reader.0.is_empty() {

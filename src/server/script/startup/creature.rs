@@ -55,6 +55,16 @@ pub(super) fn declarer(
                 Value::Nil => 0,
                 value => integer(value, 0, 1)? as u8,
             };
+            let reads_neighbours = match field(&declaration, "reads_neighbours")? {
+                Value::Nil | Value::Boolean(false) => false,
+                Value::Boolean(true) => true,
+                _ => return Err("creature reads_neighbours must be boolean"),
+            };
+            let wakes_on_terrain_change = match field(&declaration, "wakes_on_terrain_change")? {
+                Value::Nil | Value::Boolean(true) => true,
+                Value::Boolean(false) => false,
+                _ => return Err("creature wakes_on_terrain_change must be boolean"),
+            };
             let Value::Table(body) = field(&declaration, "body")? else {
                 return Err("creature body must be a table");
             };
@@ -143,8 +153,8 @@ pub(super) fn declarer(
                 body,
                 interval,
                 read_radius,
-                reads_neighbours: false,
-                wakes_on_terrain_change: true,
+                reads_neighbours,
+                wakes_on_terrain_change,
                 model,
                 animation,
                 interaction,

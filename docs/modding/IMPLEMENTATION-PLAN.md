@@ -693,7 +693,12 @@ services; a failed read rejects the whole tick even if script code catches the
 Lua error. A tick may also return a fifth lifecycle table with `despawn` and
 up to four bounded same-type spawn positions. The host validates spawn terrain
 and commits the parent transition and children in one entity WAL transaction.
-Neighbour reads and cross-type creature spawns remain open.
+Cross-type creature spawns remain open.
+Optional `reads_neighbours` and `wakes_on_terrain_change` creature policies now
+negotiate in V37. The callback receives the coordinator's bounded, immutable
+public neighbour list with exact ID words, key, position, and public bytes.
+Defaults retain older bundle identities; a real-listener join and restart
+verify the policy alongside a machine descriptor.
 Luau `register_machine` declares a process machine with one explicit recipe,
 optional fuel, and a host-owned three or two slot inventory screen; omitted
 footprints default to one cell.
