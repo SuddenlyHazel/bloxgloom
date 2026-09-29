@@ -139,6 +139,106 @@ fn luau_owner_drop_errors_poison_caught_plan() {
     assert!(invalid.open().is_err());
     assert!(!invalid.0.join("save/content.map").exists());
 }
+
+#[test]
+fn luau_owner_general_entity_spawn_shares_receipt_and_restarts() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_entity('demo:marker',1,1,1,nil); h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,creates_drops=true,creates_entities=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) if c.data == 'new' then c.spawn_entity('demo:marker',2,80,0,'x'); c.spawn_drop(3,80,0,'bloxgloom:stick',2,0); c.edit(4,80,0,c.block(4,80,0),'bloxgloom:glowstone') end return 'done',10000 end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\nrequires bloxgloom:actions/v1\n"),
+    )
+    .unwrap();
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.get_chunk(KEY).unwrap();
+    let entity_type = state
+        .world
+        .catalog()
+        .entity_type_id_by_key("demo:marker")
+        .unwrap();
+    let spawned = |state: &State| {
+        state
+            .entities
+            .query_mobile_aabb([2.0, 80.0, 0.0], [3.0, 81.0, 1.0])
+            .unwrap()
+            .into_iter()
+            .filter_map(|id| state.entities.snapshot(id))
+            .find(|entity| entity.entity_type == entity_type)
+    };
+    let (wave, missing) = stage(&mut state, "demo:clock", 1).unwrap();
+    assert!(missing.is_empty());
+    assert!(spawned(&state).is_none());
+    assert!(crate::server::drops::nearby(&state.entities, [3.5, 80.5, 0.5]).is_empty());
+    assert_eq!(state.world.cached_block(4, 80, 0), Some(AIR));
+    complete_barrier(&mut state, wave.unwrap().barrier()).unwrap();
+    assert_eq!(value(&state, "demo:clock"), (1, b"done".to_vec()));
+    assert_eq!(
+        crate::server::drops::nearby(&state.entities, [3.5, 80.5, 0.5])[0].count,
+        2
+    );
+    assert_eq!(state.world.cached_block(4, 80, 0), Some(GLOWSTONE));
+    assert_eq!(
+        spawned(&state)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<Vec<u8>>()
+            .unwrap(),
+        b"x"
+    );
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x532).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+    });
+    let mut restored = fixture.open().unwrap();
+    assert_eq!(
+        spawned(&restored)
+            .unwrap()
+            .private_payload
+            .downcast_ref::<Vec<u8>>()
+            .unwrap(),
+        b"x"
+    );
+    assert_eq!(value(&restored, "demo:clock"), (1, b"done".to_vec()));
+    assert_eq!(
+        crate::server::drops::nearby(&restored.entities, [3.5, 80.5, 0.5])[0].count,
+        2
+    );
+    assert_eq!(restored.world.get_block(4, 80, 0).unwrap(), GLOWSTONE);
+}
+
+#[test]
+fn luau_owner_entity_spawn_rejects_obstructed_cell_without_partial_state() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_entity('demo:marker',1,1,1,nil); h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,creates_entities=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) c.spawn_entity('demo:marker',2,80,0,'x'); return 'done',10000 end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\nrequires bloxgloom:actions/v1\n"),
+    )
+    .unwrap();
+    let mut state = fixture.open().unwrap();
+    state.world.edit(2, 80, 0, STONE).unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    assert!(stage(&mut state, "demo:clock", 1).is_err());
+    assert_eq!(value(&state, "demo:clock"), (0, b"new".to_vec()));
+    assert!(
+        state
+            .entities
+            .query_mobile_aabb([2.0, 80.0, 0.0], [3.0, 81.0, 1.0])
+            .unwrap()
+            .is_empty()
+    );
+}
 const REGISTER: &str = r#"return function(h)
     h.register_system { key='demo:clock', schema=1, revision=1, module='demo:clock',
         max_state_bytes=64, max_jobs_per_tick=2, read_world=true,

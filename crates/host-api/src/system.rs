@@ -62,6 +62,9 @@ pub struct Plan {
     /// Item creation by a chunk owner. The host resolves each registered item,
     /// enforces finite stack counts, and commits drops with owner state and edits.
     pub drops: Vec<DropSpawn>,
+    /// General, package-owned entities created at captured chunk cells. The
+    /// host chooses IDs and validates schemas, occupancy and WAL admission.
+    pub entity_spawns: Vec<EntitySpawn>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,6 +73,13 @@ pub struct DropSpawn {
     pub item: String,
     pub count: u16,
     pub pickup_delay_ms: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EntitySpawn {
+    pub position: [f32; 3],
+    pub key: String,
+    pub state: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,6 +127,10 @@ pub trait Behavior: Send + Sync + 'static {
 
     /// Explicit item-creation authority for bounded chunk-owner drop spawns.
     fn creates_drops(&self) -> bool {
+        false
+    }
+
+    fn creates_entities(&self) -> bool {
         false
     }
 
@@ -280,6 +294,7 @@ impl System {
             || (self.read_radius_chunks.is_some() && self.partition != Partition::Chunk)
             || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_drops() && self.read_radius_chunks.is_none())
+            || (self.behavior.creates_entities() && self.read_radius_chunks.is_none())
             || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
@@ -379,6 +394,9 @@ impl System {
         }
         if self.behavior.creates_drops() {
             out.extend(b"owner-drop-spawns-v1");
+        }
+        if self.behavior.creates_entities() {
+            out.extend(b"owner-entity-spawns-v1");
         }
         out
     }

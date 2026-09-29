@@ -4,12 +4,18 @@ use super::*;
 use std::cell::Cell;
 mod intents;
 
+#[derive(Clone, Copy)]
+pub(super) struct Capabilities {
+    pub drops: bool,
+    pub entities: bool,
+}
+
 pub(super) fn invoke(
     lua: &Lua,
     entry: Function,
     context: &api::Context<'_>,
     max_bytes: usize,
-    creates_drops: bool,
+    capabilities: Capabilities,
     inbox: &[api::IntentDelivery],
     outbox: Option<&mut api::IntentOutbox>,
 ) -> mlua::Result<api::Plan> {
@@ -30,6 +36,7 @@ pub(super) fn invoke(
     let reads = Cell::new(0usize);
     let edits = RefCell::new(Vec::new());
     let drops = RefCell::new(Vec::new());
+    let entity_spawns = RefCell::new(Vec::new());
     let wakes = RefCell::new(Vec::new());
     let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
@@ -110,7 +117,7 @@ pub(super) fn invoke(
             scope.create_function(
                 |_, (x, y, z, item, count, delay): (Value, Value, Value, Value, Value, Value)| {
                     checked(&rejected, || {
-                        if !creates_drops {
+                        if !capabilities.drops {
                             return Err("system has not declared drop creation");
                         }
                         let mut drops = drops.borrow_mut();
@@ -129,6 +136,41 @@ pub(super) fn invoke(
                             item: text(item)?,
                             count: integer(count, 1, 128)? as u16,
                             pickup_delay_ms: integer(delay, 0, u32::MAX.into())? as u32,
+                        });
+                        Ok(())
+                    })
+                },
+            )?,
+        )?;
+        host.set(
+            "spawn_entity",
+            scope.create_function(
+                |_, (key, x, y, z, state): (Value, Value, Value, Value, Value)| {
+                    checked(&rejected, || {
+                        if !capabilities.entities {
+                            return Err("system has not declared entity creation");
+                        }
+                        let mut spawns = entity_spawns.borrow_mut();
+                        if spawns.len() >= 16 {
+                            return Err("system entity spawn limit exceeded (16)");
+                        }
+                        let cell = cell(x, y, z)?;
+                        if cell.iter().any(|v| v.unsigned_abs() > 1_000_000) {
+                            return Err("system entity coordinate exceeds exact range");
+                        }
+                        context
+                            .block(cell)
+                            .map_err(|_| "system entity cell unavailable")?;
+                        let Value::String(state) = state else {
+                            return Err("system entity state must be a binary string");
+                        };
+                        if state.as_bytes().len() > 1024 {
+                            return Err("system entity state exceeds 1024 bytes");
+                        }
+                        spawns.push(api::EntitySpawn {
+                            position: cell.map(|v| v as f32 + 0.5),
+                            key: text(key)?,
+                            state: state.as_bytes().to_vec(),
                         });
                         Ok(())
                     })
@@ -163,6 +205,7 @@ pub(super) fn invoke(
                     .ok_or("system deadline overflow")?,
                 edits: std::mem::take(&mut *edits.borrow_mut()),
                 drops: std::mem::take(&mut *drops.borrow_mut()),
+                entity_spawns: std::mem::take(&mut *entity_spawns.borrow_mut()),
                 wakes: std::mem::take(&mut *wakes.borrow_mut()),
             })
         })

@@ -207,6 +207,59 @@ impl SystemHandler for Adapter {
                 ));
             }
         }
+        if plan.entity_spawns.len() > 16
+            || (!plan.entity_spawns.is_empty() && !self.0.behavior.creates_entities())
+        {
+            return Err(SystemHandlerError::Rejected(
+                "public owner system exceeds or lacks entity creation authority".into(),
+            ));
+        }
+        let namespace = self.0.key.split_once(':').map_or("", |(owner, _)| owner);
+        for spawn in &plan.entity_spawns {
+            let OwnerKey::Chunk(owner) = job.owner() else {
+                return Err(SystemHandlerError::Rejected(
+                    "owner entity spawn requires a chunk owner".into(),
+                ));
+            };
+            let Some(radius) = self.0.read_radius_chunks else {
+                return Err(SystemHandlerError::Rejected(
+                    "owner entity spawn requires captured terrain".into(),
+                ));
+            };
+            if spawn
+                .position
+                .iter()
+                .any(|v| !v.is_finite() || !(-1_000_000.0..=1_000_000.0).contains(v))
+                || spawn.state.len() > 1024
+                || spawn.key.split_once(':').map_or("", |(owner, _)| owner) != namespace
+            {
+                return Err(SystemHandlerError::Rejected(
+                    "invalid owner entity spawn".into(),
+                ));
+            }
+            let [x, y, z] = spawn.position.map(|v| v.floor() as i32);
+            let (key, _) = crate::world::world_to_chunk(x, y, z);
+            if (i64::from(key.x) - i64::from(owner.x)).abs() > i64::from(radius)
+                || (i64::from(key.y) - i64::from(owner.y)).abs() > i64::from(radius)
+                || (i64::from(key.z) - i64::from(owner.z)).abs() > i64::from(radius)
+                || job.owner_catalog().is_none_or(|catalog| {
+                    catalog
+                        .gameplay_entity(&spawn.key)
+                        .is_none_or(|definition| {
+                            spawn.state.len() > usize::from(definition.max_state_bytes)
+                                || definition.state.validate(&spawn.state).is_err()
+                                || !definition
+                                    .state
+                                    .public(&spawn.state)
+                                    .is_ok_and(|view| view.len() <= 4096)
+                        })
+                })
+            {
+                return Err(SystemHandlerError::Rejected(
+                    "invalid owner entity state or location".into(),
+                ));
+            }
+        }
         let mut edited = std::collections::BTreeSet::new();
         let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {
@@ -258,10 +311,16 @@ impl SystemHandler for Adapter {
                 .drops
                 .iter()
                 .map(|drop| drop.item.len() + 32)
+                .sum::<usize>()
+            + plan
+                .entity_spawns
+                .iter()
+                .map(|spawn| spawn.key.len() + spawn.state.len() + 32)
                 .sum::<usize>();
         let output = if wakes.is_empty()
             && plan.edits.is_empty()
             && plan.drops.is_empty()
+            && plan.entity_spawns.is_empty()
             && intents.is_empty()
         {
             None
@@ -271,7 +330,8 @@ impl SystemHandler for Adapter {
                     .with_durable_wakes(wakes)
                     .with_intents(intents)
                     .with_world_edits(plan.edits, edit_cause)
-                    .with_drops(plan.drops),
+                    .with_drops(plan.drops)
+                    .with_entity_spawns(plan.entity_spawns),
             )
         };
         let usage = PatchUsage {

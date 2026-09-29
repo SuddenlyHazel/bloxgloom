@@ -666,6 +666,10 @@ Chunk owners may now declare `creates_drops=true` and stage up to 16 validated
 item drops at captured cell centers. Direct drops merge or allocate through the
 server planner and commit with owner state/edits in one WAL receipt. Direct
 owner entity operations and broader services remain open.
+Chunk owners may also declare `creates_entities=true` and stage up to 16
+package-owned general entity spawns at captured cells. The host validates the
+registered schema and terrain, allocates IDs, and commits spawns with owner state
+through the same receipt. Owner entity reads, updates and removals remain open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints, machines and creatures remain open.

@@ -102,6 +102,7 @@ impl api::Behavior for Ignitions {
             wakes: vec![],
             edits,
             drops: vec![],
+            entity_spawns: vec![],
         })
     }
 }

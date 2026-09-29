@@ -7,6 +7,8 @@
 //! removal semantics; it does not install the deferred native fire owner.
 //! Optional `creates_drops=true` grants bounded, host-validated item creation
 //! through `c.spawn_drop(x,y,z,item,count,pickup_delay_ms)` at cell centers.
+//! Optional `creates_entities=true` permits `c.spawn_entity(key,x,y,z,state)`
+//! for registered general entities owned by this package.
 //!
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
@@ -115,8 +117,16 @@ pub(super) fn declarer(
                 Value::Nil => false,
                 _ => return Err("creates_drops must be boolean"),
             };
+            let creates_entities = match field(&table, "creates_entities")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("creates_entities must be boolean"),
+            };
             if creates_drops && read_radius_chunks.is_none() {
                 return Err("creates_drops requires read_world=true");
+            }
+            if creates_entities && read_radius_chunks.is_none() {
+                return Err("creates_entities requires read_world=true");
             }
             let intent_bootstrap = match field(&table, "intent_bootstrap")? {
                 Value::Nil => None,
@@ -211,6 +221,7 @@ pub(super) fn declarer(
                     intent_bootstrap,
                     edit_cause,
                     creates_drops,
+                    creates_entities,
                 }),
             };
             system
@@ -257,6 +268,7 @@ struct ScriptSystem {
     intent_bootstrap: Option<Vec<u8>>,
     edit_cause: api::EditCause,
     creates_drops: bool,
+    creates_entities: bool,
 }
 impl api::Behavior for ScriptSystem {
     fn edit_cause(&self) -> api::EditCause {
@@ -264,6 +276,9 @@ impl api::Behavior for ScriptSystem {
     }
     fn creates_drops(&self) -> bool {
         self.creates_drops
+    }
+    fn creates_entities(&self) -> bool {
+        self.creates_entities
     }
     fn accepts_intents(&self) -> bool {
         self.accepts_intents
@@ -314,7 +329,10 @@ impl ScriptSystem {
                     entry,
                     context,
                     self.max_bytes,
-                    self.creates_drops,
+                    bindings::Capabilities {
+                        drops: self.creates_drops,
+                        entities: self.creates_entities,
+                    },
                     inbox,
                     outbox,
                 )

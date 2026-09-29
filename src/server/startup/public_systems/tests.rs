@@ -19,6 +19,7 @@ impl api::Behavior for InvalidOutput {
             wakes: vec![],
             edits: vec![],
             drops: vec![],
+            entity_spawns: vec![],
         })
     }
 }

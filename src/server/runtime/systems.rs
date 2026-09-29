@@ -772,6 +772,7 @@ impl SystemRuntime {
         let world_action = if validated.patches().iter().any(|patch| {
             !OwnerEffectPatch::world_edits(patch).is_empty()
                 || !OwnerEffectPatch::drops(patch).is_empty()
+                || !OwnerEffectPatch::entity_spawns(patch).is_empty()
         }) {
             let world = world.ok_or_else(|| {
                 io::Error::new(ErrorKind::InvalidInput, "owner edits have no world")
@@ -789,6 +790,7 @@ impl SystemRuntime {
                 players,
                 seed,
                 tick: tick.get(),
+                system_key: id.as_str(),
                 radius: system.world_read_radius(),
                 patches: validated.patches(),
                 reads: &mut terrain_reads,

@@ -44,6 +44,7 @@ impl system::Behavior for Behavior {
                 after: "bloxgloom:air".into(),
             }],
             drops: vec![],
+            entity_spawns: vec![],
         })
     }
 }

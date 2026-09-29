@@ -76,6 +76,7 @@ pub(super) struct EditInputs<'a> {
     pub players: &'a [[f32; 3]],
     pub seed: u64,
     pub tick: u64,
+    pub system_key: &'a str,
     pub radius: Option<u8>,
     pub patches: &'a [OwnerPatch],
     pub reads: &'a mut TerrainReads,
@@ -90,6 +91,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         players,
         seed,
         tick,
+        system_key,
         radius,
         patches,
         reads,
@@ -97,12 +99,73 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     } = inputs;
     let mut edits = Vec::new();
     let mut direct_drops = Vec::new();
+    let mut direct_entities = Vec::new();
     let mut removals = Vec::new();
     let mut owners = Vec::new();
     let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
     for patch in patches {
+        if !OwnerEffectPatch::entity_spawns(patch).is_empty() {
+            let Some(owner) = patch.owner().as_chunk() else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner entity requires chunk owner",
+                ));
+            };
+            let Some(radius) = radius else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner entity requires world capture",
+                ));
+            };
+            let namespace = system_key.split_once(':').map_or("", |(owner, _)| owner);
+            for spawn in OwnerEffectPatch::entity_spawns(patch) {
+                if direct_entities.len() >= 256
+                    || spawn.state.len() > 1024
+                    || spawn
+                        .position
+                        .iter()
+                        .any(|v| !v.is_finite() || !(-1_000_000.0..=1_000_000.0).contains(v))
+                    || spawn.key.split_once(':').map_or("", |(owner, _)| owner) != namespace
+                {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "invalid owner entity spawn",
+                    ));
+                }
+                let [x, y, z] = spawn.position.map(|v| v.floor() as i32);
+                let (key, _) = crate::world::world_to_chunk(x, y, z);
+                if !within_radius(key, owner, radius) {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "owner entity escaped its neighborhood",
+                    ));
+                }
+                let definition = catalog.gameplay_entity(&spawn.key).ok_or_else(|| {
+                    io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "owner entity has no general schema",
+                    )
+                })?;
+                if spawn.state.len() > usize::from(definition.max_state_bytes)
+                    || definition.state.validate(&spawn.state).is_err()
+                    || !definition
+                        .state
+                        .public(&spawn.state)
+                        .is_ok_and(|view| view.len() <= 4096)
+                {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "invalid owner entity state",
+                    ));
+                }
+                let entity_type = catalog.entity_type_id_by_key(&spawn.key).ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidInput, "unknown owner entity type")
+                })?;
+                direct_entities.push((spawn.position, entity_type, spawn.state.clone()));
+            }
+        }
         if !OwnerEffectPatch::drops(patch).is_empty() {
             let Some(owner) = patch.owner().as_chunk() else {
                 return Err(io::Error::new(
@@ -222,7 +285,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             }
         }
     }
-    if edits.is_empty() && direct_drops.is_empty() {
+    if edits.is_empty() && direct_drops.is_empty() && direct_entities.is_empty() {
         return Ok(None);
     }
     let radius = radius.expect("edits require a world view");
@@ -329,6 +392,42 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     }
     planned.drops.extend(anchored.drops);
     planned.drops.extend(direct_drops);
+    for (position, entity_type, state) in direct_entities {
+        let [x, y, z] = position.map(|v| v.floor() as i32);
+        let block = if let Some(&(_, _, _, block)) = planned
+            .edits
+            .iter()
+            .find(|&&(ex, ey, ez, _)| [ex, ey, ez] == [x, y, z])
+        {
+            block
+        } else {
+            let Some(block) = reads.read(world, x, y, z)? else {
+                let key = crate::world::world_to_chunk(x, y, z).0;
+                if missing.len() < 8 && !missing.contains(&key) {
+                    missing.push(key);
+                }
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "owner entity terrain unavailable",
+                ));
+            };
+            block
+        };
+        if catalog.block_flags(block) & crate::content::SOLID != 0 {
+            return Err(io::Error::new(
+                ErrorKind::PermissionDenied,
+                "owner entity spawn obstructed",
+            ));
+        }
+        planned
+            .entity_spawns
+            .push(crate::server::entities::EntitySpawn::Mobile {
+                entity_type,
+                position,
+                payload: crate::server::entities::EntityPayload::new(state),
+                spawn_tick: tick,
+            });
+    }
     planned.entity_updates.extend(anchored.despawns);
     // Preflight the shared merge planner's spatial traversal before it collects
     // candidates. Dense pages fail the bounded dependency capture, rather than
