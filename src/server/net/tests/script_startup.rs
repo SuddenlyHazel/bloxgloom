@@ -28,6 +28,8 @@ mod gameplay;
 mod generation;
 #[path = "script_startup/join_lifecycle.rs"]
 mod join_lifecycle;
+#[path = "script_startup/machine.rs"]
+mod machine;
 #[path = "script_startup/player.rs"]
 mod player;
 #[path = "script_startup/system.rs"]
@@ -200,7 +202,7 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
             "requires",
         ),
         (
-            "requires bloxgloom:machines/v1",
+            "requires bloxgloom:machines/v2",
             "return function(_) end",
             "unsupported",
         ),

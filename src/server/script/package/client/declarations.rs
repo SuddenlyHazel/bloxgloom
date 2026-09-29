@@ -8,6 +8,7 @@ use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, 
 mod appearance;
 mod components;
 mod creature;
+mod machine;
 mod runtime;
 mod states;
 mod storage;
@@ -31,6 +32,7 @@ pub(super) struct Format {
     pub storage: bool,
     pub screen_layout: bool,
     pub creatures: bool,
+    pub machines: bool,
 }
 
 #[derive(Debug)]
@@ -44,6 +46,7 @@ pub(super) struct Startup {
     blocks: Vec<content::Block>,
     storage: Vec<crate::server::script::startup::StorageDeclaration>,
     creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    machines: Vec<crate::server::script::startup::MachineDeclaration>,
     runtime: runtime::Runtime,
 }
 
@@ -61,6 +64,7 @@ impl ClientBundle {
         let blocks = &declarations.blocks;
         let storage = &declarations.storage;
         let creatures = &declarations.creatures;
+        let machines = &declarations.machines;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
@@ -69,6 +73,7 @@ impl ClientBundle {
             || blocks.len() > MAX_PACKAGES * MAX_BLOCKS
             || storage.len() > MAX_PACKAGES * 8
             || creatures.len() > MAX_PACKAGES * 8
+            || machines.len() > MAX_PACKAGES * 8
         {
             return Err(invalid());
         }
@@ -92,7 +97,8 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
-        let creature_format = !creatures.is_empty();
+        let machine_format = !machines.is_empty();
+        let creature_format = !creatures.is_empty() || machine_format;
         let storage_format = !storage.is_empty() || creature_format;
         let state_texture_format = blocks
             .iter()
@@ -113,7 +119,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if creature_format {
+        let version = if machine_format {
+            MACHINE_MAGIC
+        } else if creature_format {
             CREATURE_MAGIC
         } else if screen_layout {
             SCREEN_LAYOUT_MAGIC
@@ -349,6 +357,9 @@ impl ClientBundle {
             if creature_format {
                 creature::encode(&mut writer, name, creatures)?;
             }
+            if machine_format {
+                machine::encode(&mut writer, name, machines)?;
+            }
         }
         if has_appearance || extended_blocks {
             writer.count(usize::from(declarations.player_rules.is_some()))?;
@@ -374,6 +385,7 @@ impl ClientBundle {
             || decoded.tags.len() != tags.len()
             || decoded.storage.len() != storage.len()
             || decoded.creatures.len() != creatures.len()
+            || decoded.machines.len() != machines.len()
             || decoded.runtime.counts() != runtime.counts()
             || decoded.player_rules != declarations.player_rules
             || decoded.appearance != declarations.appearance
@@ -420,6 +432,25 @@ impl ClientBundle {
                         for declaration in &startup.storage {
                             catalog.extension_storage(&declaration.storage)?;
                             catalog.register_inventory_screen(declaration.screen.clone())?;
+                        }
+                        for declaration in &startup.machines {
+                            catalog.register_machine_identity(&declaration.machine)?;
+                        }
+                        for declaration in &startup.machines {
+                            catalog.register_inventory_screen(declaration.screen.clone())?;
+                        }
+                        for declaration in &startup.machines {
+                            let id = catalog
+                                .entity_type_id_by_key(&declaration.machine.entity)
+                                .ok_or_else(|| {
+                                    bloxgloom_host_api::RegistrationError(
+                                        "missing machine identity".into(),
+                                    )
+                                })?;
+                            catalog.bind_machine(
+                                id,
+                                std::sync::Arc::new(declaration.machine.clone()),
+                            )?;
                         }
                         if let Some(appearance) = &startup.appearance {
                             catalog
@@ -475,6 +506,7 @@ impl Startup {
             storage,
             screen_layout,
             creatures,
+            machines,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -492,6 +524,7 @@ impl Startup {
                 || storage
                 || screen_layout
                 || creatures
+                || machines
             {
                 return Err(invalid());
             }
@@ -509,6 +542,7 @@ impl Startup {
         let mut has_storage = false;
         let mut has_screen_layout = false;
         let mut has_creatures = false;
+        let mut has_machines = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -519,6 +553,7 @@ impl Startup {
             blocks: Vec::new(),
             storage: Vec::new(),
             creatures: Vec::new(),
+            machines: Vec::new(),
             runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
@@ -526,7 +561,9 @@ impl Startup {
                 return Err(invalid());
             }
             let mut requires = Vec::new();
-            for _ in 0..reader.count(if creatures {
+            for _ in 0..reader.count(if machines {
+                8
+            } else if creatures {
                 7
             } else if storage {
                 6
@@ -542,6 +579,7 @@ impl Startup {
                     composition::STORAGE,
                     composition::INVENTORY_SCREENS,
                     composition::MOBILE_ENTITIES,
+                    composition::MACHINES,
                 ]
                 .contains(&requirement.as_str())
                     || requires.last().is_some_and(|last| last >= &requirement)
@@ -895,6 +933,11 @@ impl Startup {
                 has_creatures |= !decoded.is_empty();
                 startup.creatures.extend(decoded);
             }
+            if machines {
+                let decoded = machine::decode(reader, name, &requires, &startup.blocks)?;
+                has_machines |= !decoded.is_empty();
+                startup.machines.extend(decoded);
+            }
             startup.packages.push(composition::Package {
                 key: format!("{name}:package"),
                 version: 1,
@@ -955,7 +998,8 @@ impl Startup {
             || (state_textures && !has_state_textures && !storage)
             || (storage && !has_storage && !creatures)
             || (screen_layout && !has_screen_layout && !creatures)
-            || (creatures && !has_creatures)
+            || (creatures && !has_creatures && !machines)
+            || (machines && !has_machines)
         {
             return Err(invalid());
         }

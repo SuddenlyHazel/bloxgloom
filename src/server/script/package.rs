@@ -149,7 +149,7 @@ impl PackageSnapshot {
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
         use bloxgloom_host_api::composition::{
-            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, MOBILE_ENTITIES,
+            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, MACHINES, MOBILE_ENTITIES,
             OWNER_SYSTEMS, Package, STORAGE,
         };
         self.packages
@@ -164,6 +164,7 @@ impl PackageSnapshot {
                             && c != STORAGE
                             && c != INVENTORY_SCREENS
                             && c != MOBILE_ENTITIES
+                            && c != MACHINES
                     })
                 {
                     return Err(error(
@@ -202,6 +203,18 @@ impl PackageSnapshot {
             [
                 bloxgloom_host_api::composition::CONTENT,
                 bloxgloom_host_api::composition::MOBILE_ENTITIES,
+            ]
+            .into_iter()
+            .all(|capability| p.manifest.requires.contains(capability))
+        })
+    }
+
+    pub(super) fn permits_machines(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            [
+                bloxgloom_host_api::composition::CONTENT,
+                bloxgloom_host_api::composition::MACHINES,
+                bloxgloom_host_api::composition::INVENTORY_SCREENS,
             ]
             .into_iter()
             .all(|capability| p.manifest.requires.contains(capability))
@@ -261,6 +274,12 @@ impl PackageSnapshot {
         let mut identity = schema.to_le_bytes().to_vec();
         identity.extend(revision.to_le_bytes());
         self.execution_identity(b"luau-creature-v1", entry, &identity)
+    }
+
+    pub(super) fn machine_schema(&self, entry: &str, schema: u16, revision: u16) -> u64 {
+        let mut identity = schema.to_le_bytes().to_vec();
+        identity.extend(revision.to_le_bytes());
+        self.execution_identity(b"luau-machine-v1", entry, &identity)
     }
 
     pub(super) fn entity_schema(

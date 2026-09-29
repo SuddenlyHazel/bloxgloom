@@ -30,7 +30,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let catalog = server::catalog_with_extension(catalog, &bloxgloom_lifecycle_fixture::Fixture)?;
     let catalog = if arguments
         .first()
-        .is_some_and(|command| command == "creature-preview")
+        .is_some_and(|command| command == "creature-preview" || command == "inventory-preview")
         && arguments.len() == 4
     {
         server::package_catalog_for_preview(catalog, std::path::Path::new(&arguments[3]))?
@@ -292,14 +292,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_creature_preview(&key, std::path::Path::new(&path))?;
         }
         Some("inventory-preview") => {
-            let entity = args
-                .next()
-                .ok_or("usage: inventory-preview <entity-key> <directory>")?;
-            let path = args
-                .next()
-                .ok_or("usage: inventory-preview <entity-key> <directory>")?;
+            let usage = "usage: inventory-preview <entity-key> <directory> [package-root]";
+            let entity = args.next().ok_or(usage)?;
+            let path = args.next().ok_or(usage)?;
+            let _package_root = args.next();
             if args.next().is_some() {
-                return Err("usage: inventory-preview <entity-key> <directory>".into());
+                return Err(usage.into());
             }
             preview::render_inventory_previews(&entity, std::path::Path::new(&path))?;
         }

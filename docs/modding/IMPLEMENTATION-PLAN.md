@@ -674,14 +674,20 @@ Luau `register_creature` now declares bounded server tick logic, a host-owned
 locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
 the client without sending the server callback or private creature bytes. A
 real-listener catalog join, restart identity, bounded route failure and authored
-creature preview cover this initial mobile declaration surface; interactions,
-client animation customization and machine declarations remain open.
+creature preview cover this initial mobile declaration surface; interactions and
+client animation customization remain open.
+Luau `register_machine` now declares a one-cell process machine with one explicit
+recipe, optional fuel, and a host-owned three or two slot inventory screen.
+The server runs its bounded planning callback; V32 reconstructs the inert client
+machine descriptor and status screen. A real-listener join, restart identity,
+invalid declaration checks and desktop/compact screen previews cover this slice.
+Multiple recipes, ports, transfer work and configurable footprints remain open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
-screen layouts; configurable footprints, machines and creatures remain open.
+screen layouts; configurable footprints remain open.
 Optional bounded storage screen hints and labeled slot groups now negotiate in
 V30. A real-listener join and restart verify the client layout and saved identity;
-machine status screens and specialized dynamic content remain open.
+broader dynamic content remains open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -711,9 +717,10 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Expose creatures,
-  machines and screens as Luau startup declarations. Bounded explicit state
-  properties, one-state cube/plant geometry, face/emission options and tags are bound.
+- [ ] Complete creatures, machines and screens as Luau startup declarations.
+  Bounded creature models, one-cell process machines and their status screens are
+  bound; richer interactions, transfer ports and footprints remain open. Explicit
+  state properties, cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [ ] Bind directly authored owner entity/drop operations and broader owner

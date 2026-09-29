@@ -7,6 +7,7 @@ mod entities;
 mod gameplay;
 mod generation;
 mod imports;
+pub(in crate::server::script) mod machine;
 pub mod package;
 pub(super) mod startup;
 mod system;
