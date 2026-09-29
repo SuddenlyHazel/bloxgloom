@@ -16,6 +16,9 @@ bloxgloom-lifecycle-fixture = { path = "extensions/lifecycle-fixture" }
 bloxgloom-lifecycle-fixture = { path = "extensions/lifecycle-fixture", optional = true }
 bloxgloom-host-api = { path = "crates/host-api" }
 bytemuck = { version = "1.25.2", features = ["derive"] }
+egui = "=0.36.2"
+egui-wgpu = { version = "=0.36.2", default-features = false }
+egui-winit = { version = "=0.36.2", default-features = false, features = ["clipboard"] }
 font8x8 = "0.3.1"
 fontdue = "0.9"
 getrandom = "0.3"

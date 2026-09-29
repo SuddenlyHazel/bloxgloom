@@ -1,7 +1,9 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
 mod block;
+mod egui_ui;
 pub use block::render_block_preview;
+pub use egui_ui::render_egui_previews;
 mod perf;
 
 use perf::run_perf_benchmark_async;

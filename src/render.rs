@@ -4,6 +4,7 @@ mod avatars;
 pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
+pub(crate) mod egui_proof;
 pub(crate) mod fire;
 mod material;
 mod mesh;
@@ -35,6 +36,7 @@ pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar}
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 pub(crate) use drops::mesh_with_catalog as mesh_dropped_items_with_catalog;
+pub(crate) use egui_proof::Intent as EguiProofIntent;
 pub(crate) use fire::VisualFire;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
@@ -135,6 +137,7 @@ pub struct Renderer {
     avatars: avatars::AvatarRenderer,
     fire: fire::FireRenderer,
     ui: UiRenderer,
+    egui_proof: egui_proof::Proof,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
     pending_order: VecDeque<ChunkKey>,
@@ -171,6 +174,18 @@ impl Renderer {
     pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
         self.ui
             .install_package_ui(&self.device, &self.queue, resources);
+    }
+
+    pub(crate) fn set_egui_proof_open(&mut self, open: bool) {
+        self.egui_proof.set_open(open);
+    }
+
+    pub(crate) fn egui_proof_event(&mut self, event: &winit::event::WindowEvent) {
+        self.egui_proof.on_window_event(&self.window, event);
+    }
+
+    pub(crate) fn take_egui_proof_intents(&mut self) -> Vec<EguiProofIntent> {
+        self.egui_proof.take_intents()
     }
     pub async fn new_with_catalog(
         window: Arc<Window>,
@@ -232,6 +247,7 @@ impl Renderer {
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));
+        let egui_proof = egui_proof::Proof::new(&window, &device, format);
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
             size: drops::MAX_VERTEX_BYTES,
@@ -287,6 +303,7 @@ impl Renderer {
             avatars,
             fire,
             ui,
+            egui_proof,
             meshes: HashMap::new(),
             pending: HashMap::new(),
             pending_order: VecDeque::new(),
@@ -670,6 +687,18 @@ impl Renderer {
             });
             self.ui.encode(&mut pass);
         }
+        self.egui_proof.encode(
+            egui_proof::DrawTarget {
+                window: &self.window,
+                device: &self.device,
+                queue: &self.queue,
+                encoder: &mut encoder,
+                view: &view,
+                size: [self.config.width, self.config.height],
+            },
+            ui_frame,
+            &self.catalog,
+        );
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);
         if uploaded_chunks != 0 {

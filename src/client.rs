@@ -307,6 +307,7 @@ struct ClientApp {
     config: Config,
     config_writer: ConfigWriter,
     screen: UiScreen,
+    egui_proof_open: bool,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     ui_layout: Option<UiLayout>,
@@ -381,6 +382,7 @@ impl ClientApp {
             config,
             config_writer,
             screen: UiScreen::Playing,
+            egui_proof_open: false,
             window: None,
             renderer: None,
             ui_layout: None,
@@ -444,6 +446,10 @@ impl ClientApp {
     }
 
     fn set_screen(&mut self, screen: UiScreen) {
+        self.egui_proof_open = false;
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_egui_proof_open(false);
+        }
         self.screen = screen;
         if screen != UiScreen::Admin {
             self.admin_binding_mode = false;
@@ -483,6 +489,16 @@ impl ClientApp {
 
     fn on_escape(&mut self) {
         self.set_screen(escape_screen(self.screen));
+    }
+
+    fn toggle_egui_proof(&mut self) {
+        self.egui_proof_open = !self.egui_proof_open;
+        self.keys = Keys::default();
+        self.shift_down = false;
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_egui_proof_open(self.egui_proof_open);
+        }
+        self.set_grab(self.screen == UiScreen::Playing && !self.egui_proof_open);
     }
 
     fn toggle_inventory(&mut self) {
@@ -1681,6 +1697,28 @@ impl ClientApp {
                     }
                 }
                 Err(error) => eprintln!("render error: {error:?}"),
+            }
+        }
+        let intents = self
+            .renderer
+            .as_mut()
+            .map_or_else(Vec::new, Renderer::take_egui_proof_intents);
+        for intent in intents {
+            match intent {
+                crate::render::EguiProofIntent::InventorySlot(slot, right) => {
+                    if self.screen == UiScreen::Container {
+                        self.kiln_inventory_click(slot, right);
+                    } else {
+                        self.inventory_click(slot, right);
+                    }
+                }
+                crate::render::EguiProofIntent::ContainerSlot(slot, right)
+                    if self.screen == UiScreen::Container =>
+                {
+                    self.kiln_click(slot, right);
+                }
+                crate::render::EguiProofIntent::ContainerSlot(_, _) => {}
+                crate::render::EguiProofIntent::Close => self.toggle_egui_proof(),
             }
         }
     }

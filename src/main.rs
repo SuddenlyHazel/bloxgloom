@@ -246,6 +246,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("wrote UI previews to {directory}");
         }
+        Some("egui-preview") => {
+            let directory = args.next().unwrap_or_else(|| "egui-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: egui-preview [output-dir]".into());
+            }
+            preview::render_egui_previews(std::path::Path::new(&directory))?;
+            println!("wrote egui previews to {directory}");
+        }
         Some("lighting-preview") => {
             let directory = args
                 .next()

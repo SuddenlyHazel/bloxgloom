@@ -86,6 +86,44 @@ impl ClientApp {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
+        if matches!(&event, WindowEvent::KeyboardInput { event, .. }
+            if event.state == ElementState::Pressed
+                && !event.repeat
+                && event.physical_key == PhysicalKey::Code(KeyCode::F7))
+        {
+            if self.egui_proof_open
+                || matches!(
+                    self.screen,
+                    UiScreen::Playing | UiScreen::Inventory | UiScreen::Container
+                )
+            {
+                self.toggle_egui_proof();
+            }
+            return;
+        }
+        if self.egui_proof_open {
+            if matches!(&event, WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && event.physical_key == PhysicalKey::Code(KeyCode::Escape))
+            {
+                self.toggle_egui_proof();
+                return;
+            }
+            if let Some(renderer) = &mut self.renderer {
+                renderer.egui_proof_event(&event);
+            }
+            if matches!(
+                event,
+                WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::KeyboardInput { .. }
+                    | WindowEvent::ModifiersChanged(_)
+                    | WindowEvent::Ime(_)
+            ) {
+                return;
+            }
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
