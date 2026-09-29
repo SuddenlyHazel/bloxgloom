@@ -103,6 +103,37 @@ pub(super) fn declarer(
                     motion,
                 });
             }
+            let animation = match field(&declaration, "animation")? {
+                Value::Nil => Animation::default(),
+                Value::Table(table) if table.metatable().is_none() => {
+                    let default = Animation::default();
+                    let option = |key, default, max| match field(&table, key)? {
+                        Value::Nil => Ok(default),
+                        value => number(value, 0.0, max),
+                    };
+                    Animation {
+                        stride_rate: option("stride_rate", default.stride_rate, 40.0)?,
+                        stride_amplitude: option(
+                            "stride_amplitude",
+                            default.stride_amplitude,
+                            3.0,
+                        )?,
+                        idle_rate: option("idle_rate", default.idle_rate, 20.0)?,
+                        idle_bob: option("idle_bob", default.idle_bob, 0.1)?,
+                        walk_bob: option("walk_bob", default.walk_bob, 0.2)?,
+                        fall_stretch: option("fall_stretch", default.fall_stretch, 0.5)?,
+                        landing_squash: option("landing_squash", default.landing_squash, 0.5)?,
+                    }
+                }
+                _ => return Err("invalid creature animation"),
+            };
+            let interaction = match field(&declaration, "interaction")? {
+                Value::Nil => Vec::new(),
+                Value::String(request) if (1..=128).contains(&request.as_bytes().len()) => {
+                    request.as_bytes().to_vec()
+                }
+                _ => return Err("invalid creature interaction request"),
+            };
             let creature = MobileEntity {
                 key,
                 schema_version: schema,
@@ -115,8 +146,8 @@ pub(super) fn declarer(
                 reads_neighbours: false,
                 wakes_on_terrain_change: true,
                 model,
-                animation: Animation::default(),
-                interaction: vec![],
+                animation,
+                interaction,
                 behavior: Arc::new(crate::server::script::creature::ScriptCreature::server(
                     Arc::clone(&snapshot),
                     module,

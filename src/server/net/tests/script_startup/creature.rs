@@ -152,3 +152,82 @@ fn luau_creature_rejects_invalid_declaration_before_save_and_caught_route_failur
     assert!(creature.behavior.tick(&context).is_err());
     assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
 }
+
+#[test]
+fn luau_creature_interaction_and_animation_negotiate_and_keep_private_state() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let register = REGISTER.replace(
+        "model={{",
+        "interaction='pat',animation={stride_rate=7.0,idle_bob=0.02},model={{",
+    );
+    package(&fixture, &register);
+    std::fs::write(
+        fixture.0.join("packages/demo/tick.luau"),
+        "return function(c) if c.event == 'interact' then assert(c.request == 'pat' and c.data == 'new'); return 'happy' end assert(c.event == 'tick'); return c.data,10,nil,nil end",
+    ).unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let id = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
+    let creature = catalog.mobile_entity(id).unwrap();
+    assert_eq!(creature.interaction, b"pat");
+    assert_eq!(creature.animation.stride_rate, 7.0);
+    assert_eq!(creature.animation.idle_bob, 0.02);
+    let initial = creature.behavior.initial();
+    let interacted = creature.behavior.interact(&initial, b"pat").unwrap();
+    assert_eq!(
+        &creature.behavior.encode(&interacted).unwrap()[12..],
+        b"happy"
+    );
+    assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x21")
+    );
+    let fingerprint = catalog.fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x541).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let id = client.entity_type_id_by_key("demo:sproutling").unwrap();
+        let descriptor = client.mobile_entity(id).unwrap();
+        assert_eq!(descriptor.interaction, b"pat");
+        assert_eq!(descriptor.animation.stride_rate, 7.0);
+        assert_eq!(descriptor.animation.idle_bob, 0.02);
+        assert!(
+            descriptor
+                .behavior
+                .interact(&descriptor.behavior.initial(), b"pat")
+                .is_err()
+        );
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/main.luau"),
+        register.replace("stride_rate=7.0", "stride_rate=8.0"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
+}
+
+#[test]
+fn luau_creature_options_reject_invalid_bounds_before_save_creation() {
+    for declaration in [
+        REGISTER.replace("model={{", "animation={stride_rate=41},model={{"),
+        REGISTER.replace(
+            "model={{",
+            &format!("interaction='{}',model={{{{", "x".repeat(129)),
+        ),
+    ] {
+        let fixture = Fixture::new();
+        package(&fixture, &declaration);
+        assert!(fixture.open().is_err());
+        assert!(!fixture.0.join("save/content.map").exists());
+    }
+}

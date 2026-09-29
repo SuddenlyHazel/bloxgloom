@@ -32,6 +32,7 @@ pub(super) struct Format {
     pub storage: bool,
     pub screen_layout: bool,
     pub creatures: bool,
+    pub creature_options: bool,
     pub machines: bool,
 }
 
@@ -99,6 +100,10 @@ impl ClientBundle {
                 .any(|texture| texture.definition.alpha_cutout);
         let machine_format = !machines.is_empty();
         let creature_format = !creatures.is_empty() || machine_format;
+        let creature_options = creatures.iter().any(|creature| {
+            creature.animation != bloxgloom_host_api::entity::Animation::default()
+                || !creature.interaction.is_empty()
+        });
         let storage_format = !storage.is_empty() || creature_format;
         let state_texture_format = blocks
             .iter()
@@ -119,7 +124,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if machine_format {
+        let version = if creature_options {
+            CREATURE_OPTIONS_MAGIC
+        } else if machine_format {
             MACHINE_MAGIC
         } else if creature_format {
             CREATURE_MAGIC
@@ -355,9 +362,9 @@ impl ClientBundle {
                 storage::encode(&mut writer, name, storage, bundle_screen_layout)?;
             }
             if creature_format {
-                creature::encode(&mut writer, name, creatures)?;
+                creature::encode(&mut writer, name, creatures, creature_options)?;
             }
-            if machine_format {
+            if machine_format || creature_options {
                 machine::encode(&mut writer, name, machines)?;
             }
         }
@@ -506,6 +513,7 @@ impl Startup {
             storage,
             screen_layout,
             creatures,
+            creature_options,
             machines,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
@@ -524,6 +532,7 @@ impl Startup {
                 || storage
                 || screen_layout
                 || creatures
+                || creature_options
                 || machines
             {
                 return Err(invalid());
@@ -542,6 +551,7 @@ impl Startup {
         let mut has_storage = false;
         let mut has_screen_layout = false;
         let mut has_creatures = false;
+        let mut has_creature_options = false;
         let mut has_machines = false;
         let mut startup = Self {
             appearance: None,
@@ -929,8 +939,12 @@ impl Startup {
                 startup.storage.extend(decoded);
             }
             if creatures {
-                let decoded = creature::decode(reader, name, &requires)?;
+                let decoded = creature::decode(reader, name, &requires, creature_options)?;
                 has_creatures |= !decoded.is_empty();
+                has_creature_options |= decoded.iter().any(|creature| {
+                    creature.animation != bloxgloom_host_api::entity::Animation::default()
+                        || !creature.interaction.is_empty()
+                });
                 startup.creatures.extend(decoded);
             }
             if machines {
@@ -999,7 +1013,8 @@ impl Startup {
             || (storage && !has_storage && !creatures)
             || (screen_layout && !has_screen_layout && !creatures)
             || (creatures && !has_creatures && !machines)
-            || (machines && !has_machines)
+            || (creature_options && !has_creature_options)
+            || (machines && !has_machines && !creature_options)
         {
             return Err(invalid());
         }

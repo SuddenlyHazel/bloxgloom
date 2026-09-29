@@ -8,6 +8,7 @@ pub(super) fn encode(
     writer: &mut Writer,
     owner: &str,
     declarations: &[MobileEntity],
+    options: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -26,9 +27,9 @@ pub(super) fn encode(
             || creature.max_public_bytes != 5
             || creature.reads_neighbours
             || !creature.wakes_on_terrain_change
-            || !creature.interaction.is_empty()
+            || (!options && !creature.interaction.is_empty())
             || creature.model.len() > 16
-            || creature.animation != Animation::default()
+            || (!options && creature.animation != Animation::default())
         {
             return Err(invalid());
         }
@@ -56,6 +57,20 @@ pub(super) fn encode(
                 PartMotion::RightFoot => 2,
             }])?;
         }
+        if options {
+            for value in [
+                creature.animation.stride_rate,
+                creature.animation.stride_amplitude,
+                creature.animation.idle_rate,
+                creature.animation.idle_bob,
+                creature.animation.walk_bob,
+                creature.animation.fall_stretch,
+                creature.animation.landing_squash,
+            ] {
+                writer.field(&value.to_le_bytes())?;
+            }
+            writer.field(&creature.interaction)?;
+        }
     }
     Ok(())
 }
@@ -64,6 +79,7 @@ pub(super) fn decode(
     reader: &mut Reader<'_>,
     owner: &str,
     requires: &[String],
+    options: bool,
 ) -> Result<Vec<MobileEntity>, ScriptError> {
     let mut result: Vec<MobileEntity> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -119,6 +135,24 @@ pub(super) fn decode(
                 },
             });
         }
+        let animation = if options {
+            Animation {
+                stride_rate: float(reader)?,
+                stride_amplitude: float(reader)?,
+                idle_rate: float(reader)?,
+                idle_bob: float(reader)?,
+                walk_bob: float(reader)?,
+                fall_stretch: float(reader)?,
+                landing_squash: float(reader)?,
+            }
+        } else {
+            Animation::default()
+        };
+        let interaction = if options {
+            reader.field(128)?.to_vec()
+        } else {
+            Vec::new()
+        };
         let creature = MobileEntity {
             key,
             schema_version,
@@ -131,8 +165,8 @@ pub(super) fn decode(
             reads_neighbours: false,
             wakes_on_terrain_change: true,
             model,
-            animation: Animation::default(),
-            interaction: vec![],
+            animation,
+            interaction,
             behavior: Arc::new(crate::server::script::creature::ScriptCreature::client(
                 usize::from(max_private),
             )),

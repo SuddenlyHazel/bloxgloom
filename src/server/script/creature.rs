@@ -179,6 +179,45 @@ impl Behavior for ScriptCreature {
         );
         Ok(plan)
     }
+
+    fn interact(&self, payload: &Payload, request: &[u8]) -> Result<Payload, Error> {
+        let Some(snapshot) = &self.snapshot else {
+            return Err(Error::InvalidState);
+        };
+        let mut state = payload
+            .downcast_ref::<State>()
+            .ok_or(Error::InvalidState)?
+            .clone();
+        let private = run_with(
+            &Program::Package {
+                snapshot: Arc::clone(snapshot),
+                entry: self.module.clone(),
+                invocation: Invocation::Integer,
+            },
+            Limits::default(),
+            |lua, entry| {
+                let host = lua.create_table()?;
+                host.set("event", "interact")?;
+                host.set("data", lua.create_string(&state.private)?)?;
+                host.set("request", lua.create_string(request)?)?;
+                host.set_readonly(true);
+                let result: Value = entry.call(host)?;
+                let Value::String(result) = result else {
+                    return Err(invalid("creature interaction must return binary state"));
+                };
+                if result.as_bytes().len() > self.max_private {
+                    return Err(invalid("creature interaction state exceeds bound"));
+                }
+                Ok(result.as_bytes().to_vec())
+            },
+        )
+        .map_err(|error| {
+            eprintln!("creature {} interaction rejected: {error}", self.module);
+            Error::InvalidState
+        })?;
+        state.private = private;
+        Ok(Payload::new(state))
+    }
 }
 
 fn invoke(
@@ -189,6 +228,7 @@ fn invoke(
     max_private: usize,
 ) -> mlua::Result<(Vec<u8>, u32, Option<[f32; 3]>)> {
     let host = lua.create_table()?;
+    host.set("event", "tick")?;
     host.set("data", lua.create_string(private)?)?;
     host.set("id_lo", context.id as u32)?;
     host.set("id_hi", (context.id >> 32) as u32)?;

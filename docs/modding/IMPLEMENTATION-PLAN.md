@@ -678,8 +678,10 @@ Luau `register_creature` now declares bounded server tick logic, a host-owned
 locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
 the client without sending the server callback or private creature bytes. A
 real-listener catalog join, restart identity, bounded route failure and authored
-creature preview cover this initial mobile declaration surface; interactions and
-client animation customization remain open.
+creature preview cover this initial mobile declaration surface. Optional bounded
+interaction requests now invoke the same server-side Luau source with an explicit
+interaction event, and authored gait parameters negotiate through V33. Defaults
+keep V31/V32 bytes; the client receives only inert request and animation data.
 Luau `register_machine` now declares a one-cell process machine with one explicit
 recipe, optional fuel, and a host-owned three or two slot inventory screen.
 The server runs its bounded planning callback; V32 reconstructs the inert client
@@ -731,8 +733,9 @@ continuity are covered by mesh/animator regressions, not that preview.
 **Remaining**
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
-  Bounded creature models, one-cell process machines and their status screens are
-  bound; richer interactions, transfer ports and footprints remain open. Explicit
+  Bounded creature models, state interactions, gait parameters, one-cell process
+  machines and their status screens are bound; richer interactions, transfer ports
+  and footprints remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
