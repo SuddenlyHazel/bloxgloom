@@ -10,12 +10,14 @@ Spawn `prism:glimmer` with the admin UI to see an owned entity drive that value;
 the empty window restores the baseline mix. Its simple cuboid uses the existing
 actor renderer.
 
-Run with a fresh isolated save in separate terminals:
+Run locally with admin access and a fresh isolated save:
 
 ```sh
-cargo run --release -- server-packages fixtures/visual-packages 127.0.0.1:4000 ./world-prism-try1
-cargo run --release -- client 127.0.0.1:4000
+cargo run --release -- local-packages fixtures/visual-packages ./world-prism-local-1
 ```
+
+This starts the server and client together and grants admin access to your local
+profile.
 
 Existing world stone should appear cyan with subtle motion and a warm scene mix.
 Use the usual admin grant UI to try `prism:stone` and `prism:token`; place the
