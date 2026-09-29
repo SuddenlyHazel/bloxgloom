@@ -18,6 +18,7 @@ impl api::Behavior for InvalidOutput {
             next_tick: if self.oversized { c.tick + 1 } else { c.tick },
             wakes: vec![],
             edits: vec![],
+            drops: vec![],
         })
     }
 }

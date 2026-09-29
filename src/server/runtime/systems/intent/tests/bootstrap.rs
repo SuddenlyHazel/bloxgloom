@@ -417,6 +417,7 @@ impl api::Behavior for PairedProducers {
             next_tick: c.tick + 10_000,
             wakes: vec![],
             edits: vec![],
+            drops: vec![],
         })
     }
 }

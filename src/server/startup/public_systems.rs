@@ -165,6 +165,48 @@ impl SystemHandler for Adapter {
                 "public owner system exceeds 16 block edits per job".into(),
             ));
         }
+        if plan.drops.len() > 16 || (!plan.drops.is_empty() && !self.0.behavior.creates_drops()) {
+            return Err(SystemHandlerError::Rejected(
+                "public owner system exceeds 16 drop spawns per job".into(),
+            ));
+        }
+        for drop in &plan.drops {
+            let OwnerKey::Chunk(owner) = job.owner() else {
+                return Err(SystemHandlerError::Rejected(
+                    "owner drop requires a chunk owner".into(),
+                ));
+            };
+            let Some(radius) = self.0.read_radius_chunks else {
+                return Err(SystemHandlerError::Rejected(
+                    "owner drop requires captured terrain".into(),
+                ));
+            };
+            let valid_position = drop
+                .position
+                .iter()
+                .all(|v| v.is_finite() && (-1_000_000.0..=1_000_000.0).contains(v));
+            if !valid_position
+                || !(1..=128).contains(&drop.count)
+                || drop.item.len() > 128
+                || job
+                    .owner_catalog()
+                    .is_none_or(|catalog| catalog.item_by_key(&drop.item).is_none())
+            {
+                return Err(SystemHandlerError::Rejected(
+                    "invalid owner drop spawn".into(),
+                ));
+            }
+            let [x, y, z] = drop.position.map(|v| v.floor() as i32);
+            let (key, _) = crate::world::world_to_chunk(x, y, z);
+            if (i64::from(key.x) - i64::from(owner.x)).abs() > i64::from(radius)
+                || (i64::from(key.y) - i64::from(owner.y)).abs() > i64::from(radius)
+                || (i64::from(key.z) - i64::from(owner.z)).abs() > i64::from(radius)
+            {
+                return Err(SystemHandlerError::Rejected(
+                    "owner drop escaped captured neighborhood".into(),
+                ));
+            }
+        }
         let mut edited = std::collections::BTreeSet::new();
         let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {
@@ -211,15 +253,25 @@ impl SystemHandler for Adapter {
                 .edits
                 .iter()
                 .map(|edit| edit.before.len() + edit.after.len() + 16)
+                .sum::<usize>()
+            + plan
+                .drops
+                .iter()
+                .map(|drop| drop.item.len() + 32)
                 .sum::<usize>();
-        let output = if wakes.is_empty() && plan.edits.is_empty() && intents.is_empty() {
+        let output = if wakes.is_empty()
+            && plan.edits.is_empty()
+            && plan.drops.is_empty()
+            && intents.is_empty()
+        {
             None
         } else {
             Some(
                 OwnerEffectPatch::new(state.clone(), Vec::new())
                     .with_durable_wakes(wakes)
                     .with_intents(intents)
-                    .with_world_edits(plan.edits, edit_cause),
+                    .with_world_edits(plan.edits, edit_cause)
+                    .with_drops(plan.drops),
             )
         };
         let usage = PatchUsage {

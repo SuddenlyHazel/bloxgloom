@@ -5,6 +5,8 @@
 //! Optional `after={'other:system'}` is a bounded, startup-resolved phase edge.
 //! Optional `edit_cause='burn'` opts world-read systems into host-owned burn
 //! removal semantics; it does not install the deferred native fire owner.
+//! Optional `creates_drops=true` grants bounded, host-validated item creation
+//! through `c.spawn_drop(x,y,z,item,count,pickup_delay_ms)` at cell centers.
 //!
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
@@ -17,6 +19,7 @@
 //! 0 or 1. Out-of-neighborhood reads/edits fail, never procedural fallback.
 //! Shared removal/placement/neighbor planning can generate entity/drop effects;
 //! those effects participate in the same owner WAL record as bytes and edits.
+//! Direct drops require a captured world cell and share that receipt as well.
 //!
 //! Frozen sources execute directly on existing owner workers, in a fresh bounded
 //! VM per plan. The public schema fingerprints script schema/revision, module and
@@ -107,6 +110,14 @@ pub(super) fn declarer(
                 Value::Nil => false,
                 _ => return Err("accepts_intents must be boolean"),
             };
+            let creates_drops = match field(&table, "creates_drops")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("creates_drops must be boolean"),
+            };
+            if creates_drops && read_radius_chunks.is_none() {
+                return Err("creates_drops requires read_world=true");
+            }
             let intent_bootstrap = match field(&table, "intent_bootstrap")? {
                 Value::Nil => None,
                 value => Some(bytes(value, max_bytes)?),
@@ -199,6 +210,7 @@ pub(super) fn declarer(
                     accepts_intents,
                     intent_bootstrap,
                     edit_cause,
+                    creates_drops,
                 }),
             };
             system
@@ -244,10 +256,14 @@ struct ScriptSystem {
     accepts_intents: bool,
     intent_bootstrap: Option<Vec<u8>>,
     edit_cause: api::EditCause,
+    creates_drops: bool,
 }
 impl api::Behavior for ScriptSystem {
     fn edit_cause(&self) -> api::EditCause {
         self.edit_cause
+    }
+    fn creates_drops(&self) -> bool {
+        self.creates_drops
     }
     fn accepts_intents(&self) -> bool {
         self.accepts_intents
@@ -292,7 +308,17 @@ impl ScriptSystem {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
-            |lua, entry| bindings::invoke(lua, entry, context, self.max_bytes, inbox, outbox),
+            |lua, entry| {
+                bindings::invoke(
+                    lua,
+                    entry,
+                    context,
+                    self.max_bytes,
+                    self.creates_drops,
+                    inbox,
+                    outbox,
+                )
+            },
         )
         .map_err(|error| RegistrationError(error.to_string()))
     }

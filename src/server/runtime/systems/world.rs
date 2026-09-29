@@ -96,12 +96,57 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         missing,
     } = inputs;
     let mut edits = Vec::new();
+    let mut direct_drops = Vec::new();
     let mut removals = Vec::new();
     let mut owners = Vec::new();
     let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
     for patch in patches {
+        if !OwnerEffectPatch::drops(patch).is_empty() {
+            let Some(owner) = patch.owner().as_chunk() else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner drop requires chunk owner",
+                ));
+            };
+            let Some(radius) = radius else {
+                return Err(io::Error::new(
+                    ErrorKind::InvalidInput,
+                    "owner drop requires world capture",
+                ));
+            };
+            for drop in OwnerEffectPatch::drops(patch) {
+                if direct_drops.len() >= 256
+                    || !(1..=128).contains(&drop.count)
+                    || drop
+                        .position
+                        .iter()
+                        .any(|v| !v.is_finite() || *v < -1_000_000.0 || *v > 1_000_000.0)
+                {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "invalid owner drop",
+                    ));
+                }
+                let [x, y, z] = drop.position.map(|v| v.floor() as i32);
+                let (key, _) = crate::world::world_to_chunk(x, y, z);
+                if !within_radius(key, owner, radius) {
+                    return Err(io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "owner drop escaped its neighborhood",
+                    ));
+                }
+                let item = catalog.item_by_key(&drop.item).ok_or_else(|| {
+                    io::Error::new(ErrorKind::InvalidInput, "unknown owner drop item")
+                })?;
+                direct_drops.push((
+                    drop.position,
+                    crate::inventory::Stack::new(item, drop.count),
+                    std::time::Duration::from_millis(u64::from(drop.pickup_delay_ms)),
+                ));
+            }
+        }
         let proposals = OwnerEffectPatch::world_edits(patch);
         if proposals.is_empty() {
             continue;
@@ -177,7 +222,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             }
         }
     }
-    if edits.is_empty() {
+    if edits.is_empty() && direct_drops.is_empty() {
         return Ok(None);
     }
     let radius = radius.expect("edits require a world view");
@@ -283,6 +328,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         }
     }
     planned.drops.extend(anchored.drops);
+    planned.drops.extend(direct_drops);
     planned.entity_updates.extend(anchored.despawns);
     // Preflight the shared merge planner's spatial traversal before it collects
     // candidates. Dense pages fail the bounded dependency capture, rather than

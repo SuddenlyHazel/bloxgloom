@@ -49,6 +49,7 @@ impl Behavior for Clock {
                 .ok_or_else(|| RegistrationError("clock exhausted".into()))?,
             wakes: vec![],
             edits: vec![],
+            drops: vec![],
         })
     }
 }
@@ -150,6 +151,7 @@ impl Behavior for Probe {
             next_tick: context.tick + 2,
             wakes: vec![],
             edits: vec![],
+            drops: vec![],
         })
     }
 }
@@ -205,6 +207,7 @@ impl Behavior for Writer {
             } else {
                 vec![]
             },
+            drops: vec![],
         })
     }
 }
@@ -280,6 +283,7 @@ impl Behavior for Pair {
             next_tick: context.tick + 1_000,
             wakes,
             edits: vec![],
+            drops: vec![],
         })
     }
 }

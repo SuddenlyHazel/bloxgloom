@@ -43,6 +43,7 @@ impl system::Behavior for Behavior {
                 before: block.state,
                 after: "bloxgloom:air".into(),
             }],
+            drops: vec![],
         })
     }
 }

@@ -59,6 +59,17 @@ pub struct Plan {
     /// The host runs removal, placement and neighbor decisions before WAL admission.
     /// Duplicate source cells within a job or across its wave are rejected.
     pub edits: Vec<BlockEdit>,
+    /// Item creation by a chunk owner. The host resolves each registered item,
+    /// enforces finite stack counts, and commits drops with owner state and edits.
+    pub drops: Vec<DropSpawn>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DropSpawn {
+    pub position: [f32; 3],
+    pub item: String,
+    pub count: u16,
+    pub pickup_delay_ms: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,6 +113,11 @@ pub trait Behavior: Send + Sync + 'static {
     /// during registration or play. Existing systems keep WorldEdit semantics.
     fn edit_cause(&self) -> EditCause {
         EditCause::WorldEdit
+    }
+
+    /// Explicit item-creation authority for bounded chunk-owner drop spawns.
+    fn creates_drops(&self) -> bool {
+        false
     }
 
     /// Opt into durable same-system messages between chunk-owner cells
@@ -263,6 +279,7 @@ impl System {
             || self.seeds.len() > 16384
             || (self.read_radius_chunks.is_some() && self.partition != Partition::Chunk)
             || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
+            || (self.behavior.creates_drops() && self.read_radius_chunks.is_none())
             || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
@@ -359,6 +376,9 @@ impl System {
         }
         if self.behavior.edit_cause() == EditCause::Burn {
             out.extend(b"owner-burn-edits-v1");
+        }
+        if self.behavior.creates_drops() {
+            out.extend(b"owner-drop-spawns-v1");
         }
         out
     }

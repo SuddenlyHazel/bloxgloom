@@ -85,6 +85,60 @@ fn luau_burn_owner_uses_host_removal_semantics_and_persists_receipt() {
     assert!(invalid.open().is_err());
     assert!(!invalid.0.join("save/content.map").exists());
 }
+
+#[test]
+fn luau_owner_drop_creation_shares_receipt_and_restarts() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,creates_drops=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) if c.data == 'new' then c.spawn_drop(2,80,0,'bloxgloom:stick',2,0) end return 'done',10000 end",
+    );
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.get_chunk(KEY).unwrap();
+    let (wave, missing) = stage(&mut state, "demo:clock", 1).unwrap();
+    assert!(missing.is_empty());
+    let position = [2.5, 80.5, 0.5];
+    assert!(crate::server::drops::nearby(&state.entities, position).is_empty());
+    complete_barrier(&mut state, wave.unwrap().barrier()).unwrap();
+    assert_eq!(value(&state, "demo:clock"), (1, b"done".to_vec()));
+    assert_eq!(
+        crate::server::drops::nearby(&state.entities, position)[0].count,
+        2
+    );
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x531).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+    });
+    let restored = fixture.open().unwrap();
+    assert_eq!(value(&restored, "demo:clock"), (1, b"done".to_vec()));
+    assert_eq!(
+        crate::server::drops::nearby(&restored.entities, position)[0].count,
+        2
+    );
+}
+
+#[test]
+fn luau_owner_drop_errors_poison_caught_plan() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,creates_drops=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) pcall(function() c.spawn_drop(2,80,0,'missing:item',1,0) end); return 'done',10000 end",
+    );
+    let mut state = fixture.open().unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    assert!(stage(&mut state, "demo:clock", 1).is_err());
+    assert_eq!(value(&state, "demo:clock"), (0, b"new".to_vec()));
+    assert!(crate::server::drops::nearby(&state.entities, [2.5, 80.5, 0.5]).is_empty());
+    drop(state);
+    let invalid = Fixture::new();
+    invalid.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,creates_drops=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        SOURCE,
+    );
+    assert!(invalid.open().is_err());
+    assert!(!invalid.0.join("save/content.map").exists());
+}
 const REGISTER: &str = r#"return function(h)
     h.register_system { key='demo:clock', schema=1, revision=1, module='demo:clock',
         max_state_bytes=64, max_jobs_per_tick=2, read_world=true,

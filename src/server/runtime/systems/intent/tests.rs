@@ -101,6 +101,7 @@ impl api::Behavior for Ignitions {
             next_tick: c.tick + 10_000,
             wakes: vec![],
             edits,
+            drops: vec![],
         })
     }
 }

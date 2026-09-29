@@ -9,6 +9,7 @@ pub(super) fn invoke(
     entry: Function,
     context: &api::Context<'_>,
     max_bytes: usize,
+    creates_drops: bool,
     inbox: &[api::IntentDelivery],
     outbox: Option<&mut api::IntentOutbox>,
 ) -> mlua::Result<api::Plan> {
@@ -28,6 +29,7 @@ pub(super) fn invoke(
     let rejected = RefCell::new(None);
     let reads = Cell::new(0usize);
     let edits = RefCell::new(Vec::new());
+    let drops = RefCell::new(Vec::new());
     let wakes = RefCell::new(Vec::new());
     let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
@@ -104,6 +106,36 @@ pub(super) fn invoke(
             )?,
         )?;
         host.set(
+            "spawn_drop",
+            scope.create_function(
+                |_, (x, y, z, item, count, delay): (Value, Value, Value, Value, Value, Value)| {
+                    checked(&rejected, || {
+                        if !creates_drops {
+                            return Err("system has not declared drop creation");
+                        }
+                        let mut drops = drops.borrow_mut();
+                        if drops.len() >= 16 {
+                            return Err("system drop limit exceeded (16)");
+                        }
+                        let cell = cell(x, y, z)?;
+                        if cell.iter().any(|v| v.unsigned_abs() > 1_000_000) {
+                            return Err("system drop coordinate exceeds exact range");
+                        }
+                        context
+                            .block(cell)
+                            .map_err(|_| "system drop cell unavailable")?;
+                        drops.push(api::DropSpawn {
+                            position: cell.map(|v| v as f32 + 0.5),
+                            item: text(item)?,
+                            count: integer(count, 1, 128)? as u16,
+                            pickup_delay_ms: integer(delay, 0, u32::MAX.into())? as u32,
+                        });
+                        Ok(())
+                    })
+                },
+            )?,
+        )?;
+        host.set(
             "wake",
             scope.create_function(|_, (system, x, y, z): (Value, Value, Value, Value)| {
                 checked(&rejected, || {
@@ -130,6 +162,7 @@ pub(super) fn invoke(
                     .checked_add(delay)
                     .ok_or("system deadline overflow")?,
                 edits: std::mem::take(&mut *edits.borrow_mut()),
+                drops: std::mem::take(&mut *drops.borrow_mut()),
                 wakes: std::mem::take(&mut *wakes.borrow_mut()),
             })
         })

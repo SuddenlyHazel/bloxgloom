@@ -59,6 +59,7 @@ impl system::Behavior for Burn {
             next_tick: c.tick + 100,
             wakes: vec![],
             edits,
+            drops: vec![],
         })
     }
 }

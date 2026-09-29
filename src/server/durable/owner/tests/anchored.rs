@@ -32,6 +32,7 @@ impl system::Behavior for StorageOwner {
             } else {
                 vec![]
             },
+            drops: vec![],
         })
     }
 }

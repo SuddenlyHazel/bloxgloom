@@ -662,6 +662,10 @@ dependencies; unknown targets/cycles fail before publishing a save.
 Chunk owner declarations may opt into `edit_cause='burn'` with declared world
 reads. Removal decisions and WAL admission stay host-owned; native fire
 migration is still deferred.
+Chunk owners may now declare `creates_drops=true` and stage up to 16 validated
+item drops at captured cell centers. Direct drops merge or allocate through the
+server planner and commit with owner state/edits in one WAL receipt. Direct
+owner entity operations and broader services remain open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints, machines and creatures remain open.
