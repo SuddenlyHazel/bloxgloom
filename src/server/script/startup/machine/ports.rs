@@ -90,7 +90,7 @@ fn slot_list(value: Value, slots: u8) -> Result<Vec<u8>, &'static str> {
     Ok(result)
 }
 
-fn sequence_len(table: &mlua::Table, maximum: usize) -> Result<usize, &'static str> {
+pub(super) fn sequence_len(table: &mlua::Table, maximum: usize) -> Result<usize, &'static str> {
     if table.metatable().is_some() {
         return Err("machine list cannot have a metatable");
     }

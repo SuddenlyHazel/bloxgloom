@@ -1,4 +1,4 @@
-//! V32/V34/V35 inert process machine descriptors. Luau source and durable private data
+//! V32/V34/V35/V36 inert process machine descriptors. Luau source and durable private data
 //! are excluded; the host and client reconstruct identical catalog identities.
 use super::*;
 use crate::server::script::startup::MachineDeclaration;
@@ -14,6 +14,7 @@ pub(super) fn encode(
     declarations: &[MachineDeclaration],
     multiple_recipes: bool,
     port_format: bool,
+    footprint_format: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -43,12 +44,24 @@ pub(super) fn encode(
             || p.fuels.len() > 1
             || p.input != if p.fuel.is_some() { 1 } else { 0 }
             || p.output != p.input + 1
-            || m.variants[0].idle.len() != 1
-            || m.variants[0].active.len() != 1
-            || m.variants[0].idle[0].offset != m.variants[0].active[0].offset
-            || m.variants[0].idle[0].state != m.variants[0].active[0].state
-            || m.variants[0].idle[0].offset != [0; 3]
-            || screen.footprint != [[0; 3]]
+            || m.variants[0].idle.len() > if footprint_format { 8 } else { 1 }
+            || m.variants[0].idle.len() != m.variants[0].active.len()
+            || m.variants[0]
+                .idle
+                .iter()
+                .zip(&m.variants[0].active)
+                .any(|(idle, active)| {
+                    idle.offset != active.offset
+                        || idle.state != active.state
+                        || idle.state != m.variants[0].placement_state
+                        || idle.offset.iter().any(|axis| axis.unsigned_abs() > 2)
+                })
+            || screen.footprint
+                != m.variants[0]
+                    .idle
+                    .iter()
+                    .map(|cell| cell.offset)
+                    .collect::<Vec<_>>()
             || screen.groups.len() != usize::from(m.slots)
             || screen.status.len() != 2
         {
@@ -100,6 +113,12 @@ pub(super) fn encode(
                 }
             }
         }
+        if footprint_format {
+            writer.count(m.variants[0].idle.len())?;
+            for cell in &m.variants[0].idle {
+                writer.field(&cell.offset.map(|axis| (axis + 2) as u8))?;
+            }
+        }
     }
     Ok(())
 }
@@ -111,6 +130,7 @@ pub(super) fn decode(
     blocks: &[content::Block],
     multiple_recipes: bool,
     port_format: bool,
+    footprint_format: bool,
 ) -> Result<Vec<MachineDeclaration>, ScriptError> {
     let mut result: Vec<MachineDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -196,6 +216,18 @@ pub(super) fn decode(
                 });
             }
         }
+        let mut offsets = vec![[0; 3]];
+        if footprint_format {
+            offsets.clear();
+            for _ in 0..reader.count(8)? {
+                let bytes = reader.field(3)?;
+                if bytes.len() != 3 || bytes.iter().any(|axis| *axis > 4) {
+                    return Err(invalid());
+                }
+                let axes: [u8; 3] = bytes.try_into().map_err(|_| invalid())?;
+                offsets.push(axes.map(|axis| i32::from(axis) - 2));
+            }
+        }
         let definition = blocks
             .iter()
             .find(|old| old.key == block)
@@ -253,10 +285,13 @@ pub(super) fn decode(
                 .collect(),
             components: false,
         });
-        let cell = FootprintCell {
-            offset: [0; 3],
-            state: state.clone(),
-        };
+        let cells = offsets
+            .iter()
+            .map(|offset| FootprintCell {
+                offset: *offset,
+                state: state.clone(),
+            })
+            .collect::<Vec<_>>();
         let machine = api::Machine {
             entity: entity.clone(),
             block: block.clone(),
@@ -268,16 +303,15 @@ pub(super) fn decode(
             reads_neighbours: !ports.is_empty(),
             variants: vec![api::Variant {
                 placement_state: state,
-                idle: vec![cell.clone()],
-                active: vec![cell],
+                idle: cells.clone(),
+                active: cells,
             }],
             filters,
             ports,
             process: Some(process),
             behavior: Arc::new(crate::server::script::machine::ScriptMachine::client()),
         };
-        let mut screen =
-            InventoryScreen::storage(&entity, &block, &title, slots, slots, vec![[0; 3]]);
+        let mut screen = InventoryScreen::storage(&entity, &block, &title, slots, slots, offsets);
         screen.hint = hint;
         screen.groups = (0..slots)
             .map(|index| SlotGroup {

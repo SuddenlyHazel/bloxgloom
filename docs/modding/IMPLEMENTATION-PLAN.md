@@ -692,7 +692,11 @@ input/output filters reconstructed on the client and the same inventory screen.
 Bounded cardinal automation ports and ordered Luau transfer/process proposals
 now use V35. The host selects exact stacks, enforces both ports and finite
 inventories, and commits successful transfers through its existing entity WAL
-path. Configurable footprints remain open.
+path. Bounded anchored machine footprints of up to eight cells now negotiate in
+V36; the host plans secondary cells across chunk seams and uses the shared
+atomic workstation placement/removal path. A real-listener join, restart
+identity and malformed-footprint checks cover the declaration. A live authored
+placement/removal acceptance check remains open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints remain open.
@@ -739,8 +743,9 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
   Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists, transfer ports and their status screens are
-  bound; richer interactions and footprints remain open. Explicit
+  machines, bounded recipe lists, transfer ports, machine footprints and their
+  status screens are bound; richer interactions and live authored footprint
+  acceptance remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.

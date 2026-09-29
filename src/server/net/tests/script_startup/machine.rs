@@ -323,6 +323,74 @@ fn luau_machine_ports_and_transfer_work_negotiate_and_restart() {
 }
 
 #[test]
+fn luau_machine_footprint_negotiates_across_seam_and_restarts() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let register = REGISTER.replace(
+        "fuel={item='bloxgloom:stick',pulses=30}",
+        "fuel={item='bloxgloom:stick',pulses=30},footprint={{0,0,0},{1,0,0}}",
+    );
+    package(&fixture, &register);
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let id = catalog.entity_type_id_by_key("demo:press_machine").unwrap();
+    let machine = catalog.machine(id).unwrap();
+    let placement_state = &machine.variants[0].placement_state;
+    let placed = machine.plan_place([15, 80, 0], placement_state).unwrap();
+    assert_eq!(
+        placed.cells.iter().map(|(at, _)| *at).collect::<Vec<_>>(),
+        [[15, 80, 0], [16, 80, 0]]
+    );
+    let stored = placed.cells.iter().map(|(at, _)| *at).collect::<Vec<_>>();
+    assert!(
+        machine
+            .plan_remove([15, 80, 0], [16, 80, 0], 0, false, &stored)
+            .is_ok()
+    );
+    assert_eq!(
+        catalog.inventory_screen(id).unwrap().footprint,
+        [[0, 0, 0], [1, 0, 0]]
+    );
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x24")
+    );
+    let fingerprint = catalog.fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x546).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let id = client.entity_type_id_by_key("demo:press_machine").unwrap();
+        assert_eq!(
+            client.inventory_screen(id).unwrap().footprint,
+            [[0, 0, 0], [1, 0, 0]]
+        );
+        assert_eq!(client.machine(id).unwrap().variants[0].idle.len(), 2);
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+}
+
+#[test]
+fn luau_machine_rejects_unanchored_or_duplicate_footprint_before_save() {
+    for footprint in ["{{1,0,0}}", "{{0,0,0},{0,0,0}}", "{{0,0,0},{3,0,0}}"] {
+        let fixture = Fixture::new();
+        let register = REGISTER.replace(
+            "fuel={item='bloxgloom:stick',pulses=30}",
+            &format!("fuel={{item='bloxgloom:stick',pulses=30}},footprint={footprint}"),
+        );
+        package(&fixture, &register);
+        assert!(fixture.open().is_err());
+        assert!(!fixture.0.join("save/content.map").exists());
+    }
+}
+
+#[test]
 fn luau_machine_rejects_invalid_ports_and_undeclared_transfer_work() {
     let bad_port = Fixture::new();
     package(

@@ -1,10 +1,12 @@
-//! Single-cell Luau process machines with host-owned recipes and screens.
+//! Luau process machines with host-owned recipes, footprints, and screens.
 use super::*;
 use crate::server::script::values::integer;
 use bloxgloom_host_api::{
     FootprintCell, InventoryScreen, SlotGroup, StatusField, StatusFormat,
     machine::{self as api, ComponentMatch, ComponentOutput},
 };
+#[path = "machine/footprint.rs"]
+mod footprint;
 #[path = "machine/ports.rs"]
 mod ports;
 
@@ -64,6 +66,7 @@ pub(super) fn declarer(
                 .find(|old| old.key == block)
                 .ok_or("machine needs a previously registered block")?;
             let state = super::placement_state(block_def);
+            let cells = footprint::parse(field(&d, "footprint")?, &state)?;
             let module = text(field(&d, "module")?)?;
             if module.split_once(':').map(|v| v.0) != Some(namespace.as_str())
                 || snapshot.source(&module).is_none()
@@ -149,10 +152,6 @@ pub(super) fn declarer(
                     .collect(),
                 components: false,
             });
-            let cell = FootprintCell {
-                offset: [0; 3],
-                state: state.clone(),
-            };
             let machine = api::Machine {
                 entity: entity.clone(),
                 block: block.clone(),
@@ -164,8 +163,8 @@ pub(super) fn declarer(
                 reads_neighbours: !ports.is_empty(),
                 variants: vec![api::Variant {
                     placement_state: state,
-                    idle: vec![cell.clone()],
-                    active: vec![cell],
+                    idle: cells.clone(),
+                    active: cells.clone(),
                 }],
                 filters,
                 ports: ports.clone(),
@@ -176,8 +175,14 @@ pub(super) fn declarer(
                     ports.iter().map(|port| port.name.clone()).collect(),
                 )),
             };
-            let mut screen =
-                InventoryScreen::storage(&entity, &block, &title, slots, slots, vec![[0; 3]]);
+            let mut screen = InventoryScreen::storage(
+                &entity,
+                &block,
+                &title,
+                slots,
+                slots,
+                cells.iter().map(|cell| cell.offset).collect(),
+            );
             screen.hint = hint;
             screen.groups = (0..slots)
                 .map(|index| SlotGroup {
