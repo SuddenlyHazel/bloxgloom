@@ -130,7 +130,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 let effects = session.effects(std::time::Instant::now(), &[avatar]);
                 assert_eq!(effects.len(), 2);
                 assert!(effects.iter().any(|effect| {
-                    effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0])
+                    effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0], 0.16)
                 }));
                 let anchor_id = id + 2;
                 session.replica_anchors(

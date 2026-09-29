@@ -8,6 +8,7 @@ return function(input)
                     op = 'spark', id_lo = entity.id_lo, id_hi = entity.id_hi,
                     x = 0, y = 0.6, z = 0,
                     r = 0.25, g = 0.85, b = 1.0,
+                    size = 0.28, lifetime_ms = 1200,
                 }
             end
         end

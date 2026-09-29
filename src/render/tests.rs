@@ -515,7 +515,7 @@ fn colored_spark_mesh_uses_its_own_shape_and_fades() {
     let spark = fire::VisualFire {
         center: Vec3::ZERO,
         age: 0.25,
-        style: fire::FireStyle::Spark([0.2, 0.8, 1.0]),
+        style: fire::FireStyle::Spark([0.2, 0.8, 1.0], 0.16),
     };
     let vertices = fire::vertices(&[spark]);
     assert_eq!(vertices.len() / 9, 12);
@@ -526,4 +526,10 @@ fn colored_spark_mesh_uses_its_own_shape_and_fades() {
     }));
     let faded = fire::vertices(&[fire::VisualFire { age: 0.9, ..spark }]);
     assert!(faded[8] < vertices[8]);
+    let larger = fire::vertices(&[fire::VisualFire {
+        style: fire::FireStyle::Spark([0.2, 0.8, 1.0], 0.28),
+        ..spark
+    }]);
+    assert!(larger[0].abs() > vertices[0].abs());
+    assert_eq!(larger.len(), vertices.len());
 }

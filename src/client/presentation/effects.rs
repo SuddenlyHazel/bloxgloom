@@ -12,23 +12,35 @@ mod tests;
 
 #[derive(Debug, Default)]
 pub(crate) struct EffectBuffer {
-    entries: Vec<(u64, [f32; 3], Instant, FireStyle)>,
+    entries: Vec<(u64, [f32; 3], Instant, Duration, FireStyle)>,
 }
 
 impl EffectBuffer {
     pub(crate) fn push(&mut self, id: u64, offset: [f32; 3]) {
-        self.push_style(id, offset, FireStyle::Flame);
+        self.push_style(id, offset, FireStyle::Flame, LIFE);
     }
 
-    pub(crate) fn spark(&mut self, id: u64, offset: [f32; 3], color: [f32; 3]) {
-        self.push_style(id, offset, FireStyle::Spark(color));
+    pub(crate) fn spark_with(
+        &mut self,
+        id: u64,
+        offset: [f32; 3],
+        color: [f32; 3],
+        size: f32,
+        lifetime_ms: u16,
+    ) {
+        self.push_style(
+            id,
+            offset,
+            FireStyle::Spark(color, size),
+            Duration::from_millis(u64::from(lifetime_ms)),
+        );
     }
 
-    fn push_style(&mut self, id: u64, offset: [f32; 3], style: FireStyle) {
+    fn push_style(&mut self, id: u64, offset: [f32; 3], style: FireStyle, life: Duration) {
         if self.entries.len() == MAX_EMBERS {
             self.entries.remove(0);
         }
-        self.entries.push((id, offset, Instant::now(), style));
+        self.entries.push((id, offset, Instant::now(), life, style));
     }
 
     pub(crate) fn clear(&mut self) {
@@ -43,8 +55,8 @@ impl EffectBuffer {
     ) -> Vec<VisualFire> {
         self.entries
             .iter()
-            .filter_map(|(id, offset, at, style)| {
-                if now.saturating_duration_since(*at) >= LIFE {
+            .filter_map(|(id, offset, at, life, style)| {
+                if now.saturating_duration_since(*at) >= *life {
                     return None;
                 }
                 let position = avatars
@@ -54,7 +66,7 @@ impl EffectBuffer {
                     .or_else(|| anchors.get(id).copied().map(Vec3::from))?;
                 Some(VisualFire {
                     center: position + Vec3::from(*offset),
-                    age: (now.saturating_duration_since(*at).as_secs_f32() / LIFE.as_secs_f32())
+                    age: (now.saturating_duration_since(*at).as_secs_f32() / life.as_secs_f32())
                         .clamp(0.0, 1.0),
                     style: *style,
                 })

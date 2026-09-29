@@ -4,7 +4,7 @@
 defines a five-part mobile sproutling, a two-cell fueled stone press with an
 inventory screen, explicit idle/lit block states, and a client replica callback
 that colors the sproutling from its public grounded flag and emits a short-lived
-blue spark. It also emits a spark at the press's installed anchor. The mobile
+blue spark. It also emits a larger, longer-lived spark at the press's installed anchor. The mobile
 callback handles at most eight creatures per batch within the 16-command
 output limit.
 

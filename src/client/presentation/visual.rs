@@ -194,9 +194,11 @@ impl VisualSession {
                         reply.offered_entities.contains(id)
                             && values.iter().all(|value| value.is_finite())
                     }
-                    Command::Spark(id, offset, color) => {
+                    Command::Spark(id, offset, color, size, lifetime_ms) => {
                         reply.offered_entities.contains(id)
                             && offset.iter().chain(color).all(|value| value.is_finite())
+                            && (0.05..=0.5).contains(size)
+                            && (100..=2000).contains(lifetime_ms)
                     }
                     _ => false,
                 })
@@ -216,7 +218,9 @@ impl VisualSession {
                         tints.insert(id, tint);
                     }
                     Command::Ember(id, offset) => embers.push((id, offset)),
-                    Command::Spark(id, offset, color) => sparks.push((id, offset, color)),
+                    Command::Spark(id, offset, color, size, lifetime_ms) => {
+                        sparks.push((id, offset, color, size, lifetime_ms))
+                    }
                     _ => unreachable!("validated visual command"),
                 }
             }
@@ -234,8 +238,9 @@ impl VisualSession {
                 for (id, offset) in embers {
                     self.effects.push(id, offset);
                 }
-                for (id, offset, color) in sparks {
-                    self.effects.spark(id, offset, color);
+                for (id, offset, color, size, lifetime_ms) in sparks {
+                    self.effects
+                        .spark_with(id, offset, color, size, lifetime_ms);
                 }
             }
             Err(error) => self.failure = Some(error),

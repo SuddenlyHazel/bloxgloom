@@ -911,6 +911,20 @@ test logs four edit response times; this is a small mixed-load sample, not a
 sustained-load measurement. The creature tint is checked against the installed
 public state after its tick advances. Live release-window inspection is still
 outstanding.
+Replica spark commands now accept bounded optional size and lifetime, with the
+old visual defaults preserved. The showcase uses a larger, longer-lived spark
+at its installed press anchor; the real-listener worker checks that command
+after download and restart. Invalid sizes and lifetimes fail the callback,
+while effect retention and authority stay session/host owned. The headless fire
+preview was inspected and shows the larger blue spark through the production
+effect pipeline; it does not show an authored live anchor transition.
+The two-thread root suite passes **1034/1034**, with formatting and strict
+all-target/all-feature Clippy clean. The release terrain-only `perf 300 6`
+run kept 17,292,744 mesh bytes and 88,026 triangles; setup was 2330 ms,
+steady CPU median 0.313 ms and GPU median 0.232 ms. With `bounced`, mesh bytes
+were 17,500,968 and triangles 89,218; setup was 2666 ms, CPU 0.319 ms and
+GPU 0.229 ms. These offscreen runs exclude live entity effects, so they do not
+measure the cost of the larger spark.
 
 **Remaining**
 

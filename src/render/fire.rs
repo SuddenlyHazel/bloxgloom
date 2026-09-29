@@ -17,18 +17,18 @@ pub(crate) struct VisualFire {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum FireStyle {
     Flame,
-    Spark([f32; 3]),
+    Spark([f32; 3], f32),
 }
 
 pub(crate) fn vertices(fires: &[VisualFire]) -> Vec<f32> {
     let mut out = Vec::with_capacity(fires.len().min(MAX_FIRES) * VERTICES_PER_FIRE * FLOATS);
     for fire in fires.iter().take(MAX_FIRES) {
         let fade = (1.0 - fire.age).clamp(0.0, 1.0);
-        if let FireStyle::Spark(rgb) = fire.style {
+        if let FireStyle::Spark(rgb, base_size) = fire.style {
             let rise = fire.age * 0.65;
             let center = fire.center + Vec3::Y * rise;
             for axis in [Vec3::X, Vec3::Z] {
-                let size = 0.16 * fade.max(0.2);
+                let size = base_size * fade.max(0.2);
                 triangle(
                     &mut out,
                     [

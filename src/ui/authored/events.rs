@@ -315,11 +315,13 @@ impl Session {
                         && reply.offered_entities.contains(id)
                         && offset.iter().all(|value| value.is_finite())
                 }
-                Command::Spark(id, offset, color) => {
+                Command::Spark(id, offset, color, size, lifetime_ms) => {
                     reply.replica
                         && (reply.entity_batch || reply.anchor_batch)
                         && reply.offered_entities.contains(id)
                         && offset.iter().chain(color).all(|value| value.is_finite())
+                        && (0.05..=0.5).contains(size)
+                        && (100..=2000).contains(lifetime_ms)
                 }
             }) && commands
                 .iter()
@@ -381,7 +383,9 @@ impl Session {
                         self.visual_tints.insert(id, tint);
                     }
                     Command::Ember(id, offset) => self.effects.push(id, offset),
-                    Command::Spark(id, offset, color) => self.effects.spark(id, offset, color),
+                    Command::Spark(id, offset, color, size, lifetime_ms) => self
+                        .effects
+                        .spark_with(id, offset, color, size, lifetime_ms),
                 }
             }
             if self.focused.is_some_and(|i| !self.is_visible(i)) {

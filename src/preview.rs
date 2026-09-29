@@ -712,7 +712,7 @@ async fn render_previews_with_packages(
                         target_xz.1 as f32 + 0.5,
                     ),
                     age: 0.28,
-                    style: render::fire::FireStyle::Spark([0.25, 0.85, 1.0]),
+                    style: render::fire::FireStyle::Spark([0.25, 0.85, 1.0], 0.28),
                 },
             ],
         );

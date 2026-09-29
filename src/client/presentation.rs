@@ -70,7 +70,7 @@ pub(crate) enum Command {
     /// Bounded client-only ember, attached to an offered entity.
     Ember(u64, [f32; 3]),
     /// Short-lived colored spark attached to an offered entity.
-    Spark(u64, [f32; 3], [f32; 3]),
+    Spark(u64, [f32; 3], [f32; 3], f32, u16),
 }
 
 #[derive(Debug)]
@@ -269,7 +269,15 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                         bounded_float(&command, "g", 0.0, 1.0)?,
                         bounded_float(&command, "b", 0.0, 1.0)?,
                     ];
-                    Command::Spark(id, offset, color)
+                    let size = optional_bounded_float(&command, "size", 0.05, 0.5, 0.16)?;
+                    let lifetime_ms = match command.raw_get("lifetime_ms")? {
+                        mlua::Value::Nil => 850,
+                        mlua::Value::Integer(value) if (100..=2000).contains(&value) => {
+                            value as u16
+                        }
+                        _ => return Err(invalid()),
+                    };
+                    Command::Spark(id, offset, color, size, lifetime_ms)
                 }
                 _ => return Err(invalid()),
             });
@@ -320,4 +328,18 @@ fn bounded_float(table: &mlua::Table, key: &str, min: f32, max: f32) -> mlua::Re
         return Err(invalid());
     }
     Ok(value as f32)
+}
+
+fn optional_bounded_float(
+    table: &mlua::Table,
+    key: &str,
+    min: f32,
+    max: f32,
+    default: f32,
+) -> mlua::Result<f32> {
+    if matches!(table.raw_get::<mlua::Value>(key)?, mlua::Value::Nil) {
+        Ok(default)
+    } else {
+        bounded_float(table, key, min, max)
+    }
 }

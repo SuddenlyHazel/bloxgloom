@@ -48,7 +48,7 @@ fn embers_follow_only_presented_entities_expire_and_stay_bounded() {
 #[test]
 fn colored_sparks_follow_the_same_bounded_session_lifetime() {
     let mut effects = EffectBuffer::default();
-    effects.spark(7, [0.0, 0.5, 0.0], [0.2, 0.8, 1.0]);
+    effects.spark_with(7, [0.0, 0.5, 0.0], [0.2, 0.8, 1.0], 0.16, 850);
     let now = Instant::now();
     assert!(
         effects
@@ -57,7 +57,7 @@ fn colored_sparks_follow_the_same_bounded_session_lifetime() {
     );
     let shown = effects.visuals(now, &[avatar(7)], &BTreeMap::new());
     assert_eq!(shown.len(), 1);
-    assert_eq!(shown[0].style, FireStyle::Spark([0.2, 0.8, 1.0]));
+    assert_eq!(shown[0].style, FireStyle::Spark([0.2, 0.8, 1.0], 0.16));
     assert!(
         effects
             .visuals(now + LIFE, &[avatar(7)], &BTreeMap::new())
@@ -68,7 +68,7 @@ fn colored_sparks_follow_the_same_bounded_session_lifetime() {
 #[test]
 fn anchor_effects_use_only_current_offered_positions() {
     let mut effects = EffectBuffer::default();
-    effects.spark(91, [0.0, 0.6, 0.0], [0.2, 0.8, 1.0]);
+    effects.spark_with(91, [0.0, 0.6, 0.0], [0.2, 0.8, 1.0], 0.16, 850);
     let now = Instant::now();
     assert!(effects.visuals(now, &[], &BTreeMap::new()).is_empty());
     let anchors = BTreeMap::from([(91, [2.5, 80.5, 3.5])]);
@@ -76,4 +76,20 @@ fn anchor_effects_use_only_current_offered_positions() {
     assert_eq!(shown.len(), 1);
     assert_eq!(shown[0].center, Vec3::new(2.5, 81.1, 3.5));
     assert!(effects.visuals(now + LIFE, &[], &anchors).is_empty());
+}
+
+#[test]
+fn custom_sparks_keep_their_own_lifetimes_and_sizes() {
+    let mut effects = EffectBuffer::default();
+    effects.spark_with(91, [0.0, 0.6, 0.0], [0.2, 0.8, 1.0], 0.28, 1200);
+    let now = Instant::now();
+    let anchors = BTreeMap::from([(91, [2.5, 80.5, 3.5])]);
+    let shown = effects.visuals(now + LIFE, &[], &anchors);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].style, FireStyle::Spark([0.2, 0.8, 1.0], 0.28));
+    assert!(
+        effects
+            .visuals(now + Duration::from_millis(1200), &[], &anchors)
+            .is_empty()
+    );
 }

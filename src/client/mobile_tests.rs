@@ -79,7 +79,7 @@ impl NetworkedVisualProbe {
             .effects(std::time::Instant::now(), &[])
             .iter()
             .any(|effect| {
-                effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0])
+                effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0], 0.28)
                     && effect.center == center
             })
     }
@@ -103,7 +103,9 @@ impl NetworkedVisualProbe {
             .unwrap()
             .effects(std::time::Instant::now(), &[avatar])
             .iter()
-            .any(|effect| effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0]))
+            .any(|effect| {
+                effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0], 0.16)
+            })
     }
 
     pub(crate) fn settle(&mut self) {
