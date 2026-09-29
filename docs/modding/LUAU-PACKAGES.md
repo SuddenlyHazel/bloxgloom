@@ -183,6 +183,15 @@ builtin `give` and `spawn` console commands use these same registered action
 operations and durable receipts. `help` is local console text, not a gameplay
 transaction or mod command registry.
 
+A mobile creature tick receives read-only `c.position` and bounded host world
+queries: `c.solid(x,y,z)` uses integer cells; `c.clear(x,y,z)` and
+`c.grounded(x,y,z)` use feet positions; `c.walk_edge(x1,y1,z1,x2,y2,z2)` checks
+a traversable step. The existing `c.route(x,z)` finds a bounded next point.
+The tick may make at most 16 world queries, of which at most 8 may be routes.
+Any invalid or unavailable query rejects the tick even if Lua catches the
+error. These reads use the server's captured terrain; they do not change
+authoritative movement directly.
+
 A package with the owner-systems capability can register one persistent system
 with `host.register_system { key, schema, revision, module, partition,
 max_state_bytes, max_jobs_per_tick, read_world, read_radius_chunks, seeds }`.

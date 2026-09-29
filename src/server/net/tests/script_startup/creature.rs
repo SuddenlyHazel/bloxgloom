@@ -231,3 +231,41 @@ fn luau_creature_options_reject_invalid_bounds_before_save_creation() {
         assert!(!fixture.0.join("save/content.map").exists());
     }
 }
+
+#[test]
+fn luau_creature_world_services_are_bounded_and_caught_errors_reject_tick() {
+    for (source, accepted) in [
+        (
+            "return function(c) assert(c.solid(2,80,0) == false); assert(c.clear(2.5,80,0.5)); assert(c.grounded(2.5,80,0.5)); assert(c.walk_edge(2.5,80,0.5,3.5,80,0.5)); return 'ok',2,nil,nil end",
+            true,
+        ),
+        (
+            "return function(c) pcall(function() c.solid(1.5,80,0) end); return 'bad',2,nil,nil end",
+            false,
+        ),
+        (
+            "return function(c) pcall(function() for i=1,17 do c.clear(2.5,80,0.5) end end); return 'bad',2,nil,nil end",
+            false,
+        ),
+    ] {
+        let fixture = Fixture::new();
+        package(&fixture, REGISTER);
+        std::fs::write(fixture.0.join("packages/demo/tick.luau"), source).unwrap();
+        let state = fixture.open().unwrap();
+        let catalog = state.world.catalog();
+        let id = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
+        let creature = catalog.mobile_entity(id).unwrap();
+        let initial = creature.behavior.initial();
+        let context = api::Context {
+            id: 1,
+            tick: 1,
+            next_tick: Some(1),
+            position: [2.5, 80.0, 0.5],
+            state: &initial,
+            world: &Flat,
+            neighbours: &[],
+        };
+        assert_eq!(creature.behavior.tick(&context).is_ok(), accepted);
+        assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
+    }
+}

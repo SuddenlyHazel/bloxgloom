@@ -687,6 +687,10 @@ creature preview cover this initial mobile declaration surface. Optional bounded
 interaction requests now invoke the same server-side Luau source with an explicit
 interaction event, and authored gait parameters negotiate through V33. Defaults
 keep V31/V32 bytes; the client receives only inert request and animation data.
+Creature ticks now have bounded `solid`, `clear`, `grounded`, and `walk_edge`
+world reads alongside routing. These use captured host terrain and locomotion
+services; a failed read rejects the whole tick even if script code catches the
+Lua error. Neighbour reads and lifecycle spawns/despawns remain open.
 Luau `register_machine` declares a process machine with one explicit recipe,
 optional fuel, and a host-owned three or two slot inventory screen; omitted
 footprints default to one cell.

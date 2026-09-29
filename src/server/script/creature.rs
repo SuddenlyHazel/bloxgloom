@@ -1,13 +1,13 @@
 //! Server-only Luau planning for authored mobile creatures. The same bounded
 //! codec supplies inert client pose reconstruction; client catalogs never run
 //! the server callback or receive private creature state.
-use super::{Invocation, Limits, Program, package::PackageSnapshot, run_with, values::integer};
+use super::{Invocation, Limits, Program, package::PackageSnapshot, run_with};
 use bloxgloom_host_api::entity::{self as api, Behavior, Error, Lifecycle, Payload};
 use mlua::{Function, Lua, Value};
-use std::{
-    cell::{Cell, RefCell},
-    sync::Arc,
-};
+use std::sync::Arc;
+
+mod services;
+use services::invoke;
 
 #[derive(Clone)]
 struct State {
@@ -218,96 +218,6 @@ impl Behavior for ScriptCreature {
         state.private = private;
         Ok(Payload::new(state))
     }
-}
-
-fn invoke(
-    lua: &Lua,
-    entry: Function,
-    context: &api::Context<'_>,
-    private: &[u8],
-    max_private: usize,
-) -> mlua::Result<(Vec<u8>, u32, Option<[f32; 3]>)> {
-    let host = lua.create_table()?;
-    host.set("event", "tick")?;
-    host.set("data", lua.create_string(private)?)?;
-    host.set("id_lo", context.id as u32)?;
-    host.set("id_hi", (context.id >> 32) as u32)?;
-    host.set("tick_lo", context.tick as u32)?;
-    host.set("tick_hi", (context.tick >> 32) as u32)?;
-    let position = lua.create_sequence_from(context.position)?;
-    position.set_readonly(true);
-    host.set("position", position)?;
-    let routes = Cell::new(0u8);
-    let rejected = RefCell::new(None);
-    lua.scope(|scope| {
-        host.set(
-            "route",
-            scope.create_function(|lua, (x, z): (Value, Value)| {
-                let value = (|| {
-                    if let Some(error) = *rejected.borrow() {
-                        return Err(invalid(error));
-                    }
-                    if routes.get() >= 8 {
-                        return Err(invalid("creature route limit exceeded"));
-                    }
-                    routes.set(routes.get() + 1);
-                    let x = integer(x, -1_000_000, 1_000_000).map_err(invalid)? as i32;
-                    let z = integer(z, -1_000_000, 1_000_000).map_err(invalid)? as i32;
-                    match context
-                        .world
-                        .route(context.position, [x, z])
-                        .map_err(|_| invalid("creature route unavailable"))?
-                    {
-                        api::Route::Next(point) => {
-                            let result = lua.create_sequence_from(point)?;
-                            result.set_readonly(true);
-                            Ok(Value::Table(result))
-                        }
-                        api::Route::Arrived | api::Route::Unreachable => Ok(Value::Nil),
-                        api::Route::BudgetExhausted => {
-                            Err(invalid("creature route budget exceeded"))
-                        }
-                    }
-                })();
-                if value.is_err() {
-                    rejected.borrow_mut().get_or_insert("creature route failed");
-                }
-                value
-            })?,
-        )?;
-        host.set_readonly(true);
-        let (data, delay, x, z): (Value, Value, Value, Value) = entry.call(host)?;
-        if let Some(error) = *rejected.borrow() {
-            return Err(invalid(error));
-        }
-        let Value::String(data) = data else {
-            return Err(invalid("creature state must be binary string"));
-        };
-        if data.as_bytes().len() > max_private {
-            return Err(invalid("creature state exceeds bound"));
-        }
-        let delay = integer(delay, 1, 100_000).map_err(invalid)? as u32;
-        let target = if x.is_nil() && z.is_nil() {
-            None
-        } else if !x.is_nil() && !z.is_nil() {
-            Some([coordinate(x)?, context.position[1], coordinate(z)?])
-        } else {
-            return Err(invalid("creature target needs x and z"));
-        };
-        Ok((data.as_bytes().to_vec(), delay, target))
-    })
-}
-
-fn coordinate(value: Value) -> mlua::Result<f32> {
-    let number = match value {
-        Value::Integer(value) => value as f64,
-        Value::Number(value) => value,
-        _ => return Err(invalid("creature target must be numeric")),
-    };
-    if !number.is_finite() || !(-1_000_000.0..=1_000_000.0).contains(&number) {
-        return Err(invalid("creature target out of bounds"));
-    }
-    Ok(number as f32)
 }
 
 fn invalid(message: &'static str) -> mlua::Error {
