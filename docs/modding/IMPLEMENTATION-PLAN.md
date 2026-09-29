@@ -290,15 +290,18 @@ client bundle.
 2. Reuse exact cached packages and transfer missing bytes from the server.
    Keep transfers bounded, cancel cleanly on disconnect and allow a clear
    reconnect/retry with visible preparing/error status. An in-process exact-byte
-   cache is sufficient for now; disk caching and an elaborate progress UI are
-   not acceptance requirements unless reliability testing demonstrates a need.
+   cache is sufficient. Show received/total bytes and percentage during downloads,
+   identify verified cache reuse without pretending bytes were transferred, and
+   keep verification and GPU preparation stages visible. Disk caching is not an
+   acceptance requirement unless reliability testing demonstrates a need.
 3. Resolve dependencies and package resources, execute startup registration,
    prepare required assets and build the session's frozen catalog/client runtime.
 4. Validate catalog compatibility/readiness, then enter authoritative play.
 
 Implement actual server-to-client delivery. A manifest telling the user to find
-files elsewhere is not completion. A CDN, account service or public marketplace
-is not required; transport can be extended later.
+files elsewhere is not completion. A CDN or public marketplace will not be built;
+an account service is outside this plan. Packages are delivered directly by the
+server.
 
 Refactor assumptions that require all client content to be installed before
 connecting. Preserve frozen catalogs during play, but make negotiated catalogs
@@ -398,7 +401,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 2 | Events, persistent scheduling and remaining non-fire world/drop/player/command behavior; consolidate existing helpers | Done (native fire deferred) |
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Done |
-| 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
+| 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Done |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Done |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Done |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
@@ -975,35 +978,49 @@ live release-window visual acceptance remains a Phase 8 task. Per `AGENTS.md`,
 the current authored creature, screen, block-state and effect visuals were
 inspected through headless previews for this phase.
 
-#### Phase 5 — packages and joining · In progress
+#### Phase 5 — packages and joining · Done
 
-**Working:** real server-to-client verified bundle transfer, negotiated frozen
-catalogs, exact in-process byte reuse and package UI/effect/material assets.
-A verified client/shared `client_startup` module executes once per connection
-on a bounded worker before `ContentReady`; its host initializes authored UI
-text/state, registers a bounded replica handler, and sets owned visual parameters. Real-listener reconnect/switch tests cover
-that narrow session lifecycle. Connection workers now retire on failure/exit;
-cached reconnect and differently modded switches start with fresh UI, material,
-effect, startup and action state. Join stages/errors are printed to stderr,
-including package-attributed startup failures. The client now opens a window
-first, renders preparing/error states, and offers retry, cancellation and F2
-server switching; the retained join worker cannot install a cancelled session.
-GPU/window failures propagate instead of looking like successful exits.
+**Landed:** direct server-to-client verified bundle transfer, exact in-process
+cache reuse, negotiated frozen session catalogs, and package UI/material/effect
+resources. The client opens its window first; a retained worker prepares the
+session while egui shows byte/percentage download progress, verified cache
+reuse, verification and preparation stages. Retry, cancellation and F2 switching
+retire the old session. Cancelled candidates cannot install or process snapshots;
+GPU/window failures propagate as failures.
 
-**Remaining**
+**Acceptance**
 
-- [ ] Expand the narrow downloaded startup host into the documented client
-  presentation/replica services and resource registration model, with bounded
-  session-scoped callbacks and explicit compatibility/readiness failures.
-- [ ] Complete the remaining client runtime compatibility/readiness checks and
-  exercise the whole package flow under mixed live load. Real-listener
-  download, failure, retry, cancellation, reconnect and cross-server switching
-  are covered; OS DNS/filesystem cancellation is not instantaneous. Phase 7
-  makes package shader compilation asynchronous with a retained candidate;
-  window/surface setup and the final resource installation remain on the window
-  thread. Disk
-  caching and elaborate progress UI are **not** prerequisites unless testing
-  requires them.
+- [x] Documented presentation services and resource declarations: authored UI,
+  public replica callbacks, owned material/effect parameters, and bounded
+  entity/visual presentation. Joins own fresh workers/state; the cache retains
+  reusable verified resource bytes, not mutable session registrations.
+- [x] Wire v10 offers client host contract v2; an unsupported contract fails
+  before download or cached admission. All delivered client/shared sources
+  compile before `ContentReady` without executing dormant modules. Startup
+  registrations run on a bounded worker; errors name their package/module.
+- [x] Real nonblocking listeners cover download, invalid/tampered/incomplete
+  artifacts, readiness failure, retry, cancellation, cached reconnect,
+  differently modded server switches, save/catalog identity and restart.
+- [x] Concurrent full/cancelled package transfers preserve acknowledged player
+  movement, durable edits, finite inventory transfers, and scheduled
+  hopper/kiln/chest output. The slow receiver cannot stall the live player.
+- [x] Release egui download, verification, cache and failed-join previews inspected
+  at 640×360 and 1280×720. Root tests, formatting and strict Clippy passed.
+
+**Verification (2026-09-29):** **1069/1069** root tests,
+`cargo fmt --all -- --check`, and
+`cargo clippy --all-targets --all-features -- -D warnings`. The isolated local
+mixed-load run completed 14 transfers of 1.5 MiB and cancelled 7 while 16 moves
+and edits were acknowledged and machine output reached the chest. Edit receipt
+latency was median 34 ms, p95 65 ms, max 85 ms for those 16 samples; this is a
+local loopback observation, not an internet latency or frame-time guarantee.
+Visual acceptance used the release renderer's headless previews.
+
+DNS/filesystem cancellation may wait for the OS; the retained worker prevents
+replacement or installation of a cancelled candidate. Package shader compilation
+runs asynchronously; window/surface setup and final installation stay on the
+window thread. Disk caching is not required. Marketplace/CDN infrastructure is
+permanently outside the project. Phase 8's wider acceptance remains open.
 
 #### Phase 6 — authored UI · Done
 
@@ -1744,9 +1761,21 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
 - **Open implementation blockers:** none established; UI dependency selection is
   delegated to phase 6, not a reason to block the earlier host work.
 - **Deferred:** native fire propagation/delivery migration and optional visual
-  investigation; custom model workflow/import; live hot reload; marketplace/CDN
-  services; additional language runtimes; new gameplay/engine features not needed
-  for existing non-deferred capability coverage.
+  investigation; custom model workflow/import; live hot reload; additional
+  language runtimes; new gameplay/engine features not needed for existing
+  non-deferred capability coverage.
+
+- **Phase 5 acceptance (2026-09-29):** completed direct delivery/cache/session
+  lifecycle with explicit client host contract compatibility, compilation of
+  every delivered client/shared module before readiness, and egui byte progress
+  plus cache/verification states. Mixed real-listener transfers/cancellations
+  ran alongside acknowledged movement, durable edits, finite slot transfers and
+  machine output. Release previews were inspected at 640×360 and 1280×720;
+  **1069/1069** root tests, formatting and strict all-target/all-feature Clippy
+  passed. Falling-drop receipt timing fixtures now pin the full lower chunk
+  view after crossing a chunk boundary, removing unrelated loader timing from
+  their comparison. Phase 5 is **Done**; Phase 8 remains open. Marketplace/CDN
+  infrastructure will never be built; native fire migration remains deferred.
 
 After approval, record it here, update phase status and meaningful decisions as
 work lands, and retain the latest verification results and next concrete step.

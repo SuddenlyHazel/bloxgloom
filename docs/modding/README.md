@@ -1,10 +1,10 @@
 # Modding: start here
 
 **Current status:** The [implementation plan](IMPLEMENTATION-PLAN.md) is the
-authoritative progress and acceptance record. Phases 1–4, authored UI (Phase 6)
-and authored visuals (Phase 7) are marked done. Packages/joining (Phase 5) and
-integrated verification (Phase 8) remain open; committed increments do **not**
-imply full modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
+authoritative progress and acceptance record. Phases 1–7, including server
+packages/joining, authored UI and authored visuals, are marked done. Integrated
+verification (Phase 8) remains open; completed phases do **not** imply full
+modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
 before treating a capability as complete.
 
 ## Try authoring now
