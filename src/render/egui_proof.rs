@@ -89,6 +89,10 @@ impl Proof {
         std::mem::take(&mut self.intents)
     }
 
+    pub(super) fn wants_keyboard_input(&self) -> bool {
+        self.context.egui_wants_keyboard_input()
+    }
+
     pub(super) fn encode(
         &mut self,
         target: DrawTarget<'_>,

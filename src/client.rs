@@ -448,7 +448,8 @@ impl ClientApp {
     fn set_screen(&mut self, screen: UiScreen) {
         self.egui_proof_open = false;
         if let Some(renderer) = &mut self.renderer {
-            renderer.set_egui_proof_open(false);
+            renderer
+                .set_egui_proof_open(matches!(screen, UiScreen::Inventory | UiScreen::Container));
         }
         self.screen = screen;
         if screen != UiScreen::Admin {
@@ -1718,7 +1719,13 @@ impl ClientApp {
                     self.kiln_click(slot, right);
                 }
                 crate::render::EguiProofIntent::ContainerSlot(_, _) => {}
-                crate::render::EguiProofIntent::Close => self.toggle_egui_proof(),
+                crate::render::EguiProofIntent::Close => {
+                    if matches!(self.screen, UiScreen::Inventory | UiScreen::Container) {
+                        self.set_screen(UiScreen::Playing);
+                    } else {
+                        self.toggle_egui_proof();
+                    }
+                }
             }
         }
     }

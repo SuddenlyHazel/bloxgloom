@@ -22,6 +22,10 @@ impl ClientApp {
         if let Some(session) = &self.package_ui {
             renderer.install_package_ui(session.resources());
         }
+        renderer.set_egui_proof_open(matches!(
+            self.screen,
+            UiScreen::Inventory | UiScreen::Container
+        ));
         self.renderer = Some(renderer);
         self.window = Some(window);
         self.refresh_layout();
@@ -91,22 +95,64 @@ impl ClientApp {
                 && !event.repeat
                 && event.physical_key == PhysicalKey::Code(KeyCode::F7))
         {
-            if self.egui_proof_open
-                || matches!(
-                    self.screen,
-                    UiScreen::Playing | UiScreen::Inventory | UiScreen::Container
-                )
-            {
+            if self.egui_proof_open || self.screen == UiScreen::Playing {
                 self.toggle_egui_proof();
             }
             return;
         }
-        if self.egui_proof_open {
+        if self.egui_proof_open || matches!(self.screen, UiScreen::Inventory | UiScreen::Container)
+        {
+            if let WindowEvent::ModifiersChanged(modifiers) = &event {
+                self.shift_down = modifiers.state().shift_key();
+            }
             if matches!(&event, WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Escape))
             {
-                self.toggle_egui_proof();
+                if self.egui_proof_open {
+                    self.toggle_egui_proof();
+                } else {
+                    self.set_screen(UiScreen::Playing);
+                }
+                return;
+            }
+            if matches!(&event, WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && !event.repeat
+                    && matches!(event.physical_key, PhysicalKey::Code(code)
+                        if self.config.bindings.action(code)
+                            == Some(crate::config::bindings::Action::Inventory))
+                    && !self.renderer.as_ref().is_some_and(Renderer::egui_wants_keyboard_input))
+            {
+                self.set_screen(UiScreen::Playing);
+                return;
+            }
+            if let WindowEvent::KeyboardInput { event, .. } = &event
+                && event.state == ElementState::Pressed
+                && !event.repeat
+                && self.screen == UiScreen::Inventory
+                && let PhysicalKey::Code(code) = event.physical_key
+                && self.config.bindings.action(code) == Some(crate::config::bindings::Action::Drop)
+                && !self
+                    .renderer
+                    .as_ref()
+                    .is_some_and(Renderer::egui_wants_keyboard_input)
+            {
+                if let Some(slot) = self.inventory_source
+                    && let Some(stack) = self.inventory.slots[usize::from(slot)].as_ref()
+                {
+                    let count = if self.shift_down { stack.count } else { 1 };
+                    if let Some(action_id) = self.allocate_action_id() {
+                        self.queue_command(ClientMessage::DropStack {
+                            action_id,
+                            slot,
+                            count,
+                        });
+                        self.inventory_source = None;
+                    } else {
+                        self.show_status("Action session pending or busy");
+                    }
+                }
                 return;
             }
             if let Some(renderer) = &mut self.renderer {

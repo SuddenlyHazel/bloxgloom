@@ -129,7 +129,7 @@ fn header(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>, com
                 if compact { 58.0 } else { 75.0 },
                 if compact { 25.0 } else { 31.0 },
             ],
-            egui::Button::new("CLOSE  F7"),
+            egui::Button::new("CLOSE  ESC"),
         );
         if close.clicked() {
             intents.push(Intent::Close);

@@ -187,6 +187,10 @@ impl Renderer {
     pub(crate) fn take_egui_proof_intents(&mut self) -> Vec<EguiProofIntent> {
         self.egui_proof.take_intents()
     }
+
+    pub(crate) fn egui_wants_keyboard_input(&self) -> bool {
+        self.egui_proof.wants_keyboard_input()
+    }
     pub async fn new_with_catalog(
         window: Arc<Window>,
         catalog: Arc<Catalog>,
@@ -523,8 +527,14 @@ impl Renderer {
                 self.config.height,
             )),
         );
-        self.ui
-            .prepare(&self.queue, self.config.width, self.config.height, ui_frame);
+        let egui_screen = matches!(
+            ui_frame.screen,
+            crate::ui::UiScreen::Inventory | crate::ui::UiScreen::Container
+        );
+        if !egui_screen {
+            self.ui
+                .prepare(&self.queue, self.config.width, self.config.height, ui_frame);
+        }
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -670,7 +680,7 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
-        {
+        if !egui_screen {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("screen-space UI"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {

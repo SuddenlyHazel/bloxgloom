@@ -1007,7 +1007,8 @@ GPU/window failures propagate instead of looking like successful exits.
 
 **Working:** egui is selected as the shared UI foundation after a wgpu/winit
 inventory and machine proof with text input, focus, scrolling and custom slot
-painting; the F7 proof is merged but remains separate from production screens.
+painting. Inventory and container now use that view in their production screen
+path; the F7 proof remains available from play during migration.
 Taffy-backed verified documents provide basic layout/images/fonts/input,
 local Luau event handlers and downloaded startup text/state. The client composes
 server-authorized item/empty actions (`uidemo` transfers a stick) and block

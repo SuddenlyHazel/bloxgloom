@@ -1,8 +1,10 @@
 # egui UI proof of concept
 
-This branch adds an experimental egui overlay to the existing wgpu client. Press
-**F7** in play, inventory, or a container to open it; press **F7** or **Escape**
-to close it. The overlay reads the current inventory and container view. Clicking
+Inventory and container screens now use egui directly. Press **E** (or the
+configured inventory key) to open the pack, or interact with a container;
+press **Escape** or the close button to return to play. The former F7 proof
+remains available from play while other screens are migrated. The egui screen
+reads the current inventory and container view. Clicking
 a source slot and then a destination sends the game's existing inventory move
 or container transfer request to the server. Right-clicking a container transfer
 moves up to one item. The server still decides whether each request applies.
@@ -10,9 +12,8 @@ moves up to one item. The server still decides whether each request applies.
 The overlay exercises egui text input, a drop-down slot filter, machine-slot
 scrolling, buttons, keyboard focus, pointer input, clipboard integration, and
 rendering into the existing wgpu surface. The inventory grid uses egui input
-with custom slot and item-icon painting. This does not expose egui to Luau or
-replace the current UI; it is an experiment for choosing the Phase 6 UI
-foundation.
+with custom slot and item-icon painting. Luau documents and the remaining
+built-in screens are still on the earlier UI path.
 
 To try it with the built-in kiln, run:
 
@@ -20,7 +21,7 @@ To try it with the built-in kiln, run:
 cargo run -- local /tmp/bloxgloom-egui-poc-world
 ```
 
-Open a kiln and press **F7**. To try the authored press, use a fresh save:
+Open a kiln to see its egui screen. To try the authored press, use a fresh save:
 
 ```sh
 cargo run -- local-packages fixtures/phase4-showcase/packages /tmp/bloxgloom-egui-showcase-world
