@@ -669,7 +669,11 @@ owner entity operations and broader services remain open.
 Chunk owners may also declare `creates_entities=true` and stage up to 16
 package-owned general entity spawns at captured cells. The host validates the
 registered schema and terrain, allocates IDs, and commits spawns with owner state
-through the same receipt. Owner entity reads, updates and removals remain open.
+through the same receipt. `reads_entities=true` captures bounded package-owned
+mobile entity state and fences complete neighborhood entity pages. With separate
+`mutates_entities=true` authority, conditional state updates and removals check
+captured revisions and commit with the owner state through one receipt. Richer
+owner services remain open.
 Luau `register_creature` now declares bounded server tick logic, a host-owned
 locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
 the client without sending the server callback or private creature bytes. A
@@ -734,7 +738,9 @@ continuity are covered by mesh/animator regressions, not that preview.
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [ ] Bind directly authored owner entity/drop operations and broader owner
   services with the same authority/retry contract as Rust mods. Chunk systems
-  now have bounded neighborhood reads/edits and durable same-system intents.
+  now have bounded neighborhood reads/edits, entity capture/update/removal,
+  direct entity/drop creation, and durable same-system intents. Broader owner
+  services remain open.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
   owned UI callbacks and bounded mobile pose offsets are bound, including
