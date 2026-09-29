@@ -8,6 +8,13 @@ blue spark. It also emits a spark at the press's installed anchor. The mobile
 callback handles at most eight creatures per batch within the 16-command
 output limit.
 
+To inspect the package in the local game with your normal admin profile, use
+an isolated save directory:
+
+```sh
+cargo run --release -- local-packages fixtures/phase4-showcase/packages /tmp/bloxgloom-phase4-showcase-save
+```
+
 Use the package directory as the local package root when starting a server.
 These headless previews show the authored assets and screen:
 

@@ -265,3 +265,38 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
         });
     }
 }
+
+#[test]
+fn local_package_showcase_joins_and_restarts_through_nonblocking_listener() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let packages =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/phase4-showcase/packages");
+    let save = fixture.0.join("local-package-save");
+    let mut fingerprint = None;
+    for _ in 0..2 {
+        let (address, server) =
+            crate::server::start_local_server_with_packages(7, save.clone(), 0xA440, &packages)
+                .unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let catalog =
+                crate::client::connect_catalog_probe(&address.to_string(), 0xA441).unwrap();
+            assert!(
+                catalog
+                    .entity_type_id_by_key("demo:press_machine")
+                    .is_some()
+            );
+            if let Some(expected) = fingerprint {
+                assert_eq!(catalog.fingerprint(), expected);
+            } else {
+                fingerprint = Some(catalog.fingerprint());
+            }
+            crate::client::connect_visual_probe(&address.to_string(), 0xA442, |visual| {
+                assert_eq!(visual.owner(), "demo");
+            })
+            .unwrap();
+        }));
+        server.stop().unwrap();
+        result.unwrap();
+    }
+}

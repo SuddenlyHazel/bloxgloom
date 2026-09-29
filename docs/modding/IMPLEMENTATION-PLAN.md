@@ -893,6 +893,16 @@ Projection, queue ordering, invalid mobile-only commands and UI reset have
 focused tests. Empty anchored windows do not repeatedly invoke the worker.
 The integrated two-thread suite passes **1031/1031**, with formatting and
 strict Clippy clean for this slice.
+The `local-packages <root> <save-dir>` command now runs a packaged server and
+the normal admin client through a real loopback listener for local visual
+acceptance. A focused nonblocking-listener test joins the reusable showcase,
+downloads its client worker, stops the server and rejoins the same save after
+restart with an unchanged catalog identity. The release command itself joined
+the showcase in an isolated temporary save. This macOS session exposed only
+the lock screen to screenshot capture, so the game window could not be
+inspected; live release-window visual acceptance remains outstanding.
+The integrated two-thread root suite passes **1032/1032**, with formatting
+and strict all-target/all-feature Clippy clean for this local workflow slice.
 
 **Remaining**
 

@@ -68,6 +68,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             client_result?;
             server_result?;
         }
+        Some("local-packages") => {
+            let usage = "usage: local-packages <package-root> <save-dir>";
+            let root = args.next().ok_or(usage)?;
+            let save_dir = args.next().ok_or(usage)?;
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            let config_path = config::Config::default_path();
+            let mut config = config::Config::load(&config_path);
+            config.ensure_profile(&config_path)?;
+            let (addr, server) = server::start_local_server_with_packages(
+                0xB10C_6100,
+                save_dir.into(),
+                config.profile,
+                std::path::Path::new(&root),
+            )?;
+            let client_result = client::run_client_with_admin(&addr.to_string());
+            let server_result = server.stop();
+            client_result?;
+            server_result?;
+        }
         Some("server") => {
             let addr = args.next().unwrap_or_else(|| "127.0.0.1:4000".to_string());
             let save_dir = args.next().unwrap_or_else(|| default_world.to_string());

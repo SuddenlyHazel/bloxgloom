@@ -419,14 +419,43 @@ pub fn start_local_server_with_admin(
     start_local_server_for_profile(seed, save_dir, Some(admin_profile))
 }
 
+/// Local package-development path with the same frozen startup and admin
+/// profile used by `local`, but without reusing a builtin-only save.
+pub fn start_local_server_with_packages(
+    seed: u64,
+    save_dir: PathBuf,
+    admin_profile: u128,
+    package_root: &std::path::Path,
+) -> io::Result<(SocketAddr, LocalServer)> {
+    if admin_profile == 0 {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "missing admin profile",
+        ));
+    }
+    let startup = ServerStartup::new(Arc::new(crate::content::catalog().clone()))
+        .with_local_packages(package_root)?;
+    start_local_server_with_startup(seed, save_dir, Some(admin_profile), startup)
+}
+
 fn start_local_server_for_profile(
     seed: u64,
     save_dir: PathBuf,
     admin_profile: Option<u128>,
 ) -> io::Result<(SocketAddr, LocalServer)> {
+    let startup = ServerStartup::new(Arc::new(crate::content::catalog().clone()));
+    start_local_server_with_startup(seed, save_dir, admin_profile, startup)
+}
+
+fn start_local_server_with_startup(
+    seed: u64,
+    save_dir: PathBuf,
+    admin_profile: Option<u128>,
+    startup: ServerStartup,
+) -> io::Result<(SocketAddr, LocalServer)> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let addr = listener.local_addr()?;
-    let mut state = server_state(seed, save_dir)?;
+    let mut state = server_state_with_startup(seed, save_dir, DEFAULT_CLIENTS, startup)?;
     state.admin_profile = admin_profile;
     let state = Box::new(state);
     let (stop, receiver) = std::sync::mpsc::channel();

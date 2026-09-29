@@ -22,6 +22,11 @@ policy, and `assets/ui/welcome.json` for widget/event declarations.
 `cargo run -- ui-preview <output-dir>` writes UI previews without joining.
 Pass a package root as a second argument to preview that package's authored UI
 and downloaded client startup state instead of the built-in `uidemo` fixture.
+For one-process development with your normal local admin profile, run
+`cargo run --release -- local-packages <package-root> <new-save-dir>`.
+This starts the same verified package server and client on a real loopback
+listener, then stops the server when the client closes. Keep each package set
+in its own save directory so `content.map` remains its stable save identity.
 
 # Package shape
 
