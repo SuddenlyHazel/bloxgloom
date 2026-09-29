@@ -2,6 +2,75 @@
 use super::*;
 
 #[test]
+fn authored_entity_action_uses_observed_identity_and_exact_bounded_arguments() {
+    let catalog = crate::content::Catalog::builtins();
+    let action = Action {
+        key: "demo:pat".into(),
+        version: 3,
+        label: "Pat".into(),
+        target: Target::Entity("bloxgloom:mossbun".into()),
+        operation: Operation::Gameplay,
+        panel: None,
+        command: None,
+    };
+    let entity = crate::protocol::PublicEntity {
+        id: 91,
+        entity_type: crate::content::MOSSBUN_ENTITY_TYPE,
+        revision: 7,
+        motion_revision: 4,
+        location: crate::protocol::PublicEntityLocation::Mobile {
+            position: [2.5, 3.0, -1.5],
+        },
+        payload: vec![0, 1],
+    };
+    let ClientMessage::EntityInteract {
+        target, payload, ..
+    } = compose_observed_entity_action(
+        &catalog,
+        &action,
+        &entity,
+        2,
+        11,
+        vec![0, 255],
+        1u128 << 64 | 9,
+    )
+    .unwrap()
+    else {
+        panic!("expected entity request")
+    };
+    assert_eq!(target, [2, 3, -2]);
+    let request = Request::decode(&payload).unwrap();
+    assert_eq!(
+        (
+            request.entity,
+            request.entity_revision,
+            request.slot,
+            request.inventory_revision
+        ),
+        (91, 7, 2, 11)
+    );
+    assert_eq!(request.arguments, [0, 255]);
+    let mut wrong = action.clone();
+    wrong.target = Target::Entity("demo:other".into());
+    assert!(
+        compose_observed_entity_action(&catalog, &wrong, &entity, 2, 11, vec![], 1u128 << 64 | 9)
+            .is_none()
+    );
+    assert!(
+        compose_observed_entity_action(
+            &catalog,
+            &action,
+            &entity,
+            2,
+            11,
+            vec![0; 131],
+            1u128 << 64 | 9
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn named_shortcut_is_inert_without_matching_session_command() {
     use bloxgloom_host_api::actions::{Command, CommandArgument, CommandPermission};
     let mut catalog = crate::content::Catalog::builtins();

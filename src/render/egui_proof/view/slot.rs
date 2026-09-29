@@ -5,7 +5,7 @@ use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, V
 
 use super::{GOLD, MUTED, PANEL_EDGE, SLOT, SLOT_HOVER, TEXT};
 
-pub(super) struct SlotStyle {
+pub(crate) struct SlotStyle {
     pub side: f32,
     pub selected: bool,
     pub highlighted: bool,
@@ -13,7 +13,7 @@ pub(super) struct SlotStyle {
     pub hotbar: bool,
 }
 
-pub(super) fn show(
+pub(crate) fn show(
     ui: &mut Ui,
     number: u8,
     stack: Option<&Stack>,

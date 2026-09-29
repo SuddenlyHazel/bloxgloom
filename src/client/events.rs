@@ -22,10 +22,7 @@ impl ClientApp {
         if let Some(session) = &self.package_ui {
             renderer.install_package_ui(session.resources());
         }
-        renderer.set_egui_proof_open(matches!(
-            self.screen,
-            UiScreen::Inventory | UiScreen::Container
-        ));
+        renderer.set_egui_proof_open(true);
         self.renderer = Some(renderer);
         self.window = Some(window);
         self.refresh_layout();
@@ -90,35 +87,60 @@ impl ClientApp {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
-        if matches!(&event, WindowEvent::KeyboardInput { event, .. }
-            if event.state == ElementState::Pressed
-                && !event.repeat
-                && event.physical_key == PhysicalKey::Code(KeyCode::F7))
-        {
-            if self.egui_proof_open || self.screen == UiScreen::Playing {
-                self.toggle_egui_proof();
-            }
-            return;
-        }
-        if self.egui_proof_open || matches!(self.screen, UiScreen::Inventory | UiScreen::Container)
-        {
+        if self.screen.uses_egui() {
             if let WindowEvent::ModifiersChanged(modifiers) = &event {
                 self.shift_down = modifiers.state().shift_key();
+            }
+            if let WindowEvent::KeyboardInput { event, .. } = &event
+                && event.state == ElementState::Pressed
+                && !event.repeat
+                && self.screen == UiScreen::Package
+                && let PhysicalKey::Code(code) = event.physical_key
+            {
+                match code {
+                    KeyCode::F6 => {
+                        self.set_screen(UiScreen::Playing);
+                        return;
+                    }
+                    KeyCode::PageDown => {
+                        if let Some(session) = &mut self.package_ui {
+                            session.next_document();
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
             }
             if matches!(&event, WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Escape))
             {
-                if self.egui_proof_open {
-                    self.toggle_egui_proof();
+                if self.screen == UiScreen::Admin && self.admin_binding_selected.take().is_some() {
+                    self.show_status("Binding cancelled");
                 } else {
-                    self.set_screen(UiScreen::Playing);
+                    self.on_escape();
                 }
                 return;
+            }
+            if let WindowEvent::KeyboardInput { event, .. } = &event
+                && event.state == ElementState::Pressed
+                && !event.repeat
+                && self.screen == UiScreen::Admin
+                && let PhysicalKey::Code(code) = event.physical_key
+            {
+                if code == KeyCode::F4 {
+                    self.set_screen(UiScreen::Playing);
+                    return;
+                }
+                if self.admin_binding_selected.is_some() {
+                    self.binding_capture(code);
+                    return;
+                }
             }
             if matches!(&event, WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
                     && !event.repeat
+                    && matches!(self.screen, UiScreen::Inventory | UiScreen::Container)
                     && matches!(event.physical_key, PhysicalKey::Code(code)
                         if self.config.bindings.action(code)
                             == Some(crate::config::bindings::Action::Inventory))
@@ -235,7 +257,7 @@ impl ClientApp {
                                 KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space
                             ) && let Some(control) = self.focused_control
                             {
-                                self.activate_control(event_loop, control);
+                                self.activate_control(Some(event_loop), control);
                             }
                             return;
                         }
@@ -360,7 +382,7 @@ impl ClientApp {
                                 if self.screen != UiScreen::Playing =>
                             {
                                 if let Some(control) = self.focused_control {
-                                    self.activate_control(event_loop, control);
+                                    self.activate_control(Some(event_loop), control);
                                 }
                                 return;
                             }
@@ -463,7 +485,7 @@ impl ClientApp {
                             } else if let UiControl::InventorySlot(slot) = control {
                                 self.inventory_click(slot, button == MouseButton::Right);
                             } else if button == MouseButton::Left {
-                                self.activate_control(event_loop, control);
+                                self.activate_control(Some(event_loop), control);
                             }
                         }
                     }
@@ -492,7 +514,12 @@ impl ClientApp {
                     );
                 }
             }
-            WindowEvent::RedrawRequested => self.frame(),
+            WindowEvent::RedrawRequested => {
+                self.frame();
+                if self.exit_requested {
+                    event_loop.exit();
+                }
+            }
             _ => {}
         }
     }

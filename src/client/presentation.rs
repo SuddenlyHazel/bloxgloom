@@ -62,7 +62,7 @@ pub(crate) enum Command {
     Text(String, String),
     Visible(String, bool),
     State(String),
-    Action(String),
+    Action(String, Vec<u8>),
     /// A client-only offset applied after authoritative pose reconstruction.
     Visual(u64, [f32; 3]),
     /// Client-only RGB multiplier for an offered entity's rendered model.
@@ -206,17 +206,30 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             let command: mlua::Table = output.raw_get(index)?;
             let op = text(&command, "op", 16)?;
             commands.push(match op.as_str() {
-                "text" => {
-                    Command::Text(text(&command, "node", 194)?, text(&command, "value", 128)?)
-                }
+                "text" => Command::Text(
+                    text(&command, "node", 194)?,
+                    display_text(&command, "value", 128)?,
+                ),
                 "visible" => {
                     let mlua::Value::Boolean(value) = command.raw_get("value")? else {
                         return Err(invalid());
                     };
                     Command::Visible(text(&command, "node", 194)?, value)
                 }
-                "state" => Command::State(text(&command, "value", 128)?),
-                "action" => Command::Action(text(&command, "key", 129)?),
+                "state" => Command::State(display_text(&command, "value", 128)?),
+                "action" => {
+                    let arguments = match command.raw_get::<mlua::Value>("arguments")? {
+                        mlua::Value::Nil => Vec::new(),
+                        mlua::Value::String(value)
+                            if value.as_bytes().len()
+                                <= bloxgloom_host_api::actions::MAX_REQUEST_ARGUMENTS =>
+                        {
+                            value.as_bytes().to_vec()
+                        }
+                        _ => return Err(invalid()),
+                    };
+                    Command::Action(text(&command, "key", 129)?, arguments)
+                }
                 "visual" if request.replica => {
                     let lo = word(&command, "id_lo")?;
                     let hi = word(&command, "id_hi")?;
@@ -309,6 +322,17 @@ fn text(table: &mlua::Table, key: &str, max: usize) -> mlua::Result<String> {
         return Err(invalid());
     }
     Ok(value.to_str()?.to_owned())
+}
+
+fn display_text(table: &mlua::Table, key: &str, max: usize) -> mlua::Result<String> {
+    let mlua::Value::String(value) = table.raw_get(key)? else {
+        return Err(invalid());
+    };
+    let text = value.to_str()?;
+    if text.len() > max || text.chars().any(char::is_control) {
+        return Err(invalid());
+    }
+    Ok(text.to_owned())
 }
 
 fn word(table: &mlua::Table, key: &str) -> mlua::Result<u32> {

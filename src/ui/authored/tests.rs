@@ -87,6 +87,20 @@ fn action_callback_cannot_supply_target_or_authorization_claims() {
 }
 
 #[test]
+fn egui_input_dispatches_unicode_text_and_preserves_busy_value() {
+    let mut session = dynamic(
+        "return function(input) return {{op='text',node='uidemo:welcome/title',value=input.value}} end",
+        1,
+    );
+    session.apply_egui(EguiIntent::Input(4, "café".into()));
+    assert_eq!(session.inputs[4], "café");
+    session.apply_egui(EguiIntent::Input(4, "discarded".into()));
+    assert_eq!(session.inputs[4], "café");
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.text_at(1), "café");
+}
+
+#[test]
 fn replica_module_cannot_write_another_packages_document() {
     let startup = crate::client::startup::State {
         replica: Some(Arc::new(crate::client::presentation::Script {
@@ -279,13 +293,16 @@ fn verified_bundle_rejects_cross_package_references_and_unsupported_features() {
         (2, "image", "other:icon"),
         (4, "event", "other:changed"),
         (4, "kind", "scroll"),
-        (4, "text", "Unicode: é"),
     ] {
         let changed = change_json(assets, "welcome", |v| {
             v["nodes"][node][field] = value.into()
         });
         assert!(decode(&changed).is_err(), "{field}: {value}");
     }
+    let unicode = change_json(assets, "welcome", |v| {
+        v["nodes"][4]["text"] = "Moss & café".into();
+    });
+    assert!(decode(&unicode).is_ok());
     for (field, value) in [
         ("font", serde_json::json!("other:body")),
         ("height", serde_json::json!(0)),

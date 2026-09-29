@@ -68,6 +68,14 @@ fn ascii(value: mlua::LuaString, max: usize) -> mlua::Result<String> {
     Ok(value.to_str()?.to_owned())
 }
 
+fn display(value: mlua::LuaString, max: usize) -> mlua::Result<String> {
+    let text = value.to_str()?;
+    if text.len() > max || text.chars().any(char::is_control) {
+        return Err(mlua::Error::RuntimeError("invalid startup text".into()));
+    }
+    Ok(text.to_owned())
+}
+
 fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<(), String> {
     let id = identity(&bundle, entry);
     let fail = |error: mlua::Error| format!("client startup {id}: {error}");
@@ -106,7 +114,7 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
             "set_text",
             lua.create_function(move |_, (key, value): (mlua::LuaString, mlua::LuaString)| {
                 let key = ascii(key, 194)?;
-                let value = ascii(value, 128)?;
+                let value = display(value, 128)?;
                 if !key.starts_with(&format!("{text_owner}:"))
                     || !key.contains('/')
                     || texts.borrow().texts.len() >= 64
@@ -124,7 +132,7 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
             "set_state",
             lua.create_function(move |_, (key, value): (mlua::LuaString, mlua::LuaString)| {
                 let key = ascii(key, 129)?;
-                let value = ascii(value, 128)?;
+                let value = display(value, 128)?;
                 if key
                     .split_once(':')
                     .is_none_or(|(package, document)| package != owner || !identifier(document))

@@ -1,26 +1,27 @@
 # Phase 6 UI foundation
 
-Decision: use egui 0.36 as the shared Rust UI foundation. The merged F7 proof
-renders a responsive inventory and machine interface through the existing
-wgpu/winit surface and uses egui for buttons, text input, focus, selection,
-clipboard, drop-downs and scrolling. Its inventory slots use custom painting
-over egui interaction. Desktop and compact renders are in `EGUI-POC.md`; the
-proof was visually reviewed, and the root tests, formatting and strict Clippy
-passed before it was merged.
+egui 0.36 is the production UI foundation on the existing wgpu/winit surface.
+The live renderer paints the playing HUD, inventory and container screens,
+menus, join flow, and verified package documents through one egui pass. Slot
+icons and the crosshair use small custom egui painters. The previous GPU UI
+renderer remains in headless legacy previews and benchmarks only.
 
-The earlier Taffy flex header and Taffy-backed package documents established
-verified package resource and Luau event paths. They remain active until those
-paths and every built-in screen are migrated. Taffy supplies geometry but not
-text editing, focus, controls or rendering; the custom layer still limits
-authored text to ASCII. Blitz was considered earlier, but the egui proof now
-demonstrates the required embedding path in this game. Eguis immediate model
-requires Rust-owned per-session widget state and stable IDs for authored
-documents. Luau remains on the bounded presentation worker, and the server
-continues to authorize all gameplay requests.
+Verified package documents retain their bounded JSON widget model and
+package-owned styles, fonts and images. Rust maps panels, labels, images,
+buttons and inputs to egui widgets with scrolling and wrapping. Packaged font
+bytes and the verified image atlas are installed in the session's egui context.
+Document text and visibility can change through bounded local or replica
+callbacks. Text input uses egui's selection, focus, clipboard and IME path;
+the retained values and callback results are capped at 128 UTF-8 bytes.
 
-Phase 6 will replace the F7 proof with the normal UI runtime, map verified
-documents/fonts/images to egui, support dynamic documents and robust text,
-complete the authorized UI action bridge, and migrate built-in screens. Keep
-the existing renderer only as a migration seam; remove the duplicate path
-before marking the phase Done. Graphics and input behavior must be inspected
-in the live release window or generated previews at desktop and compact sizes.
+Luau executes on the bounded presentation worker, never inside the draw pass.
+It may submit one package-owned action key and up to 130 argument bytes. The
+client composes item, block or currently aimed entity identity from its
+streamed state. The server still checks reach, target identity, inventory,
+permissions and durable effects. Receipts provide the authoritative result.
+
+The earlier Taffy layout and bitmap renderer remain available to old headless
+preview fixtures. They are no longer used to paint production screens. The
+document format is intentionally bounded and widget based; it does not accept
+HTML/CSS or arbitrary script-created controls. Accessibility beyond egui's
+keyboard focus and platform text handling remains a future refinement.

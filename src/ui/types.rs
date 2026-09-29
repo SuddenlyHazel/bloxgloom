@@ -17,6 +17,24 @@ pub enum UiScreen {
     JoinFailed,
 }
 
+impl UiScreen {
+    pub(crate) fn uses_egui(self) -> bool {
+        matches!(
+            self,
+            Self::Inventory
+                | Self::Container
+                | Self::Actions
+                | Self::Admin
+                | Self::Pause
+                | Self::Settings
+                | Self::Graphics
+                | Self::Package
+                | Self::Joining
+                | Self::JoinFailed
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SettingId {
     Sensitivity,
@@ -106,6 +124,7 @@ pub struct UiDebug {
 #[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
     pub(crate) package_ui: Option<&'a super::authored::Session>,
+    pub(crate) join_address: Option<&'a str>,
     pub screen: UiScreen,
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
@@ -129,6 +148,7 @@ impl Default for UiFrame<'_> {
     fn default() -> Self {
         Self {
             package_ui: None,
+            join_address: None,
             screen: UiScreen::Playing,
             selected_slot: 0,
             inventory: std::array::from_fn(|_| None),

@@ -447,6 +447,7 @@ enum PreviewScene {
     Kilns,
     Hoppers,
     Surface,
+    SurfaceBare,
     Effect,
     Fire,
     Vegetation,
@@ -577,7 +578,10 @@ async fn render_previews_with_packages(
         surface_height(target_xz.0, target_xz.1)
     };
     let (camera_position, target) = match scene {
-        PreviewScene::Surface | PreviewScene::Effect | PreviewScene::Inventory(_) => (
+        PreviewScene::Surface
+        | PreviewScene::SurfaceBare
+        | PreviewScene::Effect
+        | PreviewScene::Inventory(_) => (
             Vec3::new(
                 camera_xz.0 as f32 + 0.5,
                 surface_height(camera_xz.0, camera_xz.1) as f32 + 18.0,
@@ -1264,7 +1268,9 @@ async fn render_previews_with_packages(
             }
             ui_frame.package_ui = Some(session);
         }
-        ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
+        if !matches!(scene, PreviewScene::SurfaceBare) {
+            ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
+        }
         let bytes_per_row = output.width * 4;
         let padded_bytes_per_row = bytes_per_row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -1371,7 +1377,7 @@ async fn render_previews_with_packages(
             pass.set_vertex_buffer(0, target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
-        {
+        if !matches!(scene, PreviewScene::SurfaceBare) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview UI"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1492,6 +1498,7 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
         package_ui: None,
+        join_address: None,
         screen,
         selected_slot: 1,
         inventory: sample_inventory(),
@@ -1560,6 +1567,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
         package_ui: None,
+        join_address: None,
         inventory_search: "",
         action_panel: None,
         container_screen: None,

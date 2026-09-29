@@ -2,6 +2,33 @@
 use super::*;
 
 #[test]
+fn authored_action_arguments_are_exact_bytes_and_bounded() {
+    let request = |arguments: &str| Request {
+        script: Arc::new(Script {
+            module: "demo:ui".into(),
+            source: format!(
+                "return function(_) return {{{{op='action',key='demo:use',arguments={arguments}}}}} end"
+            ),
+        }),
+        sequence: 1,
+        event: "demo:click".into(),
+        value: String::new(),
+        state: String::new(),
+        texts: vec![],
+        replica: false,
+        entities: vec![],
+        entered: vec![],
+        left: vec![],
+    };
+    assert!(matches!(
+        run(request("string.char(0, 255, 1)")).unwrap().as_slice(),
+        [Command::Action(key, bytes)] if key == "demo:use" && bytes == &[0, 255, 1]
+    ));
+    assert!(run(request("string.rep('x', 131)")).is_err());
+    assert!(run(request("42")).is_err());
+}
+
+#[test]
 fn tint_commands_reject_nonfinite_and_out_of_range_channels() {
     for color in ["r=0/0,g=1,b=1", "r=-0.1,g=1,b=1", "r=1,g=1.1,b=1"] {
         let request = Request {

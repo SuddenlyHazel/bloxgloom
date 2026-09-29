@@ -17,11 +17,11 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
             width,
             height,
             scale: 1.0,
-            screen: UiScreen::Inventory,
+            screen: UiScreen::Playing,
             orientation: None,
         })
         .collect();
-    render_previews(backdrops, (0, 0), PreviewScene::Surface).await?;
+    render_previews(backdrops, (0, 0), PreviewScene::SurfaceBare).await?;
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -35,7 +35,42 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
     let mut renderer = egui_wgpu::Renderer::new(&device, FORMAT, Default::default());
-    for (width, height) in [(1280, 720), (640, 360)] {
+    let package_snapshot = crate::server::PackageSnapshot::discover(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages"),
+    )?;
+    let package_resources = Arc::clone(
+        package_snapshot
+            .client_bundle()
+            .ui()
+            .ok_or("missing package UI")?,
+    );
+    let package_session = crate::ui::authored::Session::new(Arc::clone(&package_resources));
+    let mut updated_session = crate::ui::authored::Session::new(Arc::clone(&package_resources));
+    updated_session.apply_egui(crate::ui::authored::EguiIntent::Input(
+        4,
+        "café garden".into(),
+    ));
+    updated_session.wait_for_presentation()?;
+    let screens = [
+        (UiScreen::Playing, "playing"),
+        (UiScreen::Container, "container"),
+        (UiScreen::Pause, "pause"),
+        (UiScreen::Settings, "settings"),
+        (UiScreen::Admin, "admin"),
+        (UiScreen::Package, "package"),
+        (UiScreen::Package, "package-updated"),
+        (UiScreen::Joining, "joining"),
+        (UiScreen::JoinFailed, "join-failed"),
+    ];
+    for (width, height, screen_kind, label) in
+        [(1280, 720), (640, 360)]
+            .into_iter()
+            .flat_map(|(width, height)| {
+                screens
+                    .into_iter()
+                    .map(move |(screen, label)| (width, height, screen, label))
+            })
+    {
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("egui preview color"),
             size: wgpu::Extent3d {
@@ -74,7 +109,25 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         );
         let view = color.create_view(&Default::default());
         let context = render::egui_proof::themed_context();
-        let frame = preview_frame(UiScreen::Container, None, 1.0);
+        let atlas =
+            (screen_kind == UiScreen::Package).then(|| package_resources.install_egui(&context));
+        let package = if label == "package-updated" {
+            &updated_session
+        } else {
+            &package_session
+        };
+        let preview = preview_frame(screen_kind, None, 1.0);
+        let frame = UiFrame {
+            package_ui: (screen_kind == UiScreen::Package).then_some(package),
+            join_address: matches!(screen_kind, UiScreen::Joining | UiScreen::JoinFailed)
+                .then_some("127.0.0.1:25565"),
+            status: match screen_kind {
+                UiScreen::Joining => Some("Downloading and verifying package content"),
+                UiScreen::JoinFailed => Some("Connection failed during package verification"),
+                _ => preview.status,
+            },
+            ..preview
+        };
         let mut search = String::new();
         let mut filter = render::egui_proof::SlotFilter::All;
         let mut intents = Vec::new();
@@ -87,10 +140,11 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             },
             |ui| {
-                render::egui_proof::draw(
+                render::egui_proof::draw_screen(
                     ui,
                     &frame,
                     crate::content::catalog(),
+                    atlas.as_ref().map(egui::TextureHandle::id),
                     &mut search,
                     &mut filter,
                     &mut intents,
@@ -179,7 +233,7 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         drop(mapped);
         readback.unmap();
         write_png(
-            &directory.join(format!("egui-container-{width}x{height}.png")),
+            &directory.join(format!("egui-{label}-{width}x{height}.png")),
             width,
             height,
             &pixels,

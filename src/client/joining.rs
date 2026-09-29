@@ -15,8 +15,6 @@ pub(super) struct JoinApp {
     error: Option<String>,
     pub(super) failure: Option<String>,
     admin_enabled: bool,
-    cursor: (f32, f32),
-    control_down: bool,
     first_frame: bool,
     next_frame: Instant,
 }
@@ -34,8 +32,6 @@ impl JoinApp {
             error: None,
             failure: None,
             admin_enabled,
-            cursor: (0.0, 0.0),
-            control_down: false,
             first_frame: true,
             next_frame: Instant::now(),
         }
@@ -43,13 +39,13 @@ impl JoinApp {
 
     fn status_renderer(&mut self) -> Result<(), String> {
         if self.renderer.is_none() {
-            self.renderer = Some(
-                pollster::block_on(Renderer::new_with_catalog(
-                    Arc::clone(self.window.as_ref().unwrap()),
-                    Arc::new(crate::content::Catalog::builtins()),
-                ))
-                .map_err(|error| error.to_string())?,
-            );
+            let mut renderer = pollster::block_on(Renderer::new_with_catalog(
+                Arc::clone(self.window.as_ref().unwrap()),
+                Arc::new(crate::content::Catalog::builtins()),
+            ))
+            .map_err(|error| error.to_string())?;
+            renderer.set_egui_proof_open(true);
+            self.renderer = Some(renderer);
         }
         Ok(())
     }
@@ -158,18 +154,15 @@ impl JoinApp {
             .attempt
             .as_ref()
             .map_or("starting", |a| a.control.label());
-        let text = format!(
-            "Server: {}\n\n{}",
-            self.address,
-            self.error.as_deref().unwrap_or(stage)
-        );
+        let text = self.error.as_deref().unwrap_or(stage);
         let frame = UiFrame {
             screen: if self.error.is_some() {
                 UiScreen::JoinFailed
             } else {
                 UiScreen::Joining
             },
-            status: Some(&text),
+            status: Some(text),
+            join_address: Some(&self.address),
             ..Default::default()
         };
         let camera = Camera {
@@ -182,6 +175,19 @@ impl JoinApp {
             self.failure = Some(error.to_string());
             event_loop.exit();
             return;
+        }
+        for intent in self.renderer.as_mut().unwrap().take_egui_proof_intents() {
+            match intent {
+                crate::render::EguiProofIntent::JoinAddress(address) if self.attempt.is_none() => {
+                    self.address = address
+                        .chars()
+                        .filter(|character| character.is_ascii_graphic())
+                        .take(256)
+                        .collect();
+                }
+                crate::render::EguiProofIntent::JoinAction => self.action(),
+                _ => {}
+            }
         }
         // Present at least one preparing frame before starting slow work.
         if self.first_frame {
@@ -218,18 +224,6 @@ impl ApplicationHandler for JoinApp {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
-        // Track shell input even while forwarding events to a live session;
-        // switching back must not retain an old Ctrl state or cursor position.
-        match &event {
-            WindowEvent::ModifiersChanged(modifiers) => {
-                self.control_down = modifiers.state().control_key();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = (position.x as f32, position.y as f32);
-            }
-            WindowEvent::Focused(false) => self.control_down = false,
-            _ => {}
-        }
         // F2 always leaves the current session and opens the address/retry UI.
         if matches!(&event, WindowEvent::KeyboardInput { event, .. }
             if event.state == ElementState::Pressed && !event.repeat && event.physical_key == PhysicalKey::Code(KeyCode::F2))
@@ -242,24 +236,15 @@ impl ApplicationHandler for JoinApp {
             live.window_event(event_loop, id, event);
             return;
         }
+        if let Some(renderer) = &mut self.renderer {
+            renderer.egui_proof_event(&event);
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => self.draw(event_loop),
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = &mut self.renderer {
                     renderer.resize(size);
-                }
-            }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
-                ..
-            } => {
-                let size = self.window.as_ref().unwrap().inner_size();
-                if crate::ui::join_action_rect(size.width, size.height, 1.0)
-                    .contains(self.cursor.0, self.cursor.1)
-                {
-                    self.action();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -273,23 +258,6 @@ impl ApplicationHandler for JoinApp {
                         if !event.repeat && self.attempt.is_none() =>
                     {
                         self.start()
-                    }
-                    PhysicalKey::Code(KeyCode::KeyA)
-                        if self.control_down && self.attempt.is_none() =>
-                    {
-                        self.address.clear()
-                    }
-                    PhysicalKey::Code(KeyCode::Backspace) if self.attempt.is_none() => {
-                        self.address.pop();
-                    }
-                    _ if self.attempt.is_none() && !self.control_down => {
-                        if let Some(text) = event.text {
-                            for c in text.chars().filter(char::is_ascii_graphic) {
-                                if self.address.len() < 256 {
-                                    self.address.push(c);
-                                }
-                            }
-                        }
                     }
                     _ => {}
                 }

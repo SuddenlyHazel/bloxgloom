@@ -2,23 +2,55 @@
 //! Gameplay requests still go through the client and authoritative server.
 
 use crate::content::Catalog;
-use crate::ui::UiFrame;
+use crate::ui::{UiControl, UiFrame, UiScreen};
 use winit::{event::WindowEvent, window::Window};
 
+mod hud;
+mod menus;
 mod view;
 pub(crate) use view::{draw, themed_context};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) fn draw_screen(
+    ui: &mut egui::Ui,
+    frame: &UiFrame<'_>,
+    catalog: &Catalog,
+    package_atlas: Option<egui::TextureId>,
+    search: &mut String,
+    filter: &mut SlotFilter,
+    intents: &mut Vec<Intent>,
+) {
+    if frame.screen == UiScreen::Package {
+        if let Some(session) = frame.package_ui {
+            let mut authored = Vec::new();
+            session.draw_egui(ui, package_atlas, &mut authored);
+            intents.extend(authored.into_iter().map(Intent::Package));
+        }
+    } else if frame.screen == UiScreen::Playing {
+        hud::draw(ui, frame, catalog);
+    } else if matches!(frame.screen, UiScreen::Inventory | UiScreen::Container) {
+        draw(ui, frame, catalog, search, filter, intents);
+    } else {
+        menus::draw(ui, frame, catalog, intents);
+    }
+}
+
+#[derive(Debug)]
 pub(crate) enum Intent {
     InventorySlot(u8, bool),
     ContainerSlot(u8, bool),
     Close,
+    Control(UiControl),
+    AdminInput(String),
+    Package(crate::ui::authored::EguiIntent),
+    JoinAddress(String),
+    JoinAction,
 }
 
 pub(super) struct Proof {
     context: egui::Context,
     input: egui_winit::State,
     renderer: egui_wgpu::Renderer,
+    package_atlas: Option<egui::TextureHandle>,
     open: bool,
     search: String,
     filter: SlotFilter,
@@ -67,6 +99,7 @@ impl Proof {
             context,
             input,
             renderer,
+            package_atlas: None,
             open: false,
             search: String::new(),
             filter: SlotFilter::All,
@@ -77,6 +110,10 @@ impl Proof {
     pub(super) fn set_open(&mut self, open: bool) {
         self.open = open;
         self.intents.clear();
+    }
+
+    pub(super) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
+        self.package_atlas = Some(resources.install_egui(&self.context));
     }
 
     pub(super) fn on_window_event(&mut self, window: &Window, event: &WindowEvent) {
@@ -102,12 +139,15 @@ impl Proof {
         if !self.open {
             return;
         }
+        self.context
+            .set_zoom_factor(frame.settings.scale.clamp(0.75, 2.0));
         let raw_input = self.input.take_egui_input(target.window);
         let mut output = self.context.run_ui(raw_input, |ui| {
-            draw(
+            draw_screen(
                 ui,
                 frame,
                 catalog,
+                self.package_atlas.as_ref().map(egui::TextureHandle::id),
                 &mut self.search,
                 &mut self.filter,
                 &mut self.intents,

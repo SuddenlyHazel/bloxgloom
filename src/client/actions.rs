@@ -13,16 +13,21 @@ pub(super) struct ActionChoice {
 
 impl ClientApp {
     pub(super) fn pump_package_action(&mut self) {
-        let Some(key) = self.package_ui.as_mut().and_then(|ui| ui.take_action()) else {
+        let Some((key, arguments)) = self
+            .package_ui
+            .as_mut()
+            .and_then(|ui| ui.take_action_request())
+        else {
             return;
         };
         // Validate selection before allocating: a locally rejected request must
         // not leave a hole in the server-issued receipt sequence.
-        let Some(mut request) = self.compose_current_package_action(&key) else {
+        let Some(mut request) = self.compose_current_package_action_with_args(&key, arguments)
+        else {
             self.package_ui
                 .as_mut()
                 .unwrap()
-                .action_failed_locally("select a matching item or aim at a matching block");
+                .action_failed_locally("select a matching item or aim at a matching target");
             return;
         };
         let Some(action_id) = self.allocate_action_id() else {
@@ -43,19 +48,51 @@ impl ClientApp {
             .action_submitted(action_id);
     }
 
+    #[cfg(test)]
     fn compose_current_package_action(&self, key: &str) -> Option<ClientMessage> {
-        compose_package_action(
+        self.compose_current_package_action_with_args(key, vec![])
+    }
+
+    fn compose_current_package_action_with_args(
+        &self,
+        key: &str,
+        arguments: Vec<u8>,
+    ) -> Option<ClientMessage> {
+        let action = self.catalog.action(key)?;
+        if let Target::Entity(_) = &action.target {
+            let camera = self.camera();
+            let limit = self.aimed_block().map_or(7.0, |hit| hit.distance);
+            let entity = self.replicas.aimed_mobile(
+                &self.catalog,
+                camera.position,
+                camera.direction(),
+                limit,
+            )?;
+            return compose_observed_entity_action(
+                &self.catalog,
+                action,
+                entity,
+                self.config.selected_slot as u8,
+                self.inventory.revision,
+                arguments,
+                1u128 << 64 | 1,
+            );
+        }
+        compose_package_action_with_args(
             &self.catalog,
             key,
-            self.config.selected_slot as u8,
             &self.inventory,
-            self.position.to_array().map(|v| v.floor() as i32),
-            self.aimed_block().and_then(|hit| {
-                let [x, y, z] = hit.block;
-                let chunk = self.chunks.get(&crate::world::world_to_chunk(x, y, z).0)?;
-                Some((hit, chunk.version))
-            }),
-            1u128 << 64 | 1,
+            PackageActionInput {
+                slot: self.config.selected_slot as u8,
+                target: self.position.to_array().map(|v| v.floor() as i32),
+                aimed: self.aimed_block().and_then(|hit| {
+                    let [x, y, z] = hit.block;
+                    let chunk = self.chunks.get(&crate::world::world_to_chunk(x, y, z).0)?;
+                    Some((hit, chunk.version))
+                }),
+                action_id: 1u128 << 64 | 1,
+                arguments,
+            },
         )
     }
     pub(super) fn action_panel(&self) -> Option<Panel> {
@@ -231,18 +268,89 @@ impl ClientApp {
     }
 }
 
-// The script supplies only its owned key. The caller supplies current client
-// selection and a ray hit/version from streamed chunks, never script target coordinates.
+fn compose_observed_entity_action(
+    catalog: &crate::content::Catalog,
+    action: &Action,
+    entity: &crate::protocol::PublicEntity,
+    slot: u8,
+    inventory_revision: u64,
+    arguments: Vec<u8>,
+    action_id: u128,
+) -> Option<ClientMessage> {
+    let Target::Entity(expected) = &action.target else {
+        return None;
+    };
+    if action.operation != Operation::Gameplay
+        || &catalog.entity_type(entity.entity_type)?.key != expected
+    {
+        return None;
+    }
+    let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
+        return None;
+    };
+    let request = Request {
+        key: action.key.clone(),
+        version: action.version,
+        slot,
+        inventory_revision,
+        entity: entity.id,
+        entity_revision: entity.revision,
+        arguments,
+    };
+    Some(ClientMessage::EntityInteract {
+        action_id,
+        target: position.map(|v| v.floor() as i32),
+        payload: request.encode()?,
+    })
+}
+
+// The script supplies its owned key and bounded argument bytes. The caller supplies
+// current client selection and observed target identity, never script coordinates.
 // Server authorization still owns reach, sight, costs and target validation.
 pub(crate) fn compose_package_action(
     catalog: &crate::content::Catalog,
     key: &str,
     slot: u8,
     inventory: &crate::inventory::Inventory,
-    mut target: [i32; 3],
+    target: [i32; 3],
     aimed: Option<(Hit, u64)>,
     action_id: u128,
 ) -> Option<ClientMessage> {
+    compose_package_action_with_args(
+        catalog,
+        key,
+        inventory,
+        PackageActionInput {
+            slot,
+            target,
+            aimed,
+            action_id,
+            arguments: vec![],
+        },
+    )
+}
+
+struct PackageActionInput {
+    slot: u8,
+    target: [i32; 3],
+    aimed: Option<(Hit, u64)>,
+    action_id: u128,
+    arguments: Vec<u8>,
+}
+
+fn compose_package_action_with_args(
+    catalog: &crate::content::Catalog,
+    key: &str,
+    inventory: &crate::inventory::Inventory,
+    input: PackageActionInput,
+) -> Option<ClientMessage> {
+    let PackageActionInput {
+        slot,
+        mut target,
+        aimed,
+        action_id,
+        arguments,
+    } = input;
     let action = catalog.action(key)?;
     if action.operation != Operation::Gameplay {
         return None;
@@ -274,7 +382,7 @@ pub(crate) fn compose_package_action(
         inventory_revision: inventory.revision,
         entity: 0,
         entity_revision: 0,
-        arguments: vec![],
+        arguments,
     };
     Some(ClientMessage::EntityInteract {
         action_id,

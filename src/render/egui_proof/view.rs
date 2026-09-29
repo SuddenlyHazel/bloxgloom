@@ -1,6 +1,6 @@
 //! A compact game overlay built from egui controls and custom slot painting.
 
-mod slot;
+pub(super) mod slot;
 
 use super::{Intent, SlotFilter};
 use crate::{content::Catalog, inventory::Stack, ui::UiFrame};

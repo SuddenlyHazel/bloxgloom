@@ -1005,28 +1005,30 @@ GPU/window failures propagate instead of looking like successful exits.
 
 #### Phase 6 — authored UI · In progress
 
-**Working:** egui is selected as the shared UI foundation after a wgpu/winit
-inventory and machine proof with text input, focus, scrolling and custom slot
-painting. Inventory and container now use that view in their production screen
-path; the F7 proof remains available from play during migration.
-Taffy-backed verified documents provide basic layout/images/fonts/input,
-local Luau event handlers and downloaded startup text/state. The client composes
-server-authorized item/empty actions (`uidemo` transfers a stick) and block
-actions from its current streamed-world ray hit (`uitarget` trades a stick for
-a stone-to-glowstone edit), with denial/receipt feedback. A same-type block
-observation fence is verified: the client submits its current streamed
-chunk version, and the server compares and retains the authoritative chunk read
-through WAL admission. Entity targets remain open.
+**Working:** egui is the live wgpu/winit UI renderer for the playing HUD, join
+flow, menus, inventory, containers and verified package documents. The F7
+proof path is retired; the earlier bitmap/Taffy renderer remains only for
+legacy headless previews. Package documents use egui widgets, packaged fonts
+and images, scrolling, wrapped labels and platform text editing. Bounded UTF-8
+startup and callback text updates redraw the document; an updated package
+document was inspected at desktop and compact sizes. Local and replica
+callbacks remain on session-owned presentation workers. Authored requests can
+carry bounded argument bytes and compose an aimed entity identity from the
+current replica; server authorization and receipts remain authoritative.
+Existing real-listener tests cover item/block UI actions, same-type block
+observation fences, server receipts and restart. The root suite passed at
+1,040 tests; strict Clippy and desktop/compact UI previews also passed.
 
 **Remaining**
 
-- [ ] Support useful dynamic documents/state, scrolling, wrapping and robust
-  text entry/focus (including appropriate clipboard/IME/accessibility behavior).
-- [ ] Extend authorized UI requests beyond the initial block target to entity
-  targets, bounded arguments and server-driven updates without giving client
-  handlers authority.
-- [ ] Migrate built-in screens onto the same foundation rather than leaving mod
-  documents as a second-class overlay.
+- [x] Support bounded dynamic document state, scrolling, wrapping and egui text
+  entry/focus with clipboard and IME. Broader accessibility was deferred by
+  the user for this phase.
+- [ ] Verify an authored entity action with argument bytes through the real
+  listener, denial/receipt and restart path; composition and bounds have focused
+  tests, while item/block UI and replica updates have real listener coverage.
+- [x] Migrate built-in screens and authored documents onto the same live egui
+  renderer and input path.
 
 #### Phase 7 — authored visuals · In progress
 

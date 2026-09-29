@@ -307,7 +307,7 @@ struct ClientApp {
     config: Config,
     config_writer: ConfigWriter,
     screen: UiScreen,
-    egui_proof_open: bool,
+    exit_requested: bool,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     ui_layout: Option<UiLayout>,
@@ -382,7 +382,7 @@ impl ClientApp {
             config,
             config_writer,
             screen: UiScreen::Playing,
-            egui_proof_open: false,
+            exit_requested: false,
             window: None,
             renderer: None,
             ui_layout: None,
@@ -446,10 +446,8 @@ impl ClientApp {
     }
 
     fn set_screen(&mut self, screen: UiScreen) {
-        self.egui_proof_open = false;
         if let Some(renderer) = &mut self.renderer {
-            renderer
-                .set_egui_proof_open(matches!(screen, UiScreen::Inventory | UiScreen::Container));
+            renderer.set_egui_proof_open(true);
         }
         self.screen = screen;
         if screen != UiScreen::Admin {
@@ -490,16 +488,6 @@ impl ClientApp {
 
     fn on_escape(&mut self) {
         self.set_screen(escape_screen(self.screen));
-    }
-
-    fn toggle_egui_proof(&mut self) {
-        self.egui_proof_open = !self.egui_proof_open;
-        self.keys = Keys::default();
-        self.shift_down = false;
-        if let Some(renderer) = &mut self.renderer {
-            renderer.set_egui_proof_open(self.egui_proof_open);
-        }
-        self.set_grab(self.screen == UiScreen::Playing && !self.egui_proof_open);
     }
 
     fn toggle_inventory(&mut self) {
@@ -602,7 +590,7 @@ impl ClientApp {
         }
     }
 
-    fn activate_control(&mut self, event_loop: &ActiveEventLoop, control: UiControl) {
+    fn activate_control(&mut self, event_loop: Option<&ActiveEventLoop>, control: UiControl) {
         match control {
             UiControl::Action(row) => self.action_control(row),
             UiControl::HotbarSlot(_) => {}
@@ -682,7 +670,13 @@ impl ClientApp {
                 self.admin_run()
             }
             UiControl::AdminPrev | UiControl::AdminNext | UiControl::AdminRun => {}
-            UiControl::Exit => event_loop.exit(),
+            UiControl::Exit => {
+                if let Some(event_loop) = event_loop {
+                    event_loop.exit();
+                } else {
+                    self.exit_requested = true;
+                }
+            }
             UiControl::Back => self.set_screen(if self.screen == UiScreen::Graphics {
                 UiScreen::Settings
             } else {
@@ -1561,6 +1555,7 @@ impl ClientApp {
         let binding_view = self.binding_view();
         let ui = UiFrame {
             package_ui: self.package_ui.as_ref(),
+            join_address: None,
             screen: self.screen,
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),
@@ -1720,12 +1715,27 @@ impl ClientApp {
                 }
                 crate::render::EguiProofIntent::ContainerSlot(_, _) => {}
                 crate::render::EguiProofIntent::Close => {
-                    if matches!(self.screen, UiScreen::Inventory | UiScreen::Container) {
-                        self.set_screen(UiScreen::Playing);
-                    } else {
-                        self.toggle_egui_proof();
+                    self.set_screen(UiScreen::Playing);
+                }
+                crate::render::EguiProofIntent::Control(control) => {
+                    self.activate_control(None, control);
+                }
+                crate::render::EguiProofIntent::AdminInput(value) => {
+                    self.admin_input = value
+                        .chars()
+                        .filter(|character| character.is_ascii_graphic() || *character == ' ')
+                        .take(1024)
+                        .collect();
+                }
+                crate::render::EguiProofIntent::Package(intent) => {
+                    if self.screen == UiScreen::Package
+                        && let Some(session) = &mut self.package_ui
+                    {
+                        session.apply_egui(intent);
                     }
                 }
+                crate::render::EguiProofIntent::JoinAddress(_)
+                | crate::render::EguiProofIntent::JoinAction => {}
             }
         }
     }

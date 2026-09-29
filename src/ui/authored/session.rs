@@ -24,7 +24,7 @@ pub(crate) struct Session {
     pub(super) pending: Option<u32>,
     pub(super) expected: Option<u32>,
     pub(super) failure: Option<String>,
-    pub(super) action: Option<String>,
+    pub(super) action: Option<(String, Vec<u8>)>,
     pub(super) in_flight: Option<(u128, u64)>,
     pub(super) feedback: Option<String>,
     pub(super) replica_events:

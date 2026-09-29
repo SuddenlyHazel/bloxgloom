@@ -26,7 +26,7 @@ use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use crate::content::Catalog;
-use crate::ui::{UiFrame, UiRenderer};
+use crate::ui::UiFrame;
 use crate::world::ChunkKey;
 
 use mesh::{GpuMesh, GpuSubmesh};
@@ -136,7 +136,6 @@ pub struct Renderer {
     drop_cutout_index_count: u32,
     avatars: avatars::AvatarRenderer,
     fire: fire::FireRenderer,
-    ui: UiRenderer,
     egui_proof: egui_proof::Proof,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
@@ -172,8 +171,7 @@ impl Renderer {
         self.post.install_effect(&self.device, effect)
     }
     pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
-        self.ui
-            .install_package_ui(&self.device, &self.queue, resources);
+        self.egui_proof.install_package_ui(resources);
     }
 
     pub(crate) fn set_egui_proof_open(&mut self, open: bool) {
@@ -250,8 +248,8 @@ impl Renderer {
             avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer, &catalog);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
-        let ui = UiRenderer::new_with_catalog(&device, &queue, format, Arc::clone(&catalog));
-        let egui_proof = egui_proof::Proof::new(&window, &device, format);
+        let mut egui_proof = egui_proof::Proof::new(&window, &device, format);
+        egui_proof.set_open(true);
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
             size: drops::MAX_VERTEX_BYTES,
@@ -306,7 +304,6 @@ impl Renderer {
             drop_cutout_index_count: 0,
             avatars,
             fire,
-            ui,
             egui_proof,
             meshes: HashMap::new(),
             pending: HashMap::new(),
@@ -527,14 +524,6 @@ impl Renderer {
                 self.config.height,
             )),
         );
-        let egui_screen = matches!(
-            ui_frame.screen,
-            crate::ui::UiScreen::Inventory | crate::ui::UiScreen::Container
-        );
-        if !egui_screen {
-            self.ui
-                .prepare(&self.queue, self.config.width, self.config.height, ui_frame);
-        }
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
@@ -679,23 +668,6 @@ impl Renderer {
             pass.set_bind_group(0, &self.target_camera_group, &[]);
             pass.set_vertex_buffer(0, self.target_vertices.slice(..));
             pass.draw(0..24, 0..1);
-        }
-        if !egui_screen {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("screen-space UI"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                ..Default::default()
-            });
-            self.ui.encode(&mut pass);
         }
         self.egui_proof.encode(
             egui_proof::DrawTarget {

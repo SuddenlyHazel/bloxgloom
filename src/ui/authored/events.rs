@@ -293,10 +293,10 @@ impl Session {
                     (!reply.replica || self.replica_owner() == Some(owner))
                         && self.document().nodes.iter().any(|n| n.id == *id)
                 }
-                Command::Action(key) if !reply.replica => key
+                Command::Action(key, _) if !reply.replica => key
                     .split_once(':')
                     .is_some_and(|(package, local)| package == owner && identifier(local)),
-                Command::Action(_) => false,
+                Command::Action(_, _) => false,
                 Command::Visual(id, pose) => {
                     reply.replica
                         && reply.entity_batch
@@ -325,11 +325,11 @@ impl Session {
                 }
             }) && commands
                 .iter()
-                .filter(|c| matches!(c, Command::Action(_)))
+                .filter(|c| matches!(c, Command::Action(_, _)))
                 .count()
                 <= 1
                 && (self.action.is_none() && self.in_flight.is_none()
-                    || !commands.iter().any(|c| matches!(c, Command::Action(_))));
+                    || !commands.iter().any(|c| matches!(c, Command::Action(_, _))));
             if !valid {
                 return Err(format!(
                     "{}: invalid local-ui target",
@@ -372,9 +372,9 @@ impl Session {
                             .unwrap();
                         self.visible[i] = visible;
                     }
-                    Command::Action(key) => {
+                    Command::Action(key, arguments) => {
                         self.feedback = Some("REQUESTING ACTION".into());
-                        self.action = Some(key);
+                        self.action = Some((key, arguments));
                     }
                     Command::Visual(id, pose) => {
                         self.visual_poses.insert(id, pose);
@@ -407,7 +407,12 @@ impl Session {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn take_action(&mut self) -> Option<String> {
+        self.take_action_request().map(|(key, _)| key)
+    }
+
+    pub(crate) fn take_action_request(&mut self) -> Option<(String, Vec<u8>)> {
         self.action.take()
     }
 

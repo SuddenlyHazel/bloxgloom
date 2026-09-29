@@ -130,7 +130,7 @@ impl RawDocument {
                 || !ids.insert(raw.id.clone())
                 || !owned(owner, &raw.style)
                 || raw.text.len() > MAX_TEXT
-                || !raw.text.bytes().all(|c| (32..=126).contains(&c))
+                || raw.text.chars().any(char::is_control)
                 || raw.event.as_ref().is_some_and(|id| !owned(owner, id))
             {
                 return Err(INVALID);
