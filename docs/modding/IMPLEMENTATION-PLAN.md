@@ -605,9 +605,9 @@ phase's acceptance; see the explicit deferred note below.
 Public deterministic generation and builtin terrain/vegetation migration are
 accepted. No phase-level work remains.
 
-#### Phase 4 — Luau authoring · In progress
+#### Phase 4 — Luau authoring · Done
 
-**Working:** bounded local packages register sprite items and simple placeable
+**Development record:** bounded local packages register sprite items and simple placeable
 opaque cubes (including own verified PNG textures), semantic actions/decisions,
 entity schemas, generators and chunk systems with authoritative radius-one
 neighborhood reads/edits, durable same-system payload intents and optional
@@ -616,8 +616,8 @@ failures; local UI handlers and a downloaded, verified
 client startup module can initialize connection-local authored UI text/state.
 Optional bounded `flammable` and `supports_plant` cube flags are verified
 through a real listener/catalog join, restart, invalid-registration regressions,
-the 896/896 suite, formatting and strict Clippy. The rest of the public
-block/material surface remains open.
+the 896/896 suite, formatting and strict Clippy. Shader/material extension
+continues in Phase 7.
 
 Package cubes now also declare bounded one-state side/bottom face textures,
 solid/replaceable flags, emission and RGB reflectance. Non-default definitions
@@ -627,8 +627,8 @@ identity. Item/block tags and nested same-kind members are now authored in Luau,
 canonically negotiated by V24 and rejected on missing/cyclic references. Entity-target
 gameplay actions are registered and negotiated, with the
 existing authenticated target/revision check before handler dispatch. This
-widens authoring but does not complete Phase 4's dynamic content, owner and
-client-presentation services.
+was an intermediate authoring slice; the dynamic content, owner and client
+presentation bindings are documented below.
 Gameplay Luau also exposes dependency-capturing entity lookups and bounded
 mobile spatial queries, anchored occupancy and stable per-handler random words;
 private owned bytes remain behind the existing state API.
@@ -740,7 +740,8 @@ client reconstructs both state keys in the verified catalog. A real-listener
 test places an authored machine, deposits finite input and fuel, observes the
 active state in the client replica, then checks the active world state and
 remaining fuel after restart. Foreign or unpowered active states fail before
-publishing a save. A live rendered view of this authored transition remains open.
+publishing a save. Live release-window inspection of this transition remains
+part of Phase 8 acceptance.
 The package-root `block-preview` command rendered both registered states with
 the normal GPU mesh/material path. Both images were inspected: the authored
 texture is present and the active emission changes nearby lighting subtly.
@@ -763,7 +764,7 @@ Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screens; omitted footprints use one cell.
 Optional bounded storage screen hints and labeled slot groups now negotiate in
 V30. A real-listener join and restart verify the client layout and saved identity;
-broader dynamic content remains open.
+dynamic documents and richer screen interaction continue in Phase 6.
 Bounded storage footprints of up to eight cells now negotiate in V38. The
 client reconstructs the same screen access cells, while the host owns one
 inventory and one placement/refund transaction. A real-listener test places
@@ -787,15 +788,15 @@ effect renderer; a missing avatar draws nothing, and session reset drops the
 effect buffer. Real-listener callbacks and expiry/cap tests cover this primitive.
 The headless fire preview was inspected and shows the shared orange streak
 primitive; it does not depict an authored ember attached to a live creature.
-Broader effect styles and production scene acceptance remain open.
+Broader effect styles and production scene acceptance continue in later phases.
 Replica callbacks can now return bounded RGB tint multipliers for offered
 package-owned mobile IDs. The same off-window worker validates finite 0–1
 channels and exact offered IDs; the avatar renderer applies tint after
 authoritative pose/interpolation, and new batches or session switches clear
 old values. UI-backed and UI-free real-listener join/reconnect/restart tests
 cover scope and reset, while a headless GPU regression checks one tinted
-avatar without changing its neighbor. A rendered authored live creature with
-the callback tint remains to be inspected.
+avatar without changing its neighbor. The callback tint still needed an authored
+creature preview at this point in the development record.
 The headless GPU tint image was inspected: the right avatar is green and the
 untinted left avatar retains its original colors. This confirms the per-instance
 shader path, while the real-listener tests confirm callback/session delivery.
@@ -943,15 +944,17 @@ were 17,500,968 and triangles 89,218; setup was 2666 ms, CPU 0.319 ms and
 GPU 0.229 ms. These offscreen runs exclude live entity effects, so they do not
 measure the cost of the larger spark.
 
-**Remaining**
+**Acceptance (September 29, 2026)**
 
-- [ ] Complete creatures, machines and screens as Luau startup declarations.
-  Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists, component policies and fueled active states,
-  transfer ports, machine/storage footprints and their
-  status screens are bound; richer interactions and authored visual acceptance
-  remain open. Explicit
-  state properties, cube/plant geometry, face/emission options and tags are bound.
+- [x] Complete creatures, machines and screens as Luau startup declarations.
+  Bounded creature models, tick/lifecycle and interaction callbacks, gait
+  parameters, process machines, recipe lists, component policies, fueled active
+  states, transfer ports, footprints, placement variants and host-owned status
+  screens negotiate through the frozen catalog. The real-listener showcase
+  verifies processing, finite inventory, creature interaction, public replica,
+  save identity and restart. Current authored creature, tint, machine states,
+  screen layouts and effect previews were rendered and inspected. Dynamic UI
+  and shader effects remain in later phases; custom models remain deferred.
 - [x] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [x] Bind directly authored owner entity/drop operations and broader owner
@@ -961,12 +964,22 @@ measure the cost of the larger spark.
   entity/profile owner partitions with durable wakes and complete public block
   descriptors. The Luau caps are lower than public maximums; the host still
   validates and commits every staged effect.
-- [ ] Run general client presentation/replica callbacks off the window thread;
-  retain scoped handles, budgets and reproducible inputs. Replica-driven owned
-  UI callbacks, bounded mobile pose offsets and tint, separate anchored entity
-  views, presentation-window changes and attached embers/sparks are bound,
-  including UI-free package workers; broader effect and entity presentations
-  remain open.
+- [x] Run general client presentation/replica callbacks off the window thread;
+  retain scoped handles, budgets and reproducible inputs. Downloaded callbacks
+  receive bounded, immutable installed mobile/anchor views and advisory UI
+  observations on session-owned workers. Exact offered IDs scope pose, tint and
+  attached ember/spark commands; queue, command and effect limits fail closed.
+  Real-listener UI-backed and UI-free tests cover join, switch/reconnect and
+  restart, while the showcase exercises actual replicated entities. Richer
+  resources, UI and custom effects remain in Phases 5–7.
+
+The integrated two-thread root suite passed **1036/1036**, host API **34/34**,
+formatting and strict all-target/all-feature Clippy. The current release
+`local-packages` command joined and rejoined the same save through a real
+loopback listener. This macOS session exposed only the lock screen to capture;
+live release-window visual acceptance remains a Phase 8 task. Per `AGENTS.md`,
+the current authored creature, screen, block-state and effect visuals were
+inspected through headless previews for this phase.
 
 #### Phase 5 — packages and joining · In progress
 
@@ -1119,16 +1132,13 @@ This section exists so compaction or a new session does not restart the design.
   but has since been removed from Phase 2 and deferred by the user. The user
   explicitly authorizes parallel, scoped agents with personal review and commits;
   prefer `coder-fast` and reserve `coder-smart` for unusually difficult work.
-- **Current work (September 28, 2026):** Phases 1 and 3 are done; phases 2 and
-  4–7 remain in progress, and phase 8 has a working combined package but is not
-  accepted. Durable owner intents/bootstrap, burn-cause edits, Luau radius-one
-  neighborhoods, package cubes/textures, downloaded client startup and
-  authorized item/block UI requests work. Native fire still has its private
-  scheduler; general Luau content/client services, UI migration, richer visuals
-  and final mixed-load/release-window verification remain. Native fire migration
-  and its unverified optional visual are deferred, not Phase 2 blockers. The
-  latest reviewed 4-thread suite passed **892/892** after public drop stack filling;
-  strict Clippy and formatting also pass.
+- **Current work (September 29, 2026):** Phases 1–4 are done; native fire
+  migration remains explicitly deferred. Phases 5–8 remain in progress.
+  Bounded Luau content, gameplay, owners, generation and client replica
+  callbacks are accepted through Phase 4. Client package/resource readiness,
+  UI migration, richer visuals and final mixed-load/release-window verification
+  remain in later phases. The latest Phase 4 two-thread root suite passed
+  **1036/1036**, host API **34/34**, with strict Clippy and formatting clean.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,
@@ -1425,7 +1435,8 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
   same-player transfers; the normal host transaction and request authorization
   own conflicts, rollback, WAL and replication. Loopback/restart and failure
   rollback tests pass. Other events, general entity operations and package
-  delivery still require binding; Phase 4 is not complete.
+  delivery were still unbound at this intermediate slice; later Phase 4 work
+  completed the bounded authoring surface above.
 - **Phase 4 durable owner-script binding:** opt-in Luau packages can register a
   bounded chunk-partitioned persistent system with frozen source, byte state,
   deadline, owner-chunk reads, conditional edits and durable wakes. Fresh VMs
