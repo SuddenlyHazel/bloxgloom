@@ -6,6 +6,9 @@ the surface hook tints the art cyan and adds a little emission. A half-resolutio
 warm grade feeds a two-input mix before the game's bloom/display mapping.
 Downloaded startup sets the material and effect parameters. The bounded public
 entity replica window changes the mix strength through a presentation callback.
+Spawn `prism:glimmer` with the admin UI to see an owned entity drive that value;
+the empty window restores the baseline mix. Its simple cuboid uses the existing
+actor renderer.
 
 Run with a fresh isolated save in separate terminals:
 

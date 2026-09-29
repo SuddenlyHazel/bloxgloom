@@ -62,6 +62,31 @@ fn fragment_contract_rejects_unbounded_work_and_foreign_bindings() {
 }
 
 #[test]
+fn gpu_composition_error_is_returned_with_package_resource_context() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/visual-packages");
+    let snapshot = crate::server::PackageSnapshot::discover(&root).unwrap();
+    let mut prepared = snapshot.client_bundle().effect().unwrap().as_ref().clone();
+    // A pure helper can pass the authored-hook validator and then collide with
+    // a renderer entrypoint in the composed module. Backend failures must be
+    // returned by preparation rather than escaping an uncaptured GPU error.
+    prepared.passes[0]
+        .source
+        .push_str("\nfn fs_main() -> f32 { return 1.0; }");
+    shader::validate(&prepared.passes[0].source).unwrap();
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, _) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let result = Effect::prepare(&device, &prepared);
+    let Err(error) = result else {
+        panic!("invalid composition installed")
+    };
+    assert!(
+        error.contains("prism:grade") && error.contains("shader pipeline"),
+        "{error}"
+    );
+}
+
+#[test]
 fn verified_example_gpu_pass_survives_resize_and_grades_scene() {
     gpu_preview(false);
 }

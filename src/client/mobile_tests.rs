@@ -151,6 +151,11 @@ impl NetworkedVisualProbe {
             })
     }
 
+    pub(crate) fn parameter_updates(&mut self) -> Vec<crate::render::parameters::Update> {
+        self.settle();
+        self.app.visual_session.as_mut().unwrap().take_parameters()
+    }
+
     pub(crate) fn settle(&mut self) {
         let visual = self.app.visual_session.as_mut().unwrap();
         visual.poll();

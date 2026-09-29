@@ -3,7 +3,9 @@ package prism
 version 1.0.0
 entry main
 requires bloxgloom:content/v1
+requires bloxgloom:mobile_entities/v1
 module server main server/main.luau
+module server creature server/creature.luau
 module client client_startup client/startup.luau
 module client replica client/replica.luau
 asset texture tile assets/textures/tile.png

@@ -66,7 +66,7 @@ fn negotiated_visuals_parameters_switch_and_restart_without_global_state() {
                     visual.entities(
                         vec![crate::client::presentation::EntityView {
                             id: 17,
-                            key: "bloxgloom:mossbun".into(),
+                            key: "prism:glimmer".into(),
                             position: [0.5, 80.0, 0.5],
                             revision: 1,
                             motion_revision: 2,
@@ -109,5 +109,110 @@ fn invalid_typed_startup_parameter_refuses_real_join_with_source_identity() {
         let message = error.to_string();
         assert!(message.contains("prism@1.0.0:client_startup"), "{message}");
         assert!(message.contains("parameter type mismatch"), "{message}");
+    });
+}
+
+#[test]
+fn installed_authoritative_entity_replica_drives_the_shader_parameter() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = fixture();
+    let mut state = fixture.open().unwrap();
+    state.admin_profile = Some(0x70706);
+    state.spawn_anchor = [0.5, 79.0, 0.5];
+    for x in -4..=4 {
+        for z in -4..=4 {
+            for y in 78..=83 {
+                state
+                    .world
+                    .edit(
+                        x,
+                        y,
+                        z,
+                        if y == 78 {
+                            crate::world::STONE
+                        } else {
+                            crate::world::AIR
+                        },
+                    )
+                    .unwrap();
+            }
+        }
+    }
+    let catalog = state.world.catalog_arc();
+    let creature = catalog.entity_type_id_by_key("prism:glimmer").unwrap();
+    gameplay::serve(Box::new(state), |address| {
+        let mut peer = TcpStream::connect(address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        protocol::write_client(
+            &mut peer,
+            &ClientMessage::Hello {
+                name: "prism-admin".into(),
+                profile: 0x70706,
+                content_fingerprint: catalog.fingerprint(),
+            },
+        )
+        .unwrap();
+        let ServerMessage::BundleOffer { identity } = protocol::read_server(&mut peer).unwrap()
+        else {
+            panic!("missing bundle")
+        };
+        crate::client::bundle::receive(&mut peer, identity, None).unwrap();
+        let (fingerprint, _) = receive_content_manifest(&mut peer);
+        protocol::write_client(&mut peer, &ClientMessage::ContentReady { fingerprint }).unwrap();
+        let mut admin =
+            crate::client::InventoryProbe::new(catalog.clone(), fixture.0.join("admin-config"));
+        loop {
+            let message = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
+            let ready = matches!(message, ServerMessage::ActionSession { .. });
+            admin.accept(message);
+            if ready {
+                break;
+            }
+        }
+        let mut visual = crate::client::NetworkedVisualProbe::connect(
+            &address.to_string(),
+            0x70707,
+            fixture.0.join("visual-config"),
+        )
+        .unwrap();
+        visual.parameter_updates();
+        let action_id = admin.next_id();
+        protocol::write_client_with_catalog(
+            &mut peer,
+            &ClientMessage::AdminSpawnEntity {
+                action_id,
+                entity_type: creature,
+            },
+            &catalog,
+        )
+        .unwrap();
+        loop {
+            let message = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
+            if let ServerMessage::ActionResult {
+                action_id: id,
+                accepted,
+                reason,
+            } = &message
+                && *id == action_id
+            {
+                assert!(accepted, "{reason}");
+                break;
+            }
+            admin.accept(message);
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while visual.entity(creature).is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "entity replica deadline"
+            );
+            visual.accept_next();
+        }
+        // A queued empty-window call may precede the new installed entity batch.
+        visual.settle();
+        visual.settle();
+        let updates = visual.parameter_updates();
+        assert_eq!(scalar(&updates), 0.265625);
     });
 }

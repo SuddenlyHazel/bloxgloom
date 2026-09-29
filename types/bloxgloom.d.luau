@@ -197,9 +197,12 @@ export type BloxOwnerIntentDelivery = {
     payload: string,
 }
 
+export type BloxVisualParameterValue = number | boolean | {number}
+
 export type BloxClientStartupHost = {
     set_text: (owned_document_node: string, ascii_text: string) -> (),
     set_state: (owned_document: string, ascii_state: string) -> (),
+    set_parameter: (owned_resource: string, parameter_name: string, value: BloxVisualParameterValue) -> (),
     set_replica_handler: (own_client_module: string) -> (),
 }
 
@@ -214,4 +217,5 @@ export type BloxUiCommand =
     { op: "text", node: string, value: string }
     | { op: "visible", node: string, value: boolean }
     | { op: "state", value: string }
+    | { op: "parameter", resource: string, name: string, value: BloxVisualParameterValue }
     | { op: "action", key: string }
