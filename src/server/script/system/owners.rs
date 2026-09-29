@@ -23,11 +23,23 @@ pub(super) fn seed(partition: api::Partition, value: &Table) -> Result<api::Owne
             field(value, "z")?,
         )?)),
         api::Partition::Entity => {
-            let words = words(field(value, "id")?, 2)?;
+            let id = field(value, "id")?;
+            if let Value::String(value) = &id {
+                let id = hex_id(value, 16)? as u64;
+                if id == 0 {
+                    return Err("entity ID must be nonzero");
+                }
+                return Ok(api::Owner::Entity(id));
+            }
+            let words = words(id, 2)?;
             Ok(api::Owner::Entity(entity(words[0], words[1])))
         }
         api::Partition::Profile => {
-            let words = words(field(value, "id")?, 4)?;
+            let id = field(value, "id")?;
+            if let Value::String(value) = &id {
+                return Ok(api::Owner::Profile(hex_id(value, 32)?));
+            }
+            let words = words(id, 4)?;
             Ok(api::Owner::Profile(profile([
                 words[0], words[1], words[2], words[3],
             ])))
@@ -77,23 +89,29 @@ fn words(value: Value, count: usize) -> Result<Vec<u32>, &'static str> {
         .collect()
 }
 
-pub(super) fn present(lua: &Lua, owner: api::Owner) -> mlua::Result<(&'static str, Table)> {
-    let (kind, value) = match owner {
-        api::Owner::Chunk(cell) => ("chunk", lua.create_sequence_from(cell)?),
+pub(super) fn present(lua: &Lua, owner: api::Owner) -> mlua::Result<(&'static str, Value)> {
+    Ok(match owner {
+        api::Owner::Chunk(cell) => {
+            let value = lua.create_sequence_from(cell)?;
+            value.set_readonly(true);
+            ("chunk", Value::Table(value))
+        }
         api::Owner::Entity(id) => (
             "entity",
-            lua.create_sequence_from([id as u32, (id >> 32) as u32])?,
+            Value::UserData(crate::server::script::handles::entity(lua, id)?),
         ),
         api::Owner::Profile(id) => (
             "profile",
-            lua.create_sequence_from([
-                id as u32,
-                (id >> 32) as u32,
-                (id >> 64) as u32,
-                (id >> 96) as u32,
-            ])?,
+            Value::UserData(crate::server::script::handles::profile(lua, id)?),
         ),
-    };
-    value.set_readonly(true);
-    Ok((kind, value))
+    })
+}
+
+fn hex_id(value: &mlua::LuaString, digits: usize) -> Result<u128, &'static str> {
+    let bytes = value.as_bytes();
+    if bytes.len() != digits || !bytes.iter().all(u8::is_ascii_hexdigit) {
+        return Err("owner ID must be a fixed-width hexadecimal string");
+    }
+    u128::from_str_radix(value.to_str().map_err(|_| "invalid owner ID")?.as_ref(), 16)
+        .map_err(|_| "invalid owner ID")
 }

@@ -39,6 +39,10 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
                 fields.set("cell", triple(lua, *cell)?)?;
             }
             if let Some(entity) = entity {
+                fields.set(
+                    "entity",
+                    crate::server::script::handles::entity(lua, *entity)?,
+                )?;
                 fields.set("entity_lo", *entity as u32)?;
                 fields.set("entity_hi", (*entity >> 32) as u32)?;
             }
@@ -62,6 +66,10 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
                     RemovalCause::Burn => "Burn",
                     RemovalCause::AnchoredBreak => "AnchoredBreak",
                 },
+            )?;
+            fields.set(
+                "random",
+                crate::server::script::handles::unit_random(*random),
             )?;
             fields.set("random_lo", *random as u32)?;
             fields.set("random_hi", (*random >> 32) as u32)?;
@@ -94,9 +102,14 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
             tick,
         } => {
             fields.set("kind", "EntityTick")?;
+            fields.set(
+                "entity",
+                crate::server::script::handles::entity(lua, *entity)?,
+            )?;
             fields.set("entity_lo", *entity as u32)?;
             fields.set("entity_hi", (*entity >> 32) as u32)?;
             fields.set("position", triple(lua, *position)?)?;
+            fields.set("tick", crate::server::script::handles::tick(lua, *tick)?)?;
             fields.set("tick_lo", *tick as u32)?;
             fields.set("tick_hi", (*tick >> 32) as u32)?;
         }
@@ -113,6 +126,7 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
             let candidates = lua.create_table()?;
             for (index, &(id, count)) in drops.iter().enumerate() {
                 let candidate = lua.create_table()?;
+                candidate.set("id", crate::server::script::handles::entity(lua, id)?)?;
                 candidate.set("entity_lo", id as u32)?;
                 candidate.set("entity_hi", (id >> 32) as u32)?;
                 candidate.set("count", count)?;

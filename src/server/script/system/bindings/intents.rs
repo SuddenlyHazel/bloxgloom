@@ -22,12 +22,20 @@ pub(super) fn inbox(lua: &Lua, deliveries: &[api::IntentDelivery]) -> mlua::Resu
         source.set_readonly(true);
         let id = lua.create_table()?;
         id.set("source", source)?;
+        id.set(
+            "revision",
+            crate::server::script::handles::revision(lua, delivery.id.revision)?,
+        )?;
         id.set("revision_lo", delivery.id.revision as u32)?;
         id.set("revision_hi", (delivery.id.revision >> 32) as u32)?;
         id.set("ordinal", delivery.id.ordinal)?;
         id.set_readonly(true);
         let message = lua.create_table()?;
         message.set("id", id)?;
+        message.set(
+            "produced_tick",
+            crate::server::script::handles::tick(lua, delivery.produced_tick)?,
+        )?;
         message.set("produced_tick_lo", delivery.produced_tick as u32)?;
         message.set("produced_tick_hi", (delivery.produced_tick >> 32) as u32)?;
         message.set("payload", lua.create_string(&delivery.payload)?)?;

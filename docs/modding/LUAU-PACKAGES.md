@@ -118,9 +118,11 @@ See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
 restrictions. With the generation capability, an entry may also call
 `host.register_generator("example:terrain", 1, "example:terrain")`; its named
-module returns a chunk function using `seed_lo`/`seed_hi`, chunk coordinates,
+module returns a chunk function using chunk coordinates,
 `world_position`, `builtin_terrain_height`, `builtin_base_block`, `random_at`
-and `set_block`. Bump the declared revision whenever its output changes;
+and `set_block`. `random_at(x,y,z,salt?)` returns a deterministic sample in
+`[0,1)`; its optional integer salt is `0..4294967295` and defaults to zero.
+The host consumes the exact world seed internally. Bump the declared revision whenever its output changes;
 `world.meta` rejects incompatible restarts. Scripts run in fresh bounded VMs
 on generation workers and never write neighboring chunks directly.
 Local packages may register one semantic action under the actions capability:
@@ -128,6 +130,35 @@ Local packages may register one semantic action under the actions capability:
 ```lua
 host.register_action("example:shift", 1, "Shift", "item", "bloxgloom:stick", "example:shift")
 ```
+
+### Exact identities and time
+
+Callback entity IDs are immutable host-created `BloxEntityId` handles. Pass
+`entity.id` directly to `entity`, `entity_state`, `update_entity`, `remove_entity`,
+`schedule_entity`, or inventory services. Action/tick events supply `event.entity`;
+pickup candidates supply `drop.id`. An inventory owner is `"player"` or an entity
+ID handle, so a transfer can use `c.transfer_inventory(drop.id,0,'player',0,1)`.
+These values do not grant access: host ownership, finite inventory, read fences
+and transaction checks remain authoritative. Numbers, lookalike tables, printed
+labels and revision tokens are rejected where an entity handle is required.
+
+Compare identities with `==`, use them as table keys, or print exact diagnostic
+labels with `tostring`. Repeated reads of one identity in a VM share a handle;
+the weak handle cache does not retain departed entities. No runtime constructor
+is exposed. Userdata is local to its VM; wire/save identities remain Rust values.
+
+`context.tick`, event ticks and message `produced_tick` are `BloxTick` values.
+Use `earlier:before(later)` or `later:elapsed_since(earlier)` rather than numeric
+halves. Elapsed intervals error if reversed or greater than `2^53`. Revisions are
+`BloxRevision` tokens with equality and `:is_initial()`. A chunk owner updates a
+captured entity with `c.update_entity(e.id,e.revision,state)` or removes it with
+`c.remove_entity(e.id,e.revision)`; the host still checks the captured revision.
+Machine inputs supply exact `tick` and `due` values. Creature ticks and public
+neighbour views supply `id` handles.
+
+Older word fields and validated word-argument forms remain runtime compatibility
+paths for existing modules. They are omitted from the public editor types and
+fixtures. New authoring uses handles; no saved or wire ID format changes.
 
 Its module returns `function(context, event)`, with scoped `block(x,y,z)`,
 `set_block(x,y,z,state)` and exact-stack `transfer(from_slot,to_slot,count)`
@@ -150,9 +181,8 @@ Replies may update owned document text/visibility/state but **cannot** request
 actions. Observations are advisory and coalesced by kind behind a bounded
 queue; overflow or a callback error fails that presentation session.
 For `replica:entities`, `input.entities` is a sorted window of at most 16
-package-owned mobile views with exact `id_lo`, `id_hi`, `key`, and position.
-Each view also has `revision_lo`/`revision_hi`,
-`motion_revision_lo`/`motion_revision_hi`, and the exact binary `public`
+package-owned mobile views with opaque `id` handles, `key`, and position.
+Each view also has opaque `revision` and `motion_revision` tokens, and the exact binary `public`
 payload from the installed server replica. These are readonly callback inputs;
 the creature's private state is never sent to the client. At most 16 views and
 4 KiB of public bytes per view reach one callback.
@@ -161,9 +191,9 @@ authoritative spawn or despawn events. The callback may return at most 16
 commands: `visual` pose offsets, `tint` RGB multipliers, short-lived attached
 `ember` effects, or colored `spark` effects for IDs offered in that input. A
 tint command is
-`{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3}`; each channel is
+`{op='tint',entity=e.id,r=0.2,g=0.8,b=0.3}`; each channel is
 finite and in 0–1. A spark command is
-`{op='spark',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0,r=0.2,g=0.8,b=1,size=0.28,lifetime_ms=1200}`;
+`{op='spark',entity=e.id,x=0,y=0.5,z=0,r=0.2,g=0.8,b=1,size=0.28,lifetime_ms=1200}`;
 offsets are finite in −1–1 blocks and RGB channels are finite in 0–1. A spark's
 optional `size` is 0.05–0.5 blocks (default 0.16), and optional integer
 `lifetime_ms` is 100–2000 (default 850). Embers keep the 850 ms lifetime. Both
@@ -176,7 +206,7 @@ fail that presentation session without applying a partial result.
 For `replica:anchors`, `input.entities` is a separate sorted window of at most
 16 package-owned anchored views. Each view has the same exact ID, key, public
 bytes and revision fields; `position` is the anchor cell center and both motion
-revision words are zero. `input.value` reports that window's total count, while
+revision is initial (`e.motion_revision:is_initial()`). `input.value` reports that window's total count, while
 `input.entered` and `input.left` track its own bounded window. The callback may
 attach `ember` or `spark` effects to offered anchors. `visual` pose and `tint`
 commands remain mobile-only; an anchored target for either rejects the whole
@@ -193,19 +223,20 @@ private owned `entity_state`,
 host's public context permits them.
 `BlockRemoved` supplies the exact `cause` name (`Break`, `Replacement`,
 `SupportLoss`, `WorldEdit`, `Burn`, or `AnchoredBreak`), immutable `previous`
-block descriptor and exact `random_lo`/`random_hi` words. The callback reads
+block descriptor and a deterministic `random` sample in `[0,1)`. The callback reads
 staged block results through `c.block` while the host keeps the original
 preimage and all decision effects in one receipt.
-`entity(id_lo,id_hi)` returns a readonly public projection (ID, type, position,
+`entity(id)` returns a readonly public projection (ID, type, position,
 optional anchor and binary public data), not owned private bytes.
 `nearby_entities(x,y,z,radius)` captures mobile query dependencies, filters
 bucket candidates to the requested spherical radius (0..16), and fails rather
 than truncating above 128 results;
-`anchored_entity_at(x,y,z)` returns two ID halves or nil for absence, including
+`anchored_entity_at(x,y,z)` returns an entity ID handle or nil for absence, including
 footprint cells. Public entity reads reflect staged updates/removals but do not
-invent IDs for staged spawns. `random(x,y,z,sequence_lo,sequence_hi)` returns
-two reproducible 32-bit halves salted by the dispatched handler key; retries
-reproduce the same word without mutable VM state. All query failures poison the
+invent IDs for staged spawns. `random(x,y,z,sequence?)` returns a reproducible
+sample in `[0,1)`, salted by the dispatched handler key. Its optional sequence
+is an integer in `0..4294967295` (default zero); retries reproduce the same
+sample without mutable VM state. All query failures poison the
 whole transaction, even if caught with `pcall`.
 Register exact-length private entity bytes
 and a bounded public prefix with `host.register_entity(key, schema_version,
@@ -317,7 +348,7 @@ The host checks terrain and commits the parent and children atomically; invalid
 lifecycle data rejects the tick.
 `register_creature` may set `reads_neighbours=true` to capture the host's bounded
 public entity view. Tick callbacks then receive `c.neighbours`, a read-only list
-of `{id_lo,id_hi,key,position,public}` records; private neighbour state is never
+of `{id,key,position,public}` records; private neighbour state is never
 included. `wakes_on_terrain_change=false` disables automatic terrain wakes.
 Both declaration options participate in save and client catalog identity.
 
@@ -325,11 +356,11 @@ A package with the owner-systems capability can register one persistent system
 with `host.register_system { key, schema, revision, module, partition,
 max_state_bytes, max_jobs_per_tick, read_world, read_radius_chunks, seeds }`.
 The default `partition='chunk'` retains `{x,y,z,data}` seeds. Entity and profile
-systems use `partition='entity'|'profile'` and seeds `{id={low_word,...},data}`
-with two or four exact unsigned 32-bit words, least significant first. Their
-readonly callback inputs are `c.owner_kind` and `c.owner` with the same words.
-They cannot declare world reads or world effects. `c.wake_entity` and
-`c.wake_profile` carry exact ID words; the host validates destination system
+systems use `partition='entity'|'profile'` and seeds `{id='fixed-width hex',data}`
+with exactly 16 or 32 hexadecimal digits respectively. Their readonly callback
+inputs are `c.owner_kind` and `c.owner`, an entity or profile ID handle.
+They cannot declare world reads or world effects. `c.wake_entity(system,c.owner)`
+and `c.wake_profile(system,c.owner)` carry the exact identity; the host validates destination system
 and partition and commits wakes with the owner WAL receipt.
 With `read_world=true`, `read_radius_chunks=0` (the default) captures the
 owner chunk; `1` captures its 3×3×3 chunk neighborhood. Missing authoritative

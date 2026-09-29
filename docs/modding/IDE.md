@@ -2,7 +2,7 @@
 
 This repository recommends **JohnnyMorganz.luau-lsp** (VS Code extensions panel). Open the repository root as your workspace, install the recommended extension, and reopen a `.luau` package file. The checked-in `.vscode/settings.json` selects the **standard** (non-Roblox) platform, disables Rojo sourcemaps, and loads `types/bloxgloom.d.luau` as `@bloxgloom`. These workspace settings affect only editors that use them; they do not alter Bloxgloom's runtime or require Rojo. Other editors can point luau-lsp at the same definition file.
 
-The definition file exports **type aliases**, not runtime globals. Annotate the host-supplied callback arguments in your modules, for example:
+The definition file supplies **type aliases and nominal handle types**, not runtime globals. Annotate the host-supplied callback arguments in your modules, for example:
 
 ```luau
 return function(host: BloxStartupHost)
@@ -11,18 +11,38 @@ end
 ```
 
 The definition file uses `---` documentation comments directly above types,
-fields and methods. Hover a typed field such as `entity.id_lo` or a method such
+fields and methods. Hover a typed field such as `entity.id` or a method such
 as `context.inventory` to see its meaning, units and indexing conventions.
 These comments are supported by [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp#supported-features)
 and were checked through actual hover requests with the installed language server.
 Use **Luau: Reload Language Server** after changing global definitions.
 
-For example, `id_lo` and `id_hi` are the low and high unsigned 32-bit words of
-one 64-bit entity identity, each in `0..4294967295`. Keep both words together
-and pass them unchanged to entity services. Luau numbers cannot represent every
-64-bit integer exactly, so reconstructing an ID as `id_hi * 2^32 + id_lo` can
-silently identify the wrong entity. Tick and revision pairs use the same word
-encoding but represent simulation time and state versions respectively.
+Entity IDs, revisions and ticks are immutable host-created values, with distinct
+editor types (`BloxEntityId`, `BloxRevision`, `BloxTick`). They preserve the full
+Rust value without exposing numeric halves. Compare IDs/revisions with `==`, use
+IDs as table keys, and use `tostring` for exact diagnostic labels. Passing a
+revision where an entity ID is expected is a type error and a runtime error.
+The handles grant no permissions: server ownership and transaction checks apply.
+
+```luau
+-- An entity view supplies its identity directly.
+local current = context.entity(entity.id)
+context.update_entity(entity.id, newState)
+
+-- Compare exact simulation time without floating-point reconstruction.
+if message.produced_tick:before(context.tick) then
+    local elapsed = context.tick:elapsed_since(message.produced_tick)
+end
+```
+
+Host callback services use **dot calls**, while handle helpers use **colon
+calls**. Tick intervals must be nonnegative and no greater than `2^53`; larger
+intervals error rather than silently rounding. Revision tokens support
+`:is_initial()` for the zero version (including anchored motion revisions).
+Generation and gameplay random helpers accept an optional small integer salt or
+sequence and return a deterministic number in `[0, 1)`; the host consumes its
+exact world seed internally. Startup component fingerprints use fixed-width
+hexadecimal strings. See [Luau packages](LUAU-PACKAGES.md) for the runtime contract.
 
 For the other callbacks, use `BloxGenerationContext`, `BloxGameplayContext` with `BloxActionEvent` (only for `ActionRequested`), `BloxOwnerContext`, `BloxClientStartupHost`, or `BloxUiInput`. A UI handler can annotate its return value as `{ BloxUiCommand }`. Owner planners return `(binary_state: string, delay_ticks: number)`; their readonly `inbox` carries `BloxOwnerIntentDelivery` values. Declarations may request radius-one chunk reads and same-system durable intent delivery, but the editor types do not prove authority or bounds. All methods on these callback tables are **dot calls**, not colon calls. Namespaced keys, revision ranges, capabilities in `package.txt`, state byte limits, ownership, and host budgets are still checked by Bloxgloom, not proven by these types. The `BloxActionEvent` alias does not describe other `register_handler` event shapes; consult the host binding for those rather than treating them as action events.
 

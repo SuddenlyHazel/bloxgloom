@@ -6,6 +6,7 @@ pub(in crate::server::script) mod creature;
 mod entities;
 mod gameplay;
 mod generation;
+pub(crate) mod handles;
 mod imports;
 pub(in crate::server::script) mod machine;
 pub mod package;

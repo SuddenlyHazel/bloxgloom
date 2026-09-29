@@ -112,3 +112,44 @@ fn spark_commands_preserve_defaults_and_bounded_custom_appearance() {
         );
     }
 }
+
+#[test]
+fn replica_commands_roundtrip_exact_handles_and_reject_forged_or_wrong_kind_values() {
+    let id = u64::MAX;
+    let request = |target: &str| Request {
+        script: Arc::new(Script {
+            module: "demo:visual".into(),
+            source: format!(
+                "return function(input) local e=input.entities[1]; assert(e.id == input.entered[1].id); return {{{{op='tint',entity={target},r=0.5,g=1,b=0.5}}}} end"
+            ),
+        }),
+        sequence: 1,
+        event: "replica:entities".into(),
+        value: "1".into(),
+        state: String::new(),
+        texts: vec![],
+        replica: true,
+        entities: vec![EntityView {
+            id,
+            key: "demo:creature".into(),
+            position: [0.0, 0.0, 0.0],
+            revision: u64::MAX,
+            motion_revision: u64::MAX - 1,
+            public: vec![],
+        }],
+        entered: vec![id],
+        left: vec![],
+    };
+    assert!(
+        matches!(run(request("e.id")).unwrap().as_slice(), [Command::Tint(actual, color)] if *actual == id && *color == [0.5, 1.0, 0.5])
+    );
+    for forged in [
+        "e.revision",
+        "e.motion_revision",
+        "tostring(e.id)",
+        "{id=e.id}",
+        "42",
+    ] {
+        assert!(run(request(forged)).is_err(), "accepted {forged}");
+    }
+}

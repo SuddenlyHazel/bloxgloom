@@ -25,8 +25,16 @@ pub(super) fn invoke(
     host.set("owner", owner)?;
     host.set("owner_kind", kind)?;
     host.set("data", lua.create_string(context.data)?)?;
+    host.set(
+        "tick",
+        crate::server::script::handles::tick(lua, context.tick)?,
+    )?;
     host.set("tick_lo", context.tick as u32)?;
     host.set("tick_hi", (context.tick >> 32) as u32)?;
+    host.set(
+        "revision",
+        crate::server::script::handles::revision(lua, context.revision)?,
+    )?;
     host.set("revision_lo", context.revision as u32)?;
     host.set("revision_hi", (context.revision >> 32) as u32)?;
     host.set("inbox", intents::inbox(lua, inbox)?)?;
@@ -34,8 +42,16 @@ pub(super) fn invoke(
         let list = lua.create_table_with_capacity(entities.len(), 0)?;
         for (index, entity) in entities.iter().enumerate() {
             let value = lua.create_table()?;
+            value.set(
+                "id",
+                crate::server::script::handles::entity(lua, entity.id)?,
+            )?;
             value.set("id_lo", entity.id as u32)?;
             value.set("id_hi", (entity.id >> 32) as u32)?;
+            value.set(
+                "revision",
+                crate::server::script::handles::revision(lua, entity.revision)?,
+            )?;
             value.set("revision_lo", entity.revision as u32)?;
             value.set("revision_hi", (entity.revision >> 32) as u32)?;
             value.set("key", entity.key.as_str())?;
@@ -220,8 +236,20 @@ pub(super) fn invoke(
                         if !capabilities.entity_mutations {
                             return Err("system has not declared entity mutation");
                         }
-                        let (id, revision) =
-                            entity_identity(id_lo, id_hi, revision_lo, revision_hi)?;
+                        let (id, revision, state) = if matches!(id_lo, Value::UserData(_)) {
+                            if !revision_hi.is_nil() || !state.is_nil() {
+                                return Err("update_entity expects entity, revision, state");
+                            }
+                            (
+                                crate::server::script::handles::entity_value(id_lo)?,
+                                crate::server::script::handles::revision_value(id_hi)?,
+                                revision_lo,
+                            )
+                        } else {
+                            let (id, revision) =
+                                entity_identity(id_lo, id_hi, revision_lo, revision_hi)?;
+                            (id, revision, state)
+                        };
                         captured_entity(context, id, revision)?;
                         let Value::String(state) = state else {
                             return Err("entity state must be a binary string");
@@ -255,8 +283,17 @@ pub(super) fn invoke(
                         if !capabilities.entity_mutations {
                             return Err("system has not declared entity mutation");
                         }
-                        let (id, revision) =
-                            entity_identity(id_lo, id_hi, revision_lo, revision_hi)?;
+                        let (id, revision) = if matches!(id_lo, Value::UserData(_)) {
+                            if !revision_lo.is_nil() || !revision_hi.is_nil() {
+                                return Err("remove_entity expects entity, revision");
+                            }
+                            (
+                                crate::server::script::handles::entity_value(id_lo)?,
+                                crate::server::script::handles::revision_value(id_hi)?,
+                            )
+                        } else {
+                            entity_identity(id_lo, id_hi, revision_lo, revision_hi)?
+                        };
                         captured_entity(context, id, revision)?;
                         let mut changes = entity_changes.borrow_mut();
                         if changes.len() >= 16
@@ -290,10 +327,17 @@ pub(super) fn invoke(
                     push_wake(
                         &wakes,
                         system,
-                        api::Owner::Entity(super::owners::entity(
-                            super::owners::word(lo)?,
-                            super::owners::word(hi)?,
-                        )),
+                        api::Owner::Entity(if matches!(lo, Value::UserData(_)) {
+                            if !hi.is_nil() {
+                                return Err("wake_entity expects one entity handle");
+                            }
+                            crate::server::script::handles::entity_value(lo)?
+                        } else {
+                            super::owners::entity(
+                                super::owners::word(lo)?,
+                                super::owners::word(hi)?,
+                            )
+                        }),
                     )
                 })
             })?,
@@ -306,12 +350,19 @@ pub(super) fn invoke(
                         push_wake(
                             &wakes,
                             system,
-                            api::Owner::Profile(super::owners::profile([
-                                super::owners::word(a)?,
-                                super::owners::word(b)?,
-                                super::owners::word(c)?,
-                                super::owners::word(d)?,
-                            ])),
+                            api::Owner::Profile(if matches!(a, Value::UserData(_)) {
+                                if !b.is_nil() || !c.is_nil() || !d.is_nil() {
+                                    return Err("wake_profile expects one profile handle");
+                                }
+                                crate::server::script::handles::profile_value(a)?
+                            } else {
+                                super::owners::profile([
+                                    super::owners::word(a)?,
+                                    super::owners::word(b)?,
+                                    super::owners::word(c)?,
+                                    super::owners::word(d)?,
+                                ])
+                            }),
                         )
                     })
                 },

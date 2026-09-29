@@ -33,8 +33,16 @@ pub(super) fn invoke(
     let host = lua.create_table()?;
     host.set("event", "tick")?;
     host.set("data", lua.create_string(private)?)?;
+    host.set(
+        "id",
+        crate::server::script::handles::entity(lua, context.id)?,
+    )?;
     host.set("id_lo", context.id as u32)?;
     host.set("id_hi", (context.id >> 32) as u32)?;
+    host.set(
+        "tick",
+        crate::server::script::handles::tick(lua, context.tick)?,
+    )?;
     host.set("tick_lo", context.tick as u32)?;
     host.set("tick_hi", (context.tick >> 32) as u32)?;
     let position = lua.create_sequence_from(context.position)?;
@@ -43,6 +51,10 @@ pub(super) fn invoke(
     let neighbours = lua.create_table()?;
     for (index, neighbour) in context.neighbours.iter().enumerate() {
         let record = lua.create_table()?;
+        record.set(
+            "id",
+            crate::server::script::handles::entity(lua, neighbour.id)?,
+        )?;
         record.set("id_lo", neighbour.id as u32)?;
         record.set("id_hi", (neighbour.id >> 32) as u32)?;
         record.set("key", neighbour.key)?;

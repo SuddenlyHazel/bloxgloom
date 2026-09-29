@@ -22,11 +22,14 @@ const HANDLER: &str = r#"return function(c,e)
         if entity.entity_type == 'demo:marker' then marker = entity end
     end
     if marker then
-        assert(c.update_entity(marker.id_lo,marker.id_hi,string.char(2)))
-        assert(c.entity_state(marker.id_lo,marker.id_hi) == string.char(2))
-        assert(c.schedule_entity(marker.id_lo,marker.id_hi,100000))
+        assert(c.update_entity(marker.id,string.char(2)))
+        assert(c.entity_state(marker.id) == string.char(2))
+        assert(c.schedule_entity(marker.id,100000))
     else
         c.spawn_entity('demo:marker',6.5,80.5,0.5,string.char(1))
+    end
+    if string.byte(e.arguments,1) == 2 then
+        pcall(function() c.entity_state(c.tick) end)
     end
     if string.byte(e.arguments,1) == 1 then
         pcall(function() c.spawn_stack(8.5,80.5,0.5,{item='bloxgloom:stick',count=129},0) end)
@@ -58,6 +61,11 @@ fn luau_world_entity_inventory_drop_and_schedule_are_one_retryable_receipt() {
         assert!(peer.send(&first).0);
         assert!(peer.send(&first).0, "duplicate receipt reapplied");
         peer.inventory_at(2);
+        let forged = peer.request(2);
+        assert!(
+            !peer.send(&forged).0,
+            "wrong-kind handle committed staged changes"
+        );
         let failed = peer.request(1);
         assert!(!peer.send(&failed).0, "caught invalid stack committed");
     });

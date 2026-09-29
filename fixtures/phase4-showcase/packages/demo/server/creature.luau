@@ -1,4 +1,5 @@
-return function(context)
+--!strict
+return function(context: BloxCreatureContext)
     if context.event == 'interact' then
         assert(context.request == 'pat')
         local pats = tonumber(context.data:match('^happy:(%d+)$')) or 0

@@ -17,9 +17,9 @@
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
 //! delay is 1..u32::MAX and becomes an absolute durable deadline. Context has
-//! readonly owner, owner_kind, data, tick_lo/hi and revision_lo/hi. Chunk owners
-//! retain owner[1..3] coordinates. Entity/profile owners use two/four exact u32
-//! words respectively, declared as seed `id={...}` with `partition`.
+//! readonly owner, owner_kind, data, tick and revision handles. Chunk owners
+//! retain owner[1..3] coordinates. Entity/profile owners use nominal handles,
+//! declared as fixed-width hexadecimal seed IDs with `partition`.
 //! Dot methods: block(x,y,z) -> state key (64 calls),
 //! edit(x,y,z,before,after) (16 conditional edits), wake(system,x,y,z) (32).
 //! Reads see the captured preimage, not earlier proposed edits. Reads/edits
@@ -41,8 +41,8 @@
 //! Optional `accepts_intents=true` requires `read_world=true`. It exposes a
 //! readonly `c.inbox` (at most 8 deliveries) and `c.send(x,y,z,payload)` (8 sends,
 //! 512 bytes each), targeting only this registered system. Each delivery has
-//! readonly `id={source={x,y,z},revision_lo,revision_hi,ordinal}`, exact
-//! `produced_tick_lo/hi`, and binary `payload`. Successful plans acknowledge the
+//! readonly `id={source={x,y,z},revision,ordinal}`, exact
+//! `produced_tick` handles, and binary `payload`. Successful plans acknowledge the
 //! entire inbox in the same WAL record as bytes, edits, wakes, and outgoing mail.
 //! Caught send errors poison the plan. Optional `intent_bootstrap='bytes'` is a
 //! constant initial state for absent destinations, validated and fingerprinted

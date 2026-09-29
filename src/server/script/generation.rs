@@ -5,9 +5,10 @@
 //! `requires bloxgloom:generation/v1` and a declared own-package terrain module.
 //! That module returns `function(c) ... end`; dot-call methods are
 //! `world_position(lx, ly, lz)`, `builtin_terrain_height(x, z)`,
-//! `builtin_base_block(x, y, z)`, `random_at(x, y, z, salt_lo, salt_hi)` and
-//! `set_block(lx, ly, lz, state_key)`. Seed and random values use unsigned low/high
-//! u32 halves. Coordinates are exact integers in public Context bounds.
+//! `builtin_base_block(x, y, z)`, `random_at(x, y, z, salt?)` and
+//! `set_block(lx, ly, lz, state_key)`. The host consumes its exact world seed;
+//! random calls return deterministic [0,1) samples. Coordinates are exact
+//! integers in public Context bounds.
 //!
 //! The existing persisted key/revision identity is authoritative, not a source
 //! hash. Authors must bump revision for any algorithm/dependency/config change
@@ -128,8 +129,8 @@ impl Contributor for ScriptContributor {
 
 pub(super) fn invoke(lua: &Lua, entry: Function, context: Context) -> mlua::Result<Output> {
     let host = lua.create_table()?;
-    // Exact even for seeds above 2^53. All exposed coordinates fit exactly in
-    // Luau doubles; random_at returns the same (low, high) u32 pair convention.
+    // The host consumes the exact world seed internally. Legacy seed/word
+    // fields remain available to older modules; new random calls return [0,1).
     host.set("seed_lo", context.seed as u32)?;
     host.set("seed_hi", (context.seed >> 32) as u32)?;
     for (name, axis) in ["chunk_x", "chunk_y", "chunk_z"]
@@ -173,11 +174,28 @@ pub(super) fn invoke(lua: &Lua, entry: Function, context: Context) -> mlua::Resu
         "random_at",
         lua.create_function(
             move |_, (x, y, z, lo, hi): (Value, Value, Value, Value, Value)| {
-                let salt = integer(lo, 0, i64::from(u32::MAX)).map_err(runtime)? as u64
-                    | ((integer(hi, 0, i64::from(u32::MAX)).map_err(runtime)? as u64) << 32);
+                let legacy = !hi.is_nil();
+                let salt = if legacy {
+                    integer(lo, 0, i64::from(u32::MAX)).map_err(runtime)? as u64
+                        | ((integer(hi, 0, i64::from(u32::MAX)).map_err(runtime)? as u64) << 32)
+                } else if lo.is_nil() {
+                    0
+                } else {
+                    integer(lo, 0, i64::from(u32::MAX)).map_err(runtime)? as u64
+                };
                 let value =
                     context.random_at([coordinate(x)?, coordinate(y)?, coordinate(z)?], salt);
-                Ok((value as u32, (value >> 32) as u32))
+                Ok(if legacy {
+                    (
+                        Value::Integer((value as u32).into()),
+                        Value::Integer(((value >> 32) as u32).into()),
+                    )
+                } else {
+                    (
+                        Value::Number(crate::server::script::handles::unit_random(value)),
+                        Value::Nil,
+                    )
+                })
             },
         )?,
     )?;

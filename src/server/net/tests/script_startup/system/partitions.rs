@@ -4,23 +4,23 @@ use super::*;
 #[test]
 fn entity_and_profile_owner_partitions_wake_commit_join_and_restart() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
-    for (kind, words, wake, owner) in [
+    for (kind, hex, wake, owner) in [
         (
             "entity",
-            "2882400001,305419896",
-            "c.wake_entity('demo:clock',c.owner[1],c.owner[2])",
+            "12345678abcdef01",
+            "c.wake_entity('demo:clock',c.owner)",
             OwnerKey::Entity(0x1234_5678_abcd_ef01),
         ),
         (
             "profile",
-            "1,2,3,4",
-            "c.wake_profile('demo:clock',c.owner[1],c.owner[2],c.owner[3],c.owner[4])",
+            "00000004000000030000000200000001",
+            "c.wake_profile('demo:clock',c.owner)",
             OwnerKey::Profile(1 | (2 << 32) | (3 << 64) | (4 << 96)),
         ),
     ] {
         let fixture = Fixture::new();
         let register = format!(
-            "return function(h) h.register_system{{key='demo:clock',schema=1,revision=1,module='demo:clock',partition='{kind}',max_state_bytes=8,max_jobs_per_tick=1,seeds={{{{id={{{words}}},data='new'}}}}}} end"
+            "return function(h) h.register_system{{key='demo:clock',schema=1,revision=1,module='demo:clock',partition='{kind}',max_state_bytes=8,max_jobs_per_tick=1,seeds={{{{id='{hex}',data='new'}}}}}} end"
         );
         let source = format!(
             "return function(c) assert(c.owner_kind == '{kind}'); if c.data == 'new' then {wake}; return 'done',10000 end assert(c.data == 'done'); return 'woken',10000 end"

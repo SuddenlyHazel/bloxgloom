@@ -5,7 +5,7 @@ fn luau_component_schema_rejects_wrong_payload_and_persists_exact_bytes() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
     fixture.action(
-        "return function(h) h.register_item('demo:token','Token','bloxgloom:stone',{components={version=1,fingerprint_lo=42,fingerprint_hi=7,max_bytes=4,required=true}}); h.register_action('demo:shift',1,'Grant','empty',nil,'demo:action') end",
+        "return function(h) h.register_item('demo:token','Token','bloxgloom:stone',{components={version=1,fingerprint='000000070000002a',max_bytes=4,required=true}}); h.register_action('demo:shift',1,'Grant','empty',nil,'demo:action') end",
         "return function(c,e) if string.byte(e.arguments,1) == 1 then pcall(function() c.give('player',{item='demo:token',count=1,components={version=2,bytes='bad'}}) end) else assert(c.give('player',{item='demo:token',count=1,components={version=1,bytes=string.char(0,255)}})) end end",
     );
     let manifest = fixture.0.join("packages/demo/package.txt");
@@ -49,14 +49,14 @@ fn luau_component_schema_rejects_wrong_payload_and_persists_exact_bytes() {
         .unwrap();
     assert_eq!(stack.components.unwrap().bytes.as_ref(), [0, 255]);
     let saved_map = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    drop(state);
     let main = fixture.0.join("packages/demo/main.luau");
     let source = std::fs::read_to_string(&main).unwrap();
-    std::fs::write(
-        main,
-        source.replace("fingerprint_lo=42", "fingerprint_lo=43"),
-    )
-    .unwrap();
-    assert!(fixture.open().is_err());
+    std::fs::write(main, source.replace("000000070000002a", "000000070000002b")).unwrap();
+    assert_eq!(
+        fixture.open().err().unwrap().kind(),
+        io::ErrorKind::InvalidData
+    );
     assert_eq!(
         std::fs::read(fixture.0.join("save/content.map")).unwrap(),
         saved_map
@@ -327,9 +327,9 @@ fn luau_pickup_host_credit_eligibility_permissions_and_caught_errors_rollback() 
     // Errors after valid staged mutations must never admit a partial candidate.
     // Cases also prove script access cannot replace the host candidate authority.
     for (body, expected) in [
-        ("local s=c.take(e.drops[1],0,1)", "did not credit"),
+        ("local s=c.take(e.drops[1].id,0,1)", "did not credit"),
         (
-            "local s=c.take(e.drops[1],0,1); assert(c.give('player',{item=s.item,count=1}))",
+            "local s=c.take(e.drops[1].id,0,1); assert(c.give('player',{item=s.item,count=1}))",
             "without crediting",
         ),
         (
@@ -341,19 +341,19 @@ fn luau_pickup_host_credit_eligibility_permissions_and_caught_errors_rollback() 
             "out of pickup reach",
         ),
         (
-            "assert(c.transfer_inventory(e.drops[1],0,'player',0,1)); error('abort pickup')",
+            "assert(c.transfer_inventory(e.drops[1].id,0,'player',0,1)); error('abort pickup')",
             "abort pickup",
         ),
         (
-            "assert(c.transfer_inventory(e.drops[1],0,'player',0,1)); pcall(function() c.take('player',-1,1) end)",
+            "assert(c.transfer_inventory(e.drops[1].id,0,'player',0,1)); pcall(function() c.take('player',-1,1) end)",
             "integer",
         ),
         (
-            "assert(c.transfer_inventory(e.drops[1],0,'player',0,1)); pcall(function() c.inventory({entity_lo=3,entity_hi=0}) end)",
+            "assert(c.transfer_inventory(e.drops[1].id,0,'player',0,1)); pcall(function() c.inventory({entity_lo=3,entity_hi=0}) end)",
             "outside interaction radius",
         ),
         (
-            "assert(c.transfer_inventory(e.drops[1],0,'player',0,1)); pcall(function() c.entity_state(e.drops[1].entity_lo,e.drops[1].entity_hi) end)",
+            "assert(c.transfer_inventory(e.drops[1].id,0,'player',0,1)); pcall(function() c.entity_state(e.drops[1].id) end)",
             "no general gameplay state",
         ),
     ] {

@@ -14,14 +14,31 @@ pub(super) fn install<'scope, 'env: 'scope>(
         "random",
         scope.create_function(
             |_, (x, y, z, lo, hi): (Value, Value, Value, Value, Value)| {
+                let legacy = !hi.is_nil();
                 checked(rejected, || {
-                    context.borrow_mut().random(
-                        cell_at(x, y, z)?,
+                    let sequence = if legacy {
                         integer(lo, 0, u32::MAX.into()).map_err(invalid)? as u64
-                            | ((integer(hi, 0, u32::MAX.into()).map_err(invalid)? as u64) << 32),
-                    )
+                            | ((integer(hi, 0, u32::MAX.into()).map_err(invalid)? as u64) << 32)
+                    } else if lo.is_nil() {
+                        0
+                    } else {
+                        integer(lo, 0, u32::MAX.into()).map_err(invalid)? as u64
+                    };
+                    context.borrow_mut().random(cell_at(x, y, z)?, sequence)
                 })
-                .map(|word| (word as u32, (word >> 32) as u32))
+                .map(|word| {
+                    if legacy {
+                        (
+                            Value::Integer((word as u32).into()),
+                            Value::Integer(((word >> 32) as u32).into()),
+                        )
+                    } else {
+                        (
+                            Value::Number(crate::server::script::handles::unit_random(word)),
+                            Value::Nil,
+                        )
+                    }
+                })
             },
         )?,
     )?;
@@ -58,11 +75,15 @@ pub(super) fn install<'scope, 'env: 'scope>(
     )?;
     host.set(
         "anchored_entity_at",
-        scope.create_function(|_, (x, y, z): (Value, Value, Value)| {
+        scope.create_function(|lua, (x, y, z): (Value, Value, Value)| {
             checked(rejected, || {
                 context.borrow_mut().anchored_entity_at(cell_at(x, y, z)?)
             })
-            .map(|id| (id.map(|id| id as u32), id.map(|id| (id >> 32) as u32)))
+            .and_then(|id| {
+                id.map(|id| crate::server::script::handles::entity(lua, id))
+                    .transpose()
+            })
+            .inspect_err(|error| latch(rejected, error))
         })?,
     )?;
     Ok(())
@@ -83,6 +104,10 @@ fn number(value: Value) -> Result<f32, Error> {
 
 fn view(lua: &Lua, entity: &Entity) -> mlua::Result<Table> {
     let result = lua.create_table()?;
+    result.set(
+        "id",
+        crate::server::script::handles::entity(lua, entity.id)?,
+    )?;
     result.set("id_lo", entity.id as u32)?;
     result.set("id_hi", (entity.id >> 32) as u32)?;
     result.set("entity_type", entity.entity_type.as_str())?;

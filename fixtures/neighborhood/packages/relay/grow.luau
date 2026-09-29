@@ -11,8 +11,7 @@ return function(c: BloxOwnerContext): (string, number)
     if c.data == 'new' then
         assert(#c.inbox == 1)
         local message = c.inbox[1]
-        assert(message.produced_tick_hi < c.tick_hi or
-            (message.produced_tick_hi == c.tick_hi and message.produced_tick_lo < c.tick_lo))
+        assert(message.produced_tick:before(c.tick))
         local before = c.block(34, 80, 2)
         if before == message.payload and before == 'bloxgloom:air' then
             c.edit(34, 80, 2, before, 'bloxgloom:glowstone')

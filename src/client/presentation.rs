@@ -156,11 +156,20 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
         let entities = lua.create_table()?;
         for (index, entity) in request.entities.iter().enumerate() {
             let view = lua.create_table()?;
+            view.raw_set("id", crate::server::script_handles::entity(lua, entity.id)?)?;
             view.raw_set("id_lo", entity.id as u32)?;
             view.raw_set("id_hi", (entity.id >> 32) as u32)?;
             view.raw_set("key", entity.key.as_str())?;
+            view.raw_set(
+                "revision",
+                crate::server::script_handles::revision(lua, entity.revision)?,
+            )?;
             view.raw_set("revision_lo", entity.revision as u32)?;
             view.raw_set("revision_hi", (entity.revision >> 32) as u32)?;
+            view.raw_set(
+                "motion_revision",
+                crate::server::script_handles::revision(lua, entity.motion_revision)?,
+            )?;
             view.raw_set("motion_revision_lo", entity.motion_revision as u32)?;
             view.raw_set("motion_revision_hi", (entity.motion_revision >> 32) as u32)?;
             view.raw_set("public", lua.create_string(&entity.public)?)?;
@@ -176,6 +185,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             let list = lua.create_table_with_capacity(ids.len(), 0)?;
             for (index, id) in ids.into_iter().enumerate() {
                 let value = lua.create_table()?;
+                value.raw_set("id", crate::server::script_handles::entity(lua, id)?)?;
                 value.raw_set("id_lo", id as u32)?;
                 value.raw_set("id_hi", (id >> 32) as u32)?;
                 value.set_readonly(true);
@@ -238,9 +248,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                     Command::Action(text(&command, "key", 129)?, arguments)
                 }
                 "visual" if request.replica => {
-                    let lo = word(&command, "id_lo")?;
-                    let hi = word(&command, "id_hi")?;
-                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let id = command_entity(&command)?;
                     let pose = [
                         bounded_float(
                             &command,
@@ -254,9 +262,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                     Command::Visual(id, pose)
                 }
                 "tint" if request.replica => {
-                    let lo = word(&command, "id_lo")?;
-                    let hi = word(&command, "id_hi")?;
-                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let id = command_entity(&command)?;
                     let tint = [
                         bounded_float(&command, "r", 0.0, 1.0)?,
                         bounded_float(&command, "g", 0.0, 1.0)?,
@@ -265,9 +271,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                     Command::Tint(id, tint)
                 }
                 "ember" if request.replica => {
-                    let lo = word(&command, "id_lo")?;
-                    let hi = word(&command, "id_hi")?;
-                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let id = command_entity(&command)?;
                     let offset = [
                         bounded_float(&command, "x", -1.0, 1.0)?,
                         bounded_float(&command, "y", -1.0, 1.0)?,
@@ -276,9 +280,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                     Command::Ember(id, offset)
                 }
                 "spark" if request.replica => {
-                    let lo = word(&command, "id_lo")?;
-                    let hi = word(&command, "id_hi")?;
-                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let id = command_entity(&command)?;
                     let offset = [
                         bounded_float(&command, "x", -1.0, 1.0)?,
                         bounded_float(&command, "y", -1.0, 1.0)?,
@@ -373,4 +375,20 @@ fn optional_bounded_float(
     } else {
         bounded_float(table, key, min, max)
     }
+}
+
+// Decode nominal handles without invoking script metamethods. Legacy numeric
+// fields remain accepted for older modules, with the same raw exact-word checks.
+fn command_entity(command: &mlua::Table) -> mlua::Result<u64> {
+    let entity = command.raw_get::<mlua::Value>("entity")?;
+    if !entity.is_nil() {
+        return crate::server::script_handles::entity_value(entity).map_err(|_| invalid());
+    }
+    let lo = word(command, "id_lo")?;
+    let hi = word(command, "id_hi")?;
+    let id = u64::from(lo) | (u64::from(hi) << 32);
+    if id == 0 {
+        return Err(invalid());
+    }
+    Ok(id)
 }

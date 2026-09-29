@@ -1,11 +1,11 @@
 //! Borrowed callbacks are invalidated at scope exit, even if Lua retains one in
 //! a module table/coroutine. Host operation and VM budgets bound all work.
 //! Additional dot methods: spawn_drop(x,y,z,item,count,delay_ms),
-//! spawn_entity(key,x,y,z,binary_state), entity_state(id_lo,id_hi),
-//! update_entity(id_lo,id_hi,binary_state), remove_entity(id_lo,id_hi),
-//! schedule_entity(id_lo,id_hi,delay_ticks_or_nil). State strings are at most
+//! spawn_entity(key,x,y,z,binary_state), entity_state(id),
+//! update_entity(id,binary_state), remove_entity(id),
+//! schedule_entity(id,delay_ticks_or_nil). State strings are at most
 //! u16::MAX bytes before host copying; the registered schema may be stricter.
-//! IDs are exact nonzero u64s. Delay is 1..100000 ticks; nil suspends. Host
+//! IDs are immutable handles containing exact nonzero u64s. Delay is 1..100000 ticks; nil suspends. Host
 //! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
@@ -20,6 +20,10 @@ pub(super) fn invoke(
 ) -> mlua::Result<()> {
     let fields = events::fields(lua, event)?;
     let host = lua.create_table()?;
+    host.set(
+        "tick",
+        crate::server::script::handles::tick(lua, context.tick())?,
+    )?;
     host.set("tick_lo", context.tick() as u32)?;
     host.set("tick_hi", (context.tick() >> 32) as u32)?;
     if let Some(position) = context.player_position() {
@@ -163,9 +167,14 @@ pub(super) fn invoke(
             "update_entity",
             scope.create_function(|_, (lo, hi, state): (Value, Value, Value)| {
                 checked(rejected, || {
+                    let (id, state) = if matches!(lo, Value::UserData(_)) && state.is_nil() {
+                        (entity_id(lo, Value::Nil)?, hi)
+                    } else {
+                        (entity_id(lo, hi)?, state)
+                    };
                     context
                         .borrow_mut()
-                        .update_entity(entity_id(lo, hi)?, &state_bytes(state)?.as_bytes())
+                        .update_entity(id, &state_bytes(state)?.as_bytes())
                 })
             })?,
         )?;
@@ -181,14 +190,17 @@ pub(super) fn invoke(
             "schedule_entity",
             scope.create_function(|_, (lo, hi, delay): (Value, Value, Value)| {
                 checked(rejected, || {
+                    let (id, delay) = if matches!(lo, Value::UserData(_)) && delay.is_nil() {
+                        (entity_id(lo, Value::Nil)?, hi)
+                    } else {
+                        (entity_id(lo, hi)?, delay)
+                    };
                     let delay = if delay.is_nil() {
                         None
                     } else {
                         Some(integer(delay, 1, 100_000).map_err(invalid)? as u32)
                     };
-                    context
-                        .borrow_mut()
-                        .schedule_entity(entity_id(lo, hi)?, delay)
+                    context.borrow_mut().schedule_entity(id, delay)
                 })
             })?,
         )?;
@@ -224,6 +236,12 @@ fn cell_at(x: Value, y: Value, z: Value) -> Result<Cell, Error> {
 }
 
 pub(super) fn entity_id(lo: Value, hi: Value) -> Result<u64, Error> {
+    if matches!(lo, Value::UserData(_)) {
+        if !hi.is_nil() {
+            return Err(invalid("entity handle takes one argument"));
+        }
+        return crate::server::script::handles::entity_value(lo).map_err(invalid);
+    }
     let lo = integer(lo, 0, u32::MAX.into()).map_err(invalid)? as u64;
     let hi = integer(hi, 0, u32::MAX.into()).map_err(invalid)? as u64;
     let id = lo | (hi << 32);

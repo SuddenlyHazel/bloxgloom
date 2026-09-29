@@ -110,6 +110,7 @@ fn component_schema(value: Value) -> Result<Components, &'static str> {
         };
         if ![
             b"version".as_slice(),
+            b"fingerprint",
             b"fingerprint_lo",
             b"fingerprint_hi",
             b"max_bytes",
@@ -126,20 +127,43 @@ fn component_schema(value: Value) -> Result<Components, &'static str> {
             .map_err(|_| "invalid component schema")
     };
     let version = integer(get("version")?, 1, u16::MAX.into())? as u16;
-    let lo = integer(get("fingerprint_lo")?, 0, u32::MAX.into())? as u64;
-    let hi = integer(get("fingerprint_hi")?, 0, u32::MAX.into())? as u64;
+    let fingerprint = match get("fingerprint")? {
+        Value::Nil => {
+            let lo = integer(get("fingerprint_lo")?, 0, u32::MAX.into())? as u64;
+            let hi = integer(get("fingerprint_hi")?, 0, u32::MAX.into())? as u64;
+            lo | (hi << 32)
+        }
+        Value::String(value) => {
+            if !get("fingerprint_lo")?.is_nil() || !get("fingerprint_hi")?.is_nil() {
+                return Err("component fingerprint cannot mix encodings");
+            }
+            let bytes = value.as_bytes();
+            if bytes.len() != 16 || !bytes.iter().all(u8::is_ascii_hexdigit) {
+                return Err("component fingerprint must be 16 hexadecimal digits");
+            }
+            u64::from_str_radix(
+                value
+                    .to_str()
+                    .map_err(|_| "invalid component fingerprint")?
+                    .as_ref(),
+                16,
+            )
+            .map_err(|_| "invalid component fingerprint")?
+        }
+        _ => return Err("component fingerprint must be a hexadecimal string"),
+    };
     let max_bytes = integer(get("max_bytes")?, 1, 1024)? as u16;
     let required = match get("required")? {
         Value::Nil => false,
         Value::Boolean(value) => value,
         _ => return Err("component required must be boolean"),
     };
-    if lo == 0 && hi == 0 {
+    if fingerprint == 0 {
         return Err("component fingerprint must be nonzero");
     }
     Ok(Components::Opaque {
         version,
-        fingerprint: lo | (hi << 32),
+        fingerprint,
         max_bytes,
         required,
     })
@@ -186,3 +210,6 @@ fn drop_policy(value: Value) -> Result<DropPolicy, &'static str> {
     }
     Ok(policy)
 }
+
+#[cfg(test)]
+mod tests;

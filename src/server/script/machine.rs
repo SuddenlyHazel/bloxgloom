@@ -64,8 +64,16 @@ fn invoke(
 ) -> mlua::Result<api::Plan> {
     let input = lua.create_table()?;
     input.set("data", lua.create_string(context.data)?)?;
+    input.set(
+        "tick",
+        crate::server::script::handles::tick(lua, context.tick)?,
+    )?;
     input.set("tick_lo", context.tick as u32)?;
     input.set("tick_hi", (context.tick >> 32) as u32)?;
+    input.set(
+        "due",
+        crate::server::script::handles::tick(lua, context.due)?,
+    )?;
     input.set("due_lo", context.due as u32)?;
     input.set("due_hi", (context.due >> 32) as u32)?;
     input.set("fuel", context.fuel)?;

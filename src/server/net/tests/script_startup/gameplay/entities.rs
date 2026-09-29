@@ -16,17 +16,17 @@ const SOURCE: &str = r#"return function(c,e)
         if mode == 3 then error('rollback after valid spawn') end
     else
         assert(e.kind == 'EntityTick')
-        local bytes = c.entity_state(e.entity_lo,e.entity_hi)
+        local bytes = c.entity_state(e.entity)
         if bytes == string.char(1,0,255) then
-            assert(c.update_entity(e.entity_lo,e.entity_hi,string.char(2,0,255)))
-            c.schedule_entity(e.entity_lo,e.entity_hi,100000)
+            assert(c.update_entity(e.entity,string.char(2,0,255)))
+            c.schedule_entity(e.entity,100000)
             c.spawn_drop(8.5,80.5,0.5,'bloxgloom:seeds',1,4294967295)
         else
             assert(bytes == string.char(2,0,255))
-            assert(c.update_entity(e.entity_lo,e.entity_hi,string.char(3,0,255)))
-            c.schedule_entity(e.entity_lo,e.entity_hi,nil)
+            assert(c.update_entity(e.entity,string.char(3,0,255)))
+            c.schedule_entity(e.entity,nil)
             if c.block(5,80,0).state == 'bloxgloom:glowstone' then
-                pcall(function() c.update_entity(e.entity_lo,e.entity_hi,'xx') end)
+                pcall(function() c.update_entity(e.entity,'xx') end)
             end
         end
     end
