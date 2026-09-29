@@ -295,6 +295,7 @@ pub(super) async fn run_perf_benchmark_async(
         let ui_frame = UiFrame {
             package_ui: None,
             join_address: None,
+            join_progress: None,
             inventory_search: "",
             action_panel: None,
             container_screen: None,

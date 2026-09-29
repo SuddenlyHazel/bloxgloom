@@ -120,11 +120,20 @@ pub struct UiDebug {
     pub latency_ms: Option<u32>,
 }
 
+/// Verified contiguous bytes received for this join; cache reuse transfers none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct JoinProgress {
+    pub received: u32,
+    pub total: u32,
+    pub cached: bool,
+}
+
 /// Values needed to draw a frame. Borrow status text to avoid per-frame string allocation.
 #[derive(Clone, Debug)]
 pub struct UiFrame<'a> {
     pub(crate) package_ui: Option<&'a super::authored::Session>,
     pub(crate) join_address: Option<&'a str>,
+    pub(crate) join_progress: Option<JoinProgress>,
     pub screen: UiScreen,
     pub selected_slot: usize,
     pub inventory: [Option<Stack>; SLOTS],
@@ -149,6 +158,7 @@ impl Default for UiFrame<'_> {
         Self {
             package_ui: None,
             join_address: None,
+            join_progress: None,
             screen: UiScreen::Playing,
             selected_slot: 0,
             inventory: std::array::from_fn(|_| None),

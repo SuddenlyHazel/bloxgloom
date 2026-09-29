@@ -86,6 +86,7 @@ fn outbound_wire_lengths_match_serialized_frames() {
     let messages = vec![
         ServerMessage::BundleOffer {
             identity: BundleIdentity {
+                client_runtime: crate::protocol::CLIENT_RUNTIME_VERSION,
                 key: crate::server::client_bundle::CacheKey::from_bytes([7; 32]),
                 total_len: 3,
             },

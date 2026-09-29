@@ -240,7 +240,7 @@ fn slow_attempt_can_be_cancelled(address: &str, path: &std::path::Path) {
     let mut attempt = Attempt::start(relay_address.to_string(), path.to_owned(), None).unwrap();
     holding.recv_timeout(Duration::from_secs(10)).unwrap();
     assert!(attempt.poll().is_none(), "slow join must remain pending");
-    assert_eq!(attempt.control.label(), "initial handshake");
+    assert_eq!(attempt.control.snapshot().0, "initial handshake");
     attempt.cancel();
     let error = attempt
         .wait_for_test()

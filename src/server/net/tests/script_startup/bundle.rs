@@ -1,5 +1,8 @@
 //! Real reactor joins, including hostile handshakes and a corrupting relay.
 use super::*;
+
+#[path = "bundle/progress.rs"]
+mod progress;
 use crate::protocol::{BundleIdentity, MAX_BUNDLE_PART};
 use crate::server::client_bundle::{CacheKey, ClientBundle, MAX_BUNDLE_BYTES};
 use std::io::{Read, Write};
@@ -262,6 +265,7 @@ fn bundle_gate_rejects_mismatches_and_early_play_without_blocking_healthy_join()
         for mode in 0..5 {
             let (mut peer, identity) = offer(address, 0x100 + mode);
             let wrong = BundleIdentity {
+                client_runtime: crate::protocol::CLIENT_RUNTIME_VERSION,
                 key: CacheKey::from_bytes([0; 32]),
                 ..identity
             };
@@ -429,6 +433,7 @@ fn client_verification_rejects_relay_tamper_truncation_and_reordering() {
 #[test]
 fn bundle_wire_rejects_unbounded_lengths_before_allocation() {
     let identity = BundleIdentity {
+        client_runtime: crate::protocol::CLIENT_RUNTIME_VERSION,
         key: CacheKey::from_bytes([0; 32]),
         total_len: 1,
     };

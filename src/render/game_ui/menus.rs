@@ -1,6 +1,8 @@
 //! Built-in menus on the same egui input and paint path as inventory.
 
 use super::Intent;
+
+mod join;
 use crate::{
     content::Catalog,
     ui::{SettingId, UiControl, UiFrame, UiScreen},
@@ -20,7 +22,7 @@ pub(super) fn draw(
     intents: &mut Vec<Intent>,
 ) {
     if matches!(frame.screen, UiScreen::Joining | UiScreen::JoinFailed) {
-        join(root, frame, intents);
+        join::draw(root, frame, intents);
         return;
     }
     let viewport = root.max_rect();
@@ -48,69 +50,6 @@ pub(super) fn draw(
                         UiScreen::Admin => admin(ui, frame, catalog, intents),
                         _ => {}
                     });
-            });
-    });
-}
-
-fn join(root: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
-    let viewport = root.max_rect();
-    root.painter()
-        .rect_filled(viewport, 0.0, Color32::from_rgb(19, 29, 33));
-    let card = egui::Rect::from_center_size(
-        viewport.center(),
-        Vec2::new(
-            (viewport.width() - 24.0).min(640.0),
-            (viewport.height() - 24.0).min(520.0),
-        ),
-    );
-    root.scope_builder(egui::UiBuilder::new().max_rect(card), |ui| {
-        egui::Frame::new()
-            .fill(PANEL)
-            .stroke(Stroke::new(2.0, EDGE))
-            .corner_radius(egui::CornerRadius::same(11))
-            .inner_margin(Margin::same(16))
-            .show(ui, |ui| {
-                ui.set_width(card.width() - 32.0);
-                title(
-                    ui,
-                    if frame.screen == UiScreen::JoinFailed {
-                        "Unable to join"
-                    } else {
-                        "Joining"
-                    },
-                    "Enter a server address; the session is prepared before world state is shown.",
-                );
-                let mut address = frame.join_address.unwrap_or_default().to_owned();
-                if ui
-                    .add_sized(
-                        [ui.available_width(), 32.0],
-                        egui::TextEdit::singleline(&mut address).char_limit(256),
-                    )
-                    .changed()
-                {
-                    intents.push(Intent::JoinAddress(address));
-                }
-                ui.add_space(9.0);
-                egui::ScrollArea::vertical()
-                    .id_salt("join-status")
-                    .max_height(card.height() - 180.0)
-                    .show(ui, |ui| {
-                        ui.label(frame.status.unwrap_or("Preparing…"));
-                    });
-                ui.add_space(9.0);
-                if ui
-                    .add_sized(
-                        [ui.available_width(), 35.0],
-                        egui::Button::new(if frame.screen == UiScreen::JoinFailed {
-                            "Retry"
-                        } else {
-                            "Cancel"
-                        }),
-                    )
-                    .clicked()
-                {
-                    intents.push(Intent::JoinAction);
-                }
             });
     });
 }

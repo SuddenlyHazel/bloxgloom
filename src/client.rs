@@ -1571,6 +1571,7 @@ impl ClientApp {
         let ui = UiFrame {
             package_ui: self.package_ui.as_ref(),
             join_address: None,
+            join_progress: None,
             screen: self.screen,
             selected_slot: self.config.selected_slot,
             inventory: self.inventory.slots.clone(),

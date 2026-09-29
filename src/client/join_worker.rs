@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 struct Progress {
     stage: &'static str,
+    download: Option<crate::ui::JoinProgress>,
     cancelled: bool,
     socket: Option<TcpStream>,
 }
@@ -25,7 +26,33 @@ impl Control {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "join cancelled"));
         }
         progress.stage = stage;
+        progress.download = None;
         Ok(())
+    }
+
+    pub(super) fn download(&self, received: u32, total: u32, cached: bool) -> io::Result<()> {
+        let mut progress = self.0.lock().unwrap();
+        if progress.cancelled {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "join cancelled"));
+        }
+        progress.stage = if cached {
+            "reusing verified package cache"
+        } else if received == total {
+            "verifying downloaded package"
+        } else {
+            "downloading package"
+        };
+        progress.download = Some(crate::ui::JoinProgress {
+            received,
+            total,
+            cached,
+        });
+        Ok(())
+    }
+
+    pub(super) fn snapshot(&self) -> (&'static str, Option<crate::ui::JoinProgress>) {
+        let progress = self.0.lock().unwrap();
+        (progress.stage, progress.download)
     }
 
     pub(super) fn attach(&self, socket: &TcpStream) -> io::Result<()> {
@@ -40,14 +67,11 @@ impl Control {
     fn cancel(&self) {
         let mut progress = self.0.lock().unwrap();
         progress.cancelled = true;
+        progress.download = None;
         progress.stage = "cancelling; waiting for preparation worker";
         if let Some(socket) = progress.socket.take() {
             let _ = socket.shutdown(Shutdown::Both);
         }
-    }
-
-    pub(super) fn label(&self) -> &'static str {
-        self.0.lock().unwrap().stage
     }
 }
 

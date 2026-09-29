@@ -477,6 +477,7 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
             let frame = UiFrame {
                 package_ui: None,
                 join_address: None,
+                join_progress: None,
                 inventory_search: "",
                 action_panel: None,
                 container_screen: None,

@@ -1515,6 +1515,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
     UiFrame {
         package_ui: None,
         join_address: None,
+        join_progress: None,
         screen,
         selected_slot: 1,
         inventory: sample_inventory(),
@@ -1584,6 +1585,7 @@ fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
         package_ui: None,
         join_address: None,
+        join_progress: None,
         inventory_search: "",
         action_panel: None,
         container_screen: None,

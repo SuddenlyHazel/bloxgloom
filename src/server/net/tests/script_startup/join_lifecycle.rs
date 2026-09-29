@@ -122,3 +122,95 @@ fn readiness_failure_names_stage_closes_socket_and_allows_retry() {
         crate::client::connect_catalog_probe(&address.to_string(), 0x11fec8).unwrap();
     });
 }
+
+#[test]
+fn dormant_client_and_shared_syntax_errors_fail_before_play_and_allow_retry() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    for (module, path) in [
+        ("view", "client/view.luau"),
+        ("helper", "shared/helper.luau"),
+    ] {
+        let fixture = bundle_ui::startup_fixture("return function(_) end");
+        std::fs::write(
+            fixture.0.join("packages/uidemo").join(path),
+            "return function( broken syntax",
+        )
+        .unwrap();
+        gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+            let error =
+                crate::client::connect_bundle_probe(&address.to_string(), 0xface).unwrap_err();
+            let text = error.to_string();
+            assert!(text.contains("package client startup"), "{text}");
+            assert!(text.contains(&format!("uidemo@1.0.0:{module}")), "{text}");
+        });
+        std::fs::write(
+            fixture.0.join("packages/uidemo").join(path),
+            "return function() error('dormant module must not execute') end",
+        )
+        .unwrap();
+        // Changed source changes save schema identity; this prerelease uses a
+        // fresh save rather than converting the failed candidate's world.
+        std::fs::remove_dir_all(fixture.0.join("save")).unwrap();
+        gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+            crate::client::connect_bundle_probe(&address.to_string(), 0xface).unwrap();
+        });
+    }
+}
+
+#[test]
+fn incompatible_runtime_offer_fails_before_request_even_with_verified_cache() {
+    use std::io::Read;
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = bundle_ui::startup_fixture("return function(_) end");
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        // Populate the real process cache first. A runtime contract mismatch
+        // must still fail before requesting bytes or sending BundleReady.
+        crate::client::connect_bundle_probe(&address.to_string(), 0xfeed).unwrap();
+        let relay = TcpListener::bind("127.0.0.1:0").unwrap();
+        let relay_address = relay.local_addr().unwrap();
+        let worker = thread::spawn(move || {
+            let (mut downstream, _) = relay.accept().unwrap();
+            let mut upstream = TcpStream::connect(address).unwrap();
+            for stream in [&downstream, &upstream] {
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(10)))
+                    .unwrap();
+            }
+            let hello = protocol::read_client(&mut downstream).unwrap();
+            protocol::write_client(&mut upstream, &hello).unwrap();
+            let ServerMessage::BundleOffer { mut identity } =
+                protocol::read_server(&mut upstream).unwrap()
+            else {
+                panic!("expected offer")
+            };
+            identity.client_runtime += 1;
+            protocol::write_server(&mut downstream, &ServerMessage::BundleOffer { identity })
+                .unwrap();
+            assert_eq!(
+                downstream.read(&mut [0]).unwrap(),
+                0,
+                "incompatible client requested or acknowledged bundle"
+            );
+        });
+        let error =
+            crate::client::connect_bundle_probe(&relay_address.to_string(), 0xbeef).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error
+                .to_string()
+                .contains("package download and verification"),
+            "{error}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("runtime contract 3; this client supports 2"),
+            "{error}"
+        );
+        worker.join().unwrap();
+        crate::client::connect_bundle_probe(&address.to_string(), 0xbeef).unwrap();
+    });
+}

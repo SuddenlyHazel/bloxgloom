@@ -60,6 +60,8 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Package, "package"),
         (UiScreen::Package, "package-updated"),
         (UiScreen::Joining, "joining"),
+        (UiScreen::Joining, "join-cached"),
+        (UiScreen::Joining, "join-verifying"),
         (UiScreen::JoinFailed, "join-failed"),
     ];
     for (width, height, screen_kind, label) in
@@ -121,8 +123,23 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
             package_ui: (screen_kind == UiScreen::Package).then_some(package),
             join_address: matches!(screen_kind, UiScreen::Joining | UiScreen::JoinFailed)
                 .then_some("127.0.0.1:25565"),
+            join_progress: (screen_kind == UiScreen::Joining).then_some(crate::ui::JoinProgress {
+                received: if label == "join-verifying" {
+                    800 * 1024
+                } else if label == "join-cached" {
+                    0
+                } else {
+                    384 * 1024
+                },
+                total: 800 * 1024,
+                cached: label == "join-cached",
+            }),
             status: match screen_kind {
-                UiScreen::Joining => Some("Downloading and verifying package content"),
+                UiScreen::Joining => Some(match label {
+                    "join-cached" => "Reusing verified package cache",
+                    "join-verifying" => "Verifying downloaded package",
+                    _ => "Downloading package content",
+                }),
                 UiScreen::JoinFailed => Some("Connection failed during package verification"),
                 _ => preview.status,
             },

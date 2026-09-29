@@ -14,6 +14,7 @@ pub(super) struct BundleHandshake {
 impl BundleHandshake {
     pub(super) fn new(bundle: &ClientBundle, catalog: &Catalog) -> io::Result<Self> {
         let identity = BundleIdentity {
+            client_runtime: crate::protocol::CLIENT_RUNTIME_VERSION,
             key: bundle.cache_key(),
             total_len: bundle.bytes().len() as u32,
         };

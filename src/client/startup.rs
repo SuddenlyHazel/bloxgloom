@@ -6,6 +6,8 @@
 //! sees this package and its direct exact dependencies, never server sources.
 //! No VM, host callback, or registration survives the worker invocation.
 use crate::server::client_bundle::ClientBundle;
+
+mod readiness;
 use mlua::{Lua, LuaOptions, StdLib, Value, VmState};
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -38,6 +40,7 @@ pub(crate) fn prepare(bundle: Arc<ClientBundle>) -> io::Result<State> {
 }
 
 fn run(bundle: Arc<ClientBundle>) -> Result<State, String> {
+    readiness::validate_sources(&bundle)?;
     let mut state = State {
         parameters: bundle.parameter_state()?,
         ..Default::default()

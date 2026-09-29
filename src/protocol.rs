@@ -7,7 +7,7 @@ use std::io::{self, Read, Write};
 
 mod bundle;
 mod entities;
-pub use bundle::{BundleIdentity, MAX_BUNDLE_PART};
+pub use bundle::{BundleIdentity, CLIENT_RUNTIME_VERSION, MAX_BUNDLE_PART};
 pub(crate) mod workstation;
 pub(crate) use entities::MAX_PUBLIC_ENTITY_PAYLOAD;
 pub use entities::{
@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 9;
+const WIRE_VERSION: u8 = 10;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 /// Fixed vertical streaming/retention radius shared by server and client.
@@ -213,7 +213,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
-            ServerMessage::BundleOffer { .. } => 32 + 4,
+            ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
             ServerMessage::Welcome { .. } => 8 + 8,
             ServerMessage::Position { .. } => 8 + 12,

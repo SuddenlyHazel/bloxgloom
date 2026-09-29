@@ -200,6 +200,10 @@ impl JoinApp {
             event_loop.exit();
             return;
         }
+        let (attempt_stage, join_progress) = self
+            .attempt
+            .as_ref()
+            .map_or(("starting", None), |attempt| attempt.control.snapshot());
         let stage = if let Some(installing) = &self.installing {
             if installing.cancelled {
                 "cancelling; waiting for GPU preparation"
@@ -207,9 +211,7 @@ impl JoinApp {
                 "package shader GPU preparation"
             }
         } else {
-            self.attempt
-                .as_ref()
-                .map_or("starting", |a| a.control.label())
+            attempt_stage
         };
         let text = self.error.as_deref().unwrap_or(stage);
         let frame = UiFrame {
@@ -220,6 +222,7 @@ impl JoinApp {
             },
             status: Some(text),
             join_address: Some(&self.address),
+            join_progress,
             ..Default::default()
         };
         let camera = Camera {

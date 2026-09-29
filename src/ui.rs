@@ -6,6 +6,7 @@ mod inventory_search;
 mod layout;
 mod renderer;
 mod types;
+pub(crate) use types::JoinProgress;
 
 pub(crate) use inventory_search::InventorySearch;
 pub use layout::UiLayout;

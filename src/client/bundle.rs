@@ -18,21 +18,35 @@ pub(crate) static TEST_CACHE_LOCK: Mutex<()> = Mutex::new(());
 pub(super) fn install(
     socket: &mut TcpStream,
     identity: BundleIdentity,
+    control: &super::join_worker::Control,
 ) -> io::Result<Arc<ClientBundle>> {
     let cached = CACHE.lock().unwrap().clone();
-    let bundle = receive(socket, identity, cached)?;
+    let bundle = receive_progress(socket, identity, cached, |received, cached| {
+        control.download(received, identity.total_len, cached)
+    })?;
     *CACHE.lock().unwrap() = Some(Arc::clone(&bundle));
     Ok(bundle)
 }
 
 /// Publishes and acknowledges only a complete canonical verified artifact. A
 /// failed/incomplete transfer never changes the cache or returns session data.
+#[cfg(test)]
 pub(crate) fn receive(
     socket: &mut TcpStream,
     identity: BundleIdentity,
     cached: Option<Arc<ClientBundle>>,
 ) -> io::Result<Arc<ClientBundle>> {
+    receive_progress(socket, identity, cached, |_, _| Ok(()))
+}
+
+pub(crate) fn receive_progress(
+    socket: &mut TcpStream,
+    identity: BundleIdentity,
+    cached: Option<Arc<ClientBundle>>,
+    mut progress: impl FnMut(u32, bool) -> io::Result<()>,
+) -> io::Result<Arc<ClientBundle>> {
     identity.validate()?;
+    identity.require_supported_runtime()?;
     let mut stream = DeadlineStream {
         socket,
         deadline: Instant::now() + Duration::from_secs(30),
@@ -40,8 +54,10 @@ pub(crate) fn receive(
     let bundle = if let Some(bundle) = cached.filter(|bundle| {
         bundle.cache_key() == identity.key && bundle.bytes().len() == identity.total_len as usize
     }) {
+        progress(0, true)?;
         bundle
     } else {
+        progress(0, false)?;
         protocol::write_client(&mut stream, &ClientMessage::BundleRequest { identity })?;
         let total = identity.total_len as usize;
         let mut bytes = Vec::with_capacity(total);
@@ -61,6 +77,7 @@ pub(crate) fn receive(
                 return Err(invalid("out-of-order or oversized bundle part"));
             }
             bytes.extend_from_slice(&part);
+            progress(bytes.len() as u32, false)?;
         }
         Arc::new(ClientBundle::decode_verify(&bytes, identity.key).map_err(io::Error::other)?)
     };

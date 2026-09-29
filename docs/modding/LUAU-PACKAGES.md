@@ -394,11 +394,18 @@ Package format 2 declares each module as `module server|client|shared <name>
 assets/textures/<path>.png`. Format 1 modules stay server-only. The immutable
 client artifact contains client/shared source and declared texture bytes, but
 never server modules or original paths. Its SHA-256 cache key verifies exact
-canonical bytes; it does not authenticate who supplied that key. General client
-module startup remains separate work. Registered catalog PNGs are decoded and
+canonical bytes; it does not authenticate who supplied that key. Registered catalog PNGs are decoded and
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
-admission. The client verifies and caches one artifact across reconnects;
+admission. The offer includes client host contract version **2** (wire version
+**10**): opaque identity handles, authored UI, bounded session replica callbacks
+and declared visual resources. An unsupported contract is rejected before bytes
+are requested or a cached artifact is acknowledged. This versions the public
+host API, not a Luau compiler patch release. Before `ContentReady`, every delivered
+client/shared module is compiled, without executing dormant modules; syntax
+errors name the package version and module. Validation has a 16 MiB VM budget,
+a two-second preparation budget, and the existing 64 KiB per-module/256-module
+bundle limits. The client verifies and caches one artifact across reconnects;
 matching bundle bytes alone do not grant client catalog compatibility.
 Canonical bundle metadata builds a fresh session catalog for the current Luau
 startup texture/block/item/action/entity/handler/system identities, including saved numeric
@@ -417,9 +424,12 @@ client/shared sources in the package and its exact direct dependencies, never
 server-only code. Invalid registration or execution aborts readiness with the
 package/module in the error. Initial presentation state is reset on each join,
 reconnect or server switch; it is not saved gameplay state. The client now opens
-its window first and shows a simple preparation stage while one retained join worker
+its window first and shows download percentage and received/total KiB while one
+retained join worker
 connects, transfers/verifies packages, negotiates the catalog and runs client
-startup. A failure displays its attributed reason; **Enter** or the button
+startup. Verified cache reuse is identified separately and transfers no bytes;
+100% means the advertised bytes arrived, followed by verification and preparation
+before play. A failure displays its attributed reason; **Enter** or the button
 retries, **Esc** cancels the active attempt, and **F2** leaves a live session to
 edit the server address and join another. Failed/closed sessions retire socket
 workers and UI/material/effect/startup resources. Cancellation cannot interrupt
@@ -428,7 +438,9 @@ the previous attempt finishes. The window creates the candidate renderer after t
 `ContentReady`; package shader compilation then runs asynchronously while
 joining progress remains responsive. The candidate admits snapshots only after
 every material/effect pipeline succeeds. There is no persistent disk cache or
-general client services API yet.
+arbitrary networking/filesystem service exposed to client scripts. Packages are
+delivered directly by the server; marketplace and CDN infrastructure will not be
+added.
 
 An authored `ui-document` may opt into client-only presentation events with
 `"presentation":{"capability":"local-ui","module":"uidemo:view"}`. The

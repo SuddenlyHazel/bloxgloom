@@ -175,7 +175,7 @@ impl Network {
         let mut first = protocol::read_server(&mut socket)?;
         let bundle = if let ServerMessage::BundleOffer { identity } = first {
             preparing(stage, "package download and verification", control)?;
-            let bundle = super::bundle::install(&mut socket, identity)?;
+            let bundle = super::bundle::install(&mut socket, identity, control)?;
             // Transfer time does not consume the separate content/Join
             // budget (the receiver narrows OS timeouts to its remaining time).
             socket.set_read_timeout(Some(Duration::from_secs(10)))?;
