@@ -1,10 +1,11 @@
 //! Bounded presentation and authoritative lifecycle options for startup items.
-use bloxgloom_host_api::content::{DropAnimation, DropPolicy, DropSize};
+use crate::server::script::values::integer;
+use bloxgloom_host_api::content::{Components, DropAnimation, DropPolicy, DropSize};
 use mlua::Value;
 
 pub(super) fn options(
     options: Value,
-) -> Result<(bool, DropSize, DropAnimation, DropPolicy), &'static str> {
+) -> Result<(bool, DropSize, DropAnimation, DropPolicy, Components), &'static str> {
     let table = match options {
         Value::Nil => {
             return Ok((
@@ -12,6 +13,7 @@ pub(super) fn options(
                 DropSize::Normal,
                 DropAnimation::default(),
                 DropPolicy::default(),
+                Components::None,
             ));
         }
         Value::Table(table) => table,
@@ -21,8 +23,9 @@ pub(super) fn options(
     let mut size = DropSize::Normal;
     let mut animation = DropAnimation::default();
     let mut policy = DropPolicy::default();
+    let mut components = Components::None;
     for (index, pair) in table.pairs::<Value, Value>().enumerate() {
-        if index >= 4 {
+        if index >= 5 {
             return Err("too many item options");
         }
         let (key, value) = pair.map_err(|_| "invalid item option")?;
@@ -83,10 +86,63 @@ pub(super) fn options(
                 }
             }
             b"drop_policy" => policy = drop_policy(value)?,
+            b"components" => components = component_schema(value)?,
             _ => return Err("unknown item option"),
         }
     }
-    Ok((sprite, size, animation, policy))
+    Ok((sprite, size, animation, policy, components))
+}
+
+fn component_schema(value: Value) -> Result<Components, &'static str> {
+    let Value::Table(table) = value else {
+        return Err("item components must be a table");
+    };
+    if table.metatable().is_some() {
+        return Err("component schema metatable is unsupported");
+    }
+    for (index, pair) in table.clone().pairs::<Value, Value>().enumerate() {
+        if index >= 5 {
+            return Err("too many component schema fields");
+        }
+        let (key, _) = pair.map_err(|_| "invalid component schema")?;
+        let Value::String(key) = key else {
+            return Err("invalid component schema field");
+        };
+        if ![
+            b"version".as_slice(),
+            b"fingerprint_lo",
+            b"fingerprint_hi",
+            b"max_bytes",
+            b"required",
+        ]
+        .contains(&key.as_bytes().as_ref())
+        {
+            return Err("unknown component schema field");
+        }
+    }
+    let get = |name| {
+        table
+            .raw_get::<Value>(name)
+            .map_err(|_| "invalid component schema")
+    };
+    let version = integer(get("version")?, 1, u16::MAX.into())? as u16;
+    let lo = integer(get("fingerprint_lo")?, 0, u32::MAX.into())? as u64;
+    let hi = integer(get("fingerprint_hi")?, 0, u32::MAX.into())? as u64;
+    let max_bytes = integer(get("max_bytes")?, 1, 1024)? as u16;
+    let required = match get("required")? {
+        Value::Nil => false,
+        Value::Boolean(value) => value,
+        _ => return Err("component required must be boolean"),
+    };
+    if lo == 0 && hi == 0 {
+        return Err("component fingerprint must be nonzero");
+    }
+    Ok(Components::Opaque {
+        version,
+        fingerprint: lo | (hi << 32),
+        max_bytes,
+        required,
+    })
 }
 
 fn drop_policy(value: Value) -> Result<DropPolicy, &'static str> {

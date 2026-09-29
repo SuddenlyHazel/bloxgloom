@@ -50,3 +50,22 @@ fn corrupted_position_is_not_silently_replaced() {
         io::ErrorKind::InvalidData
     );
 }
+
+#[test]
+fn position_checkpoint_does_not_share_inventory_temp_namespace() {
+    let save = TestSave::new();
+    let store = PositionStore::new(&save.0).unwrap();
+    let profile = 9;
+    // InventoryStore uses this independently numbered filename in the same
+    // players directory. It may still be writing when a session disconnects.
+    let inventory_temp = store
+        .root
+        .join(format!(".{profile:032x}.{}.0.tmp", std::process::id()));
+    fs::write(&inventory_temp, b"in-progress inventory checkpoint").unwrap();
+    store.save(profile, [0.5, 80.0, 0.5]).unwrap();
+    assert_eq!(store.load(profile).unwrap(), Some([0.5, 80.0, 0.5]));
+    assert_eq!(
+        fs::read(inventory_temp).unwrap(),
+        b"in-progress inventory checkpoint"
+    );
+}

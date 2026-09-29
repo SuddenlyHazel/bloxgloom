@@ -63,7 +63,7 @@ impl PositionStore {
         }
         bytes.extend_from_slice(&checksum(&bytes).to_le_bytes());
         let temporary = self.root.join(format!(
-            ".{profile:032x}.{}.{}.tmp",
+            ".{profile:032x}.pos.{}.{}.tmp",
             std::process::id(),
             TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));

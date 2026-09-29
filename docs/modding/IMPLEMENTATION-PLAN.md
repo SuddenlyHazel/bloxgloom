@@ -643,8 +643,12 @@ V25 client bundle; defaults retain older bytes. A real listener negotiates the
 same plant/cutout selection and restart identity.
 Explicit bounded Luau property schemas and legal states with emission overrides
 now use V26 and negotiate the same canonical state keys and default placement
-state. Per-state textures, item component schemas, and specialized entity/UI
+state. Per-state textures and specialized entity/UI
 registrations are still outstanding.
+Opaque item component schema identity and required/version/size constraints are
+now authored and negotiated by V27; live Luau grants reject wrong versions and
+persist exact component bytes. Per-state textures and specialized declarations
+remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -674,7 +678,7 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Expose per-state textures and applicable component schemas, creatures,
+- [ ] Expose per-state textures, creatures,
   machines and screens as Luau startup declarations. Bounded explicit state
   properties, one-state cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the

@@ -1,6 +1,69 @@
 use super::*;
 
 #[test]
+fn luau_component_schema_rejects_wrong_payload_and_persists_exact_bytes() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    fixture.action(
+        "return function(h) h.register_item('demo:token','Token','bloxgloom:stone',{components={version=1,fingerprint_lo=42,fingerprint_hi=7,max_bytes=4,required=true}}); h.register_action('demo:shift',1,'Grant','empty',nil,'demo:action') end",
+        "return function(c,e) if string.byte(e.arguments,1) == 1 then pcall(function() c.give('player',{item='demo:token',count=1,components={version=2,bytes='bad'}}) end) else assert(c.give('player',{item='demo:token',count=1,components={version=1,bytes=string.char(0,255)}})) end end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let source = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        source.replace(
+            "requires bloxgloom:actions/v1",
+            "requires bloxgloom:actions/v1\nrequires bloxgloom:content/v1",
+        ),
+    )
+    .unwrap();
+    let mut state = Box::new(fixture.open().unwrap());
+    prepare(&mut state);
+    let catalog = state.world.catalog_arc();
+    let item = catalog.item_by_key("demo:token").unwrap();
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x1b")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let mut peer = Peer::connect(address, catalog);
+        let denied = peer.request(1);
+        assert!(!peer.send(&denied).0);
+        let request = peer.request(0);
+        assert!(peer.send(&request).0);
+        peer.inventory_at(1);
+        let stack = peer.inventory.slots[0].as_ref().unwrap();
+        assert_eq!(stack.item, item);
+        assert_eq!(stack.components.as_ref().unwrap().bytes.as_ref(), [0, 255]);
+    });
+    let state = fixture.open().unwrap();
+    assert_eq!(state.world.catalog().fingerprint(), fingerprint);
+    let stack = state.inventory_store.load(PROFILE).unwrap().slots[0]
+        .clone()
+        .unwrap();
+    assert_eq!(stack.components.unwrap().bytes.as_ref(), [0, 255]);
+    let saved_map = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    let main = fixture.0.join("packages/demo/main.luau");
+    let source = std::fs::read_to_string(&main).unwrap();
+    std::fs::write(
+        main,
+        source.replace("fingerprint_lo=42", "fingerprint_lo=43"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
+    assert_eq!(
+        std::fs::read(fixture.0.join("save/content.map")).unwrap(),
+        saved_map
+    );
+}
+
+#[test]
 fn luau_take_and_spawn_stack_preserve_binary_components_across_receipt_and_restart() {
     let fixture = Fixture::new();
     fixture.action(

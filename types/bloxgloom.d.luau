@@ -4,7 +4,7 @@
 export type BloxStartupHost = {
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
-    register_item: (key: string, name: string, texture: string) -> (),
+    register_item: (key: string, name: string, texture: string, options: BloxItemOptions?) -> (),
     -- A member is a namespaced definition key or "#namespace:tag".
     -- At most 32 tags per package and 32 members per tag; cycles fail startup.
     register_tag: (key: string, kind: "block" | "item", members: {string}) -> (),
@@ -42,6 +42,21 @@ export type BloxBlockOptions = {
 }
 export type BloxBlockState = {[string]: string | number} -- property=value; optional emission=0..15
 export type BloxTextureOptions = { alpha_cutout: boolean? }
+export type BloxItemComponents = {
+    version: number, -- 1..65535
+    fingerprint_lo: number, -- exact unsigned 32-bit halves; combined fingerprint is nonzero
+    fingerprint_hi: number,
+    max_bytes: number, -- 1..1024
+    required: boolean?,
+}
+export type BloxItemOptions = {
+    sprite: boolean?,
+    drop_size: ("small" | "normal" | "large")?,
+    components: BloxItemComponents?,
+    -- Existing drop_animation/drop_policy tables are described in REGISTERED-CONTENT.md.
+    drop_animation: {[string]: number}?,
+    drop_policy: {[string]: number}?,
+}
 
 -- All nine fields are required finite numbers; unknown fields are rejected.
 -- Geometry/input/eye values compile to f32; budget remains f64. Exact compiled

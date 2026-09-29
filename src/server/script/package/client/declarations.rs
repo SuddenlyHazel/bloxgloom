@@ -6,6 +6,7 @@ use super::*;
 use bloxgloom_host_api::{composition, content};
 use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
 mod appearance;
+mod components;
 mod runtime;
 mod states;
 
@@ -23,6 +24,7 @@ pub(super) struct Format {
     pub tags: bool,
     pub visual_blocks: bool,
     pub block_states: bool,
+    pub components: bool,
 }
 
 #[derive(Debug)]
@@ -78,12 +80,18 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
-        let states_format = blocks
+        let component_format = items
+            .iter()
+            .any(|item| item.components != content::Components::None);
+        let authored_states = blocks
             .iter()
             .any(crate::server::script::startup::stateful_block);
+        let states_format = authored_states || component_format;
         let extended_blocks = authored_blocks || tag_format || visual_format || states_format;
         let visual_format = visual_format || states_format;
-        let version = if states_format {
+        let version = if component_format {
+            COMPONENTS_MAGIC
+        } else if states_format {
             BLOCK_STATES_MAGIC
         } else if visual_format {
             VISUAL_BLOCKS_MAGIC
@@ -142,7 +150,7 @@ impl ClientBundle {
             for item in own {
                 let cube = blocks.iter().find(|block| block.key == item.key);
                 if item.swatch != [1.0; 4]
-                    || item.components != content::Components::None
+                    || (item.components != content::Components::None && !component_format)
                     || match cube {
                         Some(block) => {
                             item.placeable.as_deref()
@@ -190,6 +198,9 @@ impl ClientBundle {
                         return Err(invalid());
                     }
                     writer.field(&item.drop_policy.to_bytes())?;
+                }
+                if component_format {
+                    components::encode(&mut writer, &item.components)?;
                 }
             }
             let own = textures
@@ -412,6 +423,7 @@ impl Startup {
             tags,
             visual_blocks,
             block_states,
+            components,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -424,6 +436,7 @@ impl Startup {
                 || tags
                 || visual_blocks
                 || block_states
+                || components
             {
                 return Err(invalid());
             }
@@ -436,6 +449,7 @@ impl Startup {
         let mut has_tag = false;
         let mut has_visual = false;
         let mut has_states = false;
+        let mut has_components = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -508,6 +522,13 @@ impl Startup {
                     DropPolicy::default()
                 };
                 has_nondefault_policy |= drop_policy != DropPolicy::default();
+                let item_components = if components {
+                    let value = components::decode(reader)?;
+                    has_components |= value != content::Components::None;
+                    value
+                } else {
+                    content::Components::None
+                };
                 let (sprite, texture) = match encoded_texture.strip_prefix('!') {
                     Some(texture) => (false, texture.to_owned()),
                     None => (true, encoded_texture),
@@ -534,7 +555,7 @@ impl Startup {
                     drop_size,
                     drop_animation,
                     drop_policy,
-                    components: content::Components::None,
+                    components: item_components,
                 });
             }
             let count = reader.count(MAX_TEXTURES)?;
@@ -842,7 +863,8 @@ impl Startup {
             || (extended_blocks && !has_extended_block && !tags && !visual_blocks)
             || (tags && !has_tag && !visual_blocks)
             || (visual_blocks && !has_visual && !block_states)
-            || (block_states && !has_states)
+            || (block_states && !has_states && !components)
+            || (components && !has_components)
         {
             return Err(invalid());
         }

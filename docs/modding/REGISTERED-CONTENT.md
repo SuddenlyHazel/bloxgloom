@@ -71,6 +71,15 @@ textures and invisible materials still require a broader Luau binding. Do not
 mistake this shorthand for the
 entire public Rust `Block` contract.
 
+Luau `register_item(..., {components={version=1, fingerprint_lo=42,
+fingerprint_hi=7, max_bytes=64, required=true}})` declares a bounded opaque
+component schema. The two unsigned 32-bit fingerprint halves form a nonzero
+schema identity; increment it when the byte format changes. The host checks
+version, length and requiredness on inventory creation/transfer, retaining exact
+bytes and the 128-item stack cap. Component bytes are not interpreted as public
+client logic. A V27 bundle negotiates this schema; default items retain their
+older bundle bytes.
+
 `register_tag(key, "item" | "block", members)` contributes a same-kind tag at
 startup. Each member is a namespaced definition key or a nested
 `"#namespace:tag"`; forward references resolve when the full package set is
