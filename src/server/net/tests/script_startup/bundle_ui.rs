@@ -80,6 +80,62 @@ fn verified_replica_callbacks_are_session_scoped_worker_presentations() {
 }
 
 #[test]
+fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture =
+        startup_fixture("return function(host) host.set_replica_handler('uidemo:replica') end");
+    let package = fixture.0.join("packages/uidemo");
+    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then return {} end local lo = e.id_lo; if input.value == 'total=2' then lo = lo + 1 end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
+    let manifest = package.join("package.txt");
+    let original = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        manifest,
+        format!("{original}module client replica client/replica.luau\n"),
+    )
+    .unwrap();
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        for profile in [0xa403, 0xa404] {
+            crate::client::connect_ui_probe(&address.to_string(), profile, |_, session| {
+                assert_eq!(session.replica_owner(), Some("uidemo"));
+                let id = (1u64 << 53) + 7;
+                session.replica_entities(
+                    vec![crate::client::presentation::EntityView {
+                        id,
+                        key: "uidemo:creature".into(),
+                        position: [2.5, 80.0, 0.5],
+                    }],
+                    1,
+                );
+                session.wait_for_presentation().unwrap();
+                assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
+                assert_eq!(session.text_at(1), "uidemo:creature");
+                session.replica_entities(
+                    vec![crate::client::presentation::EntityView {
+                        id,
+                        key: "uidemo:creature".into(),
+                        position: [2.5, 80.0, 0.5],
+                    }],
+                    2,
+                );
+                assert!(
+                    session
+                        .wait_for_presentation()
+                        .unwrap_err()
+                        .contains("invalid local-ui target")
+                );
+                assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
+                session.next_document();
+                assert_eq!(session.visual_pose(id), None);
+                session.replica_entities(vec![], 0);
+                session.wait_for_presentation().unwrap();
+                assert_eq!(session.visual_pose(id), None);
+            })
+            .unwrap();
+        }
+    });
+}
+
+#[test]
 fn downloaded_client_startup_is_session_scoped_across_reconnect_and_switch() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     for (source, expected) in [

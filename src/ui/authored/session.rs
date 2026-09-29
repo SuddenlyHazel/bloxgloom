@@ -1,6 +1,7 @@
 //! Bounded local presentation state. No network/gameplay authority.
 use super::super::UiRect;
 use super::*;
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use taffy::prelude::*;
@@ -26,7 +27,9 @@ pub(crate) struct Session {
     pub(super) action: Option<String>,
     pub(super) in_flight: Option<(u128, u64)>,
     pub(super) feedback: Option<String>,
-    pub(super) replica_events: VecDeque<(String, String)>,
+    pub(super) replica_events:
+        VecDeque<(String, String, Vec<crate::client::presentation::EntityView>)>,
+    pub(super) visual_poses: BTreeMap<u64, [f32; 3]>,
     pub(super) startup: crate::client::startup::State,
 }
 
@@ -68,6 +71,7 @@ impl Session {
             in_flight: None,
             feedback: None,
             replica_events: VecDeque::new(),
+            visual_poses: BTreeMap::new(),
             startup,
         };
         session.reset();
@@ -80,6 +84,7 @@ impl Session {
         self.document_generation = self.document_generation.wrapping_add(1);
         self.expected = None;
         self.replica_events.clear();
+        self.visual_poses.clear();
         self.failure = None;
         self.action = None;
         self.feedback = None;

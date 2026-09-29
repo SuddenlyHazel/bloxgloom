@@ -688,6 +688,13 @@ screen layouts; configurable footprints remain open.
 Optional bounded storage screen hints and labeled slot groups now negotiate in
 V30. A real-listener join and restart verify the client layout and saved identity;
 broader dynamic content remains open.
+The downloaded session replica handler now receives a bounded, sorted public
+window of package-owned mobile entities after complete snapshot/commit install.
+It may return validated visual pose offsets for offered exact IDs; the worker
+applies these only to client avatars, after interpolation. Switch and reconnect
+discard offsets, and malformed outputs leave the prior presentation intact.
+The callback is still attached to package UI; general visual/effect callbacks
+without an authored UI and production scene acceptance remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -728,7 +735,8 @@ continuity are covered by mesh/animator regressions, not that preview.
   now have bounded neighborhood reads/edits and durable same-system intents.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
-  owned UI callbacks are bound; entity/visual presentations remain open.
+  owned UI callbacks and bounded mobile pose offsets are bound; independent
+  visual/effect presentations remain open.
 
 #### Phase 5 — packages and joining · In progress
 

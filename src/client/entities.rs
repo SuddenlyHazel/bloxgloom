@@ -158,6 +158,47 @@ impl Replicas {
         avatars
     }
 
+    /// A deterministic, bounded presentation window over installed public
+    /// mobile views. Private payloads and host-owned player identities stay out.
+    pub(super) fn presentation_entities(
+        &self,
+        owner: &str,
+        catalog: &Catalog,
+    ) -> (Vec<crate::client::presentation::EntityView>, usize) {
+        let mut visible = self
+            .entities
+            .values()
+            .flat_map(|chunk| chunk.values())
+            .filter_map(|entity| {
+                let definition = catalog.entity_type(entity.entity_type)?;
+                if definition.key.split_once(':').map(|v| v.0) != Some(owner)
+                    || catalog.mobile_entity(entity.entity_type).is_none()
+                {
+                    return None;
+                }
+                let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location
+                else {
+                    return None;
+                };
+                Some(crate::client::presentation::EntityView {
+                    id: entity.id,
+                    key: definition.key.to_string(),
+                    position,
+                })
+            })
+            .take(1025)
+            .collect::<Vec<_>>();
+        if visible.len() > 1024 {
+            // Overload is advisory only. Clear prior overrides and keep host
+            // entity rendering; never scan an unbounded replica set per commit.
+            return (vec![], 1025);
+        }
+        visible.sort_unstable_by_key(|entity| entity.id);
+        let total = visible.len();
+        visible.truncate(16);
+        (visible, total)
+    }
+
     #[cfg(test)]
     pub(super) fn entities_in(&self, key: ChunkKey) -> Option<&BTreeMap<u64, PublicEntity>> {
         self.entities.get(&key)

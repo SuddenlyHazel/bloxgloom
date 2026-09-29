@@ -51,6 +51,7 @@ impl Session {
                 .map(|(i, n)| (n.id.clone(), self.text_at(i).to_owned()))
                 .collect(),
             replica: false,
+            entities: vec![],
         };
         if self
             .worker
@@ -88,21 +89,64 @@ impl Session {
     /// Replica notifications are advisory presentation inputs, not gameplay
     /// requests. Queue bounded snapshots while a local UI callback is running.
     pub(crate) fn replica_event(&mut self, event: &str, value: String) {
+        self.queue_replica(event, value, vec![]);
+    }
+
+    pub(crate) fn replica_owner(&self) -> Option<&str> {
+        self.startup
+            .replica
+            .as_ref()?
+            .module
+            .split_once('@')
+            .map(|v| v.0)
+    }
+
+    pub(crate) fn replica_entities(
+        &mut self,
+        entities: Vec<crate::client::presentation::EntityView>,
+        total: usize,
+    ) {
+        self.queue_replica("replica:entities", format!("total={total}"), entities);
+    }
+
+    pub(crate) fn visual_pose(&self, id: u64) -> Option<[f32; 3]> {
+        self.visual_poses.get(&id).copied()
+    }
+
+    fn queue_replica(
+        &mut self,
+        event: &str,
+        value: String,
+        entities: Vec<crate::client::presentation::EntityView>,
+    ) {
         if self.startup.replica.is_none() || self.failure.is_some() {
             return;
         }
-        if event.len() > 64 || value.len() > 640 || !event.is_ascii() || !value.is_ascii() {
+        if event.len() > 64
+            || value.len() > 640
+            || !event.is_ascii()
+            || !value.is_ascii()
+            || entities.len() > 16
+            || entities.iter().any(|entity| {
+                entity.id == 0
+                    || entity.key.len() > 129
+                    || !entity.key.is_ascii()
+                    || entity.position.iter().any(|axis| !axis.is_finite())
+            })
+        {
             self.failure = Some("invalid replica presentation input".into());
             return;
         }
         if let Some(existing) = self
             .replica_events
             .iter_mut()
-            .find(|(kind, _)| kind == event)
+            .find(|(kind, _, _)| kind == event)
         {
             existing.1 = value;
+            existing.2 = entities;
         } else if self.replica_events.len() < 8 {
-            self.replica_events.push_back((event.to_owned(), value));
+            self.replica_events
+                .push_back((event.to_owned(), value, entities));
         } else {
             self.failure = Some("replica presentation queue exceeded".into());
             return;
@@ -125,7 +169,7 @@ impl Session {
             self.failure = Some("presentation event sequence exhausted".into());
             return;
         };
-        let (event, value) = self.replica_events.front().unwrap();
+        let (event, value, entities) = self.replica_events.front().unwrap();
         let request = Request {
             script,
             sequence,
@@ -141,6 +185,7 @@ impl Session {
                 .map(|(index, node)| (node.id.clone(), self.text_at(index).to_owned()))
                 .collect(),
             replica: true,
+            entities: entities.clone(),
         };
         match worker.requests.try_send(request) {
             Ok(()) => {
@@ -193,6 +238,12 @@ impl Session {
                     .split_once(':')
                     .is_some_and(|(package, local)| package == owner && identifier(local)),
                 Command::Action(_) => false,
+                Command::Visual(id, pose) => {
+                    reply.replica
+                        && reply.entity_batch
+                        && reply.offered_entities.contains(id)
+                        && pose.iter().all(|value| value.is_finite())
+                }
             }) && commands
                 .iter()
                 .filter(|c| matches!(c, Command::Action(_)))
@@ -209,6 +260,9 @@ impl Session {
                         &self.document().script.as_ref().unwrap().module
                     }
                 ));
+            }
+            if reply.entity_batch {
+                self.visual_poses.clear();
             }
             for command in commands {
                 match command {
@@ -238,6 +292,9 @@ impl Session {
                     Command::Action(key) => {
                         self.feedback = Some("REQUESTING ACTION".into());
                         self.action = Some(key);
+                    }
+                    Command::Visual(id, pose) => {
+                        self.visual_poses.insert(id, pose);
                     }
                 }
             }

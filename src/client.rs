@@ -944,6 +944,11 @@ impl ClientApp {
                                 "replica:world",
                                 format!("changed_chunks={}", keys.len()),
                             );
+                            if let Some(owner) = ui.replica_owner().map(str::to_owned) {
+                                let (entities, total) =
+                                    self.replicas.presentation_entities(&owner, &self.catalog);
+                                ui.replica_entities(entities, total);
+                            }
                         }
                         for key in keys {
                             if block_commit {
@@ -1567,6 +1572,15 @@ impl ClientApp {
             .visual_avatars(self.position, self.owned_entity_id);
         self.actor_animator.present(&mut visual_avatars, now);
         for avatar in &mut visual_avatars {
+            if let Some(pose) = self
+                .package_ui
+                .as_ref()
+                .and_then(|ui| ui.visual_pose(avatar.id))
+            {
+                avatar.pose[0] += pose[0];
+                avatar.pose[2] += pose[1];
+                avatar.pose[3] += pose[2];
+            }
             let height = match avatar.model {
                 crate::render::AvatarModel::Player => 1.45,
                 crate::render::AvatarModel::Registered(id) => self

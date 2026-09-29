@@ -68,6 +68,16 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
         );
     }
     assert_eq!(replicas.visual_avatars(glam::Vec3::ZERO, None).len(), 1);
+    let (views, total) = replicas.presentation_entities("bloxgloom", &catalog);
+    assert_eq!(total, 1);
+    assert_eq!(views[0].id, 91);
+    assert_eq!(views[0].key, "bloxgloom:mossbun");
+    assert!(
+        replicas
+            .presentation_entities("other", &catalog)
+            .0
+            .is_empty()
+    );
     accept(
         &mut replicas,
         ServerMessage::WorldCommitPart(WorldCommitPart {
@@ -90,6 +100,12 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
         &mut chunks,
     );
     assert!(replicas.visual_avatars(glam::Vec3::ZERO, None).is_empty());
+    assert!(
+        replicas
+            .presentation_entities("bloxgloom", &catalog)
+            .0
+            .is_empty()
+    );
     let (start, pages) = snapshot(key(0), 2, 3, vec![vec![bun]], &catalog);
     accept(
         &mut replicas,
@@ -107,4 +123,42 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
     }
     replicas.retain(|_| false);
     assert!(replicas.visual_avatars(glam::Vec3::ZERO, None).is_empty());
+}
+
+#[test]
+fn presentation_entity_window_is_ordered_and_explicitly_bounded() {
+    let catalog = Catalog::builtins();
+    let mut replicas = Replicas::default();
+    let mut chunks = HashMap::new();
+    let entities = (1..=20)
+        .rev()
+        .map(|id| {
+            let mut bun = player(id, 1);
+            bun.entity_type = crate::content::MOSSBUN_ENTITY_TYPE;
+            bun.payload = vec![1, 1];
+            bun
+        })
+        .collect();
+    let (start, pages) = snapshot(key(0), 1, 1, vec![entities], &catalog);
+    accept(
+        &mut replicas,
+        ServerMessage::WorldSnapshotStart(start),
+        &catalog,
+        &mut chunks,
+    );
+    for page in pages {
+        accept(
+            &mut replicas,
+            ServerMessage::EntitySnapshotPage(page),
+            &catalog,
+            &mut chunks,
+        );
+    }
+    let (views, total) = replicas.presentation_entities("bloxgloom", &catalog);
+    assert_eq!(total, 20);
+    assert_eq!(views.len(), 16);
+    assert_eq!(
+        views.iter().map(|view| view.id).collect::<Vec<_>>(),
+        (1..=16).collect::<Vec<_>>()
+    );
 }

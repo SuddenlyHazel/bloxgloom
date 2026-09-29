@@ -17,6 +17,14 @@ pub(crate) struct Request {
     pub(crate) state: String,
     pub(crate) texts: Vec<(String, String)>,
     pub(crate) replica: bool,
+    pub(crate) entities: Vec<EntityView>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct EntityView {
+    pub(crate) id: u64,
+    pub(crate) key: String,
+    pub(crate) position: [f32; 3],
 }
 
 #[derive(Debug)]
@@ -25,6 +33,8 @@ pub(crate) enum Command {
     Visible(String, bool),
     State(String),
     Action(String),
+    /// A client-only offset applied after authoritative pose reconstruction.
+    Visual(u64, [f32; 3]),
 }
 
 #[derive(Debug)]
@@ -32,6 +42,8 @@ pub(crate) struct Reply {
     pub(crate) sequence: u32,
     pub(crate) result: Result<Vec<Command>, String>,
     pub(crate) replica: bool,
+    pub(crate) offered_entities: Vec<u64>,
+    pub(crate) entity_batch: bool,
 }
 
 #[derive(Debug)]
@@ -50,11 +62,16 @@ impl Worker {
                 while let Ok(request) = receiver.recv() {
                     let sequence = request.sequence;
                     let replica = request.replica;
+                    let offered_entities =
+                        request.entities.iter().map(|entity| entity.id).collect();
+                    let entity_batch = request.event == "replica:entities";
                     if sender
                         .send(Reply {
                             sequence,
                             result: run(request),
                             replica,
+                            offered_entities,
+                            entity_batch,
                         })
                         .is_err()
                     {
@@ -84,6 +101,20 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             texts.raw_set(id, text)?;
         }
         input.raw_set("texts", texts)?;
+        let entities = lua.create_table()?;
+        for (index, entity) in request.entities.iter().enumerate() {
+            let view = lua.create_table()?;
+            view.raw_set("id_lo", entity.id as u32)?;
+            view.raw_set("id_hi", (entity.id >> 32) as u32)?;
+            view.raw_set("key", entity.key.as_str())?;
+            let position = lua.create_sequence_from(entity.position)?;
+            position.set_readonly(true);
+            view.raw_set("position", position)?;
+            view.set_readonly(true);
+            entities.raw_set(index + 1, view)?;
+        }
+        entities.set_readonly(true);
+        input.raw_set("entities", entities)?;
         let output: mlua::Table = entry.call(input)?;
         // Do not trust raw_len alone: sparse/associative tables must not bypass
         // traversal limits. Reject the seventeenth pair before decoding it.
@@ -119,6 +150,22 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                 }
                 "state" => Command::State(text(&command, "value", 128)?),
                 "action" => Command::Action(text(&command, "key", 129)?),
+                "visual" if request.replica => {
+                    let lo = word(&command, "id_lo")?;
+                    let hi = word(&command, "id_hi")?;
+                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let pose = [
+                        bounded_float(
+                            &command,
+                            "yaw",
+                            -std::f32::consts::PI,
+                            std::f32::consts::PI,
+                        )?,
+                        bounded_float(&command, "bob", -0.25, 0.25)?,
+                        bounded_float(&command, "squash", -0.25, 0.25)?,
+                    ];
+                    Command::Visual(id, pose)
+                }
                 _ => return Err(invalid()),
             });
         }
@@ -149,4 +196,23 @@ fn text(table: &mlua::Table, key: &str, max: usize) -> mlua::Result<String> {
         return Err(invalid());
     }
     Ok(value.to_str()?.to_owned())
+}
+
+fn word(table: &mlua::Table, key: &str) -> mlua::Result<u32> {
+    let mlua::Value::Integer(value) = table.raw_get(key)? else {
+        return Err(invalid());
+    };
+    u32::try_from(value).map_err(|_| invalid())
+}
+
+fn bounded_float(table: &mlua::Table, key: &str, min: f32, max: f32) -> mlua::Result<f32> {
+    let value = match table.raw_get(key)? {
+        mlua::Value::Integer(value) => value as f64,
+        mlua::Value::Number(value) => value,
+        _ => return Err(invalid()),
+    };
+    if !value.is_finite() || value < f64::from(min) || value > f64::from(max) {
+        return Err(invalid());
+    }
+    Ok(value as f32)
 }
