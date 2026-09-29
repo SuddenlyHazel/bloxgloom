@@ -11,6 +11,7 @@ pub(crate) struct VisualSession {
     pending: Option<u32>,
     queued: Option<(Vec<EntityView>, usize)>,
     poses: BTreeMap<u64, [f32; 3]>,
+    previous: Vec<u64>,
     failure: Option<String>,
 }
 
@@ -23,6 +24,7 @@ impl VisualSession {
             pending: None,
             queued: None,
             poses: BTreeMap::new(),
+            previous: Vec::new(),
             failure: None,
         })
     }
@@ -36,6 +38,7 @@ impl VisualSession {
             return;
         }
         if entities.len() > 16
+            || entities.windows(2).any(|pair| pair[0].id >= pair[1].id)
             || entities.iter().any(|entity| {
                 entity.id == 0
                     || entity.key.len() > 129
@@ -61,6 +64,8 @@ impl VisualSession {
             self.failure = Some("visual sequence exhausted".into());
             return;
         };
+        let (entered, left) = super::window_changes(&self.previous, &entities);
+        let current = entities.iter().map(|entity| entity.id).collect::<Vec<_>>();
         let request = Request {
             script: Arc::clone(&self.script),
             sequence,
@@ -70,11 +75,14 @@ impl VisualSession {
             texts: vec![],
             replica: true,
             entities,
+            entered,
+            left,
         };
         match self.worker.requests.try_send(request) {
             Ok(()) => {
                 self.sequence = sequence;
                 self.pending = Some(sequence);
+                self.previous = current;
             }
             Err(std::sync::mpsc::TrySendError::Full(request)) => {
                 self.queued = Some((request.entities, total));

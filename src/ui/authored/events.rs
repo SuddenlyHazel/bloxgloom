@@ -52,6 +52,8 @@ impl Session {
                 .collect(),
             replica: false,
             entities: vec![],
+            entered: vec![],
+            left: vec![],
         };
         if self
             .worker
@@ -127,6 +129,7 @@ impl Session {
             || !event.is_ascii()
             || !value.is_ascii()
             || entities.len() > 16
+            || entities.windows(2).any(|pair| pair[0].id >= pair[1].id)
             || entities.iter().any(|entity| {
                 entity.id == 0
                     || entity.key.len() > 129
@@ -170,6 +173,12 @@ impl Session {
             return;
         };
         let (event, value, entities) = self.replica_events.front().unwrap();
+        let (entered, left) = if event == "replica:entities" {
+            crate::client::presentation::window_changes(&self.replica_previous, entities)
+        } else {
+            (vec![], vec![])
+        };
+        let current = entities.iter().map(|entity| entity.id).collect::<Vec<_>>();
         let request = Request {
             script,
             sequence,
@@ -186,9 +195,14 @@ impl Session {
                 .collect(),
             replica: true,
             entities: entities.clone(),
+            entered,
+            left,
         };
         match worker.requests.try_send(request) {
             Ok(()) => {
+                if event == "replica:entities" {
+                    self.replica_previous = current;
+                }
                 self.replica_events.pop_front();
                 self.sequence = sequence;
                 self.pending = Some(sequence);

@@ -20,6 +20,10 @@ pub(crate) struct Request {
     pub(crate) texts: Vec<(String, String)>,
     pub(crate) replica: bool,
     pub(crate) entities: Vec<EntityView>,
+    /// IDs entering or leaving the bounded presented window since the prior
+    /// dispatched entity callback. Leaving does not imply server despawn.
+    pub(crate) entered: Vec<u64>,
+    pub(crate) left: Vec<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -27,6 +31,21 @@ pub(crate) struct EntityView {
     pub(crate) id: u64,
     pub(crate) key: String,
     pub(crate) position: [f32; 3],
+}
+
+pub(crate) fn window_changes(previous: &[u64], current: &[EntityView]) -> (Vec<u64>, Vec<u64>) {
+    let current_ids = current.iter().map(|entity| entity.id).collect::<Vec<_>>();
+    let entered = current_ids
+        .iter()
+        .copied()
+        .filter(|id| previous.binary_search(id).is_err())
+        .collect();
+    let left = previous
+        .iter()
+        .copied()
+        .filter(|id| current_ids.binary_search(id).is_err())
+        .collect();
+    (entered, left)
 }
 
 #[derive(Debug)]
@@ -117,6 +136,18 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
         }
         entities.set_readonly(true);
         input.raw_set("entities", entities)?;
+        for (name, ids) in [("entered", request.entered), ("left", request.left)] {
+            let list = lua.create_table_with_capacity(ids.len(), 0)?;
+            for (index, id) in ids.into_iter().enumerate() {
+                let value = lua.create_table()?;
+                value.raw_set("id_lo", id as u32)?;
+                value.raw_set("id_hi", (id >> 32) as u32)?;
+                value.set_readonly(true);
+                list.raw_set(index + 1, value)?;
+            }
+            list.set_readonly(true);
+            input.raw_set(name, list)?;
+        }
         let output: mlua::Table = entry.call(input)?;
         // Do not trust raw_len alone: sparse/associative tables must not bypass
         // traversal limits. Reject the seventeenth pair before decoding it.

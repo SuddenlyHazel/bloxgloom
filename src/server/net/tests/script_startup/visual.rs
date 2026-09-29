@@ -16,7 +16,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
         "return function(h) h.set_replica_handler('demo:visual') end",
     )
     .unwrap();
-    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then return {} end return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0}} end").unwrap();
+    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 1); return {} end assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == e.id_lo and input.entered[1].id_hi == e.id_hi); return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0}} end").unwrap();
     let state = Box::new(fixture.open().unwrap());
     let fingerprint = state.world.catalog().fingerprint();
     gameplay::serve(state, |address| {

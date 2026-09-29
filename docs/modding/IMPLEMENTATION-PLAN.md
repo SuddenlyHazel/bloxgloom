@@ -682,8 +682,9 @@ creature preview cover this initial mobile declaration surface. Optional bounded
 interaction requests now invoke the same server-side Luau source with an explicit
 interaction event, and authored gait parameters negotiate through V33. Defaults
 keep V31/V32 bytes; the client receives only inert request and animation data.
-Luau `register_machine` now declares a one-cell process machine with one explicit
-recipe, optional fuel, and a host-owned three or two slot inventory screen.
+Luau `register_machine` declares a process machine with one explicit recipe,
+optional fuel, and a host-owned three or two slot inventory screen; omitted
+footprints default to one cell.
 The server runs its bounded planning callback; V32 reconstructs the inert client
 machine descriptor and status screen. A real-listener join, restart identity,
 invalid declaration checks and desktop/compact screen previews cover this slice.
@@ -712,8 +713,12 @@ applies these only to client avatars, after interpolation. Switch and reconnect
 discard offsets, and malformed outputs leave the prior presentation intact.
 Packages without an authored UI now run the same replica module on an independent
 session worker that accepts only visual pose commands. A real-listener join,
-reconnect and restart cover that path. General effect commands, lifecycle event
-inputs and production scene acceptance remain open.
+reconnect and restart cover that path. Both worker paths now expose bounded
+`entered` and `left` ID lists for changes to the offered presentation window;
+these are window transitions, since chunk eviction and the 16-entity cap do not
+prove a server despawn. Real-listener join, switch and restart exercise the
+session reset. General effect commands and production scene acceptance remain
+open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
