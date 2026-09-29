@@ -65,6 +65,10 @@ pub(in crate::server) struct StartupOwnerCodec {
 }
 
 impl ServerStartup {
+    pub(crate) fn into_preview_catalog(self) -> Catalog {
+        Arc::unwrap_or_clone(self.catalog)
+    }
+
     /// Explicit local-development root only. All scripts finish and all public
     /// declarations validate before a replacement startup catalog is published.
     pub(crate) fn with_local_packages(self, root: &std::path::Path) -> io::Result<Self> {

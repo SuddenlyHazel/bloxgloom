@@ -38,6 +38,15 @@ pub(crate) use script::{SourceModule, run_presentation};
 mod simulation;
 mod spawn;
 mod startup;
+
+pub(crate) fn package_catalog_for_preview(
+    catalog: crate::content::Catalog,
+    root: &std::path::Path,
+) -> std::io::Result<crate::content::Catalog> {
+    startup::ServerStartup::new(std::sync::Arc::new(catalog))
+        .with_local_packages(root)
+        .map(startup::ServerStartup::into_preview_catalog)
+}
 mod streaming;
 mod voxel_view;
 

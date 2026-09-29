@@ -18,6 +18,8 @@ mod bundle_runtime;
 mod bundle_ui;
 #[path = "script_startup/combined.rs"]
 mod combined;
+#[path = "script_startup/creature.rs"]
+mod creature;
 #[path = "script_startup/drop_policy.rs"]
 mod drop_policy;
 #[path = "script_startup/gameplay.rs"]

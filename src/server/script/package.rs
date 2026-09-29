@@ -149,8 +149,8 @@ impl PackageSnapshot {
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
         use bloxgloom_host_api::composition::{
-            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, OWNER_SYSTEMS, Package,
-            STORAGE,
+            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, MOBILE_ENTITIES,
+            OWNER_SYSTEMS, Package, STORAGE,
         };
         self.packages
             .iter()
@@ -163,6 +163,7 @@ impl PackageSnapshot {
                             && c != OWNER_SYSTEMS
                             && c != STORAGE
                             && c != INVENTORY_SCREENS
+                            && c != MOBILE_ENTITIES
                     })
                 {
                     return Err(error(
@@ -193,6 +194,17 @@ impl PackageSnapshot {
             p.manifest
                 .requires
                 .contains(bloxgloom_host_api::composition::CONTENT)
+        })
+    }
+
+    pub(super) fn permits_creatures(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            [
+                bloxgloom_host_api::composition::CONTENT,
+                bloxgloom_host_api::composition::MOBILE_ENTITIES,
+            ]
+            .into_iter()
+            .all(|capability| p.manifest.requires.contains(capability))
         })
     }
 
@@ -243,6 +255,12 @@ impl PackageSnapshot {
         let mut identity = schema.to_le_bytes().to_vec();
         identity.extend(revision.to_le_bytes());
         self.execution_identity(b"luau-owner-system-v1", entry, &identity)
+    }
+
+    pub(super) fn creature_schema(&self, entry: &str, schema: u16, revision: u16) -> u64 {
+        let mut identity = schema.to_le_bytes().to_vec();
+        identity.extend(revision.to_le_bytes());
+        self.execution_identity(b"luau-creature-v1", entry, &identity)
     }
 
     pub(super) fn entity_schema(

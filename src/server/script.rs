@@ -2,6 +2,7 @@
 //! no live world state or file handle is exposed to scripts. Startup may collect
 //! bounded public declarations. Gameplay borrows only a staged public Context.
 
+pub(in crate::server::script) mod creature;
 mod entities;
 mod gameplay;
 mod generation;

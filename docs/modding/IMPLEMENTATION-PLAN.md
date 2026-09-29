@@ -670,6 +670,12 @@ Chunk owners may also declare `creates_entities=true` and stage up to 16
 package-owned general entity spawns at captured cells. The host validates the
 registered schema and terrain, allocates IDs, and commits spawns with owner state
 through the same receipt. Owner entity reads, updates and removals remain open.
+Luau `register_creature` now declares bounded server tick logic, a host-owned
+locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
+the client without sending the server callback or private creature bytes. A
+real-listener catalog join, restart identity, bounded route failure and authored
+creature preview cover this initial mobile declaration surface; interactions,
+client animation customization and machine declarations remain open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints, machines and creatures remain open.

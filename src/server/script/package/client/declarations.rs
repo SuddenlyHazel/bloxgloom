@@ -7,6 +7,7 @@ use bloxgloom_host_api::{composition, content};
 use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
 mod appearance;
 mod components;
+mod creature;
 mod runtime;
 mod states;
 mod storage;
@@ -29,6 +30,7 @@ pub(super) struct Format {
     pub state_textures: bool,
     pub storage: bool,
     pub screen_layout: bool,
+    pub creatures: bool,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,7 @@ pub(super) struct Startup {
     textures: Vec<content::Texture>,
     blocks: Vec<content::Block>,
     storage: Vec<crate::server::script::startup::StorageDeclaration>,
+    creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
     runtime: runtime::Runtime,
 }
 
@@ -57,6 +60,7 @@ impl ClientBundle {
         let textures = &declarations.textures;
         let blocks = &declarations.blocks;
         let storage = &declarations.storage;
+        let creatures = &declarations.creatures;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
@@ -64,6 +68,7 @@ impl ClientBundle {
             || textures.len() > MAX_PACKAGES * MAX_TEXTURES
             || blocks.len() > MAX_PACKAGES * MAX_BLOCKS
             || storage.len() > MAX_PACKAGES * 8
+            || creatures.len() > MAX_PACKAGES * 8
         {
             return Err(invalid());
         }
@@ -87,7 +92,8 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
-        let storage_format = !storage.is_empty();
+        let creature_format = !creatures.is_empty();
+        let storage_format = !storage.is_empty() || creature_format;
         let state_texture_format = blocks
             .iter()
             .any(|block| block.states.iter().any(|state| state.textures.is_some()));
@@ -106,7 +112,10 @@ impl ClientBundle {
                 || declaration.screen.groups.len() != 1
                 || declaration.screen.groups[0].label != "STORAGE"
         });
-        let version = if screen_layout {
+        let bundle_screen_layout = screen_layout || creature_format;
+        let version = if creature_format {
+            CREATURE_MAGIC
+        } else if screen_layout {
             SCREEN_LAYOUT_MAGIC
         } else if storage_format {
             STORAGE_MAGIC
@@ -335,7 +344,10 @@ impl ClientBundle {
             }
             runtime.encode_package(&mut writer, name)?;
             if storage_format {
-                storage::encode(&mut writer, name, storage, screen_layout)?;
+                storage::encode(&mut writer, name, storage, bundle_screen_layout)?;
+            }
+            if creature_format {
+                creature::encode(&mut writer, name, creatures)?;
             }
         }
         if has_appearance || extended_blocks {
@@ -361,6 +373,7 @@ impl ClientBundle {
             || decoded.blocks.len() != blocks.len()
             || decoded.tags.len() != tags.len()
             || decoded.storage.len() != storage.len()
+            || decoded.creatures.len() != creatures.len()
             || decoded.runtime.counts() != runtime.counts()
             || decoded.player_rules != declarations.player_rules
             || decoded.appearance != declarations.appearance
@@ -400,6 +413,9 @@ impl ClientBundle {
                         declarations.install_base(&mut catalog)?;
                         declarations.install_items_and_tags(&mut catalog)?;
                         catalog.refresh_builtin_fuels()?;
+                        for creature in &startup.creatures {
+                            catalog.register_mobile(creature.clone())?;
+                        }
                         startup.runtime.install(&mut catalog)?;
                         for declaration in &startup.storage {
                             catalog.extension_storage(&declaration.storage)?;
@@ -458,6 +474,7 @@ impl Startup {
             state_textures,
             storage,
             screen_layout,
+            creatures,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -474,6 +491,7 @@ impl Startup {
                 || state_textures
                 || storage
                 || screen_layout
+                || creatures
             {
                 return Err(invalid());
             }
@@ -490,6 +508,7 @@ impl Startup {
         let mut has_state_textures = false;
         let mut has_storage = false;
         let mut has_screen_layout = false;
+        let mut has_creatures = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -499,6 +518,7 @@ impl Startup {
             textures: Vec::new(),
             blocks: Vec::new(),
             storage: Vec::new(),
+            creatures: Vec::new(),
             runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
@@ -506,7 +526,13 @@ impl Startup {
                 return Err(invalid());
             }
             let mut requires = Vec::new();
-            for _ in 0..reader.count(if storage { 6 } else { 4 })? {
+            for _ in 0..reader.count(if creatures {
+                7
+            } else if storage {
+                6
+            } else {
+                4
+            })? {
                 let requirement = reader.text(64)?;
                 if ![
                     composition::CONTENT,
@@ -515,6 +541,7 @@ impl Startup {
                     composition::OWNER_SYSTEMS,
                     composition::STORAGE,
                     composition::INVENTORY_SCREENS,
+                    composition::MOBILE_ENTITIES,
                 ]
                 .contains(&requirement.as_str())
                     || requires.last().is_some_and(|last| last >= &requirement)
@@ -863,6 +890,11 @@ impl Startup {
                 });
                 startup.storage.extend(decoded);
             }
+            if creatures {
+                let decoded = creature::decode(reader, name, &requires)?;
+                has_creatures |= !decoded.is_empty();
+                startup.creatures.extend(decoded);
+            }
             startup.packages.push(composition::Package {
                 key: format!("{name}:package"),
                 version: 1,
@@ -921,8 +953,9 @@ impl Startup {
             || (block_states && !has_states && !components)
             || (components && !has_components && !state_textures)
             || (state_textures && !has_state_textures && !storage)
-            || (storage && !has_storage)
-            || (screen_layout && !has_screen_layout)
+            || (storage && !has_storage && !creatures)
+            || (screen_layout && !has_screen_layout && !creatures)
+            || (creatures && !has_creatures)
         {
             return Err(invalid());
         }
