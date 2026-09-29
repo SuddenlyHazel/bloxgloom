@@ -721,12 +721,17 @@ identity and malformed-footprint checks cover the declaration. A production
 nonblocking-listener test places across a negative chunk seam, opens the screen
 from the secondary cell, restarts, breaks that cell and verifies both world
 cells plus the single conserved item after recovery.
-Simple one-cell storage entities and inventory screens can now be authored in
+Simple storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
-screen layouts; configurable footprints remain open.
+screens; omitted footprints use one cell.
 Optional bounded storage screen hints and labeled slot groups now negotiate in
 V30. A real-listener join and restart verify the client layout and saved identity;
 broader dynamic content remains open.
+Bounded storage footprints of up to eight cells now negotiate in V38. The
+client reconstructs the same screen access cells, while the host owns one
+inventory and one placement/refund transaction. A real-listener test places
+across a negative chunk seam, opens the screen from the secondary cell,
+restarts, breaks from that cell, and checks both blocks plus item conservation.
 The downloaded session replica handler now receives a bounded, sorted public
 window of package-owned mobile entities after complete snapshot/commit install.
 It may return validated visual pose offsets for offered exact IDs; the worker
@@ -777,7 +782,7 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
   Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists, transfer ports, machine footprints and their
+  machines, bounded recipe lists, transfer ports, machine/storage footprints and their
   status screens are bound; richer interactions and authored visual acceptance
   remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.

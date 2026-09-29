@@ -183,6 +183,14 @@ builtin `give` and `spawn` console commands use these same registered action
 operations and durable receipts. `help` is local console text, not a gameplay
 transaction or mod command registry.
 
+`register_storage(entity, block, title, slots, columns, options)` creates a
+host-owned inventory screen. `options.footprint={{0,0,0},{1,0,0}}` may declare
+one to eight distinct cells with offsets from -2 through 2 on each axis; the
+anchor `{0,0,0}` is required. Every cell uses the block's placement state.
+The host places and removes the whole footprint atomically, opens the same
+inventory from any cell, and refunds the placed item only once. Footprints
+participate in V38 client catalog and save identity.
+
 A mobile creature tick receives read-only `c.position` and bounded host world
 queries: `c.solid(x,y,z)` uses integer cells; `c.clear(x,y,z)` and
 `c.grounded(x,y,z)` use feet positions; `c.walk_edge(x1,y1,z1,x2,y2,z2)` checks

@@ -1,10 +1,9 @@
-//! Single-cell host-owned storage with a shared, negotiated inventory screen.
+//! Host-owned storage with a shared, negotiated inventory screen.
 use super::*;
 use crate::server::script::values::integer;
-use bloxgloom_host_api::{
-    InventoryScreen, SlotGroup,
-    lifecycle::{FootprintCell, StorageBlockEntity},
-};
+use bloxgloom_host_api::{InventoryScreen, SlotGroup, lifecycle::StorageBlockEntity};
+#[path = "storage/footprint.rs"]
+mod footprint;
 
 #[derive(Clone, Debug)]
 pub(in crate::server::script) struct Declaration {
@@ -64,6 +63,16 @@ pub(super) fn declarer(
                     .find(|definition| definition.key == block)
                     .ok_or("storage needs a previously registered block")?;
                 let state = super::placement_state(block_def);
+                let cells = match &options {
+                    Value::Nil => footprint::parse(Value::Nil, &state)?,
+                    Value::Table(table) => footprint::parse(
+                        table
+                            .raw_get("footprint")
+                            .map_err(|_| "invalid storage footprint")?,
+                        &state,
+                    )?,
+                    _ => return Err("storage screen options must be a table"),
+                };
                 let title = text(title)?;
                 let slots = integer(slots, 1, 54)? as u8;
                 let columns = integer(columns, 1, 9)? as u8;
@@ -71,16 +80,19 @@ pub(super) fn declarer(
                     entity: entity.clone(),
                     block: block.clone(),
                     placement_item: block.clone(),
-                    anchor_state: state.clone(),
-                    footprint: vec![FootprintCell {
-                        offset: [0; 3],
-                        state,
-                    }],
+                    footprint: cells.clone(),
+                    anchor_state: state,
                     slots: usize::from(slots),
                     automation_faces: None,
                 };
-                let mut screen =
-                    InventoryScreen::storage(&entity, &block, &title, slots, columns, vec![[0; 3]]);
+                let mut screen = InventoryScreen::storage(
+                    &entity,
+                    &block,
+                    &title,
+                    slots,
+                    columns,
+                    cells.iter().map(|cell| cell.offset).collect(),
+                );
                 if !options.is_nil() {
                     let Value::Table(options) = options else {
                         return Err("storage screen options must be a table");

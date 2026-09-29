@@ -38,6 +38,7 @@ pub(super) struct Format {
     pub machine_recipes: bool,
     pub machine_ports: bool,
     pub machine_footprints: bool,
+    pub storage_footprints: bool,
 }
 
 #[derive(Debug)]
@@ -116,7 +117,10 @@ impl ClientBundle {
         let machine_footprints = machines
             .iter()
             .any(|declaration| declaration.machine.variants[0].idle.len() > 1);
-        let creature_format = !creatures.is_empty() || machine_format;
+        let storage_footprints = storage
+            .iter()
+            .any(|declaration| declaration.storage.footprint.len() > 1);
+        let creature_format = !creatures.is_empty() || machine_format || storage_footprints;
         let creature_options = creatures.iter().any(|creature| {
             creature.animation != bloxgloom_host_api::entity::Animation::default()
                 || !creature.interaction.is_empty()
@@ -144,7 +148,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if creature_policy {
+        let version = if storage_footprints {
+            STORAGE_FOOTPRINT_MAGIC
+        } else if creature_policy {
             CREATURE_POLICY_MAGIC
         } else if machine_footprints {
             MACHINE_FOOTPRINT_MAGIC
@@ -387,7 +393,13 @@ impl ClientBundle {
             }
             runtime.encode_package(&mut writer, name)?;
             if storage_format {
-                storage::encode(&mut writer, name, storage, bundle_screen_layout)?;
+                storage::encode(
+                    &mut writer,
+                    name,
+                    storage,
+                    bundle_screen_layout,
+                    storage_footprints,
+                )?;
             }
             if creature_format {
                 creature::encode(
@@ -398,18 +410,23 @@ impl ClientBundle {
                         || machine_recipes
                         || machine_ports
                         || machine_footprints
-                        || creature_policy,
-                    creature_policy,
+                        || creature_policy
+                        || storage_footprints,
+                    creature_policy || storage_footprints,
                 )?;
             }
-            if machine_format || creature_options || creature_policy {
+            if machine_format || creature_options || creature_policy || storage_footprints {
                 machine::encode(
                     &mut writer,
                     name,
                     machines,
-                    machine_recipes || machine_ports || machine_footprints || creature_policy,
-                    machine_ports || machine_footprints || creature_policy,
-                    machine_footprints || creature_policy,
+                    machine_recipes
+                        || machine_ports
+                        || machine_footprints
+                        || creature_policy
+                        || storage_footprints,
+                    machine_ports || machine_footprints || creature_policy || storage_footprints,
+                    machine_footprints || creature_policy || storage_footprints,
                 )?;
             }
         }
@@ -564,6 +581,7 @@ impl Startup {
             machine_recipes,
             machine_ports,
             machine_footprints,
+            storage_footprints,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -587,6 +605,7 @@ impl Startup {
                 || machine_recipes
                 || machine_ports
                 || machine_footprints
+                || storage_footprints
             {
                 return Err(invalid());
             }
@@ -610,6 +629,7 @@ impl Startup {
         let mut has_machine_recipes = false;
         let mut has_machine_ports = false;
         let mut has_machine_footprints = false;
+        let mut has_storage_footprints = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -985,14 +1005,23 @@ impl Startup {
             }
             startup.runtime.decode_package(reader, name, &requires)?;
             if storage {
-                let decoded =
-                    storage::decode(reader, name, &requires, &startup.blocks, screen_layout)?;
+                let decoded = storage::decode(
+                    reader,
+                    name,
+                    &requires,
+                    &startup.blocks,
+                    screen_layout,
+                    storage_footprints,
+                )?;
                 has_storage |= !decoded.is_empty();
                 has_screen_layout |= decoded.iter().any(|declaration| {
                     !declaration.screen.hint.is_empty()
                         || declaration.screen.groups.len() != 1
                         || declaration.screen.groups[0].label != "STORAGE"
                 });
+                has_storage_footprints |= decoded
+                    .iter()
+                    .any(|declaration| declaration.storage.footprint.len() > 1);
                 startup.storage.extend(decoded);
             }
             if creatures {
@@ -1102,8 +1131,12 @@ impl Startup {
             || (machines && !has_machines && !creature_options)
             || (machine_recipes && !has_machine_recipes && !machine_ports && !machine_footprints)
             || (machine_ports && !has_machine_ports && !machine_footprints)
-            || (machine_footprints && !has_machine_footprints && !creature_policy)
-            || (creature_policy && !has_creature_policy)
+            || (machine_footprints
+                && !has_machine_footprints
+                && !creature_policy
+                && !storage_footprints)
+            || (creature_policy && !has_creature_policy && !storage_footprints)
+            || (storage_footprints && !has_storage_footprints)
         {
             return Err(invalid());
         }

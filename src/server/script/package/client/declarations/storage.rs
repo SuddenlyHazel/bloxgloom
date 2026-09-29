@@ -1,4 +1,4 @@
-//! V29 declarative single-cell storage and inventory screen reconstruction.
+//! Declarative storage and inventory screen reconstruction through V38.
 use super::*;
 use crate::server::script::startup::StorageDeclaration;
 use bloxgloom_host_api::{
@@ -11,6 +11,7 @@ pub(super) fn encode(
     owner: &str,
     declarations: &[StorageDeclaration],
     screen_layout: bool,
+    footprints: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -32,11 +33,21 @@ pub(super) fn encode(
         if storage.block != screen.block
             || storage.entity != screen.entity
             || storage.placement_item != storage.block
-            || storage.footprint.len() != 1
-            || storage.footprint[0].offset != [0; 3]
-            || storage.footprint[0].state != storage.anchor_state
+            || storage.footprint.is_empty()
+            || storage.footprint.len() > 8
+            || storage.footprint.iter().any(|cell| {
+                cell.state != storage.anchor_state
+                    || cell.offset.iter().any(|axis| !(-2..=2).contains(axis))
+            })
+            || (!footprints
+                && (storage.footprint.len() != 1 || storage.footprint[0].offset != [0; 3]))
             || storage.automation_faces.is_some()
-            || screen.footprint != [[0; 3]]
+            || screen.footprint
+                != storage
+                    .footprint
+                    .iter()
+                    .map(|cell| cell.offset)
+                    .collect::<Vec<_>>()
             || screen.slots as usize != storage.slots
             || !screen.status.is_empty()
             || screen
@@ -51,6 +62,12 @@ pub(super) fn encode(
         writer.field(storage.block.as_bytes())?;
         writer.field(screen.title.as_bytes())?;
         writer.field(&[screen.slots, screen.columns])?;
+        if footprints {
+            writer.count(storage.footprint.len())?;
+            for cell in &storage.footprint {
+                writer.field(&cell.offset.map(|axis| axis as i8 as u8))?;
+            }
+        }
         if screen_layout {
             writer.field(screen.hint.as_bytes())?;
             writer.count(screen.groups.len())?;
@@ -76,6 +93,7 @@ pub(super) fn decode(
     requires: &[String],
     blocks: &[content::Block],
     screen_layout: bool,
+    footprints: bool,
 ) -> Result<Vec<StorageDeclaration>, ScriptError> {
     let mut result: Vec<StorageDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -114,20 +132,47 @@ pub(super) fn decode(
             .find(|definition| definition.key == block)
             .ok_or_else(invalid)?;
         let state = crate::server::script::startup::placement_state(definition);
+        let cells = if footprints {
+            let mut cells = Vec::new();
+            for _ in 0..reader.count(8)? {
+                let [x, y, z] = reader.field(3)? else {
+                    return Err(invalid());
+                };
+                let offset = [*x as i8 as i32, *y as i8 as i32, *z as i8 as i32];
+                if offset.iter().any(|axis| !(-2..=2).contains(axis))
+                    || cells.iter().any(|old: &FootprintCell| old.offset == offset)
+                {
+                    return Err(invalid());
+                }
+                cells.push(FootprintCell {
+                    offset,
+                    state: state.clone(),
+                });
+            }
+            cells
+        } else {
+            vec![FootprintCell {
+                offset: [0; 3],
+                state: state.clone(),
+            }]
+        };
         let storage = StorageBlockEntity {
             entity: entity.clone(),
             block: block.clone(),
             placement_item: block.clone(),
-            anchor_state: state.clone(),
-            footprint: vec![FootprintCell {
-                offset: [0; 3],
-                state,
-            }],
+            footprint: cells.clone(),
+            anchor_state: state,
             slots: usize::from(*slots),
             automation_faces: None,
         };
-        let mut screen =
-            InventoryScreen::storage(&entity, &block, &title, *slots, *columns, vec![[0; 3]]);
+        let mut screen = InventoryScreen::storage(
+            &entity,
+            &block,
+            &title,
+            *slots,
+            *columns,
+            cells.iter().map(|cell| cell.offset).collect(),
+        );
         if screen_layout {
             screen.hint = reader.text(80)?;
             let mut first = 0u8;
