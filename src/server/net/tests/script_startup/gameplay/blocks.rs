@@ -262,6 +262,46 @@ fn package_cube_flags_are_frozen_and_old_declaration_keeps_defaults() {
 }
 
 #[test]
+fn package_state_face_overrides_use_verified_registered_layers() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    package(&fixture, "return function(h)
+        h.register_texture('demo:tile','tile'); h.register_texture('demo:other','tile')
+        h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'off','on'}},states={
+            {lit='off'}, {lit='on',textures={top='demo:other',side='demo:tile',bottom='demo:tile'}}}})
+    end");
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let lit = catalog.state_by_key("demo:jade[lit=on]").unwrap();
+    let dark = catalog.state_by_key("demo:jade[lit=off]").unwrap();
+    assert_ne!(
+        catalog.state(lit).unwrap().textures.top,
+        catalog.state(dark).unwrap().textures.top
+    );
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x1c")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x528).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        assert_ne!(
+            client.state(lit).unwrap().textures.top,
+            client.state(dark).unwrap().textures.top
+        );
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+}
+
+#[test]
 fn package_explicit_states_negotiate_placement_and_light_identity() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
@@ -491,6 +531,10 @@ fn package_cube_rejections_fail_before_world_open() {
         (
             "h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'on','off'}},states={{lit='on'},[33]={lit='off'}}})",
             "invalid array index",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'on'}},states={{lit='on',textures={top='demo:missing',side='demo:tile',bottom='demo:tile'}}}})",
+            "state faces require registered matching package textures",
         ),
         (
             "pcall(function() h.register_block('demo:jade','Jade','demo:tile',{supports_plant='yes'}) end)",

@@ -1,7 +1,11 @@
-//! Bounded V26 property/schema records; no implicit combinations or VM values.
+//! Bounded V26 property/schema records and V28 per-state faces.
 use super::*;
 
-pub(super) fn encode(writer: &mut Writer, block: &content::Block) -> Result<(), ScriptError> {
+pub(super) fn encode(
+    writer: &mut Writer,
+    block: &content::Block,
+    textures: bool,
+) -> Result<(), ScriptError> {
     if block.properties.len() > 8 || block.states.is_empty() || block.states.len() > 32 {
         return Err(invalid());
     }
@@ -40,7 +44,7 @@ pub(super) fn encode(writer: &mut Writer, block: &content::Block) -> Result<(), 
     states.sort_by(|a, b| a.properties.cmp(&b.properties));
     writer.count(states.len())?;
     for state in states {
-        if state.textures.is_some() || state.properties.len() != properties.len() {
+        if (state.textures.is_some() && !textures) || state.properties.len() != properties.len() {
             return Err(invalid());
         }
         for property in &properties {
@@ -61,6 +65,14 @@ pub(super) fn encode(writer: &mut Writer, block: &content::Block) -> Result<(), 
             }
             writer.field(&[emission])?;
         }
+        if textures {
+            writer.count(usize::from(state.textures.is_some()))?;
+            if let Some(faces) = &state.textures {
+                for key in [&faces.top, &faces.side, &faces.bottom] {
+                    writer.field(key.as_bytes())?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -68,6 +80,9 @@ pub(super) fn encode(writer: &mut Writer, block: &content::Block) -> Result<(), 
 pub(super) fn decode(
     reader: &mut Reader<'_>,
     block: &mut content::Block,
+    textures: bool,
+    registered: &[content::Texture],
+    owner: &str,
 ) -> Result<(), ScriptError> {
     let mut properties = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -112,6 +127,29 @@ pub(super) fn decode(
         } else {
             None
         };
+        let faces = if textures && reader.count(1)? == 1 {
+            let mut face = || -> Result<String, ScriptError> {
+                let key = reader.text(129)?;
+                if key
+                    .split_once(':')
+                    .is_none_or(|(package, local)| package != owner || !identifier(local))
+                    || !registered.iter().any(|texture| {
+                        texture.key == key
+                            && (block.material != Material::Cutout || texture.alpha_cutout)
+                    })
+                {
+                    return Err(invalid());
+                }
+                Ok(key)
+            };
+            Some(content::FaceTextures {
+                top: face()?,
+                side: face()?,
+                bottom: face()?,
+            })
+        } else {
+            None
+        };
         if states
             .last()
             .is_some_and(|last: &content::BlockState| last.properties >= values)
@@ -120,7 +158,7 @@ pub(super) fn decode(
         }
         states.push(content::BlockState {
             properties: values,
-            textures: None,
+            textures: faces,
             emission,
         });
     }

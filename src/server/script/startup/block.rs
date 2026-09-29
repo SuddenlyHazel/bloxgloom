@@ -123,7 +123,10 @@ pub(in crate::server::script) fn visual(block: &Block) -> bool {
 }
 
 pub(in crate::server::script) fn stateful(block: &Block) -> bool {
-    !block.properties.is_empty() || block.states.len() != 1 || block.states[0].emission.is_some()
+    !block.properties.is_empty()
+        || block.states.len() != 1
+        || block.states[0].emission.is_some()
+        || block.states[0].textures.is_some()
 }
 
 pub(in crate::server::script) fn placement_state(block: &Block) -> String {

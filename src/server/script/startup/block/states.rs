@@ -66,13 +66,37 @@ pub(super) fn states(
         }
         let mut state = BlockState::default();
         for (index, pair) in table.pairs::<Value, Value>().enumerate() {
-            if index >= 9 {
+            if index >= 10 {
                 return Err("too many state fields");
             }
             let (name, value) = pair.map_err(|_| "invalid state field")?;
             let name = text(name)?;
             if name == "emission" {
                 state.emission = Some(integer(value, 0, 15)? as u8);
+            } else if name == "textures" {
+                let Value::Table(faces) = value else {
+                    return Err("state textures must be a table");
+                };
+                if faces.metatable().is_some()
+                    || faces.clone().pairs::<Value, Value>().take(4).count() != 3
+                {
+                    return Err("state textures require top, side and bottom");
+                }
+                let key = |name| -> Result<String, &'static str> {
+                    let key = text(faces.raw_get(name).map_err(|_| "invalid state texture")?)?;
+                    if key.split_once(':').is_none_or(|(owner, local)| {
+                        !super::super::super::package::manifest::identifier(owner)
+                            || !super::super::super::package::manifest::identifier(local)
+                    }) {
+                        return Err("invalid state texture key");
+                    }
+                    Ok(key)
+                };
+                state.textures = Some(FaceTextures {
+                    top: key("top")?,
+                    side: key("side")?,
+                    bottom: key("bottom")?,
+                });
             } else {
                 let property = properties
                     .iter()

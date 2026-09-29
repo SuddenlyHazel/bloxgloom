@@ -40,7 +40,8 @@ export type BloxBlockOptions = {
     properties: {[string]: {string}}?, -- 1..8 names, 1..16 values each
     states: {BloxBlockState}?, -- 1..32 explicit legal states
 }
-export type BloxBlockState = {[string]: string | number} -- property=value; optional emission=0..15
+export type BloxBlockState = {[string]: string | number | BloxStateFaces} -- property=value; optional emission=0..15 and textures
+export type BloxStateFaces = {top: string, side: string, bottom: string}
 export type BloxTextureOptions = { alpha_cutout: boolean? }
 export type BloxItemComponents = {
     version: number, -- 1..65535

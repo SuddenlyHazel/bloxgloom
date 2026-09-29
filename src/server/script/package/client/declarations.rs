@@ -25,6 +25,7 @@ pub(super) struct Format {
     pub visual_blocks: bool,
     pub block_states: bool,
     pub components: bool,
+    pub state_textures: bool,
 }
 
 #[derive(Debug)]
@@ -80,16 +81,22 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
-        let component_format = items
+        let state_texture_format = blocks
+            .iter()
+            .any(|block| block.states.iter().any(|state| state.textures.is_some()));
+        let item_components = items
             .iter()
             .any(|item| item.components != content::Components::None);
+        let component_format = item_components || state_texture_format;
         let authored_states = blocks
             .iter()
             .any(crate::server::script::startup::stateful_block);
         let states_format = authored_states || component_format;
         let extended_blocks = authored_blocks || tag_format || visual_format || states_format;
         let visual_format = visual_format || states_format;
-        let version = if component_format {
+        let version = if state_texture_format {
+            STATE_TEXTURES_MAGIC
+        } else if component_format {
             COMPONENTS_MAGIC
         } else if states_format {
             BLOCK_STATES_MAGIC
@@ -280,7 +287,7 @@ impl ClientBundle {
                     }])?;
                 }
                 if states_format {
-                    states::encode(&mut writer, block)?;
+                    states::encode(&mut writer, block, state_texture_format)?;
                 }
             }
             if tag_format || visual_format {
@@ -424,6 +431,7 @@ impl Startup {
             visual_blocks,
             block_states,
             components,
+            state_textures,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -437,6 +445,7 @@ impl Startup {
                 || visual_blocks
                 || block_states
                 || components
+                || state_textures
             {
                 return Err(invalid());
             }
@@ -450,6 +459,7 @@ impl Startup {
         let mut has_visual = false;
         let mut has_states = false;
         let mut has_components = false;
+        let mut has_state_textures = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -750,8 +760,9 @@ impl Startup {
                     }
                 }
                 if block_states {
-                    states::decode(reader, &mut block)?;
+                    states::decode(reader, &mut block, state_textures, &startup.textures, name)?;
                     has_states |= crate::server::script::startup::stateful_block(&block);
+                    has_state_textures |= block.states.iter().any(|state| state.textures.is_some());
                 }
                 item.placeable = Some(crate::server::script::startup::placement_state(&block));
                 startup.blocks.push(block);
@@ -864,7 +875,8 @@ impl Startup {
             || (tags && !has_tag && !visual_blocks)
             || (visual_blocks && !has_visual && !block_states)
             || (block_states && !has_states && !components)
-            || (components && !has_components)
+            || (components && !has_components && !state_textures)
+            || (state_textures && !has_state_textures)
         {
             return Err(invalid());
         }

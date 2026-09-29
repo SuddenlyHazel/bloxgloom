@@ -647,8 +647,11 @@ state. Per-state textures and specialized entity/UI
 registrations are still outstanding.
 Opaque item component schema identity and required/version/size constraints are
 now authored and negotiated by V27; live Luau grants reject wrong versions and
-persist exact component bytes. Per-state textures and specialized declarations
+persist exact component bytes. Specialized declarations
 remain open.
+Explicit per-state face overrides now negotiate as V28 with package-owned
+registered textures, including cutout checks. Specialized creature/machine/
+screen declarations and owner/client execution services remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -678,7 +681,7 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Expose per-state textures, creatures,
+- [ ] Expose creatures,
   machines and screens as Luau startup declarations. Bounded explicit state
   properties, one-state cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the

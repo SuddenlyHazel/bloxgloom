@@ -66,8 +66,12 @@ set (up to 8 property names, 16 values per name and 32 legal states). No
 Cartesian product is implicit; `set_block` and property transitions accept only
 listed combinations. State names are canonical and sorted, for example
 `package:lamp[lit=off]`. The block's item places the lexicographically first
-legal state. Unspecified states are rejected rather than synthesized; per-state
-textures and invisible materials still require a broader Luau binding. Do not
+legal state. A state may also override all three faces with
+`textures={top='package:top',side='package:side',bottom='package:bottom'}`.
+Each face must already be a registered texture of the same package, and cutout
+blocks must use cutout face textures. V28 bundles preserve these overrides;
+unspecified states are rejected rather than synthesized. Invisible materials
+still require a broader Luau binding. Do not
 mistake this shorthand for the
 entire public Rust `Block` contract.
 

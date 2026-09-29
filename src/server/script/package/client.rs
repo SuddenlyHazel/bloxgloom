@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–27
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–28
 //! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -25,6 +25,7 @@
 //! V25 adds cutout texture flags and block geometry/material to the V24 grammar.
 //! V26 adds explicit bounded property schemas and legal state lists to V25.
 //! V27 adds opaque item component schema identity to V26.
+//! V28 adds per-state package-owned face textures to V27.
 //! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
@@ -57,6 +58,7 @@ const TAGS_MAGIC: &[u8] = b"BGCLIENT\x18";
 const VISUAL_BLOCKS_MAGIC: &[u8] = b"BGCLIENT\x19";
 const BLOCK_STATES_MAGIC: &[u8] = b"BGCLIENT\x1a";
 const COMPONENTS_MAGIC: &[u8] = b"BGCLIENT\x1b";
+const STATE_TEXTURES_MAGIC: &[u8] = b"BGCLIENT\x1c";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -215,6 +217,7 @@ impl ClientBundle {
             VISUAL_BLOCKS_MAGIC,
             BLOCK_STATES_MAGIC,
             COMPONENTS_MAGIC,
+            STATE_TEXTURES_MAGIC,
         ]
         .contains(&version)
         {
@@ -321,7 +324,8 @@ impl ClientBundle {
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
                 animated: version == ANIMATED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
                     || version == APPEARANCE_MAGIC
@@ -332,7 +336,8 @@ impl ClientBundle {
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
                 player: version == PLAYER_MAGIC
                     || version == PLAYER_SIZED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
@@ -345,21 +350,28 @@ impl ClientBundle {
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
                 extended_blocks: version == BLOCK_OPTIONS_MAGIC
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
                 tags: version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
                 visual_blocks: version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
-                    || version == COMPONENTS_MAGIC,
-                block_states: version == BLOCK_STATES_MAGIC || version == COMPONENTS_MAGIC,
-                components: version == COMPONENTS_MAGIC,
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
+                block_states: version == BLOCK_STATES_MAGIC
+                    || version == COMPONENTS_MAGIC
+                    || version == STATE_TEXTURES_MAGIC,
+                components: version == COMPONENTS_MAGIC || version == STATE_TEXTURES_MAGIC,
+                state_textures: version == STATE_TEXTURES_MAGIC,
             },
         )?;
         if !reader.0.is_empty() {

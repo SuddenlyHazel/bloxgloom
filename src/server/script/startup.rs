@@ -470,6 +470,25 @@ pub(super) fn invoke(
                 {
                     return Err("cutout blocks require cutout face textures");
                 }
+                for state in &block.states {
+                    if let Some(faces) = &state.textures {
+                        for face in [&faces.top, &faces.side, &faces.bottom] {
+                            if face.split_once(':').is_none_or(|(owner, local)| {
+                                owner != block_namespace
+                                    || !super::package::manifest::identifier(local)
+                            }) || !pending.textures.iter().any(|texture| {
+                                texture.definition.key == *face
+                                    && (block.material
+                                        != bloxgloom_host_api::content::Material::Cutout
+                                        || texture.definition.alpha_cutout)
+                            }) {
+                                return Err(
+                                    "state faces require registered matching package textures",
+                                );
+                            }
+                        }
+                    }
+                }
                 let placeable = block::placement_state(&block);
                 pending.blocks.push(block);
                 pending.items.push(Item {
