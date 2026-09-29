@@ -21,6 +21,10 @@ fn fixture() -> Fixture {
     );
     fixture
 }
+fn open_boxed(fixture: &Fixture) -> Box<State> {
+    Box::new(fixture.open().unwrap())
+}
+
 fn scalar(updates: &[crate::render::parameters::Update]) -> f32 {
     let update = updates
         .iter()
@@ -42,17 +46,29 @@ fn negotiated_visuals_parameters_switch_and_restart_without_global_state() {
         .unwrap()
         .replace("0.35", "0.75");
     std::fs::write(path, source).unwrap();
-    let state = original.open().unwrap();
+    let state = open_boxed(&original);
     let fingerprint = state.world.catalog().fingerprint();
+    let other_state = open_boxed(&other);
+    let other_fingerprint = other_state.world.catalog().fingerprint();
+    // Creature schema identity includes the package source identity. A server
+    // with different startup source must negotiate its own exact catalog.
+    assert_ne!(fingerprint, other_fingerprint);
     let mut identity = None;
-    gameplay::serve(Box::new(state), |first| {
-        gameplay::serve(Box::new(other.open().unwrap()), |second| {
+    gameplay::serve(state, |first| {
+        gameplay::serve(other_state, |second| {
             for (address, expected) in [(first, 0.35), (second, 0.75), (first, 0.35)] {
                 let bundle = crate::client::connect_bundle_probe(&address.to_string(), 0x70701)
                     .unwrap()
                     .unwrap();
                 let catalog = bundle.session_catalog().unwrap();
-                assert_eq!(catalog.fingerprint(), fingerprint);
+                assert_eq!(
+                    catalog.fingerprint(),
+                    if address == first {
+                        fingerprint
+                    } else {
+                        other_fingerprint
+                    }
+                );
                 let material = bundle.material().unwrap().resolve(&catalog).unwrap();
                 assert_eq!(material.materials[0].layers.len(), 2);
                 let effect = bundle.effect().unwrap();
