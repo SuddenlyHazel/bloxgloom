@@ -59,6 +59,7 @@ mod block;
 pub(in crate::server::script) use block::cube;
 pub(in crate::server::script) use block::extended as extended_block;
 pub(in crate::server::script) use block::visual as visual_block;
+pub(in crate::server::script) use block::{placement_state, stateful as stateful_block};
 mod appearance;
 mod item;
 mod player;
@@ -468,13 +469,14 @@ pub(super) fn invoke(
                 {
                     return Err("cutout blocks require cutout face textures");
                 }
+                let placeable = block::placement_state(&block);
                 pending.blocks.push(block);
                 pending.items.push(Item {
                     key: key.clone(),
                     name,
                     texture,
                     swatch: [1.0; 4],
-                    placeable: Some(key),
+                    placeable: Some(placeable),
                     sprite: false,
                     drop_size: bloxgloom_host_api::content::DropSize::Normal,
                     drop_animation: Default::default(),

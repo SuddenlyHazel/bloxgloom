@@ -640,7 +640,11 @@ radius after capturing dependencies. Broader event context and specialized
 owner services still prevent checking off the combined surface as complete.
 One-state cutout cubes/crossed plants and cutout texture declarations now use a
 V25 client bundle; defaults retain older bytes. A real listener negotiates the
-same plant/cutout selection and restart identity. Multi-state content remains.
+same plant/cutout selection and restart identity.
+Explicit bounded Luau property schemas and legal states with emission overrides
+now use V26 and negotiate the same canonical state keys and default placement
+state. Per-state textures, item component schemas, and specialized entity/UI
+registrations are still outstanding.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -670,9 +674,9 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Widen one-state cube/plant content to multi-state and more material content and
-  expose applicable component schemas, creatures, machines and screens as Luau
-  startup declarations. Cube faces/emission and item/block tags are now bound.
+- [ ] Expose per-state textures and applicable component schemas, creatures,
+  machines and screens as Luau startup declarations. Bounded explicit state
+  properties, one-state cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
 - [ ] Bind directly authored owner entity/drop operations and broader owner

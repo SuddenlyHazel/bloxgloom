@@ -3,6 +3,7 @@
 use crate::server::script::values::{integer, text};
 use bloxgloom_host_api::content::{Block, BlockState, FaceTextures, Geometry, Material};
 use mlua::Value;
+mod states;
 
 pub(in crate::server::script) fn cube(
     key: String,
@@ -31,8 +32,10 @@ pub(in crate::server::script) fn cube(
         Value::Table(table) => table,
         _ => return Err("block options must be a table"),
     };
+    let mut properties = None;
+    let mut states = None;
     for (index, pair) in options.pairs::<Value, Value>().enumerate() {
-        if index >= 11 {
+        if index >= 13 {
             return Err("too many block options");
         }
         let (key, value) = pair.map_err(|_| "invalid block option")?;
@@ -81,8 +84,17 @@ pub(in crate::server::script) fn cube(
                     _ => return Err("unsupported block material"),
                 };
             }
+            b"properties" => properties = Some(value),
+            b"states" => states = Some(value),
             _ => return Err("unknown block option"),
         }
+    }
+    if properties.is_some() || states.is_some() {
+        block.properties = states::properties(properties.ok_or("states require properties")?)?;
+        block.states = states::states(
+            states.ok_or("properties require explicit states")?,
+            &block.properties,
+        )?;
     }
     if block.geometry != Geometry::Cube && (block.material != Material::Cutout || block.solid) {
         return Err("crossed plants require cutout material and solid=false");
@@ -108,4 +120,31 @@ pub(in crate::server::script) fn extended(block: &Block) -> bool {
 
 pub(in crate::server::script) fn visual(block: &Block) -> bool {
     block.geometry != Geometry::Cube || block.material != Material::Opaque
+}
+
+pub(in crate::server::script) fn stateful(block: &Block) -> bool {
+    !block.properties.is_empty() || block.states.len() != 1 || block.states[0].emission.is_some()
+}
+
+pub(in crate::server::script) fn placement_state(block: &Block) -> String {
+    let mut states = block
+        .states
+        .iter()
+        .map(|state| {
+            let mut properties = state.properties.clone();
+            properties.sort();
+            let suffix = properties
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            (properties, suffix)
+        })
+        .collect::<Vec<_>>();
+    states.sort_by(|a, b| a.0.cmp(&b.0));
+    if states[0].1.is_empty() {
+        block.key.clone()
+    } else {
+        format!("{}[{}]", block.key, states[0].1)
+    }
 }

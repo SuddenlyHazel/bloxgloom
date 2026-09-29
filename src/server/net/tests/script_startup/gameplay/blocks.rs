@@ -262,6 +262,61 @@ fn package_cube_flags_are_frozen_and_old_declaration_keeps_defaults() {
 }
 
 #[test]
+fn package_explicit_states_negotiate_placement_and_light_identity() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let source = |emission| {
+        format!(
+            "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile',{{properties={{lit={{'on','off'}}}},states={{{{lit='on',emission={emission}}},{{lit='off'}}}}}}); h.register_tag('demo:lamps','block',{{'demo:jade'}}) end"
+        )
+    };
+    package(&fixture, &source(12));
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let off = catalog.state_by_key("demo:jade[lit=off]").unwrap();
+    let on = catalog.state_with_property(off, "lit", "on").unwrap();
+    assert_eq!(catalog.emission(on), 12);
+    assert_eq!(catalog.emission(off), 0);
+    let item = catalog.item_by_key("demo:jade").unwrap();
+    assert_eq!(catalog.item(item).unwrap().placeable, Some(off));
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x1a")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x526).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        assert_eq!(
+            client.emission(client.state_by_key("demo:jade[lit=on]").unwrap()),
+            12
+        );
+        assert_eq!(
+            client
+                .item(client.item_by_key("demo:jade").unwrap())
+                .unwrap()
+                .placeable,
+            Some(off)
+        );
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    let before = std::fs::read(fixture.0.join("save/content.map")).unwrap();
+    package(&fixture, &source(13));
+    assert!(fixture.open().is_err());
+    assert_eq!(
+        std::fs::read(fixture.0.join("save/content.map")).unwrap(),
+        before
+    );
+}
+
+#[test]
 fn package_cutout_plants_and_textures_roundtrip_on_real_listener() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
@@ -424,6 +479,18 @@ fn package_cube_rejections_fail_before_world_open() {
         (
             "h.register_block('demo:jade','Jade','demo:tile',{geometry='crossed_plant'})",
             "crossed plants require",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'on','off'}},states={{lit='on'},{lit='on'}}})",
+            "duplicate block state",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'on','off'}},states={{lit='missing'}}})",
+            "state value not in property schema",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{properties={lit={'on','off'}},states={{lit='on'},[33]={lit='off'}}})",
+            "invalid array index",
         ),
         (
             "pcall(function() h.register_block('demo:jade','Jade','demo:tile',{supports_plant='yes'}) end)",

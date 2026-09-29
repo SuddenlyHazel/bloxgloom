@@ -7,6 +7,7 @@ use bloxgloom_host_api::{composition, content};
 use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
 mod appearance;
 mod runtime;
+mod states;
 
 const MAX_ITEMS: usize = 32;
 const MAX_TEXTURES: usize = 32;
@@ -21,6 +22,7 @@ pub(super) struct Format {
     pub extended_blocks: bool,
     pub tags: bool,
     pub visual_blocks: bool,
+    pub block_states: bool,
 }
 
 #[derive(Debug)]
@@ -76,8 +78,14 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
-        let extended_blocks = authored_blocks || tag_format || visual_format;
-        let version = if visual_format {
+        let states_format = blocks
+            .iter()
+            .any(crate::server::script::startup::stateful_block);
+        let extended_blocks = authored_blocks || tag_format || visual_format || states_format;
+        let visual_format = visual_format || states_format;
+        let version = if states_format {
+            BLOCK_STATES_MAGIC
+        } else if visual_format {
             VISUAL_BLOCKS_MAGIC
         } else if tag_format {
             TAGS_MAGIC
@@ -137,7 +145,10 @@ impl ClientBundle {
                     || item.components != content::Components::None
                     || match cube {
                         Some(block) => {
-                            item.placeable.as_deref() != Some(&block.key)
+                            item.placeable.as_deref()
+                                != Some(
+                                    crate::server::script::startup::placement_state(block).as_str(),
+                                )
                                 || item.sprite
                                 || item.texture != block.textures.top
                                 || item.name != block.name
@@ -256,6 +267,9 @@ impl ClientBundle {
                         Material::Cutout => 4,
                         Material::Invisible => return Err(invalid()),
                     }])?;
+                }
+                if states_format {
+                    states::encode(&mut writer, block)?;
                 }
             }
             if tag_format || visual_format {
@@ -397,6 +411,7 @@ impl Startup {
             extended_blocks,
             tags,
             visual_blocks,
+            block_states,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -408,6 +423,7 @@ impl Startup {
                 || extended_blocks
                 || tags
                 || visual_blocks
+                || block_states
             {
                 return Err(invalid());
             }
@@ -419,6 +435,7 @@ impl Startup {
         let mut has_extended_block = false;
         let mut has_tag = false;
         let mut has_visual = false;
+        let mut has_states = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -660,7 +677,6 @@ impl Startup {
                 {
                     return Err(error(name, format!("block {key} item does not match")));
                 }
-                item.placeable = Some(key.clone());
                 item.sprite = false;
                 previous.clone_from(&key);
                 let mut block =
@@ -712,6 +728,11 @@ impl Startup {
                         return Err(invalid());
                     }
                 }
+                if block_states {
+                    states::decode(reader, &mut block)?;
+                    has_states |= crate::server::script::startup::stateful_block(&block);
+                }
+                item.placeable = Some(crate::server::script::startup::placement_state(&block));
                 startup.blocks.push(block);
             }
             if tags {
@@ -820,7 +841,8 @@ impl Startup {
             || (policy && !extended_blocks && !has_nondefault_policy)
             || (extended_blocks && !has_extended_block && !tags && !visual_blocks)
             || (tags && !has_tag && !visual_blocks)
-            || (visual_blocks && !has_visual)
+            || (visual_blocks && !has_visual && !block_states)
+            || (block_states && !has_states)
         {
             return Err(invalid());
         }

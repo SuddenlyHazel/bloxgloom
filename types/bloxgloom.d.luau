@@ -37,7 +37,10 @@ export type BloxBlockOptions = {
     reflectance: {number}?, -- exactly three channels, 0..255
     geometry: ("cube" | "crossed_plant" | "narrow_crossed_plant")?,
     material: ("opaque" | "cutout")?,
+    properties: {[string]: {string}}?, -- 1..8 names, 1..16 values each
+    states: {BloxBlockState}?, -- 1..32 explicit legal states
 }
+export type BloxBlockState = {[string]: string | number} -- property=value; optional emission=0..15
 export type BloxTextureOptions = { alpha_cutout: boolean? }
 
 -- All nine fields are required finite numbers; unknown fields are rejected.

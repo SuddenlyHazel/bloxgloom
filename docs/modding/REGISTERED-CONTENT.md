@@ -60,8 +60,15 @@ material and `solid=false`. `register_texture(key, asset, {alpha_cutout=true})`
 declares a cutout PNG; every cutout block face must use a cutout texture.
 Face textures must already be registered by the same package; the required
 third argument supplies the top texture and the default for other faces.
-State/property combinations and invisible materials still require a broader
-Luau binding; do not mistake this one-state shorthand for the
+`properties={lit={'off','on'}}` together with
+`states={{lit='off'},{lit='on',emission=12}}` declares a bounded explicit state
+set (up to 8 property names, 16 values per name and 32 legal states). No
+Cartesian product is implicit; `set_block` and property transitions accept only
+listed combinations. State names are canonical and sorted, for example
+`package:lamp[lit=off]`. The block's item places the lexicographically first
+legal state. Unspecified states are rejected rather than synthesized; per-state
+textures and invisible materials still require a broader Luau binding. Do not
+mistake this shorthand for the
 entire public Rust `Block` contract.
 
 `register_tag(key, "item" | "block", members)` contributes a same-kind tag at
