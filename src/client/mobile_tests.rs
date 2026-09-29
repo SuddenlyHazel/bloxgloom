@@ -42,6 +42,37 @@ impl NetworkedVisualProbe {
         self.app.replicas.mobile_for_test(entity_type)
     }
 
+    pub(crate) fn interact(&mut self, entity: &crate::protocol::PublicEntity) -> bool {
+        let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
+            panic!("expected mobile")
+        };
+        let body = self
+            .app
+            .catalog
+            .mobile_entity(entity.entity_type)
+            .unwrap()
+            .body;
+        let direction = (Vec3::from_array(position) + Vec3::Y * (body.height * 0.5)
+            - self.app.camera().position)
+            .normalize();
+        self.app.yaw = direction.z.atan2(direction.x);
+        self.app.pitch = direction.y.asin();
+        let previous = self.app.pending_actions.keys().copied().collect::<Vec<_>>();
+        assert!(self.app.interact_aimed_mobile());
+        let action_id = *self
+            .app
+            .pending_actions
+            .keys()
+            .find(|id| !previous.contains(id))
+            .expect("aimed creature did not create a request");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.app.pending_actions.contains_key(&action_id) {
+            assert!(Instant::now() < deadline, "creature interaction deadline");
+            self.accept_next();
+        }
+        self.app.status.as_ref().map(|status| status.0.as_str()) == Some("Interaction applied")
+    }
+
     pub(crate) fn tint(&mut self, id: u64) -> Option<[f32; 3]> {
         let visual = self.app.visual_session.as_mut().unwrap();
         visual.poll();

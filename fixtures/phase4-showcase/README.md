@@ -38,3 +38,6 @@ test logs four edit response times as a small mixed-load sample. The second
 creature in the tinted preview uses the
 callback's grounded-state RGB value. The preview applies that value directly
 to the production avatar renderer; it does not show a live callback transition.
+The downloaded client also aims at and pats the creature through its registered
+interaction. Restart checks the resulting private `happy` state, while the
+client receives only public pose bytes.

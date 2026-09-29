@@ -911,6 +911,11 @@ test logs four edit response times; this is a small mixed-load sample, not a
 sustained-load measurement. The creature tint is checked against the installed
 public state after its tick advances. Live release-window inspection is still
 outstanding.
+The same downloaded client now aims at and invokes the creature's registered
+`pat` interaction through the normal entity action path. Its accepted receipt
+advances the public replica, and restart verifies the private `happy` state in
+the server store. The presentation callback still receives only public pose
+bytes, so this also checks the interaction/private-state boundary.
 Replica spark commands now accept bounded optional size and lifetime, with the
 old visual defaults preserved. The showcase uses a larger, longer-lived spark
 at its installed press anchor; the real-listener worker checks that command

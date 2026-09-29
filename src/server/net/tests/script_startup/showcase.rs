@@ -104,6 +104,15 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             inventory.slots[2] = Some(crate::inventory::Stack::new(crate::items::STICK, 1));
             state.inventory_store.save(0xA440, &inventory).unwrap();
         } else {
+            let id = crate::server::entities::EntityId::new(saved_id.unwrap()).unwrap();
+            let snapshot = state.entities.snapshot(id).unwrap();
+            let bytes = catalog
+                .mobile_entity(creature)
+                .unwrap()
+                .behavior
+                .encode(&snapshot.private_payload)
+                .unwrap();
+            assert_eq!(&bytes[12..], b"happy");
             let inventory = state.inventory_store.load(0xA440).unwrap();
             assert!(inventory.slots[..3].iter().all(Option::is_none));
             for [x, z] in [[-2, 2], [-2, 1], [-1, 2], [-1, 1]] {
@@ -396,6 +405,21 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             assert_eq!(visual.tint(entity.id), Some(expected_tint));
             assert!(visual.has_spark(entity.id));
             assert!(visual.has_anchor_spark(machine_id));
+            if !restarted {
+                let before = entity.revision;
+                assert!(
+                    visual.interact(&entity),
+                    "authored creature interaction failed"
+                );
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while visual
+                    .entity(creature)
+                    .is_none_or(|current| current.revision <= before)
+                {
+                    assert!(Instant::now() < deadline, "interaction replica deadline");
+                    visual.accept_next();
+                }
+            }
         });
     }
 }
