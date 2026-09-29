@@ -341,6 +341,8 @@ struct ClientApp {
     actions: ActionTracker,
     pending_actions: BTreeMap<u128, ClientMessage>,
     deferred_actions: BTreeMap<u128, Instant>,
+    stale_inventory_retries: VecDeque<kiln::StaleInventoryRetry>,
+    retried_inventory_actions: BTreeSet<u128>,
     unacked: VecDeque<(u64, Vec3)>,
     frame_count: u64,
     last_report: Instant,
@@ -415,6 +417,8 @@ impl ClientApp {
             actions: ActionTracker::default(),
             pending_actions: BTreeMap::new(),
             deferred_actions: BTreeMap::new(),
+            stale_inventory_retries: VecDeque::new(),
+            retried_inventory_actions: BTreeSet::new(),
             unacked: VecDeque::new(),
             frame_count: 0,
             last_report: now,
@@ -1038,7 +1042,14 @@ impl ClientApp {
                     ui.replica_event("replica:action", format!("accepted={accepted}"));
                 }
                 trace::event(format_args!("ack {action_id} accepted={accepted}"));
-                if !accepted {
+                let was_retried = self.retried_inventory_actions.remove(&action_id);
+                let retrying = !accepted
+                    && reason == "stale action entity"
+                    && !was_retried
+                    && self.queue_stale_inventory_retry(action_id);
+                if retrying {
+                    self.show_status("Refreshing workstation transfer");
+                } else if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
                 } else if let Some(ClientMessage::EntityInteract { payload, .. }) =
                     self.pending_actions.get(&action_id)
@@ -1525,6 +1536,7 @@ impl ClientApp {
         if self.disconnected {
             return;
         }
+        self.pump_stale_inventory_retries();
         self.validate_kiln_screen();
         self.move_player(dt);
         let camera = self.camera();

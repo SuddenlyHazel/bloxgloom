@@ -43,6 +43,7 @@ impl NetworkedVisualProbe {
     }
 
     pub(crate) fn interact(&mut self, entity: &crate::protocol::PublicEntity) -> bool {
+        let inventory_revision = self.app.inventory.revision;
         let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
             panic!("expected mobile")
         };
@@ -70,7 +71,18 @@ impl NetworkedVisualProbe {
             assert!(Instant::now() < deadline, "creature interaction deadline");
             self.accept_next();
         }
-        self.app.status.as_ref().map(|status| status.0.as_str()) == Some("Interaction applied")
+        let accepted =
+            self.app.status.as_ref().map(|status| status.0.as_str()) == Some("Interaction applied");
+        if accepted {
+            while self.app.inventory.revision <= inventory_revision {
+                assert!(
+                    Instant::now() < deadline,
+                    "creature inventory replica deadline"
+                );
+                self.accept_next();
+            }
+        }
+        accepted
     }
 
     pub(crate) fn tint(&mut self, id: u64) -> Option<[f32; 3]> {

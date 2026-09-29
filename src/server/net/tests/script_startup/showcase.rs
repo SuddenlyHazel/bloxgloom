@@ -66,6 +66,23 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             "STONE PRESS"
         );
         assert_eq!(catalog.mobile_entity(creature).unwrap().model.len(), 5);
+        let idle = catalog
+            .machine(machine)
+            .unwrap()
+            .behavior
+            .plan(&bloxgloom_host_api::machine::Context {
+                tick: 100,
+                due: 100,
+                slots: &[None, None, None],
+                data: &[],
+                fuel: 0,
+                progress: 0,
+            })
+            .unwrap();
+        assert_eq!(
+            idle.next_tick, 150,
+            "idle press must allow time for UI transfers"
+        );
         if let Some(expected) = fingerprint {
             assert_eq!(catalog.fingerprint(), expected);
         } else {
@@ -112,7 +129,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                 .behavior
                 .encode(&snapshot.private_payload)
                 .unwrap();
-            assert_eq!(&bytes[12..], b"happy");
+            assert_eq!(&bytes[12..], b"happy:2");
             let inventory = state.inventory_store.load(0xA440).unwrap();
             assert!(inventory.slots[..3].iter().all(Option::is_none));
             for [x, z] in [[-2, 2], [-2, 1], [-1, 2], [-1, 1]] {
@@ -251,7 +268,50 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                         ClientMessage::EntityInteract { action_id, .. } => *action_id,
                         _ => unreachable!("inventory probe transfer"),
                     };
-                    send_action(&mut peer, &mut admin, &catalog, action_id, request);
+                    if player == 2 {
+                        let ClientMessage::EntityInteract { payload, .. } = &request else {
+                            unreachable!()
+                        };
+                        let observed = bloxgloom_host_api::actions::Request::decode(payload)
+                            .unwrap()
+                            .entity_revision;
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        while admin
+                            .workstation_revision()
+                            .is_none_or(|revision| revision <= observed)
+                        {
+                            assert!(Instant::now() < deadline, "idle press revision deadline");
+                            admin.accept(
+                                protocol::read_server_with_catalog(&mut peer, &catalog).unwrap(),
+                            );
+                        }
+                        protocol::write_client_with_catalog(&mut peer, &request, &catalog).unwrap();
+                        loop {
+                            assert!(Instant::now() < deadline, "stale transfer deadline");
+                            let message =
+                                protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
+                            let rejected = matches!(&message, ServerMessage::ActionResult {
+                                action_id: result, accepted: false, reason
+                            } if *result == action_id && reason == "stale action entity");
+                            admin.accept(message);
+                            if rejected {
+                                break;
+                            }
+                        }
+                        let retry = admin
+                            .take_stale_retry()
+                            .expect("client must retry stale press transfer");
+                        let ClientMessage::EntityInteract {
+                            action_id: retry_id,
+                            ..
+                        } = &retry
+                        else {
+                            unreachable!()
+                        };
+                        send_action(&mut peer, &mut admin, &catalog, *retry_id, retry);
+                    } else {
+                        send_action(&mut peer, &mut admin, &catalog, action_id, request);
+                    }
                     let deadline = Instant::now() + Duration::from_secs(10);
                     while admin.player_count(player as usize) != 0
                         || admin.view().unwrap().slots[container as usize]
@@ -417,6 +477,15 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                     .is_none_or(|current| current.revision <= before)
                 {
                     assert!(Instant::now() < deadline, "interaction replica deadline");
+                    visual.accept_next();
+                }
+                let updated = visual.entity(creature).unwrap();
+                assert!(visual.interact(&updated), "second pat should apply");
+                while visual
+                    .entity(creature)
+                    .is_none_or(|current| current.revision <= updated.revision)
+                {
+                    assert!(Instant::now() < deadline, "second pat replica deadline");
                     visual.accept_next();
                 }
             }

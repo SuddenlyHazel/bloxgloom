@@ -8,12 +8,24 @@ blue spark. It also emits a larger, longer-lived spark at the press's installed 
 callback handles at most eight creatures per batch within the 16-command
 output limit.
 
+For a live check, spawn `demo:sproutling` through F4 and right-click its body
+within reach. Each pat updates a small private counter and should show
+`Interaction applied`; the sproutling does not wander or play a pat animation.
+Give yourself `demo:press`, `bloxgloom:stone`, and `bloxgloom:stick` through F4.
+In the press screen, click stone in the lower player inventory and then INPUT;
+click stick below and then FUEL. The press updates slowly while idle so these
+transfers can use its current entity revision. If a revision changes during a
+transfer, the client retries it once after receiving the new replica.
+
 To inspect the package in the local game with your normal admin profile, use
 an isolated save directory:
 
 ```sh
 cargo run --release -- local-packages fixtures/phase4-showcase/packages /tmp/bloxgloom-phase4-showcase-save
 ```
+
+Package script changes alter the save's content identity. Use a new save path
+when trying a changed showcase package; keep the old directory for comparison.
 
 Use the package directory as the local package root when starting a server.
 These headless previews show the authored assets and screen:
@@ -39,5 +51,5 @@ creature in the tinted preview uses the
 callback's grounded-state RGB value. The preview applies that value directly
 to the production avatar renderer; it does not show a live callback transition.
 The downloaded client also aims at and pats the creature through its registered
-interaction. Restart checks the resulting private `happy` state, while the
+interaction twice. Restart checks the resulting private `happy:2` state, while the
 client receives only public pose bytes.

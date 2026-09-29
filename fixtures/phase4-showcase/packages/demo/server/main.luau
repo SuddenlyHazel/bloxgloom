@@ -14,7 +14,7 @@ return function(host)
     })
     host.register_machine {
         entity = 'demo:press_machine', block = 'demo:press',
-        module = 'demo:machine', schema = 1, revision = 1, interval = 1,
+        module = 'demo:machine', schema = 1, revision = 1, interval = 50,
         title = 'STONE PRESS', hint = 'FUEL + STONE TO GRAVEL',
         footprint = {{0,0,0}, {1,0,0}},
         active_state = 'demo:press[lit=on]',
