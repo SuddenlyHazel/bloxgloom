@@ -359,6 +359,16 @@ fn client_commands_are_rejected_until_content_ready_matches() {
 
 #[test]
 fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
+    // This full server lifecycle exceeds the test harness's default stack in debug builds.
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(nonblocking_listener_streams_and_recovers_a_wal_acked_edit_inner)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit_inner() {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -385,7 +395,10 @@ fn nonblocking_listener_streams_and_recovers_a_wal_acked_edit() {
         }
     };
     let (input, receiver) = mpsc::sync_channel(INPUT_CAPACITY);
-    let coordinator = thread::spawn(move || run_simulation_ticks(state, receiver));
+    let coordinator = thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || run_simulation_ticks(state, receiver))
+        .unwrap();
     let socket_input = input.clone();
     let content = ContentHandshake::from_local_catalog().unwrap();
     let connection =

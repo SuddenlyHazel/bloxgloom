@@ -1171,11 +1171,9 @@ fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
                 nearby[0].position,
             ));
         }
-        let mut tick = 120;
         let mut center = position;
-        for _ in 0..2_000 {
+        for tick in 120..2_120 {
             tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
-            tick += 1;
             let nearby = drop_nearby(&state, center);
             assert_eq!(nearby.len(), 1);
             center = nearby[0].position;
@@ -1235,11 +1233,9 @@ fn staggered_drop_merge_resolves_identically_under_receipt_timing() {
             settled.sort_by_key(|(id, count, position)| (*id, *count, position.map(f32::to_bits)));
             sequence.push(settled);
         }
-        let mut tick = 120;
         let mut center = top;
-        for _ in 0..2_000 {
+        for tick in 120..2_120 {
             tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
-            tick += 1;
             let nearby = drop_nearby(&state, center);
             assert_eq!(nearby.len(), 1);
             center = nearby[0].position;
@@ -1385,11 +1381,9 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
     // Past the resident window both runs settle with loader sleeps and rest
     // identically with every item conserved. The query center follows the
     // drop down so the 64-block view radius never clips the comparison.
-    let mut reference_tick = 125;
     let mut reference_center = position;
-    for _ in 0..2_000 {
+    for reference_tick in 125..2_125 {
         tick_once(&mut reference, TickId::new(reference_tick), Instant::now()).unwrap();
-        reference_tick += 1;
         let nearby = drop_nearby(&reference, reference_center);
         assert_eq!(nearby.len(), 1);
         reference_center = nearby[0].position;
@@ -1398,11 +1392,9 @@ fn withheld_motion_receipt_defers_without_duplicating_or_losing_steps() {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    let mut delayed_tick = staged_tick + 120 - shift as u64;
     let mut delayed_center = position;
-    for _ in 0..2_000 {
+    for delayed_tick in (staged_tick + 120 - shift as u64)..(staged_tick + 2_120 - shift as u64) {
         tick_once(&mut delayed, TickId::new(delayed_tick), Instant::now()).unwrap();
-        delayed_tick += 1;
         let nearby = drop_nearby(&delayed, delayed_center);
         assert_eq!(nearby.len(), 1);
         delayed_center = nearby[0].position;

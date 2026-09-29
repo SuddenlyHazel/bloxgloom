@@ -35,14 +35,17 @@ fn listener_drop_motion_merge_pickup_and_restart_use_one_durable_path() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = std::sync::mpsc::channel();
-    let server = std::thread::spawn(move || {
-        crate::server::net::serve_listener_with_stats(
-            listener,
-            Box::new(state),
-            stopped,
-            Arc::new(crate::server::net::TransportStats::default()),
-        )
-    });
+    let server = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            crate::server::net::serve_listener_with_stats(
+                listener,
+                Box::new(state),
+                stopped,
+                Arc::new(crate::server::net::TransportStats::default()),
+            )
+        })
+        .unwrap();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut peer = TcpStream::connect(address).unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();

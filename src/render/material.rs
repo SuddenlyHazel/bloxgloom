@@ -177,11 +177,7 @@ pub(super) fn material_mips_for(catalog: &content::Catalog) -> Vec<Vec<u8>> {
                             .iter()
                             .map(|pixel| u32::from(pixel[channel]) * u32::from(pixel[3]))
                             .sum::<u32>();
-                        pixels.push(if alpha == 0 {
-                            0
-                        } else {
-                            (weighted / alpha) as u8
-                        });
+                        pixels.push(weighted.checked_div(alpha).unwrap_or(0) as u8);
                     }
                     pixels.push((alpha / 4) as u8);
                 }

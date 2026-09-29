@@ -15,10 +15,8 @@ fn zero_client_tick_advances_world_drops() {
     // later receipt applies it, so the test polls until the fall lands
     // instead of assuming a single-tick step.
     let mut moved = false;
-    let mut tick = 1;
-    for _ in 0..500 {
+    for tick in 1..501 {
         tick_once(&mut state, TickId::new(tick), Instant::now()).unwrap();
-        tick += 1;
         if drop_nearby(&state, position)[0].position[1] < before {
             moved = true;
             break;
