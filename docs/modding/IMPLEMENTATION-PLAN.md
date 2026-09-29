@@ -403,7 +403,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 1 | Shared read/transaction context, general world/entity/item operations, and harvesting migration | Done |
 | 2 | Events, persistent scheduling and remaining non-fire world/drop/player/command behavior; consolidate existing helpers | Done (native fire deferred) |
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
-| 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | In progress |
+| 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Done |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | In progress |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | In progress |
