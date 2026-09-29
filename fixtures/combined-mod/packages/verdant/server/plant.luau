@@ -1,6 +1,7 @@
+--!strict
 -- The server checks sight and block type before this callback. The stick and
 -- block edit participate in the same authoritative gameplay transaction.
-return function(context, event)
+return function(context: BloxGameplayContext, event: BloxActionEvent): ()
     assert(event.kind == 'ActionRequested' and event.action == 'verdant:plant')
     assert(event.cell ~= nil and event.entity_lo == nil and event.arguments == '')
     local stack = context.inventory('player')[event.slot + 1].stack

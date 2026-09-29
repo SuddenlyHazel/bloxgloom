@@ -218,4 +218,39 @@ export type BloxUiCommand =
     | { op: "visible", node: string, value: boolean }
     | { op: "state", value: string }
     | { op: "parameter", resource: string, name: string, value: BloxVisualParameterValue }
-    | { op: "action", key: string }
+    | { op: "action", key: string, arguments: string? }
+
+-- Replica callbacks receive the same local presentation fields as UI callbacks,
+-- plus bounded public entities and membership changes. No private state.
+export type BloxReplicaId = { id_lo: number, id_hi: number }
+export type BloxReplicaEntity = {
+    id_lo: number,
+    id_hi: number,
+    key: string,
+    revision_lo: number,
+    revision_hi: number,
+    motion_revision_lo: number,
+    motion_revision_hi: number,
+    public: string,
+    position: BloxTriple,
+}
+export type BloxReplicaInput = {
+    sequence: number,
+    event: "replica:entities" | "replica:anchors",
+    value: string,
+    state: string,
+    texts: {[string]: string},
+    entities: {BloxReplicaEntity},
+    entered: {BloxReplicaId},
+    left: {BloxReplicaId},
+}
+export type BloxReplicaCommand =
+    { op: "text", node: string, value: string }
+    | { op: "visible", node: string, value: boolean }
+    | { op: "state", value: string }
+    | { op: "parameter", resource: string, name: string, value: BloxVisualParameterValue }
+    | { op: "visual", id_lo: number, id_hi: number, yaw: number, bob: number, squash: number }
+    | { op: "tint", id_lo: number, id_hi: number, r: number, g: number, b: number }
+    | { op: "ember", id_lo: number, id_hi: number, x: number, y: number, z: number }
+    | { op: "spark", id_lo: number, id_hi: number, x: number, y: number, z: number,
+        r: number, g: number, b: number, size: number?, lifetime_ms: number? }

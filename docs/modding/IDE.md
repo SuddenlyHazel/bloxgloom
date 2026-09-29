@@ -12,7 +12,27 @@ end
 
 For the other callbacks, use `BloxGenerationContext`, `BloxGameplayContext` with `BloxActionEvent` (only for `ActionRequested`), `BloxOwnerContext`, `BloxClientStartupHost`, or `BloxUiInput`. A UI handler can annotate its return value as `{ BloxUiCommand }`. Owner planners return `(binary_state: string, delay_ticks: number)`; their readonly `inbox` carries `BloxOwnerIntentDelivery` values. Declarations may request radius-one chunk reads and same-system durable intent delivery, but the editor types do not prove authority or bounds. All methods on these callback tables are **dot calls**, not colon calls. Namespaced keys, revision ranges, capabilities in `package.txt`, state byte limits, ownership, and host budgets are still checked by Bloxgloom, not proven by these types. The `BloxActionEvent` alias does not describe other `register_handler` event shapes; consult the host binding for those rather than treating them as action events.
 
-The host's `import("package:module")` resolves **manifest module identities** and direct dependencies, not filesystem paths or Luau `require` aliases. luau-lsp does not automatically model that loader or its side/authority rules; imports may show an unknown-global diagnostic and imported exports will not be inferred. Do not change scripts to `require` merely to appease the editor. This configuration does not declare a fake global `import`, enable Rojo, or claim Roblox APIs exist. A downloaded client startup module may import visible client/shared sources and initialize its own UI text/state, not world/inventory state. The client UI event module can request one package-owned registered item/empty/block gameplay action from the current selection or ray hit; only the server authorizes its result. Entity targets and argument-bearing UI requests remain unbound.
+The UI fixtures use strict checking and explicit input/output types:
+
+```luau
+--!strict
+return function(input: BloxUiInput): {BloxUiCommand}
+    if input.event == "uitarget:light" then
+        return {{op = "action", key = "uitarget:light"}}
+    end
+    return {}
+end
+```
+
+This gives completion for `input.event`, the other input fields and the returned
+command shapes. Action commands may include optional binary `arguments`.
+Replica presentation handlers instead use `BloxReplicaInput` and return
+`{BloxReplicaCommand}`; these expose public entities, entered/left identities,
+and the permitted visual commands. See the typed Prism and Phase 4 client
+fixtures for examples. The host still validates ownership, sizes and value
+ranges at runtime; annotations are erased when Luau compiles the source.
+
+The host's `import("package:module")` resolves **manifest module identities** and direct dependencies, not filesystem paths or Luau `require` aliases. luau-lsp does not automatically model that loader or its side/authority rules; imports may show an unknown-global diagnostic and imported exports will not be inferred. Do not change scripts to `require` merely to appease the editor. This configuration does not declare a fake global `import`, enable Rojo, or claim Roblox APIs exist. A downloaded client startup module may import visible client/shared sources and initialize its own UI text/state, not world/inventory state. The client UI event module can request one package-owned registered item/empty/block/entity gameplay action from the current selection or ray hit, with optional binary arguments; only the server authorizes its result.
 
 ## Validate
 

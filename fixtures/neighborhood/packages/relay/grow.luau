@@ -1,6 +1,7 @@
+--!strict
 -- The source observes its east neighbor, then durably invites that owner.
 -- That owner runs on a later tick and conditionally edits its own east neighbor.
-return function(c)
+return function(c: BloxOwnerContext): (string, number)
     if c.data == 'seed' then
         assert(#c.inbox == 0)
         local observed = c.block(18, 80, 2)

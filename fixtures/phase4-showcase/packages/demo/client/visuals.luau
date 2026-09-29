@@ -1,6 +1,7 @@
-return function(input)
+--!strict
+return function(input: BloxReplicaInput): {BloxReplicaCommand}
     if input.event == 'replica:anchors' then
-        local commands = {}
+        local commands: {BloxReplicaCommand} = {}
         for _, entity in input.entities do
             if entity.key == 'demo:press_machine' then
                 assert(entity.motion_revision_lo == 0 and entity.motion_revision_hi == 0)
@@ -15,7 +16,7 @@ return function(input)
         return commands
     end
     if input.event ~= 'replica:entities' then return {} end
-    local commands = {}
+    local commands: {BloxReplicaCommand} = {}
     for _, entity in input.entities do
         if #commands >= 16 then break end
         assert(entity.key == 'demo:sproutling' and #entity.public == 5)

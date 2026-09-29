@@ -1,4 +1,5 @@
-return function(input)
+--!strict
+return function(input: BloxReplicaInput): {BloxReplicaCommand}
     if input.event ~= "replica:entities" then return {} end
     -- Only a bounded public replica window drives this presentation value.
     -- Empty windows reset it; no gameplay state or GPU commands are writable.

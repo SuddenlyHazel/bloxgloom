@@ -1,6 +1,7 @@
+--!strict
 -- This separate durable chunk owner wakes after a logical deadline, not a
 -- window timer. The seeded owner only changes a designated stone cell once.
-return function(c)
+return function(c: BloxOwnerContext): (string, number)
     if c.data == '0' then
         local before = c.block(3,80,0)
         if before == 'bloxgloom:stone' then

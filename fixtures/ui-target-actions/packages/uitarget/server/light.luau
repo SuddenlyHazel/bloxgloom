@@ -1,5 +1,6 @@
+--!strict
 -- Cost and world edit are staged together by the authoritative server.
-return function(context, event)
+return function(context: BloxGameplayContext, event: BloxActionEvent): ()
     assert(event.kind == 'ActionRequested' and event.action == 'uitarget:light')
     assert(event.cell ~= nil and event.entity_lo == nil and event.arguments == '')
     local stack = context.inventory('player')[event.slot + 1].stack

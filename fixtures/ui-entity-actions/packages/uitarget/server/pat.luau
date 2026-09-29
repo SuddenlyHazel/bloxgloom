@@ -1,4 +1,5 @@
-return function(context, event)
+--!strict
+return function(context: BloxGameplayContext, event: BloxActionEvent): ()
     assert(event.kind == 'ActionRequested' and event.action == 'uitarget:pat')
     assert(event.entity_lo ~= nil and event.cell ~= nil)
     assert(event.arguments == string.char(7, 9), 'Invalid pat arguments')
