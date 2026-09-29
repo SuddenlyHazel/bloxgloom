@@ -1,6 +1,7 @@
 //! Bounded local presentation state. No network/gameplay authority.
 use super::super::UiRect;
 use super::*;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use taffy::prelude::*;
 
@@ -25,7 +26,8 @@ pub(crate) struct Session {
     pub(super) action: Option<String>,
     pub(super) in_flight: Option<(u128, u64)>,
     pub(super) feedback: Option<String>,
-    startup: crate::client::startup::State,
+    pub(super) replica_events: VecDeque<(String, String)>,
+    pub(super) startup: crate::client::startup::State,
 }
 
 impl Session {
@@ -37,12 +39,10 @@ impl Session {
         resources: Arc<Resources>,
         startup: crate::client::startup::State,
     ) -> Self {
-        let worker = resources
-            .documents
-            .iter()
-            .any(|d| d.script.is_some())
-            .then(crate::client::presentation::Worker::spawn)
-            .transpose();
+        let worker = (resources.documents.iter().any(|d| d.script.is_some())
+            || startup.replica.is_some())
+        .then(crate::client::presentation::Worker::spawn)
+        .transpose();
         let (worker, failure) = match worker {
             Ok(worker) => (worker, None),
             Err(error) => (None, Some(format!("presentation worker: {error}"))),
@@ -67,6 +67,7 @@ impl Session {
             action: None,
             in_flight: None,
             feedback: None,
+            replica_events: VecDeque::new(),
             startup,
         };
         session.reset();
@@ -78,6 +79,7 @@ impl Session {
         // Invalidate an outstanding result without admitting a second job.
         self.document_generation = self.document_generation.wrapping_add(1);
         self.expected = None;
+        self.replica_events.clear();
         self.failure = None;
         self.action = None;
         self.feedback = None;

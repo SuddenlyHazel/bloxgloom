@@ -16,6 +16,7 @@ pub(crate) struct Request {
     pub(crate) value: String,
     pub(crate) state: String,
     pub(crate) texts: Vec<(String, String)>,
+    pub(crate) replica: bool,
 }
 
 #[derive(Debug)]
@@ -30,6 +31,7 @@ pub(crate) enum Command {
 pub(crate) struct Reply {
     pub(crate) sequence: u32,
     pub(crate) result: Result<Vec<Command>, String>,
+    pub(crate) replica: bool,
 }
 
 #[derive(Debug)]
@@ -47,10 +49,12 @@ impl Worker {
             .spawn(move || {
                 while let Ok(request) = receiver.recv() {
                     let sequence = request.sequence;
+                    let replica = request.replica;
                     if sender
                         .send(Reply {
                             sequence,
                             result: run(request),
+                            replica,
                         })
                         .is_err()
                     {

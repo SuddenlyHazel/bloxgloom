@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 pub(crate) struct State {
     pub(crate) texts: BTreeMap<String, String>,
     pub(crate) states: BTreeMap<String, String>,
+    pub(crate) replica: Option<Arc<crate::client::presentation::Script>>,
 }
 
 pub(crate) fn prepare(bundle: Arc<ClientBundle>) -> io::Result<State> {
@@ -137,6 +138,41 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
                 Ok(())
             })?,
         )?;
+        let handler_bundle = Arc::clone(&bundle);
+        let handler_owner = entry.split_once(':').unwrap().0.to_owned();
+        let handler_state = Rc::clone(&registrations);
+        host.set(
+            "set_replica_handler",
+            lua.create_function(move |_, module: mlua::LuaString| {
+                let key = ascii(module, 129)?;
+                let (owner, local) = key
+                    .split_once(':')
+                    .ok_or_else(|| mlua::Error::RuntimeError("invalid replica module".into()))?;
+                if owner != handler_owner
+                    || !identifier(local)
+                    || handler_state.borrow().replica.is_some()
+                {
+                    return Err(mlua::Error::RuntimeError(
+                        "invalid or duplicate replica handler".into(),
+                    ));
+                }
+                let source = handler_bundle
+                    .packages()
+                    .get(owner)
+                    .and_then(|package| package.sources.get(local))
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError(
+                            "replica handler must be a declared client module".into(),
+                        )
+                    })?;
+                handler_state.borrow_mut().replica =
+                    Some(Arc::new(crate::client::presentation::Script {
+                        module: identity(&handler_bundle, &key),
+                        source: source.source.clone(),
+                    }));
+                Ok(())
+            })?,
+        )?;
         function.call::<()>(host)
     })();
     if exceeded.get() || Instant::now() >= deadline {
@@ -152,8 +188,19 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
             "client startup {id}: no package UI for registered presentation"
         ));
     }
+    if output.replica.is_some() && bundle.ui().is_none() {
+        return Err(format!(
+            "client startup {id}: replica handler requires package UI"
+        ));
+    }
+    if output.replica.is_some() && state.replica.is_some() {
+        return Err(format!(
+            "client startup {id}: only one replica handler per session"
+        ));
+    }
     state.texts.extend(output.texts.clone());
     state.states.extend(output.states.clone());
+    state.replica = output.replica.clone().or_else(|| state.replica.take());
     Ok(())
 }
 

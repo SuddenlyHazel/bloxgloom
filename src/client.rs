@@ -939,6 +939,12 @@ impl ClientApp {
                 ) {
                     Assembly::Waiting => {}
                     Assembly::Installed(keys) => {
+                        if let Some(ui) = &mut self.package_ui {
+                            ui.replica_event(
+                                "replica:world",
+                                format!("changed_chunks={}", keys.len()),
+                            );
+                        }
                         for key in keys {
                             if block_commit {
                                 self.queue_edited_chunk_relight(key);
@@ -970,6 +976,17 @@ impl ClientApp {
                             updated.blocks.set(index, block);
                             updated.version = version;
                             self.queue_edited_chunk_relight(key);
+                            if let Some(ui) = &mut self.package_ui {
+                                ui.replica_event(
+                                    "replica:block",
+                                    format!(
+                                        "version={version};block={}",
+                                        self.catalog
+                                            .state(block)
+                                            .map_or("unknown", |state| state.key.as_str())
+                                    ),
+                                );
+                            }
                         }
                     } else if version > chunk.version {
                         self.queue_command(ClientMessage::Resync { key });
@@ -995,6 +1012,7 @@ impl ClientApp {
                 };
                 if let Some(ui) = &mut self.package_ui {
                     ui.action_result(action_id, accepted, &reason);
+                    ui.replica_event("replica:action", format!("accepted={accepted}"));
                 }
                 trace::event(format_args!("ack {action_id} accepted={accepted}"));
                 if !accepted {
@@ -1031,6 +1049,19 @@ impl ClientApp {
             ServerMessage::Inventory { revision, slots } => {
                 if revision >= self.inventory.revision {
                     self.inventory = Inventory { revision, slots };
+                    if let Some(ui) = &mut self.package_ui {
+                        let items = self
+                            .inventory
+                            .slots
+                            .iter()
+                            .flatten()
+                            .map(|stack| usize::from(stack.count))
+                            .sum::<usize>();
+                        ui.replica_event(
+                            "replica:inventory",
+                            format!("revision={revision};items={items}"),
+                        );
+                    }
                 }
             }
             ServerMessage::Drops { revision, items } => {

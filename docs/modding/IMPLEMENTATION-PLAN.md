@@ -652,6 +652,11 @@ remain open.
 Explicit per-state face overrides now negotiate as V28 with package-owned
 registered textures, including cutout checks. Specialized creature/machine/
 screen declarations and owner/client execution services remain open.
+Downloaded `client_startup` can now register one session-scoped replica callback
+for bounded inventory/block/world/action observations. The callback shares the
+off-window presentation worker with authored UI, may update only owned UI
+state, and cannot submit actions; overloaded or failing sessions fail closed.
+This does not yet expose general entity replica, animation or effect commands.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -690,7 +695,8 @@ continuity are covered by mesh/animator regressions, not that preview.
   services with the same authority/retry contract as Rust mods. Chunk systems
   now have bounded neighborhood reads/edits and durable same-system intents.
 - [ ] Run general client presentation/replica callbacks off the window thread;
-  retain scoped handles, budgets and reproducible inputs.
+  retain scoped handles, budgets and reproducible inputs. Initial replica-driven
+  owned UI callbacks are bound; entity/visual presentations remain open.
 
 #### Phase 5 — packages and joining · In progress
 

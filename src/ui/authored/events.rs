@@ -50,6 +50,7 @@ impl Session {
                 .filter(|(_, n)| matches!(n.kind, Kind::Label | Kind::Button | Kind::Input))
                 .map(|(i, n)| (n.id.clone(), self.text_at(i).to_owned()))
                 .collect(),
+            replica: false,
         };
         if self
             .worker
@@ -80,6 +81,78 @@ impl Session {
                 self.failure = Some("presentation worker stopped".into());
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+        self.dispatch_replica();
+    }
+
+    /// Replica notifications are advisory presentation inputs, not gameplay
+    /// requests. Queue bounded snapshots while a local UI callback is running.
+    pub(crate) fn replica_event(&mut self, event: &str, value: String) {
+        if self.startup.replica.is_none() || self.failure.is_some() {
+            return;
+        }
+        if event.len() > 64 || value.len() > 640 || !event.is_ascii() || !value.is_ascii() {
+            self.failure = Some("invalid replica presentation input".into());
+            return;
+        }
+        if let Some(existing) = self
+            .replica_events
+            .iter_mut()
+            .find(|(kind, _)| kind == event)
+        {
+            existing.1 = value;
+        } else if self.replica_events.len() < 8 {
+            self.replica_events.push_back((event.to_owned(), value));
+        } else {
+            self.failure = Some("replica presentation queue exceeded".into());
+            return;
+        }
+        self.dispatch_replica();
+    }
+
+    fn dispatch_replica(&mut self) {
+        if self.pending.is_some() || self.failure.is_some() || self.replica_events.is_empty() {
+            return;
+        }
+        let Some(script) = self.startup.replica.clone() else {
+            return;
+        };
+        let Some(worker) = &self.worker else {
+            self.failure = Some("presentation worker unavailable".into());
+            return;
+        };
+        let Some(sequence) = self.sequence.checked_add(1) else {
+            self.failure = Some("presentation event sequence exhausted".into());
+            return;
+        };
+        let (event, value) = self.replica_events.front().unwrap();
+        let request = Request {
+            script,
+            sequence,
+            event: event.clone(),
+            value: value.clone(),
+            state: self.state.clone(),
+            texts: self
+                .document()
+                .nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, node)| matches!(node.kind, Kind::Label | Kind::Button | Kind::Input))
+                .map(|(index, node)| (node.id.clone(), self.text_at(index).to_owned()))
+                .collect(),
+            replica: true,
+        };
+        match worker.requests.try_send(request) {
+            Ok(()) => {
+                self.replica_events.pop_front();
+                self.sequence = sequence;
+                self.pending = Some(sequence);
+                self.expected = Some(sequence);
+            }
+            Err(std::sync::mpsc::TrySendError::Full(_)) => {}
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                self.failure = Some("presentation worker stopped".into())
+            }
         }
     }
 
@@ -116,9 +189,10 @@ impl Session {
                     n.id == *id && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
                 }),
                 Command::Visible(id, _) => self.document().nodes.iter().any(|n| n.id == *id),
-                Command::Action(key) => key
+                Command::Action(key) if !reply.replica => key
                     .split_once(':')
                     .is_some_and(|(package, local)| package == owner && identifier(local)),
+                Command::Action(_) => false,
             }) && commands
                 .iter()
                 .filter(|c| matches!(c, Command::Action(_)))
@@ -129,7 +203,11 @@ impl Session {
             if !valid {
                 return Err(format!(
                     "{}: invalid local-ui target",
-                    self.document().script.as_ref().unwrap().module
+                    if reply.replica {
+                        "replica handler"
+                    } else {
+                        &self.document().script.as_ref().unwrap().module
+                    }
                 ));
             }
             for command in commands {

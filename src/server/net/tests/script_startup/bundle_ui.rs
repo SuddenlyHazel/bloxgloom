@@ -46,6 +46,40 @@ pub(super) fn startup_fixture(source: &str) -> Fixture {
 }
 
 #[test]
+fn verified_replica_callbacks_are_session_scoped_worker_presentations() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture =
+        startup_fixture("return function(host) host.set_replica_handler('uidemo:replica') end");
+    let package = fixture.0.join("packages/uidemo");
+    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.value == 'action' then return {{op='action',key='uidemo:trade'}} end if input.event == 'replica:inventory' then return {{op='text',node='uidemo:welcome/title',value=input.value}} end return {} end").unwrap();
+    let manifest = package.join("package.txt");
+    let original = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        manifest,
+        format!("{original}module client replica client/replica.luau\n"),
+    )
+    .unwrap();
+    gameplay::serve(Box::new(fixture.open().unwrap()), |address| {
+        for profile in [0xa401, 0xa402] {
+            crate::client::connect_ui_probe(&address.to_string(), profile, |_, session| {
+                session.replica_event("replica:inventory", "revision=7;items=3".into());
+                session.wait_for_presentation().unwrap();
+                assert_eq!(session.text_at(1), "revision=7;items=3");
+                session.replica_event("replica:inventory", "action".into());
+                assert!(
+                    session
+                        .wait_for_presentation()
+                        .unwrap_err()
+                        .contains("invalid local-ui target")
+                );
+                assert_eq!(session.text_at(1), "revision=7;items=3");
+            })
+            .unwrap();
+        }
+    });
+}
+
+#[test]
 fn downloaded_client_startup_is_session_scoped_across_reconnect_and_switch() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     for (source, expected) in [
@@ -88,6 +122,7 @@ fn client_startup_failure_refuses_content_ready_with_package_and_module() {
     for source in [
         "return function(host) host.set_text('uidemo:welcome/title', import('uidemo:main')) end",
         "return function(host) host.set_text('uidemo:welcome/missing', 'bad') end",
+        "return function(host) host.set_replica_handler('uidemo:missing') end",
         "return function(_) while true do end end",
     ] {
         let fixture = startup_fixture(source);

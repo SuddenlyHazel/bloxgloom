@@ -197,6 +197,7 @@ export type BloxOwnerIntentDelivery = {
 export type BloxClientStartupHost = {
     set_text: (owned_document_node: string, ascii_text: string) -> (),
     set_state: (owned_document: string, ascii_state: string) -> (),
+    set_replica_handler: (own_client_module: string) -> (),
 }
 
 export type BloxUiInput = {

@@ -111,6 +111,17 @@ between retries. See `src/server/script/gameplay.rs` for limits and fields.
 Other gameplay event shapes are still being bound. Client bundle delivery is
 implemented; this action callback runs on the authoritative server.
 
+A downloaded `client_startup` may register one own-package client/shared module
+with `host.set_replica_handler('package:module')`. Its function receives the
+bounded local presentation input and returns the same command list as authored
+UI events. Accepted inventory, block, world-assembly and action-result
+observations use `replica:inventory`, `replica:block`, `replica:world` and
+`replica:action`, with bounded ASCII summaries in `input.value`. The callback
+runs on the session-owned presentation worker, never the window/network thread.
+Replies may update owned document text/visibility/state but **cannot** request
+actions. Observations are advisory and coalesced by kind behind a bounded
+queue; overflow or a callback error fails that presentation session.
+
 Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
 target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
 `NeighborChanged`, or `EntityTick` decisions. These use the same scoped VM and
