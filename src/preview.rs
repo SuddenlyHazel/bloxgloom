@@ -38,7 +38,7 @@ const MESHER_RESULT_CAPACITY: usize = 64;
 const CLIENT_MESH_RESULT_BATCH: usize = 64;
 const CLIENT_PENDING_UPLOADS: usize = 128;
 
-/// Synthetic committed-burn cue at a cleared tree cell for visual inspection.
+/// Synthetic committed-burn cue and colored spark for visual inspection.
 pub fn render_fire_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(
         vec![PreviewOutput {
@@ -689,14 +689,26 @@ async fn render_previews_with_packages(
         );
         fire_renderer.set(
             &queue,
-            &[render::VisualFire {
-                center: Vec3::new(
-                    target_xz.0 as f32 + 0.5,
-                    target_height as f32 + 1.5,
-                    target_xz.1 as f32 + 0.5,
-                ),
-                age: 0.28,
-            }],
+            &[
+                render::VisualFire {
+                    center: Vec3::new(
+                        target_xz.0 as f32 + 0.5,
+                        target_height as f32 + 1.5,
+                        target_xz.1 as f32 + 0.5,
+                    ),
+                    age: 0.28,
+                    style: render::fire::FireStyle::Flame,
+                },
+                render::VisualFire {
+                    center: Vec3::new(
+                        target_xz.0 as f32 + 1.35,
+                        target_height as f32 + 1.8,
+                        target_xz.1 as f32 + 0.5,
+                    ),
+                    age: 0.28,
+                    style: render::fire::FireStyle::Spark([0.25, 0.85, 1.0]),
+                },
+            ],
         );
     }
     if let PreviewScene::Block(state) = scene {

@@ -165,6 +165,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                     [1.0, 1.0, 0.5]
                 })
             );
+            assert!(visual.has_spark(entity.id));
         });
     }
 }

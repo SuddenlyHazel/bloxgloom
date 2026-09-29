@@ -48,6 +48,7 @@ impl FireAnimator {
                     center,
                     age: (now.saturating_duration_since(at).as_secs_f32() / LIFE.as_secs_f32())
                         .clamp(0.0, 1.0),
+                    style: crate::render::fire::FireStyle::Flame,
                 })
             })
             .collect()

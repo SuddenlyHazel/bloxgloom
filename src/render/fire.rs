@@ -11,12 +11,47 @@ pub(crate) const MAX_BYTES: u64 = (MAX_FIRES * VERTICES_PER_FIRE * FLOATS * 4) a
 pub(crate) struct VisualFire {
     pub center: Vec3,
     pub age: f32, // 0..1
+    pub style: FireStyle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FireStyle {
+    Flame,
+    Spark([f32; 3]),
 }
 
 pub(crate) fn vertices(fires: &[VisualFire]) -> Vec<f32> {
     let mut out = Vec::with_capacity(fires.len().min(MAX_FIRES) * VERTICES_PER_FIRE * FLOATS);
     for fire in fires.iter().take(MAX_FIRES) {
         let fade = (1.0 - fire.age).clamp(0.0, 1.0);
+        if let FireStyle::Spark(rgb) = fire.style {
+            let rise = fire.age * 0.65;
+            let center = fire.center + Vec3::Y * rise;
+            for axis in [Vec3::X, Vec3::Z] {
+                let size = 0.16 * fade.max(0.2);
+                triangle(
+                    &mut out,
+                    [
+                        center - axis * size,
+                        center + Vec3::Y * size * 1.8,
+                        center + axis * size,
+                    ],
+                    [0.0, 1.0, 0.0],
+                    [rgb[0], rgb[1], rgb[2], fade * 0.85],
+                );
+                triangle(
+                    &mut out,
+                    [
+                        center - axis * size,
+                        center + axis * size,
+                        center - Vec3::Y * size * 1.2,
+                    ],
+                    [0.0, 0.5, 1.0],
+                    [rgb[0], rgb[1], rgb[2], fade * 0.55],
+                );
+            }
+            continue;
+        }
         let height = 1.0 * fade.max(0.12);
         let sway = (fire.age * 13.0 + fire.center.x * 1.7 + fire.center.z).sin() * 0.14;
         let center = fire.center + Vec3::new(0.0, -0.15, 0.0);

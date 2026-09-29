@@ -129,11 +129,17 @@ payload from the installed server replica. These are readonly callback inputs;
 the creature's private state is never sent to the client. At most 16 views and
 4 KiB of public bytes per view reach one callback.
 `input.entered` and `input.left` describe changes to that bounded window, not
-authoritative spawn or despawn events. The callback may return `visual` pose
-offsets, `tint` RGB multipliers, or short-lived attached `ember` effects for
-IDs offered in that input. A tint command is
+authoritative spawn or despawn events. The callback may return at most 16
+commands: `visual` pose offsets, `tint` RGB multipliers, short-lived attached
+`ember` effects, or colored `spark` effects for IDs offered in that input. A
+tint command is
 `{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3}`; each channel is
-finite and in 0–1. Tint changes only the rendered model, after the host-owned
+finite and in 0–1. A spark command is
+`{op='spark',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0,r=0.2,g=0.8,b=1}`;
+offsets are finite in −1–1 blocks and RGB channels are finite in 0–1. Both
+effects are client-only, last 850 ms, follow the offered entity's rendered
+position, and are capped at 32 retained effects per session. Tint changes only
+the rendered model, after the host-owned
 replica is installed. The next entity callback replaces prior tints and pose
 offsets, and switching sessions clears them. Invalid IDs, colors, or commands
 fail that presentation session without applying a partial result.

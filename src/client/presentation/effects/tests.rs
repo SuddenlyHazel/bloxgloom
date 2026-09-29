@@ -22,7 +22,7 @@ fn embers_follow_only_presented_entities_expire_and_stay_bounded() {
     for _ in 0..40 {
         effects.push(7, [0.0, 0.5, 0.0]);
     }
-    assert_eq!(effects.embers.len(), MAX_EMBERS);
+    assert_eq!(effects.entries.len(), MAX_EMBERS);
     let now = Instant::now();
     assert!(effects.visuals(now, &[avatar(8)]).is_empty());
     let shown = effects.visuals(now, &[avatar(7)]);
@@ -31,4 +31,16 @@ fn embers_follow_only_presented_entities_expire_and_stay_bounded() {
     assert!(effects.visuals(now + LIFE, &[avatar(7)]).is_empty());
     effects.clear();
     assert!(effects.visuals(now, &[avatar(7)]).is_empty());
+}
+
+#[test]
+fn colored_sparks_follow_the_same_bounded_session_lifetime() {
+    let mut effects = EffectBuffer::default();
+    effects.spark(7, [0.0, 0.5, 0.0], [0.2, 0.8, 1.0]);
+    let now = Instant::now();
+    assert!(effects.visuals(now, &[avatar(8)]).is_empty());
+    let shown = effects.visuals(now, &[avatar(7)]);
+    assert_eq!(shown.len(), 1);
+    assert_eq!(shown[0].style, FireStyle::Spark([0.2, 0.8, 1.0]));
+    assert!(effects.visuals(now + LIFE, &[avatar(7)]).is_empty());
 }

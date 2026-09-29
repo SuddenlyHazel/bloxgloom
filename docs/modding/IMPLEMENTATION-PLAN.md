@@ -858,6 +858,23 @@ commit even with no terrain mesh keys.
 The integrated two-thread root suite passes **1024/1024**, with formatting and
 strict all-target/all-feature Clippy clean for this slice.
 
+Replica callbacks can now also emit a bounded colored `spark` attached to an
+offered mobile entity. The shared off-window worker validates exact IDs, local
+offsets and RGB values for both UI-backed and UI-free sessions; the same
+session-local effect cap and expiry apply. Real-listener tests exercise both
+session paths, including the showcase spark after download and restart. The
+headless fire preview was
+inspected with both the original orange flame and distinct blue spark visible.
+This does not establish a live release-window effect transition.
+The integrated two-thread root suite passes **1027/1027**, with formatting and
+strict all-target/all-feature Clippy clean. The release terrain-only
+`perf 300 6` run kept 17,292,744 mesh bytes and 88,026 triangles; setup was
+2367 ms, steady CPU median 0.317 ms and GPU median 0.242 ms. With `bounced`,
+mesh bytes stayed 17,500,968 and triangles 89,218; setup was 2703 ms, CPU
+0.317 ms and GPU 0.232 ms. These single runs exclude live entity effects and
+cannot measure spark cost; the recent pre-spark comparison above is the
+baseline for scene size and frame-time context.
+
 **Remaining**
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.

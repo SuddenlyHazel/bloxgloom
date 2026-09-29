@@ -55,6 +55,28 @@ impl NetworkedVisualProbe {
             .presentation_entities(visual.owner(), &self.app.catalog)
     }
 
+    pub(crate) fn has_spark(&self, id: u64) -> bool {
+        let avatar = crate::render::VisualAvatar {
+            animation: Default::default(),
+            model: crate::render::AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
+            pose: [0.0; 4],
+            airborne: false,
+            id,
+            position: glam::Vec3::ZERO,
+            cosmetics: [0; 4],
+            light_levels: [0; 4],
+            bounce: [0; 4],
+            tint: [1.0; 3],
+        };
+        self.app
+            .visual_session
+            .as_ref()
+            .unwrap()
+            .effects(std::time::Instant::now(), &[avatar])
+            .iter()
+            .any(|effect| effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0]))
+    }
+
     pub(crate) fn settle(&mut self) {
         let visual = self.app.visual_session.as_mut().unwrap();
         visual.poll();

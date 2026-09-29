@@ -498,6 +498,7 @@ fn fire_streak_mesh_is_bounded_and_rises_before_fading() {
     let fire = fire::VisualFire {
         center: Vec3::new(4.5, 9.5, -3.5),
         age: 0.25,
+        style: fire::FireStyle::Flame,
     };
     let mesh = fire::vertices(&[fire; fire::MAX_FIRES + 1]);
     assert_eq!(mesh.len() * 4, fire::MAX_BYTES as usize);
@@ -507,4 +508,22 @@ fn fire_streak_mesh_is_bounded_and_rises_before_fading() {
     }));
     let fading = fire::vertices(&[fire::VisualFire { age: 0.9, ..fire }]);
     assert!(fading[8] < fire::vertices(&[fire])[8]);
+}
+
+#[test]
+fn colored_spark_mesh_uses_its_own_shape_and_fades() {
+    let spark = fire::VisualFire {
+        center: Vec3::ZERO,
+        age: 0.25,
+        style: fire::FireStyle::Spark([0.2, 0.8, 1.0]),
+    };
+    let vertices = fire::vertices(&[spark]);
+    assert_eq!(vertices.len() / 9, 12);
+    assert!(vertices.chunks_exact(9).all(|vertex| {
+        vertex[5..8] == [0.2, 0.8, 1.0]
+            && (0.0..=1.0).contains(&vertex[8])
+            && Vec3::new(vertex[0], vertex[1], vertex[2]).length() < 1.0
+    }));
+    let faded = fire::vertices(&[fire::VisualFire { age: 0.9, ..spark }]);
+    assert!(faded[8] < vertices[8]);
 }

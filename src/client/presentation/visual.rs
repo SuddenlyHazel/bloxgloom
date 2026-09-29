@@ -122,10 +122,18 @@ impl VisualSession {
         let result = reply.result.and_then(|commands| {
             if !reply.replica
                 || !reply.entity_batch
-                || commands.iter().any(|command| {
-                    !matches!(command,
-                        Command::Visual(id, values) | Command::Tint(id, values) | Command::Ember(id, values)
-                        if reply.offered_entities.contains(id) && values.iter().all(|v| v.is_finite()))
+                || commands.iter().any(|command| !match command {
+                    Command::Visual(id, values)
+                    | Command::Tint(id, values)
+                    | Command::Ember(id, values) => {
+                        reply.offered_entities.contains(id)
+                            && values.iter().all(|value| value.is_finite())
+                    }
+                    Command::Spark(id, offset, color) => {
+                        reply.offered_entities.contains(id)
+                            && offset.iter().chain(color).all(|value| value.is_finite())
+                    }
+                    _ => false,
                 })
             {
                 return Err("invalid visual replica command".into());
@@ -133,6 +141,7 @@ impl VisualSession {
             let mut poses = BTreeMap::new();
             let mut tints = BTreeMap::new();
             let mut embers = Vec::new();
+            let mut sparks = Vec::new();
             for command in commands {
                 match command {
                     Command::Visual(id, pose) => {
@@ -142,17 +151,21 @@ impl VisualSession {
                         tints.insert(id, tint);
                     }
                     Command::Ember(id, offset) => embers.push((id, offset)),
+                    Command::Spark(id, offset, color) => sparks.push((id, offset, color)),
                     _ => unreachable!("validated visual command"),
                 }
             }
-            Ok((poses, tints, embers))
+            Ok((poses, tints, embers, sparks))
         });
         match result {
-            Ok((poses, tints, embers)) => {
+            Ok((poses, tints, embers, sparks)) => {
                 self.poses = poses;
                 self.tints = tints;
                 for (id, offset) in embers {
                     self.effects.push(id, offset);
+                }
+                for (id, offset, color) in sparks {
+                    self.effects.spark(id, offset, color);
                 }
             }
             Err(error) => self.failure = Some(error),
