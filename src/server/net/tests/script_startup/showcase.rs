@@ -1,6 +1,6 @@
 //! One reusable authored package across server join, mobile replica and client worker.
 use super::*;
-use crate::client::{MobileProbe, NetworkedVisualProbe};
+use crate::client::{InventoryProbe, NetworkedVisualProbe};
 use crate::server::startup::ServerStartup;
 use std::sync::Arc;
 use std::time::Instant;
@@ -9,7 +9,7 @@ const PRESS_ANCHOR: [i32; 3] = [2, 79, 2];
 
 fn send_action(
     peer: &mut TcpStream,
-    admin: &mut MobileProbe,
+    admin: &mut InventoryProbe,
     catalog: &Catalog,
     action_id: u128,
     message: ClientMessage,
@@ -59,6 +59,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
         let creature = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
         let machine = catalog.entity_type_id_by_key("demo:press_machine").unwrap();
         let press = catalog.state_by_key("demo:press[lit=off]").unwrap();
+        let lit_press = catalog.state_by_key("demo:press[lit=on]").unwrap();
         assert_eq!(catalog.machine(machine).unwrap().variants[0].idle.len(), 2);
         assert_eq!(
             catalog.inventory_screen(machine).unwrap().title,
@@ -96,22 +97,32 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                 catalog.item_by_key("demo:press").unwrap(),
                 1,
             ));
+            inventory.slots[1] = Some(crate::inventory::Stack::new(
+                catalog.item_by_key("bloxgloom:stone").unwrap(),
+                1,
+            ));
+            inventory.slots[2] = Some(crate::inventory::Stack::new(crate::items::STICK, 1));
             state.inventory_store.save(0xA440, &inventory).unwrap();
         } else {
-            assert_eq!(state.inventory_store.load(0xA440).unwrap().slots[0], None);
-            assert_eq!(
-                state
-                    .world
-                    .get_block(PRESS_ANCHOR[0], PRESS_ANCHOR[1], PRESS_ANCHOR[2])
-                    .unwrap(),
-                press
-            );
+            let inventory = state.inventory_store.load(0xA440).unwrap();
+            assert!(inventory.slots[..3].iter().all(Option::is_none));
+            for [x, z] in [[-2, 2], [-2, 1], [-1, 2], [-1, 1]] {
+                assert_eq!(
+                    state.world.get_block(x, 79, z).unwrap(),
+                    crate::world::STONE
+                );
+            }
+            let saved_press = state
+                .world
+                .get_block(PRESS_ANCHOR[0], PRESS_ANCHOR[1], PRESS_ANCHOR[2])
+                .unwrap();
+            assert!(saved_press == press || saved_press == lit_press);
             assert_eq!(
                 state
                     .world
                     .get_block(PRESS_ANCHOR[0] + 1, PRESS_ANCHOR[1], PRESS_ANCHOR[2])
                     .unwrap(),
-                press
+                saved_press
             );
             let anchor_id = state
                 .entities
@@ -160,7 +171,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                 },
             )
             .unwrap();
-            let mut admin = MobileProbe::new(
+            let mut admin = InventoryProbe::new(
                 catalog.clone(),
                 fixture.0.join(format!("showcase-admin-{restarted}")),
             );
@@ -207,7 +218,130 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                 );
             }
             let deadline = Instant::now() + Duration::from_secs(10);
-            while visual.entity(creature).is_none() {
+            while admin.anchored(PRESS_ANCHOR).is_none() {
+                assert!(Instant::now() < deadline, "showcase press replica deadline");
+                admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+            }
+            if !restarted {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while admin.player_count(0) != 0 {
+                    assert!(
+                        Instant::now() < deadline,
+                        "showcase placement inventory deadline"
+                    );
+                    admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+                }
+            }
+            let secondary = [PRESS_ANCHOR[0] + 1, PRESS_ANCHOR[1], PRESS_ANCHOR[2]];
+            let current_state = admin.block_state(secondary).unwrap();
+            admin.open(secondary, current_state);
+            if !restarted {
+                for (player, container) in [(2, 0), (1, 1)] {
+                    let request = admin.transfer(true, player, container, true);
+                    let action_id = match &request {
+                        ClientMessage::EntityInteract { action_id, .. } => *action_id,
+                        _ => unreachable!("inventory probe transfer"),
+                    };
+                    send_action(&mut peer, &mut admin, &catalog, action_id, request);
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while admin.player_count(player as usize) != 0
+                        || admin.view().unwrap().slots[container as usize]
+                            .as_ref()
+                            .map(|stack| stack.count)
+                            != Some(1)
+                    {
+                        assert!(
+                            Instant::now() < deadline,
+                            "showcase transfer replica deadline"
+                        );
+                        admin.accept(
+                            protocol::read_server_with_catalog(&mut peer, &catalog).unwrap(),
+                        );
+                    }
+                }
+                let stone = catalog.item_by_key("bloxgloom:stone").unwrap();
+                let action_id = admin.next_id();
+                send_action(
+                    &mut peer,
+                    &mut admin,
+                    &catalog,
+                    action_id,
+                    ClientMessage::AdminGive {
+                        action_id,
+                        item: stone,
+                        count: 4,
+                    },
+                );
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while admin.player_count(0) != 4
+                    || !admin.ready(crate::world::world_to_chunk(-2, 79, 2).0)
+                {
+                    assert!(
+                        Instant::now() < deadline,
+                        "showcase edit readiness deadline"
+                    );
+                    admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+                }
+                let mut response = Vec::new();
+                for (index, [x, z]) in [[-2, 2], [-2, 1], [-1, 2], [-1, 1]].into_iter().enumerate()
+                {
+                    let action_id = admin.next_id();
+                    let start = Instant::now();
+                    send_action(
+                        &mut peer,
+                        &mut admin,
+                        &catalog,
+                        action_id,
+                        ClientMessage::Edit {
+                            action_id,
+                            x,
+                            y: 79,
+                            z,
+                            block: crate::world::STONE,
+                            slot: 0,
+                        },
+                    );
+                    response.push(start.elapsed());
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    while admin.player_count(0) != 3 - index as u16
+                        || admin.block_state([x, 79, z]) != Some(crate::world::STONE)
+                    {
+                        assert!(
+                            Instant::now() < deadline,
+                            "showcase edit replica deadline: cell=({x},{z}) count={} state={:?}",
+                            admin.player_count(0),
+                            admin.block_state([x, 79, z])
+                        );
+                        admin.accept(
+                            protocol::read_server_with_catalog(&mut peer, &catalog).unwrap(),
+                        );
+                    }
+                }
+                response.sort();
+                eprintln!(
+                    "showcase mixed edit response p50={:?} p95={:?}",
+                    response[2], response[3]
+                );
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while admin.view().unwrap().slots[2]
+                    .as_ref()
+                    .map(|stack| stack.count)
+                    != Some(2)
+                {
+                    assert!(Instant::now() < deadline, "showcase process deadline");
+                    admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+                }
+            }
+            assert_eq!(
+                admin.view().unwrap().slots[2].as_ref().unwrap(),
+                &crate::inventory::Stack::new(catalog.item_by_key("bloxgloom:gravel").unwrap(), 2,)
+            );
+            admin.close();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while visual
+                .entity(creature)
+                .is_none_or(|entity| entity.revision <= 1)
+            {
                 assert!(Instant::now() < deadline, "showcase replica deadline");
                 visual.accept_next();
             }
@@ -246,20 +380,20 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             } else {
                 saved_id = Some(entity.id);
             }
+            let expected_tint = if entity.payload[4] == 1 {
+                [0.7, 1.0, 0.7]
+            } else {
+                [1.0, 1.0, 0.5]
+            };
             for _ in 0..32 {
                 visual.settle();
-                if visual.tint(entity.id).is_some() && visual.has_anchor_spark(machine_id) {
+                if visual.tint(entity.id) == Some(expected_tint)
+                    && visual.has_anchor_spark(machine_id)
+                {
                     break;
                 }
             }
-            assert_eq!(
-                visual.tint(entity.id),
-                Some(if entity.payload[4] == 1 {
-                    [0.7, 1.0, 0.7]
-                } else {
-                    [1.0, 1.0, 0.5]
-                })
-            );
+            assert_eq!(visual.tint(entity.id), Some(expected_tint));
             assert!(visual.has_spark(entity.id));
             assert!(visual.has_anchor_spark(machine_id));
         });

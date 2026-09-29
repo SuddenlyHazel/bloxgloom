@@ -29,8 +29,12 @@ cargo run -- fire-preview /tmp/fire-and-spark.png
 The real-listener integration test `phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart`
 downloads the package into a client, spawns the creature, verifies the worker's
 state-derived tint and attached spark, and places the two-cell press from one
-finite inventory item. It restarts the server from the same save and checks the
-stable catalog/entity identities, both press cells, consumed item, and an
-anchor-attached spark. The second creature in the tinted preview uses the
+finite inventory item. It transfers finite stone and fuel through the screen,
+waits for two gravel from the authored process, and places four more finite
+blocks while the creature and press run. It restarts the server from the same
+save and checks the stable catalog/entity identities, both press cells, machine
+output, inventory balance, four saved edits, and an anchor-attached spark. The
+test logs four edit response times as a small mixed-load sample. The second
+creature in the tinted preview uses the
 callback's grounded-state RGB value. The preview applies that value directly
 to the production avatar renderer; it does not show a live callback transition.

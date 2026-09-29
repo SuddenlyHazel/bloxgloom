@@ -903,6 +903,14 @@ the lock screen to screenshot capture, so the game window could not be
 inspected; live release-window visual acceptance remains outstanding.
 The integrated two-thread root suite passes **1032/1032**, with formatting
 and strict all-target/all-feature Clippy clean for this local workflow slice.
+The showcase listener test now also transfers finite input and fuel through
+the authored screen, observes two gravel from the press, and places four finite
+blocks while the machine and creature run. Restart checks machine output,
+inventory balance, four saved edits, and the same creature and anchor IDs. The
+test logs four edit response times; this is a small mixed-load sample, not a
+sustained-load measurement. The creature tint is checked against the installed
+public state after its tick advances. Live release-window inspection is still
+outstanding.
 
 **Remaining**
 
