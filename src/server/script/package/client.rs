@@ -31,6 +31,7 @@
 //! V31 adds server-authored mobile creature presentation and schema identity.
 //! V32 adds host-owned process machines and inventory screens.
 //! V33 adds bounded creature interaction requests and animation parameters.
+//! V34 adds bounded process-machine recipe lists.
 //! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
@@ -69,6 +70,7 @@ const SCREEN_LAYOUT_MAGIC: &[u8] = b"BGCLIENT\x1e";
 const CREATURE_MAGIC: &[u8] = b"BGCLIENT\x1f";
 const MACHINE_MAGIC: &[u8] = b"BGCLIENT\x20";
 const CREATURE_OPTIONS_MAGIC: &[u8] = b"BGCLIENT\x21";
+const MACHINE_RECIPES_MAGIC: &[u8] = b"BGCLIENT\x22";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -233,6 +235,7 @@ impl ClientBundle {
             CREATURE_MAGIC,
             MACHINE_MAGIC,
             CREATURE_OPTIONS_MAGIC,
+            MACHINE_RECIPES_MAGIC,
         ]
         .contains(&version)
         {
@@ -345,7 +348,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 animated: version == ANIMATED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
                     || version == APPEARANCE_MAGIC
@@ -362,7 +366,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 player: version == PLAYER_MAGIC
                     || version == PLAYER_SIZED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
@@ -381,7 +386,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 extended_blocks: version == BLOCK_OPTIONS_MAGIC
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
@@ -392,7 +398,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 tags: version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
@@ -402,7 +409,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 visual_blocks: version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
@@ -411,7 +419,8 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 block_states: version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
@@ -419,34 +428,44 @@ impl ClientBundle {
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 components: version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 state_textures: version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 storage: version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 screen_layout: version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
                 creatures: version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
-                    || version == CREATURE_OPTIONS_MAGIC,
-                creature_options: version == CREATURE_OPTIONS_MAGIC,
-                machines: version == MACHINE_MAGIC || version == CREATURE_OPTIONS_MAGIC,
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
+                creature_options: version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
+                machines: version == MACHINE_MAGIC
+                    || version == CREATURE_OPTIONS_MAGIC
+                    || version == MACHINE_RECIPES_MAGIC,
+                machine_recipes: version == MACHINE_RECIPES_MAGIC,
             },
         )?;
         if !reader.0.is_empty() {

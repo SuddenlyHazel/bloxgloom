@@ -140,3 +140,115 @@ fn luau_machine_rejects_missing_capability_and_caught_invalid_recipe() {
     assert!(invalid.open().is_err());
     assert!(!invalid.0.join("save/content.map").exists());
 }
+
+#[test]
+fn luau_machine_recipe_list_negotiates_filters_and_restarts() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let multi = REGISTER.replace(
+        "recipe={key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3}",
+        "recipes={{key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3},{key='demo:polish',input='bloxgloom:gravel',input_count=2,output='bloxgloom:stone',output_count=1,pulses=5}}",
+    );
+    package(&fixture, &multi);
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let id = catalog.entity_type_id_by_key("demo:press_machine").unwrap();
+    let machine = catalog.machine(id).unwrap();
+    let process = machine.process.as_ref().unwrap();
+    assert_eq!(process.recipes.len(), 2);
+    assert_eq!(process.recipes[1].key, "demo:polish");
+    assert_eq!(process.recipes[1].pulses, 5);
+    assert_eq!(
+        machine.filters[1].items,
+        ["bloxgloom:gravel", "bloxgloom:stone"]
+    );
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x22")
+    );
+    let fingerprint = catalog.fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x543).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let id = client.entity_type_id_by_key("demo:press_machine").unwrap();
+        let machine = client.machine(id).unwrap();
+        assert_eq!(
+            machine.process.as_ref().unwrap().recipes[1].key,
+            "demo:polish"
+        );
+        assert_eq!(
+            machine.filters[1].items,
+            ["bloxgloom:gravel", "bloxgloom:stone"]
+        );
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/server/main.luau"),
+        multi.replace("pulses=5", "pulses=6"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
+}
+
+#[test]
+fn luau_machine_recipe_list_rejects_overlapping_inputs_before_save() {
+    let fixture = Fixture::new();
+    let duplicate = REGISTER.replace(
+        "recipe={key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3}",
+        "recipes={{key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3},{key='demo:again',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=1,pulses=5}}",
+    );
+    package(&fixture, &duplicate);
+    assert!(fixture.open().is_err());
+    assert!(!fixture.0.join("save/content.map").exists());
+}
+
+#[test]
+fn v34_combines_recipe_lists_and_creature_options_in_one_client_catalog() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let multi = REGISTER.replace(
+        "recipe={key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3}",
+        "recipes={{key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3},{key='demo:polish',input='bloxgloom:gravel',input_count=2,output='bloxgloom:stone',output_count=1,pulses=5}}",
+    ).replace(
+        "h.register_entity('demo:marker'",
+        "h.register_creature{key='demo:sproutling',module='demo:critter',schema=1,revision=1,max_state_bytes=8,interval=1,body={half_width=0.25,height=0.7,speed=1.0},interaction='pat',animation={idle_bob=0.02},model={{min={-0.2,0.0,-0.2},max={0.2,0.7,0.2},color={0.2,0.8,0.3}}}}; h.register_entity('demo:marker'",
+    );
+    package(&fixture, &multi);
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(&manifest, format!("{text}requires bloxgloom:mobile_entities/v1\nmodule server critter server/critter.luau\n")).unwrap();
+    std::fs::write(
+        fixture.0.join("packages/demo/server/critter.luau"),
+        "return function(c) if c.event == 'interact' then return c.data end return c.data,10,nil,nil end",
+    ).unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x22")
+    );
+    let fingerprint = state.world.catalog().fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x544).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let machine = client
+            .machine(client.entity_type_id_by_key("demo:press_machine").unwrap())
+            .unwrap();
+        assert_eq!(machine.process.as_ref().unwrap().recipes.len(), 2);
+        let creature = client
+            .mobile_entity(client.entity_type_id_by_key("demo:sproutling").unwrap())
+            .unwrap();
+        assert_eq!(creature.interaction, b"pat");
+        assert_eq!(creature.animation.idle_bob, 0.02);
+    });
+}

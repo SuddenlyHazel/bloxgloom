@@ -76,20 +76,25 @@ pub(super) fn declarer(
                 Value::Nil => String::new(),
                 value => text(value)?,
             };
-            let Value::Table(recipe) = field(&d, "recipe")? else {
-                return Err("machine recipe must be a table");
+            let recipes = match (field(&d, "recipe")?, field(&d, "recipes")?) {
+                (Value::Table(recipe), Value::Nil) => vec![parse_recipe(&recipe, &namespace)?],
+                (Value::Nil, Value::Table(list)) if list.metatable().is_none() => {
+                    let count = list.raw_len();
+                    if !(1..=8).contains(&count)
+                        || list.clone().pairs::<Value, Value>().take(9).count() != count
+                    {
+                        return Err("machine recipes must be a dense list of 1..=8 entries");
+                    }
+                    let mut recipes = Vec::with_capacity(count);
+                    for index in 1..=count {
+                        let recipe: mlua::Table =
+                            list.raw_get(index).map_err(|_| "invalid machine recipe")?;
+                        recipes.push(parse_recipe(&recipe, &namespace)?);
+                    }
+                    recipes
+                }
+                _ => return Err("machine requires recipe or recipes"),
             };
-            let recipe_key = text(field(&recipe, "key")?)?;
-            if recipe_key.split_once(':').is_none_or(|(owner, local)| {
-                owner != namespace || !super::super::package::manifest::identifier(local)
-            }) {
-                return Err("machine recipe key must belong to the package");
-            }
-            let input = text(field(&recipe, "input")?)?;
-            let output = text(field(&recipe, "output")?)?;
-            let input_count = integer(field(&recipe, "input_count")?, 1, 128)? as u16;
-            let output_count = integer(field(&recipe, "output_count")?, 1, 128)? as u16;
-            let pulses = integer(field(&recipe, "pulses")?, 1, 60000)? as u16;
             let fuel = match field(&d, "fuel")? {
                 Value::Nil => None,
                 Value::Table(fuel) => Some((
@@ -105,16 +110,7 @@ pub(super) fn declarer(
                 input: input_slot,
                 output: output_slot,
                 fuel: fuel.as_ref().map(|_| 0),
-                recipes: vec![api::Recipe {
-                    key: recipe_key,
-                    input: input.clone(),
-                    input_count,
-                    input_components: ComponentMatch::Empty,
-                    output: output.clone(),
-                    output_count,
-                    output_components: ComponentOutput::Empty,
-                    pulses,
-                }],
+                recipes: recipes.clone(),
                 fuels: fuel
                     .as_ref()
                     .map(|(item, pulses)| api::Fuel {
@@ -133,11 +129,21 @@ pub(super) fn declarer(
                 });
             }
             filters.push(api::Filter {
-                items: vec![input],
+                items: recipes
+                    .iter()
+                    .map(|recipe| recipe.input.clone())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 components: false,
             });
             filters.push(api::Filter {
-                items: vec![output],
+                items: recipes
+                    .iter()
+                    .map(|recipe| recipe.output.clone())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 components: false,
             });
             let cell = FootprintCell {
@@ -213,4 +219,26 @@ pub(super) fn declarer(
 
 fn field(table: &mlua::Table, key: &str) -> Result<Value, &'static str> {
     table.raw_get(key).map_err(|_| "invalid machine field")
+}
+
+fn parse_recipe(recipe: &mlua::Table, namespace: &str) -> Result<api::Recipe, &'static str> {
+    if recipe.metatable().is_some() {
+        return Err("machine recipe cannot have a metatable");
+    }
+    let key = text(field(recipe, "key")?)?;
+    if key.split_once(':').is_none_or(|(owner, local)| {
+        owner != namespace || !super::super::package::manifest::identifier(local)
+    }) {
+        return Err("machine recipe key must belong to the package");
+    }
+    Ok(api::Recipe {
+        key,
+        input: text(field(recipe, "input")?)?,
+        input_count: integer(field(recipe, "input_count")?, 1, 128)? as u16,
+        input_components: ComponentMatch::Empty,
+        output: text(field(recipe, "output")?)?,
+        output_count: integer(field(recipe, "output_count")?, 1, 128)? as u16,
+        output_components: ComponentOutput::Empty,
+        pulses: integer(field(recipe, "pulses")?, 1, 60000)? as u16,
+    })
 }

@@ -1,4 +1,4 @@
-//! V32 inert process machine descriptors. Luau source and durable private data
+//! V32/V34 inert process machine descriptors. Luau source and durable private data
 //! are excluded; the host and client reconstruct identical catalog identities.
 use super::*;
 use crate::server::script::startup::MachineDeclaration;
@@ -12,6 +12,7 @@ pub(super) fn encode(
     writer: &mut Writer,
     owner: &str,
     declarations: &[MachineDeclaration],
+    multiple_recipes: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -36,7 +37,8 @@ pub(super) fn encode(
             || m.reads_neighbours
             || m.variants.len() != 1
             || !m.ports.is_empty()
-            || p.recipes.len() != 1
+            || p.recipes.is_empty()
+            || p.recipes.len() > if multiple_recipes { 8 } else { 1 }
             || p.fuels.len() > 1
             || p.input != if p.fuel.is_some() { 1 } else { 0 }
             || p.output != p.input + 1
@@ -51,12 +53,13 @@ pub(super) fn encode(
         {
             return Err(invalid());
         }
-        let recipe = &p.recipes[0];
-        if !matches!(recipe.input_components, ComponentMatch::Empty)
-            || !matches!(recipe.output_components, ComponentOutput::Empty)
-            || p.fuels
-                .iter()
-                .any(|f| !matches!(f.components, ComponentMatch::Empty))
+        if p.recipes.iter().any(|recipe| {
+            !matches!(recipe.input_components, ComponentMatch::Empty)
+                || !matches!(recipe.output_components, ComponentOutput::Empty)
+        }) || p
+            .fuels
+            .iter()
+            .any(|f| !matches!(f.components, ComponentMatch::Empty))
         {
             return Err(invalid());
         }
@@ -67,12 +70,17 @@ pub(super) fn encode(
         writer.field(m.variants[0].placement_state.as_bytes())?;
         writer.field(screen.title.as_bytes())?;
         writer.field(screen.hint.as_bytes())?;
-        writer.field(recipe.key.as_bytes())?;
-        writer.field(recipe.input.as_bytes())?;
-        writer.field(recipe.output.as_bytes())?;
-        writer.field(&recipe.input_count.to_le_bytes())?;
-        writer.field(&recipe.output_count.to_le_bytes())?;
-        writer.field(&recipe.pulses.to_le_bytes())?;
+        if multiple_recipes {
+            writer.count(p.recipes.len())?;
+        }
+        for recipe in &p.recipes {
+            writer.field(recipe.key.as_bytes())?;
+            writer.field(recipe.input.as_bytes())?;
+            writer.field(recipe.output.as_bytes())?;
+            writer.field(&recipe.input_count.to_le_bytes())?;
+            writer.field(&recipe.output_count.to_le_bytes())?;
+            writer.field(&recipe.pulses.to_le_bytes())?;
+        }
         writer.count(p.fuels.len())?;
         if let Some(fuel) = p.fuels.first() {
             writer.field(fuel.item.as_bytes())?;
@@ -87,6 +95,7 @@ pub(super) fn decode(
     owner: &str,
     requires: &[String],
     blocks: &[content::Block],
+    multiple_recipes: bool,
 ) -> Result<Vec<MachineDeclaration>, ScriptError> {
     let mut result: Vec<MachineDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -116,12 +125,31 @@ pub(super) fn decode(
         let state = reader.text(129)?;
         let title = reader.text(40)?;
         let hint = reader.text(80)?;
-        let recipe_key = reader.text(129)?;
-        let input = reader.text(129)?;
-        let output = reader.text(129)?;
-        let input_count = u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
-        let output_count = u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
-        let pulses = u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
+        let recipe_count = if multiple_recipes {
+            reader.count(8)?
+        } else {
+            1
+        };
+        if recipe_count == 0 {
+            return Err(invalid());
+        }
+        let mut recipes = Vec::with_capacity(recipe_count);
+        for _ in 0..recipe_count {
+            recipes.push(api::Recipe {
+                key: reader.text(129)?,
+                input: reader.text(129)?,
+                output: reader.text(129)?,
+                input_count: u16::from_le_bytes(
+                    reader.field(2)?.try_into().map_err(|_| invalid())?,
+                ),
+                output_count: u16::from_le_bytes(
+                    reader.field(2)?.try_into().map_err(|_| invalid())?,
+                ),
+                pulses: u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?),
+                input_components: ComponentMatch::Empty,
+                output_components: ComponentOutput::Empty,
+            });
+        }
         let fuel = if reader.count(1)? == 1 {
             Some((
                 reader.text(129)?,
@@ -135,9 +163,12 @@ pub(super) fn decode(
             .find(|old| old.key == block)
             .ok_or_else(invalid)?;
         if crate::server::script::startup::placement_state(definition) != state
-            || recipe_key
-                .split_once(':')
-                .is_none_or(|(namespace, local)| namespace != owner || !identifier(local))
+            || recipes.iter().any(|recipe| {
+                recipe
+                    .key
+                    .split_once(':')
+                    .is_none_or(|(namespace, local)| namespace != owner || !identifier(local))
+            })
         {
             return Err(invalid());
         }
@@ -148,16 +179,7 @@ pub(super) fn decode(
             input: input_slot,
             output: output_slot,
             fuel: fuel.as_ref().map(|_| 0),
-            recipes: vec![api::Recipe {
-                key: recipe_key,
-                input: input.clone(),
-                input_count,
-                input_components: ComponentMatch::Empty,
-                output: output.clone(),
-                output_count,
-                output_components: ComponentOutput::Empty,
-                pulses,
-            }],
+            recipes: recipes.clone(),
             fuels: fuel
                 .as_ref()
                 .map(|(item, pulses)| api::Fuel {
@@ -176,11 +198,21 @@ pub(super) fn decode(
             });
         }
         filters.push(api::Filter {
-            items: vec![input],
+            items: recipes
+                .iter()
+                .map(|recipe| recipe.input.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             components: false,
         });
         filters.push(api::Filter {
-            items: vec![output],
+            items: recipes
+                .iter()
+                .map(|recipe| recipe.output.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             components: false,
         });
         let cell = FootprintCell {
