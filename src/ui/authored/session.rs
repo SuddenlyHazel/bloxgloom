@@ -31,8 +31,10 @@ pub(crate) struct Session {
         VecDeque<(String, String, Vec<crate::client::presentation::EntityView>)>,
     pub(super) visual_poses: BTreeMap<u64, [f32; 3]>,
     pub(super) visual_tints: BTreeMap<u64, [f32; 3]>,
+    pub(super) anchor_positions: BTreeMap<u64, [f32; 3]>,
     pub(super) effects: crate::client::presentation::EffectBuffer,
     pub(super) replica_previous: Vec<u64>,
+    pub(super) anchor_previous: Vec<u64>,
     pub(super) startup: crate::client::startup::State,
 }
 
@@ -76,8 +78,10 @@ impl Session {
             replica_events: VecDeque::new(),
             visual_poses: BTreeMap::new(),
             visual_tints: BTreeMap::new(),
+            anchor_positions: BTreeMap::new(),
             effects: Default::default(),
             replica_previous: Vec::new(),
+            anchor_previous: Vec::new(),
             startup,
         };
         session.reset();
@@ -92,8 +96,10 @@ impl Session {
         self.replica_events.clear();
         self.visual_poses.clear();
         self.visual_tints.clear();
+        self.anchor_positions.clear();
         self.effects.clear();
         self.replica_previous.clear();
+        self.anchor_previous.clear();
         self.failure = None;
         self.action = None;
         self.feedback = None;

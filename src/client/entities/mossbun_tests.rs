@@ -165,3 +165,43 @@ fn presentation_entity_window_is_ordered_and_explicitly_bounded() {
         (1..=16).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn anchored_presentation_window_is_separate_scoped_and_sorted() {
+    let catalog = Catalog::builtins();
+    let mut replicas = Replicas::default();
+    let anchors = (1..=20)
+        .rev()
+        .map(|id| {
+            (
+                id,
+                PublicEntity {
+                    id,
+                    entity_type: crate::content::CHEST_ENTITY_TYPE,
+                    revision: 7,
+                    motion_revision: 0,
+                    location: PublicEntityLocation::Anchored {
+                        anchor: [id as i32, 80, -2],
+                        anchor_state: crate::content::CHEST_STATE,
+                    },
+                    payload: vec![1, 2, 3],
+                },
+            )
+        })
+        .collect();
+    replicas.entities.insert(key(0), anchors);
+    assert_eq!(replicas.presentation_entities("bloxgloom", &catalog).1, 0);
+    let (views, total) = replicas.presentation_anchors("bloxgloom", &catalog);
+    assert_eq!(total, 20);
+    assert_eq!(views.len(), 16);
+    assert_eq!(views[0].id, 1);
+    assert_eq!(views[0].position, [1.5, 80.5, -1.5]);
+    assert_eq!(views[0].motion_revision, 0);
+    assert_eq!(views[0].public, vec![1, 2, 3]);
+    assert!(
+        replicas
+            .presentation_anchors("other", &catalog)
+            .0
+            .is_empty()
+    );
+}

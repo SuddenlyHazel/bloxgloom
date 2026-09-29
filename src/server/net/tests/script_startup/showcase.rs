@@ -44,6 +44,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
     let packages =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/phase4-showcase/packages");
     let mut saved_id = None;
+    let mut saved_machine_id = None;
     let mut fingerprint = None;
     for restarted in [false, true] {
         let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
@@ -212,6 +213,31 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             }
             let entity = visual.entity(creature).unwrap();
             assert_eq!(entity.payload.len(), 5);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !visual
+                .offered_anchors()
+                .0
+                .iter()
+                .any(|view| view.key == "demo:press_machine")
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "showcase anchor replica deadline"
+                );
+                visual.accept_next();
+            }
+            let machine_id = visual
+                .offered_anchors()
+                .0
+                .into_iter()
+                .find(|view| view.key == "demo:press_machine")
+                .unwrap()
+                .id;
+            if let Some(expected) = saved_machine_id {
+                assert_eq!(machine_id, expected);
+            } else {
+                saved_machine_id = Some(machine_id);
+            }
             let (offered, total) = visual.offered();
             assert!(total >= 1, "visual owner did not receive the entity");
             assert!(offered.iter().any(|view| view.id == entity.id));
@@ -222,7 +248,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             }
             for _ in 0..32 {
                 visual.settle();
-                if visual.tint(entity.id).is_some() {
+                if visual.tint(entity.id).is_some() && visual.has_anchor_spark(machine_id) {
                     break;
                 }
             }
@@ -235,6 +261,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                 })
             );
             assert!(visual.has_spark(entity.id));
+            assert!(visual.has_anchor_spark(machine_id));
         });
     }
 }

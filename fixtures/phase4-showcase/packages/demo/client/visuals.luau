@@ -1,4 +1,18 @@
 return function(input)
+    if input.event == 'replica:anchors' then
+        local commands = {}
+        for _, entity in input.entities do
+            if entity.key == 'demo:press_machine' then
+                assert(entity.motion_revision_lo == 0 and entity.motion_revision_hi == 0)
+                commands[#commands + 1] = {
+                    op = 'spark', id_lo = entity.id_lo, id_hi = entity.id_hi,
+                    x = 0, y = 0.6, z = 0,
+                    r = 0.25, g = 0.85, b = 1.0,
+                }
+            end
+        end
+        return commands
+    end
     if input.event ~= 'replica:entities' then return {} end
     local commands = {}
     for _, entity in input.entities do

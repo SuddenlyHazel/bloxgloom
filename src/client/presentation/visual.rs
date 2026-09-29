@@ -1,18 +1,29 @@
 //! UI-independent replica presentation. One immutable downloaded module, one
 //! outstanding worker call, and one replacement snapshot per connection.
 use super::{Command, EffectBuffer, EntityView, Reply, Request, Script, Worker};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+#[cfg(test)]
+#[path = "visual/tests.rs"]
+mod tests;
+
+struct PendingBatch {
+    anchored: bool,
+    entities: Vec<EntityView>,
+    total: usize,
+}
 
 pub(crate) struct VisualSession {
     script: Arc<Script>,
     worker: Worker,
     sequence: u32,
     pending: Option<u32>,
-    queued: Option<(Vec<EntityView>, usize)>,
+    queued: VecDeque<PendingBatch>,
     poses: BTreeMap<u64, [f32; 3]>,
     tints: BTreeMap<u64, [f32; 3]>,
-    previous: Vec<u64>,
+    previous_mobile: Vec<u64>,
+    previous_anchors: Vec<u64>,
+    anchor_positions: BTreeMap<u64, [f32; 3]>,
     effects: EffectBuffer,
     failure: Option<String>,
 }
@@ -24,10 +35,12 @@ impl VisualSession {
             worker: Worker::spawn()?,
             sequence: 0,
             pending: None,
-            queued: None,
+            queued: VecDeque::new(),
             poses: BTreeMap::new(),
             tints: BTreeMap::new(),
-            previous: Vec::new(),
+            previous_mobile: Vec::new(),
+            previous_anchors: Vec::new(),
+            anchor_positions: BTreeMap::new(),
             effects: EffectBuffer::default(),
             failure: None,
         })
@@ -38,6 +51,20 @@ impl VisualSession {
     }
 
     pub(crate) fn entities(&mut self, entities: Vec<EntityView>, total: usize) {
+        self.queue(false, entities, total);
+    }
+
+    pub(crate) fn anchors(&mut self, entities: Vec<EntityView>, total: usize) {
+        if total == 0
+            && self.previous_anchors.is_empty()
+            && !self.queued.iter().any(|batch| batch.anchored)
+        {
+            return;
+        }
+        self.queue(true, entities, total);
+    }
+
+    fn queue(&mut self, anchored: bool, entities: Vec<EntityView>, total: usize) {
         if self.failure.is_some() {
             return;
         }
@@ -49,14 +76,27 @@ impl VisualSession {
                     || !entity.key.is_ascii()
                     || entity.position.iter().any(|axis| !axis.is_finite())
                     || entity.revision == 0
-                    || entity.motion_revision == 0
+                    || (entity.motion_revision == 0) != anchored
                     || entity.public.len() > crate::protocol::MAX_PUBLIC_ENTITY_PAYLOAD
             })
         {
             self.failure = Some("invalid visual replica input".into());
             return;
         }
-        self.queued = Some((entities, total));
+        if let Some(batch) = self
+            .queued
+            .iter_mut()
+            .find(|batch| batch.anchored == anchored)
+        {
+            batch.entities = entities;
+            batch.total = total;
+        } else {
+            self.queued.push_back(PendingBatch {
+                anchored,
+                entities,
+                total,
+            });
+        }
         self.dispatch();
     }
 
@@ -64,24 +104,38 @@ impl VisualSession {
         if self.pending.is_some() || self.failure.is_some() {
             return;
         }
-        let Some((entities, total)) = self.queued.take() else {
+        let Some(batch) = self.queued.pop_front() else {
             return;
         };
         let Some(sequence) = self.sequence.checked_add(1) else {
             self.failure = Some("visual sequence exhausted".into());
             return;
         };
-        let (entered, left) = super::window_changes(&self.previous, &entities);
-        let current = entities.iter().map(|entity| entity.id).collect::<Vec<_>>();
+        let previous = if batch.anchored {
+            &self.previous_anchors
+        } else {
+            &self.previous_mobile
+        };
+        let (entered, left) = super::window_changes(previous, &batch.entities);
+        let current = batch
+            .entities
+            .iter()
+            .map(|entity| entity.id)
+            .collect::<Vec<_>>();
         let request = Request {
             script: Arc::clone(&self.script),
             sequence,
-            event: "replica:entities".into(),
-            value: format!("total={total}"),
+            event: if batch.anchored {
+                "replica:anchors"
+            } else {
+                "replica:entities"
+            }
+            .into(),
+            value: format!("total={}", batch.total),
             state: String::new(),
             texts: vec![],
             replica: true,
-            entities,
+            entities: batch.entities,
             entered,
             left,
         };
@@ -89,10 +143,18 @@ impl VisualSession {
             Ok(()) => {
                 self.sequence = sequence;
                 self.pending = Some(sequence);
-                self.previous = current;
+                if batch.anchored {
+                    self.previous_anchors = current;
+                } else {
+                    self.previous_mobile = current;
+                }
             }
             Err(std::sync::mpsc::TrySendError::Full(request)) => {
-                self.queued = Some((request.entities, total));
+                self.queued.push_front(PendingBatch {
+                    anchored: batch.anchored,
+                    entities: request.entities,
+                    total: batch.total,
+                });
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
                 self.failure = Some("visual worker stopped".into());
@@ -121,11 +183,14 @@ impl VisualSession {
         self.pending = None;
         let result = reply.result.and_then(|commands| {
             if !reply.replica
-                || !reply.entity_batch
+                || !(reply.entity_batch || reply.anchor_batch)
                 || commands.iter().any(|command| !match command {
-                    Command::Visual(id, values)
-                    | Command::Tint(id, values)
-                    | Command::Ember(id, values) => {
+                    Command::Visual(id, values) | Command::Tint(id, values) => {
+                        reply.entity_batch
+                            && reply.offered_entities.contains(id)
+                            && values.iter().all(|value| value.is_finite())
+                    }
+                    Command::Ember(id, values) => {
                         reply.offered_entities.contains(id)
                             && values.iter().all(|value| value.is_finite())
                     }
@@ -159,8 +224,13 @@ impl VisualSession {
         });
         match result {
             Ok((poses, tints, embers, sparks)) => {
-                self.poses = poses;
-                self.tints = tints;
+                if reply.entity_batch {
+                    self.poses = poses;
+                    self.tints = tints;
+                }
+                if reply.anchor_batch {
+                    self.anchor_positions = reply.offered_anchor_positions.into_iter().collect();
+                }
                 for (id, offset) in embers {
                     self.effects.push(id, offset);
                 }
@@ -185,7 +255,7 @@ impl VisualSession {
         now: std::time::Instant,
         avatars: &[crate::render::VisualAvatar],
     ) -> Vec<crate::render::VisualFire> {
-        self.effects.visuals(now, avatars)
+        self.effects.visuals(now, avatars, &self.anchor_positions)
     }
 
     #[cfg(test)]

@@ -55,6 +55,35 @@ impl NetworkedVisualProbe {
             .presentation_entities(visual.owner(), &self.app.catalog)
     }
 
+    pub(crate) fn offered_anchors(&self) -> (Vec<crate::client::presentation::EntityView>, usize) {
+        let visual = self.app.visual_session.as_ref().unwrap();
+        self.app
+            .replicas
+            .presentation_anchors(visual.owner(), &self.app.catalog)
+    }
+
+    pub(crate) fn has_anchor_spark(&self, id: u64) -> bool {
+        let Some(anchor) = self
+            .offered_anchors()
+            .0
+            .into_iter()
+            .find(|anchor| anchor.id == id)
+        else {
+            return false;
+        };
+        let center = glam::Vec3::from(anchor.position) + glam::Vec3::Y * 0.6;
+        self.app
+            .visual_session
+            .as_ref()
+            .unwrap()
+            .effects(std::time::Instant::now(), &[])
+            .iter()
+            .any(|effect| {
+                effect.style == crate::render::fire::FireStyle::Spark([0.25, 0.85, 1.0])
+                    && effect.center == center
+            })
+    }
+
     pub(crate) fn has_spark(&self, id: u64) -> bool {
         let avatar = crate::render::VisualAvatar {
             animation: Default::default(),

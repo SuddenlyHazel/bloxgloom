@@ -80,6 +80,8 @@ pub(crate) struct Reply {
     pub(crate) replica: bool,
     pub(crate) offered_entities: Vec<u64>,
     pub(crate) entity_batch: bool,
+    pub(crate) anchor_batch: bool,
+    pub(crate) offered_anchor_positions: Vec<(u64, [f32; 3])>,
 }
 
 #[derive(Debug)]
@@ -101,6 +103,16 @@ impl Worker {
                     let offered_entities =
                         request.entities.iter().map(|entity| entity.id).collect();
                     let entity_batch = request.event == "replica:entities";
+                    let anchor_batch = request.event == "replica:anchors";
+                    let offered_anchor_positions = if anchor_batch {
+                        request
+                            .entities
+                            .iter()
+                            .map(|entity| (entity.id, entity.position))
+                            .collect()
+                    } else {
+                        vec![]
+                    };
                     if sender
                         .send(Reply {
                             sequence,
@@ -108,6 +120,8 @@ impl Worker {
                             replica,
                             offered_entities,
                             entity_batch,
+                            anchor_batch,
+                            offered_anchor_positions,
                         })
                         .is_err()
                     {

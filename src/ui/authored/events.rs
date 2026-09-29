@@ -111,6 +111,23 @@ impl Session {
         self.queue_replica("replica:entities", format!("total={total}"), entities);
     }
 
+    pub(crate) fn replica_anchors(
+        &mut self,
+        anchors: Vec<crate::client::presentation::EntityView>,
+        total: usize,
+    ) {
+        if total == 0
+            && self.anchor_previous.is_empty()
+            && !self
+                .replica_events
+                .iter()
+                .any(|(event, _, _)| event == "replica:anchors")
+        {
+            return;
+        }
+        self.queue_replica("replica:anchors", format!("total={total}"), anchors);
+    }
+
     pub(crate) fn visual_pose(&self, id: u64) -> Option<[f32; 3]> {
         self.visual_poses.get(&id).copied()
     }
@@ -124,7 +141,7 @@ impl Session {
         now: std::time::Instant,
         avatars: &[crate::render::VisualAvatar],
     ) -> Vec<crate::render::VisualFire> {
-        self.effects.visuals(now, avatars)
+        self.effects.visuals(now, avatars, &self.anchor_positions)
     }
 
     fn queue_replica(
@@ -148,7 +165,7 @@ impl Session {
                     || !entity.key.is_ascii()
                     || entity.position.iter().any(|axis| !axis.is_finite())
                     || entity.revision == 0
-                    || entity.motion_revision == 0
+                    || (entity.motion_revision == 0) != (event == "replica:anchors")
                     || entity.public.len() > crate::protocol::MAX_PUBLIC_ENTITY_PAYLOAD
             })
         {
@@ -188,10 +205,14 @@ impl Session {
             return;
         };
         let (event, value, entities) = self.replica_events.front().unwrap();
-        let (entered, left) = if event == "replica:entities" {
-            crate::client::presentation::window_changes(&self.replica_previous, entities)
-        } else {
-            (vec![], vec![])
+        let (entered, left) = match event.as_str() {
+            "replica:entities" => {
+                crate::client::presentation::window_changes(&self.replica_previous, entities)
+            }
+            "replica:anchors" => {
+                crate::client::presentation::window_changes(&self.anchor_previous, entities)
+            }
+            _ => (vec![], vec![]),
         };
         let current = entities.iter().map(|entity| entity.id).collect::<Vec<_>>();
         let request = Request {
@@ -217,6 +238,8 @@ impl Session {
             Ok(()) => {
                 if event == "replica:entities" {
                     self.replica_previous = current;
+                } else if event == "replica:anchors" {
+                    self.anchor_previous = current;
                 }
                 self.replica_events.pop_front();
                 self.sequence = sequence;
@@ -288,13 +311,13 @@ impl Session {
                 }
                 Command::Ember(id, offset) => {
                     reply.replica
-                        && reply.entity_batch
+                        && (reply.entity_batch || reply.anchor_batch)
                         && reply.offered_entities.contains(id)
                         && offset.iter().all(|value| value.is_finite())
                 }
                 Command::Spark(id, offset, color) => {
                     reply.replica
-                        && reply.entity_batch
+                        && (reply.entity_batch || reply.anchor_batch)
                         && reply.offered_entities.contains(id)
                         && offset.iter().chain(color).all(|value| value.is_finite())
                 }
@@ -318,6 +341,9 @@ impl Session {
             if reply.entity_batch {
                 self.visual_poses.clear();
                 self.visual_tints.clear();
+            }
+            if reply.anchor_batch {
+                self.anchor_positions = reply.offered_anchor_positions.into_iter().collect();
             }
             for command in commands {
                 match command {

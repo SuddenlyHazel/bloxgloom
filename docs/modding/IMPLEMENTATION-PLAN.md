@@ -882,6 +882,18 @@ mesh bytes stayed 17,500,968 and triangles 89,218; setup was 2703 ms, CPU
 cannot measure spark cost; the recent pre-spark comparison above is the
 baseline for scene size and frame-time context.
 
+Installed package-owned anchored entities now have a separate bounded
+`replica:anchors` worker callback with exact public bytes, stable ID/revision,
+anchor-cell center and zero motion revision. Mobile callback input stays
+unchanged. Both UI-backed and UI-free workers may attach bounded ember/spark
+effects to offered anchors; pose and tint commands remain mobile-only. A
+real-listener showcase places the press, receives its anchored replica, draws
+its session-local spark and recovers the same anchored entity ID after restart.
+Projection, queue ordering, invalid mobile-only commands and UI reset have
+focused tests. Empty anchored windows do not repeatedly invoke the worker.
+The integrated two-thread suite passes **1031/1031**, with formatting and
+strict Clippy clean for this slice.
+
 **Remaining**
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
@@ -901,10 +913,11 @@ baseline for scene size and frame-time context.
   descriptors. The Luau caps are lower than public maximums; the host still
   validates and commits every staged effect.
 - [ ] Run general client presentation/replica callbacks off the window thread;
-  retain scoped handles, budgets and reproducible inputs. Initial replica-driven
-  owned UI callbacks, bounded mobile pose offsets and tint, presentation-window changes
-  and attached embers are bound, including UI-free package workers; broader
-  effect and entity presentations remain open.
+  retain scoped handles, budgets and reproducible inputs. Replica-driven owned
+  UI callbacks, bounded mobile pose offsets and tint, separate anchored entity
+  views, presentation-window changes and attached embers/sparks are bound,
+  including UI-free package workers; broader effect and entity presentations
+  remain open.
 
 #### Phase 5 — packages and joining · In progress
 

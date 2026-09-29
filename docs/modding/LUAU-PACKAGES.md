@@ -144,6 +144,16 @@ the rendered model, after the host-owned
 replica is installed. The next entity callback replaces prior tints and pose
 offsets, and switching sessions clears them. Invalid IDs, colors, or commands
 fail that presentation session without applying a partial result.
+For `replica:anchors`, `input.entities` is a separate sorted window of at most
+16 package-owned anchored views. Each view has the same exact ID, key, public
+bytes and revision fields; `position` is the anchor cell center and both motion
+revision words are zero. `input.value` reports that window's total count, while
+`input.entered` and `input.left` track its own bounded window. The callback may
+attach `ember` or `spark` effects to offered anchors. `visual` pose and `tint`
+commands remain mobile-only; an anchored target for either rejects the whole
+batch. Effects follow the currently offered anchor position and disappear after
+the next completed callback removes that anchor from the presentation window,
+or when the session resets. Empty anchor windows do not dispatch repeatedly.
 
 Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
 target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,

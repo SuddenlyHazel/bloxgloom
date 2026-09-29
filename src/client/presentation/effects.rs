@@ -1,6 +1,7 @@
 //! Session-local bounded transient effects attached to offered entity visuals.
 use crate::render::{VisualAvatar, VisualFire, fire::FireStyle};
 use glam::Vec3;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 const LIFE: Duration = Duration::from_millis(850);
@@ -34,16 +35,25 @@ impl EffectBuffer {
         self.entries.clear();
     }
 
-    pub(crate) fn visuals(&self, now: Instant, avatars: &[VisualAvatar]) -> Vec<VisualFire> {
+    pub(crate) fn visuals(
+        &self,
+        now: Instant,
+        avatars: &[VisualAvatar],
+        anchors: &BTreeMap<u64, [f32; 3]>,
+    ) -> Vec<VisualFire> {
         self.entries
             .iter()
             .filter_map(|(id, offset, at, style)| {
                 if now.saturating_duration_since(*at) >= LIFE {
                     return None;
                 }
-                let avatar = avatars.iter().find(|avatar| avatar.id == *id)?;
+                let position = avatars
+                    .iter()
+                    .find(|avatar| avatar.id == *id)
+                    .map(|avatar| avatar.position)
+                    .or_else(|| anchors.get(id).copied().map(Vec3::from))?;
                 Some(VisualFire {
-                    center: avatar.position + Vec3::from(*offset),
+                    center: position + Vec3::from(*offset),
                     age: (now.saturating_duration_since(*at).as_secs_f32() / LIFE.as_secs_f32())
                         .clamp(0.0, 1.0),
                     style: *style,

@@ -953,6 +953,9 @@ impl ClientApp {
                                 let (entities, total) =
                                     self.replicas.presentation_entities(&owner, &self.catalog);
                                 ui.replica_entities(entities, total);
+                                let (anchors, total) =
+                                    self.replicas.presentation_anchors(&owner, &self.catalog);
+                                ui.replica_anchors(anchors, total);
                             }
                         }
                         if let Some(visual) = &mut self.visual_session {
@@ -960,6 +963,10 @@ impl ClientApp {
                                 .replicas
                                 .presentation_entities(visual.owner(), &self.catalog);
                             visual.entities(entities, total);
+                            let (anchors, total) = self
+                                .replicas
+                                .presentation_anchors(visual.owner(), &self.catalog);
+                            visual.anchors(anchors, total);
                         }
                         for key in keys {
                             if block_commit {

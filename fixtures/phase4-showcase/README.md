@@ -4,8 +4,9 @@
 defines a five-part mobile sproutling, a two-cell fueled stone press with an
 inventory screen, explicit idle/lit block states, and a client replica callback
 that colors the sproutling from its public grounded flag and emits a short-lived
-blue spark. The callback handles at most eight entities per batch within the
-16-command output limit.
+blue spark. It also emits a spark at the press's installed anchor. The mobile
+callback handles at most eight creatures per batch within the 16-command
+output limit.
 
 Use the package directory as the local package root when starting a server.
 These headless previews show the authored assets and screen:
@@ -22,7 +23,7 @@ The real-listener integration test `phase4_showcase_creature_machine_and_replica
 downloads the package into a client, spawns the creature, verifies the worker's
 state-derived tint and attached spark, and places the two-cell press from one
 finite inventory item. It restarts the server from the same save and checks the
-stable catalog/entity identities, both press cells, and consumed item. The
-second creature in the tinted preview uses the callback's grounded-state RGB
-value. The preview applies that value directly to the production avatar renderer;
-it does not show a live callback transition.
+stable catalog/entity identities, both press cells, consumed item, and an
+anchor-attached spark. The second creature in the tinted preview uses the
+callback's grounded-state RGB value. The preview applies that value directly
+to the production avatar renderer; it does not show a live callback transition.

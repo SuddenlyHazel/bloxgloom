@@ -223,6 +223,63 @@ impl Replicas {
         )
     }
 
+    /// A separate bounded window of installed package-owned anchored views.
+    /// Keeping it separate preserves the mobile callback's input contract.
+    pub(super) fn presentation_anchors(
+        &self,
+        owner: &str,
+        catalog: &Catalog,
+    ) -> (Vec<crate::client::presentation::EntityView>, usize) {
+        let mut visible = self
+            .entities
+            .values()
+            .flat_map(|chunk| chunk.values())
+            .filter(|entity| {
+                catalog
+                    .entity_type(entity.entity_type)
+                    .is_some_and(|definition| {
+                        definition.key.split_once(':').map(|v| v.0) == Some(owner)
+                    })
+                    && matches!(
+                        entity.location,
+                        crate::protocol::PublicEntityLocation::Anchored { .. }
+                    )
+            })
+            .take(1025)
+            .collect::<Vec<_>>();
+        if visible.len() > 1024 {
+            return (vec![], 1025);
+        }
+        visible.sort_unstable_by_key(|entity| entity.id);
+        let total = visible.len();
+        visible.truncate(16);
+        (
+            visible
+                .into_iter()
+                .map(|entity| {
+                    let crate::protocol::PublicEntityLocation::Anchored { anchor, .. } =
+                        entity.location
+                    else {
+                        unreachable!("filtered anchored entity")
+                    };
+                    crate::client::presentation::EntityView {
+                        id: entity.id,
+                        key: catalog
+                            .entity_type(entity.entity_type)
+                            .unwrap()
+                            .key
+                            .to_string(),
+                        position: anchor.map(|cell| cell as f32 + 0.5),
+                        revision: entity.revision,
+                        motion_revision: 0,
+                        public: entity.payload.clone(),
+                    }
+                })
+                .collect(),
+            total,
+        )
+    }
+
     #[cfg(test)]
     pub(super) fn entities_in(&self, key: ChunkKey) -> Option<&BTreeMap<u64, PublicEntity>> {
         self.entities.get(&key)
