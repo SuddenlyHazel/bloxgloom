@@ -4,8 +4,8 @@ mod avatars;
 pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
-pub(crate) mod egui_proof;
 pub(crate) mod fire;
+pub(crate) mod game_ui;
 mod material;
 mod mesh;
 mod pipeline;
@@ -36,8 +36,8 @@ pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar}
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 pub(crate) use drops::mesh_with_catalog as mesh_dropped_items_with_catalog;
-pub(crate) use egui_proof::Intent as EguiProofIntent;
 pub(crate) use fire::VisualFire;
+pub(crate) use game_ui::Intent as GameUiIntent;
 #[cfg(test)]
 pub use mesh::mesh_chunk;
 pub use mesh::{ChunkMesh, mesh_chunk_lit, mesh_chunk_lit_with_catalog};
@@ -136,7 +136,7 @@ pub struct Renderer {
     drop_cutout_index_count: u32,
     avatars: avatars::AvatarRenderer,
     fire: fire::FireRenderer,
-    egui_proof: egui_proof::Proof,
+    game_ui: game_ui::GameUi,
     meshes: HashMap<ChunkKey, GpuMesh>,
     pending: HashMap<ChunkKey, ChunkMesh>,
     pending_order: VecDeque<ChunkKey>,
@@ -171,23 +171,23 @@ impl Renderer {
         self.post.install_effect(&self.device, effect)
     }
     pub(crate) fn install_package_ui(&mut self, resources: &crate::ui::authored::Resources) {
-        self.egui_proof.install_package_ui(resources);
+        self.game_ui.install_package_ui(resources);
     }
 
-    pub(crate) fn set_egui_proof_open(&mut self, open: bool) {
-        self.egui_proof.set_open(open);
+    pub(crate) fn clear_game_ui_intents(&mut self) {
+        self.game_ui.clear_intents();
     }
 
-    pub(crate) fn egui_proof_event(&mut self, event: &winit::event::WindowEvent) {
-        self.egui_proof.on_window_event(&self.window, event);
+    pub(crate) fn game_ui_event(&mut self, event: &winit::event::WindowEvent) {
+        self.game_ui.on_window_event(&self.window, event);
     }
 
-    pub(crate) fn take_egui_proof_intents(&mut self) -> Vec<EguiProofIntent> {
-        self.egui_proof.take_intents()
+    pub(crate) fn take_game_ui_intents(&mut self) -> Vec<GameUiIntent> {
+        self.game_ui.take_intents()
     }
 
     pub(crate) fn egui_wants_keyboard_input(&self) -> bool {
-        self.egui_proof.wants_keyboard_input()
+        self.game_ui.wants_keyboard_input()
     }
     pub async fn new_with_catalog(
         window: Arc<Window>,
@@ -248,8 +248,7 @@ impl Renderer {
             avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer, &catalog);
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
-        let mut egui_proof = egui_proof::Proof::new(&window, &device, format);
-        egui_proof.set_open(true);
+        let game_ui = game_ui::GameUi::new(&window, &device, format);
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
             size: drops::MAX_VERTEX_BYTES,
@@ -304,7 +303,7 @@ impl Renderer {
             drop_cutout_index_count: 0,
             avatars,
             fire,
-            egui_proof,
+            game_ui,
             meshes: HashMap::new(),
             pending: HashMap::new(),
             pending_order: VecDeque::new(),
@@ -669,8 +668,8 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
-        self.egui_proof.encode(
-            egui_proof::DrawTarget {
+        self.game_ui.encode(
+            game_ui::DrawTarget {
                 window: &self.window,
                 device: &self.device,
                 queue: &self.queue,

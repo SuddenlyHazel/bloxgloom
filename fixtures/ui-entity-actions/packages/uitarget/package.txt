@@ -1,0 +1,15 @@
+format 2
+package uitarget
+version 1.0.0
+requires bloxgloom:actions/v1
+requires bloxgloom:content/v1
+requires bloxgloom:mobile_entities/v1
+entry main
+module server main server/main.luau
+module server pat server/pat.luau
+module server creature server/creature.luau
+module client view client/view.luau
+asset ui-document controls assets/ui/controls.json
+asset ui-style panel assets/ui/panel.json
+asset ui-style button assets/ui/button.json
+asset ui-font body assets/fonts/body.ttf

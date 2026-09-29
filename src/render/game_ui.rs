@@ -1,4 +1,4 @@
-//! Temporary egui overlay for evaluating a shared game UI foundation.
+//! Live egui UI for built-in screens and verified package documents.
 //! Gameplay requests still go through the client and authoritative server.
 
 use crate::content::Catalog;
@@ -46,12 +46,11 @@ pub(crate) enum Intent {
     JoinAction,
 }
 
-pub(super) struct Proof {
+pub(super) struct GameUi {
     context: egui::Context,
     input: egui_winit::State,
     renderer: egui_wgpu::Renderer,
     package_atlas: Option<egui::TextureHandle>,
-    open: bool,
     search: String,
     filter: SlotFilter,
     intents: Vec<Intent>,
@@ -83,7 +82,7 @@ impl SlotFilter {
     }
 }
 
-impl Proof {
+impl GameUi {
     pub(super) fn new(window: &Window, device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let context = themed_context();
         let input = egui_winit::State::new(
@@ -100,15 +99,13 @@ impl Proof {
             input,
             renderer,
             package_atlas: None,
-            open: false,
             search: String::new(),
             filter: SlotFilter::All,
             intents: Vec::new(),
         }
     }
 
-    pub(super) fn set_open(&mut self, open: bool) {
-        self.open = open;
+    pub(super) fn clear_intents(&mut self) {
         self.intents.clear();
     }
 
@@ -117,9 +114,7 @@ impl Proof {
     }
 
     pub(super) fn on_window_event(&mut self, window: &Window, event: &WindowEvent) {
-        if self.open {
-            let _ = self.input.on_window_event(window, event);
-        }
+        let _ = self.input.on_window_event(window, event);
     }
 
     pub(super) fn take_intents(&mut self) -> Vec<Intent> {
@@ -136,9 +131,6 @@ impl Proof {
         frame: &UiFrame<'_>,
         catalog: &Catalog,
     ) {
-        if !self.open {
-            return;
-        }
         self.context
             .set_zoom_factor(frame.settings.scale.clamp(0.75, 2.0));
         let raw_input = self.input.take_egui_input(target.window);
@@ -174,7 +166,7 @@ impl Proof {
             let pass = target
                 .encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui proof overlay"),
+                    label: Some("game ui"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: target.view,
                         resolve_target: None,

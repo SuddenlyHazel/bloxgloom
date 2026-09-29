@@ -132,7 +132,12 @@ impl PackageActionProbe {
         app.config.selected_slot = 0;
         let ui = app.package_ui.as_mut().unwrap();
         ui.resize(640, 360, 1.0);
-        ui.tab(false);
+        for _ in 0..64 {
+            ui.tab(false);
+            if ui.event() == Some(event) {
+                break;
+            }
+        }
         assert_eq!(ui.event(), Some(event));
         Self { app }
     }
@@ -388,5 +393,105 @@ impl PackageActionProbe {
         self.app.inventory.slots[0]
             .as_ref()
             .map_or(0, |stack| stack.count)
+    }
+
+    pub(crate) fn spawn_marker(&mut self) -> ClientMessage {
+        let action = self
+            .app
+            .catalog
+            .action(crate::gameplay::admin::SPAWN)
+            .unwrap();
+        let arguments = action
+            .command
+            .as_ref()
+            .unwrap()
+            .encode_arguments(&["uitarget:marker"])
+            .unwrap();
+        let request = Request {
+            key: action.key.clone(),
+            version: action.version,
+            slot: 0,
+            inventory_revision: 0,
+            entity: 0,
+            entity_revision: 0,
+            arguments,
+        };
+        let action_id = self.app.allocate_action_id().unwrap();
+        let target = self.app.position.to_array().map(|v| v.floor() as i32);
+        self.submit(ClientMessage::EntityInteract {
+            action_id,
+            target,
+            payload: request.encode().unwrap(),
+        })
+    }
+
+    pub(crate) fn wait_for_marker(&mut self) -> crate::protocol::PublicEntity {
+        let entity_type = self
+            .app
+            .catalog
+            .entity_type_id_by_key("uitarget:marker")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(entity) = self.app.replicas.mobile_for_test(entity_type) {
+                return entity;
+            }
+            let message = self.read(deadline);
+            self.app.accept(message);
+            assert!(!self.app.disconnected);
+        }
+    }
+
+    pub(crate) fn click_marker(&mut self, entity: &crate::protocol::PublicEntity) -> ClientMessage {
+        let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location else {
+            panic!("expected mobile marker")
+        };
+        let body = self
+            .app
+            .catalog
+            .mobile_entity(entity.entity_type)
+            .unwrap()
+            .body;
+        let direction = (Vec3::from_array(position) + Vec3::Y * (body.height * 0.5)
+            - self.app.camera().position)
+            .normalize();
+        self.app.yaw = direction.z.atan2(direction.x);
+        self.app.pitch = direction.y.asin();
+        self.activate();
+        let id = action_id(self.app.actions.epoch, self.app.actions.next_seq);
+        self.app.pump_package_action();
+        assert_eq!(self.feedback(), "WAITING FOR SERVER");
+        self.app.pending_actions[&id].clone()
+    }
+
+    pub(crate) fn forge_entity_arguments(
+        &mut self,
+        original: &ClientMessage,
+        arguments: Vec<u8>,
+    ) -> ClientMessage {
+        let ClientMessage::EntityInteract {
+            target, payload, ..
+        } = original
+        else {
+            unreachable!()
+        };
+        let mut request = Request::decode(payload).unwrap();
+        request.arguments = arguments;
+        request.inventory_revision = self.app.inventory.revision;
+        let action_id = self.app.allocate_action_id().unwrap();
+        self.submit(ClientMessage::EntityInteract {
+            action_id,
+            target: *target,
+            payload: request.encode().unwrap(),
+        })
+    }
+
+    pub(crate) fn wait_for_count(&mut self, count: u16) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while self.count() != count {
+            let message = self.read(deadline);
+            self.app.accept(message);
+            assert!(!self.app.disconnected);
+        }
     }
 }

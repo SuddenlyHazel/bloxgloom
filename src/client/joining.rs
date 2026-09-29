@@ -44,7 +44,7 @@ impl JoinApp {
                 Arc::new(crate::content::Catalog::builtins()),
             ))
             .map_err(|error| error.to_string())?;
-            renderer.set_egui_proof_open(true);
+            renderer.clear_game_ui_intents();
             self.renderer = Some(renderer);
         }
         Ok(())
@@ -176,16 +176,16 @@ impl JoinApp {
             event_loop.exit();
             return;
         }
-        for intent in self.renderer.as_mut().unwrap().take_egui_proof_intents() {
+        for intent in self.renderer.as_mut().unwrap().take_game_ui_intents() {
             match intent {
-                crate::render::EguiProofIntent::JoinAddress(address) if self.attempt.is_none() => {
+                crate::render::GameUiIntent::JoinAddress(address) if self.attempt.is_none() => {
                     self.address = address
                         .chars()
                         .filter(|character| character.is_ascii_graphic())
                         .take(256)
                         .collect();
                 }
-                crate::render::EguiProofIntent::JoinAction => self.action(),
+                crate::render::GameUiIntent::JoinAction => self.action(),
                 _ => {}
             }
         }
@@ -237,7 +237,7 @@ impl ApplicationHandler for JoinApp {
             return;
         }
         if let Some(renderer) = &mut self.renderer {
-            renderer.egui_proof_event(&event);
+            renderer.game_ui_event(&event);
         }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),

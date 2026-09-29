@@ -399,7 +399,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 3 | Public generation context and migration of existing terrain/vegetation | Done |
 | 4 | Complete Luau/mlua bindings, local package loading, module lifecycle and persistence integration | Done |
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | In progress |
-| 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | In progress |
+| 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Done |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | In progress |
 | 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
 
@@ -1003,9 +1003,9 @@ GPU/window failures propagate instead of looking like successful exits.
   caching and elaborate progress UI are **not** prerequisites unless testing
   requires them.
 
-#### Phase 6 — authored UI · In progress
+#### Phase 6 — authored UI · Done
 
-**Working:** egui is the live wgpu/winit UI renderer for the playing HUD, join
+**Landed:** egui is the live wgpu/winit UI renderer for the playing HUD, join
 flow, menus, inventory, containers and verified package documents. The F7
 proof path is retired; the earlier bitmap/Taffy renderer remains only for
 legacy headless previews. Package documents use egui widgets, packaged fonts
@@ -1015,18 +1015,20 @@ document was inspected at desktop and compact sizes. Local and replica
 callbacks remain on session-owned presentation workers. Authored requests can
 carry bounded argument bytes and compose an aimed entity identity from the
 current replica; server authorization and receipts remain authoritative.
-Existing real-listener tests cover item/block UI actions, same-type block
-observation fences, server receipts and restart. The root suite passed at
-1,040 tests; strict Clippy and desktop/compact UI previews also passed.
+Real-listener tests cover item, block and entity UI actions, binary arguments,
+same-type block observation fences, server denials and receipts, and restart.
+The root suite passed at 1,041 tests; formatting, strict Clippy and
+desktop/compact UI previews passed. The screenshots were inspected; a live
+window acceptance claim was not made.
 
-**Remaining**
+**Completed**
 
 - [x] Support bounded dynamic document state, scrolling, wrapping and egui text
   entry/focus with clipboard and IME. Broader accessibility was deferred by
   the user for this phase.
-- [ ] Verify an authored entity action with argument bytes through the real
-  listener, denial/receipt and restart path; composition and bounds have focused
-  tests, while item/block UI and replica updates have real listener coverage.
+- [x] Verify an authored entity action with argument bytes through the real
+  listener, denial/receipt and restart path. Composition and bounds also have
+  focused tests.
 - [x] Migrate built-in screens and authored documents onto the same live egui
   renderer and input path.
 

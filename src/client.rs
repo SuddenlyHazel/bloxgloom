@@ -447,7 +447,7 @@ impl ClientApp {
 
     fn set_screen(&mut self, screen: UiScreen) {
         if let Some(renderer) = &mut self.renderer {
-            renderer.set_egui_proof_open(true);
+            renderer.clear_game_ui_intents();
         }
         self.screen = screen;
         if screen != UiScreen::Admin {
@@ -1698,44 +1698,44 @@ impl ClientApp {
         let intents = self
             .renderer
             .as_mut()
-            .map_or_else(Vec::new, Renderer::take_egui_proof_intents);
+            .map_or_else(Vec::new, Renderer::take_game_ui_intents);
         for intent in intents {
             match intent {
-                crate::render::EguiProofIntent::InventorySlot(slot, right) => {
+                crate::render::GameUiIntent::InventorySlot(slot, right) => {
                     if self.screen == UiScreen::Container {
                         self.kiln_inventory_click(slot, right);
                     } else {
                         self.inventory_click(slot, right);
                     }
                 }
-                crate::render::EguiProofIntent::ContainerSlot(slot, right)
+                crate::render::GameUiIntent::ContainerSlot(slot, right)
                     if self.screen == UiScreen::Container =>
                 {
                     self.kiln_click(slot, right);
                 }
-                crate::render::EguiProofIntent::ContainerSlot(_, _) => {}
-                crate::render::EguiProofIntent::Close => {
+                crate::render::GameUiIntent::ContainerSlot(_, _) => {}
+                crate::render::GameUiIntent::Close => {
                     self.set_screen(UiScreen::Playing);
                 }
-                crate::render::EguiProofIntent::Control(control) => {
+                crate::render::GameUiIntent::Control(control) => {
                     self.activate_control(None, control);
                 }
-                crate::render::EguiProofIntent::AdminInput(value) => {
+                crate::render::GameUiIntent::AdminInput(value) => {
                     self.admin_input = value
                         .chars()
                         .filter(|character| character.is_ascii_graphic() || *character == ' ')
                         .take(1024)
                         .collect();
                 }
-                crate::render::EguiProofIntent::Package(intent) => {
+                crate::render::GameUiIntent::Package(intent) => {
                     if self.screen == UiScreen::Package
                         && let Some(session) = &mut self.package_ui
                     {
                         session.apply_egui(intent);
                     }
                 }
-                crate::render::EguiProofIntent::JoinAddress(_)
-                | crate::render::EguiProofIntent::JoinAction => {}
+                crate::render::GameUiIntent::JoinAddress(_)
+                | crate::render::GameUiIntent::JoinAction => {}
             }
         }
     }

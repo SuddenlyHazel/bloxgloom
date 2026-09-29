@@ -22,7 +22,7 @@ impl ClientApp {
         if let Some(session) = &self.package_ui {
             renderer.install_package_ui(session.resources());
         }
-        renderer.set_egui_proof_open(true);
+        renderer.clear_game_ui_intents();
         self.renderer = Some(renderer);
         self.window = Some(window);
         self.refresh_layout();
@@ -178,7 +178,7 @@ impl ClientApp {
                 return;
             }
             if let Some(renderer) = &mut self.renderer {
-                renderer.egui_proof_event(&event);
+                renderer.game_ui_event(&event);
             }
             if matches!(
                 event,

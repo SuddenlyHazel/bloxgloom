@@ -11,6 +11,101 @@ const SECOND: [i32; 3] = [2, 81, 2];
 const THIRD: [i32; 3] = [0, 81, 3];
 
 #[test]
+fn authored_entity_action_arguments_and_receipts_survive_real_listener_restart() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let packages = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/ui-entity-actions/packages");
+    let open = || {
+        let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
+            .with_local_packages(&packages)
+            .unwrap();
+        crate::server::server_state_with_startup(7, fixture.0.join("save"), 2, startup).unwrap()
+    };
+    let mut state = open();
+    state.admin_profile = Some(PROFILE);
+    state.spawn_anchor = [0.5, 80.0, 0.5];
+    for x in -1..=4 {
+        for z in -1..=1 {
+            state.world.edit(x, 79, z, STONE).unwrap();
+            for y in 80..=83 {
+                state.world.edit(x, y, z, AIR).unwrap();
+            }
+        }
+    }
+    let mut inventory = Inventory::default();
+    inventory.slots[0] = Some(Stack::new(crate::items::STICK, 2));
+    state.inventory_store.save(PROFILE, &inventory).unwrap();
+    let mut marker_id = None;
+    gameplay::serve(Box::new(state), |address| {
+        let mut client = PackageActionProbe::connect_for(
+            &address.to_string(),
+            PROFILE,
+            fixture.0.join("client-config"),
+            "uitarget:pat",
+        );
+        client.ready([2, 79, 0], STONE, 0);
+        let spawn = client.spawn_marker();
+        let result = client.result(&spawn);
+        assert!(result.0, "{}", result.1);
+        let marker = client.wait_for_marker();
+        marker_id = Some(marker.id);
+        let request = client.click_marker(&marker);
+        let ClientMessage::EntityInteract { payload, .. } = &request else {
+            unreachable!()
+        };
+        let decoded = bloxgloom_host_api::actions::Request::decode(payload).unwrap();
+        assert_eq!(decoded.entity, marker.id);
+        assert_eq!(decoded.entity_revision, marker.revision);
+        assert_eq!(decoded.arguments, [7, 9]);
+        let result = client.result(&request);
+        assert!(result.0, "{}", result.1);
+        client.wait_for_count(1);
+        let denied = client.forge_entity_arguments(&request, vec![7, 8]);
+        let result = client.result(&denied);
+        assert!(!result.0, "wrong arguments applied");
+        assert!(result.1.contains("uitarget:pat:"), "{}", result.1);
+        assert_eq!(client.count(), 1);
+    });
+    let recovered = open();
+    assert_eq!(
+        recovered.inventory_store.load(PROFILE).unwrap().slots[0]
+            .as_ref()
+            .unwrap()
+            .count,
+        1
+    );
+    assert_eq!(
+        recovered.inventory_store.load(PROFILE).unwrap().slots[1]
+            .as_ref()
+            .unwrap()
+            .item,
+        recovered
+            .world
+            .catalog()
+            .item_by_key("bloxgloom:seeds")
+            .unwrap()
+    );
+    assert!(
+        recovered
+            .entities
+            .public_view(crate::server::entities::EntityId::new(marker_id.unwrap()).unwrap())
+            .is_some()
+    );
+    gameplay::serve(Box::new(recovered), |address| {
+        let mut client = PackageActionProbe::connect_for(
+            &address.to_string(),
+            PROFILE,
+            fixture.0.join("client-config"),
+            "uitarget:pat",
+        );
+        client.ready([2, 79, 0], STONE, 1);
+        assert_eq!(client.count(), 1);
+        assert_eq!(client.wait_for_marker().id, marker_id.unwrap());
+    });
+}
+
+#[test]
 fn authored_block_action_rejects_observed_stone_after_remove_and_restore_over_listener() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();

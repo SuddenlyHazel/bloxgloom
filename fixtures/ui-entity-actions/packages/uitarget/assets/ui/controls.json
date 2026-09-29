@@ -1,0 +1,4 @@
+{"version":1,"presentation":{"capability":"local-ui","module":"uitarget:view"},"nodes":[
+  {"id":"root","kind":"panel","style":"uitarget:panel"},
+  {"id":"pat","parent":0,"kind":"button","style":"uitarget:button","text":"Pat aimed marker: 1 stick [server]","event":"uitarget:pat"}
+]}

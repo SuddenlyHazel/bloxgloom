@@ -108,7 +108,7 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
             },
         );
         let view = color.create_view(&Default::default());
-        let context = render::egui_proof::themed_context();
+        let context = render::game_ui::themed_context();
         let atlas =
             (screen_kind == UiScreen::Package).then(|| package_resources.install_egui(&context));
         let package = if label == "package-updated" {
@@ -129,7 +129,7 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
             ..preview
         };
         let mut search = String::new();
-        let mut filter = render::egui_proof::SlotFilter::All;
+        let mut filter = render::game_ui::SlotFilter::All;
         let mut intents = Vec::new();
         let mut output = context.run_ui(
             egui::RawInput {
@@ -140,7 +140,7 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
                 ..Default::default()
             },
             |ui| {
-                render::egui_proof::draw_screen(
+                render::game_ui::draw_screen(
                     ui,
                     &frame,
                     crate::content::catalog(),
