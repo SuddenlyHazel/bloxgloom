@@ -632,6 +632,12 @@ client-presentation services.
 Gameplay Luau also exposes dependency-capturing entity lookups and bounded
 mobile spatial queries, anchored occupancy and stable per-handler random words;
 private owned bytes remain behind the existing state API.
+One real-listener Luau action now verifies item consumption, block change,
+component-preserving drop creation, entity creation/update and durable scheduling
+on the same WAL receipt, including caught-error rollback, deduplication and
+restart. The mobile query also filters spatial-index bucket candidates by exact
+radius after capturing dependencies. Broader event context and specialized
+owner services still prevent checking off the combined surface as complete.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options

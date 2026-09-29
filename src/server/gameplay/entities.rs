@@ -152,13 +152,26 @@ pub(super) fn nearby(
     let ids = store
         .query_mobile_aabb(min, max)
         .map_err(|_| Error::BudgetExceeded)?;
-    if ids.len() > 128 {
-        return Err(Error::BudgetExceeded);
+    let radius_squared = f64::from(radius) * f64::from(radius);
+    let mut matches = Vec::new();
+    for id in ids {
+        let entity = read(catalog, reads, store, id.get())?
+            .ok_or_else(|| Error::Host("queried entity disappeared".into()))?;
+        let distance_squared = entity
+            .position
+            .iter()
+            .zip(position)
+            .map(|(coordinate, center)| {
+                let difference = f64::from(*coordinate) - f64::from(center);
+                difference * difference
+            })
+            .sum::<f64>();
+        if distance_squared <= radius_squared {
+            if matches.len() == 128 {
+                return Err(Error::BudgetExceeded);
+            }
+            matches.push(entity);
+        }
     }
-    ids.into_iter()
-        .map(|id| {
-            read(catalog, reads, store, id.get())?
-                .ok_or_else(|| Error::Host("queried entity disappeared".into()))
-        })
-        .collect()
+    Ok(matches)
 }

@@ -120,8 +120,9 @@ private owned `entity_state`,
 host's public context permits them.
 `entity(id_lo,id_hi)` returns a readonly public projection (ID, type, position,
 optional anchor and binary public data), not owned private bytes.
-`nearby_entities(x,y,z,radius)` captures mobile query dependencies, permits a
-radius of 0..16, and fails rather than truncating above 128 results;
+`nearby_entities(x,y,z,radius)` captures mobile query dependencies, filters
+bucket candidates to the requested spherical radius (0..16), and fails rather
+than truncating above 128 results;
 `anchored_entity_at(x,y,z)` returns two ID halves or nil for absence, including
 footprint cells. Public entity reads reflect staged updates/removals but do not
 invent IDs for staged spawns. `random(x,y,z,sequence_lo,sequence_hi)` returns

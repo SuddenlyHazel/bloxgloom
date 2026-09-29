@@ -10,6 +10,8 @@ mod authorization;
 mod blocks;
 #[path = "gameplay/commands.rs"]
 mod commands;
+#[path = "gameplay/composed.rs"]
+mod composed;
 #[path = "gameplay/decisions.rs"]
 mod decisions;
 #[path = "gameplay/entities.rs"]
