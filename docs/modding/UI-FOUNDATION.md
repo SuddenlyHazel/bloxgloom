@@ -13,6 +13,12 @@ bytes and the verified image atlas are installed in the session's egui context.
 Document text and visibility can change through bounded local or replica
 callbacks. Text input uses egui's selection, focus, clipboard and IME path;
 the retained values and callback results are capped at 128 UTF-8 bytes.
+The authored set is limited to nested panels, labels, static images, buttons
+and single-line inputs. Modders declare these in JSON and cannot call egui or
+create widgets from Luau at runtime. Checkboxes, sliders, dropdowns, tables,
+multiline inputs and animations are not exposed. See
+`LUAU-PACKAGES.md#authored-ui-widgets-and-current-limits` for the authoring
+contract.
 
 Luau executes on the bounded presentation worker, never inside the draw pass.
 It may submit one package-owned action key and up to 130 argument bytes. The

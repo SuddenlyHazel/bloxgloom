@@ -28,6 +28,28 @@ This starts the same verified package server and client on a real loopback
 listener, then stops the server when the client closes. Keep each package set
 in its own save directory so `content.map` remains its stable save identity.
 
+# Authored UI widgets and current limits
+
+Package UI documents declare a fixed widget tree in JSON. The supported kinds
+are:
+
+| Kind | Current behavior |
+| --- | --- |
+| `panel` | Groups child widgets vertically or in a wrapped row; panels can nest. |
+| `label` | Shows text that a presentation callback may update. |
+| `image` | Shows a packaged, static PNG. |
+| `button` | Sends its declared event on click or keyboard activation. |
+| `input` | Edits one line of text and sends change events; egui handles focus, selection, clipboard and IME input. |
+
+Styles provide width, height, padding, gaps, row layout, colors and packaged
+fonts. egui supplies document scrolling and text wrapping. Luau callbacks may
+change text and visibility or retain a bounded state string, but they cannot
+create, remove or rearrange widgets. Modders cannot call egui directly from
+Luau. There are currently no authored checkboxes, sliders, dropdown/select
+controls, tables, multiline inputs, HTML/CSS or UI animations. Adding one of
+these requires extending the verified document schema and its Rust renderer.
+See `fixtures/packages/uidemo/assets/ui/welcome.json` for all five kinds.
+
 # Package shape
 
 Place one package directory per identity under a chosen root, containing a UTF-8
@@ -382,15 +404,17 @@ receiving `{sequence,event,value,state,texts}`. It returns up to 16 commands:
 `{op="state",value="local state"}`, or one
 `{op="action",key="uidemo:store"}`. Widget event IDs and action keys must belong
 to the document's package. The worker executes each event in a fresh sandbox;
-it never receives world/inventory/network handles. The client composes only
-registered item/empty/block gameplay requests using its current slot,
-inventory revision and session action ID. Block actions use the current ray hit
-and observed chunk version from streamed terrain when the callback is dispatched;
-the UI cannot supply
-coordinates or an entity identity. Server reach, line of sight, target type,
-permissions, costs, WAL transactions and receipts remain authoritative. UI
-feedback distinguishes unsent, pending, applied and denied requests. Entity
-targets and arbitrary argument schemas are not yet bound. Same-type block
-replacement rejects stale chunk observations and rechecks the server read fence
-at WAL admission. See `fixtures/packages/uidemo/` and
-`fixtures/ui-target-actions/`.
+it never receives world/inventory/network handles. The client composes
+registered item, empty, block or entity gameplay requests using its current
+selection, streamed target and session action ID. A callback may supply up to
+130 raw argument bytes for its package-owned action; the server handler must
+validate their meaning. Block actions use the current ray hit and observed
+chunk version; entity actions use the currently aimed replica identity and
+revision. The UI cannot supply coordinates or an entity identity. Server reach,
+line of sight, target type, permissions, costs, WAL transactions and receipts
+remain authoritative. UI feedback distinguishes unsent, pending, applied and
+denied requests. Same-type block replacement rejects stale chunk observations
+and rechecks the server read fence at WAL admission. See
+`fixtures/packages/uidemo/` and
+`fixtures/ui-target-actions/` for item and block examples, and
+`fixtures/ui-entity-actions/` for entity targeting with binary arguments.
