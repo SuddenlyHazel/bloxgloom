@@ -690,7 +690,10 @@ keep V31/V32 bytes; the client receives only inert request and animation data.
 Creature ticks now have bounded `solid`, `clear`, `grounded`, and `walk_edge`
 world reads alongside routing. These use captured host terrain and locomotion
 services; a failed read rejects the whole tick even if script code catches the
-Lua error. Neighbour reads and lifecycle spawns/despawns remain open.
+Lua error. A tick may also return a fifth lifecycle table with `despawn` and
+up to four bounded same-type spawn positions. The host validates spawn terrain
+and commits the parent transition and children in one entity WAL transaction.
+Neighbour reads and cross-type creature spawns remain open.
 Luau `register_machine` declares a process machine with one explicit recipe,
 optional fuel, and a host-owned three or two slot inventory screen; omitted
 footprints default to one cell.

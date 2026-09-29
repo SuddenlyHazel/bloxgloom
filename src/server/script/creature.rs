@@ -19,6 +19,7 @@ struct State {
 
 pub(in crate::server::script) struct ScriptCreature {
     snapshot: Option<Arc<PackageSnapshot>>,
+    key: String,
     module: String,
     initial: Vec<u8>,
     max_private: usize,
@@ -27,12 +28,14 @@ pub(in crate::server::script) struct ScriptCreature {
 impl ScriptCreature {
     pub(in crate::server::script) fn server(
         snapshot: Arc<PackageSnapshot>,
+        key: String,
         module: String,
         initial: Vec<u8>,
         max_private: usize,
     ) -> Self {
         Self {
             snapshot: Some(snapshot),
+            key,
             module,
             initial,
             max_private,
@@ -42,6 +45,7 @@ impl ScriptCreature {
     pub(in crate::server::script) fn client(max_private: usize) -> Self {
         Self {
             snapshot: None,
+            key: String::new(),
             module: String::new(),
             initial: Vec::new(),
             max_private,
@@ -151,14 +155,14 @@ impl Behavior for ScriptCreature {
             Limits::default(),
             |lua, entry| invoke(lua, entry, context, &state.private, self.max_private),
         );
-        let (private, delay, target) = result.map_err(|error| {
+        let result = result.map_err(|error| {
             eprintln!("creature {} tick rejected: {error}", self.module);
             Error::InvalidState
         })?;
         let movement = context
             .world
-            .advance(context.position, state.velocity, target)?;
-        state.private = private;
+            .advance(context.position, state.velocity, result.target)?;
+        state.private = result.private;
         state.velocity = movement.vertical_velocity;
         state.grounded = movement.grounded;
         let dx = movement.position[0] - context.position[0];
@@ -170,11 +174,22 @@ impl Behavior for ScriptCreature {
             return Err(Error::InvalidState);
         }
         plan.state = Some(Payload::new(state));
+        plan.lifecycle.despawn = result.lifecycle.despawn;
+        plan.lifecycle.spawns = result
+            .lifecycle
+            .spawns
+            .into_iter()
+            .map(|position| api::Spawn {
+                key: self.key.clone(),
+                position,
+                state: self.initial(),
+            })
+            .collect();
         plan.position = (movement.position != context.position).then_some(movement.position);
         plan.next_tick = Some(
             context
                 .tick
-                .checked_add(u64::from(delay))
+                .checked_add(u64::from(result.delay))
                 .ok_or(Error::Exhausted)?,
         );
         Ok(plan)

@@ -191,6 +191,12 @@ The tick may make at most 16 world queries, of which at most 8 may be routes.
 Any invalid or unavailable query rejects the tick even if Lua catches the
 error. These reads use the server's captured terrain; they do not change
 authoritative movement directly.
+The tick returns `(binary_state, delay, target_x, target_z)` and may add a fifth
+`{despawn=true, spawns={{x,y,z}, ...}}` result. Each position is an absolute
+feet position within eight blocks of the parent, with at most four children.
+Children use the same creature declaration and its initial private state.
+The host checks terrain and commits the parent and children atomically; invalid
+lifecycle data rejects the tick.
 
 A package with the owner-systems capability can register one persistent system
 with `host.register_system { key, schema, revision, module, partition,

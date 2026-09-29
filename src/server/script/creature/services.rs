@@ -6,13 +6,25 @@ use bloxgloom_host_api::entity as api;
 use mlua::Value;
 use std::cell::{Cell, RefCell};
 
+pub(super) struct LifecycleRequest {
+    pub despawn: bool,
+    pub spawns: Vec<[f32; 3]>,
+}
+
+pub(super) struct TickResult {
+    pub private: Vec<u8>,
+    pub delay: u32,
+    pub target: Option<[f32; 3]>,
+    pub lifecycle: LifecycleRequest,
+}
+
 pub(super) fn invoke(
     lua: &Lua,
     entry: Function,
     context: &api::Context<'_>,
     private: &[u8],
     max_private: usize,
-) -> mlua::Result<(Vec<u8>, u32, Option<[f32; 3]>)> {
+) -> mlua::Result<TickResult> {
     let host = lua.create_table()?;
     host.set("event", "tick")?;
     host.set("data", lua.create_string(private)?)?;
@@ -105,7 +117,8 @@ pub(super) fn invoke(
             )?,
         )?;
         host.set_readonly(true);
-        let (data, delay, x, z): (Value, Value, Value, Value) = entry.call(host)?;
+        let (data, delay, x, z, lifecycle): (Value, Value, Value, Value, Value) =
+            entry.call(host)?;
         if let Some(error) = *rejected.borrow() {
             return Err(invalid(error));
         }
@@ -123,8 +136,78 @@ pub(super) fn invoke(
         } else {
             return Err(invalid("creature target needs x and z"));
         };
-        Ok((data.as_bytes().to_vec(), delay, target))
+        Ok(TickResult {
+            private: data.as_bytes().to_vec(),
+            delay,
+            target,
+            lifecycle: parse_lifecycle(lifecycle, context.position)?,
+        })
     })
+}
+
+fn parse_lifecycle(value: Value, origin: [f32; 3]) -> mlua::Result<LifecycleRequest> {
+    let Value::Table(table) = value else {
+        return if value.is_nil() {
+            Ok(LifecycleRequest {
+                despawn: false,
+                spawns: vec![],
+            })
+        } else {
+            Err(invalid("creature lifecycle must be a table"))
+        };
+    };
+    if table.metatable().is_some() {
+        return Err(invalid("creature lifecycle metatable forbidden"));
+    }
+    for pair in table.clone().pairs::<Value, Value>() {
+        let (key, _) = pair?;
+        if !matches!(key, Value::String(ref s) if s.as_bytes().as_ref() == b"despawn" || s.as_bytes().as_ref() == b"spawns")
+        {
+            return Err(invalid("unknown creature lifecycle field"));
+        }
+    }
+    let despawn = match table.raw_get::<Value>("despawn")? {
+        Value::Nil | Value::Boolean(false) => false,
+        Value::Boolean(true) => true,
+        _ => return Err(invalid("creature despawn must be boolean")),
+    };
+    let spawns = match table.raw_get::<Value>("spawns")? {
+        Value::Nil => vec![],
+        Value::Table(spawns) if spawns.metatable().is_none() => {
+            let count = spawns.raw_len();
+            if count > 4 || spawns.clone().pairs::<Value, Value>().count() != count {
+                return Err(invalid(
+                    "creature spawns must be a dense list of at most four",
+                ));
+            }
+            let mut positions = Vec::with_capacity(count);
+            for index in 1..=count {
+                let Value::Table(point) = spawns.raw_get::<Value>(index)? else {
+                    return Err(invalid("creature spawn position must be a sequence"));
+                };
+                if point.metatable().is_some()
+                    || point.raw_len() != 3
+                    || point.clone().pairs::<Value, Value>().count() != 3
+                {
+                    return Err(invalid(
+                        "creature spawn position must have three coordinates",
+                    ));
+                }
+                let position = [
+                    coordinate(point.raw_get(1)?)?,
+                    coordinate(point.raw_get(2)?)?,
+                    coordinate(point.raw_get(3)?)?,
+                ];
+                if (0..3).any(|axis| (position[axis] - origin[axis]).abs() > 8.0) {
+                    return Err(invalid("creature spawn position exceeds local bound"));
+                }
+                positions.push(position);
+            }
+            positions
+        }
+        _ => return Err(invalid("creature spawns must be a dense list")),
+    };
+    Ok(LifecycleRequest { despawn, spawns })
 }
 
 fn guarded<T>(

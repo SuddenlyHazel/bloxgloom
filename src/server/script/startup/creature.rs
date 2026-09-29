@@ -135,7 +135,7 @@ pub(super) fn declarer(
                 _ => return Err("invalid creature interaction request"),
             };
             let creature = MobileEntity {
-                key,
+                key: key.clone(),
                 schema_version: schema,
                 schema_fingerprint: snapshot.creature_schema(&module, schema, revision),
                 max_state_bytes: 12 + max_private,
@@ -150,6 +150,7 @@ pub(super) fn declarer(
                 interaction,
                 behavior: Arc::new(crate::server::script::creature::ScriptCreature::server(
                     Arc::clone(&snapshot),
+                    key.clone(),
                     module,
                     initial,
                     max_private,

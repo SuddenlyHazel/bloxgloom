@@ -269,3 +269,68 @@ fn luau_creature_world_services_are_bounded_and_caught_errors_reject_tick() {
         assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
     }
 }
+
+#[test]
+fn luau_creature_tick_can_request_bounded_self_spawn_and_despawn() {
+    let fixture = Fixture::new();
+    package(&fixture, REGISTER);
+    std::fs::write(
+        fixture.0.join("packages/demo/tick.luau"),
+        "return function(c) return 'parent',2,nil,nil,{despawn=true,spawns={{c.position[1]+1,c.position[2],c.position[3]}}} end",
+    ).unwrap();
+    let state = fixture.open().unwrap();
+    let catalog = state.world.catalog();
+    let id = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
+    let creature = catalog.mobile_entity(id).unwrap();
+    let initial = creature.behavior.initial();
+    let context = api::Context {
+        id: 1,
+        tick: 1,
+        next_tick: Some(1),
+        position: [2.5, 80.0, 0.5],
+        state: &initial,
+        world: &Flat,
+        neighbours: &[],
+    };
+    let plan = creature.behavior.tick(&context).unwrap();
+    assert!(plan.lifecycle.despawn);
+    assert_eq!(plan.lifecycle.spawns.len(), 1);
+    assert_eq!(plan.lifecycle.spawns[0].key, "demo:sproutling");
+    assert_eq!(plan.lifecycle.spawns[0].position, [3.5, 80.0, 0.5]);
+    assert_eq!(
+        creature
+            .behavior
+            .encode(&plan.lifecycle.spawns[0].state)
+            .unwrap(),
+        creature.behavior.encode(&initial).unwrap()
+    );
+}
+
+#[test]
+fn luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change() {
+    for source in [
+        "return function(c) return 'bad',2,nil,nil,{spawns={{c.position[1]+9,c.position[2],c.position[3]}}} end",
+        "return function(c) return 'bad',2,nil,nil,{spawns={{1,2,3},{1,2,3},{1,2,3},{1,2,3},{1,2,3}}} end",
+        "return function(c) return 'bad',2,nil,nil,{despawn=1} end",
+    ] {
+        let fixture = Fixture::new();
+        package(&fixture, REGISTER);
+        std::fs::write(fixture.0.join("packages/demo/tick.luau"), source).unwrap();
+        let state = fixture.open().unwrap();
+        let catalog = state.world.catalog();
+        let id = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
+        let creature = catalog.mobile_entity(id).unwrap();
+        let initial = creature.behavior.initial();
+        let context = api::Context {
+            id: 1,
+            tick: 1,
+            next_tick: Some(1),
+            position: [2.5, 80.0, 0.5],
+            state: &initial,
+            world: &Flat,
+            neighbours: &[],
+        };
+        assert!(creature.behavior.tick(&context).is_err());
+        assert_eq!(&creature.behavior.encode(&initial).unwrap()[12..], b"new");
+    }
+}
