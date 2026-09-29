@@ -7,6 +7,10 @@ use crate::items::{ItemId, STICK};
 use crate::world::{AIR, STONE};
 use std::time::Instant;
 
+#[cfg(unix)]
+#[path = "kiln_latency/package_load.rs"]
+mod package_load;
+
 fn observe(message: &ServerMessage, chunks: &mut ReplicationProbe) {
     chunks.accept(message.clone());
 }
@@ -51,20 +55,26 @@ fn action_result(
 
 #[test]
 fn running_kiln_keeps_nearby_and_cross_chunk_placements_live() {
-    placement_probe(false, false);
+    placement_probe(false, false, false);
 }
 
 #[test]
 fn running_hopper_feeds_kiln_while_player_moves_and_places_over_real_tcp() {
-    placement_probe(true, false);
+    placement_probe(true, false, false);
 }
 
 #[test]
 fn chest_collects_hopper_output_while_moving_and_building_over_real_tcp() {
-    placement_probe(true, true);
+    placement_probe(true, true, false);
 }
 
-fn placement_probe(with_hopper: bool, with_chest: bool) {
+#[cfg(unix)]
+#[test]
+fn package_downloads_and_cancellations_preserve_live_movement_edits_and_machine_progress() {
+    placement_probe(true, true, true);
+}
+
+fn placement_probe(with_hopper: bool, with_chest: bool, with_join: bool) {
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -73,7 +83,18 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
         "bloxgloom-kiln-placement-{}-{suffix}",
         std::process::id()
     ));
-    let mut state = Box::new(crate::server::server_state(7, save.clone()).unwrap());
+    let mut state = if with_join {
+        #[cfg(unix)]
+        {
+            package_load::state_with_package(&save)
+        }
+        #[cfg(not(unix))]
+        {
+            unreachable!("package test requires Unix")
+        }
+    } else {
+        Box::new(crate::server::server_state(7, save.clone()).unwrap())
+    };
     state.spawn_anchor = [0.5, 80.0, 0.5];
     for x in -3..=3 {
         for z in -1..=4 {
@@ -107,6 +128,10 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
     let (stop_tx, stop_rx) = mpsc::sync_channel(1);
     let server = thread::spawn(move || reactor::serve_listener_until(listener, state, stop_rx));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        #[cfg(unix)]
+        let mut downloads = with_join.then(|| package_load::Downloads::start(address));
+        let mut latencies = Vec::new();
+        let mut movement_acks = 0;
         let mut peer = TcpStream::connect(address).unwrap();
         peer.set_nodelay(true).unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(10)))
@@ -120,7 +145,12 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
             },
         )
         .unwrap();
-        complete_content_handshake(&mut peer);
+        if with_join {
+            #[cfg(unix)]
+            package_load::receive_package(&mut peer);
+        } else {
+            complete_content_handshake(&mut peer);
+        }
         let mut chunks = ReplicationProbe::new();
         let near = crate::world::world_to_chunk(1, 80, 3).0;
         let far = crate::world::world_to_chunk(-1, 80, 3).0;
@@ -153,6 +183,10 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
             },
             id,
         );
+        #[cfg(unix)]
+        if let Some(downloads) = &mut downloads {
+            downloads.resume();
+        }
         for burning in [false, true] {
             if burning {
                 if with_chest {
@@ -235,6 +269,22 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                         },
                     )
                     .unwrap();
+                    if with_join {
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        loop {
+                            assert!(
+                                Instant::now() < deadline,
+                                "movement stalled during package transfer"
+                            );
+                            let message = protocol::read_server(&mut peer).unwrap();
+                            observe(&message, &mut chunks);
+                            if matches!(message, ServerMessage::Position { ack_seq, .. } if ack_seq == id as u64)
+                            {
+                                movement_acks += 1;
+                                break;
+                            }
+                        }
+                    }
                     let ack = action(
                         &mut peer,
                         &mut chunks,
@@ -248,6 +298,7 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                         },
                         id,
                     );
+                    latencies.push(ack);
                     let light_start = Instant::now();
                     let light = crate::lighting::LightField::build_with_bounce_and_catalog(
                         key,
@@ -296,6 +347,21 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                 );
                 observe(&protocol::read_server(&mut peer).unwrap(), &mut chunks);
             }
+        }
+        if with_join {
+            assert_eq!(movement_acks, 16);
+            latencies.sort();
+            eprintln!(
+                "mixed package load: {} edit acknowledgements, median={:?}, p95={:?}, max={:?}",
+                latencies.len(),
+                latencies[latencies.len() / 2],
+                latencies[(latencies.len() - 1) * 95 / 100],
+                latencies.last().unwrap()
+            );
+        }
+        #[cfg(unix)]
+        if let Some(downloads) = downloads {
+            downloads.finish();
         }
         let _ = peer.shutdown(Shutdown::Both);
     }));
