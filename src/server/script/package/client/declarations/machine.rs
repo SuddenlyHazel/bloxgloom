@@ -1,4 +1,4 @@
-//! V32/V34 inert process machine descriptors. Luau source and durable private data
+//! V32/V34/V35 inert process machine descriptors. Luau source and durable private data
 //! are excluded; the host and client reconstruct identical catalog identities.
 use super::*;
 use crate::server::script::startup::MachineDeclaration;
@@ -13,6 +13,7 @@ pub(super) fn encode(
     owner: &str,
     declarations: &[MachineDeclaration],
     multiple_recipes: bool,
+    port_format: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -33,10 +34,10 @@ pub(super) fn encode(
         let p = m.process.as_ref().ok_or_else(invalid)?;
         if m.item != m.block
             || m.slots != screen.slots
-            || m.read_radius != 0
-            || m.reads_neighbours
+            || m.read_radius != u8::from(!m.ports.is_empty())
+            || m.reads_neighbours == m.ports.is_empty()
             || m.variants.len() != 1
-            || !m.ports.is_empty()
+            || m.ports.len() > if port_format { 8 } else { 0 }
             || p.recipes.is_empty()
             || p.recipes.len() > if multiple_recipes { 8 } else { 1 }
             || p.fuels.len() > 1
@@ -86,6 +87,19 @@ pub(super) fn encode(
             writer.field(fuel.item.as_bytes())?;
             writer.field(&fuel.pulses.to_le_bytes())?;
         }
+        if port_format {
+            writer.count(m.ports.len())?;
+            for port in &m.ports {
+                writer.field(port.name.as_bytes())?;
+                writer.count(port.faces.len())?;
+                for face in &port.faces {
+                    writer.field(&face.map(|axis| (axis + 1) as u8))?;
+                }
+                for slots in [&port.insert, &port.extract] {
+                    writer.field(slots)?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -96,6 +110,7 @@ pub(super) fn decode(
     requires: &[String],
     blocks: &[content::Block],
     multiple_recipes: bool,
+    port_format: bool,
 ) -> Result<Vec<MachineDeclaration>, ScriptError> {
     let mut result: Vec<MachineDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -158,6 +173,29 @@ pub(super) fn decode(
         } else {
             None
         };
+        let mut ports = Vec::new();
+        if port_format {
+            for _ in 0..reader.count(8)? {
+                let name = reader.text(64)?;
+                let mut faces = Vec::new();
+                for _ in 0..reader.count(6)? {
+                    let bytes = reader.field(3)?;
+                    if bytes.len() != 3 || bytes.iter().any(|axis| *axis > 2) {
+                        return Err(invalid());
+                    }
+                    let axes: [u8; 3] = bytes.try_into().map_err(|_| invalid())?;
+                    faces.push(axes.map(|axis| i32::from(axis) - 1));
+                }
+                let insert = reader.field(54)?.to_vec();
+                let extract = reader.field(54)?.to_vec();
+                ports.push(api::Port {
+                    name,
+                    faces,
+                    insert,
+                    extract,
+                });
+            }
+        }
         let definition = blocks
             .iter()
             .find(|old| old.key == block)
@@ -226,15 +264,15 @@ pub(super) fn decode(
             schema,
             slots,
             interval,
-            read_radius: 0,
-            reads_neighbours: false,
+            read_radius: u8::from(!ports.is_empty()),
+            reads_neighbours: !ports.is_empty(),
             variants: vec![api::Variant {
                 placement_state: state,
                 idle: vec![cell.clone()],
                 active: vec![cell],
             }],
             filters,
-            ports: vec![],
+            ports,
             process: Some(process),
             behavior: Arc::new(crate::server::script::machine::ScriptMachine::client()),
         };

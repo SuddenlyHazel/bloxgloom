@@ -252,3 +252,119 @@ fn v34_combines_recipe_lists_and_creature_options_in_one_client_catalog() {
         assert_eq!(creature.animation.idle_bob, 0.02);
     });
 }
+
+#[test]
+fn luau_machine_ports_and_transfer_work_negotiate_and_restart() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let register = REGISTER.replace(
+        "fuel={item='bloxgloom:stick',pulses=30}",
+        "fuel={item='bloxgloom:stick',pulses=30},ports={{name='feed',faces={{1,0,0}},insert={2},extract={3}}}",
+    );
+    package(&fixture, &register);
+    std::fs::write(
+        fixture.0.join("packages/demo/server/tick.luau"),
+        "return function(c) return 'step',20,{{kind='transfer',offset={1,0,0},port='feed',push=true,count=2,source_slot=3},{kind='process'}} end",
+    ).unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let id = catalog.entity_type_id_by_key("demo:press_machine").unwrap();
+    let machine = catalog.machine(id).unwrap();
+    assert_eq!(machine.read_radius, 1);
+    assert!(machine.reads_neighbours);
+    assert_eq!(machine.ports[0].name, "feed");
+    assert_eq!(machine.ports[0].faces, [[1, 0, 0]]);
+    assert_eq!(machine.ports[0].insert, [1]);
+    assert_eq!(machine.ports[0].extract, [2]);
+    let plan = machine
+        .behavior
+        .plan(&Context {
+            tick: 100,
+            due: 100,
+            slots: &[None, None, None],
+            data: b"",
+            fuel: 0,
+            progress: 0,
+        })
+        .unwrap();
+    assert_eq!(plan.work.len(), 2);
+    assert!(
+        matches!(&plan.work[0], Work::Transfer {offset, own_port, push: true, selection, ..}
+        if *offset == [1,0,0] && own_port == "feed" && selection.count == 2 && selection.source_slot == Some(2))
+    );
+    assert!(matches!(plan.work[1], Work::Process));
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x23")
+    );
+    let fingerprint = catalog.fingerprint();
+    super::gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x545).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let id = client.entity_type_id_by_key("demo:press_machine").unwrap();
+        let machine = client.machine(id).unwrap();
+        assert_eq!(machine.ports[0].extract, [2]);
+        assert_eq!(machine.read_radius, 1);
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/server/main.luau"),
+        register.replace("extract={3}", "extract={2}"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
+}
+
+#[test]
+fn luau_machine_rejects_invalid_ports_and_undeclared_transfer_work() {
+    let bad_port = Fixture::new();
+    package(
+        &bad_port,
+        &REGISTER.replace(
+            "fuel={item='bloxgloom:stick',pulses=30}",
+            "fuel={item='bloxgloom:stick',pulses=30},ports={{name='bad',faces={{1,1,0}},extract={3}}}",
+        ),
+    );
+    assert!(bad_port.open().is_err());
+    assert!(!bad_port.0.join("save/content.map").exists());
+
+    let bad_work = Fixture::new();
+    package(
+        &bad_work,
+        &REGISTER.replace(
+            "fuel={item='bloxgloom:stick',pulses=30}",
+            "fuel={item='bloxgloom:stick',pulses=30},ports={{name='feed',faces={{1,0,0}},extract={3}}}",
+        ),
+    );
+    std::fs::write(
+        bad_work.0.join("packages/demo/server/tick.luau"),
+        "return function(c) return 'bad',20,{{kind='transfer',offset={1,0,0},port='missing',push=true}} end",
+    ).unwrap();
+    let state = bad_work.open().unwrap();
+    let id = state
+        .world
+        .catalog()
+        .entity_type_id_by_key("demo:press_machine")
+        .unwrap();
+    let machine = state.world.catalog().machine(id).unwrap();
+    assert!(
+        machine
+            .behavior
+            .plan(&Context {
+                tick: 100,
+                due: 100,
+                slots: &[None, None, None],
+                data: b"",
+                fuel: 0,
+                progress: 0,
+            })
+            .is_err()
+    );
+}

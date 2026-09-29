@@ -5,6 +5,8 @@ use bloxgloom_host_api::{
     FootprintCell, InventoryScreen, SlotGroup, StatusField, StatusFormat,
     machine::{self as api, ComponentMatch, ComponentOutput},
 };
+#[path = "machine/ports.rs"]
+mod ports;
 
 #[derive(Clone, Debug)]
 pub(in crate::server::script) struct Declaration {
@@ -106,6 +108,7 @@ pub(super) fn declarer(
             let slots = if fuel.is_some() { 3 } else { 2 };
             let input_slot = if fuel.is_some() { 1 } else { 0 };
             let output_slot = input_slot + 1;
+            let ports = ports::parse(field(&d, "ports")?, slots)?;
             let process = api::Process {
                 input: input_slot,
                 output: output_slot,
@@ -157,19 +160,20 @@ pub(super) fn declarer(
                 schema: snapshot.machine_schema(&module, schema, revision),
                 slots,
                 interval,
-                read_radius: 0,
-                reads_neighbours: false,
+                read_radius: u8::from(!ports.is_empty()),
+                reads_neighbours: !ports.is_empty(),
                 variants: vec![api::Variant {
                     placement_state: state,
                     idle: vec![cell.clone()],
                     active: vec![cell],
                 }],
                 filters,
-                ports: vec![],
+                ports: ports.clone(),
                 process: Some(process),
                 behavior: Arc::new(crate::server::script::machine::ScriptMachine::server(
                     Arc::clone(&snapshot),
                     module,
+                    ports.iter().map(|port| port.name.clone()).collect(),
                 )),
             };
             let mut screen =

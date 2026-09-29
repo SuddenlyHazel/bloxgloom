@@ -35,6 +35,7 @@ pub(super) struct Format {
     pub creature_options: bool,
     pub machines: bool,
     pub machine_recipes: bool,
+    pub machine_ports: bool,
 }
 
 #[derive(Debug)]
@@ -107,6 +108,9 @@ impl ClientBundle {
                 .as_ref()
                 .is_some_and(|process| process.recipes.len() > 1)
         });
+        let machine_ports = machines
+            .iter()
+            .any(|declaration| !declaration.machine.ports.is_empty());
         let creature_format = !creatures.is_empty() || machine_format;
         let creature_options = creatures.iter().any(|creature| {
             creature.animation != bloxgloom_host_api::entity::Animation::default()
@@ -132,7 +136,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if machine_recipes {
+        let version = if machine_ports {
+            MACHINE_PORTS_MAGIC
+        } else if machine_recipes {
             MACHINE_RECIPES_MAGIC
         } else if creature_options {
             CREATURE_OPTIONS_MAGIC
@@ -376,11 +382,17 @@ impl ClientBundle {
                     &mut writer,
                     name,
                     creatures,
-                    creature_options || machine_recipes,
+                    creature_options || machine_recipes || machine_ports,
                 )?;
             }
             if machine_format || creature_options {
-                machine::encode(&mut writer, name, machines, machine_recipes)?;
+                machine::encode(
+                    &mut writer,
+                    name,
+                    machines,
+                    machine_recipes || machine_ports,
+                    machine_ports,
+                )?;
             }
         }
         if has_appearance || extended_blocks {
@@ -531,6 +543,7 @@ impl Startup {
             creature_options,
             machines,
             machine_recipes,
+            machine_ports,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -551,6 +564,7 @@ impl Startup {
                 || creature_options
                 || machines
                 || machine_recipes
+                || machine_ports
             {
                 return Err(invalid());
             }
@@ -571,6 +585,7 @@ impl Startup {
         let mut has_creature_options = false;
         let mut has_machines = false;
         let mut has_machine_recipes = false;
+        let mut has_machine_ports = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -966,8 +981,14 @@ impl Startup {
                 startup.creatures.extend(decoded);
             }
             if machines {
-                let decoded =
-                    machine::decode(reader, name, &requires, &startup.blocks, machine_recipes)?;
+                let decoded = machine::decode(
+                    reader,
+                    name,
+                    &requires,
+                    &startup.blocks,
+                    machine_recipes,
+                    machine_ports,
+                )?;
                 has_machines |= !decoded.is_empty();
                 has_machine_recipes |= decoded.iter().any(|declaration| {
                     declaration
@@ -976,6 +997,9 @@ impl Startup {
                         .as_ref()
                         .is_some_and(|process| process.recipes.len() > 1)
                 });
+                has_machine_ports |= decoded
+                    .iter()
+                    .any(|declaration| !declaration.machine.ports.is_empty());
                 startup.machines.extend(decoded);
             }
             startup.packages.push(composition::Package {
@@ -1041,7 +1065,8 @@ impl Startup {
             || (creatures && !has_creatures && !machines)
             || (creature_options && !has_creature_options && !machine_recipes)
             || (machines && !has_machines && !creature_options)
-            || (machine_recipes && !has_machine_recipes)
+            || (machine_recipes && !has_machine_recipes && !machine_ports)
+            || (machine_ports && !has_machine_ports)
         {
             return Err(invalid());
         }

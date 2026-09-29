@@ -689,7 +689,10 @@ machine descriptor and status screen. A real-listener join, restart identity,
 invalid declaration checks and desktop/compact screen previews cover this slice.
 Bounded lists of up to eight disjoint recipes now use V34, with host-owned
 input/output filters reconstructed on the client and the same inventory screen.
-Ports, transfer work and configurable footprints remain open.
+Bounded cardinal automation ports and ordered Luau transfer/process proposals
+now use V35. The host selects exact stacks, enforces both ports and finite
+inventories, and commits successful transfers through its existing entity WAL
+path. Configurable footprints remain open.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints remain open.
@@ -736,8 +739,8 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
   Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists and their status screens are bound; richer
-  interactions, transfer ports and footprints remain open. Explicit
+  machines, bounded recipe lists, transfer ports and their status screens are
+  bound; richer interactions and footprints remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the
   full relevant decision/removal context to Luau, rather than isolated slices.
