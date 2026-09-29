@@ -3,6 +3,8 @@ use super::*;
 use crate::client::InventoryProbe;
 use crate::inventory::Stack;
 use bloxgloom_host_api::machine::{Context, Work};
+#[path = "machine/active.rs"]
+mod active;
 #[path = "machine/components.rs"]
 mod components;
 

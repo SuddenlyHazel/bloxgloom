@@ -151,3 +151,20 @@ pub(in crate::server::script) fn placement_state(block: &Block) -> String {
         format!("{}[{}]", block.key, states[0].1)
     }
 }
+
+pub(in crate::server::script) fn has_state(block: &Block, key: &str) -> bool {
+    block.states.iter().any(|state| {
+        let mut properties = state.properties.clone();
+        properties.sort();
+        let suffix = properties
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        if suffix.is_empty() {
+            key == block.key
+        } else {
+            key == format!("{}[{suffix}]", block.key)
+        }
+    })
+}

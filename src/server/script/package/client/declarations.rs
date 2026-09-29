@@ -40,6 +40,7 @@ pub(super) struct Format {
     pub machine_footprints: bool,
     pub storage_footprints: bool,
     pub machine_components: bool,
+    pub machine_active: bool,
 }
 
 #[derive(Debug)]
@@ -129,6 +130,9 @@ impl ClientBundle {
                 })
             })
         });
+        let machine_active = machines.iter().any(|declaration| {
+            declaration.machine.variants[0].idle != declaration.machine.variants[0].active
+        });
         let storage_footprints = storage
             .iter()
             .any(|declaration| declaration.storage.footprint.len() > 1);
@@ -160,7 +164,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if machine_components {
+        let version = if machine_active {
+            MACHINE_ACTIVE_MAGIC
+        } else if machine_components {
             MACHINE_COMPONENT_MAGIC
         } else if storage_footprints {
             STORAGE_FOOTPRINT_MAGIC
@@ -412,7 +418,7 @@ impl ClientBundle {
                     name,
                     storage,
                     bundle_screen_layout,
-                    storage_footprints || machine_components,
+                    storage_footprints || machine_components || machine_active,
                 )?;
             }
             if creature_format {
@@ -426,11 +432,17 @@ impl ClientBundle {
                         || machine_footprints
                         || creature_policy
                         || storage_footprints
-                        || machine_components,
-                    creature_policy || storage_footprints || machine_components,
+                        || machine_components
+                        || machine_active,
+                    creature_policy || storage_footprints || machine_components || machine_active,
                 )?;
             }
-            if machine_format || creature_options || creature_policy || storage_footprints {
+            if machine_format
+                || creature_options
+                || creature_policy
+                || storage_footprints
+                || machine_active
+            {
                 machine::encode(
                     &mut writer,
                     name,
@@ -441,17 +453,21 @@ impl ClientBundle {
                             || machine_footprints
                             || creature_policy
                             || storage_footprints
-                            || machine_components,
+                            || machine_components
+                            || machine_active,
                         ports: machine_ports
                             || machine_footprints
                             || creature_policy
                             || storage_footprints
-                            || machine_components,
+                            || machine_components
+                            || machine_active,
                         footprints: machine_footprints
                             || creature_policy
                             || storage_footprints
-                            || machine_components,
-                        components: machine_components,
+                            || machine_components
+                            || machine_active,
+                        components: machine_components || machine_active,
+                        active: machine_active,
                     },
                 )?;
             }
@@ -609,6 +625,7 @@ impl Startup {
             machine_footprints,
             storage_footprints,
             machine_components,
+            machine_active,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -634,6 +651,7 @@ impl Startup {
                 || machine_footprints
                 || storage_footprints
                 || machine_components
+                || machine_active
             {
                 return Err(invalid());
             }
@@ -659,6 +677,7 @@ impl Startup {
         let mut has_machine_footprints = false;
         let mut has_storage_footprints = false;
         let mut has_machine_components = false;
+        let mut has_machine_active = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -1077,6 +1096,7 @@ impl Startup {
                         ports: machine_ports,
                         footprints: machine_footprints,
                         components: machine_components,
+                        active: machine_active,
                     },
                 )?;
                 has_machines |= !decoded.is_empty();
@@ -1104,6 +1124,9 @@ impl Startup {
                             fuel.components != bloxgloom_host_api::machine::ComponentMatch::Empty
                         })
                     })
+                });
+                has_machine_active |= decoded.iter().any(|declaration| {
+                    declaration.machine.variants[0].idle != declaration.machine.variants[0].active
                 });
                 startup.machines.extend(decoded);
             }
@@ -1180,8 +1203,12 @@ impl Startup {
                 && !creature_policy
                 && !storage_footprints)
             || (creature_policy && !has_creature_policy && !storage_footprints)
-            || (storage_footprints && !has_storage_footprints && !machine_components)
-            || (machine_components && !has_machine_components)
+            || (storage_footprints
+                && !has_storage_footprints
+                && !machine_components
+                && !machine_active)
+            || (machine_components && !has_machine_components && !machine_active)
+            || (machine_active && !has_machine_active)
         {
             return Err(invalid());
         }

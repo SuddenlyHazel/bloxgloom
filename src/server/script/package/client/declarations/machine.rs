@@ -16,6 +16,7 @@ pub(super) struct Format {
     pub ports: bool,
     pub footprints: bool,
     pub components: bool,
+    pub active: bool,
 }
 
 pub(super) fn encode(
@@ -50,6 +51,7 @@ pub(super) fn encode(
             || p.recipes.is_empty()
             || p.recipes.len() > if format.recipes { 8 } else { 1 }
             || p.fuels.len() > 1
+            || (m.variants[0].idle != m.variants[0].active && p.fuel.is_none())
             || p.input != if p.fuel.is_some() { 1 } else { 0 }
             || p.output != p.input + 1
             || m.variants[0].idle.len() > if format.footprints { 8 } else { 1 }
@@ -60,8 +62,9 @@ pub(super) fn encode(
                 .zip(&m.variants[0].active)
                 .any(|(idle, active)| {
                     idle.offset != active.offset
-                        || idle.state != active.state
+                        || (!format.active && idle.state != active.state)
                         || idle.state != m.variants[0].placement_state
+                        || (format.active && active.state != m.variants[0].active[0].state)
                         || idle.offset.iter().any(|axis| axis.unsigned_abs() > 2)
                 })
             || screen.footprint
@@ -91,6 +94,9 @@ pub(super) fn encode(
         writer.field(&m.schema.to_le_bytes())?;
         writer.field(&m.interval.to_le_bytes())?;
         writer.field(m.variants[0].placement_state.as_bytes())?;
+        if format.active {
+            writer.field(m.variants[0].active[0].state.as_bytes())?;
+        }
         writer.field(screen.title.as_bytes())?;
         writer.field(screen.hint.as_bytes())?;
         if format.recipes {
@@ -172,6 +178,11 @@ pub(super) fn decode(
         let schema = u64::from_le_bytes(reader.field(8)?.try_into().map_err(|_| invalid())?);
         let interval = u32::from_le_bytes(reader.field(4)?.try_into().map_err(|_| invalid())?);
         let state = reader.text(129)?;
+        let active_state = if format.active {
+            reader.text(129)?
+        } else {
+            state.clone()
+        };
         let title = reader.text(40)?;
         let hint = reader.text(80)?;
         let recipe_count = if format.recipes { reader.count(8)? } else { 1 };
@@ -261,6 +272,7 @@ pub(super) fn decode(
             .find(|old| old.key == block)
             .ok_or_else(invalid)?;
         if crate::server::script::startup::placement_state(definition) != state
+            || !crate::server::script::startup::has_state(definition, &active_state)
             || recipes.iter().any(|recipe| {
                 recipe
                     .key
@@ -271,6 +283,9 @@ pub(super) fn decode(
             return Err(invalid());
         }
         let slots = if fuel.is_some() { 3 } else { 2 };
+        if active_state != state && fuel.is_none() {
+            return Err(invalid());
+        }
         let input_slot = if fuel.is_some() { 1 } else { 0 };
         let output_slot = input_slot + 1;
         let process = api::Process {
@@ -324,6 +339,13 @@ pub(super) fn decode(
                 state: state.clone(),
             })
             .collect::<Vec<_>>();
+        let active_cells = offsets
+            .iter()
+            .map(|offset| FootprintCell {
+                offset: *offset,
+                state: active_state.clone(),
+            })
+            .collect::<Vec<_>>();
         let machine = api::Machine {
             entity: entity.clone(),
             block: block.clone(),
@@ -336,7 +358,7 @@ pub(super) fn decode(
             variants: vec![api::Variant {
                 placement_state: state,
                 idle: cells.clone(),
-                active: cells,
+                active: active_cells,
             }],
             filters,
             ports,

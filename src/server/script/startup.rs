@@ -59,7 +59,7 @@ mod block;
 pub(in crate::server::script) use block::cube;
 pub(in crate::server::script) use block::extended as extended_block;
 pub(in crate::server::script) use block::visual as visual_block;
-pub(in crate::server::script) use block::{placement_state, stateful as stateful_block};
+pub(in crate::server::script) use block::{has_state, placement_state, stateful as stateful_block};
 mod appearance;
 mod item;
 mod player;

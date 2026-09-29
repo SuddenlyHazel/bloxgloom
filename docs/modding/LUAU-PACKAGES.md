@@ -207,6 +207,15 @@ slot filters are checked by the host and reconstructed in V39 client bundles;
 the machine screen still shows host-owned finite stacks. Processing preserves
 the input bytes only when the recipe selects `'preserve_input'`.
 
+A fueled `register_machine` may set `active_state` to another explicit state
+key of its registered block, such as `'demo:press[lit=on]'`. The default is the
+placement state. While fuel remains, the host changes every footprint cell to
+that active state; when fuel runs out it restores the placement state. The
+state key must exist on the same block, and a distinct active state requires
+fuel. V40 bundles reconstruct both states and their save identity.
+Use `block-preview <state-key> <output.png> <package-root>` to inspect either
+authored state with the regular renderer.
+
 A mobile creature tick receives read-only `c.position` and bounded host world
 queries: `c.solid(x,y,z)` uses integer cells; `c.clear(x,y,z)` and
 `c.grounded(x,y,z)` use feet positions; `c.walk_edge(x1,y1,z1,x2,y2,z2)` checks

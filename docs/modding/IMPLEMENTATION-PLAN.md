@@ -735,6 +735,18 @@ listener test deposits an exact component-bearing stack, runs the authored
 machine, retries the transfer receipt, and verifies finite inventory plus exact
 output bytes after restart. Malformed constants and a changed package are
 rejected before use.
+V40 now lets fueled Luau machines select a second explicit block state for the
+whole bounded footprint while burning. The host owns the state change; the
+client reconstructs both state keys in the verified catalog. A real-listener
+test places an authored machine, deposits finite input and fuel, observes the
+active state in the client replica, then checks the active world state and
+remaining fuel after restart. Foreign or unpowered active states fail before
+publishing a save. A live rendered view of this authored transition remains open.
+The package-root `block-preview` command rendered both registered states with
+the normal GPU mesh/material path. Both images were inspected: the authored
+texture is present and the active emission changes nearby lighting subtly.
+This previews the two states separately; the live machine switch is verified
+through the client replica and has not been inspected in a release window.
 Simple storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screens; omitted footprints use one cell.
@@ -812,7 +824,8 @@ readonly nested fields.
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
   Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists and component policies, transfer ports, machine/storage footprints and their
+  machines, bounded recipe lists, component policies and fueled active states,
+  transfer ports, machine/storage footprints and their
   status screens are bound; richer interactions and authored visual acceptance
   remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.

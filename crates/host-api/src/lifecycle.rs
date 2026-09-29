@@ -8,7 +8,7 @@ pub const MAX_STORAGE_SLOTS: usize = crate::inventory::MAX_SLOTS;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FootprintCell {
     pub offset: [i32; 3],
     pub state: String,

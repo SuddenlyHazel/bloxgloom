@@ -29,6 +29,9 @@ impl InventoryProbe {
     pub(crate) fn ready(&self, key: ChunkKey) -> bool {
         self.app.chunks.contains_key(&key)
     }
+    pub(crate) fn block_state(&self, at: [i32; 3]) -> Option<crate::content::BlockStateId> {
+        self.app.block_at(at[0], at[1], at[2])
+    }
     pub(crate) fn next_id(&mut self) -> u128 {
         self.app.allocate_action_id().unwrap()
     }
