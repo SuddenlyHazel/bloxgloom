@@ -5,6 +5,8 @@ use bloxgloom_host_api::{
     FootprintCell, InventoryScreen, SlotGroup, StatusField, StatusFormat,
     machine::{self as api, ComponentMatch, ComponentOutput},
 };
+#[path = "machine/components.rs"]
+mod components;
 #[path = "machine/footprint.rs"]
 mod footprint;
 #[path = "machine/ports.rs"]
@@ -105,6 +107,7 @@ pub(super) fn declarer(
                 Value::Table(fuel) => Some((
                     text(field(&fuel, "item")?)?,
                     integer(field(&fuel, "pulses")?, 1, 240)? as u16,
+                    components::input(field(&fuel, "components")?)?,
                 )),
                 _ => return Err("machine fuel must be a table"),
             };
@@ -119,19 +122,19 @@ pub(super) fn declarer(
                 recipes: recipes.clone(),
                 fuels: fuel
                     .as_ref()
-                    .map(|(item, pulses)| api::Fuel {
+                    .map(|(item, pulses, components)| api::Fuel {
                         item: item.clone(),
-                        components: ComponentMatch::Empty,
+                        components: components.clone(),
                         pulses: *pulses,
                     })
                     .into_iter()
                     .collect(),
             };
             let mut filters = Vec::new();
-            if let Some((item, _)) = &fuel {
+            if let Some((item, _, components)) = &fuel {
                 filters.push(api::Filter {
                     items: vec![item.clone()],
-                    components: false,
+                    components: *components != ComponentMatch::Empty,
                 });
             }
             filters.push(api::Filter {
@@ -141,7 +144,9 @@ pub(super) fn declarer(
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
                     .collect(),
-                components: false,
+                components: recipes
+                    .iter()
+                    .any(|recipe| recipe.input_components != ComponentMatch::Empty),
             });
             filters.push(api::Filter {
                 items: recipes
@@ -150,7 +155,9 @@ pub(super) fn declarer(
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
                     .collect(),
-                components: false,
+                components: recipes
+                    .iter()
+                    .any(|recipe| recipe.output_components != ComponentOutput::Empty),
             });
             let machine = api::Machine {
                 entity: entity.clone(),
@@ -244,10 +251,10 @@ fn parse_recipe(recipe: &mlua::Table, namespace: &str) -> Result<api::Recipe, &'
         key,
         input: text(field(recipe, "input")?)?,
         input_count: integer(field(recipe, "input_count")?, 1, 128)? as u16,
-        input_components: ComponentMatch::Empty,
+        input_components: components::input(field(recipe, "input_components")?)?,
         output: text(field(recipe, "output")?)?,
         output_count: integer(field(recipe, "output_count")?, 1, 128)? as u16,
-        output_components: ComponentOutput::Empty,
+        output_components: components::output(field(recipe, "output_components")?)?,
         pulses: integer(field(recipe, "pulses")?, 1, 60000)? as u16,
     })
 }

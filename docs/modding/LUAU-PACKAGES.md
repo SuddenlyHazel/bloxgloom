@@ -196,6 +196,17 @@ The host places and removes the whole footprint atomically, opens the same
 inventory from any cell, and refunds the placed item only once. Footprints
 participate in V38 client catalog and save identity.
 
+`register_machine` recipes may set `input_components` to `'empty'`
+(the default), `'present'`, or an exact `{version=1,bytes='...'}` value.
+They may set `output_components` to `'empty'` (the default),
+`'preserve_input'`, or an exact value. Fuel entries use the same
+`components` predicate as recipe input. Exact bytes are a binary Luau string
+of 1–1024 bytes, with a positive 16-bit version. The declared item schemas
+must permit the selected component values. These constants and the resulting
+slot filters are checked by the host and reconstructed in V39 client bundles;
+the machine screen still shows host-owned finite stacks. Processing preserves
+the input bytes only when the recipe selects `'preserve_input'`.
+
 A mobile creature tick receives read-only `c.position` and bounded host world
 queries: `c.solid(x,y,z)` uses integer cells; `c.clear(x,y,z)` and
 `c.grounded(x,y,z)` use feet positions; `c.walk_edge(x1,y1,z1,x2,y2,z2)` checks

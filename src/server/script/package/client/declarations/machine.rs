@@ -7,14 +7,22 @@ use bloxgloom_host_api::{
     machine::{self as api, ComponentMatch, ComponentOutput},
 };
 use std::sync::Arc;
+#[path = "machine/components.rs"]
+mod components;
+
+#[derive(Clone, Copy)]
+pub(super) struct Format {
+    pub recipes: bool,
+    pub ports: bool,
+    pub footprints: bool,
+    pub components: bool,
+}
 
 pub(super) fn encode(
     writer: &mut Writer,
     owner: &str,
     declarations: &[MachineDeclaration],
-    multiple_recipes: bool,
-    port_format: bool,
-    footprint_format: bool,
+    format: Format,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -38,13 +46,13 @@ pub(super) fn encode(
             || m.read_radius != u8::from(!m.ports.is_empty())
             || m.reads_neighbours == m.ports.is_empty()
             || m.variants.len() != 1
-            || m.ports.len() > if port_format { 8 } else { 0 }
+            || m.ports.len() > if format.ports { 8 } else { 0 }
             || p.recipes.is_empty()
-            || p.recipes.len() > if multiple_recipes { 8 } else { 1 }
+            || p.recipes.len() > if format.recipes { 8 } else { 1 }
             || p.fuels.len() > 1
             || p.input != if p.fuel.is_some() { 1 } else { 0 }
             || p.output != p.input + 1
-            || m.variants[0].idle.len() > if footprint_format { 8 } else { 1 }
+            || m.variants[0].idle.len() > if format.footprints { 8 } else { 1 }
             || m.variants[0].idle.len() != m.variants[0].active.len()
             || m.variants[0]
                 .idle
@@ -67,13 +75,14 @@ pub(super) fn encode(
         {
             return Err(invalid());
         }
-        if p.recipes.iter().any(|recipe| {
-            !matches!(recipe.input_components, ComponentMatch::Empty)
-                || !matches!(recipe.output_components, ComponentOutput::Empty)
-        }) || p
-            .fuels
-            .iter()
-            .any(|f| !matches!(f.components, ComponentMatch::Empty))
+        if !format.components
+            && (p.recipes.iter().any(|recipe| {
+                !matches!(recipe.input_components, ComponentMatch::Empty)
+                    || !matches!(recipe.output_components, ComponentOutput::Empty)
+            }) || p
+                .fuels
+                .iter()
+                .any(|f| !matches!(f.components, ComponentMatch::Empty)))
         {
             return Err(invalid());
         }
@@ -84,7 +93,7 @@ pub(super) fn encode(
         writer.field(m.variants[0].placement_state.as_bytes())?;
         writer.field(screen.title.as_bytes())?;
         writer.field(screen.hint.as_bytes())?;
-        if multiple_recipes {
+        if format.recipes {
             writer.count(p.recipes.len())?;
         }
         for recipe in &p.recipes {
@@ -94,13 +103,20 @@ pub(super) fn encode(
             writer.field(&recipe.input_count.to_le_bytes())?;
             writer.field(&recipe.output_count.to_le_bytes())?;
             writer.field(&recipe.pulses.to_le_bytes())?;
+            if format.components {
+                components::encode_input(writer, &recipe.input_components)?;
+                components::encode_output(writer, &recipe.output_components)?;
+            }
         }
         writer.count(p.fuels.len())?;
         if let Some(fuel) = p.fuels.first() {
             writer.field(fuel.item.as_bytes())?;
             writer.field(&fuel.pulses.to_le_bytes())?;
+            if format.components {
+                components::encode_input(writer, &fuel.components)?;
+            }
         }
-        if port_format {
+        if format.ports {
             writer.count(m.ports.len())?;
             for port in &m.ports {
                 writer.field(port.name.as_bytes())?;
@@ -113,7 +129,7 @@ pub(super) fn encode(
                 }
             }
         }
-        if footprint_format {
+        if format.footprints {
             writer.count(m.variants[0].idle.len())?;
             for cell in &m.variants[0].idle {
                 writer.field(&cell.offset.map(|axis| (axis + 2) as u8))?;
@@ -128,9 +144,7 @@ pub(super) fn decode(
     owner: &str,
     requires: &[String],
     blocks: &[content::Block],
-    multiple_recipes: bool,
-    port_format: bool,
-    footprint_format: bool,
+    format: Format,
 ) -> Result<Vec<MachineDeclaration>, ScriptError> {
     let mut result: Vec<MachineDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -160,41 +174,55 @@ pub(super) fn decode(
         let state = reader.text(129)?;
         let title = reader.text(40)?;
         let hint = reader.text(80)?;
-        let recipe_count = if multiple_recipes {
-            reader.count(8)?
-        } else {
-            1
-        };
+        let recipe_count = if format.recipes { reader.count(8)? } else { 1 };
         if recipe_count == 0 {
             return Err(invalid());
         }
         let mut recipes = Vec::with_capacity(recipe_count);
         for _ in 0..recipe_count {
+            let key = reader.text(129)?;
+            let input = reader.text(129)?;
+            let output = reader.text(129)?;
+            let input_count =
+                u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
+            let output_count =
+                u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
+            let pulses = u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
+            let input_components = if format.components {
+                components::decode_input(reader)?
+            } else {
+                ComponentMatch::Empty
+            };
+            let output_components = if format.components {
+                components::decode_output(reader)?
+            } else {
+                ComponentOutput::Empty
+            };
             recipes.push(api::Recipe {
-                key: reader.text(129)?,
-                input: reader.text(129)?,
-                output: reader.text(129)?,
-                input_count: u16::from_le_bytes(
-                    reader.field(2)?.try_into().map_err(|_| invalid())?,
-                ),
-                output_count: u16::from_le_bytes(
-                    reader.field(2)?.try_into().map_err(|_| invalid())?,
-                ),
-                pulses: u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?),
-                input_components: ComponentMatch::Empty,
-                output_components: ComponentOutput::Empty,
+                key,
+                input,
+                output,
+                input_count,
+                output_count,
+                pulses,
+                input_components,
+                output_components,
             });
         }
         let fuel = if reader.count(1)? == 1 {
-            Some((
-                reader.text(129)?,
-                u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?),
-            ))
+            let item = reader.text(129)?;
+            let pulses = u16::from_le_bytes(reader.field(2)?.try_into().map_err(|_| invalid())?);
+            let components = if format.components {
+                components::decode_input(reader)?
+            } else {
+                ComponentMatch::Empty
+            };
+            Some((item, pulses, components))
         } else {
             None
         };
         let mut ports = Vec::new();
-        if port_format {
+        if format.ports {
             for _ in 0..reader.count(8)? {
                 let name = reader.text(64)?;
                 let mut faces = Vec::new();
@@ -217,7 +245,7 @@ pub(super) fn decode(
             }
         }
         let mut offsets = vec![[0; 3]];
-        if footprint_format {
+        if format.footprints {
             offsets.clear();
             for _ in 0..reader.count(8)? {
                 let bytes = reader.field(3)?;
@@ -252,19 +280,19 @@ pub(super) fn decode(
             recipes: recipes.clone(),
             fuels: fuel
                 .as_ref()
-                .map(|(item, pulses)| api::Fuel {
+                .map(|(item, pulses, components)| api::Fuel {
                     item: item.clone(),
-                    components: ComponentMatch::Empty,
+                    components: components.clone(),
                     pulses: *pulses,
                 })
                 .into_iter()
                 .collect(),
         };
         let mut filters = Vec::new();
-        if let Some((item, _)) = &fuel {
+        if let Some((item, _, components)) = &fuel {
             filters.push(api::Filter {
                 items: vec![item.clone()],
-                components: false,
+                components: components != &ComponentMatch::Empty,
             });
         }
         filters.push(api::Filter {
@@ -274,7 +302,9 @@ pub(super) fn decode(
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect(),
-            components: false,
+            components: recipes
+                .iter()
+                .any(|r| r.input_components != ComponentMatch::Empty),
         });
         filters.push(api::Filter {
             items: recipes
@@ -283,7 +313,9 @@ pub(super) fn decode(
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect(),
-            components: false,
+            components: recipes
+                .iter()
+                .any(|r| r.output_components != ComponentOutput::Empty),
         });
         let cells = offsets
             .iter()

@@ -39,6 +39,7 @@ pub(super) struct Format {
     pub machine_ports: bool,
     pub machine_footprints: bool,
     pub storage_footprints: bool,
+    pub machine_components: bool,
 }
 
 #[derive(Debug)]
@@ -117,6 +118,17 @@ impl ClientBundle {
         let machine_footprints = machines
             .iter()
             .any(|declaration| declaration.machine.variants[0].idle.len() > 1);
+        let machine_components = machines.iter().any(|declaration| {
+            declaration.machine.process.as_ref().is_some_and(|process| {
+                process.recipes.iter().any(|recipe| {
+                    recipe.input_components != bloxgloom_host_api::machine::ComponentMatch::Empty
+                        || recipe.output_components
+                            != bloxgloom_host_api::machine::ComponentOutput::Empty
+                }) || process.fuels.iter().any(|fuel| {
+                    fuel.components != bloxgloom_host_api::machine::ComponentMatch::Empty
+                })
+            })
+        });
         let storage_footprints = storage
             .iter()
             .any(|declaration| declaration.storage.footprint.len() > 1);
@@ -148,7 +160,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if storage_footprints {
+        let version = if machine_components {
+            MACHINE_COMPONENT_MAGIC
+        } else if storage_footprints {
             STORAGE_FOOTPRINT_MAGIC
         } else if creature_policy {
             CREATURE_POLICY_MAGIC
@@ -398,7 +412,7 @@ impl ClientBundle {
                     name,
                     storage,
                     bundle_screen_layout,
-                    storage_footprints,
+                    storage_footprints || machine_components,
                 )?;
             }
             if creature_format {
@@ -411,8 +425,9 @@ impl ClientBundle {
                         || machine_ports
                         || machine_footprints
                         || creature_policy
-                        || storage_footprints,
-                    creature_policy || storage_footprints,
+                        || storage_footprints
+                        || machine_components,
+                    creature_policy || storage_footprints || machine_components,
                 )?;
             }
             if machine_format || creature_options || creature_policy || storage_footprints {
@@ -420,13 +435,24 @@ impl ClientBundle {
                     &mut writer,
                     name,
                     machines,
-                    machine_recipes
-                        || machine_ports
-                        || machine_footprints
-                        || creature_policy
-                        || storage_footprints,
-                    machine_ports || machine_footprints || creature_policy || storage_footprints,
-                    machine_footprints || creature_policy || storage_footprints,
+                    machine::Format {
+                        recipes: machine_recipes
+                            || machine_ports
+                            || machine_footprints
+                            || creature_policy
+                            || storage_footprints
+                            || machine_components,
+                        ports: machine_ports
+                            || machine_footprints
+                            || creature_policy
+                            || storage_footprints
+                            || machine_components,
+                        footprints: machine_footprints
+                            || creature_policy
+                            || storage_footprints
+                            || machine_components,
+                        components: machine_components,
+                    },
                 )?;
             }
         }
@@ -582,6 +608,7 @@ impl Startup {
             machine_ports,
             machine_footprints,
             storage_footprints,
+            machine_components,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -606,6 +633,7 @@ impl Startup {
                 || machine_ports
                 || machine_footprints
                 || storage_footprints
+                || machine_components
             {
                 return Err(invalid());
             }
@@ -630,6 +658,7 @@ impl Startup {
         let mut has_machine_ports = false;
         let mut has_machine_footprints = false;
         let mut has_storage_footprints = false;
+        let mut has_machine_components = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -1043,9 +1072,12 @@ impl Startup {
                     name,
                     &requires,
                     &startup.blocks,
-                    machine_recipes,
-                    machine_ports,
-                    machine_footprints,
+                    machine::Format {
+                        recipes: machine_recipes,
+                        ports: machine_ports,
+                        footprints: machine_footprints,
+                        components: machine_components,
+                    },
                 )?;
                 has_machines |= !decoded.is_empty();
                 has_machine_recipes |= decoded.iter().any(|declaration| {
@@ -1061,6 +1093,18 @@ impl Startup {
                 has_machine_footprints |= decoded
                     .iter()
                     .any(|declaration| declaration.machine.variants[0].idle.len() > 1);
+                has_machine_components |= decoded.iter().any(|declaration| {
+                    declaration.machine.process.as_ref().is_some_and(|process| {
+                        process.recipes.iter().any(|recipe| {
+                            recipe.input_components
+                                != bloxgloom_host_api::machine::ComponentMatch::Empty
+                                || recipe.output_components
+                                    != bloxgloom_host_api::machine::ComponentOutput::Empty
+                        }) || process.fuels.iter().any(|fuel| {
+                            fuel.components != bloxgloom_host_api::machine::ComponentMatch::Empty
+                        })
+                    })
+                });
                 startup.machines.extend(decoded);
             }
             startup.packages.push(composition::Package {
@@ -1136,7 +1180,8 @@ impl Startup {
                 && !creature_policy
                 && !storage_footprints)
             || (creature_policy && !has_creature_policy && !storage_footprints)
-            || (storage_footprints && !has_storage_footprints)
+            || (storage_footprints && !has_storage_footprints && !machine_components)
+            || (machine_components && !has_machine_components)
         {
             return Err(invalid());
         }

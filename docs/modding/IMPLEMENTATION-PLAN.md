@@ -727,6 +727,14 @@ identity and malformed-footprint checks cover the declaration. A production
 nonblocking-listener test places across a negative chunk seam, opens the screen
 from the secondary cell, restarts, breaks that cell and verifies both world
 cells plus the single conserved item after recovery.
+V39 now binds bounded machine component predicates for recipe inputs and fuel,
+and empty, exact or input-preserving recipe outputs. Exact binary values are
+immutable registration constants checked against item schemas; derived slot
+filters and policies reconstruct in the client bundle. A real nonblocking
+listener test deposits an exact component-bearing stack, runs the authored
+machine, retries the transfer receipt, and verifies finite inventory plus exact
+output bytes after restart. Malformed constants and a changed package are
+rejected before use.
 Simple storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screens; omitted footprints use one cell.
@@ -804,7 +812,7 @@ readonly nested fields.
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
   Bounded creature models, state interactions, gait parameters, one-cell process
-  machines, bounded recipe lists, transfer ports, machine/storage footprints and their
+  machines, bounded recipe lists and component policies, transfer ports, machine/storage footprints and their
   status screens are bound; richer interactions and authored visual acceptance
   remain open. Explicit
   state properties, cube/plant geometry, face/emission options and tags are bound.
