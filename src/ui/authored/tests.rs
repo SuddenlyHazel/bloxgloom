@@ -87,6 +87,27 @@ fn action_callback_cannot_supply_target_or_authorization_claims() {
 }
 
 #[test]
+fn replica_module_cannot_write_another_packages_document() {
+    let startup = crate::client::startup::State {
+        replica: Some(Arc::new(crate::client::presentation::Script {
+            module: "other@1.0.0:replica".into(),
+            source: "return function(_) return {{op='text',node='uidemo:welcome/title',value='FORGED'}} end".into(),
+        })),
+        ..Default::default()
+    };
+    let mut session = Session::with_startup(Arc::clone(sample().ui().unwrap()), startup);
+    let before = session.text_at(1).to_owned();
+    session.replica_event("replica:inventory", "revision=1".into());
+    assert!(
+        session
+            .wait_for_presentation()
+            .unwrap_err()
+            .contains("invalid local-ui target")
+    );
+    assert_eq!(session.text_at(1), before);
+}
+
+#[test]
 fn worker_dispatches_click_and_input_with_bounded_admission_and_explicit_state() {
     let mut session = Session::new(Arc::clone(sample().ui().unwrap()));
     session.resize(640, 360, 1.0);

@@ -36,6 +36,8 @@ mod player;
 mod system;
 #[path = "script_startup/tags.rs"]
 mod tags;
+#[path = "script_startup/visual.rs"]
+mod visual;
 
 struct Fixture(PathBuf);
 impl Fixture {

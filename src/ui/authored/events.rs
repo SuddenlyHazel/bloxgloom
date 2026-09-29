@@ -230,10 +230,17 @@ impl Session {
             let owner = self.document().id.split_once(':').unwrap().0;
             let valid = commands.iter().all(|c| match c {
                 Command::State(_) => true,
-                Command::Text(id, _) => self.document().nodes.iter().any(|n| {
-                    n.id == *id && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
-                }),
-                Command::Visible(id, _) => self.document().nodes.iter().any(|n| n.id == *id),
+                Command::Text(id, _) => {
+                    (!reply.replica || self.replica_owner() == Some(owner))
+                        && self.document().nodes.iter().any(|n| {
+                            n.id == *id
+                                && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
+                        })
+                }
+                Command::Visible(id, _) => {
+                    (!reply.replica || self.replica_owner() == Some(owner))
+                        && self.document().nodes.iter().any(|n| n.id == *id)
+                }
                 Command::Action(key) if !reply.replica => key
                     .split_once(':')
                     .is_some_and(|(package, local)| package == owner && identifier(local)),

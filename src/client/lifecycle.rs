@@ -8,6 +8,7 @@ impl ClientApp {
         self.disconnected = true;
         self.network.retire();
         self.package_ui = None;
+        self.visual_session = None;
         // Renderer owns the package UI textures, material and effect pipelines.
         // A later session constructs a new renderer against its frozen catalog.
         self.renderer = None;

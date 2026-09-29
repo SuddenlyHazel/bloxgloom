@@ -98,6 +98,11 @@ struct Widget {
 }
 
 impl Resources {
+    pub(crate) fn owns_document(&self, owner: &str) -> bool {
+        self.documents
+            .iter()
+            .any(|document| document.id.split_once(':').map(|v| v.0) == Some(owner))
+    }
     pub(crate) fn validate_startup(
         &self,
         state: &crate::client::startup::State,

@@ -2,6 +2,8 @@
 //! action, but the client composes the request and the server owns its effects.
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
+mod visual;
+pub(crate) use visual::VisualSession;
 
 #[derive(Debug)]
 pub(crate) struct Script {

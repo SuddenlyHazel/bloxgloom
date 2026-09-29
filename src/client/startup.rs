@@ -188,11 +188,6 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
             "client startup {id}: no package UI for registered presentation"
         ));
     }
-    if output.replica.is_some() && bundle.ui().is_none() {
-        return Err(format!(
-            "client startup {id}: replica handler requires package UI"
-        ));
-    }
     if output.replica.is_some() && state.replica.is_some() {
         return Err(format!(
             "client startup {id}: only one replica handler per session"

@@ -273,6 +273,7 @@ use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 #[cfg(test)]
 pub(crate) use workers::{
     connect_bundle_probe, connect_catalog_probe, connect_inventory_probe, connect_ui_probe,
+    connect_visual_probe,
 };
 
 #[derive(Default)]
@@ -287,6 +288,7 @@ struct Keys {
 
 struct ClientApp {
     package_ui: Option<crate::ui::authored::Session>,
+    visual_session: Option<presentation::VisualSession>,
     catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
@@ -360,6 +362,7 @@ impl ClientApp {
         let entity_registry = EntityClientRegistry::builtins(&catalog);
         Self {
             package_ui: network.package_ui(),
+            visual_session: network.visual_session(),
             drop_animator: DropAnimator::new(now, Arc::clone(&catalog)),
             catalog,
             inventory: Inventory::default(),
@@ -950,6 +953,12 @@ impl ClientApp {
                                 ui.replica_entities(entities, total);
                             }
                         }
+                        if let Some(visual) = &mut self.visual_session {
+                            let (entities, total) = self
+                                .replicas
+                                .presentation_entities(visual.owner(), &self.catalog);
+                            visual.entities(entities, total);
+                        }
                         for key in keys {
                             if block_commit {
                                 self.queue_edited_chunk_relight(key);
@@ -1129,6 +1138,9 @@ impl ClientApp {
             return;
         } else if let Some(session) = &mut self.package_ui {
             session.poll_presentation();
+        }
+        if let Some(visual) = &mut self.visual_session {
+            visual.poll();
         }
         if !self.disconnected {
             self.pump_package_action();
@@ -1576,6 +1588,11 @@ impl ClientApp {
                 .package_ui
                 .as_ref()
                 .and_then(|ui| ui.visual_pose(avatar.id))
+                .or_else(|| {
+                    self.visual_session
+                        .as_ref()
+                        .and_then(|visual| visual.visual_pose(avatar.id))
+                })
             {
                 avatar.pose[0] += pose[0];
                 avatar.pose[2] += pose[1];

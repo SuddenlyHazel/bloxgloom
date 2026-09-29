@@ -47,8 +47,29 @@ impl Network {
     }
     pub(super) fn package_ui(&self) -> Option<crate::ui::authored::Session> {
         self._bundle.as_ref()?.ui().map(|resources| {
-            crate::ui::authored::Session::with_startup(Arc::clone(resources), self.startup.clone())
+            let mut startup = self.startup.clone();
+            if startup.replica.as_ref().is_some_and(|script| {
+                !resources.owns_document(script.module.split_once('@').map_or("", |v| v.0))
+            }) {
+                startup.replica = None;
+            }
+            crate::ui::authored::Session::with_startup(Arc::clone(resources), startup)
         })
+    }
+    pub(super) fn visual_session(&self) -> Option<crate::client::presentation::VisualSession> {
+        let bundle = self._bundle.as_ref()?;
+        let script = self.startup.replica.as_ref()?;
+        let owner = script.module.split_once('@').map_or("", |v| v.0);
+        if bundle.ui().is_some_and(|ui| ui.owns_document(owner)) {
+            return None;
+        }
+        match crate::client::presentation::VisualSession::new(Arc::clone(script)) {
+            Ok(session) => Some(session),
+            Err(error) => {
+                eprintln!("visual presentation worker unavailable: {error}");
+                None
+            }
+        }
     }
     #[cfg(test)]
     pub(super) fn disconnected_for_test() -> Self {
@@ -413,6 +434,19 @@ pub(crate) fn connect_ui_probe(
     let network = Network::connect(address, 1, profile)?;
     let mut session = network.package_ui().expect("package UI");
     inspect(network._bundle.as_ref().unwrap(), &mut session);
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn connect_visual_probe(
+    address: &str,
+    profile: u128,
+    inspect: impl FnOnce(&mut crate::client::presentation::VisualSession),
+) -> io::Result<()> {
+    let network = Network::connect(address, 1, profile)?;
+    assert!(network.package_ui().is_none());
+    let mut session = network.visual_session().expect("UI-free visual worker");
+    inspect(&mut session);
     Ok(())
 }
 
