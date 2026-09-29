@@ -868,6 +868,12 @@ session paths, including the showcase spark after download and restart. The
 headless fire preview was
 inspected with both the original orange flame and distinct blue spark visible.
 This does not establish a live release-window effect transition.
+The package-root creature preview now accepts an optional bounded RGB tint.
+Its inspected untinted/tinted images show the registered `demo:sproutling`
+model with the showcase callback's grounded-state color applied only to the
+second creature through the production avatar renderer. The separate real
+listener test proves the callback returns that color for the installed public
+replica; this headless image does not depict a live state transition.
 The integrated two-thread root suite passes **1027/1027**, with formatting and
 strict all-target/all-feature Clippy clean. The release terrain-only
 `perf 300 6` run kept 17,292,744 mesh bytes and 88,026 triangles; setup was

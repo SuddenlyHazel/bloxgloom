@@ -279,7 +279,7 @@ pub fn render_mossbun_preview(path: &Path) -> Result<(), Box<dyn Error>> {
             orientation: None,
         }],
         (0, 0),
-        PreviewScene::Creature(crate::content::MOSSBUN_ENTITY_TYPE),
+        PreviewScene::Creature(crate::content::MOSSBUN_ENTITY_TYPE, None),
     ))
 }
 
@@ -450,13 +450,17 @@ enum PreviewScene {
     Vegetation,
     Drops(DropPhase),
     Avatars,
-    Creature(crate::content::EntityTypeId),
+    Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
     NaturalCavern,
 }
 
-pub fn render_creature_preview(key: &str, path: &Path) -> Result<(), Box<dyn Error>> {
+pub fn render_creature_preview(
+    key: &str,
+    path: &Path,
+    tint: Option<[f32; 3]>,
+) -> Result<(), Box<dyn Error>> {
     let id = crate::content::catalog()
         .entity_type_id_by_key(key)
         .filter(|id| crate::content::catalog().mobile_entity(*id).is_some())
@@ -471,7 +475,7 @@ pub fn render_creature_preview(key: &str, path: &Path) -> Result<(), Box<dyn Err
             orientation: None,
         }],
         (0, 0),
-        PreviewScene::Creature(id),
+        PreviewScene::Creature(id, tint),
     ))
 }
 
@@ -597,7 +601,7 @@ async fn render_previews_with_packages(
         | PreviewScene::Hoppers
         | PreviewScene::Chests
         | PreviewScene::Avatars
-        | PreviewScene::Creature(_)
+        | PreviewScene::Creature(..)
         | PreviewScene::Block(_)
         | PreviewScene::MossbunMotion(_) => {
             let target = Vec3::new(
@@ -609,7 +613,9 @@ async fn render_previews_with_packages(
                 Vec3::new(3.4, 1.8, 4.8)
             } else if matches!(
                 scene,
-                PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_) | PreviewScene::Block(_)
+                PreviewScene::Creature(..)
+                    | PreviewScene::MossbunMotion(_)
+                    | PreviewScene::Block(_)
             ) {
                 Vec3::new(2.8, 1.7, 4.1)
             } else if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) {
@@ -654,7 +660,7 @@ async fn render_previews_with_packages(
     }
     if matches!(
         scene,
-        PreviewScene::Creature(_)
+        PreviewScene::Creature(..)
             | PreviewScene::Block(_)
             | PreviewScene::MossbunMotion(_)
             | PreviewScene::Kilns
@@ -1022,7 +1028,7 @@ async fn render_previews_with_packages(
     };
     if matches!(
         scene,
-        PreviewScene::Avatars | PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_)
+        PreviewScene::Avatars | PreviewScene::Creature(..) | PreviewScene::MossbunMotion(_)
     ) {
         let mut visuals = [
             render::VisualAvatar {
@@ -1030,9 +1036,9 @@ async fn render_previews_with_packages(
                 id: 1,
                 model: if matches!(
                     scene,
-                    PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_)
+                    PreviewScene::Creature(..) | PreviewScene::MossbunMotion(_)
                 ) {
-                    render::AvatarModel::Registered(if let PreviewScene::Creature(id) = scene {
+                    render::AvatarModel::Registered(if let PreviewScene::Creature(id, _) = scene {
                         id
                     } else {
                         crate::content::MOSSBUN_ENTITY_TYPE
@@ -1057,9 +1063,9 @@ async fn render_previews_with_packages(
                 id: 2,
                 model: if matches!(
                     scene,
-                    PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_)
+                    PreviewScene::Creature(..) | PreviewScene::MossbunMotion(_)
                 ) {
-                    render::AvatarModel::Registered(if let PreviewScene::Creature(id) = scene {
+                    render::AvatarModel::Registered(if let PreviewScene::Creature(id, _) = scene {
                         id
                     } else {
                         crate::content::MOSSBUN_ENTITY_TYPE
@@ -1069,7 +1075,7 @@ async fn render_previews_with_packages(
                 },
                 pose: if matches!(
                     scene,
-                    PreviewScene::Creature(_) | PreviewScene::MossbunMotion(_)
+                    PreviewScene::Creature(..) | PreviewScene::MossbunMotion(_)
                 ) {
                     [std::f32::consts::FRAC_PI_2, 0.8, 0.018, 0.12]
                 } else {
@@ -1084,7 +1090,11 @@ async fn render_previews_with_packages(
                 cosmetics: [2, 4, 2, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
-                tint: [1.0; 3],
+                tint: if let PreviewScene::Creature(_, Some(tint)) = scene {
+                    tint
+                } else {
+                    [1.0; 3]
+                },
             },
             render::VisualAvatar {
                 animation: Default::default(),

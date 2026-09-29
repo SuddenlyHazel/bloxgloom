@@ -32,7 +32,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         command == "creature-preview"
             || command == "inventory-preview"
             || command == "block-preview"
-    }) && arguments.len() == 4
+    }) && (arguments.len() == 4
+        || (arguments
+            .first()
+            .is_some_and(|command| command == "creature-preview")
+            && arguments.len() == 5))
     {
         server::package_catalog_for_preview(catalog, std::path::Path::new(&arguments[3]))?
     } else {
@@ -281,14 +285,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             preview::render_block_preview(&key, std::path::Path::new(&path))?;
         }
         Some("creature-preview") => {
-            let usage = "usage: creature-preview <entity-key> <output.png> [package-root]";
+            let usage = "usage: creature-preview <entity-key> <output.png> [package-root] [r,g,b]";
             let key = args.next().ok_or(usage)?;
             let path = args.next().ok_or(usage)?;
             let _package_root = args.next();
+            let tint = args.next().map(|value| parse_tint(&value)).transpose()?;
             if args.next().is_some() {
                 return Err(usage.into());
             }
-            preview::render_creature_preview(&key, std::path::Path::new(&path))?;
+            preview::render_creature_preview(&key, std::path::Path::new(&path), tint)?;
         }
         Some("inventory-preview") => {
             let usage = "usage: inventory-preview <entity-key> <directory> [package-root]";
@@ -368,4 +373,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn parse_tint(value: &str) -> Result<[f32; 3], Box<dyn std::error::Error>> {
+    let channels = value
+        .split(',')
+        .map(str::parse::<f32>)
+        .collect::<Result<Vec<_>, _>>()?;
+    let color: [f32; 3] = channels
+        .try_into()
+        .map_err(|_| "tint must have exactly three comma-separated channels")?;
+    if color.iter().any(|channel| !(0.0..=1.0).contains(channel)) {
+        return Err("tint channels must be finite values from 0 to 1".into());
+    }
+    Ok(color)
 }

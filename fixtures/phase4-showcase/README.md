@@ -12,6 +12,7 @@ These headless previews show the authored assets and screen:
 
 ```sh
 cargo run -- creature-preview demo:sproutling /tmp/sproutling.png fixtures/phase4-showcase/packages
+cargo run -- creature-preview demo:sproutling /tmp/sproutling-tinted.png fixtures/phase4-showcase/packages 0.7,1,0.7
 cargo run -- inventory-preview demo:press_machine /tmp/press-screen fixtures/phase4-showcase/packages
 cargo run -- block-preview 'demo:press[lit=on]' /tmp/press-lit.png fixtures/phase4-showcase/packages
 cargo run -- fire-preview /tmp/fire-and-spark.png
@@ -22,4 +23,6 @@ downloads the package into a client, spawns the creature, verifies the worker's
 state-derived tint and attached spark, and places the two-cell press from one
 finite inventory item. It restarts the server from the same save and checks the
 stable catalog/entity identities, both press cells, and consumed item. The
-previews do not show live tint transitions.
+second creature in the tinted preview uses the callback's grounded-state RGB
+value. The preview applies that value directly to the production avatar renderer;
+it does not show a live callback transition.
