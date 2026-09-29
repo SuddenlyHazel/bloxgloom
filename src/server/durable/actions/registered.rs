@@ -176,7 +176,11 @@ fn plan_observed_request(
             return Err(denied("invalid command arguments"));
         }
     }
-    if client.inventory.revision != request.inventory_revision {
+    // Screen transfers are live-slot intents. Other actions retain the actor's
+    // observed inventory fence; the transfer planner captures current slots.
+    if action.operation != Operation::Inventory
+        && client.inventory.revision != request.inventory_revision
+    {
         return Err(denied("stale actor inventory"));
     }
     match &action.operation {
@@ -261,17 +265,20 @@ fn plan_observed_request(
                 .entities
                 .snapshot(id)
                 .ok_or_else(|| denied("action entity gone"))?;
-            // Mobile use is an intent against this stable identity's current
-            // own-state, not a compare-and-swap on an old movement frame. The
-            // planner still captures and fences the current authoritative
-            // revision. Anchored/container requests retain exact client fences.
+            // Mobile use and inventory transfers are intents against current
+            // state. The planner still captures and fences the authoritative
+            // revision for the WAL commit. Other requests keep client fences.
             let mobile_use = matches!(action.operation, Operation::EntityRequest(_))
                 && matches!(action.target, Target::Entity(_))
                 && catalog.mobile_entity(snapshot.entity_type).is_some();
-            if request.entity_revision == 0
-                || request.entity_revision > snapshot.revision
-                || (!mobile_use && snapshot.revision != request.entity_revision)
-            {
+            let stale = match action.operation {
+                Operation::Inventory => false,
+                _ if mobile_use => {
+                    request.entity_revision == 0 || request.entity_revision > snapshot.revision
+                }
+                _ => request.entity_revision == 0 || snapshot.revision != request.entity_revision,
+            };
+            if stale {
                 return Err(denied("stale action entity"));
             }
             let target = if mobile_use {

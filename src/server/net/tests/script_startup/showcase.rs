@@ -132,6 +132,13 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             assert_eq!(&bytes[12..], b"happy:2");
             let inventory = state.inventory_store.load(0xA440).unwrap();
             assert!(inventory.slots[..3].iter().all(Option::is_none));
+            assert_eq!(
+                inventory.slots[3],
+                Some(crate::inventory::Stack::new(
+                    catalog.item_by_key("bloxgloom:gravel").unwrap(),
+                    2,
+                ))
+            );
             for [x, z] in [[-2, 2], [-2, 1], [-1, 2], [-1, 1]] {
                 assert_eq!(
                     state.world.get_block(x, 79, z).unwrap(),
@@ -263,7 +270,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             admin.open(secondary, current_state);
             if !restarted {
                 for (player, container) in [(2, 0), (1, 1)] {
-                    let request = admin.transfer(true, player, container, true);
+                    let mut request = admin.transfer(true, player, container, player != 2);
                     let action_id = match &request {
                         ClientMessage::EntityInteract { action_id, .. } => *action_id,
                         _ => unreachable!("inventory probe transfer"),
@@ -285,33 +292,17 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                                 protocol::read_server_with_catalog(&mut peer, &catalog).unwrap(),
                             );
                         }
-                        protocol::write_client_with_catalog(&mut peer, &request, &catalog).unwrap();
-                        loop {
-                            assert!(Instant::now() < deadline, "stale transfer deadline");
-                            let message =
-                                protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
-                            let rejected = matches!(&message, ServerMessage::ActionResult {
-                                action_id: result, accepted: false, reason
-                            } if *result == action_id && reason == "stale action entity");
-                            admin.accept(message);
-                            if rejected {
-                                break;
-                            }
-                        }
-                        let retry = admin
-                            .take_stale_retry()
-                            .expect("client must retry stale press transfer");
-                        let ClientMessage::EntityInteract {
-                            action_id: retry_id,
-                            ..
-                        } = &retry
-                        else {
+                    } else {
+                        let ClientMessage::EntityInteract { payload, .. } = &mut request else {
                             unreachable!()
                         };
-                        send_action(&mut peer, &mut admin, &catalog, *retry_id, retry);
-                    } else {
-                        send_action(&mut peer, &mut admin, &catalog, action_id, request);
+                        let mut live = bloxgloom_host_api::actions::Request::decode(payload)
+                            .expect("inventory request");
+                        live.inventory_revision = 0;
+                        live.entity_revision = 0;
+                        *payload = live.encode().unwrap();
                     }
+                    send_action(&mut peer, &mut admin, &catalog, action_id, request);
                     let deadline = Instant::now() + Duration::from_secs(10);
                     while admin.player_count(player as usize) != 0
                         || admin.view().unwrap().slots[container as usize]
@@ -401,10 +392,44 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                     admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
                 }
             }
-            assert_eq!(
-                admin.view().unwrap().slots[2].as_ref().unwrap(),
-                &crate::inventory::Stack::new(catalog.item_by_key("bloxgloom:gravel").unwrap(), 2,)
-            );
+            if restarted {
+                assert!(admin.view().unwrap().slots[2].is_none());
+                assert_eq!(admin.player_count(3), 2);
+            } else {
+                assert_eq!(
+                    admin.view().unwrap().slots[2].as_ref().unwrap(),
+                    &crate::inventory::Stack::new(
+                        catalog.item_by_key("bloxgloom:gravel").unwrap(),
+                        2,
+                    )
+                );
+                let request = admin.transfer(false, 3, 2, false);
+                let ClientMessage::EntityInteract {
+                    action_id, payload, ..
+                } = &request
+                else {
+                    unreachable!()
+                };
+                let observed = bloxgloom_host_api::actions::Request::decode(payload)
+                    .unwrap()
+                    .entity_revision;
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while admin
+                    .workstation_revision()
+                    .is_none_or(|revision| revision <= observed)
+                {
+                    assert!(Instant::now() < deadline, "output revision deadline");
+                    admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+                }
+                send_action(&mut peer, &mut admin, &catalog, *action_id, request.clone());
+                while admin.player_count(3) != 2 || admin.view().unwrap().slots[2].is_some() {
+                    assert!(
+                        Instant::now() < deadline,
+                        "output transfer replica deadline"
+                    );
+                    admin.accept(protocol::read_server_with_catalog(&mut peer, &catalog).unwrap());
+                }
+            }
             admin.close();
             let deadline = Instant::now() + Duration::from_secs(10);
             while visual

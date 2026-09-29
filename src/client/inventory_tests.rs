@@ -112,14 +112,6 @@ impl InventoryProbe {
             .filter(|entity| entity.id == id)
             .map(|entity| entity.revision)
     }
-    pub(crate) fn take_stale_retry(&mut self) -> Option<ClientMessage> {
-        self.app.pump_stale_inventory_retries();
-        let index = self.app.pending_commands.iter().position(|message| {
-            matches!(message, ClientMessage::EntityInteract { action_id, .. }
-                if self.app.retried_inventory_actions.contains(action_id))
-        })?;
-        self.app.pending_commands.remove(index)
-    }
     pub(crate) fn player_count(&self, slot: usize) -> u16 {
         self.app.inventory.slots[slot]
             .as_ref()

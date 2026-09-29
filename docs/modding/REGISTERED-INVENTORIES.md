@@ -58,8 +58,11 @@ mandatory Kiln fuel/facing/progress fields on plain storage. Client validation
 checks item validity, exact registered shape, and status maxima before accepting
 the entity projection. Item components remain private.
 
-Player transfers use the existing identity/revision-checked request and atomic
-commit path. Registered storage enforces slot permissions on the server as well
+Player transfers require current container identity and use current authoritative
+source and destination slots. Their count is an upper bound; the host moves as
+much as fits or rejects a move of zero items. Client-observed player/container
+revisions do not reject a valid transfer. The server retains atomic WAL conflict
+checks. Registered storage enforces slot permissions on the server as well
 as the client. Its automation port applies the same access flags during public
 discovery and authoritative deposit/withdrawal. Kiln retains its specialized
 recipe/fuel policy and finished-output automation rules.

@@ -235,22 +235,24 @@ fn workstation_moves_backpack_stacks_atomically_and_rejects_stale_identity() {
     assert!(
         KilnInteractionPolicy
             .plan(&loaded, &request, &inventory, &catalog, &view, &neighbours)
-            .is_err()
+            .is_err(),
+        "a full fuel slot still rejects the move"
     );
     request[1] = 1;
-    request[4] = 127;
-    request[14..22].copy_from_slice(&loaded.revision.to_le_bytes());
+    let mut partly_filled = result.inventory.clone();
+    partly_filled.slots[35] = Some(Stack::new(crate::items::STICK, 1));
+    // The old observed revision is fine when the current source and target fit.
     let taken = KilnInteractionPolicy
         .plan(
             &loaded,
             &request,
-            &result.inventory,
+            &partly_filled,
             &catalog,
             &view,
             &neighbours,
         )
         .unwrap();
-    assert_eq!(taken.inventory.slots[35].as_ref().unwrap().count, 127);
+    assert_eq!(taken.inventory.slots[35].as_ref().unwrap().count, 128);
     assert_eq!(
         taken
             .payload

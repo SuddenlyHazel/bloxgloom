@@ -83,6 +83,39 @@ pub(super) fn take(slot: &mut Option<Stack>, count: u16) -> Option<Stack> {
     Some(taken)
 }
 
+/// Maximum valid player-requested move from the current slots. Unlike owner
+/// automation, a screen click asks for up to `maximum` items and may use a
+/// smaller current stack or the remaining destination capacity.
+pub(super) fn movable_count(
+    source: &Option<Stack>,
+    destination: &Option<Stack>,
+    maximum: u16,
+) -> Option<u16> {
+    if maximum == 0 || maximum > STACK_LIMIT {
+        return None;
+    }
+    let stack = source.as_ref()?;
+    let space = match destination {
+        None => STACK_LIMIT,
+        Some(current) if current.item == stack.item && current.components == stack.components => {
+            STACK_LIMIT.saturating_sub(current.count)
+        }
+        Some(_) => 0,
+    };
+    let count = maximum.min(stack.count).min(space);
+    (count > 0).then_some(count)
+}
+
+pub(super) fn move_up_to(
+    source: &mut Option<Stack>,
+    destination: &mut Option<Stack>,
+    maximum: u16,
+) -> Option<u16> {
+    let count = movable_count(source, destination, maximum)?;
+    let stack = take(source, count)?;
+    put(destination, &stack).then_some(count)
+}
+
 /// One transfer of `count` of `item` with a visible peer. `push == false`
 /// initiates a pull from `source`; `push == true` sends to that peer instead.
 /// The initiating entity advances its own schedule, preserving the peer's.

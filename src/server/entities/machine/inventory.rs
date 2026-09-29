@@ -1,4 +1,4 @@
-use super::super::transfer::{AutomationStack, put, take};
+use super::super::transfer::{AutomationStack, move_up_to, put, take};
 use super::*;
 use crate::{inventory::Inventory, server::voxel_view::VoxelView};
 impl Adapter {
@@ -165,12 +165,11 @@ impl EntityInteractionPolicy for Adapter {
         _: &EntityView,
     ) -> Result<EntityInteractionPlan, EntityError> {
         // Version 1 is the existing fixed hotkey request; version 2 is the
-        // generic screen request and additionally fences identity and revision.
+        // generic screen request. Both operate on current authoritative slots.
         if !((request.len() == 6 && request[0] == 1)
             || (request.len() == 22
                 && request[0] == 2
-                && u64::from_le_bytes(request[6..14].try_into().unwrap()) == snapshot.id.get()
-                && u64::from_le_bytes(request[14..22].try_into().unwrap()) == snapshot.revision))
+                && u64::from_le_bytes(request[6..14].try_into().unwrap()) == snapshot.id.get()))
         {
             return Err(EntityError::InvalidPayload);
         }
@@ -199,17 +198,19 @@ impl EntityInteractionPolicy for Adapter {
             if !group.insert {
                 return Err(EntityError::InvalidPayload);
             }
-            let stack =
-                take(&mut inventory.slots[player], count).ok_or(EntityError::InvalidPayload)?;
-            if !self.accepts_slot(slot, &stack) || !put(&mut p.slots[slot], &stack) {
+            let stack = inventory.slots[player]
+                .as_ref()
+                .ok_or(EntityError::InvalidPayload)?;
+            if !self.accepts_slot(slot, stack)
+                || move_up_to(&mut inventory.slots[player], &mut p.slots[slot], count).is_none()
+            {
                 return Err(EntityError::InvalidPayload);
             }
         } else {
             if !group.extract {
                 return Err(EntityError::InvalidPayload);
             }
-            let stack = take(&mut p.slots[slot], count).ok_or(EntityError::InvalidPayload)?;
-            if !put(&mut inventory.slots[player], &stack) {
+            if move_up_to(&mut p.slots[slot], &mut inventory.slots[player], count).is_none() {
                 return Err(EntityError::InvalidPayload);
             }
         }

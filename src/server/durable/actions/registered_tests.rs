@@ -140,7 +140,7 @@ fn registered_recipe_rejects_full_output_components_stale_and_malformed_without_
 }
 
 #[test]
-fn registered_inventory_checks_identity_revision_reach_visibility_and_fences_sight_chunks() {
+fn registered_inventory_uses_current_slots_and_checks_identity_reach_and_sight() {
     let path = temp_save_dir("registered-action-sight");
     let mut state = server_state(31, path.clone()).unwrap();
     let anchor = CellCoord::new(15, 80, 0);
@@ -214,7 +214,15 @@ fn registered_inventory_checks_identity_revision_reach_visibility_and_fences_sig
     }
     let mut stale = request.clone();
     stale.entity_revision += 1;
-    assert!(plan(&mut state, &stale, [15, 80, 0]).is_err());
+    stale.inventory_revision += 1;
+    assert!(plan(&mut state, &stale, [15, 80, 0]).is_ok());
+    state.clients.get_mut(&1).unwrap().inventory.slots[0] =
+        Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 2));
+    let changed_source = plan(&mut state, &request, [15, 80, 0]).unwrap().unwrap();
+    assert_eq!(
+        changed_source.inventory.unwrap().slots[0],
+        Some(Stack::new(crate::items::ItemId(crate::world::STONE.0), 1))
+    );
     stale = request.clone();
     stale.entity += 1;
     assert!(plan(&mut state, &stale, [15, 80, 0]).is_err());

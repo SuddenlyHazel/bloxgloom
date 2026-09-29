@@ -47,3 +47,35 @@ fn transfer_intent_rejects_self_pull_and_bad_counts() {
         );
     }
 }
+
+#[test]
+fn live_slot_move_uses_current_item_and_clamps_to_capacity_without_loss() {
+    let stone = ItemId(crate::world::STONE.0);
+    let dirt = ItemId(crate::world::DIRT.0);
+    let mut source = Some(Stack::new(stone, 3));
+    let mut destination = Some(Stack::new(stone, 127));
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), Some(1));
+    assert_eq!(source.as_ref().unwrap().count, 2);
+    assert_eq!(destination.as_ref().unwrap().count, 128);
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), None);
+
+    let mut destination = None;
+    source = Some(Stack::new(dirt, 2));
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), Some(2));
+    assert!(source.is_none());
+    assert_eq!(destination, Some(Stack::new(dirt, 2)));
+
+    let mut source = Some(Stack::new(stone, 2));
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), None);
+    assert_eq!(source, Some(Stack::new(stone, 2)));
+    assert_eq!(destination, Some(Stack::new(dirt, 2)));
+
+    let mut source = Some(Stack::with_components(stone, 4, 1, vec![7]).unwrap());
+    let mut destination = Some(Stack::with_components(stone, 126, 1, vec![8]).unwrap());
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), None);
+    assert_eq!(source.as_ref().unwrap().count, 4);
+    destination = Some(Stack::with_components(stone, 126, 1, vec![7]).unwrap());
+    assert_eq!(move_up_to(&mut source, &mut destination, 128), Some(2));
+    assert_eq!(source.as_ref().unwrap().count, 2);
+    assert_eq!(destination.as_ref().unwrap().count, 128);
+}

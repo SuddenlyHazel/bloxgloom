@@ -1,6 +1,6 @@
 //! Startup-frozen interaction discovery and bounded host UI composition.
-//! Discovery is a hint, never authorization. The host checks the request against
-//! the actor's current inventory or the target's identity/revision and terrain.
+//! Discovery is a hint, never authorization. The host checks requests against
+//! current state, including target identity, permissions, slots, and terrain.
 use crate::RegistrationError;
 mod command;
 #[cfg(test)]
@@ -140,7 +140,7 @@ pub enum Operation {
     /// Fixed, versioned request to the target's registered own-state policy.
     EntityRequest(Vec<u8>),
     /// Open the target's registered inventory descriptor on the client. Slot
-    /// controls dispatch the host's exact, revisioned inventory transfer request.
+    /// controls request up to a bounded count from current authoritative slots.
     Inventory,
 }
 
@@ -354,8 +354,10 @@ impl Action {
 
 /// Bounded request envelope carried by the host's existing durable interaction
 /// message/receipt. Target coordinates remain in that message. Entity requests
-/// and inventory controls carry exact entity identity and revision; recipes use
-/// the actor inventory revision and selected slot. Trailing bytes are forbidden.
+/// and inventory controls carry entity identity. Inventory transfers use current
+/// authoritative slots and ignore the observed revisions in this shared wire
+/// shape; other operations retain their specified revision fences. Trailing
+/// bytes are forbidden.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Request {
     pub key: String,
@@ -364,7 +366,8 @@ pub struct Request {
     pub inventory_revision: u64,
     pub entity: u64,
     pub entity_revision: u64,
-    /// Inventory uses exactly four bytes: direction, container slot, count (LE u16).
+    /// Inventory uses exactly four bytes: direction, container slot, maximum
+    /// count (LE u16). A move of zero items is rejected.
     /// Gameplay actions may use a longer, bounded semantic argument payload.
     pub arguments: Vec<u8>,
 }

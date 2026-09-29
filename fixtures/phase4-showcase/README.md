@@ -13,9 +13,9 @@ within reach. Each pat updates a small private counter and should show
 `Interaction applied`; the sproutling does not wander or play a pat animation.
 Give yourself `demo:press`, `bloxgloom:stone`, and `bloxgloom:stick` through F4.
 In the press screen, click stone in the lower player inventory and then INPUT;
-click stick below and then FUEL. The press updates slowly while idle so these
-transfers can use its current entity revision. If a revision changes during a
-transfer, the client retries it once after receiving the new replica.
+click stick below and then FUEL. Click OUTPUT and then a player slot to take
+gravel. Transfers use the current server slots even if the press ticked after
+the client rendered them; left-click moves up to a stack and right-click one.
 
 To inspect the package in the local game with your normal admin profile, use
 an isolated save directory:
@@ -42,10 +42,11 @@ The real-listener integration test `phase4_showcase_creature_machine_and_replica
 downloads the package into a client, spawns the creature, verifies the worker's
 state-derived tint and attached spark, and places the two-cell press from one
 finite inventory item. It transfers finite stone and fuel through the screen,
-waits for two gravel from the authored process, and places four more finite
-blocks while the creature and press run. It restarts the server from the same
-save and checks the stable catalog/entity identities, both press cells, machine
-output, inventory balance, four saved edits, and an anchor-attached spark. The
+waits for two gravel from the authored process, takes the output into the player
+inventory, and places four more finite blocks while the creature and press run.
+It restarts the server from the same save and checks the stable catalog/entity
+identities, both press cells, withdrawn output, inventory balance, four saved
+edits, and an anchor-attached spark. The
 test logs four edit response times as a small mixed-load sample. The second
 creature in the tinted preview uses the
 callback's grounded-state RGB value. The preview applies that value directly

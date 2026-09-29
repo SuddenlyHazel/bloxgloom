@@ -16,10 +16,12 @@ participate in content-map/handshake compatibility via the player contract.
   insertion are one inventory/WAL transition. Full output, insufficient input,
   component-bearing input, or stale inventory revision reject the entire action.
 * `Block(key)` offers the registered inventory screen or a fixed request to the
-  anchored entity's existing registered interaction policy. Anchor cells are
-  discoverable; inventory and anchored lifecycle descriptors also expose their
-  declared footprint cells. `AnchoredBlockEntity::interaction` automatically
-  registers its default use action (empty means no default use control).
+  anchored entity's existing registered interaction policy. Inventory transfers
+  use current server slots and a maximum count; client-observed revisions are
+  advisory for this operation. Anchor cells are discoverable; inventory and
+  anchored lifecycle descriptors also expose their declared footprint cells.
+  `AnchoredBlockEntity::interaction` automatically registers its default use
+  action (empty means no default use control).
 * `Entity(key)` offers a fixed request to a registered anchored/mobile own-state policy.
   Anchored requests require the exact advertised revision and target cell. Mobile
   own-state use resolves the stable entity identity against its current position
@@ -97,14 +99,18 @@ The actor position is sampled at planning. Visibility ray traversal is reach-bou
 missing terrain requests a load and defers. Every sight chunk is retained as a shared
 transaction read fence, including chunks outside the policy footprint/read view.
 Those fences survive admission until confirmed apply and prevent an intervening
-terrain commit from invalidating the visibility decision. Rejected stale requests
-need a newly discovered/current request and a new action sequence; resending the
-same sequence only replays its receipt. Loading/admission conflicts remain eligible
-for the existing durable queue's retry behavior. No new scheduling queues exist.
+terrain commit from invalidating the visibility decision. Rejected stale gameplay
+or own-state requests need a newly discovered/current request and a new action
+sequence; resending the same sequence only replays its receipt. Inventory clicks
+instead use the current slots, still with receipt deduplication.
+Loading/admission conflicts remain eligible for the existing durable queue's
+retry behavior. No new scheduling queues exist.
 
-Legacy identity-fenced inventory/mobile/anchored requests are resolved through the same
+Legacy identity-bearing inventory/mobile/anchored requests are resolved through the same
 registry. Unfenced inventory-v1 requests are rejected (including old R/F bytes).
-The network frame format and inventory encoding do not change; the action envelope
+The shared request still encodes revision fields, but inventory transfers ignore
+their client-observed values and validate the current server slots instead. The
+network frame format, action version and inventory encoding do not change; the action envelope
 uses payload tag 5 (tag 4 is reserved for anchored lifecycle requests). Catalog fingerprint changes require the parent's prerelease
 world-version bump rather than a format converter.
 

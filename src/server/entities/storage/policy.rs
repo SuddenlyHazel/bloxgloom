@@ -1,4 +1,4 @@
-use super::super::transfer::{AutomationStack, put, take};
+use super::super::transfer::{AutomationStack, move_up_to, put, take};
 use super::*;
 use crate::items::ItemId;
 #[cfg(test)]
@@ -236,7 +236,6 @@ impl<P: Slots> EntityInteractionPolicy for Interaction<P> {
             || request[1] > 1
             || usize::from(request[3]) >= crate::inventory::SLOTS
             || u64::from_le_bytes(request[6..14].try_into().unwrap()) != snapshot.id.get()
-            || u64::from_le_bytes(request[14..22].try_into().unwrap()) != snapshot.revision
         {
             return Err(EntityError::InvalidPayload);
         }
@@ -267,10 +266,7 @@ impl<P: Slots> EntityInteractionPolicy for Interaction<P> {
         } else {
             (machine, player)
         };
-        let stack = take(source, count).ok_or(EntityError::InvalidPayload)?;
-        if !put(destination, &stack) {
-            return Err(EntityError::InvalidPayload);
-        }
+        move_up_to(source, destination, count).ok_or(EntityError::InvalidPayload)?;
         inventory.revision = inventory
             .revision
             .checked_add(1)

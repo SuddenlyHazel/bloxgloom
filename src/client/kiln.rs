@@ -2,86 +2,7 @@
 use super::*;
 use crate::protocol::workstation::WorkstationView;
 
-pub(super) struct StaleInventoryRetry {
-    target: [i32; 3],
-    request: bloxgloom_host_api::actions::Request,
-    deadline: Instant,
-}
-
 impl ClientApp {
-    pub(super) fn queue_stale_inventory_retry(&mut self, action_id: u128) -> bool {
-        if self.stale_inventory_retries.len() >= 8 || self.screen != UiScreen::Container {
-            return false;
-        }
-        let Some(ClientMessage::EntityInteract {
-            target, payload, ..
-        }) = self.pending_actions.get(&action_id)
-        else {
-            return false;
-        };
-        let Some(request) = bloxgloom_host_api::actions::Request::decode(payload) else {
-            return false;
-        };
-        if request.inventory_revision != self.inventory.revision
-            || self.kiln_target != Some((*target, request.entity))
-            || self.catalog.action(&request.key).is_none_or(|action| {
-                action.operation != bloxgloom_host_api::actions::Operation::Inventory
-            })
-        {
-            return false;
-        }
-        self.stale_inventory_retries.push_back(StaleInventoryRetry {
-            target: *target,
-            request,
-            deadline: Instant::now() + Duration::from_secs(3),
-        });
-        true
-    }
-
-    pub(super) fn pump_stale_inventory_retries(&mut self) {
-        let count = self.stale_inventory_retries.len();
-        for _ in 0..count {
-            let Some(mut retry) = self.stale_inventory_retries.pop_front() else {
-                break;
-            };
-            if self.screen != UiScreen::Container
-                || self.kiln_target != Some((retry.target, retry.request.entity))
-                || self.inventory.revision != retry.request.inventory_revision
-            {
-                continue;
-            }
-            let revision = self
-                .replicas
-                .kiln_at(retry.target, &self.catalog)
-                .filter(|entity| entity.id == retry.request.entity)
-                .map(|entity| entity.revision);
-            let Some(revision) =
-                revision.filter(|revision| *revision > retry.request.entity_revision)
-            else {
-                if Instant::now() < retry.deadline {
-                    self.stale_inventory_retries.push_back(retry);
-                } else {
-                    self.show_status("Workstation changed; try transfer again");
-                }
-                continue;
-            };
-            retry.request.entity_revision = revision;
-            let Some(payload) = retry.request.encode() else {
-                continue;
-            };
-            let Some(action_id) = self.allocate_action_id() else {
-                self.stale_inventory_retries.push_front(retry);
-                break;
-            };
-            self.retried_inventory_actions.insert(action_id);
-            self.queue_command(ClientMessage::EntityInteract {
-                action_id,
-                target: retry.target,
-                payload,
-            });
-        }
-    }
-
     pub(super) fn open_aimed_kiln(&mut self) -> bool {
         let Some(hit) = self.aimed_block() else {
             return false;
@@ -224,21 +145,14 @@ impl ClientApp {
                 self.show_status("Slot does not accept items");
                 return;
             }
-            let count = self.inventory.slots[inventory as usize]
-                .as_ref()
-                .map_or(0, |s| s.count);
-            let free = self.kiln_view().map_or(0, |v| {
-                crate::inventory::STACK_LIMIT
-                    - v.slots[slot as usize].as_ref().map_or(0, |s| s.count)
-            });
             self.kiln_transfer(
                 0,
                 slot,
                 inventory,
                 if one {
-                    count.min(free).min(1)
+                    1
                 } else {
-                    count.min(free)
+                    crate::inventory::STACK_LIMIT
                 },
             );
         } else {
@@ -262,27 +176,14 @@ impl ClientApp {
             return;
         }
         if let Some(source) = self.kiln_source {
-            let count = self
-                .kiln_view()
-                .and_then(|v| {
-                    v.slots
-                        .get(source as usize)
-                        .and_then(Option::as_ref)
-                        .map(|s| s.count)
-                })
-                .unwrap_or(0);
-            let free = crate::inventory::STACK_LIMIT
-                - self.inventory.slots[slot as usize]
-                    .as_ref()
-                    .map_or(0, |s| s.count);
             self.kiln_transfer(
                 1,
                 source,
                 slot,
                 if one {
-                    count.min(free).min(1)
+                    1
                 } else {
-                    count.min(free)
+                    crate::inventory::STACK_LIMIT
                 },
             );
         } else {

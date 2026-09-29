@@ -6,6 +6,7 @@ use super::model::{
 };
 use crate::content::{Catalog, KILN_ITEM};
 use crate::inventory::{Inventory, SLOTS, STACK_LIMIT, Stack};
+use crate::server::entities::transfer::{movable_count, put, take};
 use crate::server::entities::{
     CellCoord, EntityBlockStateChange, EntityError, EntityInteractionPlan, EntityInteractionPolicy,
     EntityLocation, EntitySnapshot, EntityTickPlan, EntityTickPolicy, EntityView,
@@ -64,8 +65,7 @@ impl EntityInteractionPolicy for KilnInteractionPolicy {
             .ok_or(EntityError::InvalidPayload)?;
         let request = if request.len() == 22 && request[0] == 2 {
             let id = u64::from_le_bytes(request[6..14].try_into().unwrap());
-            let revision = u64::from_le_bytes(request[14..22].try_into().unwrap());
-            if id != snapshot.id.get() || revision != snapshot.revision {
+            if id != snapshot.id.get() {
                 return Err(EntityError::InvalidPayload);
             }
             &request[..6]
@@ -154,40 +154,37 @@ fn plan_interaction_payload(
     }
     match operation {
         0 if kiln_slot != KilnSlot::Output => {
+            let amount = movable_count(
+                &inventory.slots[inventory_slot],
+                &payload.slots[kiln_slot.index()],
+                count,
+            )
+            .ok_or(EntityError::InvalidPayload)?;
             let source = inventory.slots[inventory_slot]
                 .as_ref()
-                .filter(|stack| stack.count >= count)
                 .ok_or(EntityError::InvalidPayload)?;
             let mut incoming = source.clone();
-            incoming.count = count;
+            incoming.count = amount;
             let planned = plan_insert(payload, kiln_slot, &incoming, catalog)?;
             if planned.remainder.is_some() {
                 return Err(EntityError::InvalidPayload);
             }
-            let source = inventory.slots[inventory_slot]
-                .as_mut()
+            take(&mut inventory.slots[inventory_slot], amount)
                 .ok_or(EntityError::InvalidPayload)?;
-            source.count -= count;
-            if source.count == 0 {
-                inventory.slots[inventory_slot] = None;
-            }
             bump_inventory_revision(inventory)?;
             Ok(planned.payload)
         }
         1 => {
-            let planned = plan_take(payload, kiln_slot, count, catalog)?;
+            let amount = movable_count(
+                &payload.slots[kiln_slot.index()],
+                &inventory.slots[inventory_slot],
+                count,
+            )
+            .ok_or(EntityError::InvalidPayload)?;
+            let planned = plan_take(payload, kiln_slot, amount, catalog)?;
             let destination = &mut inventory.slots[inventory_slot];
-            match destination {
-                None => *destination = Some(planned.taken),
-                Some(current)
-                    if current.item == planned.taken.item
-                        && current.components == planned.taken.components
-                        && u32::from(current.count) + u32::from(count)
-                            <= u32::from(STACK_LIMIT) =>
-                {
-                    current.count += count;
-                }
-                Some(_) => return Err(EntityError::InvalidPayload),
+            if !put(destination, &planned.taken) {
+                return Err(EntityError::InvalidPayload);
             }
             bump_inventory_revision(inventory)?;
             Ok(planned.payload)

@@ -236,6 +236,16 @@ The host places and removes the whole footprint atomically, opens the same
 inventory from any cell, and refunds the placed item only once. Footprints
 participate in V38 client catalog and save identity.
 
+Host-owned storage, kiln and machine screens transfer from the slots that exist
+when the server handles the click. The request names a direction, player slot,
+container slot and maximum count: left-click asks for up to a full stack and
+right-click asks for one. The host moves the lesser of that maximum, the current
+source count and destination space. Empty sources, incompatible stacks, full
+destinations, invalid slots, denied insert/extract groups and unreachable or
+replaced containers reject the move. A scheduled machine tick or another valid
+slot change alone does not reject it. The host still commits both inventories
+atomically with its own WAL conflict checks and action receipt.
+
 `register_machine` recipes may set `input_components` to `'empty'`
 (the default), `'present'`, or an exact `{version=1,bytes='...'}` value.
 They may set `output_components` to `'empty'` (the default),

@@ -194,40 +194,23 @@ fn placement_probe(with_hopper: bool, with_chest: bool) {
                 }
                 for original in [vec![1, 0, 0, 1, 1, 0], vec![1, 0, 1, 2, 128, 0]] {
                     let target = if with_hopper { [0, 82, 1] } else { [0, 80, 1] };
-                    let deadline = Instant::now() + Duration::from_secs(10);
-                    loop {
-                        assert!(
-                            Instant::now() < deadline,
-                            "workstation revision did not settle"
-                        );
-                        let entity = chunks.workstation(target);
-                        let mut payload = original.clone();
-                        payload[0] = 2;
-                        payload.extend(entity.id.to_le_bytes());
-                        payload.extend(entity.revision.to_le_bytes());
-                        let id = next_id();
-                        let (_, accepted, reason) = action_result(
-                            &mut peer,
-                            &mut chunks,
-                            ClientMessage::EntityInteract {
-                                action_id: id,
-                                target,
-                                payload,
-                            },
-                            id,
-                        );
-                        if accepted {
-                            break;
-                        }
-                        assert_eq!(reason, "stale action entity", "workstation action denied");
-                        // The kiln ticks while the previous terrain/lighting
-                        // samples run. A stale entity fence is legitimate;
-                        // wait for its authoritative replica before retrying.
-                        while chunks.workstation(target).revision == entity.revision {
-                            assert!(Instant::now() < deadline, "workstation replica stalled");
-                            observe(&protocol::read_server(&mut peer).unwrap(), &mut chunks);
-                        }
-                    }
+                    let entity = chunks.workstation(target);
+                    let mut payload = original.clone();
+                    payload[0] = 2;
+                    payload.extend(entity.id.to_le_bytes());
+                    payload.extend(0u64.to_le_bytes());
+                    let id = next_id();
+                    let (_, accepted, reason) = action_result(
+                        &mut peer,
+                        &mut chunks,
+                        ClientMessage::EntityInteract {
+                            action_id: id,
+                            target,
+                            payload,
+                        },
+                        id,
+                    );
+                    assert!(accepted, "live-slot kiln transfer denied: {reason}");
                 }
                 let deadline = Instant::now() + Duration::from_secs(10);
                 while chunks[&near].block([0, 0, 1])
