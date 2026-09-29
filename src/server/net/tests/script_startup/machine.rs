@@ -1,5 +1,7 @@
 //! Luau process registration, host work planning, client screen and save identity.
 use super::*;
+use crate::client::InventoryProbe;
+use crate::inventory::Stack;
 use bloxgloom_host_api::machine::{Context, Work};
 
 const REGISTER: &str = "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:press','Press','demo:tile'); h.register_machine{entity='demo:press_machine',block='demo:press',module='demo:tick',schema=1,revision=1,interval=20,title='STONE PRESS',hint='STONE TO GRAVEL',recipe={key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3},fuel={item='bloxgloom:stick',pulses=30}}; h.register_entity('demo:marker',1,1,0,nil) end";
@@ -374,6 +376,183 @@ fn luau_machine_footprint_negotiates_across_seam_and_restarts() {
         fixture.open().unwrap().world.catalog().fingerprint(),
         fingerprint
     );
+}
+
+#[test]
+fn luau_machine_footprint_places_and_breaks_secondary_cell_over_listener() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let register = REGISTER.replace(
+        "fuel={item='bloxgloom:stick',pulses=30}",
+        "fuel={item='bloxgloom:stick',pulses=30},footprint={{0,0,0},{1,0,0}}",
+    );
+    package(&fixture, &register);
+    const PROFILE: u128 = 0xF036;
+    let anchor = [-1, 80, 2];
+    let secondary = [0, 80, 2];
+    for restarted in [false, true] {
+        let mut state = Box::new(fixture.open().unwrap());
+        let catalog = state.world.catalog_arc();
+        let block = catalog.state_by_key("demo:press").unwrap();
+        let item = catalog.item_by_key("demo:press").unwrap();
+        state.spawn_anchor = [0.5, 79.0, 0.5];
+        if !restarted {
+            for x in -2..=1 {
+                for z in -1..=3 {
+                    for y in 78..=82 {
+                        state
+                            .world
+                            .edit(
+                                x,
+                                y,
+                                z,
+                                if y == 78 {
+                                    crate::world::STONE
+                                } else {
+                                    crate::world::AIR
+                                },
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+            let mut inventory = Inventory::default();
+            inventory.slots[0] = Some(Stack::new(item, 1));
+            state.inventory_store.save(PROFILE, &inventory).unwrap();
+        }
+        super::gameplay::serve(state, |address| {
+            let mut peer = TcpStream::connect(address).unwrap();
+            peer.set_nodelay(true).unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            protocol::write_client(
+                &mut peer,
+                &ClientMessage::Hello {
+                    name: "luau-footprint".into(),
+                    profile: PROFILE,
+                    content_fingerprint: catalog.fingerprint(),
+                },
+            )
+            .unwrap();
+            let ServerMessage::BundleOffer { identity } = protocol::read_server(&mut peer).unwrap()
+            else {
+                panic!("expected bundle offer");
+            };
+            crate::client::bundle::receive(&mut peer, identity, None).unwrap();
+            let (fingerprint, _) = receive_content_manifest(&mut peer);
+            assert_eq!(fingerprint, catalog.fingerprint());
+            protocol::write_client(&mut peer, &ClientMessage::ContentReady { fingerprint })
+                .unwrap();
+            let mut client = InventoryProbe::new(catalog.clone(), fixture.0.join("probe-config"));
+            let mut session = false;
+            while !session
+                || !client.ready(crate::world::world_to_chunk(-1, 80, 2).0)
+                || !client.ready(crate::world::world_to_chunk(0, 80, 2).0)
+            {
+                let message = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
+                session |= matches!(message, ServerMessage::ActionSession { .. });
+                client.accept(message);
+            }
+            if !restarted {
+                let action_id = client.next_id();
+                super::super::extension_lifecycle::send(
+                    &mut peer,
+                    &mut client,
+                    ClientMessage::Edit {
+                        action_id,
+                        x: anchor[0],
+                        y: anchor[1],
+                        z: anchor[2],
+                        block,
+                        slot: 0,
+                    },
+                    &catalog,
+                );
+                super::super::extension_lifecycle::until(&mut peer, &mut client, &catalog, |c| {
+                    c.anchored(anchor).is_some() && c.player_count(0) == 0
+                });
+                client.open(secondary, block);
+                client.close();
+            } else {
+                super::super::extension_lifecycle::until(&mut peer, &mut client, &catalog, |c| {
+                    c.anchored(anchor).is_some()
+                });
+                client.open(secondary, block);
+                client.close();
+                let action_id = client.next_id();
+                let remove = ClientMessage::Edit {
+                    action_id,
+                    x: secondary[0],
+                    y: secondary[1],
+                    z: secondary[2],
+                    block: crate::world::AIR,
+                    slot: 0,
+                };
+                super::super::extension_lifecycle::send(
+                    &mut peer,
+                    &mut client,
+                    remove.clone(),
+                    &catalog,
+                );
+                super::super::extension_lifecycle::send(&mut peer, &mut client, remove, &catalog);
+                super::super::extension_lifecycle::until(&mut peer, &mut client, &catalog, |c| {
+                    c.anchored(anchor).is_none()
+                });
+            }
+        });
+        let mut recovered = fixture.open().unwrap();
+        assert_eq!(
+            recovered
+                .world
+                .get_block(anchor[0], anchor[1], anchor[2])
+                .unwrap(),
+            if restarted { crate::world::AIR } else { block }
+        );
+        assert_eq!(
+            recovered
+                .world
+                .get_block(secondary[0], secondary[1], secondary[2])
+                .unwrap(),
+            if restarted { crate::world::AIR } else { block }
+        );
+        assert_eq!(
+            recovered
+                .entities
+                .anchored_at(crate::server::entities::CellCoord::new(
+                    anchor[0], anchor[1], anchor[2]
+                ))
+                .is_some(),
+            !restarted
+        );
+        if restarted {
+            let held = recovered
+                .inventory_store
+                .load(PROFILE)
+                .unwrap()
+                .slots
+                .iter()
+                .flatten()
+                .filter(|stack| stack.item == item)
+                .map(|stack| stack.count)
+                .sum::<u16>();
+            let dropped = crate::server::drops::nearby(&recovered.entities, [-0.5, 80.5, 2.5])
+                .into_iter()
+                .filter_map(|view| {
+                    crate::server::drops::stack(
+                        &recovered.entities,
+                        crate::server::entities::EntityId::new(view.id).unwrap(),
+                    )
+                })
+                .filter(|stack| stack.item == item)
+                .map(|stack| stack.count)
+                .sum::<u16>();
+            assert_eq!(
+                held + dropped,
+                1,
+                "break must conserve the one placed machine item"
+            );
+        }
+    }
 }
 
 #[test]
