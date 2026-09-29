@@ -108,7 +108,8 @@ on the requesting player's inventory. The existing server authorizes targets,
 reach and sessions, and commits successful effects through its shared gameplay
 transaction. Script failures abort that transaction; no Lua state survives
 between retries. See `src/server/script/gameplay.rs` for limits and fields.
-Other gameplay event shapes are still being bound. Client bundle delivery is
+The decision and pickup event shapes below use the same bounded planner.
+Client bundle delivery is
 implemented; this action callback runs on the authoritative server.
 
 A downloaded `client_startup` may register one own-package client/shared module

@@ -637,26 +637,25 @@ component-preserving drop creation, entity creation/update and durable schedulin
 on the same WAL receipt, including caught-error rollback, deduplication and
 restart. The mobile query also filters spatial-index bucket candidates by exact
 radius after capturing dependencies. The combined decision and removal
-contexts still need a contract-wide acceptance audit.
+contexts are audited against the public contract below.
 One-state cutout cubes/crossed plants and cutout texture declarations now use a
 V25 client bundle; defaults retain older bytes. A real listener negotiates the
 same plant/cutout selection and restart identity.
 Explicit bounded Luau property schemas and legal states with emission overrides
 now use V26 and negotiate the same canonical state keys and default placement
-state. Per-state textures and specialized entity/UI
-registrations are still outstanding.
+state. Per-state textures follow in V28 and entity/UI registrations in the
+later V29–V32 slices.
 Opaque item component schema identity and required/version/size constraints are
 now authored and negotiated by V27; live Luau grants reject wrong versions and
-persist exact component bytes. Specialized declarations
-remain open.
+persist exact component bytes. Specialized declarations follow below.
 Explicit per-state face overrides now negotiate as V28 with package-owned
-registered textures, including cutout checks. Specialized creature/machine/
-screen declarations and owner/client execution services remain open.
+registered textures, including cutout checks. Creature, machine, screen, owner
+and client execution services are covered by the later slices below.
 Downloaded `client_startup` can now register one session-scoped replica callback
 for bounded inventory/block/world/action observations. The callback shares the
 off-window presentation worker with authored UI, may update only owned UI
 state, and cannot submit actions; overloaded or failing sessions fail closed.
-This does not yet expose general entity replica, animation or effect commands.
+Later slices add bounded entity replica, animation and effect commands.
 Luau chunk systems may also declare up to 16 startup-resolved `after` phase
 dependencies; unknown targets/cycles fail before publishing a save.
 Chunk owner declarations may opt into `edit_cause='burn'` with declared world

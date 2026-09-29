@@ -103,8 +103,8 @@
 //!
 //! Explicit development startup also runs entries with a bounded registration
 //! host instead of integer inputs (see the sibling `startup` module). Semantic
-//! actions bind the public gameplay Context and existing host transactions;
-//! other events remain unbound. The frozen client artifact is delivered by the
+//! actions and decision events bind the public gameplay Context and existing
+//! host transactions. The frozen client artifact is delivered by the
 //! join transport. Texture/material rendering uses the existing catalog and
 //! voxel paths; hot reload remains separate. This local manifest format does
 //! not alter world/save data.
