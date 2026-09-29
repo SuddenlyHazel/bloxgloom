@@ -312,18 +312,12 @@ Provide a real authoring surface for both the game and mods: layout, styling,
 text/fonts, images, scrolling, controls, text input, focus, dynamic updates and
 Luau event handlers. Existing inventory/action panels remain conveniences.
 
-**Implementation direction:** evaluate Blitz first for native HTML/CSS rendering
-inside our existing wgpu/window stack. It already has relevant embedding work.
-Do not assume its high-level HTML wrapper supplies our interactive Luau bridge.
-If embedding, input support or runtime cost makes it unsuitable, select an
-existing Rust UI/component stack using established layout/text/rendering
-infrastructure such as Taffy and appropriate text/rendering libraries. Taffy alone
-is not a GUI toolkit. Do not write a new HTML/CSS parser or layout engine.
-
-Resolve the library choice early in this phase using one representative dynamic
-inventory/menu interface with text input and a game-rendered preview. Record the
-choice and proceed without another general design/approval loop. A full browser,
-JavaScript runtime or exhaustive web-platform compatibility is not required.
+**Implementation direction:** egui 0.36 is selected after a responsive inventory
+and machine proof on the existing wgpu/winit surface. Blitz and Taffy were
+considered; Taffy remains in the earlier authored-document path until migration.
+`docs/modding/UI-FOUNDATION.md` records the decision and tradeoff. Keep Luau
+callbacks on the presentation worker and render verified document state through
+Rust-owned egui widgets. Do not write a new HTML/CSS parser or layout engine.
 
 Expose a consistent document/widget and event model to Luau. Package documents,
 styles, fonts and images with the mod; resolve their assets through the same
@@ -1011,7 +1005,10 @@ GPU/window failures propagate instead of looking like successful exits.
 
 #### Phase 6 — authored UI · In progress
 
-**Working:** Taffy-backed verified documents, basic layout/images/fonts/input,
+**Working:** egui is selected as the shared UI foundation after a wgpu/winit
+inventory and machine proof with text input, focus, scrolling and custom slot
+painting; the F7 proof is merged but remains separate from production screens.
+Taffy-backed verified documents provide basic layout/images/fonts/input,
 local Luau event handlers and downloaded startup text/state. The client composes
 server-authorized item/empty actions (`uidemo` transfers a stick) and block
 actions from its current streamed-world ray hit (`uitarget` trades a stick for
@@ -1492,13 +1489,10 @@ each slice landed; current scope and acceptance are defined by §§1, 12 and 13.
   server callbacks, entity codecs or owner state; generation stays a separate
   saved-world identity. Mixed-package loopback and restart tests pass. Native
   extension serialization, client execution and presentation resources remain.
-- **Phase 6 UI foundation:** chose Taffy for flex layout embedded in the
-  existing wgpu/winit UI rather than Blitz; `docs/modding/UI-FOUNDATION.md` records the
-  tradeoff. A focused, keyboard/focus-driven inventory search is now rendered
-  with Taffy geometry, without altering server inventory state. Inspected the
-  1280×720 and 640×360 `ui-preview` outputs and verified tests, formatting
-  and strict Clippy. Unicode/IME text, mod documents, authored handlers and
-  migration of other panels are still in progress.
+- **Phase 6 initial Taffy seam:** Taffy flex layout was integrated for an
+  inventory search header, then used for bounded authored documents. The later
+  egui proof selected the production foundation; `docs/modding/UI-FOUNDATION.md`
+  records the current decision. The Taffy path remains active during migration.
 - **Phase 6 authored document increment:** verified format-2 bundles now carry
   package-scoped bounded UI documents, styles, fonts and images. Preparation
   validates/decodes/rasterizes before window creation; the existing renderer

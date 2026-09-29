@@ -1,9 +1,26 @@
-# Phase 6 UI foundation: inventory search field
+# Phase 6 UI foundation
 
-Decision: integrate Taffy flexbox for the inventory header, while retaining the game's wgpu overlay and bitmap text for this first seam. The search field is game-rendered and uses existing winit key events, hit rectangles, and Tab focus. It highlights matching slot names without changing slot order, inventory state, network messages, or server authority. Search is limited to ASCII by the existing atlas and survives inventory close for the current client session.
+Decision: use egui 0.36 as the shared Rust UI foundation. The merged F7 proof
+renders a responsive inventory and machine interface through the existing
+wgpu/winit surface and uses egui for buttons, text input, focus, selection,
+clipboard, drop-downs and scrolling. Its inventory slots use custom painting
+over egui interaction. Desktop and compact renders are in `EGUI-POC.md`; the
+proof was visually reviewed, and the root tests, formatting and strict Clippy
+passed before it was merged.
 
-Blitz embedding was considered: Blitz has DOM, HTML/CSS, text and event machinery, but its document/view and rendering lifecycle would add a second rendering/input stack inside this wgpu 30 / winit 0.30 game without a demonstrated compatible overlay path. We did not embed Blitz or build an HTML/CSS parser. Taffy is a focused, established Rust layout engine with a CPU geometry boundary: the resulting rectangles drive both rendering and hit testing through UiLayout. It adds a dependency and a small layout tree constructed when inventory geometry changes; the existing renderer keeps its one-pass UI overlay. No performance measurements or speed claims are made.
+The earlier Taffy flex header and Taffy-backed package documents established
+verified package resource and Luau event paths. They remain active until those
+paths and every built-in screen are migrated. Taffy supplies geometry but not
+text editing, focus, controls or rendering; the custom layer still limits
+authored text to ASCII. Blitz was considered earlier, but the egui proof now
+demonstrates the required embedding path in this game. Eguis immediate model
+requires Rust-owned per-session widget state and stable IDs for authored
+documents. Luau remains on the bounded presentation worker, and the server
+continues to authorize all gameplay requests.
 
-Text remains the existing 8x8 ASCII atlas. This is not yet an established shaping/text stack: a later increment should evaluate cosmic-text or Parley for Unicode shaping, font atlases, IME composition, selection and caret input alongside winit, plus accessibility. Remaining Phase 6 includes a trusted widget schema and permissions, dynamic panels from registered descriptors, responsive layout beyond the header, complete keyboard navigation, clipping/scrolling, styling and lifecycle tests. This increment is not a full mod UI or a general document renderer.
-
-Inspect with `cargo run -- ui-preview <output-directory>`: `inventory-1280x720.png` and `inventory-640x360.png` show a filled focused query and matching slot outlines. The preview is static; focused tests cover editing and hit geometry.
+Phase 6 will replace the F7 proof with the normal UI runtime, map verified
+documents/fonts/images to egui, support dynamic documents and robust text,
+complete the authorized UI action bridge, and migrate built-in screens. Keep
+the existing renderer only as a migration seam; remove the duplicate path
+before marking the phase Done. Graphics and input behavior must be inspected
+in the live release window or generated previews at desktop and compact sizes.
