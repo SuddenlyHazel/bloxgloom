@@ -629,6 +629,9 @@ gameplay actions are registered and negotiated, with the
 existing authenticated target/revision check before handler dispatch. This
 widens authoring but does not complete Phase 4's dynamic content, owner and
 client-presentation services.
+Gameplay Luau also exposes dependency-capturing entity lookups and bounded
+mobile spatial queries, anchored occupancy and stable per-handler random words;
+private owned bytes remain behind the existing state API.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options

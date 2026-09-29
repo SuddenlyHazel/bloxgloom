@@ -116,12 +116,16 @@ export type BloxActionEvent = {
 export type BloxGameplayContext = {
     tick_lo: number,
     tick_hi: number,
+    random: (x: number, y: number, z: number, sequence_lo: number, sequence_hi: number) -> (number, number),
     block: (x: number, y: number, z: number) -> BloxBlock,
     set_block: (x: number, y: number, z: number, state_key: string) -> (),
     transfer: (from_slot: number, to_slot: number, count: number) -> boolean,
     spawn_drop: (x: number, y: number, z: number, item: string, count: number, delay_ms: number) -> (),
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
     entity_state: (id_lo: number, id_hi: number) -> string?,
+    entity: (id_lo: number, id_hi: number) -> BloxEntity?,
+    nearby_entities: (x: number, y: number, z: number, radius: number) -> { BloxEntity },
+    anchored_entity_at: (x: number, y: number, z: number) -> (number?, number?),
     update_entity: (id_lo: number, id_hi: number, state: string) -> boolean,
     remove_entity: (id_lo: number, id_hi: number) -> boolean,
     schedule_entity: (id_lo: number, id_hi: number, delay_ticks: number?) -> boolean,
@@ -129,6 +133,14 @@ export type BloxGameplayContext = {
     give: (owner: BloxInventoryOwner, stack: BloxStack) -> boolean,
     take: (owner: BloxInventoryOwner, slot: number, count: number) -> BloxStack?,
     transfer_inventory: (from: BloxInventoryOwner, source: number, to: BloxInventoryOwner, destination: number, count: number) -> boolean,
+}
+export type BloxEntity = {
+    id_lo: number,
+    id_hi: number,
+    entity_type: string,
+    position: BloxTriple,
+    anchor: BloxTriple?,
+    data: string, -- registered public projection, not private state
 }
 export type BloxInventoryOwner = "player" | { entity_lo: number, entity_hi: number }
 export type BloxStack = { item: string, count: number, components: { version: number, bytes: string }? }

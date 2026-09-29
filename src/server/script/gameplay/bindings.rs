@@ -9,6 +9,7 @@
 //! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
+mod queries;
 
 pub(super) fn invoke(
     lua: &Lua,
@@ -35,6 +36,7 @@ pub(super) fn invoke(
     // outside the VM as well as by Context, so pcall cannot permit partial apply.
     lua.scope(|scope| {
         super::inventory::install(scope, &host, &context, rejected)?;
+        queries::install(scope, &host, &context, rejected)?;
         // These are public host operations, not a script-selected admin token.
         // Every invocation checks the server-authenticated actor before staging.
         host.set(

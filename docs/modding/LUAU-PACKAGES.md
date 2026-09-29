@@ -117,7 +117,18 @@ target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,
 transaction; `spawn_drop`, `spawn_stack(x,y,z,stack,delay_ms)`, `spawn_entity`,
 private owned `entity_state`,
 `update_entity`, `remove_entity`, and `schedule_entity` are available where the
-host's public context permits them. Register exact-length private entity bytes
+host's public context permits them.
+`entity(id_lo,id_hi)` returns a readonly public projection (ID, type, position,
+optional anchor and binary public data), not owned private bytes.
+`nearby_entities(x,y,z,radius)` captures mobile query dependencies, permits a
+radius of 0..16, and fails rather than truncating above 128 results;
+`anchored_entity_at(x,y,z)` returns two ID halves or nil for absence, including
+footprint cells. Public entity reads reflect staged updates/removals but do not
+invent IDs for staged spawns. `random(x,y,z,sequence_lo,sequence_hi)` returns
+two reproducible 32-bit halves salted by the dispatched handler key; retries
+reproduce the same word without mutable VM state. All query failures poison the
+whole transaction, even if caught with `pcall`.
+Register exact-length private entity bytes
 and a bounded public prefix with `host.register_entity(key, schema_version,
 state_bytes, public_prefix_bytes, initial_delay_or_nil)`. An initial delay
 requires an `EntityTick` handler; passive types stay out of the due index.

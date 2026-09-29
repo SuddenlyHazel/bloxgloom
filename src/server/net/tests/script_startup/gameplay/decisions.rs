@@ -189,16 +189,35 @@ return function(c,e)
         if mode == 3 then pcall(function() c.entity_state(0,0) end) end
         if mode == 4 then pcall(function() c.schedule_entity(1.5,0,1) end) end
         if mode == 5 then pcall(function() c.spawn_entity('demo:marker',8,80,0,string.rep('x',65536)) end) end
+        if mode == 6 then pcall(function() c.nearby_entities(6,80,0,17) end) end
     else
         assert(e.kind == 'EntityTick' and e.tick_lo == c.tick_lo and e.tick_hi == c.tick_hi)
         assert(e.entity_hi == 0 and e.position[2] == 80.5)
+        local first_lo, first_hi = c.random(6,80,0,5,0)
+        local again_lo, again_hi = c.random(6,80,0,5,0)
+        assert(first_lo == again_lo and first_hi == again_hi)
+        local entity = c.entity(e.entity_lo,e.entity_hi)
+        assert(entity.entity_type == 'demo:marker' and entity.data == c.entity_state(e.entity_lo,e.entity_hi))
+        assert(entity.position[2] == 80.5 and entity.anchor == nil)
+        assert(not pcall(function() entity.data = 'forged' end))
+        assert(not pcall(function() entity.position[1] = 999 end))
+        local nearby = c.nearby_entities(7,80.5,0.5,2)
+        assert(#nearby >= 2 and not pcall(function() nearby[1] = nil end))
+        local found = false
+        for _, candidate in nearby do
+            if candidate.id_lo == e.entity_lo and candidate.id_hi == e.entity_hi then found = true end
+        end
+        assert(found)
+        assert(c.anchored_entity_at(6,80,0) == nil)
         local n = string.byte(c.entity_state(e.entity_lo,e.entity_hi),1)
         if n == 4 then
             assert(c.remove_entity(e.entity_lo,e.entity_hi))
             assert(c.entity_state(e.entity_lo,e.entity_hi) == nil)
+            assert(c.entity(e.entity_lo,e.entity_hi) == nil)
         else
             assert(c.update_entity(e.entity_lo,e.entity_hi,string.char(n+1)))
             assert(c.entity_state(e.entity_lo,e.entity_hi) == string.char(n+1))
+            assert(c.entity(e.entity_lo,e.entity_hi).data == string.char(n+1))
             if n == 1 then
                 assert(c.schedule_entity(e.entity_lo,e.entity_hi,2))
                 c.spawn_drop(8.5,80.5,0.5,'bloxgloom:seeds',1,4294967295)
@@ -242,7 +261,7 @@ fn luau_decisions_owned_entity_state_schedule_and_restart() {
     state.inventory_store.save(PROFILE, &inventory).unwrap();
     serve(state, |address| {
         let mut peer = Peer::connect(address, catalog);
-        for mode in 1..=5 {
+        for mode in 1..=6 {
             let request = peer.request(mode);
             let result = peer.send(&request);
             assert!(
