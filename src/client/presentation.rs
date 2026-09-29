@@ -6,6 +6,9 @@ mod visual;
 pub(crate) use visual::VisualSession;
 mod effects;
 pub(crate) use effects::EffectBuffer;
+#[cfg(test)]
+#[path = "presentation/tests.rs"]
+mod tests;
 
 #[derive(Debug)]
 pub(crate) struct Script {
@@ -58,6 +61,8 @@ pub(crate) enum Command {
     Action(String),
     /// A client-only offset applied after authoritative pose reconstruction.
     Visual(u64, [f32; 3]),
+    /// Client-only RGB multiplier for an offered entity's rendered model.
+    Tint(u64, [f32; 3]),
     /// Bounded client-only ember, attached to an offered entity.
     Ember(u64, [f32; 3]),
 }
@@ -202,6 +207,17 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                         bounded_float(&command, "squash", -0.25, 0.25)?,
                     ];
                     Command::Visual(id, pose)
+                }
+                "tint" if request.replica => {
+                    let lo = word(&command, "id_lo")?;
+                    let hi = word(&command, "id_hi")?;
+                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let tint = [
+                        bounded_float(&command, "r", 0.0, 1.0)?,
+                        bounded_float(&command, "g", 0.0, 1.0)?,
+                        bounded_float(&command, "b", 0.0, 1.0)?,
+                    ];
+                    Command::Tint(id, tint)
                 }
                 "ember" if request.replica => {
                     let lo = word(&command, "id_lo")?;

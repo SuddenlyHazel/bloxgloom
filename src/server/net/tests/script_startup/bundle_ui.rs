@@ -85,7 +85,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
     let fixture =
         startup_fixture("return function(host) host.set_replica_handler('uidemo:replica') end");
     let package = fixture.0.join("packages/uidemo");
-    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='ember',id_lo=lo,id_hi=e.id_hi,x=0,y=0.5,z=0},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
+    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='tint',id_lo=lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=lo,id_hi=e.id_hi,x=0,y=0.5,z=0},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
     let manifest = package.join("package.txt");
     let original = std::fs::read_to_string(&manifest).unwrap();
     std::fs::write(
@@ -108,6 +108,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 );
                 session.wait_for_presentation().unwrap();
                 assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
+                assert_eq!(session.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 assert_eq!(session.text_at(1), "uidemo:creature");
                 let avatar = crate::render::VisualAvatar {
                     animation: Default::default(),
@@ -121,6 +122,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                     cosmetics: [0; 4],
                     light_levels: [0; 4],
                     bounce: [0; 4],
+                    tint: [1.0; 3],
                 };
                 assert_eq!(
                     session.effects(std::time::Instant::now(), &[avatar]).len(),
@@ -141,8 +143,10 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                         .contains("invalid local-ui target")
                 );
                 assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
+                assert_eq!(session.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 session.next_document();
                 assert_eq!(session.visual_pose(id), None);
+                assert_eq!(session.visual_tint(id), None);
                 assert!(
                     session
                         .effects(std::time::Instant::now(), &[avatar])

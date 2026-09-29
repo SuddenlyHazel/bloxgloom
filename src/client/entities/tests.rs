@@ -204,6 +204,7 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
         cosmetics: [0xA5, 0x5A, 0, 0],
         light_levels: [0; 4],
         bounce: [0; 4],
+        tint: [1.0; 3],
     }))
 }
 

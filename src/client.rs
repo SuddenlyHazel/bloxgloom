@@ -1598,6 +1598,18 @@ impl ClientApp {
                 avatar.pose[2] += pose[1];
                 avatar.pose[3] += pose[2];
             }
+            if let Some(tint) = self
+                .package_ui
+                .as_ref()
+                .and_then(|ui| ui.visual_tint(avatar.id))
+                .or_else(|| {
+                    self.visual_session
+                        .as_ref()
+                        .and_then(|visual| visual.visual_tint(avatar.id))
+                })
+            {
+                avatar.tint = tint;
+            }
             let height = match avatar.model {
                 crate::render::AvatarModel::Player => 1.45,
                 crate::render::AvatarModel::Registered(id) => self

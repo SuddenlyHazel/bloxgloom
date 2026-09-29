@@ -11,6 +11,7 @@ struct VertexInput {
     @location(6) bounce: vec4<u32>,
     @location(7) pose: vec4<f32>,
     @location(8) color: vec3<f32>,
+    @location(9) tint: vec3<f32>,
 };
 
 struct VertexOutput {
@@ -54,7 +55,7 @@ struct VertexOutput {
         + sky * (vec3<f32>(0.31, 0.40, 0.53) + sun * vec3<f32>(0.77, 0.66, 0.47))
         + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
         + bounce * 1.35;
-    output.color = albedo * light;
+    output.color = albedo * input.tint * light;
     output.distance = output.clip.w;
     output.sky = sky;
     return output;

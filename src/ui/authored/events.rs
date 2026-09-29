@@ -115,6 +115,10 @@ impl Session {
         self.visual_poses.get(&id).copied()
     }
 
+    pub(crate) fn visual_tint(&self, id: u64) -> Option<[f32; 3]> {
+        self.visual_tints.get(&id).copied()
+    }
+
     pub(crate) fn effects(
         &self,
         now: std::time::Instant,
@@ -273,6 +277,12 @@ impl Session {
                         && reply.offered_entities.contains(id)
                         && pose.iter().all(|value| value.is_finite())
                 }
+                Command::Tint(id, tint) => {
+                    reply.replica
+                        && reply.entity_batch
+                        && reply.offered_entities.contains(id)
+                        && tint.iter().all(|value| value.is_finite())
+                }
                 Command::Ember(id, offset) => {
                     reply.replica
                         && reply.entity_batch
@@ -298,6 +308,7 @@ impl Session {
             }
             if reply.entity_batch {
                 self.visual_poses.clear();
+                self.visual_tints.clear();
             }
             for command in commands {
                 match command {
@@ -330,6 +341,9 @@ impl Session {
                     }
                     Command::Visual(id, pose) => {
                         self.visual_poses.insert(id, pose);
+                    }
+                    Command::Tint(id, tint) => {
+                        self.visual_tints.insert(id, tint);
                     }
                     Command::Ember(id, offset) => self.effects.push(id, offset),
                 }

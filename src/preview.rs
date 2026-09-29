@@ -1038,6 +1038,7 @@ async fn render_previews_with_packages(
                 cosmetics: [0, 0, 0, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                tint: [1.0; 3],
             },
             render::VisualAvatar {
                 animation: Default::default(),
@@ -1071,6 +1072,7 @@ async fn render_previews_with_packages(
                 cosmetics: [2, 4, 2, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                tint: [1.0; 3],
             },
             render::VisualAvatar {
                 animation: Default::default(),
@@ -1086,6 +1088,7 @@ async fn render_previews_with_packages(
                 cosmetics: [4, 1, 4, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                tint: [1.0; 3],
             },
         ];
         if let PreviewScene::MossbunMotion(frame) = scene {

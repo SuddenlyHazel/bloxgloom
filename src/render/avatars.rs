@@ -33,6 +33,8 @@ pub(crate) struct VisualAvatar {
     pub light_levels: [u8; 4],
     /// Bounced RGB in 0..=255, plus one reserved byte.
     pub bounce: [u8; 4],
+    /// Presentation-only per-instance RGB multiplier.
+    pub tint: [f32; 3],
 }
 
 #[repr(C)]
@@ -43,6 +45,7 @@ struct AvatarInstance {
     light_levels: [u8; 4],
     bounce: [u8; 4],
     pose: [f32; 4],
+    tint: [f32; 3],
 }
 
 pub(crate) struct AvatarRenderer {
@@ -105,6 +108,7 @@ impl AvatarRenderer {
             5 => Uint8x4,
             6 => Uint8x4,
             7 => Float32x4,
+            9 => Float32x3,
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced public avatars"),
@@ -220,6 +224,7 @@ impl AvatarRenderer {
                         light_levels: avatar.light_levels,
                         bounce: avatar.bounce,
                         pose: avatar.pose,
+                        tint: avatar.tint,
                     }),
             );
             self.counts[index] = (instances.len() - start) as u32;

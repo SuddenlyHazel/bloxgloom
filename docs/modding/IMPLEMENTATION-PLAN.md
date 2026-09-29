@@ -777,6 +777,25 @@ effect buffer. Real-listener callbacks and expiry/cap tests cover this primitive
 The headless fire preview was inspected and shows the shared orange streak
 primitive; it does not depict an authored ember attached to a live creature.
 Broader effect styles and production scene acceptance remain open.
+Replica callbacks can now return bounded RGB tint multipliers for offered
+package-owned mobile IDs. The same off-window worker validates finite 0–1
+channels and exact offered IDs; the avatar renderer applies tint after
+authoritative pose/interpolation, and new batches or session switches clear
+old values. UI-backed and UI-free real-listener join/reconnect/restart tests
+cover scope and reset, while a headless GPU regression checks one tinted
+avatar without changing its neighbor. A rendered authored live creature with
+the callback tint remains to be inspected.
+The headless GPU tint image was inspected: the right avatar is green and the
+untinted left avatar retains its original colors. This confirms the per-instance
+shader path, while the real-listener tests confirm callback/session delivery.
+The release terrain-only `perf 300 6` comparison against the prior release
+binary kept normal mesh bytes at 17,292,744 and triangles at 88,026; two
+runs gave setup 2343/2369→2333/2331 ms, steady CPU medians
+0.308/0.317→0.313/0.316 ms and GPU medians 0.232/0.287→0.275/0.274 ms.
+With `bounced`, mesh bytes stayed 17,500,968 and triangles 89,218; setup
+2672/2679→2675/2672 ms, CPU 0.311/0.286→0.317/0.307 ms and GPU
+0.235/0.243→0.280/0.259 ms. Single-run GPU differences vary, and this
+benchmark excludes live avatars, so it does not measure tint cost.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -840,7 +859,7 @@ readonly nested fields.
   validates and commits every staged effect.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
-  owned UI callbacks, bounded mobile pose offsets, presentation-window changes
+  owned UI callbacks, bounded mobile pose offsets and tint, presentation-window changes
   and attached embers are bound, including UI-free package workers; broader
   effect and entity presentations remain open.
 

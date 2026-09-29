@@ -16,7 +16,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
         "return function(h) h.set_replica_handler('demo:visual') end",
     )
     .unwrap();
-    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 1); return {} end assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == e.id_lo and input.entered[1].id_hi == e.id_hi); return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0},{op='ember',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0}} end").unwrap();
+    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 1); return {} end assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == e.id_lo and input.entered[1].id_hi == e.id_hi); return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0},{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0}} end").unwrap();
     let state = Box::new(fixture.open().unwrap());
     let fingerprint = state.world.catalog().fingerprint();
     gameplay::serve(state, |address| {
@@ -34,6 +34,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                 );
                 visual.wait_for_test().unwrap();
                 assert_eq!(visual.visual_pose(id), Some([0.25, 0.1, 0.0]));
+                assert_eq!(visual.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 let avatar = crate::render::VisualAvatar {
                     animation: Default::default(),
                     model: crate::render::AvatarModel::Registered(
@@ -46,6 +47,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                     cosmetics: [0; 4],
                     light_levels: [0; 4],
                     bounce: [0; 4],
+                    tint: [1.0; 3],
                 };
                 let embers = visual.effects(std::time::Instant::now(), &[avatar]);
                 assert_eq!(embers.len(), 1);
@@ -53,6 +55,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                 visual.entities(vec![], 0);
                 visual.wait_for_test().unwrap();
                 assert_eq!(visual.visual_pose(id), None);
+                assert_eq!(visual.visual_tint(id), None);
                 assert!(visual.effects(std::time::Instant::now(), &[]).is_empty());
             })
             .unwrap();

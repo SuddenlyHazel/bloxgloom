@@ -22,8 +22,9 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             ],
         })
         .unwrap();
-    let original = render(&device, &queue, &builtin, [0; 4]);
-    let changed = render(&device, &queue, &authored, [6, 8, 6, 0]);
+    let original = render(&device, &queue, &builtin, [0; 4], [1.0; 3]);
+    let changed = render(&device, &queue, &authored, [6, 8, 6, 0], [1.0; 3]);
+    let tinted = render(&device, &queue, &authored, [6, 8, 6, 0], [0.0, 1.0, 0.0]);
     for row in 0..HEIGHT as usize {
         let start = row * WIDTH as usize * 4;
         assert_eq!(
@@ -31,7 +32,15 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             &changed[start..start + WIDTH as usize * 2],
             "builtin default changed"
         );
+        assert_eq!(
+            &changed[start..start + WIDTH as usize * 2],
+            &tinted[start..start + WIDTH as usize * 2],
+            "tint changed another avatar"
+        );
     }
+    let shirt = ((1.9 - 1.0) / 2.0 * HEIGHT as f32) as usize * WIDTH as usize
+        + ((0.65 + 1.4) / 2.8 * WIDTH as f32) as usize;
+    assert!(changed[shirt * 4] > tinted[shirt * 4] + 25);
     // Samples are on the front face, avoiding eyes, seams, hair and silhouettes.
     for (x, y, channel) in [(0.65, 1.43, 1), (0.65, 1.0, 0), (0.53, 0.35, 2)] {
         let px = ((x + 1.4) / 2.8 * WIDTH as f32) as usize;
@@ -55,6 +64,17 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             .write_image_data(&changed)
             .unwrap();
     }
+    if let Some(path) = std::env::var_os("BLOXGLOOM_TINT_PREVIEW") {
+        let file = std::fs::File::create(path).unwrap();
+        let mut encoder = png::Encoder::new(file, WIDTH, HEIGHT);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&tinted)
+            .unwrap();
+    }
 }
 
 const WIDTH: u32 = 128;
@@ -64,6 +84,7 @@ fn render(
     queue: &wgpu::Queue,
     catalog: &Catalog,
     selection: [u8; 4],
+    tint: [f32; 3],
 ) -> Vec<u8> {
     let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
@@ -84,6 +105,7 @@ fn render(
         cosmetics,
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
+        tint: if x > 0.0 { tint } else { [1.0; 3] },
     });
     renderer.set(queue, &avatars);
     let size = wgpu::Extent3d {

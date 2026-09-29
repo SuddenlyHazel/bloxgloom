@@ -121,6 +121,17 @@ runs on the session-owned presentation worker, never the window/network thread.
 Replies may update owned document text/visibility/state but **cannot** request
 actions. Observations are advisory and coalesced by kind behind a bounded
 queue; overflow or a callback error fails that presentation session.
+For `replica:entities`, `input.entities` is a sorted window of at most 16
+package-owned mobile views with exact `id_lo`, `id_hi`, `key`, and position.
+`input.entered` and `input.left` describe changes to that bounded window, not
+authoritative spawn or despawn events. The callback may return `visual` pose
+offsets, `tint` RGB multipliers, or short-lived attached `ember` effects for
+IDs offered in that input. A tint command is
+`{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3}`; each channel is
+finite and in 0–1. Tint changes only the rendered model, after the host-owned
+replica is installed. The next entity callback replaces prior tints and pose
+offsets, and switching sessions clears them. Invalid IDs, colors, or commands
+fail that presentation session without applying a partial result.
 
 Under `bloxgloom:actions/v1`, `host.register_handler(key, revision, event,
 target, module)` can also register exact-target `BlockRemoved`, `BlockPlaced`,

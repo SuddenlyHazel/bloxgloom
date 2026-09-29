@@ -11,6 +11,7 @@ pub(crate) struct VisualSession {
     pending: Option<u32>,
     queued: Option<(Vec<EntityView>, usize)>,
     poses: BTreeMap<u64, [f32; 3]>,
+    tints: BTreeMap<u64, [f32; 3]>,
     previous: Vec<u64>,
     effects: EffectBuffer,
     failure: Option<String>,
@@ -25,6 +26,7 @@ impl VisualSession {
             pending: None,
             queued: None,
             poses: BTreeMap::new(),
+            tints: BTreeMap::new(),
             previous: Vec::new(),
             effects: EffectBuffer::default(),
             failure: None,
@@ -119,28 +121,33 @@ impl VisualSession {
                 || !reply.entity_batch
                 || commands.iter().any(|command| {
                     !matches!(command,
-                        Command::Visual(id, values) | Command::Ember(id, values)
+                        Command::Visual(id, values) | Command::Tint(id, values) | Command::Ember(id, values)
                         if reply.offered_entities.contains(id) && values.iter().all(|v| v.is_finite()))
                 })
             {
                 return Err("invalid visual replica command".into());
             }
             let mut poses = BTreeMap::new();
+            let mut tints = BTreeMap::new();
             let mut embers = Vec::new();
             for command in commands {
                 match command {
                     Command::Visual(id, pose) => {
                         poses.insert(id, pose);
                     }
+                    Command::Tint(id, tint) => {
+                        tints.insert(id, tint);
+                    }
                     Command::Ember(id, offset) => embers.push((id, offset)),
                     _ => unreachable!("validated visual command"),
                 }
             }
-            Ok((poses, embers))
+            Ok((poses, tints, embers))
         });
         match result {
-            Ok((poses, embers)) => {
+            Ok((poses, tints, embers)) => {
                 self.poses = poses;
+                self.tints = tints;
                 for (id, offset) in embers {
                     self.effects.push(id, offset);
                 }
@@ -151,6 +158,10 @@ impl VisualSession {
 
     pub(crate) fn visual_pose(&self, id: u64) -> Option<[f32; 3]> {
         self.poses.get(&id).copied()
+    }
+
+    pub(crate) fn visual_tint(&self, id: u64) -> Option<[f32; 3]> {
+        self.tints.get(&id).copied()
     }
 
     pub(crate) fn effects(
