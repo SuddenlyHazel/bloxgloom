@@ -657,6 +657,8 @@ for bounded inventory/block/world/action observations. The callback shares the
 off-window presentation worker with authored UI, may update only owned UI
 state, and cannot submit actions; overloaded or failing sessions fail closed.
 This does not yet expose general entity replica, animation or effect commands.
+Luau chunk systems may also declare up to 16 startup-resolved `after` phase
+dependencies; unknown targets/cycles fail before publishing a save.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options

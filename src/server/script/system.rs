@@ -2,6 +2,7 @@
 //! `h.register_system { key='demo:clock', schema=1, revision=1,
 //! module='demo:clock', max_state_bytes=64, max_jobs_per_tick=2,
 //! read_world=true, read_radius_chunks=1, seeds={{x=0,y=5,z=0,data=''}} }`.
+//! Optional `after={'other:system'}` is a bounded, startup-resolved phase edge.
 //!
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
@@ -98,6 +99,47 @@ pub(super) fn declarer(
                 Value::Nil => None,
                 value => Some(bytes(value, max_bytes)?),
             };
+            let after = match field(&table, "after")? {
+                Value::Nil => Vec::new(),
+                Value::Table(table) => {
+                    if table.metatable().is_some() || table.raw_len() > 16 {
+                        return Err("invalid system after list");
+                    }
+                    let mut entries = Vec::new();
+                    for (index, pair) in table.pairs::<Value, Value>().enumerate() {
+                        if index >= 16 {
+                            return Err("system after limit exceeded");
+                        }
+                        let (position, target_value) =
+                            pair.map_err(|_| "invalid system after entry")?;
+                        let position = integer(position, 1, 16)? as usize;
+                        let target = text(target_value)?;
+                        if target.split_once(':').is_none_or(|(owner, local)| {
+                            !super::package::manifest::identifier(owner)
+                                || !super::package::manifest::identifier(local)
+                        }) || target == key
+                        {
+                            return Err("invalid system after key");
+                        }
+                        entries.push((position, target));
+                    }
+                    entries.sort_by_key(|(position, _)| *position);
+                    if entries
+                        .iter()
+                        .enumerate()
+                        .any(|(index, (position, _))| *position != index + 1)
+                    {
+                        return Err("system after must be a dense array");
+                    }
+                    let mut keys = entries.into_iter().map(|(_, key)| key).collect::<Vec<_>>();
+                    keys.sort();
+                    if keys.windows(2).any(|pair| pair[0] == pair[1]) {
+                        return Err("duplicate system after key");
+                    }
+                    keys
+                }
+                _ => return Err("system after must be an array"),
+            };
             let seeds = self::table(field(&table, "seeds")?)?;
             let mut values = Vec::new();
             // Inspect at most 33 entries, rejecting rather than silently dropping
@@ -136,7 +178,7 @@ pub(super) fn declarer(
                 max_state_bytes: max_bytes as u32,
                 max_jobs_per_tick: jobs,
                 read_radius_chunks,
-                after: Vec::new(),
+                after,
                 seeds: values.into_iter().map(|(_, seed)| seed).collect(),
                 behavior: Arc::new(ScriptSystem {
                     snapshot: Arc::clone(&snapshot),

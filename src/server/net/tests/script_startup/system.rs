@@ -17,6 +17,30 @@ mod intents;
 mod neighborhood;
 
 #[test]
+fn luau_owner_after_dependencies_are_resolved_before_save_creation() {
+    let fixture = Fixture::new();
+    fixture.system(REGISTER, SOURCE);
+    fixture.package("later", "requires bloxgloom:owner_systems/v1\nmodule clock clock.luau", "return function(h) h.register_system{key='later:clock',schema=1,revision=1,module='later:clock',max_state_bytes=8,max_jobs_per_tick=1,after={'demo:clock'},seeds={{x=0,y=5,z=0,data='x'}}} end");
+    std::fs::write(
+        fixture.0.join("packages/later/clock.luau"),
+        "return function(c) return c.data, 100000 end",
+    )
+    .unwrap();
+    let state = fixture.open().unwrap();
+    assert!(
+        state
+            .phase_plan
+            .system(&SystemId::new("later:clock").unwrap())
+            .is_some()
+    );
+    drop(state);
+    let bad = Fixture::new();
+    bad.system("return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,after={'demo:missing'},seeds={{x=0,y=5,z=0,data='x'}}} end", SOURCE);
+    assert!(bad.open().is_err());
+    assert!(!bad.0.join("save/content.map").exists());
+}
+
+#[test]
 fn luau_system_legacy_identity() {
     let fixture = Fixture::new();
     fixture.system(REGISTER, SOURCE);

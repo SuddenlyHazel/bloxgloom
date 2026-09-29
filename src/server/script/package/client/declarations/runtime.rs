@@ -83,7 +83,7 @@ impl Runtime {
                 || !(1..=4096).contains(&system.max_state_bytes)
                 || !(1..=8).contains(&system.max_jobs_per_tick)
                 || system.read_radius_chunks.is_some_and(|r| r > 1)
-                || !system.after.is_empty()
+                || system.after.len() > 16
                 || system.seeds.len() > 32
                 || system
                     .seeds

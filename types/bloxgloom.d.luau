@@ -100,6 +100,7 @@ export type BloxSystemDeclaration = {
     read_radius_chunks: number?, -- 0 (default) or 1; requires read_world=true
     accepts_intents: boolean?, -- requires read_world=true
     intent_bootstrap: string?, -- constant initial bytes for absent destinations
+    after: {string}?, -- up to 16 existing system keys; startup rejects cycles
     seeds: { BloxSystemSeed },
 }
 
