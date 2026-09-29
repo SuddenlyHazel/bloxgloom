@@ -51,13 +51,17 @@ ordinary placement selects the unlit state.
   metadata, but the server alone decides motion, merges, pickup and expiry.
 
 Local Luau `register_block(key, name, texture, options?)` currently registers
-one-state opaque cubes. Its optional table supports `flammable`,
+one-state cubes or crossed plants. Its optional table supports `flammable`,
 `supports_plant`, `solid`, `replaceable`, `emission` (0–15),
 `reflectance` (exactly three 0–255 channels), and `side`/`bottom` face texture
-keys. Face textures must already be registered by the same package; the required
+keys. `geometry` selects `cube`, `crossed_plant` or `narrow_crossed_plant`;
+`material` selects `opaque` or `cutout`. A crossed plant requires cutout
+material and `solid=false`. `register_texture(key, asset, {alpha_cutout=true})`
+declares a cutout PNG; every cutout block face must use a cutout texture.
+Face textures must already be registered by the same package; the required
 third argument supplies the top texture and the default for other faces.
-Unsupported geometry, state/property combinations and cutout materials still
-require a broader Luau binding; do not mistake this cube shorthand for the
+State/property combinations and invisible materials still require a broader
+Luau binding; do not mistake this one-state shorthand for the
 entire public Rust `Block` contract.
 
 `register_tag(key, "item" | "block", members)` contributes a same-kind tag at

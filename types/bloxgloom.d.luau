@@ -2,7 +2,7 @@
 -- arguments explicitly; these are not globals or a replacement for host validation.
 
 export type BloxStartupHost = {
-    register_texture: (key: string, declared_asset: string) -> (),
+    register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
     register_item: (key: string, name: string, texture: string) -> (),
     -- A member is a namespaced definition key or "#namespace:tag".
@@ -35,7 +35,10 @@ export type BloxBlockOptions = {
     bottom: string?,
     emission: number?, -- 0..15
     reflectance: {number}?, -- exactly three channels, 0..255
+    geometry: ("cube" | "crossed_plant" | "narrow_crossed_plant")?,
+    material: ("opaque" | "cutout")?,
 }
+export type BloxTextureOptions = { alpha_cutout: boolean? }
 
 -- All nine fields are required finite numbers; unknown fields are rejected.
 -- Geometry/input/eye values compile to f32; budget remains f64. Exact compiled

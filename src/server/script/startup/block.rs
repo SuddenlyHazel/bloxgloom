@@ -1,4 +1,4 @@
-//! Bounded options for one-state package-owned opaque cubes.
+//! Bounded options for one-state package-owned blocks and crossed plants.
 //! Keep the old three-argument declaration's block definition unchanged.
 use crate::server::script::values::{integer, text};
 use bloxgloom_host_api::content::{Block, BlockState, FaceTextures, Geometry, Material};
@@ -32,7 +32,7 @@ pub(in crate::server::script) fn cube(
         _ => return Err("block options must be a table"),
     };
     for (index, pair) in options.pairs::<Value, Value>().enumerate() {
-        if index >= 9 {
+        if index >= 11 {
             return Err("too many block options");
         }
         let (key, value) = pair.map_err(|_| "invalid block option")?;
@@ -66,8 +66,26 @@ pub(in crate::server::script) fn cube(
                     )? as u8;
                 }
             }
+            b"geometry" => {
+                block.geometry = match text(value)?.as_str() {
+                    "cube" => Geometry::Cube,
+                    "crossed_plant" => Geometry::CrossedPlant,
+                    "narrow_crossed_plant" => Geometry::NarrowCrossedPlant,
+                    _ => return Err("unsupported block geometry"),
+                };
+            }
+            b"material" => {
+                block.material = match text(value)?.as_str() {
+                    "opaque" => Material::Opaque,
+                    "cutout" => Material::Cutout,
+                    _ => return Err("unsupported block material"),
+                };
+            }
             _ => return Err("unknown block option"),
         }
+    }
+    if block.geometry != Geometry::Cube && (block.material != Material::Cutout || block.solid) {
+        return Err("crossed plants require cutout material and solid=false");
     }
     Ok(block)
 }
@@ -86,4 +104,8 @@ pub(in crate::server::script) fn extended(block: &Block) -> bool {
         || block.replaceable
         || block.emission != 0
         || block.reflectance != [128; 3]
+}
+
+pub(in crate::server::script) fn visual(block: &Block) -> bool {
+    block.geometry != Geometry::Cube || block.material != Material::Opaque
 }

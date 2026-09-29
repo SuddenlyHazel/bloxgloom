@@ -262,6 +262,41 @@ fn package_cube_flags_are_frozen_and_old_declaration_keeps_defaults() {
 }
 
 #[test]
+fn package_cutout_plants_and_textures_roundtrip_on_real_listener() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile',{alpha_cutout=true}); h.register_block('demo:jade','Jade','demo:tile',{geometry='narrow_crossed_plant',material='cutout',solid=false,replaceable=true}) end",
+    );
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let jade = catalog.state_by_key("demo:jade").unwrap();
+    let block = catalog.block(jade).unwrap();
+    assert!(block.cutout && block.plant && !block.solid && block.replaceable);
+    assert_eq!(catalog.plant_selection_margin(jade), 0.35);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x19")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x501).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        assert!(client.block(jade).unwrap().plant && client.block(jade).unwrap().cutout);
+        assert_eq!(client.plant_selection_margin(jade), 0.35);
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+}
+
+#[test]
 fn package_cube_material_options_negotiate_and_survive_restart() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let default = Fixture::new();
@@ -381,6 +416,14 @@ fn package_cube_rejections_fail_before_world_open() {
         (
             "h.register_block('demo:jade','Jade','demo:tile',{reflectance={1,2,300}})",
             "integer out of bounds",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{material='cutout'})",
+            "cutout face textures",
+        ),
+        (
+            "h.register_block('demo:jade','Jade','demo:tile',{geometry='crossed_plant'})",
+            "crossed plants require",
         ),
         (
             "pcall(function() h.register_block('demo:jade','Jade','demo:tile',{supports_plant='yes'}) end)",

@@ -58,6 +58,7 @@ const MAX_BLOCKS_PER_PACKAGE: usize = 32;
 mod block;
 pub(in crate::server::script) use block::cube;
 pub(in crate::server::script) use block::extended as extended_block;
+pub(in crate::server::script) use block::visual as visual_block;
 mod appearance;
 mod item;
 mod player;
@@ -325,57 +326,79 @@ pub(super) fn invoke(
             })
         },
     )?;
-    let register_texture = lua.create_function(move |_, (key, asset): (Value, Value)| {
-        let mut pending = texture_capture.borrow_mut();
-        let result = (|| {
-            if let Some(error) = pending.error {
-                return Err(error);
-            }
-            if !permits_content {
-                return Err("register_texture requires bloxgloom:content/v1");
-            }
-            if pending.textures.len() >= MAX_TEXTURES_PER_PACKAGE {
-                return Err("startup texture limit exceeded (32 per package)");
-            }
-            let key = text(key)?;
-            let asset = text(asset)?;
-            let Some((owner, local)) = key.split_once(':') else {
-                return Err("texture key must be namespaced");
-            };
-            if owner != texture_namespace || !super::package::manifest::identifier(local) {
-                return Err("texture key must belong to the startup package namespace");
-            }
-            if !super::package::manifest::identifier(&asset) {
-                return Err("texture asset must be a local declared name");
-            }
-            let bytes = asset_snapshot
-                .texture_asset(&texture_namespace, &asset)
-                .ok_or("texture asset is not a local declared PNG")?;
-            if pending
-                .textures
-                .iter()
-                .any(|texture| texture.definition.key == key)
-            {
-                return Err("duplicate startup texture");
-            }
-            pending.textures.push(PackageTexture {
-                definition: Texture {
-                    key,
-                    png: std::borrow::Cow::Owned(bytes.to_vec()),
-                    stitch_edges: true,
-                    stitch_vertical: true,
-                    alpha_cutout: false,
-                    emission_strength: 0.0,
-                },
-                asset,
-            });
-            Ok(())
-        })();
-        result.map_err(|error| {
-            pending.error.get_or_insert(error);
-            mlua::Error::RuntimeError(error.into())
-        })
-    })?;
+    let register_texture =
+        lua.create_function(move |_, (key, asset, options): (Value, Value, Value)| {
+            let mut pending = texture_capture.borrow_mut();
+            let result = (|| {
+                if let Some(error) = pending.error {
+                    return Err(error);
+                }
+                if !permits_content {
+                    return Err("register_texture requires bloxgloom:content/v1");
+                }
+                if pending.textures.len() >= MAX_TEXTURES_PER_PACKAGE {
+                    return Err("startup texture limit exceeded (32 per package)");
+                }
+                let key = text(key)?;
+                let asset = text(asset)?;
+                let alpha_cutout = match options {
+                    Value::Nil => false,
+                    Value::Table(table) => {
+                        let mut cutout = false;
+                        for (index, pair) in table.pairs::<Value, Value>().enumerate() {
+                            if index >= 1 {
+                                return Err("unknown texture option");
+                            }
+                            match pair.map_err(|_| "invalid texture option")? {
+                                (Value::String(key), Value::Boolean(value))
+                                    if key.as_bytes().as_ref() == b"alpha_cutout" =>
+                                {
+                                    cutout = value
+                                }
+                                _ => return Err("texture option must be alpha_cutout boolean"),
+                            }
+                        }
+                        cutout
+                    }
+                    _ => return Err("texture options must be a table"),
+                };
+                let Some((owner, local)) = key.split_once(':') else {
+                    return Err("texture key must be namespaced");
+                };
+                if owner != texture_namespace || !super::package::manifest::identifier(local) {
+                    return Err("texture key must belong to the startup package namespace");
+                }
+                if !super::package::manifest::identifier(&asset) {
+                    return Err("texture asset must be a local declared name");
+                }
+                let bytes = asset_snapshot
+                    .texture_asset(&texture_namespace, &asset)
+                    .ok_or("texture asset is not a local declared PNG")?;
+                if pending
+                    .textures
+                    .iter()
+                    .any(|texture| texture.definition.key == key)
+                {
+                    return Err("duplicate startup texture");
+                }
+                pending.textures.push(PackageTexture {
+                    definition: Texture {
+                        key,
+                        png: std::borrow::Cow::Owned(bytes.to_vec()),
+                        stitch_edges: true,
+                        stitch_vertical: true,
+                        alpha_cutout,
+                        emission_strength: 0.0,
+                    },
+                    asset,
+                });
+                Ok(())
+            })();
+            result.map_err(|error| {
+                pending.error.get_or_insert(error);
+                mlua::Error::RuntimeError(error.into())
+            })
+        })?;
     let register_block = lua.create_function(
         move |_, (key, name, texture, options): (Value, Value, Value, Value)| {
             let mut pending = block_capture.borrow_mut();
@@ -428,6 +451,22 @@ pub(super) fn invoke(
                     {
                         return Err("block faces require registered package-owned textures");
                     }
+                }
+                if block.material == bloxgloom_host_api::content::Material::Cutout
+                    && [
+                        &block.textures.top,
+                        &block.textures.side,
+                        &block.textures.bottom,
+                    ]
+                    .iter()
+                    .any(|face| {
+                        !pending.textures.iter().any(|texture| {
+                            texture.definition.key == face.as_str()
+                                && texture.definition.alpha_cutout
+                        })
+                    })
+                {
+                    return Err("cutout blocks require cutout face textures");
                 }
                 pending.blocks.push(block);
                 pending.items.push(Item {

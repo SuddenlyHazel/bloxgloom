@@ -4,7 +4,7 @@
 //! compatibility identities, never client execution authority.
 use super::*;
 use bloxgloom_host_api::{composition, content};
-use content::{DropAnimation, DropPolicy, DropSize, TagKind, TagMember};
+use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
 mod appearance;
 mod runtime;
 
@@ -20,6 +20,7 @@ pub(super) struct Format {
     pub policy: bool,
     pub extended_blocks: bool,
     pub tags: bool,
+    pub visual_blocks: bool,
 }
 
 #[derive(Debug)]
@@ -69,8 +70,16 @@ impl ClientBundle {
             .iter()
             .any(crate::server::script::startup::extended_block);
         let tag_format = !tags.is_empty();
-        let extended_blocks = authored_blocks || tag_format;
-        let version = if tag_format {
+        let visual_format = blocks
+            .iter()
+            .any(crate::server::script::startup::visual_block)
+            || textures
+                .iter()
+                .any(|texture| texture.definition.alpha_cutout);
+        let extended_blocks = authored_blocks || tag_format || visual_format;
+        let version = if visual_format {
+            VISUAL_BLOCKS_MAGIC
+        } else if tag_format {
             TAGS_MAGIC
         } else if extended_blocks {
             BLOCK_OPTIONS_MAGIC
@@ -196,7 +205,7 @@ impl ClientBundle {
                 if texture.definition.png.as_ref() != bytes.as_slice()
                     || !texture.definition.stitch_edges
                     || !texture.definition.stitch_vertical
-                    || texture.definition.alpha_cutout
+                    || (texture.definition.alpha_cutout && !visual_format)
                     || texture.definition.emission_strength != 0.0
                 {
                     return Err(error(
@@ -206,6 +215,9 @@ impl ClientBundle {
                 }
                 writer.field(texture.definition.key.as_bytes())?;
                 writer.field(texture.asset.as_bytes())?;
+                if visual_format {
+                    writer.field(&[u8::from(texture.definition.alpha_cutout)])?;
+                }
             }
             let own = blocks
                 .iter()
@@ -234,8 +246,19 @@ impl ClientBundle {
                         block.reflectance[2],
                     ])?;
                 }
+                if visual_format {
+                    writer.field(&[match block.geometry {
+                        Geometry::Cube => 0,
+                        Geometry::CrossedPlant => 1,
+                        Geometry::NarrowCrossedPlant => 2,
+                    } | match block.material {
+                        Material::Opaque => 0,
+                        Material::Cutout => 4,
+                        Material::Invisible => return Err(invalid()),
+                    }])?;
+                }
             }
-            if tag_format {
+            if tag_format || visual_format {
                 let own = tags
                     .iter()
                     .filter(|tag| {
@@ -373,10 +396,19 @@ impl Startup {
             policy,
             extended_blocks,
             tags,
+            visual_blocks,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
-            if sized || animated || player || appearance || policy || extended_blocks || tags {
+            if sized
+                || animated
+                || player
+                || appearance
+                || policy
+                || extended_blocks
+                || tags
+                || visual_blocks
+            {
                 return Err(invalid());
             }
             return Ok(None);
@@ -386,6 +418,7 @@ impl Startup {
         let mut has_nondefault_policy = false;
         let mut has_extended_block = false;
         let mut has_tag = false;
+        let mut has_visual = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -508,13 +541,23 @@ impl Startup {
                 let png = package.textures.get(&asset).ok_or_else(|| {
                     error(name, format!("missing declared texture asset {asset}"))
                 })?;
+                let alpha_cutout = if visual_blocks {
+                    match reader.field(1)? {
+                        [0] => false,
+                        [1] => true,
+                        _ => return Err(invalid()),
+                    }
+                } else {
+                    false
+                };
+                has_visual |= alpha_cutout;
                 previous.clone_from(&key);
                 startup.textures.push(content::Texture {
                     key,
                     png: std::borrow::Cow::Owned(png.clone()),
                     stitch_edges: true,
                     stitch_vertical: true,
-                    alpha_cutout: false,
+                    alpha_cutout,
                     emission_strength: 0.0,
                 });
             }
@@ -565,6 +608,29 @@ impl Startup {
                         return Err(invalid());
                     }
                     Some((side, bottom, *options, *emission, [*r, *g, *b]))
+                } else {
+                    None
+                };
+                let visual = if visual_blocks {
+                    let [flags] = reader.field(1)? else {
+                        return Err(invalid());
+                    };
+                    let geometry = match flags & 3 {
+                        0 => Geometry::Cube,
+                        1 => Geometry::CrossedPlant,
+                        2 => Geometry::NarrowCrossedPlant,
+                        _ => return Err(invalid()),
+                    };
+                    if flags & !7 != 0 {
+                        return Err(invalid());
+                    }
+                    let material = if flags & 4 != 0 {
+                        Material::Cutout
+                    } else {
+                        Material::Opaque
+                    };
+                    has_visual |= geometry != Geometry::Cube || material != Material::Opaque;
+                    Some((geometry, material))
                 } else {
                     None
                 };
@@ -622,6 +688,29 @@ impl Startup {
                     block.emission = emission;
                     block.reflectance = reflectance;
                     has_extended_block |= crate::server::script::startup::extended_block(&block);
+                }
+                if let Some((geometry, material)) = visual {
+                    block.geometry = geometry;
+                    block.material = material;
+                    if geometry != Geometry::Cube && (material != Material::Cutout || block.solid) {
+                        return Err(invalid());
+                    }
+                    if material == Material::Cutout
+                        && [
+                            &block.textures.top,
+                            &block.textures.side,
+                            &block.textures.bottom,
+                        ]
+                        .iter()
+                        .any(|face| {
+                            !startup
+                                .textures
+                                .iter()
+                                .any(|texture| texture.key == face.as_str() && texture.alpha_cutout)
+                        })
+                    {
+                        return Err(invalid());
+                    }
                 }
                 startup.blocks.push(block);
             }
@@ -729,8 +818,9 @@ impl Startup {
             && ((sized && !animated && !has_nondefault_size)
                 || (animated && !policy && !has_nondefault_animation))
             || (policy && !extended_blocks && !has_nondefault_policy)
-            || (extended_blocks && !has_extended_block && !tags)
-            || (tags && !has_tag)
+            || (extended_blocks && !has_extended_block && !tags && !visual_blocks)
+            || (tags && !has_tag && !visual_blocks)
+            || (visual_blocks && !has_visual)
         {
             return Err(invalid());
         }

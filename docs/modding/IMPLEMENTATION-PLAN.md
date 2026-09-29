@@ -638,6 +638,9 @@ on the same WAL receipt, including caught-error rollback, deduplication and
 restart. The mobile query also filters spatial-index bucket candidates by exact
 radius after capturing dependencies. Broader event context and specialized
 owner services still prevent checking off the combined surface as complete.
+One-state cutout cubes/crossed plants and cutout texture declarations now use a
+V25 client bundle; defaults retain older bytes. A real listener negotiates the
+same plant/cutout selection and restart identity. Multi-state content remains.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -667,7 +670,7 @@ continuity are covered by mesh/animator regressions, not that preview.
 
 **Remaining**
 
-- [ ] Widen one-state opaque cubes to multi-state/plant/material content and
+- [ ] Widen one-state cube/plant content to multi-state and more material content and
   expose applicable component schemas, creatures, machines and screens as Luau
   startup declarations. Cube faces/emission and item/block tags are now bound.
 - [ ] Expose combined world/entity/inventory/scheduled transactions and the

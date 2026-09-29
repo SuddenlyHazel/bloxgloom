@@ -1,4 +1,4 @@
-//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–24
+//! Canonical, client-safe package set, independent of filesystem paths. Versions 7–13 and 20–25
 //! use an uncompressed little-endian length-prefixed format, not a save or network
 //! protocol. No entry, executable server capabilities, local paths or original manifests are
 //! exported. All package identities/direct exact dependencies remain present,
@@ -22,6 +22,7 @@
 //! V23 adds one-state block face/material properties, while retaining optional
 //! player rules/appearance and per-item metadata without changing earlier bytes.
 //! V24 adds bounded item/block tag declarations; default packages retain V7–23.
+//! V25 adds cutout texture flags and block geometry/material to the V24 grammar.
 //! Absent selections preserve earlier bytes. No version changes wire framing or saves. Artifacts older than V7 are
 //! rejected; there is no conversion or partial install.
 
@@ -51,6 +52,7 @@ const PLAYER_POLICY_MAGIC: &[u8] = b"BGCLIENT\x15";
 const APPEARANCE_POLICY_MAGIC: &[u8] = b"BGCLIENT\x16";
 const BLOCK_OPTIONS_MAGIC: &[u8] = b"BGCLIENT\x17";
 const TAGS_MAGIC: &[u8] = b"BGCLIENT\x18";
+const VISUAL_BLOCKS_MAGIC: &[u8] = b"BGCLIENT\x19";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -206,6 +208,7 @@ impl ClientBundle {
             APPEARANCE_POLICY_MAGIC,
             BLOCK_OPTIONS_MAGIC,
             TAGS_MAGIC,
+            VISUAL_BLOCKS_MAGIC,
         ]
         .contains(&version)
         {
@@ -309,7 +312,8 @@ impl ClientBundle {
                     || version == PLAYER_POLICY_MAGIC
                     || version == APPEARANCE_POLICY_MAGIC
                     || version == BLOCK_OPTIONS_MAGIC
-                    || version == TAGS_MAGIC,
+                    || version == TAGS_MAGIC
+                    || version == VISUAL_BLOCKS_MAGIC,
                 animated: version == ANIMATED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
                     || version == APPEARANCE_MAGIC
@@ -317,7 +321,8 @@ impl ClientBundle {
                     || version == PLAYER_POLICY_MAGIC
                     || version == APPEARANCE_POLICY_MAGIC
                     || version == BLOCK_OPTIONS_MAGIC
-                    || version == TAGS_MAGIC,
+                    || version == TAGS_MAGIC
+                    || version == VISUAL_BLOCKS_MAGIC,
                 player: version == PLAYER_MAGIC
                     || version == PLAYER_SIZED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
@@ -327,9 +332,13 @@ impl ClientBundle {
                     || version == PLAYER_POLICY_MAGIC
                     || version == APPEARANCE_POLICY_MAGIC
                     || version == BLOCK_OPTIONS_MAGIC
-                    || version == TAGS_MAGIC,
-                extended_blocks: version == BLOCK_OPTIONS_MAGIC || version == TAGS_MAGIC,
-                tags: version == TAGS_MAGIC,
+                    || version == TAGS_MAGIC
+                    || version == VISUAL_BLOCKS_MAGIC,
+                extended_blocks: version == BLOCK_OPTIONS_MAGIC
+                    || version == TAGS_MAGIC
+                    || version == VISUAL_BLOCKS_MAGIC,
+                tags: version == TAGS_MAGIC || version == VISUAL_BLOCKS_MAGIC,
+                visual_blocks: version == VISUAL_BLOCKS_MAGIC,
             },
         )?;
         if !reader.0.is_empty() {
