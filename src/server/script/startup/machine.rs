@@ -11,6 +11,8 @@ mod components;
 mod footprint;
 #[path = "machine/ports.rs"]
 mod ports;
+#[path = "machine/variants.rs"]
+mod variants;
 
 #[derive(Clone, Debug)]
 pub(in crate::server::script) struct Declaration {
@@ -69,20 +71,6 @@ pub(super) fn declarer(
                 .ok_or("machine needs a previously registered block")?;
             let state = super::placement_state(block_def);
             let cells = footprint::parse(field(&d, "footprint")?, &state)?;
-            let active_state = match field(&d, "active_state")? {
-                Value::Nil => state.clone(),
-                value => text(value)?,
-            };
-            if !super::has_state(block_def, &active_state) {
-                return Err("machine active state must belong to its block");
-            }
-            let active_cells = cells
-                .iter()
-                .map(|cell| FootprintCell {
-                    offset: cell.offset,
-                    state: active_state.clone(),
-                })
-                .collect();
             let module = text(field(&d, "module")?)?;
             if module.split_once(':').map(|v| v.0) != Some(namespace.as_str())
                 || snapshot.source(&module).is_none()
@@ -125,9 +113,14 @@ pub(super) fn declarer(
                 )),
                 _ => return Err("machine fuel must be a table"),
             };
-            if active_state != state && fuel.is_none() {
-                return Err("machine active state requires fuel");
-            }
+            let variants = variants::parse(
+                field(&d, "variants")?,
+                field(&d, "active_state")?,
+                block_def,
+                &state,
+                &cells,
+                fuel.is_some(),
+            )?;
             let slots = if fuel.is_some() { 3 } else { 2 };
             let input_slot = if fuel.is_some() { 1 } else { 0 };
             let output_slot = input_slot + 1;
@@ -185,11 +178,7 @@ pub(super) fn declarer(
                 interval,
                 read_radius: u8::from(!ports.is_empty()),
                 reads_neighbours: !ports.is_empty(),
-                variants: vec![api::Variant {
-                    placement_state: state,
-                    idle: cells.clone(),
-                    active: active_cells,
-                }],
+                variants,
                 filters,
                 ports: ports.clone(),
                 process: Some(process),

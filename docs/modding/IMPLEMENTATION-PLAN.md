@@ -746,6 +746,18 @@ the normal GPU mesh/material path. Both images were inspected: the authored
 texture is present and the active emission changes nearby lighting subtly.
 This previews the two states separately; the live machine switch is verified
 through the client replica and has not been inspected in a release window.
+V41 now binds two to eight authored machine placement-state variants. The
+variants share one bounded footprint, recipe, ports and host-owned screen;
+each may name its own fueled active state. The verified client catalog
+reconstructs the same ordered variants. A real-listener test places the second
+variant from one finite item, observes both footprint cells, and checks its
+saved variant index and catalog identity after restart. Duplicate, foreign and
+missing-default variant declarations fail before publishing a save. Existing
+one-variant packages keep their earlier bundle bytes.
+The two-thread root suite passes **1036/1036**, host API **34/34**, formatting
+and strict all-target/all-feature Clippy. This declaration/placement change
+does not alter mesh or renderer code; its alternate block states use the
+existing authored state renderer.
 Simple storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screens; omitted footprints use one cell.

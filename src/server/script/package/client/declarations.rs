@@ -41,6 +41,7 @@ pub(super) struct Format {
     pub storage_footprints: bool,
     pub machine_components: bool,
     pub machine_active: bool,
+    pub machine_variants: bool,
 }
 
 #[derive(Debug)]
@@ -131,8 +132,15 @@ impl ClientBundle {
             })
         });
         let machine_active = machines.iter().any(|declaration| {
-            declaration.machine.variants[0].idle != declaration.machine.variants[0].active
+            declaration
+                .machine
+                .variants
+                .iter()
+                .any(|variant| variant.idle != variant.active)
         });
+        let machine_variants = machines
+            .iter()
+            .any(|declaration| declaration.machine.variants.len() > 1);
         let storage_footprints = storage
             .iter()
             .any(|declaration| declaration.storage.footprint.len() > 1);
@@ -164,7 +172,9 @@ impl ClientBundle {
                 || declaration.screen.groups[0].label != "STORAGE"
         });
         let bundle_screen_layout = screen_layout || creature_format;
-        let version = if machine_active {
+        let version = if machine_variants {
+            MACHINE_VARIANTS_MAGIC
+        } else if machine_active {
             MACHINE_ACTIVE_MAGIC
         } else if machine_components {
             MACHINE_COMPONENT_MAGIC
@@ -418,7 +428,7 @@ impl ClientBundle {
                     name,
                     storage,
                     bundle_screen_layout,
-                    storage_footprints || machine_components || machine_active,
+                    storage_footprints || machine_components || machine_active || machine_variants,
                 )?;
             }
             if creature_format {
@@ -433,8 +443,13 @@ impl ClientBundle {
                         || creature_policy
                         || storage_footprints
                         || machine_components
-                        || machine_active,
-                    creature_policy || storage_footprints || machine_components || machine_active,
+                        || machine_active
+                        || machine_variants,
+                    creature_policy
+                        || storage_footprints
+                        || machine_components
+                        || machine_active
+                        || machine_variants,
                 )?;
             }
             if machine_format
@@ -442,6 +457,7 @@ impl ClientBundle {
                 || creature_policy
                 || storage_footprints
                 || machine_active
+                || machine_variants
             {
                 machine::encode(
                     &mut writer,
@@ -454,20 +470,24 @@ impl ClientBundle {
                             || creature_policy
                             || storage_footprints
                             || machine_components
-                            || machine_active,
+                            || machine_active
+                            || machine_variants,
+                        variants: machine_variants,
                         ports: machine_ports
                             || machine_footprints
                             || creature_policy
                             || storage_footprints
                             || machine_components
-                            || machine_active,
+                            || machine_active
+                            || machine_variants,
                         footprints: machine_footprints
                             || creature_policy
                             || storage_footprints
                             || machine_components
-                            || machine_active,
-                        components: machine_components || machine_active,
-                        active: machine_active,
+                            || machine_active
+                            || machine_variants,
+                        components: machine_components || machine_active || machine_variants,
+                        active: machine_active || machine_variants,
                     },
                 )?;
             }
@@ -626,6 +646,7 @@ impl Startup {
             storage_footprints,
             machine_components,
             machine_active,
+            machine_variants,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -652,6 +673,7 @@ impl Startup {
                 || storage_footprints
                 || machine_components
                 || machine_active
+                || machine_variants
             {
                 return Err(invalid());
             }
@@ -678,6 +700,7 @@ impl Startup {
         let mut has_storage_footprints = false;
         let mut has_machine_components = false;
         let mut has_machine_active = false;
+        let mut has_machine_variants = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -1097,6 +1120,7 @@ impl Startup {
                         footprints: machine_footprints,
                         components: machine_components,
                         active: machine_active,
+                        variants: machine_variants,
                     },
                 )?;
                 has_machines |= !decoded.is_empty();
@@ -1126,8 +1150,15 @@ impl Startup {
                     })
                 });
                 has_machine_active |= decoded.iter().any(|declaration| {
-                    declaration.machine.variants[0].idle != declaration.machine.variants[0].active
+                    declaration
+                        .machine
+                        .variants
+                        .iter()
+                        .any(|variant| variant.idle != variant.active)
                 });
+                has_machine_variants |= decoded
+                    .iter()
+                    .any(|declaration| declaration.machine.variants.len() > 1);
                 startup.machines.extend(decoded);
             }
             startup.packages.push(composition::Package {
@@ -1208,7 +1239,8 @@ impl Startup {
                 && !machine_components
                 && !machine_active)
             || (machine_components && !has_machine_components && !machine_active)
-            || (machine_active && !has_machine_active)
+            || (machine_active && !has_machine_active && !machine_variants)
+            || (machine_variants && !has_machine_variants)
         {
             return Err(invalid());
         }

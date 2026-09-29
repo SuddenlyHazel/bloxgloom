@@ -78,6 +78,7 @@ const CREATURE_POLICY_MAGIC: &[u8] = b"BGCLIENT\x25";
 const STORAGE_FOOTPRINT_MAGIC: &[u8] = b"BGCLIENT\x26";
 const MACHINE_COMPONENT_MAGIC: &[u8] = b"BGCLIENT\x27";
 const MACHINE_ACTIVE_MAGIC: &[u8] = b"BGCLIENT\x28";
+const MACHINE_VARIANTS_MAGIC: &[u8] = b"BGCLIENT\x29";
 /// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
 /// dependency and record framing overhead (64 packages, 256 modules/256 assets).
 /// Two further MiB bound declarative startup metadata. Every record category
@@ -249,6 +250,7 @@ impl ClientBundle {
             STORAGE_FOOTPRINT_MAGIC,
             MACHINE_COMPONENT_MAGIC,
             MACHINE_ACTIVE_MAGIC,
+            MACHINE_VARIANTS_MAGIC,
         ]
         .contains(&version)
         {
@@ -368,7 +370,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 animated: version == ANIMATED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
                     || version == APPEARANCE_MAGIC
@@ -392,7 +395,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 player: version == PLAYER_MAGIC
                     || version == PLAYER_SIZED_MAGIC
                     || version == PLAYER_ANIMATED_MAGIC
@@ -418,7 +422,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 extended_blocks: version == BLOCK_OPTIONS_MAGIC
                     || version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
@@ -436,7 +441,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 tags: version == TAGS_MAGIC
                     || version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
@@ -453,7 +459,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 visual_blocks: version == VISUAL_BLOCKS_MAGIC
                     || version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
@@ -469,7 +476,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 block_states: version == BLOCK_STATES_MAGIC
                     || version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
@@ -484,7 +492,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 components: version == COMPONENTS_MAGIC
                     || version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
@@ -498,7 +507,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 state_textures: version == STATE_TEXTURES_MAGIC
                     || version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
@@ -511,7 +521,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 storage: version == STORAGE_MAGIC
                     || version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
@@ -523,7 +534,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 screen_layout: version == SCREEN_LAYOUT_MAGIC
                     || version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
@@ -534,7 +546,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 creatures: version == CREATURE_MAGIC
                     || version == MACHINE_MAGIC
                     || version == CREATURE_OPTIONS_MAGIC
@@ -544,7 +557,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 creature_options: version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
@@ -552,7 +566,8 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 machines: version == MACHINE_MAGIC
                     || version == CREATURE_OPTIONS_MAGIC
                     || version == MACHINE_RECIPES_MAGIC
@@ -561,35 +576,44 @@ impl ClientBundle {
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 machine_recipes: version == MACHINE_RECIPES_MAGIC
                     || version == MACHINE_PORTS_MAGIC
                     || version == MACHINE_FOOTPRINT_MAGIC
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 machine_ports: version == MACHINE_PORTS_MAGIC
                     || version == MACHINE_FOOTPRINT_MAGIC
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 machine_footprints: version == MACHINE_FOOTPRINT_MAGIC
                     || version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 creature_policy: version == CREATURE_POLICY_MAGIC
                     || version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 storage_footprints: version == STORAGE_FOOTPRINT_MAGIC
                     || version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
                 machine_components: version == MACHINE_COMPONENT_MAGIC
-                    || version == MACHINE_ACTIVE_MAGIC,
-                machine_active: version == MACHINE_ACTIVE_MAGIC,
+                    || version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
+                machine_active: version == MACHINE_ACTIVE_MAGIC
+                    || version == MACHINE_VARIANTS_MAGIC,
+                machine_variants: version == MACHINE_VARIANTS_MAGIC,
             },
         )?;
         if !reader.0.is_empty() {

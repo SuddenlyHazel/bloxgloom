@@ -256,6 +256,17 @@ fuel. V40 bundles reconstruct both states and their save identity.
 Use `block-preview <state-key> <output.png> <package-root>` to inspect either
 authored state with the regular renderer.
 
+`register_machine` may instead declare `variants={{state='demo:press[face=north,lit=off]',
+active_state='demo:press[face=north,lit=on]'}, {state='demo:press[face=south,lit=off]',
+active_state='demo:press[face=south,lit=on]'}}`. The list has two to eight
+entries. Its first state must be the block's default placement state; each
+state is distinct and belongs to that block. Every variant uses the same
+declared `footprint`, recipe, ports and screen. Omitted `active_state` means
+the variant's own placement state. A separate top-level `active_state` cannot
+be combined with `variants`. Placement selects the variant from the requested
+state, and the host persists that choice with the machine. V41 client bundles
+reconstruct every variant and participate in catalog/save identity.
+
 A mobile creature tick receives read-only `c.position` and bounded host world
 queries: `c.solid(x,y,z)` uses integer cells; `c.clear(x,y,z)` and
 `c.grounded(x,y,z)` use feet positions; `c.walk_edge(x1,y1,z1,x2,y2,z2)` checks

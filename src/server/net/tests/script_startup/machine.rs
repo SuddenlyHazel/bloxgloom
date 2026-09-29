@@ -7,6 +7,8 @@ use bloxgloom_host_api::machine::{Context, Work};
 mod active;
 #[path = "machine/components.rs"]
 mod components;
+#[path = "machine/variants.rs"]
+mod variants;
 
 const REGISTER: &str = "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:press','Press','demo:tile'); h.register_machine{entity='demo:press_machine',block='demo:press',module='demo:tick',schema=1,revision=1,interval=20,title='STONE PRESS',hint='STONE TO GRAVEL',recipe={key='demo:crush',input='bloxgloom:stone',input_count=1,output='bloxgloom:gravel',output_count=2,pulses=3},fuel={item='bloxgloom:stick',pulses=30}}; h.register_entity('demo:marker',1,1,0,nil) end";
 

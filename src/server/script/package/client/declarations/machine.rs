@@ -1,4 +1,4 @@
-//! V32/V34/V35/V36 inert process machine descriptors. Luau source and durable private data
+//! V32–V41 inert process machine descriptors. Luau source and durable private data
 //! are excluded; the host and client reconstruct identical catalog identities.
 use super::*;
 use crate::server::script::startup::MachineDeclaration;
@@ -17,6 +17,7 @@ pub(super) struct Format {
     pub footprints: bool,
     pub components: bool,
     pub active: bool,
+    pub variants: bool,
 }
 
 pub(super) fn encode(
@@ -46,27 +47,32 @@ pub(super) fn encode(
             || m.slots != screen.slots
             || m.read_radius != u8::from(!m.ports.is_empty())
             || m.reads_neighbours == m.ports.is_empty()
-            || m.variants.len() != 1
+            || m.variants.len() > if format.variants { 8 } else { 1 }
             || m.ports.len() > if format.ports { 8 } else { 0 }
             || p.recipes.is_empty()
             || p.recipes.len() > if format.recipes { 8 } else { 1 }
             || p.fuels.len() > 1
-            || (m.variants[0].idle != m.variants[0].active && p.fuel.is_none())
+            || (m.variants.iter().any(|v| v.idle != v.active) && p.fuel.is_none())
             || p.input != if p.fuel.is_some() { 1 } else { 0 }
             || p.output != p.input + 1
             || m.variants[0].idle.len() > if format.footprints { 8 } else { 1 }
             || m.variants[0].idle.len() != m.variants[0].active.len()
-            || m.variants[0]
-                .idle
-                .iter()
-                .zip(&m.variants[0].active)
-                .any(|(idle, active)| {
-                    idle.offset != active.offset
-                        || (!format.active && idle.state != active.state)
-                        || idle.state != m.variants[0].placement_state
-                        || (format.active && active.state != m.variants[0].active[0].state)
-                        || idle.offset.iter().any(|axis| axis.unsigned_abs() > 2)
-                })
+            || m.variants.iter().any(|variant| {
+                variant.idle.len() != m.variants[0].idle.len()
+                    || variant
+                        .idle
+                        .iter()
+                        .zip(&variant.active)
+                        .zip(&m.variants[0].idle)
+                        .any(|((idle, active), first)| {
+                            idle.offset != first.offset
+                                || active.offset != idle.offset
+                                || (!format.active && idle.state != active.state)
+                                || idle.state != variant.placement_state
+                                || (format.active && active.state != variant.active[0].state)
+                                || idle.offset.iter().any(|axis| axis.unsigned_abs() > 2)
+                        })
+            })
             || screen.footprint
                 != m.variants[0]
                     .idle
@@ -96,6 +102,13 @@ pub(super) fn encode(
         writer.field(m.variants[0].placement_state.as_bytes())?;
         if format.active {
             writer.field(m.variants[0].active[0].state.as_bytes())?;
+        }
+        if format.variants {
+            writer.count(m.variants.len())?;
+            for variant in m.variants.iter().skip(1) {
+                writer.field(variant.placement_state.as_bytes())?;
+                writer.field(variant.active[0].state.as_bytes())?;
+            }
         }
         writer.field(screen.title.as_bytes())?;
         writer.field(screen.hint.as_bytes())?;
@@ -183,6 +196,16 @@ pub(super) fn decode(
         } else {
             state.clone()
         };
+        let mut variant_states = vec![(state.clone(), active_state.clone())];
+        if format.variants {
+            let count = reader.count(8)?;
+            if count == 0 {
+                return Err(invalid());
+            }
+            for _ in 1..count {
+                variant_states.push((reader.text(129)?, reader.text(129)?));
+            }
+        }
         let title = reader.text(40)?;
         let hint = reader.text(80)?;
         let recipe_count = if format.recipes { reader.count(8)? } else { 1 };
@@ -272,7 +295,10 @@ pub(super) fn decode(
             .find(|old| old.key == block)
             .ok_or_else(invalid)?;
         if crate::server::script::startup::placement_state(definition) != state
-            || !crate::server::script::startup::has_state(definition, &active_state)
+            || variant_states.iter().any(|(state, active)| {
+                !crate::server::script::startup::has_state(definition, state)
+                    || !crate::server::script::startup::has_state(definition, active)
+            })
             || recipes.iter().any(|recipe| {
                 recipe
                     .key
@@ -283,7 +309,7 @@ pub(super) fn decode(
             return Err(invalid());
         }
         let slots = if fuel.is_some() { 3 } else { 2 };
-        if active_state != state && fuel.is_none() {
+        if variant_states.iter().any(|(state, active)| state != active) && fuel.is_none() {
             return Err(invalid());
         }
         let input_slot = if fuel.is_some() { 1 } else { 0 };
@@ -332,18 +358,24 @@ pub(super) fn decode(
                 .iter()
                 .any(|r| r.output_components != ComponentOutput::Empty),
         });
-        let cells = offsets
-            .iter()
-            .map(|offset| FootprintCell {
-                offset: *offset,
-                state: state.clone(),
-            })
-            .collect::<Vec<_>>();
-        let active_cells = offsets
-            .iter()
-            .map(|offset| FootprintCell {
-                offset: *offset,
-                state: active_state.clone(),
+        let variants = variant_states
+            .into_iter()
+            .map(|(state, active)| api::Variant {
+                placement_state: state.clone(),
+                idle: offsets
+                    .iter()
+                    .map(|offset| FootprintCell {
+                        offset: *offset,
+                        state: state.clone(),
+                    })
+                    .collect(),
+                active: offsets
+                    .iter()
+                    .map(|offset| FootprintCell {
+                        offset: *offset,
+                        state: active.clone(),
+                    })
+                    .collect(),
             })
             .collect::<Vec<_>>();
         let machine = api::Machine {
@@ -355,11 +387,7 @@ pub(super) fn decode(
             interval,
             read_radius: u8::from(!ports.is_empty()),
             reads_neighbours: !ports.is_empty(),
-            variants: vec![api::Variant {
-                placement_state: state,
-                idle: cells.clone(),
-                active: active_cells,
-            }],
+            variants,
             filters,
             ports,
             process: Some(process),

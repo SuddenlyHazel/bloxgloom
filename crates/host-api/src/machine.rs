@@ -7,6 +7,8 @@ mod components;
 pub use components::{ComponentMatch, ComponentOutput, ComponentValue};
 mod lifecycle;
 pub use lifecycle::LifecyclePlan;
+#[cfg(test)]
+mod tests;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Filter {
     /// Namespaced allowlist (or `#namespace:item_tag`); empty accepts any item.
@@ -191,7 +193,11 @@ impl Machine {
         {
             return Err(bad());
         }
+        let mut placement_states = std::collections::BTreeSet::new();
         for v in &self.variants {
+            if !placement_states.insert(&v.placement_state) {
+                return Err(bad());
+            }
             for cells in [&v.idle, &v.active] {
                 if cells.len() != offsets.len()
                     || cells
