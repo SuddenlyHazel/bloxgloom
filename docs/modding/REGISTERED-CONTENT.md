@@ -84,6 +84,14 @@ bytes and the 128-item stack cap. Component bytes are not interpreted as public
 client logic. A V27 bundle negotiates this schema; default items retain their
 older bundle bytes.
 
+With `content/v1`, `storage/v1`, and `inventory_screens/v1` requirements,
+`register_storage('package:chest', 'package:chest_block', 'Chest', 9, 3)`
+binds a previously registered package block to a one-cell, host-owned storage
+entity and a negotiated inventory screen. Placement uses the block item's
+canonical default state. The host owns slots, transfers, removal refunds and
+contents; Luau cannot supply or mint their contents. V29 bundles carry the
+same screen and storage identity to joining clients.
+
 `register_tag(key, "item" | "block", members)` contributes a same-kind tag at
 startup. Each member is a namespaced definition key or a nested
 `"#namespace:tag"`; forward references resolve when the full package set is

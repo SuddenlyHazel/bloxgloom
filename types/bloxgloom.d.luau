@@ -14,6 +14,7 @@ export type BloxStartupHost = {
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
+    register_storage: (entity: string, previously_registered_block: string, title: string, slots: number, columns: number) -> (),
     -- Requires content/v1. Exactly one selection across the entire package set;
     -- key belongs to this package, revision is an integer in 1..4294967295.
     -- Immutable for this world/session. Any change (including key/revision or

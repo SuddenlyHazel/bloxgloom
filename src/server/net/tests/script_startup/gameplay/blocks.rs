@@ -4,6 +4,62 @@ use std::time::Duration;
 
 const REGISTER: &str = "return function(h) h.register_texture('demo:tile','tile'); h.register_item('demo:token','Token','demo:tile'); h.register_block('demo:jade','Jade','demo:tile') end";
 
+#[test]
+fn luau_storage_screen_negotiates_host_owned_inventory() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'); h.register_storage('demo:chest','demo:jade','Jade Chest',9,3) end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}requires bloxgloom:storage/v1\nrequires bloxgloom:inventory_screens/v1\n"),
+    )
+    .unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let entity = catalog.entity_type_id_by_key("demo:chest").unwrap();
+    assert_eq!(catalog.inventory_screen(entity).unwrap().slots, 9);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x1d")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x529).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        assert_eq!(
+            client
+                .inventory_screen(client.entity_type_id_by_key("demo:chest").unwrap())
+                .unwrap()
+                .columns,
+            3
+        );
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+}
+
+#[test]
+fn luau_storage_requires_declared_capabilities_before_world_open() {
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'); h.register_storage('demo:chest','demo:jade','Jade Chest',9,3) end",
+    );
+    assert!(fixture.open().is_err());
+    assert!(!fixture.0.join("save/content.map").exists());
+}
+
 fn package(fixture: &Fixture, source: &str) {
     let dir = fixture.0.join("packages/demo");
     std::fs::create_dir_all(dir.join("server")).unwrap();

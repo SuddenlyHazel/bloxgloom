@@ -63,6 +63,8 @@ pub(in crate::server::script) use block::{placement_state, stateful as stateful_
 mod appearance;
 mod item;
 mod player;
+mod storage;
+pub(in crate::server::script) use storage::Declaration as StorageDeclaration;
 mod tag;
 pub(in crate::server::script) use tag::member_key as tag_member_key;
 
@@ -85,6 +87,7 @@ pub(in crate::server) struct Declarations {
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
+    pub(super) storage: Vec<StorageDeclaration>,
 }
 
 impl Declarations {
@@ -101,6 +104,7 @@ impl Declarations {
         let mut handlers = Vec::new();
         let mut entities = Vec::new();
         let mut systems = Vec::new();
+        let mut storage = Vec::new();
         let mut player_rules = None;
         let mut appearance = None;
         // At most 64 packages * 32 items, in lexical package order. Each entry
@@ -141,6 +145,7 @@ impl Declarations {
             textures.extend(declarations.textures);
             handlers.extend(declarations.handlers);
             entities.extend(declarations.entities);
+            storage.extend(declarations.storage);
             if let Some(system) = declarations.system {
                 systems.push(system);
             }
@@ -171,6 +176,7 @@ impl Declarations {
             handlers,
             entities,
             systems,
+            storage,
         };
         result.client_bundle = Arc::new(
             snapshot
@@ -215,6 +221,10 @@ impl Extension for Declarations {
         for entity in &self.entities {
             registrar.gameplay_entity(entity.clone())?;
         }
+        for declaration in &self.storage {
+            registrar.storage_block_entity(declaration.storage.clone())?;
+            registrar.inventory_screen(declaration.screen.clone())?;
+        }
         Ok(())
     }
 }
@@ -231,6 +241,7 @@ pub(super) struct Pending {
     pub(super) action: Option<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
+    pub(super) storage: Vec<storage::Declaration>,
     pub(super) system: Option<bloxgloom_host_api::system::System>,
     pub(super) error: Option<&'static str>,
 }
@@ -245,6 +256,7 @@ pub(super) fn invoke(
     let pending = Rc::new(RefCell::new(Pending::default()));
     let player_rules = player::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let appearance = appearance::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
+    let storage = storage::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let tag = tag::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
     let texture_capture = Rc::clone(&pending);
@@ -516,6 +528,7 @@ pub(super) fn invoke(
     host.set("register_texture", register_texture)?;
     host.set("register_block", register_block)?;
     host.set("register_tag", tag)?;
+    host.set("register_storage", storage)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
     host.set("register_handler", handler)?;

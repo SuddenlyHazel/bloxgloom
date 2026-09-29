@@ -9,6 +9,7 @@ mod appearance;
 mod components;
 mod runtime;
 mod states;
+mod storage;
 
 const MAX_ITEMS: usize = 32;
 const MAX_TEXTURES: usize = 32;
@@ -26,6 +27,7 @@ pub(super) struct Format {
     pub block_states: bool,
     pub components: bool,
     pub state_textures: bool,
+    pub storage: bool,
 }
 
 #[derive(Debug)]
@@ -37,6 +39,7 @@ pub(super) struct Startup {
     tags: Vec<content::Tag>,
     textures: Vec<content::Texture>,
     blocks: Vec<content::Block>,
+    storage: Vec<crate::server::script::startup::StorageDeclaration>,
     runtime: runtime::Runtime,
 }
 
@@ -52,12 +55,14 @@ impl ClientBundle {
         let tags = &declarations.tags;
         let textures = &declarations.textures;
         let blocks = &declarations.blocks;
+        let storage = &declarations.storage;
         if self.declarations.is_some()
             || packages.len() != self.packages.len()
             || items.len() > MAX_PACKAGES * MAX_ITEMS
             || tags.len() > MAX_PACKAGES * 32
             || textures.len() > MAX_PACKAGES * MAX_TEXTURES
             || blocks.len() > MAX_PACKAGES * MAX_BLOCKS
+            || storage.len() > MAX_PACKAGES * 8
         {
             return Err(invalid());
         }
@@ -81,20 +86,23 @@ impl ClientBundle {
             || textures
                 .iter()
                 .any(|texture| texture.definition.alpha_cutout);
+        let storage_format = !storage.is_empty();
         let state_texture_format = blocks
             .iter()
             .any(|block| block.states.iter().any(|state| state.textures.is_some()));
         let item_components = items
             .iter()
             .any(|item| item.components != content::Components::None);
-        let component_format = item_components || state_texture_format;
+        let component_format = item_components || state_texture_format || storage_format;
         let authored_states = blocks
             .iter()
             .any(crate::server::script::startup::stateful_block);
         let states_format = authored_states || component_format;
         let extended_blocks = authored_blocks || tag_format || visual_format || states_format;
         let visual_format = visual_format || states_format;
-        let version = if state_texture_format {
+        let version = if storage_format {
+            STORAGE_MAGIC
+        } else if state_texture_format {
             STATE_TEXTURES_MAGIC
         } else if component_format {
             COMPONENTS_MAGIC
@@ -287,7 +295,7 @@ impl ClientBundle {
                     }])?;
                 }
                 if states_format {
-                    states::encode(&mut writer, block, state_texture_format)?;
+                    states::encode(&mut writer, block, state_texture_format || storage_format)?;
                 }
             }
             if tag_format || visual_format {
@@ -318,6 +326,9 @@ impl ClientBundle {
                 }
             }
             runtime.encode_package(&mut writer, name)?;
+            if storage_format {
+                storage::encode(&mut writer, name, storage)?;
+            }
         }
         if has_appearance || extended_blocks {
             writer.count(usize::from(declarations.player_rules.is_some()))?;
@@ -341,6 +352,7 @@ impl ClientBundle {
             || decoded.textures.len() != textures.len()
             || decoded.blocks.len() != blocks.len()
             || decoded.tags.len() != tags.len()
+            || decoded.storage.len() != storage.len()
             || decoded.runtime.counts() != runtime.counts()
             || decoded.player_rules != declarations.player_rules
             || decoded.appearance != declarations.appearance
@@ -381,6 +393,10 @@ impl ClientBundle {
                         declarations.install_items_and_tags(&mut catalog)?;
                         catalog.refresh_builtin_fuels()?;
                         startup.runtime.install(&mut catalog)?;
+                        for declaration in &startup.storage {
+                            catalog.extension_storage(&declaration.storage)?;
+                            catalog.register_inventory_screen(declaration.screen.clone())?;
+                        }
                         if let Some(appearance) = &startup.appearance {
                             catalog
                                 .register_player_appearance(appearance.clone())
@@ -432,6 +448,7 @@ impl Startup {
             block_states,
             components,
             state_textures,
+            storage,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -446,6 +463,7 @@ impl Startup {
                 || block_states
                 || components
                 || state_textures
+                || storage
             {
                 return Err(invalid());
             }
@@ -460,6 +478,7 @@ impl Startup {
         let mut has_states = false;
         let mut has_components = false;
         let mut has_state_textures = false;
+        let mut has_storage = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -468,6 +487,7 @@ impl Startup {
             tags: Vec::new(),
             textures: Vec::new(),
             blocks: Vec::new(),
+            storage: Vec::new(),
             runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
@@ -475,13 +495,15 @@ impl Startup {
                 return Err(invalid());
             }
             let mut requires = Vec::new();
-            for _ in 0..reader.count(4)? {
+            for _ in 0..reader.count(if storage { 6 } else { 4 })? {
                 let requirement = reader.text(64)?;
                 if ![
                     composition::CONTENT,
                     composition::GENERATION,
                     composition::ACTIONS,
                     composition::OWNER_SYSTEMS,
+                    composition::STORAGE,
+                    composition::INVENTORY_SCREENS,
                 ]
                 .contains(&requirement.as_str())
                     || requires.last().is_some_and(|last| last >= &requirement)
@@ -819,6 +841,11 @@ impl Startup {
                 }
             }
             startup.runtime.decode_package(reader, name, &requires)?;
+            if storage {
+                let decoded = storage::decode(reader, name, &requires, &startup.blocks)?;
+                has_storage |= !decoded.is_empty();
+                startup.storage.extend(decoded);
+            }
             startup.packages.push(composition::Package {
                 key: format!("{name}:package"),
                 version: 1,
@@ -876,7 +903,8 @@ impl Startup {
             || (visual_blocks && !has_visual && !block_states)
             || (block_states && !has_states && !components)
             || (components && !has_components && !state_textures)
-            || (state_textures && !has_state_textures)
+            || (state_textures && !has_state_textures && !storage)
+            || (storage && !has_storage)
         {
             return Err(invalid());
         }

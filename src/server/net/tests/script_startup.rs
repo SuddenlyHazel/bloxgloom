@@ -198,7 +198,7 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
             "requires",
         ),
         (
-            "requires bloxgloom:storage/v1",
+            "requires bloxgloom:machines/v1",
             "return function(_) end",
             "unsupported",
         ),

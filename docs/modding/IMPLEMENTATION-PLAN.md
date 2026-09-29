@@ -659,6 +659,9 @@ state, and cannot submit actions; overloaded or failing sessions fail closed.
 This does not yet expose general entity replica, animation or effect commands.
 Luau chunk systems may also declare up to 16 startup-resolved `after` phase
 dependencies; unknown targets/cycles fail before publishing a save.
+Simple one-cell storage entities and inventory screens can now be authored in
+Luau via the host-owned storage lifecycle. V29 negotiates their identities and
+screen layouts; configurable footprints, machines and creatures remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options

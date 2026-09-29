@@ -149,14 +149,20 @@ impl PackageSnapshot {
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
         use bloxgloom_host_api::composition::{
-            ACTIONS, CONTENT, Dependency, GENERATION, OWNER_SYSTEMS, Package,
+            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, OWNER_SYSTEMS, Package,
+            STORAGE,
         };
         self.packages
             .iter()
             .map(|(name, package)| {
                 if name == "bloxgloom"
                     || package.manifest.requires.iter().any(|c| {
-                        c != CONTENT && c != GENERATION && c != ACTIONS && c != OWNER_SYSTEMS
+                        c != CONTENT
+                            && c != GENERATION
+                            && c != ACTIONS
+                            && c != OWNER_SYSTEMS
+                            && c != STORAGE
+                            && c != INVENTORY_SCREENS
                     })
                 {
                     return Err(error(
@@ -187,6 +193,18 @@ impl PackageSnapshot {
             p.manifest
                 .requires
                 .contains(bloxgloom_host_api::composition::CONTENT)
+        })
+    }
+
+    pub(super) fn permits_storage_screens(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            [
+                bloxgloom_host_api::composition::CONTENT,
+                bloxgloom_host_api::composition::STORAGE,
+                bloxgloom_host_api::composition::INVENTORY_SCREENS,
+            ]
+            .into_iter()
+            .all(|capability| p.manifest.requires.contains(capability))
         })
     }
 
