@@ -845,6 +845,19 @@ effect and owner state share one WAL receipt, including caught-error rollback
 and restart. The event audit test covers the other removal-cause names and
 readonly nested fields.
 
+A reusable `fixtures/phase4-showcase` package combines a five-part Luau creature,
+a two-cell fueled machine and storage screen, explicit lit/idle states, and a
+replica-driven client tint. Its real nonblocking-listener test downloads the
+bundle, spawns the creature, observes the bounded presentation worker callback,
+then restarts from the same save and checks stable catalog/entity identity and
+state-derived tint. Headless creature, inventory-screen and block-state previews
+were inspected; they do not establish live-window tint-transition acceptance.
+This test also caught an entity-only commit assembly path that installed the
+entity but did not wake replica presentation; that path now reports an installed
+commit even with no terrain mesh keys.
+The integrated two-thread root suite passes **1024/1024**, with formatting and
+strict all-target/all-feature Clippy clean for this slice.
+
 **Remaining**
 
 - [ ] Complete creatures, machines and screens as Luau startup declarations.
@@ -962,7 +975,7 @@ response or background-progress measurement; those and the broader audit remain 
 - [ ] Exercise real download/join/switch/restart, mixed-load response and live
   release-window visuals; run the §13 tests, formatting, Clippy and relevant
   rendering/performance comparisons. The latest integrated two-thread suite is
-  **907/907**. The user reported the Jade example working live, but that does
+  **1024/1024**. The user reported the Jade example working live, but that does
   not close mixed-load, cross-server visual or other cross-system checks.
 
 ### Explicitly deferred outside the phases

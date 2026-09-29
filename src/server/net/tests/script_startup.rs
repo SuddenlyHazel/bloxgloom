@@ -32,6 +32,8 @@ mod join_lifecycle;
 mod machine;
 #[path = "script_startup/player.rs"]
 mod player;
+#[path = "script_startup/showcase.rs"]
+mod showcase;
 #[path = "script_startup/system.rs"]
 mod system;
 #[path = "script_startup/tags.rs"]

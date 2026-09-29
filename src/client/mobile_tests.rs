@@ -3,6 +3,70 @@ pub(crate) struct MobileProbe {
     app: ClientApp,
     _incoming: std::sync::mpsc::SyncSender<Incoming>,
 }
+
+/// Full join and installed-replica path for downloaded visual callbacks.
+pub(crate) struct NetworkedVisualProbe {
+    app: ClientApp,
+}
+
+impl NetworkedVisualProbe {
+    pub(crate) fn connect(address: &str, profile: u128, path: PathBuf) -> std::io::Result<Self> {
+        let network = Network::connect(address, 1, profile)?;
+        let app = ClientApp::new(network, Config::default(), path);
+        assert!(
+            app.visual_session.is_some(),
+            "expected downloaded visual worker"
+        );
+        Ok(Self { app })
+    }
+
+    pub(crate) fn accept_next(&mut self) {
+        let message = self
+            .app
+            .network
+            .incoming
+            .recv_timeout(Duration::from_secs(10))
+            .expect("visual replica deadline");
+        match message {
+            Incoming::Message(message) => self.app.accept(*message),
+            Incoming::Closed(error) => panic!("visual replica closed: {error}"),
+        }
+        assert!(!self.app.disconnected);
+        self.app.visual_session.as_mut().unwrap().poll();
+    }
+
+    pub(crate) fn entity(
+        &self,
+        entity_type: crate::content::EntityTypeId,
+    ) -> Option<crate::protocol::PublicEntity> {
+        self.app.replicas.mobile_for_test(entity_type)
+    }
+
+    pub(crate) fn tint(&mut self, id: u64) -> Option<[f32; 3]> {
+        let visual = self.app.visual_session.as_mut().unwrap();
+        visual.poll();
+        visual.visual_tint(id)
+    }
+
+    pub(crate) fn offered(&self) -> (Vec<crate::client::presentation::EntityView>, usize) {
+        let visual = self.app.visual_session.as_ref().unwrap();
+        self.app
+            .replicas
+            .presentation_entities(visual.owner(), &self.app.catalog)
+    }
+
+    pub(crate) fn settle(&mut self) {
+        let visual = self.app.visual_session.as_mut().unwrap();
+        visual.poll();
+        visual.wait_for_test().unwrap();
+    }
+}
+
+impl Drop for NetworkedVisualProbe {
+    fn drop(&mut self) {
+        self.app.config_writer.finish();
+    }
+}
 impl MobileProbe {
     pub(crate) fn new(catalog: Arc<crate::content::Catalog>, path: PathBuf) -> Self {
         let (mut network, incoming) = Network::idle_for_test();

@@ -269,6 +269,8 @@ pub(crate) mod presentation;
 pub(crate) mod startup;
 mod workers;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
+#[cfg(test)]
+pub(crate) use mobile_tests::NetworkedVisualProbe;
 use workers::{ConfigWriter, Incoming, Mesher, MesherJob, Network};
 #[cfg(test)]
 pub(crate) use workers::{

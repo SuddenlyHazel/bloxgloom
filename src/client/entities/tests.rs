@@ -558,6 +558,49 @@ fn block_and_entity_changes_wait_for_whole_cross_chunk_commit() {
 }
 
 #[test]
+fn entity_only_commit_notifies_replica_presentation_without_chunk_remesh() {
+    let catalog = Catalog::builtins();
+    let registry = EntityClientRegistry::builtins(&catalog);
+    let mut replicas = Replicas::default();
+    let mut chunks = HashMap::new();
+    let k = key(0);
+    let (start, _) = snapshot(k, 1, 0, vec![], &catalog);
+    assert!(matches!(
+        replicas.accept(
+            ServerMessage::WorldSnapshotStart(start),
+            &catalog,
+            &mut chunks,
+            &registry
+        ),
+        Assembly::Installed(_)
+    ));
+    let mut creature = player(12, 1);
+    creature.entity_type = crate::content::MOSSBUN_ENTITY_TYPE;
+    creature.payload = vec![0, 1];
+    let result = replicas.accept(
+        ServerMessage::WorldCommitPart(WorldCommitPart {
+            commit_id: 1,
+            part_index: 0,
+            part_count: 1,
+            key: k,
+            epoch: 1,
+            block_from: 0,
+            block_to: 0,
+            entity_from: 0,
+            entity_to: 1,
+            blocks: vec![],
+            entities: vec![PublicEntityChange::Upsert(creature)],
+        }),
+        &catalog,
+        &mut chunks,
+        &registry,
+    );
+    assert!(matches!(result, Assembly::Installed(keys) if keys.is_empty()));
+    assert_eq!(replicas.presentation_entities("bloxgloom", &catalog).1, 1);
+    assert_eq!(chunks[&k].version, 0);
+}
+
+#[test]
 fn motion_only_upserts_install_without_resync_but_conflicts_do_not() {
     let catalog = Catalog::builtins();
     let mut replicas = Replicas::default();
@@ -603,7 +646,7 @@ fn motion_only_upserts_install_without_resync_but_conflicts_do_not() {
             &catalog,
             &mut chunks
         ),
-        Assembly::Waiting
+        Assembly::Installed(keys) if keys.is_empty()
     ));
     assert_eq!(replicas.entities_in(key(0)).unwrap()[&12], moved);
     for case in 0..3 {
@@ -771,7 +814,7 @@ fn cross_chunk_player_transfer_changes_avatar_only_after_full_group() {
             &catalog,
             &mut chunks
         ),
-        Assembly::Waiting
+        Assembly::Installed(keys) if keys.is_empty()
     ));
     assert!(Arc::ptr_eq(&original_west, &chunks[&key(0)]));
     assert!(Arc::ptr_eq(&original_east, &chunks[&key(1)]));

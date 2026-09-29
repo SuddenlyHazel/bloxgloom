@@ -1,0 +1,15 @@
+format 2
+package demo
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:mobile_entities/v1
+requires bloxgloom:machines/v1
+requires bloxgloom:inventory_screens/v1
+module server main server/main.luau
+module server creature server/creature.luau
+module server machine server/machine.luau
+module client client_startup client/client_startup.luau
+module client visuals client/visuals.luau
+asset texture press_idle assets/textures/blocks/press_idle.png
+asset texture press_lit assets/textures/blocks/press_lit.png

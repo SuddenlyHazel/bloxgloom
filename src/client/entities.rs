@@ -52,6 +52,8 @@ pub(super) struct Replicas {
 
 pub(super) enum Assembly {
     Waiting,
+    /// A complete replica install; keys contain only chunks needing mesh work.
+    /// Entity-only commits carry an empty key list but still wake presentation.
     Installed(Vec<ChunkKey>),
     Resync(Vec<ChunkKey>),
 }
@@ -436,6 +438,7 @@ impl Replicas {
         registry: &EntityClientRegistry,
     ) -> Assembly {
         let mut installed = Vec::new();
+        let mut committed = false;
         while let Some((&id, pending)) = self.commits.first_key_value() {
             if pending.parts.len() != usize::from(pending.count) {
                 break;
@@ -444,6 +447,7 @@ impl Replicas {
             match self.apply_commit(pending, chunks, registry) {
                 Ok(keys) => {
                     self.last_commit = id;
+                    committed = true;
                     installed.extend(keys);
                 }
                 Err(mut keys) => {
@@ -457,7 +461,7 @@ impl Replicas {
                 }
             }
         }
-        if installed.is_empty() {
+        if !committed {
             Assembly::Waiting
         } else {
             installed.sort_unstable_by_key(|key| (key.x, key.y, key.z));
