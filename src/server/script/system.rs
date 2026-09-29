@@ -11,6 +11,8 @@
 //! for registered general entities owned by this package.
 //! Optional `reads_entities=true` captures at most 128 package-owned mobile
 //! entities in the declared neighborhood as immutable `c.entities` records.
+//! Optional `mutates_entities=true` permits conditional state updates/removals
+//! of those captured records. It requires `reads_entities=true`.
 //!
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
@@ -129,6 +131,11 @@ pub(super) fn declarer(
                 Value::Nil => false,
                 _ => return Err("reads_entities must be boolean"),
             };
+            let mutates_entities = match field(&table, "mutates_entities")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("mutates_entities must be boolean"),
+            };
             if creates_drops && read_radius_chunks.is_none() {
                 return Err("creates_drops requires read_world=true");
             }
@@ -137,6 +144,9 @@ pub(super) fn declarer(
             }
             if reads_entities && read_radius_chunks.is_none() {
                 return Err("reads_entities requires read_world=true");
+            }
+            if mutates_entities && !reads_entities {
+                return Err("mutates_entities requires reads_entities=true");
             }
             let intent_bootstrap = match field(&table, "intent_bootstrap")? {
                 Value::Nil => None,
@@ -233,6 +243,7 @@ pub(super) fn declarer(
                     creates_drops,
                     creates_entities,
                     reads_entities,
+                    mutates_entities,
                 }),
             };
             system
@@ -281,6 +292,7 @@ struct ScriptSystem {
     creates_drops: bool,
     creates_entities: bool,
     reads_entities: bool,
+    mutates_entities: bool,
 }
 impl api::Behavior for ScriptSystem {
     fn edit_cause(&self) -> api::EditCause {
@@ -294,6 +306,9 @@ impl api::Behavior for ScriptSystem {
     }
     fn reads_entities(&self) -> bool {
         self.reads_entities
+    }
+    fn mutates_entities(&self) -> bool {
+        self.mutates_entities
     }
     fn accepts_intents(&self) -> bool {
         self.accepts_intents
@@ -347,6 +362,7 @@ impl ScriptSystem {
                     bindings::Capabilities {
                         drops: self.creates_drops,
                         entities: self.creates_entities,
+                        entity_mutations: self.mutates_entities,
                     },
                     inbox,
                     outbox,

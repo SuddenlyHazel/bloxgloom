@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 #[path = "world/anchored.rs"]
 mod anchored;
+#[path = "world/entities.rs"]
+mod entities;
 
 /// Capture complete entity pages alongside terrain so a worker can inspect
 /// package-owned private state without racing a concurrent spawn or update.
@@ -164,6 +166,8 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
+    let direct_changes =
+        entities::plan_changes(entities, &catalog, system_key, radius, patches, reads)?;
     for patch in patches {
         if !OwnerEffectPatch::entity_spawns(patch).is_empty() {
             let Some(owner) = patch.owner().as_chunk() else {
@@ -344,7 +348,11 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             }
         }
     }
-    if edits.is_empty() && direct_drops.is_empty() && direct_entities.is_empty() {
+    if edits.is_empty()
+        && direct_drops.is_empty()
+        && direct_entities.is_empty()
+        && direct_changes.is_empty()
+    {
         return Ok(None);
     }
     let radius = radius.expect("edits require a world view");
@@ -488,6 +496,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             });
     }
     planned.entity_updates.extend(anchored.despawns);
+    planned.entity_updates.extend(direct_changes);
     // Preflight the shared merge planner's spatial traversal before it collects
     // candidates. Dense pages fail the bounded dependency capture, rather than
     // scanning an arbitrarily large population and truncating afterwards.

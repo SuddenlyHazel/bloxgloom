@@ -85,6 +85,9 @@ pub struct Plan {
     /// General, package-owned entities created at captured chunk cells. The
     /// host chooses IDs and validates schemas, occupancy and WAL admission.
     pub entity_spawns: Vec<EntitySpawn>,
+    /// Conditional changes to package-owned mobile entities captured by this
+    /// job. The host checks exact revision, schema and neighborhood at commit.
+    pub entity_changes: Vec<EntityChange>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,6 +103,38 @@ pub struct EntitySpawn {
     pub position: [f32; 3],
     pub key: String,
     pub state: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EntityChange {
+    Update {
+        id: u64,
+        before_revision: u64,
+        state: Vec<u8>,
+    },
+    Remove {
+        id: u64,
+        before_revision: u64,
+    },
+}
+
+impl EntityChange {
+    pub fn id(&self) -> u64 {
+        match self {
+            Self::Update { id, .. } | Self::Remove { id, .. } => *id,
+        }
+    }
+
+    pub fn before_revision(&self) -> u64 {
+        match self {
+            Self::Update {
+                before_revision, ..
+            }
+            | Self::Remove {
+                before_revision, ..
+            } => *before_revision,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -157,6 +192,10 @@ pub trait Behavior: Send + Sync + 'static {
     /// Capture at most 128 entities and fence the complete neighborhood's
     /// entity pages until the owner receipt. Dense pages defer the whole job.
     fn reads_entities(&self) -> bool {
+        false
+    }
+
+    fn mutates_entities(&self) -> bool {
         false
     }
 
@@ -322,6 +361,7 @@ impl System {
             || (self.behavior.creates_drops() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_entities() && self.read_radius_chunks.is_none())
             || (self.behavior.reads_entities() && self.read_radius_chunks.is_none())
+            || (self.behavior.mutates_entities() && !self.behavior.reads_entities())
             || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
             || self.read_radius_chunks.is_some_and(|radius| {
                 radius > 1 || self.max_jobs_per_tick > if radius == 0 { 64 } else { 8 }
@@ -427,6 +467,9 @@ impl System {
         }
         if self.behavior.reads_entities() {
             out.extend(b"owner-entity-reads-v1");
+        }
+        if self.behavior.mutates_entities() {
+            out.extend(b"owner-entity-mutations-v1");
         }
         out
     }

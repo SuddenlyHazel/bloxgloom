@@ -61,6 +61,7 @@ impl system::Behavior for Burn {
             edits,
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }

@@ -34,6 +34,7 @@ impl system::Behavior for StorageOwner {
             },
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }

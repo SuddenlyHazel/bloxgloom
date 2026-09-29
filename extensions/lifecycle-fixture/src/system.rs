@@ -51,6 +51,7 @@ impl Behavior for Clock {
             edits: vec![],
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }
@@ -154,6 +155,7 @@ impl Behavior for Probe {
             edits: vec![],
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }
@@ -211,6 +213,7 @@ impl Behavior for Writer {
             },
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }
@@ -288,6 +291,7 @@ impl Behavior for Pair {
             edits: vec![],
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }

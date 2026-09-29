@@ -8,6 +8,7 @@ mod intents;
 pub(super) struct Capabilities {
     pub drops: bool,
     pub entities: bool,
+    pub entity_mutations: bool,
 }
 
 pub(super) fn invoke(
@@ -56,6 +57,7 @@ pub(super) fn invoke(
     let edits = RefCell::new(Vec::new());
     let drops = RefCell::new(Vec::new());
     let entity_spawns = RefCell::new(Vec::new());
+    let entity_changes = RefCell::new(Vec::new());
     let wakes = RefCell::new(Vec::new());
     let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
@@ -197,6 +199,76 @@ pub(super) fn invoke(
             )?,
         )?;
         host.set(
+            "update_entity",
+            scope.create_function(
+                |_,
+                 (id_lo, id_hi, revision_lo, revision_hi, state): (
+                    Value,
+                    Value,
+                    Value,
+                    Value,
+                    Value,
+                )| {
+                    checked(&rejected, || {
+                        if !capabilities.entity_mutations {
+                            return Err("system has not declared entity mutation");
+                        }
+                        let (id, revision) =
+                            entity_identity(id_lo, id_hi, revision_lo, revision_hi)?;
+                        captured_entity(context, id, revision)?;
+                        let Value::String(state) = state else {
+                            return Err("entity state must be a binary string");
+                        };
+                        let mut changes = entity_changes.borrow_mut();
+                        if changes.len() >= 16
+                            || changes
+                                .iter()
+                                .any(|change: &api::EntityChange| change.id() == id)
+                        {
+                            return Err("duplicate or excessive entity mutation");
+                        }
+                        if state.as_bytes().len() > 1024 {
+                            return Err("entity state exceeds 1024 bytes");
+                        }
+                        changes.push(api::EntityChange::Update {
+                            id,
+                            before_revision: revision,
+                            state: state.as_bytes().to_vec(),
+                        });
+                        Ok(())
+                    })
+                },
+            )?,
+        )?;
+        host.set(
+            "remove_entity",
+            scope.create_function(
+                |_, (id_lo, id_hi, revision_lo, revision_hi): (Value, Value, Value, Value)| {
+                    checked(&rejected, || {
+                        if !capabilities.entity_mutations {
+                            return Err("system has not declared entity mutation");
+                        }
+                        let (id, revision) =
+                            entity_identity(id_lo, id_hi, revision_lo, revision_hi)?;
+                        captured_entity(context, id, revision)?;
+                        let mut changes = entity_changes.borrow_mut();
+                        if changes.len() >= 16
+                            || changes
+                                .iter()
+                                .any(|change: &api::EntityChange| change.id() == id)
+                        {
+                            return Err("duplicate or excessive entity mutation");
+                        }
+                        changes.push(api::EntityChange::Remove {
+                            id,
+                            before_revision: revision,
+                        });
+                        Ok(())
+                    })
+                },
+            )?,
+        )?;
+        host.set(
             "wake",
             scope.create_function(|_, (system, x, y, z): (Value, Value, Value, Value)| {
                 checked(&rejected, || {
@@ -225,10 +297,40 @@ pub(super) fn invoke(
                 edits: std::mem::take(&mut *edits.borrow_mut()),
                 drops: std::mem::take(&mut *drops.borrow_mut()),
                 entity_spawns: std::mem::take(&mut *entity_spawns.borrow_mut()),
+                entity_changes: std::mem::take(&mut *entity_changes.borrow_mut()),
                 wakes: std::mem::take(&mut *wakes.borrow_mut()),
             })
         })
     })
+}
+
+fn entity_identity(
+    id_lo: Value,
+    id_hi: Value,
+    revision_lo: Value,
+    revision_hi: Value,
+) -> Result<(u64, u64), &'static str> {
+    let half = |value| integer(value, 0, u32::MAX.into()).map(|value| value as u64);
+    let id = half(id_lo)? | (half(id_hi)? << 32);
+    let revision = half(revision_lo)? | (half(revision_hi)? << 32);
+    if id == 0 {
+        return Err("entity ID must be nonzero");
+    }
+    Ok((id, revision))
+}
+
+fn captured_entity(context: &api::Context<'_>, id: u64, revision: u64) -> Result<(), &'static str> {
+    if context.entities().is_some_and(|entities| {
+        entities
+            .binary_search_by_key(&id, |entity| entity.id)
+            .ok()
+            .and_then(|index| entities.get(index))
+            .is_some_and(|entity| entity.revision == revision)
+    }) {
+        Ok(())
+    } else {
+        Err("entity is absent or differs from capture")
+    }
 }
 
 fn checked<T>(

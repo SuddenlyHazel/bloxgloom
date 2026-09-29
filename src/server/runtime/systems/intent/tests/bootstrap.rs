@@ -419,6 +419,7 @@ impl api::Behavior for PairedProducers {
             edits: vec![],
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }

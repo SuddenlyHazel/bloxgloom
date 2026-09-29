@@ -71,6 +71,7 @@ pub(in crate::server) struct OwnerEffectPatch {
     world_edits: Vec<bloxgloom_host_api::system::BlockEdit>,
     drops: Vec<bloxgloom_host_api::system::DropSpawn>,
     entity_spawns: Vec<bloxgloom_host_api::system::EntitySpawn>,
+    entity_changes: Vec<bloxgloom_host_api::system::EntityChange>,
     edit_cause: bloxgloom_host_api::system::EditCause,
     intents: Vec<bloxgloom_host_api::system::IntentRequest>,
 }
@@ -88,6 +89,7 @@ impl OwnerEffectPatch {
             world_edits: Vec::new(),
             drops: Vec::new(),
             entity_spawns: Vec::new(),
+            entity_changes: Vec::new(),
             edit_cause: Default::default(),
             intents: Vec::new(),
         }
@@ -161,6 +163,22 @@ impl OwnerEffectPatch {
         patch
             .payload::<OwnerEffectPatch>()
             .map_or(&[], |emission| &emission.entity_spawns)
+    }
+
+    pub(in crate::server) fn with_entity_changes(
+        mut self,
+        changes: Vec<bloxgloom_host_api::system::EntityChange>,
+    ) -> Self {
+        self.entity_changes = changes;
+        self
+    }
+
+    pub(in crate::server) fn entity_changes(
+        patch: &OwnerPatch,
+    ) -> &[bloxgloom_host_api::system::EntityChange] {
+        patch
+            .payload::<OwnerEffectPatch>()
+            .map_or(&[], |emission| &emission.entity_changes)
     }
 
     pub(in crate::server) fn with_intents(

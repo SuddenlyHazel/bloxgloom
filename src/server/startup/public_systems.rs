@@ -96,6 +96,8 @@ impl api::WorldRead for OwnerWorldView<'_> {
         crate::server::gameplay::block(self.catalog, id)
     }
 }
+#[path = "public_systems/entities.rs"]
+mod entities;
 #[cfg(test)]
 mod tests;
 impl OwnerValueCodec for Adapter {
@@ -295,6 +297,12 @@ impl SystemHandler for Adapter {
                 ));
             }
         }
+        entities::validate_changes(
+            &plan.entity_changes,
+            &context,
+            job.owner_catalog(),
+            self.0.behavior.mutates_entities(),
+        )?;
         let mut edited = std::collections::BTreeSet::new();
         let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {
@@ -351,11 +359,20 @@ impl SystemHandler for Adapter {
                 .entity_spawns
                 .iter()
                 .map(|spawn| spawn.key.len() + spawn.state.len() + 32)
+                .sum::<usize>()
+            + plan
+                .entity_changes
+                .iter()
+                .map(|change| match change {
+                    api::EntityChange::Update { state, .. } => state.len() + 32,
+                    api::EntityChange::Remove { .. } => 32,
+                })
                 .sum::<usize>();
         let output = if wakes.is_empty()
             && plan.edits.is_empty()
             && plan.drops.is_empty()
             && plan.entity_spawns.is_empty()
+            && plan.entity_changes.is_empty()
             && intents.is_empty()
         {
             None
@@ -366,7 +383,8 @@ impl SystemHandler for Adapter {
                     .with_intents(intents)
                     .with_world_edits(plan.edits, edit_cause)
                     .with_drops(plan.drops)
-                    .with_entity_spawns(plan.entity_spawns),
+                    .with_entity_spawns(plan.entity_spawns)
+                    .with_entity_changes(plan.entity_changes),
             )
         };
         let usage = PatchUsage {

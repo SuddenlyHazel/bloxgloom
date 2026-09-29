@@ -45,6 +45,7 @@ impl system::Behavior for Behavior {
             }],
             drops: vec![],
             entity_spawns: vec![],
+            entity_changes: vec![],
         })
     }
 }

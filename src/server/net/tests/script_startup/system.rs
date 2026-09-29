@@ -238,6 +238,73 @@ fn luau_owner_entity_capture_is_immutable_and_restarts() {
 }
 
 #[test]
+fn luau_owner_entity_update_remove_share_receipts_and_restart() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_entity('demo:marker',1,1,1,nil); h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,reads_entities=true,mutates_entities=true,creates_entities=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) if c.data == 'new' then c.spawn_entity('demo:marker',2,80,0,'x'); return 'change',1 end local e=c.entities[1]; assert(#c.entities == 1 and e.key == 'demo:marker'); if c.data == 'change' then assert(e.state == 'x'); c.update_entity(e.id_lo,e.id_hi,e.revision_lo,e.revision_hi,'y'); return 'remove',1 end assert(e.state == 'y'); c.remove_entity(e.id_lo,e.id_hi,e.revision_lo,e.revision_hi); return 'done',10000 end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}\nrequires bloxgloom:actions/v1\n"),
+    )
+    .unwrap();
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.get_chunk(KEY).unwrap();
+    commit(&mut state, "demo:clock", 1);
+    let entity_id = state
+        .entities
+        .query_mobile_aabb([2.0, 80.0, 0.0], [3.0, 81.0, 1.0])
+        .unwrap()[0];
+    let entity_state = |state: &State| {
+        state.entities.snapshot(entity_id).map(|snapshot| {
+            snapshot
+                .private_payload
+                .downcast_ref::<Vec<u8>>()
+                .unwrap()
+                .clone()
+        })
+    };
+    let (wave, missing) = stage(&mut state, "demo:clock", 2).unwrap();
+    assert!(missing.is_empty());
+    assert_eq!(entity_state(&state), Some(b"x".to_vec()));
+    assert_eq!(value(&state, "demo:clock"), (1, b"change".to_vec()));
+    complete_barrier(&mut state, wave.unwrap().barrier()).unwrap();
+    assert_eq!(entity_state(&state), Some(b"y".to_vec()));
+    assert_eq!(value(&state, "demo:clock"), (2, b"remove".to_vec()));
+    drop(state);
+    let mut state = Box::new(fixture.open().unwrap());
+    state.world.get_chunk(KEY).unwrap();
+    assert_eq!(entity_state(&state), Some(b"y".to_vec()));
+    let (wave, missing) = stage(&mut state, "demo:clock", 3).unwrap();
+    assert!(missing.is_empty());
+    assert_eq!(entity_state(&state), Some(b"y".to_vec()));
+    complete_barrier(&mut state, wave.unwrap().barrier()).unwrap();
+    assert_eq!(entity_state(&state), None);
+    assert_eq!(value(&state, "demo:clock"), (3, b"done".to_vec()));
+    drop(state);
+    let restored = fixture.open().unwrap();
+    assert_eq!(entity_state(&restored), None);
+    assert_eq!(value(&restored, "demo:clock"), (3, b"done".to_vec()));
+}
+
+#[test]
+fn luau_owner_caught_invalid_entity_change_rejects_whole_wave() {
+    let fixture = Fixture::new();
+    fixture.system(
+        "return function(h) h.register_system{key='demo:clock',schema=1,revision=1,module='demo:clock',max_state_bytes=8,max_jobs_per_tick=1,read_world=true,reads_entities=true,mutates_entities=true,seeds={{x=0,y=5,z=0,data='new'}}} end",
+        "return function(c) c.edit(4,80,0,c.block(4,80,0),'bloxgloom:glowstone'); assert(not pcall(function() c.remove_entity(0,0,1,0) end)); return 'done',10000 end",
+    );
+    let mut state = fixture.open().unwrap();
+    state.world.get_chunk(KEY).unwrap();
+    assert!(stage(&mut state, "demo:clock", 1).is_err());
+    assert_eq!(value(&state, "demo:clock"), (0, b"new".to_vec()));
+    assert_eq!(state.world.cached_block(4, 80, 0), Some(AIR));
+}
+
+#[test]
 fn luau_owner_entity_spawn_rejects_obstructed_cell_without_partial_state() {
     let fixture = Fixture::new();
     fixture.system(
