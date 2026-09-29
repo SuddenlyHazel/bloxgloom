@@ -1148,6 +1148,10 @@ fn drop_trajectory_is_identical_with_and_without_receipt_drains() {
         let mut state = state_for(&save, 7);
         let position = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
         reside_neighbourhood(&mut state, position);
+        // The falling entity enters the next chunk down during this window.
+        // Its declared view needs that chunk's lower neighbour too; pin both
+        // neighbourhoods so loader timing cannot masquerade as receipt timing.
+        reside_neighbourhood(&mut state, [position[0], position[1] - 16.0, position[2]]);
         spawn_drop(&mut state, 1, position, STONE_ITEM, 1, Duration::ZERO);
         let mut sequence = Vec::new();
         for tick in 1..120u64 {
@@ -1208,6 +1212,8 @@ fn staggered_drop_merge_resolves_identically_under_receipt_timing() {
         let mut state = state_for(&save, 7);
         let top = [0.5, crate::world::MAX_GENERATED_HEIGHT as f32 + 20.0, 0.5];
         reside_neighbourhood(&mut state, top);
+        // Keep the complete declared view resident after crossing downward.
+        reside_neighbourhood(&mut state, [top[0], top[1] - 16.0, top[2]]);
         spawn_drop(&mut state, 1, top, STONE_ITEM, 30, Duration::ZERO);
         let mut sequence = Vec::new();
         for tick in 1..120u64 {
