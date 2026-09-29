@@ -9,6 +9,7 @@ mod bundle;
 mod entities;
 pub use bundle::{BundleIdentity, MAX_BUNDLE_PART};
 pub(crate) mod workstation;
+pub(crate) use entities::MAX_PUBLIC_ENTITY_PAYLOAD;
 pub use entities::{
     BlockCellChange, EntitySnapshotPage, PublicEntity, PublicEntityChange, PublicEntityLocation,
     WorldCommitPart, WorldSnapshotStart, snapshot_checksum,

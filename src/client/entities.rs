@@ -176,15 +176,13 @@ impl Replicas {
                 {
                     return None;
                 }
-                let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location
-                else {
+                if !matches!(
+                    entity.location,
+                    crate::protocol::PublicEntityLocation::Mobile { .. }
+                ) {
                     return None;
-                };
-                Some(crate::client::presentation::EntityView {
-                    id: entity.id,
-                    key: definition.key.to_string(),
-                    position,
-                })
+                }
+                Some(entity)
             })
             .take(1025)
             .collect::<Vec<_>>();
@@ -196,7 +194,31 @@ impl Replicas {
         visible.sort_unstable_by_key(|entity| entity.id);
         let total = visible.len();
         visible.truncate(16);
-        (visible, total)
+        (
+            visible
+                .into_iter()
+                .map(|entity| {
+                    let crate::protocol::PublicEntityLocation::Mobile { position } =
+                        entity.location
+                    else {
+                        unreachable!("filtered mobile entity")
+                    };
+                    crate::client::presentation::EntityView {
+                        id: entity.id,
+                        key: catalog
+                            .entity_type(entity.entity_type)
+                            .unwrap()
+                            .key
+                            .to_string(),
+                        position,
+                        revision: entity.revision,
+                        motion_revision: entity.motion_revision,
+                        public: entity.payload.clone(),
+                    }
+                })
+                .collect(),
+            total,
+        )
     }
 
     #[cfg(test)]

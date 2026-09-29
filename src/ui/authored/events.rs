@@ -147,6 +147,9 @@ impl Session {
                     || entity.key.len() > 129
                     || !entity.key.is_ascii()
                     || entity.position.iter().any(|axis| !axis.is_finite())
+                    || entity.revision == 0
+                    || entity.motion_revision == 0
+                    || entity.public.len() > crate::protocol::MAX_PUBLIC_ENTITY_PAYLOAD
             })
         {
             self.failure = Some("invalid replica presentation input".into());

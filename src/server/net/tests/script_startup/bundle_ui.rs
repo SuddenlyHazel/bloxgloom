@@ -85,7 +85,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
     let fixture =
         startup_fixture("return function(host) host.set_replica_handler('uidemo:replica') end");
     let package = fixture.0.join("packages/uidemo");
-    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='tint',id_lo=lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=lo,id_hi=e.id_hi,x=0,y=0.5,z=0},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
+    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end assert(e.revision_lo == 7 and e.revision_hi == 0 and e.motion_revision_lo == 9 and e.motion_revision_hi == 0 and e.public == 'xyz'); local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='tint',id_lo=lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=lo,id_hi=e.id_hi,x=0,y=0.5,z=0},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
     let manifest = package.join("package.txt");
     let original = std::fs::read_to_string(&manifest).unwrap();
     std::fs::write(
@@ -103,6 +103,9 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                         id,
                         key: "uidemo:creature".into(),
                         position: [2.5, 80.0, 0.5],
+                        revision: 7,
+                        motion_revision: 9,
+                        public: b"xyz".to_vec(),
                     }],
                     1,
                 );
@@ -133,6 +136,9 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                         id,
                         key: "uidemo:creature".into(),
                         position: [2.5, 80.0, 0.5],
+                        revision: 7,
+                        motion_revision: 9,
+                        public: b"xyz".to_vec(),
                     }],
                     2,
                 );

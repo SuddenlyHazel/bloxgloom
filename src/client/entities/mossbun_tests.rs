@@ -72,6 +72,9 @@ fn mossbun_adapter_validates_payload_and_tracks_snapshot_removal_and_eviction() 
     assert_eq!(total, 1);
     assert_eq!(views[0].id, 91);
     assert_eq!(views[0].key, "bloxgloom:mossbun");
+    assert_eq!(views[0].revision, bun.revision);
+    assert_eq!(views[0].motion_revision, bun.motion_revision);
+    assert_eq!(views[0].public, bun.payload);
     assert!(
         replicas
             .presentation_entities("other", &catalog)

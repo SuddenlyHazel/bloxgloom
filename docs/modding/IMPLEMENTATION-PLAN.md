@@ -796,6 +796,12 @@ With `bounced`, mesh bytes stayed 17,500,968 and triangles 89,218; setup
 2672/2679→2675/2672 ms, CPU 0.311/0.286→0.317/0.307 ms and GPU
 0.235/0.243→0.280/0.259 ms. Single-run GPU differences vary, and this
 benchmark excludes live avatars, so it does not measure tint cost.
+Entity callbacks now receive exact public codec bytes and revision/motion
+revision words from the installed server replica, in addition to IDs, key and
+position. The immutable worker input remains capped at 16 mobile views and
+4 KiB per public payload; private creature state remains server-only. A
+replica projection test checks exact bytes, and both UI-backed and UI-free
+real-listener tests check binary data and high revision words in the worker.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options

@@ -123,6 +123,11 @@ actions. Observations are advisory and coalesced by kind behind a bounded
 queue; overflow or a callback error fails that presentation session.
 For `replica:entities`, `input.entities` is a sorted window of at most 16
 package-owned mobile views with exact `id_lo`, `id_hi`, `key`, and position.
+Each view also has `revision_lo`/`revision_hi`,
+`motion_revision_lo`/`motion_revision_hi`, and the exact binary `public`
+payload from the installed server replica. These are readonly callback inputs;
+the creature's private state is never sent to the client. At most 16 views and
+4 KiB of public bytes per view reach one callback.
 `input.entered` and `input.left` describe changes to that bounded window, not
 authoritative spawn or despawn events. The callback may return `visual` pose
 offsets, `tint` RGB multipliers, or short-lived attached `ember` effects for

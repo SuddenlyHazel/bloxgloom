@@ -16,7 +16,7 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
         "return function(h) h.set_replica_handler('demo:visual') end",
     )
     .unwrap();
-    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 1); return {} end assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == e.id_lo and input.entered[1].id_hi == e.id_hi); return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0},{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0}} end").unwrap();
+    std::fs::write(dir.join("client/visual.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e=input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 1); return {} end assert(e.revision_lo == 3 and e.revision_hi == 1 and e.motion_revision_lo == 5 and e.motion_revision_hi == 2 and e.public == string.char(0,255)); assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == e.id_lo and input.entered[1].id_hi == e.id_hi); return {{op='visual',id_lo=e.id_lo,id_hi=e.id_hi,yaw=0.25,bob=0.1,squash=0},{op='tint',id_lo=e.id_lo,id_hi=e.id_hi,r=0.2,g=0.8,b=0.3},{op='ember',id_lo=e.id_lo,id_hi=e.id_hi,x=0,y=0.5,z=0}} end").unwrap();
     let state = Box::new(fixture.open().unwrap());
     let fingerprint = state.world.catalog().fingerprint();
     gameplay::serve(state, |address| {
@@ -29,6 +29,9 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                         id,
                         key: "demo:sproutling".into(),
                         position: [3.5, 80.0, 2.5],
+                        revision: (1u64 << 32) + 3,
+                        motion_revision: (2u64 << 32) + 5,
+                        public: vec![0, 255],
                     }],
                     1,
                 );

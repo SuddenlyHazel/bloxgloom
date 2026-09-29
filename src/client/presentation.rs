@@ -36,6 +36,10 @@ pub(crate) struct EntityView {
     pub(crate) id: u64,
     pub(crate) key: String,
     pub(crate) position: [f32; 3],
+    pub(crate) revision: u64,
+    pub(crate) motion_revision: u64,
+    /// Exact public codec bytes from the installed authoritative replica.
+    pub(crate) public: Vec<u8>,
 }
 
 pub(crate) fn window_changes(previous: &[u64], current: &[EntityView]) -> (Vec<u64>, Vec<u64>) {
@@ -137,6 +141,11 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             view.raw_set("id_lo", entity.id as u32)?;
             view.raw_set("id_hi", (entity.id >> 32) as u32)?;
             view.raw_set("key", entity.key.as_str())?;
+            view.raw_set("revision_lo", entity.revision as u32)?;
+            view.raw_set("revision_hi", (entity.revision >> 32) as u32)?;
+            view.raw_set("motion_revision_lo", entity.motion_revision as u32)?;
+            view.raw_set("motion_revision_hi", (entity.motion_revision >> 32) as u32)?;
+            view.raw_set("public", lua.create_string(&entity.public)?)?;
             let position = lua.create_sequence_from(entity.position)?;
             position.set_readonly(true);
             view.raw_set("position", position)?;
