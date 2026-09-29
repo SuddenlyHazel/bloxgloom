@@ -849,8 +849,10 @@ A reusable `fixtures/phase4-showcase` package combines a five-part Luau creature
 a two-cell fueled machine and storage screen, explicit lit/idle states, and a
 replica-driven client tint. Its real nonblocking-listener test downloads the
 bundle, spawns the creature, observes the bounded presentation worker callback,
-then restarts from the same save and checks stable catalog/entity identity and
-state-derived tint. Headless creature, inventory-screen and block-state previews
+places the two-cell press from a finite inventory item, then restarts from the
+same save and checks catalog/entity identity, both press cells, consumed item,
+and state-derived tint. Headless creature, inventory-screen and block-state
+previews
 were inspected; they do not establish live-window tint-transition acceptance.
 This test also caught an entity-only commit assembly path that installed the
 entity but did not wake replica presentation; that path now reports an installed

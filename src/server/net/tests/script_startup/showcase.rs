@@ -5,6 +5,38 @@ use crate::server::startup::ServerStartup;
 use std::sync::Arc;
 use std::time::Instant;
 
+const PRESS_ANCHOR: [i32; 3] = [2, 79, 2];
+
+fn send_action(
+    peer: &mut TcpStream,
+    admin: &mut MobileProbe,
+    catalog: &Catalog,
+    action_id: u128,
+    message: ClientMessage,
+) {
+    protocol::write_client_with_catalog(&mut *peer, &message, catalog).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        assert!(Instant::now() < deadline, "showcase action deadline");
+        let message = protocol::read_server_with_catalog(&mut *peer, catalog).unwrap();
+        let accepted = match &message {
+            ServerMessage::ActionResult {
+                action_id: result,
+                accepted,
+                reason,
+            } if *result == action_id => {
+                assert!(*accepted, "{reason}");
+                true
+            }
+            _ => false,
+        };
+        admin.accept(message);
+        if accepted {
+            break;
+        }
+    }
+}
+
 #[test]
 fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() {
     let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
@@ -25,6 +57,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
         let catalog = state.world.catalog_arc();
         let creature = catalog.entity_type_id_by_key("demo:sproutling").unwrap();
         let machine = catalog.entity_type_id_by_key("demo:press_machine").unwrap();
+        let press = catalog.state_by_key("demo:press[lit=off]").unwrap();
         assert_eq!(catalog.machine(machine).unwrap().variants[0].idle.len(), 2);
         assert_eq!(
             catalog.inventory_screen(machine).unwrap().title,
@@ -57,6 +90,46 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
                     }
                 }
             }
+            let mut inventory = crate::inventory::Inventory::default();
+            inventory.slots[0] = Some(crate::inventory::Stack::new(
+                catalog.item_by_key("demo:press").unwrap(),
+                1,
+            ));
+            state.inventory_store.save(0xA440, &inventory).unwrap();
+        } else {
+            assert_eq!(state.inventory_store.load(0xA440).unwrap().slots[0], None);
+            assert_eq!(
+                state
+                    .world
+                    .get_block(PRESS_ANCHOR[0], PRESS_ANCHOR[1], PRESS_ANCHOR[2])
+                    .unwrap(),
+                press
+            );
+            assert_eq!(
+                state
+                    .world
+                    .get_block(PRESS_ANCHOR[0] + 1, PRESS_ANCHOR[1], PRESS_ANCHOR[2])
+                    .unwrap(),
+                press
+            );
+            let anchor_id = state
+                .entities
+                .anchored_at(crate::server::entities::CellCoord::new(
+                    PRESS_ANCHOR[0],
+                    PRESS_ANCHOR[1],
+                    PRESS_ANCHOR[2],
+                ));
+            assert!(anchor_id.is_some());
+            assert_eq!(
+                state
+                    .entities
+                    .anchored_at(crate::server::entities::CellCoord::new(
+                        PRESS_ANCHOR[0] + 1,
+                        PRESS_ANCHOR[1],
+                        PRESS_ANCHOR[2],
+                    )),
+                anchor_id
+            );
         }
         gameplay::serve(state, |address| {
             let mut peer = TcpStream::connect(address).unwrap();
@@ -106,35 +179,31 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             .unwrap();
             if !restarted {
                 let action_id = admin.next_id();
-                protocol::write_client_with_catalog(
+                send_action(
                     &mut peer,
-                    &ClientMessage::AdminSpawnEntity {
+                    &mut admin,
+                    &catalog,
+                    action_id,
+                    ClientMessage::AdminSpawnEntity {
                         action_id,
                         entity_type: creature,
                     },
+                );
+                let action_id = admin.next_id();
+                send_action(
+                    &mut peer,
+                    &mut admin,
                     &catalog,
-                )
-                .unwrap();
-                let deadline = Instant::now() + Duration::from_secs(10);
-                loop {
-                    assert!(Instant::now() < deadline, "showcase spawn deadline");
-                    let message = protocol::read_server_with_catalog(&mut peer, &catalog).unwrap();
-                    let accepted = match &message {
-                        ServerMessage::ActionResult {
-                            action_id: result,
-                            accepted,
-                            reason,
-                        } if *result == action_id => {
-                            assert!(*accepted, "{reason}");
-                            true
-                        }
-                        _ => false,
-                    };
-                    admin.accept(message);
-                    if accepted {
-                        break;
-                    }
-                }
+                    action_id,
+                    ClientMessage::Edit {
+                        action_id,
+                        x: PRESS_ANCHOR[0],
+                        y: PRESS_ANCHOR[1],
+                        z: PRESS_ANCHOR[2],
+                        block: press,
+                        slot: 0,
+                    },
+                );
             }
             let deadline = Instant::now() + Duration::from_secs(10);
             while visual.entity(creature).is_none() {

@@ -19,6 +19,7 @@ cargo run -- fire-preview /tmp/fire-and-spark.png
 
 The real-listener integration test `phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart`
 downloads the package into a client, spawns the creature, verifies the worker's
-state-derived tint and attached spark, restarts the server from the same save,
-and checks the stable catalog and entity identities. The previews do not show
-live tint transitions.
+state-derived tint and attached spark, and places the two-cell press from one
+finite inventory item. It restarts the server from the same save and checks the
+stable catalog/entity identities, both press cells, and consumed item. The
+previews do not show live tint transitions.
