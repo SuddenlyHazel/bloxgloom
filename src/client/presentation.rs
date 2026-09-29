@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
 mod visual;
 pub(crate) use visual::VisualSession;
+mod effects;
+pub(crate) use effects::EffectBuffer;
 
 #[derive(Debug)]
 pub(crate) struct Script {
@@ -56,6 +58,8 @@ pub(crate) enum Command {
     Action(String),
     /// A client-only offset applied after authoritative pose reconstruction.
     Visual(u64, [f32; 3]),
+    /// Bounded client-only ember, attached to an offered entity.
+    Ember(u64, [f32; 3]),
 }
 
 #[derive(Debug)]
@@ -198,6 +202,17 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                         bounded_float(&command, "squash", -0.25, 0.25)?,
                     ];
                     Command::Visual(id, pose)
+                }
+                "ember" if request.replica => {
+                    let lo = word(&command, "id_lo")?;
+                    let hi = word(&command, "id_hi")?;
+                    let id = u64::from(lo) | (u64::from(hi) << 32);
+                    let offset = [
+                        bounded_float(&command, "x", -1.0, 1.0)?,
+                        bounded_float(&command, "y", -1.0, 1.0)?,
+                        bounded_float(&command, "z", -1.0, 1.0)?,
+                    ];
+                    Command::Ember(id, offset)
                 }
                 _ => return Err(invalid()),
             });

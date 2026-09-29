@@ -115,6 +115,14 @@ impl Session {
         self.visual_poses.get(&id).copied()
     }
 
+    pub(crate) fn effects(
+        &self,
+        now: std::time::Instant,
+        avatars: &[crate::render::VisualAvatar],
+    ) -> Vec<crate::render::VisualFire> {
+        self.effects.visuals(now, avatars)
+    }
+
     fn queue_replica(
         &mut self,
         event: &str,
@@ -265,6 +273,12 @@ impl Session {
                         && reply.offered_entities.contains(id)
                         && pose.iter().all(|value| value.is_finite())
                 }
+                Command::Ember(id, offset) => {
+                    reply.replica
+                        && reply.entity_batch
+                        && reply.offered_entities.contains(id)
+                        && offset.iter().all(|value| value.is_finite())
+                }
             }) && commands
                 .iter()
                 .filter(|c| matches!(c, Command::Action(_)))
@@ -317,6 +331,7 @@ impl Session {
                     Command::Visual(id, pose) => {
                         self.visual_poses.insert(id, pose);
                     }
+                    Command::Ember(id, offset) => self.effects.push(id, offset),
                 }
             }
             if self.focused.is_some_and(|i| !self.is_visible(i)) {

@@ -717,8 +717,14 @@ reconnect and restart cover that path. Both worker paths now expose bounded
 `entered` and `left` ID lists for changes to the offered presentation window;
 these are window transitions, since chunk eviction and the 16-entity cap do not
 prove a server despawn. Real-listener join, switch and restart exercise the
-session reset. General effect commands and production scene acceptance remain
-open.
+session reset. Replica callbacks can now also emit bounded, short-lived
+`ember` effects attached to exact offered entity IDs with a bounded local
+offset. The host caps retained embers at 32 and feeds the existing transient
+effect renderer; a missing avatar draws nothing, and session reset drops the
+effect buffer. Real-listener callbacks and expiry/cap tests cover this primitive.
+The headless fire preview was inspected and shows the shared orange streak
+primitive; it does not depict an authored ember attached to a live creature.
+Broader effect styles and production scene acceptance remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
@@ -763,8 +769,9 @@ continuity are covered by mesh/animator regressions, not that preview.
   services remain open.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
-  owned UI callbacks and bounded mobile pose offsets are bound, including
-  UI-free package workers; effect and broader entity presentations remain open.
+  owned UI callbacks, bounded mobile pose offsets, presentation-window changes
+  and attached embers are bound, including UI-free package workers; broader
+  effect and entity presentations remain open.
 
 #### Phase 5 — packages and joining · In progress
 

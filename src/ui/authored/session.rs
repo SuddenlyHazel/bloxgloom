@@ -30,6 +30,7 @@ pub(crate) struct Session {
     pub(super) replica_events:
         VecDeque<(String, String, Vec<crate::client::presentation::EntityView>)>,
     pub(super) visual_poses: BTreeMap<u64, [f32; 3]>,
+    pub(super) effects: crate::client::presentation::EffectBuffer,
     pub(super) replica_previous: Vec<u64>,
     pub(super) startup: crate::client::startup::State,
 }
@@ -73,6 +74,7 @@ impl Session {
             feedback: None,
             replica_events: VecDeque::new(),
             visual_poses: BTreeMap::new(),
+            effects: Default::default(),
             replica_previous: Vec::new(),
             startup,
         };
@@ -87,6 +89,7 @@ impl Session {
         self.expected = None;
         self.replica_events.clear();
         self.visual_poses.clear();
+        self.effects.clear();
         self.replica_previous.clear();
         self.failure = None;
         self.action = None;

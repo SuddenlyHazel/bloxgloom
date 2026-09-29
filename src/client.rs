@@ -1609,9 +1609,15 @@ impl ClientApp {
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
         }
-        let visual_fire = self
+        let mut visual_fire = self
             .fire_animator
             .visuals(now, camera.position, camera.direction());
+        if let Some(ui) = &self.package_ui {
+            visual_fire.extend(ui.effects(now, &visual_avatars));
+        }
+        if let Some(visual) = &self.visual_session {
+            visual_fire.extend(visual.effects(now, &visual_avatars));
+        }
         if let Some(renderer) = &mut self.renderer {
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);

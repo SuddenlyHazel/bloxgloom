@@ -85,7 +85,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
     let fixture =
         startup_fixture("return function(host) host.set_replica_handler('uidemo:replica') end");
     let package = fixture.0.join("packages/uidemo");
-    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
+    std::fs::write(package.join("client/replica.luau"), "return function(input) if input.event ~= 'replica:entities' then return {} end local e = input.entities[1]; if not e then assert(#input.entered == 0 and #input.left == 0); return {} end local lo = e.id_lo; if input.value == 'total=2' then assert(#input.entered == 0 and #input.left == 0); lo = lo + 1 else assert(#input.entered == 1 and #input.left == 0 and input.entered[1].id_lo == lo) end return {{op='visual',id_lo=lo,id_hi=e.id_hi,yaw=0.5,bob=0.1,squash=-0.1},{op='ember',id_lo=lo,id_hi=e.id_hi,x=0,y=0.5,z=0},{op='text',node='uidemo:welcome/title',value=e.key}} end").unwrap();
     let manifest = package.join("package.txt");
     let original = std::fs::read_to_string(&manifest).unwrap();
     std::fs::write(
@@ -109,6 +109,23 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 session.wait_for_presentation().unwrap();
                 assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
                 assert_eq!(session.text_at(1), "uidemo:creature");
+                let avatar = crate::render::VisualAvatar {
+                    animation: Default::default(),
+                    model: crate::render::AvatarModel::Registered(
+                        crate::content::MOSSBUN_ENTITY_TYPE,
+                    ),
+                    pose: [0.0; 4],
+                    airborne: false,
+                    id,
+                    position: glam::Vec3::new(2.5, 80.0, 0.5),
+                    cosmetics: [0; 4],
+                    light_levels: [0; 4],
+                    bounce: [0; 4],
+                };
+                assert_eq!(
+                    session.effects(std::time::Instant::now(), &[avatar]).len(),
+                    1
+                );
                 session.replica_entities(
                     vec![crate::client::presentation::EntityView {
                         id,
@@ -126,6 +143,11 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 assert_eq!(session.visual_pose(id), Some([0.5, 0.1, -0.1]));
                 session.next_document();
                 assert_eq!(session.visual_pose(id), None);
+                assert!(
+                    session
+                        .effects(std::time::Instant::now(), &[avatar])
+                        .is_empty()
+                );
                 session.replica_entities(vec![], 0);
                 session.wait_for_presentation().unwrap();
                 assert_eq!(session.visual_pose(id), None);

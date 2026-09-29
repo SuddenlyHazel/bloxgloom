@@ -1,6 +1,6 @@
 //! UI-independent replica presentation. One immutable downloaded module, one
 //! outstanding worker call, and one replacement snapshot per connection.
-use super::{Command, EntityView, Reply, Request, Script, Worker};
+use super::{Command, EffectBuffer, EntityView, Reply, Request, Script, Worker};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -12,6 +12,7 @@ pub(crate) struct VisualSession {
     queued: Option<(Vec<EntityView>, usize)>,
     poses: BTreeMap<u64, [f32; 3]>,
     previous: Vec<u64>,
+    effects: EffectBuffer,
     failure: Option<String>,
 }
 
@@ -25,6 +26,7 @@ impl VisualSession {
             queued: None,
             poses: BTreeMap::new(),
             previous: Vec::new(),
+            effects: EffectBuffer::default(),
             failure: None,
         })
     }
@@ -116,28 +118,47 @@ impl VisualSession {
             if !reply.replica
                 || !reply.entity_batch
                 || commands.iter().any(|command| {
-                    !matches!(command, Command::Visual(id, pose)
-                    if reply.offered_entities.contains(id) && pose.iter().all(|v| v.is_finite()))
+                    !matches!(command,
+                        Command::Visual(id, values) | Command::Ember(id, values)
+                        if reply.offered_entities.contains(id) && values.iter().all(|v| v.is_finite()))
                 })
             {
                 return Err("invalid visual replica command".into());
             }
             let mut poses = BTreeMap::new();
+            let mut embers = Vec::new();
             for command in commands {
-                if let Command::Visual(id, pose) = command {
-                    poses.insert(id, pose);
+                match command {
+                    Command::Visual(id, pose) => {
+                        poses.insert(id, pose);
+                    }
+                    Command::Ember(id, offset) => embers.push((id, offset)),
+                    _ => unreachable!("validated visual command"),
                 }
             }
-            Ok(poses)
+            Ok((poses, embers))
         });
         match result {
-            Ok(poses) => self.poses = poses,
+            Ok((poses, embers)) => {
+                self.poses = poses;
+                for (id, offset) in embers {
+                    self.effects.push(id, offset);
+                }
+            }
             Err(error) => self.failure = Some(error),
         }
     }
 
     pub(crate) fn visual_pose(&self, id: u64) -> Option<[f32; 3]> {
         self.poses.get(&id).copied()
+    }
+
+    pub(crate) fn effects(
+        &self,
+        now: std::time::Instant,
+        avatars: &[crate::render::VisualAvatar],
+    ) -> Vec<crate::render::VisualFire> {
+        self.effects.visuals(now, avatars)
     }
 
     #[cfg(test)]
