@@ -50,12 +50,79 @@ fn luau_storage_screen_negotiates_host_owned_inventory() {
 }
 
 #[test]
+fn luau_storage_layout_negotiates_and_is_saved_identity() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let source = "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'); h.register_storage('demo:chest','demo:jade','Jade Chest',9,3,{hint='Keeps nine stacks',groups={{label='TOOLS',count=3},{label='SUPPLIES',count=6}}}) end";
+    package(&fixture, source);
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}requires bloxgloom:storage/v1\nrequires bloxgloom:inventory_screens/v1\n"),
+    )
+    .unwrap();
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    let entity = catalog.entity_type_id_by_key("demo:chest").unwrap();
+    let screen = catalog.inventory_screen(entity).unwrap();
+    assert_eq!(screen.hint, "Keeps nine stacks");
+    assert_eq!(screen.groups[1].first, 3);
+    assert!(
+        state
+            .client_bundle
+            .as_ref()
+            .unwrap()
+            .bytes()
+            .starts_with(b"BGCLIENT\x1e")
+    );
+    let fingerprint = catalog.fingerprint();
+    serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x52a).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let screen = client
+            .inventory_screen(client.entity_type_id_by_key("demo:chest").unwrap())
+            .unwrap();
+        assert_eq!(screen.hint, "Keeps nine stacks");
+        assert_eq!(screen.groups[1].label, "SUPPLIES");
+    });
+    assert_eq!(
+        fixture.open().unwrap().world.catalog().fingerprint(),
+        fingerprint
+    );
+    std::fs::write(
+        fixture.0.join("packages/demo/server/main.luau"),
+        source.replace("Keeps nine stacks", "Keeps tools"),
+    )
+    .unwrap();
+    assert!(fixture.open().is_err());
+}
+
+#[test]
 fn luau_storage_requires_declared_capabilities_before_world_open() {
     let fixture = Fixture::new();
     package(
         &fixture,
         "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'); h.register_storage('demo:chest','demo:jade','Jade Chest',9,3) end",
     );
+    assert!(fixture.open().is_err());
+    assert!(!fixture.0.join("save/content.map").exists());
+}
+
+#[test]
+fn luau_storage_rejects_caught_incomplete_group_layout() {
+    let fixture = Fixture::new();
+    package(
+        &fixture,
+        "return function(h) h.register_texture('demo:tile','tile'); h.register_block('demo:jade','Jade','demo:tile'); pcall(function() h.register_storage('demo:chest','demo:jade','Jade Chest',9,3,{groups={{label='ONLY',count=3}}}) end) end",
+    );
+    let manifest = fixture.0.join("packages/demo/package.txt");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{text}requires bloxgloom:storage/v1\nrequires bloxgloom:inventory_screens/v1\n"),
+    )
+    .unwrap();
     assert!(fixture.open().is_err());
     assert!(!fixture.0.join("save/content.map").exists());
 }

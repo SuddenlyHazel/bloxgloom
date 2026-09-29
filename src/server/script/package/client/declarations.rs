@@ -28,6 +28,7 @@ pub(super) struct Format {
     pub components: bool,
     pub state_textures: bool,
     pub storage: bool,
+    pub screen_layout: bool,
 }
 
 #[derive(Debug)]
@@ -100,7 +101,14 @@ impl ClientBundle {
         let states_format = authored_states || component_format;
         let extended_blocks = authored_blocks || tag_format || visual_format || states_format;
         let visual_format = visual_format || states_format;
-        let version = if storage_format {
+        let screen_layout = storage.iter().any(|declaration| {
+            !declaration.screen.hint.is_empty()
+                || declaration.screen.groups.len() != 1
+                || declaration.screen.groups[0].label != "STORAGE"
+        });
+        let version = if screen_layout {
+            SCREEN_LAYOUT_MAGIC
+        } else if storage_format {
             STORAGE_MAGIC
         } else if state_texture_format {
             STATE_TEXTURES_MAGIC
@@ -327,7 +335,7 @@ impl ClientBundle {
             }
             runtime.encode_package(&mut writer, name)?;
             if storage_format {
-                storage::encode(&mut writer, name, storage)?;
+                storage::encode(&mut writer, name, storage, screen_layout)?;
             }
         }
         if has_appearance || extended_blocks {
@@ -449,6 +457,7 @@ impl Startup {
             components,
             state_textures,
             storage,
+            screen_layout,
         }: Format,
     ) -> Result<Option<Self>, ScriptError> {
         if reader.count(1)? == 0 {
@@ -464,6 +473,7 @@ impl Startup {
                 || components
                 || state_textures
                 || storage
+                || screen_layout
             {
                 return Err(invalid());
             }
@@ -479,6 +489,7 @@ impl Startup {
         let mut has_components = false;
         let mut has_state_textures = false;
         let mut has_storage = false;
+        let mut has_screen_layout = false;
         let mut startup = Self {
             appearance: None,
             player_rules: None,
@@ -842,8 +853,14 @@ impl Startup {
             }
             startup.runtime.decode_package(reader, name, &requires)?;
             if storage {
-                let decoded = storage::decode(reader, name, &requires, &startup.blocks)?;
+                let decoded =
+                    storage::decode(reader, name, &requires, &startup.blocks, screen_layout)?;
                 has_storage |= !decoded.is_empty();
+                has_screen_layout |= decoded.iter().any(|declaration| {
+                    !declaration.screen.hint.is_empty()
+                        || declaration.screen.groups.len() != 1
+                        || declaration.screen.groups[0].label != "STORAGE"
+                });
                 startup.storage.extend(decoded);
             }
             startup.packages.push(composition::Package {
@@ -905,6 +922,7 @@ impl Startup {
             || (components && !has_components && !state_textures)
             || (state_textures && !has_state_textures && !storage)
             || (storage && !has_storage)
+            || (screen_layout && !has_screen_layout)
         {
             return Err(invalid());
         }

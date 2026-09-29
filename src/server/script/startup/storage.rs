@@ -2,7 +2,7 @@
 use super::*;
 use crate::server::script::values::integer;
 use bloxgloom_host_api::{
-    InventoryScreen,
+    InventoryScreen, SlotGroup,
     lifecycle::{FootprintCell, StorageBlockEntity},
 };
 
@@ -20,7 +20,15 @@ pub(super) fn declarer(
 ) -> mlua::Result<Function> {
     let namespace = namespace.to_owned();
     lua.create_function(
-        move |_, (entity, block, title, slots, columns): (Value, Value, Value, Value, Value)| {
+        move |_,
+              (entity, block, title, slots, columns, options): (
+            Value,
+            Value,
+            Value,
+            Value,
+            Value,
+            Value,
+        )| {
             let mut pending = pending.borrow_mut();
             let result = (|| {
                 if let Some(error) = pending.error {
@@ -71,8 +79,69 @@ pub(super) fn declarer(
                     slots: usize::from(slots),
                     automation_faces: None,
                 };
-                let screen =
+                let mut screen =
                     InventoryScreen::storage(&entity, &block, &title, slots, columns, vec![[0; 3]]);
+                if !options.is_nil() {
+                    let Value::Table(options) = options else {
+                        return Err("storage screen options must be a table");
+                    };
+                    let hint: Value = options.raw_get("hint").map_err(|_| "invalid screen hint")?;
+                    if !hint.is_nil() {
+                        screen.hint = text(hint)?;
+                    }
+                    let groups: Value = options
+                        .raw_get("groups")
+                        .map_err(|_| "invalid screen groups")?;
+                    if !groups.is_nil() {
+                        let Value::Table(groups) = groups else {
+                            return Err("storage groups must be a sequence");
+                        };
+                        let count = groups.raw_len();
+                        if count == 0 || count > usize::from(slots) {
+                            return Err("invalid storage group count");
+                        }
+                        let mut seen = 0;
+                        for pair in groups.clone().pairs::<Value, Value>().take(count + 1) {
+                            let (key, _) = pair.map_err(|_| "invalid storage groups")?;
+                            seen += 1;
+                            if !matches!(key, Value::Integer(i) if i > 0 && i as usize <= count) {
+                                return Err("storage groups must be a dense sequence");
+                            }
+                        }
+                        if seen != count {
+                            return Err("storage groups must be a dense sequence");
+                        }
+                        let mut first = 0u8;
+                        let mut parsed = Vec::with_capacity(count);
+                        for index in 1..=count {
+                            let group: mlua::Table =
+                                groups.raw_get(index).map_err(|_| "invalid storage group")?;
+                            let label: Value = group
+                                .raw_get("label")
+                                .map_err(|_| "invalid storage group label")?;
+                            let label = text(label)?;
+                            let size: Value = group
+                                .raw_get("count")
+                                .map_err(|_| "invalid storage group size")?;
+                            let size = integer(size, 1, i64::from(slots))? as u8;
+                            first = first.checked_add(size).ok_or("storage group overflow")?;
+                            if first > slots {
+                                return Err("storage groups exceed slots");
+                            }
+                            parsed.push(SlotGroup {
+                                label,
+                                first: first - size,
+                                count: size,
+                                insert: true,
+                                extract: true,
+                            });
+                        }
+                        if first != slots {
+                            return Err("storage groups must cover every slot");
+                        }
+                        screen.groups = parsed;
+                    }
+                }
                 storage
                     .validate()
                     .map_err(|_| "invalid storage declaration")?;

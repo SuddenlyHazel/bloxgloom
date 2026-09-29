@@ -2,7 +2,7 @@
 use super::*;
 use crate::server::script::startup::StorageDeclaration;
 use bloxgloom_host_api::{
-    InventoryScreen,
+    InventoryScreen, SlotGroup,
     lifecycle::{FootprintCell, StorageBlockEntity},
 };
 
@@ -10,6 +10,7 @@ pub(super) fn encode(
     writer: &mut Writer,
     owner: &str,
     declarations: &[StorageDeclaration],
+    screen_layout: bool,
 ) -> Result<(), ScriptError> {
     let mut own = declarations
         .iter()
@@ -37,21 +38,34 @@ pub(super) fn encode(
             || storage.automation_faces.is_some()
             || screen.footprint != [[0; 3]]
             || screen.slots as usize != storage.slots
-            || !screen.hint.is_empty()
             || !screen.status.is_empty()
-            || screen.groups.len() != 1
-            || screen.groups[0].first != 0
-            || screen.groups[0].count != screen.slots
-            || screen.groups[0].label != "STORAGE"
-            || !screen.groups[0].insert
-            || !screen.groups[0].extract
+            || screen
+                .groups
+                .iter()
+                .any(|group| !group.insert || !group.extract)
         {
             return Err(invalid());
         }
+        screen.validate().map_err(|_| invalid())?;
         writer.field(storage.entity.as_bytes())?;
         writer.field(storage.block.as_bytes())?;
         writer.field(screen.title.as_bytes())?;
         writer.field(&[screen.slots, screen.columns])?;
+        if screen_layout {
+            writer.field(screen.hint.as_bytes())?;
+            writer.count(screen.groups.len())?;
+            for group in &screen.groups {
+                writer.field(group.label.as_bytes())?;
+                writer.field(&[group.count])?;
+            }
+        } else if !screen.hint.is_empty()
+            || screen.groups.len() != 1
+            || screen.groups[0].first != 0
+            || screen.groups[0].count != screen.slots
+            || screen.groups[0].label != "STORAGE"
+        {
+            return Err(invalid());
+        }
     }
     Ok(())
 }
@@ -61,6 +75,7 @@ pub(super) fn decode(
     owner: &str,
     requires: &[String],
     blocks: &[content::Block],
+    screen_layout: bool,
 ) -> Result<Vec<StorageDeclaration>, ScriptError> {
     let mut result: Vec<StorageDeclaration> = Vec::new();
     for _ in 0..reader.count(8)? {
@@ -111,8 +126,34 @@ pub(super) fn decode(
             slots: usize::from(*slots),
             automation_faces: None,
         };
-        let screen =
+        let mut screen =
             InventoryScreen::storage(&entity, &block, &title, *slots, *columns, vec![[0; 3]]);
+        if screen_layout {
+            screen.hint = reader.text(80)?;
+            let mut first = 0u8;
+            let mut groups = Vec::new();
+            for _ in 0..reader.count(usize::from(*slots))? {
+                let label = reader.text(20)?;
+                let [count] = reader.field(1)? else {
+                    return Err(invalid());
+                };
+                if *count == 0 || first.checked_add(*count).is_none_or(|end| end > *slots) {
+                    return Err(invalid());
+                }
+                groups.push(SlotGroup {
+                    label,
+                    first,
+                    count: *count,
+                    insert: true,
+                    extract: true,
+                });
+                first += *count;
+            }
+            if first != *slots {
+                return Err(invalid());
+            }
+            screen.groups = groups;
+        }
         storage.validate().map_err(|_| invalid())?;
         screen.validate().map_err(|_| invalid())?;
         result.push(StorageDeclaration { storage, screen });

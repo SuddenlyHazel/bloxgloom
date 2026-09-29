@@ -665,6 +665,9 @@ migration is still deferred.
 Simple one-cell storage entities and inventory screens can now be authored in
 Luau via the host-owned storage lifecycle. V29 negotiates their identities and
 screen layouts; configurable footprints, machines and creatures remain open.
+Optional bounded storage screen hints and labeled slot groups now negotiate in
+V30. A real-listener join and restart verify the client layout and saved identity;
+machine status screens and specialized dynamic content remain open.
 
 An optional `sprite=false` item presentation flag is verified: the server and
 downloaded client negotiate the same frozen item definition; omitted options
