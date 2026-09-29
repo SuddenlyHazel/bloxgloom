@@ -674,6 +674,11 @@ mobile entity state and fences complete neighborhood entity pages. With separate
 `mutates_entities=true` authority, conditional state updates and removals check
 captured revisions and commit with the owner state through one receipt. Richer
 owner services remain open.
+Entity and profile owner partitions now accept exact two/four-word Luau seed
+IDs and expose immutable `owner_kind` plus ID words to callbacks. Their
+partition-specific wakes commit through the same owner WAL. Real-listener
+catalog joins, next-tick wakes, restart identity and invalid declaration tests
+cover both; default chunk identities remain byte-for-byte unchanged.
 Luau `register_creature` now declares bounded server tick logic, a host-owned
 locomotion body and a cuboid model. V31 reconstructs the model and pose codec on
 the client without sending the server callback or private creature bytes. A
@@ -765,8 +770,9 @@ continuity are covered by mesh/animator regressions, not that preview.
 - [ ] Bind directly authored owner entity/drop operations and broader owner
   services with the same authority/retry contract as Rust mods. Chunk systems
   now have bounded neighborhood reads/edits, entity capture/update/removal,
-  direct entity/drop creation, and durable same-system intents. Broader owner
-  services remain open.
+  direct entity/drop creation, durable same-system intents, and exact-word
+  entity/profile owner partitions with durable wakes. Broader owner services
+  remain open.
 - [ ] Run general client presentation/replica callbacks off the window thread;
   retain scoped handles, budgets and reproducible inputs. Initial replica-driven
   owned UI callbacks, bounded mobile pose offsets, presentation-window changes

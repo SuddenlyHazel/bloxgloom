@@ -1,4 +1,4 @@
-//! Explicit local `bloxgloom:owner_systems/v1` binding. One chunk system/package:
+//! Explicit local `bloxgloom:owner_systems/v1` binding. One system/package:
 //! `h.register_system { key='demo:clock', schema=1, revision=1,
 //! module='demo:clock', max_state_bytes=64, max_jobs_per_tick=2,
 //! read_world=true, read_radius_chunks=1, seeds={{x=0,y=5,z=0,data=''}} }`.
@@ -17,7 +17,9 @@
 //! Limits: 32 seeds, 4096 state bytes, 8 jobs/tick, at most 27 chunks/job.
 //! The module returns `function(c)` returning `(binary_state, delay_ticks)`;
 //! delay is 1..u32::MAX and becomes an absolute durable deadline. Context has
-//! readonly owner[1..3], data, tick_lo/hi and revision_lo/hi (exact u32 halves).
+//! readonly owner, owner_kind, data, tick_lo/hi and revision_lo/hi. Chunk owners
+//! retain owner[1..3] coordinates. Entity/profile owners use two/four exact u32
+//! words respectively, declared as seed `id={...}` with `partition`.
 //! Dot methods: block(x,y,z) -> state key (64 calls),
 //! edit(x,y,z,before,after) (16 conditional edits), wake(system,x,y,z) (32).
 //! Reads see the captured preimage, not earlier proposed edits. Reads/edits
@@ -31,7 +33,8 @@
 //! VM per plan. The public schema fingerprints script schema/revision, module and
 //! the entire installation. Any changed identity fails restart, without migration.
 //! Opaque bytes have only length validation; script-specific decoding belongs to
-//! the planner. Wakes target registered chunk systems; absent owners retain a
+//! the planner. Wakes target registered systems through partition-specific
+//! methods; absent owners retain a
 //! bounded pending flag, not an owner creation request.
 //! Script faults fail the existing wave closed (not a silently disabled system).
 //!
@@ -45,6 +48,7 @@
 //! constant initial state for absent destinations, validated and fingerprinted
 //! by the public contract; it grants neither client nor foreign-system authority.
 mod bindings;
+mod owners;
 
 use super::values::{integer, text};
 use super::{Invocation, Limits, Program, package::PackageSnapshot, startup::Pending};
@@ -89,6 +93,7 @@ pub(super) fn declarer(
             let revision = integer(field(&table, "revision")?, 1, u16::MAX.into())? as u16;
             let max_bytes = integer(field(&table, "max_state_bytes")?, 1, 4096)? as usize;
             let jobs = integer(field(&table, "max_jobs_per_tick")?, 1, 8)? as u16;
+            let partition = owners::partition(field(&table, "partition")?)?;
             let edit_cause = match field(&table, "edit_cause")? {
                 Value::Nil => api::EditCause::WorldEdit,
                 Value::String(value) if value.as_bytes().as_ref() == b"world_edit" => {
@@ -207,11 +212,7 @@ pub(super) fn declarer(
                 values.push((
                     index,
                     api::Seed {
-                        owner: api::Owner::Chunk(cell(
-                            field(&seed, "x")?,
-                            field(&seed, "y")?,
-                            field(&seed, "z")?,
-                        )?),
+                        owner: owners::seed(partition, &seed)?,
                         data: bytes(field(&seed, "data")?, max_bytes)?,
                     },
                 ));
@@ -227,7 +228,7 @@ pub(super) fn declarer(
             let system = api::System {
                 key,
                 schema: snapshot.system_schema(&module, schema, revision),
-                partition: api::Partition::Chunk,
+                partition,
                 max_state_bytes: max_bytes as u32,
                 max_jobs_per_tick: jobs,
                 read_radius_chunks,

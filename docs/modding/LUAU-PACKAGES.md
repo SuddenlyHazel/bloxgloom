@@ -183,9 +183,16 @@ builtin `give` and `spawn` console commands use these same registered action
 operations and durable receipts. `help` is local console text, not a gameplay
 transaction or mod command registry.
 
-A package with the owner-systems capability can register one persistent chunk
-system with `host.register_system { key, schema, revision, module,
+A package with the owner-systems capability can register one persistent system
+with `host.register_system { key, schema, revision, module, partition,
 max_state_bytes, max_jobs_per_tick, read_world, read_radius_chunks, seeds }`.
+The default `partition='chunk'` retains `{x,y,z,data}` seeds. Entity and profile
+systems use `partition='entity'|'profile'` and seeds `{id={low_word,...},data}`
+with two or four exact unsigned 32-bit words, least significant first. Their
+readonly callback inputs are `c.owner_kind` and `c.owner` with the same words.
+They cannot declare world reads or world effects. `c.wake_entity` and
+`c.wake_profile` carry exact ID words; the host validates destination system
+and partition and commits wakes with the owner WAL receipt.
 With `read_world=true`, `read_radius_chunks=0` (the default) captures the
 owner chunk; `1` captures its 3×3×3 chunk neighborhood. Missing authoritative
 chunks defer the complete job while the host requests bounded loads. Reads and
@@ -206,9 +213,9 @@ or over-budget sends still reject the entire plan. Optional
 absent destination with that validated state in the producer's WAL record.
 Delivery and acknowledgement occur on later ticks with owner state, edits and
 wakes; no script VM state is persisted. See `src/server/script/system.rs` for
-the precise schema, limits and semantics. Entity/profile ownership, directly
-authored owner entity/drop effects and general script state migration remain
-unbound.
+the precise schema, limits and semantics. Direct chunk-owner entity/drop
+effects are bound with explicit declared capabilities. General script state
+migration remains unbound.
 
 Package format 2 declares each module as `module server|client|shared <name>
 <side>/<path>.luau` and textures as `asset texture <name>

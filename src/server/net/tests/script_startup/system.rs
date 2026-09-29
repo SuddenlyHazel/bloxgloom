@@ -15,6 +15,8 @@ mod failures;
 mod intents;
 #[path = "system/neighborhood.rs"]
 mod neighborhood;
+#[path = "system/partitions.rs"]
+mod partitions;
 
 #[test]
 fn luau_owner_after_dependencies_are_resolved_before_save_creation() {

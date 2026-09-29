@@ -20,13 +20,10 @@ pub(super) fn invoke(
     inbox: &[api::IntentDelivery],
     outbox: Option<&mut api::IntentOutbox>,
 ) -> mlua::Result<api::Plan> {
-    let api::Owner::Chunk(owner) = context.owner else {
-        return Err(mlua::Error::RuntimeError("expected chunk owner".into()));
-    };
     let host = lua.create_table()?;
-    let owner = lua.create_sequence_from(owner)?;
-    owner.set_readonly(true);
+    let (kind, owner) = super::owners::present(lua, context.owner)?;
     host.set("owner", owner)?;
+    host.set("owner_kind", kind)?;
     host.set("data", lua.create_string(context.data)?)?;
     host.set("tick_lo", context.tick as u32)?;
     host.set("tick_hi", (context.tick >> 32) as u32)?;
@@ -272,17 +269,43 @@ pub(super) fn invoke(
             "wake",
             scope.create_function(|_, (system, x, y, z): (Value, Value, Value, Value)| {
                 checked(&rejected, || {
-                    let mut wakes = wakes.borrow_mut();
-                    if wakes.len() >= 32 {
-                        return Err("system wake limit exceeded (32)");
-                    }
-                    wakes.push(api::Wake {
-                        system: text(system)?,
-                        owner: api::Owner::Chunk(cell(x, y, z)?),
-                    });
-                    Ok(())
+                    push_wake(&wakes, system, api::Owner::Chunk(cell(x, y, z)?))
                 })
             })?,
+        )?;
+        host.set(
+            "wake_entity",
+            scope.create_function(|_, (system, lo, hi): (Value, Value, Value)| {
+                checked(&rejected, || {
+                    push_wake(
+                        &wakes,
+                        system,
+                        api::Owner::Entity(super::owners::entity(
+                            super::owners::word(lo)?,
+                            super::owners::word(hi)?,
+                        )),
+                    )
+                })
+            })?,
+        )?;
+        host.set(
+            "wake_profile",
+            scope.create_function(
+                |_, (system, a, b, c, d): (Value, Value, Value, Value, Value)| {
+                    checked(&rejected, || {
+                        push_wake(
+                            &wakes,
+                            system,
+                            api::Owner::Profile(super::owners::profile([
+                                super::owners::word(a)?,
+                                super::owners::word(b)?,
+                                super::owners::word(c)?,
+                                super::owners::word(d)?,
+                            ])),
+                        )
+                    })
+                },
+            )?,
         )?;
         host.set_readonly(true);
         let (data, delay): (Value, Value) = entry.call(host)?;
@@ -302,6 +325,22 @@ pub(super) fn invoke(
             })
         })
     })
+}
+
+fn push_wake(
+    wakes: &RefCell<Vec<api::Wake>>,
+    system: Value,
+    owner: api::Owner,
+) -> Result<(), &'static str> {
+    let mut wakes = wakes.borrow_mut();
+    if wakes.len() >= 32 {
+        return Err("system wake limit exceeded (32)");
+    }
+    wakes.push(api::Wake {
+        system: text(system)?,
+        owner,
+    });
+    Ok(())
 }
 
 fn entity_identity(
