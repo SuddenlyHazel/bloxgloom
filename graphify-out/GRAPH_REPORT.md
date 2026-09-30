@@ -1,17 +1,17 @@
 # Graph Report - bloxgloom  (2026-09-30)
 
 ## Corpus Check
-- 813 files · ~1,657,739 words
+- 813 files · ~1,657,998 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 18 file(s) not represented in the graph (top: .wgsl 10, .ttf 5, (none) 1)
 
 ## Summary
-- 12771 nodes · 30791 edges · 577 communities (411 shown, 166 thin omitted)
+- 12771 nodes · 30793 edges · 577 communities (411 shown, 166 thin omitted)
 - Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 1776 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `381ab48f`
+- Built from commit: `eb8729b0`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1434,7 +1434,7 @@ Nodes (9): coordinate(), guarded(), integer_cell(), invoke(), LifecycleRequest, 
 
 ### Community 231 - "modding/README.md"
 Cohesion: 0.12
-Nodes (13): Growth foundation: remaining implementation, Chunk generation for native contributors, Player rules, Public persistent owner systems, Phase 6 UI foundation, Documentation, Jade garden — combined mod example, Scene-color effect example (+5 more)
+Nodes (14): Growth foundation: remaining implementation, Chunk generation for native contributors, Player rules, Public persistent owner systems, Phase 6 UI foundation, Documentation, Persistent anchored counter, Jade garden — combined mod example (+6 more)
 
 ### Community 232 - "Context<'_>"
 Cohesion: 0.31
@@ -1742,7 +1742,7 @@ Nodes (4): Context<'_>, Player, capture(), publish_roster()
 
 ### Community 331 - "2. Player and lifecycle hooks"
 Cohesion: 0.10
-Nodes (21): 1. Basic runtime tools — closed, 2. Player and lifecycle hooks, 3. Dynamic UI and input, 4. General persistent block entities, 5. Flexible entities, motion and presentation, 6. Development iteration and save continuity, 7. Content-pack scale and composition limits, Accepted implementation scope (+13 more)
+Nodes (21): 1. Basic runtime tools — closed, 2. Player and lifecycle hooks, 3. Dynamic UI and input, 4. General persistent block entities — closed, 5. Flexible entities, motion and presentation, 6. Development iteration and save continuity, 7. Content-pack scale and composition limits, Accepted implementation scope (+13 more)
 
 ### Community 333 - "mlua"
 Cohesion: 0.08
@@ -2069,7 +2069,7 @@ Cohesion: 0.35
 Nodes (3): apply_motion(), run(), run_loop()
 
 ### Community 446 - "Agent guidance"
-Cohesion: 0.50
+Cohesion: 0.40
 Nodes (4): Agent guidance, Architecture and invariants, graphify, Verify graphics and performance
 
 ### Community 448 - "combined/mixed.rs"
@@ -2133,8 +2133,8 @@ Cohesion: 0.47
 Nodes (3): metadata(), observer_metadata_is_inert_bounded_and_rejects_nested_envelopes(), runtime_metadata_rejects_unknown_shapes_and_unbounded_counts_with_valid_digest()
 
 ### Community 508 - "General anchored block entities"
-Cohesion: 0.25
-Nodes (6): Callback, Declaration, Example and checks, General anchored block entities, Scheduling, authority and publication, Persistent anchored counter
+Cohesion: 0.40
+Nodes (5): Callback, Declaration, Example and checks, General anchored block entities, Scheduling, authority and publication
 
 ### Community 509 - "duration"
 Cohesion: 0.14
@@ -2231,9 +2231,9 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `Built-in capability parity audit` connect `Cross-cutting integration findings` to `EntityClientRegistry`, `modding/README.md`?**
   _High betweenness centrality (0.046) - this node is a cross-community bridge._
 - **Why does `Inventory` connect `Inventory` to `Port<P>`, `common.rs`, `EntityTypeDescriptor`, `world_to_chunk`, `players/inventory.rs`, `server/durable.rs`, `model.rs`, `prepare`, `publication/commit.rs`, `notifications.rs`, `WorldSnapshot`, `slots`, `join`, `server.rs`, `request_chunk`, `Adapter`, `VoxelView`, `script_startup/gameplay/inventory.rs`, `EntityTransferPolicy`, `Cache`, `script_startup/gameplay.rs`, `Adapter`, `.compose_current_package_action_with_args`, `invoke`, `ClientApp`, `InventoryStore`, `InventoryWorkers`, `Connection`, `CommitAction`, `crate`, `src/client.rs`, `join_named_client`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Why does `Audit boundary and live path` connect `Cross-cutting integration findings` to `collections`, `world_to_chunk`, `Registration`, `Replicas`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
 - **What connects `MAX_ACTIONS`, `MAX_TARGET_ACTIONS`, `MAX_WIDGETS` to the rest of the system?**
   _915 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `EntityError` be split into smaller, more focused modules?**

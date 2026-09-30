@@ -18,9 +18,9 @@
     "semantic_hash": "b8c30d69fbdc3886fd97883309fef6c8"
   },
   "Cargo.toml": {
-    "mtime": 1790737557.4997032,
-    "seen": 1790738004.897465,
-    "ast_hash": "724f2669692e8531dcbb4d6a13f34dd3",
+    "mtime": 1790806156.922382,
+    "seen": 1790806201.4955,
+    "ast_hash": "2cdf2c7d2e00f33899be1674a7724a27",
     "semantic_hash": ""
   },
   "assets/textures/blocks/source/chest.py": {
@@ -4026,9 +4026,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1790777350.5985615,
-    "seen": 1790780689.8434088,
-    "ast_hash": "9861875082371cf6f05f32715944aaae",
+    "mtime": 1790806170.5034428,
+    "seen": 1790806201.496463,
+    "ast_hash": "d7ed28e9ae68063a4288e03aaabb7820",
     "semantic_hash": ""
   },
   "SCRIPTING.md": {
@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1790799629.8182964,
-    "seen": 1790800465.956365,
-    "ast_hash": "4826308f0492c9257fd86c984562d402",
+    "mtime": 1790800647.72641,
+    "seen": 1790806201.4964612,
+    "ast_hash": "33d6706b6a14fe6c31721d12e0641de1",
     "semantic_hash": ""
   },
   "docs/README.md": {

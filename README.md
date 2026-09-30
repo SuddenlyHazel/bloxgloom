@@ -235,6 +235,20 @@ Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight
 
 ## Development and previews
 
+Ordinary builds and tests keep file/line backtraces for workspace code, omit
+third-party debug information, and use incremental compilation. Debug assertions
+and overflow checks stay enabled. For full workspace variable/type inspection,
+use `cargo build --profile debugging` or `cargo run --profile debugging`; its
+artifacts go in `target/debugging/`. This profile packs debug information into
+`.dSYM` bundles on macOS. Dependencies still omit debug information; add a named
+override such as `[profile.debugging.package.mlua]` with `debug = 2` when you need
+to inspect a particular dependency. Release settings are unchanged.
+
+Use `cargo clean --profile dev` to reclaim ordinary debug build artifacts while
+preserving release builds and worlds. Clear the opt-in profile separately with
+`cargo clean --profile debugging`. Avoid setting `CARGO_INCREMENTAL=0` during
+normal development, since it overrides the profile's incremental setting.
+
 The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, UI, and meshing checks. The original interface implementation and validation record is preserved in the [archived interface plan](docs/archive/interface/PLAN.md).
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png` or `cargo run -- preview desert.png -928 -1024` to center the render near specified world coordinates. This renders terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.

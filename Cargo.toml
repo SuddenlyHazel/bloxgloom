@@ -40,3 +40,20 @@ winit = "0.30.13"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.5", features = ["fs"] }
+
+# Keep ordinary builds and tests small while retaining file/line backtraces.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.package."*"]
+debug = 0
+
+# Opt in to workspace variable/type inspection when using a debugger.
+[profile.debugging]
+inherits = "dev"
+debug = 2
+split-debuginfo = "packed"
+
+[profile.debugging.package."*"]
+debug = 0
