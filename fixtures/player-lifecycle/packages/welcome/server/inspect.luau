@@ -5,5 +5,6 @@ return function(c: BloxGameplayContext, e: BloxActionEvent)
     assert(arguments)
     local target = c.player_by_session(arguments[1] :: BloxSessionId)
     assert(target)
-    log.info("inspected player", {name = target.name, session = tostring(target.session)})
+    local policy = c.profile_state("welcome:policy", target.profile)
+    log.info("inspected player", {name = target.name, session = tostring(target.session), policy = policy.state})
 end

@@ -1,6 +1,13 @@
 //! Player-service decisions share the gameplay overlay and captured dependencies.
 use super::*;
 use bloxgloom_host_api::players::{Decision, Event, Registration, State};
+pub(in crate::server) struct PlayerDecision {
+    pub decision: Decision,
+    pub inventory: Option<crate::inventory::Inventory>,
+    pub operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
+    pub profile_states:
+        std::collections::BTreeMap<(String, u128), bloxgloom_host_api::gameplay::ProfileCell>,
+}
 #[allow(
     clippy::too_many_arguments,
     reason = "One borrowed capture mirrors the existing gameplay planner without retaining live state."
@@ -16,14 +23,11 @@ pub(in crate::server) fn invoke(
     event: &Event,
     state: &State,
     session_data: &[u8],
-) -> io::Result<(
-    Decision,
-    Option<crate::inventory::Inventory>,
-    Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
-)> {
+) -> io::Result<PlayerDecision> {
     let actor = participants.actor;
     let catalog = world.catalog_arc();
     let mut snapshot = WorldSnapshot {
+        profile_services: participants.profile_services,
         player_operations_enabled: event.kind != bloxgloom_host_api::players::EventKind::Joining,
         players: participants.players,
         action_id: None,
@@ -90,5 +94,10 @@ pub(in crate::server) fn invoke(
             "uncaptured lifecycle inventory",
         ));
     }
-    Ok((decision, inventory, plan.player_operations))
+    Ok(PlayerDecision {
+        decision,
+        inventory,
+        operations: plan.player_operations,
+        profile_states: plan.profile_states,
+    })
 }

@@ -50,6 +50,7 @@ fn runtime_tools_action_retry_keeps_module_randomness_across_ticks_and_log_press
                 }),
             },
             Participants {
+                profile_services: None,
                 players: &[],
                 action_id: Some(id),
                 clock: None,

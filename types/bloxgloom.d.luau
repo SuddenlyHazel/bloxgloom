@@ -287,7 +287,16 @@ export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedE
     | BloxNeighbourEvent | BloxEntityTickEvent | BloxPickupEvent
 
 --- Server transaction services. Proposed mutations commit together; an error rejects the transaction.
+export type BloxProfileCell = {
+    revision: BloxRevision, initialized: boolean, state: string, public_state: string, next_tick: BloxTick?,
+}
 export type BloxGameplayContext = {
+    --- Explicit canonical-token decoding; a profile handle grants no authority.
+    profile_id: (canonical_token: string) -> BloxProfileId,
+    --- Own registered service, players/v1. Captures live or offline profile revision; readonly binary values.
+    profile_state: (own_service: string, profile: BloxProfileId) -> BloxProfileCell,
+    --- Ordinary actions/admitted lifecycle callbacks. Atomic with rewards; retains the profile timer.
+    set_profile_state: (own_service: string, profile: BloxProfileId, state: string, public_state: string) -> (),
     player_profile: BloxProfileId?,
     players: () -> {BloxPlayerView},
     player_by_profile: (profile: BloxProfileId) -> BloxPlayerView?,

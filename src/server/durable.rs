@@ -466,6 +466,15 @@ impl Durability {
 
     pub(super) fn profile_reserved(&self, profile: u128) -> bool {
         self.reserved.contains(&inventory_state_key(profile))
+            || self.catalog.player_lifecycles().any(|reg| {
+                crate::server::registry::SystemId::new(&reg.key).is_ok_and(|system| {
+                    self.reserved
+                        .contains(&crate::server::runtime::owner_codec::owner_state_key(
+                            &system,
+                            crate::server::parallel::OwnerKey::Profile(profile),
+                        ))
+                })
+            })
     }
 
     pub(super) fn profile_pending(&self, profile: u128) -> bool {

@@ -290,13 +290,6 @@ pub(in crate::server) fn committed(state: &mut State, published: Published) -> i
         }
         return Ok(());
     };
-    state.player_state_revision = state
-        .player_state_revision
-        .checked_add(1)
-        .ok_or_else(|| io::Error::other("player state revision exhausted"))?;
-    for client in state.clients.values_mut().filter(|c| c.profile == key.1) {
-        client.last_player_state_revision = 0;
-    }
     state.player_runtime.active.remove(&key);
     state
         .player_runtime

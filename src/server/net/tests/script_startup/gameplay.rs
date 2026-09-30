@@ -26,6 +26,8 @@ mod player_operations;
 mod player_teleport;
 #[path = "gameplay/players.rs"]
 mod players;
+#[path = "gameplay/profile_state.rs"]
+mod profile_state;
 #[path = "gameplay/runtime_tools.rs"]
 mod runtime_tools;
 
@@ -408,6 +410,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                profile_services: None,
                 players: &[],
                 action_id: None,
                 clock: None,

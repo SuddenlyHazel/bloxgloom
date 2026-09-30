@@ -261,7 +261,9 @@ fn process_queue(
                     let accepted = action.inventory.is_some()
                         || !action.world_edits.is_empty()
                         || action.entities.is_some()
-                        || action.clock_change.is_some();
+                        || action.clock_change.is_some()
+                        || !action.owner_changes.is_empty()
+                        || action.player_publication.is_some();
                     let reason = if accepted {
                         String::new()
                     } else {
@@ -403,6 +405,8 @@ fn batchable_motion(action: &CommitAction) -> bool {
         && action.action_id.is_none()
         && action.fire_seed.is_none()
         && action.clock_change.is_none()
+        && action.owner_changes.is_empty()
+        && action.player_publication.is_none()
 }
 
 /// Capacity outcomes from batch combination: the deterministic tail sheds

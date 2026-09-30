@@ -165,6 +165,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            profile_services: Some(&state.system_runtime),
             players: &players,
             action_id: Some(action_id),
             clock: Some(state.world_time.capture()),
@@ -266,7 +267,12 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             .transpose()?,
         entities,
         entity_wakes: vec![],
-        owner_changes: vec![],
+        owner_changes: crate::server::players::state::prepare_writes(
+            &state.system_runtime,
+            &catalog,
+            state.durability.pending_profile_inserts(),
+            plan.profile_states,
+        )?,
         player_publication: crate::server::players::Published::operations(plan.player_operations),
     })
 }

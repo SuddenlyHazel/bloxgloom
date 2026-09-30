@@ -139,6 +139,7 @@ pub(super) fn place(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            profile_services: None,
             players: &[],
             action_id: None,
             clock: None,
@@ -285,6 +286,7 @@ pub(super) fn remove(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            profile_services: None,
             players: &[],
             action_id: None,
             clock: None,

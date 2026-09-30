@@ -10,6 +10,7 @@
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
 pub(in crate::server::script) mod players;
+mod profile_state;
 mod queries;
 
 pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
@@ -48,6 +49,7 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
         super::inventory::install(scope, &host, &context, rejected)?;
         queries::install(scope, &host, &context, rejected)?;
         players::install(scope, &host, &context, rejected)?;
+        profile_state::install(scope, &host, &context, rejected)?;
         host.set(
             "world_time",
             scope.create_function(|lua, ()| {

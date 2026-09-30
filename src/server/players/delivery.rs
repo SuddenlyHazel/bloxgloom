@@ -74,3 +74,49 @@ pub(in crate::server) fn publish(state: &mut State) -> io::Result<()> {
     }
     Ok(())
 }
+
+/// Publish only after the durable owner cells are installed. Private data stays
+/// server-side; delivery projects registered public bytes to that profile alone.
+pub(in crate::server) fn publish_changes(
+    state: &mut crate::server::State,
+    changes: &[crate::server::journal::Change],
+) -> io::Result<()> {
+    let affected: std::collections::BTreeSet<_> = changes
+        .iter()
+        .filter_map(|change| {
+            crate::server::runtime::owner_codec::decode_owner_state_key(&change.key)
+        })
+        .filter_map(|(key, owner)| match owner {
+            OwnerKey::Profile(profile)
+                if state
+                    .world
+                    .catalog()
+                    .player_lifecycles()
+                    .any(|reg| reg.key == key) =>
+            {
+                Some((key, profile))
+            }
+            _ => None,
+        })
+        .collect();
+    if affected.is_empty() {
+        return Ok(());
+    }
+    state.player_state_revision = state
+        .player_state_revision
+        .checked_add(1)
+        .ok_or_else(|| io::Error::other("player state revision exhausted"))?;
+    for client in state.clients.values_mut() {
+        if affected
+            .iter()
+            .any(|(_, profile)| *profile == client.profile)
+        {
+            client.last_player_state_revision = 0;
+        }
+    }
+    state
+        .player_runtime
+        .failed
+        .retain(|(key, profile, _, _)| !affected.contains(&(key.clone(), *profile)));
+    Ok(())
+}

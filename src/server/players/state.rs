@@ -53,7 +53,7 @@ pub(in crate::server) fn config(reg: &Registration) -> io::Result<OwnerSystemCon
     )
 }
 /// Stage the flag/reward state together, without publishing a cell before sync.
-pub(super) fn prepare(
+pub(in crate::server) fn prepare(
     runtime: &crate::server::runtime::systems::SystemRuntime,
     reg: &Registration,
     profile: u128,
@@ -82,4 +82,42 @@ pub(super) fn prepare(
             .stage_profile_insert(&system, profile, &value, due_tick)
             .map(|change| vec![change])
     }
+}
+
+/// Ordinary actions retain the captured deadline and revision. Every queried
+/// cell (including absence) is reserved by the planner until receipt.
+pub(in crate::server) fn prepare_writes(
+    runtime: &crate::server::runtime::systems::SystemRuntime,
+    catalog: &crate::content::Catalog,
+    pending_inserts: usize,
+    writes: std::collections::BTreeMap<(String, u128), bloxgloom_host_api::gameplay::ProfileCell>,
+) -> io::Result<Vec<crate::server::journal::Change>> {
+    let inserts = writes.values().filter(|cell| !cell.initialized).count();
+    if inserts > 0 && !runtime.has_profile_insert_room(pending_inserts.saturating_add(inserts - 1))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "profile cell capacity exhausted",
+        ));
+    }
+    let mut changes = Vec::new();
+    for ((key, profile), cell) in writes {
+        let reg = catalog
+            .player_lifecycles()
+            .find(|reg| reg.key == key)
+            .ok_or_else(|| io::Error::other("unregistered player service output"))?;
+        let system = SystemId::new(&key).map_err(|_| io::Error::other("invalid player service"))?;
+        if runtime
+            .owner_snapshot(&system, OwnerKey::Profile(profile))
+            .map(|(revision, _)| revision)
+            != cell.initialized.then_some(cell.revision)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "stale profile state",
+            ));
+        }
+        changes.extend(prepare(runtime, reg, profile, cell.state, cell.next_tick)?);
+    }
+    Ok(changes)
 }

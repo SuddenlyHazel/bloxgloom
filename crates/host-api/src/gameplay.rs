@@ -13,6 +13,7 @@ mod inventory;
 mod observations;
 mod player_operations;
 mod players;
+mod profile_state;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
@@ -23,6 +24,7 @@ pub use observations::{
 };
 pub use player_operations::{PlayerOperation, PlayerOperationKind};
 pub use players::Player;
+pub use profile_state::ProfileCell;
 
 pub type Cell = [i32; 3];
 
@@ -61,6 +63,26 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn profile_state(
+        &mut self,
+        _namespace: &str,
+        _key: &str,
+        _profile: u128,
+    ) -> Result<ProfileCell, Error> {
+        Err(Error::Invalid(
+            "profile state unavailable in this context".into(),
+        ))
+    }
+    fn validate_profile_state(
+        &self,
+        _namespace: &str,
+        _key: &str,
+        _state: &crate::players::State,
+    ) -> Result<(), Error> {
+        Err(Error::Invalid(
+            "profile state writes unavailable in this context".into(),
+        ))
+    }
     /// Granted server-package authority, separate from command-caller admin.
     fn player_authority(&self, _namespace: &str) -> bool {
         false
@@ -128,6 +150,7 @@ pub struct DropSpawn {
 /// Constructing a plan does not publish anything or bypass host validation.
 #[derive(Debug, Default)]
 pub struct Plan {
+    pub profile_states: BTreeMap<(String, u128), ProfileCell>,
     pub player_operations: Vec<PlayerOperation>,
     pub world_time: Option<u64>,
     pub blocks: BTreeMap<Cell, String>,

@@ -69,7 +69,9 @@ fn apply_committed_action_inner(
     complete_expiry: bool,
     fire_bursts: Vec<[i32; 3]>,
 ) -> io::Result<()> {
-    if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
+    if !action.terrain_reads.is_current()
+        || !action.terrain_reads.entities_current(&state.entities)
+        || !action.terrain_reads.profiles_current(&state.system_runtime)
     {
         return Err(io::Error::other(
             "committed terrain dependency changed before apply",
@@ -146,6 +148,7 @@ fn apply_committed_action_inner(
         state
             .system_runtime
             .apply_replayed_owner_changes(&owner_changes)?;
+        super::super::players::delivery::publish_changes(state, &owner_changes)?;
     }
     if let Some(published) = action.player_publication.take() {
         super::super::players::committed(state, published)?;

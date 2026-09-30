@@ -46,8 +46,22 @@ pub(super) fn prepare(
             .map(Ok)
             .unwrap_or_else(|| state.inventory_store.load(event.profile))?,
     };
-    let (decision, inventory, operations, reads) =
-        invoke(state, reg, event, &before, final_session)?;
+    let (result, reads) = invoke(state, reg, event, &before, final_session)?;
+    let crate::server::gameplay::PlayerDecision {
+        mut decision,
+        inventory,
+        operations,
+        mut profile_states,
+    } = result;
+    if let Some(cell) = profile_states.remove(&(reg.key.clone(), event.profile)) {
+        if decision.state.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "profile state set by both context and lifecycle decision",
+            ));
+        }
+        decision.state = Some(cell.state);
+    }
     if decision.spawn.is_some() || decision.deny.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -92,7 +106,21 @@ pub(super) fn prepare(
             "session state byte limit exceeded",
         ));
     }
-    let changes = super::state::prepare(&state.system_runtime, reg, event.profile, value, due)?;
+    let mut changes = super::state::prepare(&state.system_runtime, reg, event.profile, value, due)?;
+    // Include the current service's new cell in the total insertion budget.
+    let current_insert = changes
+        .iter()
+        .filter(|change| {
+            change.key.domain == crate::server::runtime::owner_codec::OWNER_STATE_DOMAIN
+                && change.before.is_empty()
+        })
+        .count();
+    changes.extend(super::state::prepare_writes(
+        &state.system_runtime,
+        state.world.catalog(),
+        state.durability.pending_profile_inserts() + current_insert,
+        profile_states,
+    )?);
     let session = event
         .player
         .as_ref()

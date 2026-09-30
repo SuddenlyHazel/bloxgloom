@@ -79,13 +79,12 @@ runtime movement or cosmetic-change authority.
 | Existing surface | What it does not yet provide |
 | --- | --- |
 | Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Cross-profile inventory operations |
-| Package-owned lifecycle state, atomic first-join rewards and profile/session timers | Ordinary gameplay access to another profile's progress and inventory |
+| Package-owned lifecycle and ordinary gameplay profile state, atomic rewards and profile/session timers | Cross-profile inventory access |
 | Validated admission/reconnect spawn proposals, runtime teleport and cosmetic replacement, frozen player rules/palettes | Per-player physics remains deferred |
 | Client lifecycle callbacks, selected local public state and targeted status notices | General chat transport and hooks |
 | Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 
-The remaining player-service work centers on authorized runtime operations and
-gameplay access to profile state. Native and Luau post-commit observers are advisory:
+The remaining player-service implementation centers on cross-profile inventory. Native and Luau post-commit observers are advisory:
 they can be dropped under pressure and are not replayed after restart. They
 cannot safely be the only mechanism awarding a quest reward or recording a
 player's first visit.
@@ -298,7 +297,15 @@ later observers. Local public profile-state transport and client ready/change/
 disconnect callbacks now pass all 1,147 workspace tests, strict Clippy, formatting
 and typed Luau analysis. Real-client coverage verifies panel updates/reconnect
 cleanup; the authored panel preview was rendered and inspected. Additional player
-operations and ordinary gameplay access to profile state remain.
+operations are implemented; cross-profile inventory remains.
+General package-owned profile-state access is implemented in ordinary actions and
+lifecycle callbacks, with explicit offline identity decoding, revision/existence
+read fences, deadline preservation and receipt-gated public delivery. Role/ban
+examples use the same durable cells; no native operator promotion is implied.
+This increment passes all 1,166 workspace tests, strict Clippy, formatting and
+typed Luau analysis, including real-listener rollback/restart/admission coverage.
+Cross-profile inventory transactions remain the final service increment.
+
 Land the work in reviewable increments:
 
 The first increment exposes exact actor profile/session identities and captured

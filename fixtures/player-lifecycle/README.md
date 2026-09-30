@@ -32,3 +32,14 @@ Open the command console and enter `/welcome:inspect <name>`. Tab completes a
 unique name prefix to an exact session token. The server logs the selected player;
 an ambiguous, departed or stale target is rejected before the callback runs.
 The command is permitted for ordinary admitted players; it grants no admin role.
+
+The Admin command `/welcome:manage <player> 2` (builder) or `3` (ban) updates
+package-owned policy through ordinary gameplay transactions. Builder is a role
+for this package's rules; it does not grant native operator privileges. Ban saves
+private policy and kicks the exact selected session after receipt; the admission
+callback rejects subsequent joins for that profile, including after restart.
+`/welcome:inspect` logs the package policy alongside the selected session.
+These are policies on claimed profiles, with the engine's existing identity trust.
+
+`/welcome:manage <player> 1` applies the registered server uniform. These modes
+share one command so the example respects the target-action discovery bound.

@@ -6,7 +6,7 @@ use crate::{
 };
 use bloxgloom_host_api::{
     gameplay::Player,
-    players::{Decision, Event, EventKind, Registration, State as ProfileState},
+    players::{Event, EventKind, Registration, State as ProfileState},
 };
 use std::io;
 pub(super) fn profile_state(
@@ -35,12 +35,7 @@ pub(super) fn invoke(
     event: &Event,
     inventory: &Inventory,
     final_session: Option<&[u8]>,
-) -> io::Result<(
-    Decision,
-    Option<Inventory>,
-    Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
-    TerrainReads,
-)> {
+) -> io::Result<(crate::server::gameplay::PlayerDecision, TerrainReads)> {
     let players = capture(state);
     let profile = profile_state(state, reg, event.profile)?;
     let session = final_session.map(ToOwned::to_owned).unwrap_or_else(|| {
@@ -63,6 +58,7 @@ pub(super) fn invoke(
         &mut reads,
         &mut requested,
         crate::server::gameplay::Participants {
+            profile_services: Some(&state.system_runtime),
             players: &players,
             action_id: None,
             clock: Some(state.world_time.capture()),
@@ -81,8 +77,7 @@ pub(super) fn invoke(
     for chunk in requested {
         let _ = crate::server::streaming::request_chunk(state, chunk)?;
     }
-    let (decision, inventory, operations) = result?;
-    Ok((decision, inventory, operations, reads))
+    Ok((result?, reads))
 }
 /// A pending connection may propose admission/spawn, but cannot publish rewards.
 pub(in crate::server) fn admit(
@@ -120,10 +115,11 @@ pub(in crate::server) fn admit(
             }),
             transition: epoch,
         };
-        let (decision, inventory_after, operations, _) =
-            invoke(state, &reg, &event, inventory, None)?;
-        if !operations.is_empty()
-            || inventory_after.is_some()
+        let (result, _) = invoke(state, &reg, &event, inventory, None)?;
+        let decision = result.decision;
+        if !result.operations.is_empty()
+            || !result.profile_states.is_empty()
+            || result.inventory.is_some()
             || decision.state.is_some()
             || decision.session_data.is_some()
             || decision.profile_delay.is_some()

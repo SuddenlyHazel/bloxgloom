@@ -8,10 +8,12 @@ mod entities;
 mod entity_inventory;
 pub(in crate::server) mod inventory;
 mod players;
+mod profile_state;
 mod teleport;
-pub(in crate::server) use players::invoke as invoke_player;
+pub(in crate::server) use players::{PlayerDecision, invoke as invoke_player};
 
 pub(super) struct Participants<'a> {
+    pub profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
     pub players: &'a [bloxgloom_host_api::gameplay::Player],
     pub action_id: Option<u128>,
     pub clock: Option<super::world_time::Capture>,
@@ -50,6 +52,7 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
     player_operations_enabled: bool,
     players: &'a [bloxgloom_host_api::gameplay::Player],
     action_id: Option<u128>,
@@ -67,6 +70,22 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn profile_state(
+        &mut self,
+        namespace: &str,
+        key: &str,
+        profile: u128,
+    ) -> Result<bloxgloom_host_api::gameplay::ProfileCell, Error> {
+        self.capture_profile(namespace, key, profile)
+    }
+    fn validate_profile_state(
+        &self,
+        namespace: &str,
+        key: &str,
+        state: &bloxgloom_host_api::players::State,
+    ) -> Result<(), Error> {
+        self.validate_profile(namespace, key, state)
+    }
     fn valid_player_appearance(&self, palettes: [u8; 3]) -> bool {
         self.world
             .catalog()
@@ -284,6 +303,8 @@ pub(super) struct OperationInput<'a> {
 }
 
 pub(super) struct WorldPlan {
+    pub profile_states:
+        std::collections::BTreeMap<(String, u128), bloxgloom_host_api::gameplay::ProfileCell>,
     pub player_operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
     pub world_time: Option<u64>,
     pub entity_updates: Vec<super::entities::PreparedEntityTransaction>,
@@ -352,6 +373,7 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        profile_services: participants.profile_services,
         player_operations_enabled: matches!(&action, Some(Event::ActionRequested { .. })),
         players: participants.players,
         action_id: participants.action_id,
@@ -744,6 +766,7 @@ pub(super) fn plan_with_lifecycles(
         entity_updates.extend(despawns);
     }
     Ok(WorldPlan {
+        profile_states: plan.profile_states,
         player_operations: plan.player_operations,
         world_time: plan.world_time,
         entity_updates,

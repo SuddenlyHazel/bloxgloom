@@ -61,6 +61,7 @@ pub(super) fn plan(
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            profile_services: None,
             players: &[],
             action_id: None,
             clock: None,

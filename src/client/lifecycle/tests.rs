@@ -34,8 +34,23 @@ pub(crate) fn exercise_player_services(address: &str, path: PathBuf) {
         }
         assert!(app.actions.epoch > previous);
         previous = app.actions.epoch;
-        assert_eq!(app.player_states.len(), 1);
-        assert_eq!(app.player_states[0].public, b"level:1");
+        assert_eq!(app.player_states.len(), 2);
+        assert_eq!(
+            app.player_states
+                .iter()
+                .find(|cell| cell.key == "welcome:progress")
+                .unwrap()
+                .public,
+            b"level:1"
+        );
+        assert!(
+            app.player_states
+                .iter()
+                .find(|cell| cell.key == "welcome:policy")
+                .unwrap()
+                .public
+                .is_empty()
+        );
         let stopped = app.network.take_worker_completion().unwrap();
         app.retire_session();
         assert!(
@@ -47,7 +62,7 @@ pub(crate) fn exercise_player_services(address: &str, path: PathBuf) {
         for _ in 0..2 {
             stopped.recv_timeout(Duration::from_secs(10)).unwrap();
         }
-        while bundle.upgrade().is_some() {
+        while !super::super::bundle::session_references_released(&bundle) {
             assert!(
                 Instant::now() < deadline,
                 "retired player callback retained session bundle"

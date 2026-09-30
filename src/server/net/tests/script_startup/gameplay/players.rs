@@ -512,7 +512,15 @@ fn luau_player_lifecycle_example_uses_supported_server_only_package_format() {
     let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
         .with_local_packages(&root)
         .unwrap();
-    assert_eq!(startup.catalog().player_lifecycles().count(), 1);
+    let catalog = startup.catalog();
+    let keys: std::collections::BTreeSet<_> = catalog
+        .player_lifecycles()
+        .map(|reg| reg.key.as_str())
+        .collect();
+    assert_eq!(
+        keys,
+        std::collections::BTreeSet::from(["welcome:policy", "welcome:progress"])
+    );
 }
 
 #[test]

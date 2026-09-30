@@ -234,10 +234,9 @@ allows; delivery of that reason is best effort under pressure. The client retire
 its entire session and shows the supplied reason. A self-kick can close before
 the action result reaches its caller; committed inventory/profile effects still
 recover normally. Kicks do not create durable admission bans. Use durable
-profile policy for bans when the general profile-state service is available.
+profile policy for bans through the general profile-state service below.
 
-Wire version 17 adds the exact-session notice/removal frame. Cross-profile inventory and ordinary gameplay access to
-profile state remain the next increments.
+Wire version 17 adds the exact-session notice/removal frame. Cross-profile inventory remains the next increment.
 
 ## Landed: runtime appearance
 
@@ -270,13 +269,12 @@ Storage failure stops server mutation before publishing the new avatar; the
 atomic file remains the recovery authority. Do not use a costume as a critical
 reward flag; store that flag in durable profile state.
 
-The lifecycle fixture includes `/welcome:uniform <player>` as an Admin command
+The lifecycle fixture includes `/welcome:manage <player> 1` as an Admin command
 and uses builtin palette indices 1, 2 and 3. Player arguments support names and
 exact session tokens, including Tab completion. Set the server's local admin
 profile to exercise it; declaring the package capability alone does not grant
 its command to non-admin callers. This operation uses existing wire version 17
-and client host contract 7. Cross-profile inventory and general
-gameplay access to profile state remain.
+and client host contract 7. Cross-profile inventory remains.
 
 ## Landed: runtime teleport
 
@@ -315,10 +313,67 @@ never affected. Clients that refuse to acknowledge remain unable to move.
 A teleport request replay returns its existing receipt without repeating the
 reset. Multiple teleports are applied in plan order; the last reset must be
 acknowledged. Storage failures stop mutation before movement publication.
-Cross-profile inventory and ordinary gameplay access to durable profile state
-remain the next player-service increments; per-player physics changes remain
+Cross-profile inventory remains the next player-service increment; per-player physics changes remain
 outside this goal.
 
 The lifecycle fixture includes `/welcome:recall <player>`, an Admin command
 that teleports the selected session to the caller's captured feet position and
 sends a status notice. It uses the same native validation and reset handshake.
+
+## Landed: general package-owned profile state
+
+Ordinary action callbacks and player lifecycle callbacks can query any known
+profile's state in a service registered by their own package, with `players/v1`:
+
+```luau
+local saved = c.profile_state("welcome:policy", target.profile)
+c.set_profile_state("welcome:policy", target.profile, "role:builder", "builder")
+```
+
+`profile_state` returns a readonly `{revision, initialized, state, public_state,
+next_tick}` view. State fields are binary strings, revision is an exact
+`BloxRevision`, and the optional deadline is an exact `BloxTick`. Missing cells
+return the registered initial private value and empty public bytes with
+`initialized = false`. A newly persisted owner cell can have revision zero too;
+use `initialized` to distinguish absence. Proposed writes appear in subsequent
+reads while retaining the captured revision, initialization flag and deadline.
+
+A profile does not need a live connection. Obtain online identities from the
+captured directory, or explicitly decode a previously saved token with
+`c.profile_id("profile:<32 lowercase hexadecimal digits>")`. This constructor
+rejects zero, noncanonical tokens, numeric identities and lookalike tables. Other
+methods still require a profile handle; they do not silently coerce strings.
+Identity handles grant no authority or proof of account ownership.
+
+Every access checks the executing package's namespace, capability and frozen
+service registration, including reads already present in another handler's
+shared overlay. Another package's private/public server cells are inaccessible.
+Only queried values are captured; the engine does not copy every player's private
+state into every invocation. Up to 64 distinct cells can be read or written in
+one plan, under the shared operation budget. Private bytes obey the service's
+registered bound (at most 4096); public bytes are at most 1024.
+
+`set_profile_state` replaces both byte strings and preserves that profile's
+scheduled deadline. Ordinary actions and admitted lifecycle callbacks may write;
+`PlayerJoining` may query policy but cannot write. The lifecycle decision remains
+the scheduling API. A lifecycle callback can use this setter for its current
+service/profile instead of returning state, and can update other owned services
+or profiles. Setting the current cell both ways rejects the entire callback to
+avoid ambiguous precedence.
+
+State changes and inventory rewards share one WAL transaction. Reads reserve
+owner keys, including missing cells; revision and existence checks protect against
+stale writes and insert races. Pending profile-state reservations also delay that
+profile's admission until publication. Public delivery updates only affected local
+profiles after receipt. Errors, including caught errors, discard the entire plan;
+request replay returns its receipt without running the callback again. General
+writes also clear failed timer suppression for the affected service/profile.
+
+The welcome fixture demonstrates package roles and bans. Its Admin policy
+command saves a package role in mode 2; native command permissions are unchanged. Mode 3
+saves ban policy and stages a kick for the selected session. The durable policy
+controls subsequent admission, while the transient kick cannot affect a
+replacement session and is not replayed after a crash. Admission denial currently
+closes the pending handshake; the reason is logged server-side rather than sent
+as a dedicated admission-rejection frame. These policies use claimed profiles,
+not authenticated remote accounts or a new global role database.

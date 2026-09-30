@@ -969,3 +969,16 @@ Player-service lifecycle registration, events, state limits, admission policy,
 scheduling and atomic first-join rewards are documented in
 [PLAYER-LIFECYCLE.md](docs/modding/PLAYER-LIFECYCLE.md). Profile ownership remains
 claimed by Hello; server session handles are exact connection identities.
+
+## General durable player profile state
+
+With `players/v1`, `c.profile_state(own_service, profile)` reads a readonly binary
+state/revision/deadline view for a known online or offline profile.
+`c.set_profile_state(own_service, profile, private_bytes, public_bytes)` replaces
+the two strings from ordinary action or admitted lifecycle callbacks, preserving
+the profile timer. Both require a service registered by the executing package.
+State and rewards share the WAL record; reads fence revisions and absence, and
+public delivery follows receipt. `c.profile_id(canonical_token)` explicitly
+restores an exact profile handle without granting authority. See
+[the full profile-state contract](docs/modding/PLAYER-LIFECYCLE.md#landed-general-package-owned-profile-state)
+and the welcome fixture's package roles and admission bans.

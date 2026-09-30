@@ -15,6 +15,17 @@ static CACHE: Mutex<Option<Arc<ClientBundle>>> = Mutex::new(None);
 #[cfg(test)]
 pub(crate) static TEST_CACHE_LOCK: Mutex<()> = Mutex::new(());
 
+/// The process cache intentionally retains an immutable artifact after session
+/// retirement; only additional runtime references indicate a leaked worker.
+#[cfg(test)]
+pub(crate) fn session_references_released(bundle: &std::sync::Weak<ClientBundle>) -> bool {
+    let cache = CACHE.lock().unwrap();
+    let cached = cache
+        .as_ref()
+        .is_some_and(|cached| bundle.ptr_eq(&Arc::downgrade(cached)));
+    bundle.strong_count() == usize::from(cached)
+}
+
 pub(super) fn install(
     socket: &mut TcpStream,
     identity: BundleIdentity,

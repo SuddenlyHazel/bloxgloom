@@ -1,15 +1,52 @@
-//! Exact read-only dependencies for world gameplay planners. Admission reserves
-//! these keys until confirmed apply, so reads of support or empty space cannot
-//! race a writer in another chunk while a journal receipt is outstanding.
+//! Exact read dependencies for gameplay planners: terrain, clock, entities and
+//! profile cells. Admission reserves these keys until confirmed apply, including
+//! empty terrain and missing profile cells, while a receipt is outstanding.
 use super::*;
 use crate::world::{ChunkReadStamp, World};
 #[derive(Clone, Debug, Default)]
 pub(in crate::server) struct TerrainReads {
     pub clock: Option<crate::server::world_time::ReadStamp>,
+    profiles: BTreeMap<(crate::server::registry::SystemId, u128), Option<u64>>,
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
     entities: super::super::entities::EntityDependencies,
 }
 impl TerrainReads {
+    pub fn profile(
+        &mut self,
+        system: &crate::server::registry::SystemId,
+        profile: u128,
+        revision: Option<u64>,
+    ) -> io::Result<()> {
+        let key = (system.clone(), profile);
+        if let Some(old) = self.profiles.get(&key) {
+            if *old != revision {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "profile read changed during planning",
+                ));
+            }
+        } else {
+            if self.profiles.len() >= 64 {
+                return Err(io::Error::new(
+                    ErrorKind::QuotaExceeded,
+                    "profile read budget exceeded",
+                ));
+            }
+            self.profiles.insert(key, revision);
+        }
+        Ok(())
+    }
+    pub fn profiles_current(
+        &self,
+        runtime: &crate::server::runtime::systems::SystemRuntime,
+    ) -> bool {
+        self.profiles.iter().all(|((system, profile), revision)| {
+            runtime
+                .owner_snapshot(system, crate::server::parallel::OwnerKey::Profile(*profile))
+                .map(|(rev, _)| rev)
+                == *revision
+        })
+    }
     pub fn entities(
         &mut self,
         dependencies: super::super::entities::EntityDependencies,
@@ -60,6 +97,9 @@ impl TerrainReads {
             return Err(io::Error::new(ErrorKind::WouldBlock, "stale terrain read"));
         }
         self.entities(other.entities)?;
+        for ((system, profile), revision) in other.profiles {
+            self.profile(&system, profile, revision)?;
+        }
         if self.clock.is_none() {
             self.clock = other.clock;
         }
@@ -82,7 +122,10 @@ impl TerrainReads {
                 .is_none_or(crate::server::world_time::ReadStamp::is_current)
     }
     pub fn is_empty(&self) -> bool {
-        self.terrain.is_empty() && self.entities.is_empty() && self.clock.is_none()
+        self.terrain.is_empty()
+            && self.entities.is_empty()
+            && self.clock.is_none()
+            && self.profiles.is_empty()
     }
     pub fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
         self.terrain
@@ -90,6 +133,12 @@ impl TerrainReads {
             .copied()
             .map(chunk_state_key)
             .chain(self.entities.keys())
+            .chain(self.profiles.keys().map(|(system, profile)| {
+                crate::server::runtime::owner_codec::owner_state_key(
+                    system,
+                    crate::server::parallel::OwnerKey::Profile(*profile),
+                )
+            }))
             .chain(
                 self.clock
                     .iter()
