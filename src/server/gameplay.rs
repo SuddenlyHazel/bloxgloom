@@ -7,12 +7,17 @@ use std::io;
 mod entities;
 mod entity_inventory;
 pub(in crate::server) mod inventory;
+mod player_inventory;
 mod players;
 mod profile_state;
 mod teleport;
+pub(in crate::server) use player_inventory::Capture as InventoryCapture;
 pub(in crate::server) use players::{PlayerDecision, invoke as invoke_player};
 
 pub(super) struct Participants<'a> {
+    /// Original actor revision when native work precedes the callback overlay.
+    pub actor_inventory_revision: Option<u64>,
+    pub profile_inventories: Option<InventoryCapture<'a>>,
     pub profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
     pub players: &'a [bloxgloom_host_api::gameplay::Player],
     pub action_id: Option<u128>,
@@ -44,7 +49,7 @@ pub(in crate::server) fn block(catalog: &Catalog, id: BlockId) -> Result<Block, 
 
 pub(super) fn error(error: Error) -> io::Error {
     let kind = match error {
-        Error::Unavailable(_) => io::ErrorKind::WouldBlock,
+        Error::Unavailable(_) | Error::Deferred(_) => io::ErrorKind::WouldBlock,
         Error::Host(_) => io::ErrorKind::InvalidData,
         _ => io::ErrorKind::InvalidInput,
     };
@@ -52,6 +57,9 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    actor_inventory_revision: Option<u64>,
+    profile_inventories: Option<InventoryCapture<'a>>,
+    profile_inventory_before: std::collections::BTreeMap<u128, crate::inventory::Inventory>,
     profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
     player_operations_enabled: bool,
     players: &'a [bloxgloom_host_api::gameplay::Player],
@@ -70,6 +78,21 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn authorize_inventory(
+        &self,
+        owner: bloxgloom_host_api::gameplay::InventoryId,
+        namespace: Option<&str>,
+    ) -> Result<(), Error> {
+        if let bloxgloom_host_api::gameplay::InventoryId::Player(profile) = owner
+            && self.actor.is_none_or(|(actor, _)| actor != profile)
+            && (profile == 0
+                || self.profile_inventories.is_none()
+                || !namespace.is_some_and(|ns| self.player_authority(ns)))
+        {
+            return Err(Error::Invalid("profile inventory authority denied".into()));
+        }
+        Ok(())
+    }
     fn profile_state(
         &mut self,
         namespace: &str,
@@ -228,14 +251,23 @@ impl Snapshot for WorldSnapshot<'_> {
             }
             return entity_inventory::capture(self.world.catalog(), self.reads, store, id);
         }
-        let Some((profile, value)) = self.actor else {
-            return Err(Error::InventoryUnavailable(owner));
+        let bloxgloom_host_api::gameplay::InventoryId::Player(profile) = owner else {
+            unreachable!()
         };
-        if owner != bloxgloom_host_api::gameplay::InventoryId::Player(profile) {
-            return Err(Error::InventoryUnavailable(owner));
-        }
-        self.inventory_read = true;
-        inventory::capture(self.world.catalog(), value)
+        let value =
+            if let Some((actor, inventory)) = self.actor.filter(|(actor, _)| *actor == profile) {
+                self.inventory_read = true;
+                self.reads
+                    .inventory(
+                        actor,
+                        self.actor_inventory_revision.unwrap_or(inventory.revision),
+                    )
+                    .map_err(|e| Error::Invalid(e.to_string()))?;
+                inventory.clone()
+            } else {
+                self.capture_inventory(profile)?
+            };
+        inventory::capture(self.world.catalog(), &value)
     }
     fn validate_stack(&self, stack: &bloxgloom_host_api::gameplay::Stack) -> Result<(), Error> {
         inventory::stack(self.world.catalog(), stack).map(|_| ())
@@ -247,9 +279,14 @@ impl Snapshot for WorldSnapshot<'_> {
         stack: &bloxgloom_host_api::gameplay::Stack,
     ) -> bool {
         match owner {
-            bloxgloom_host_api::gameplay::InventoryId::Player(profile) => self
-                .actor
-                .is_some_and(|(id, inventory)| id == profile && slot < inventory.slots.len()),
+            bloxgloom_host_api::gameplay::InventoryId::Player(profile) => {
+                self.actor
+                    .is_some_and(|(id, inventory)| id == profile && slot < inventory.slots.len())
+                    || self
+                        .profile_inventory_before
+                        .get(&profile)
+                        .is_some_and(|inventory| slot < inventory.slots.len())
+            }
             bloxgloom_host_api::gameplay::InventoryId::Entity(id) => {
                 self.entities.is_some_and(|store| {
                     entity_inventory::accepts(self.world.catalog(), store, id, slot, stack)
@@ -303,6 +340,7 @@ pub(super) struct OperationInput<'a> {
 }
 
 pub(super) struct WorldPlan {
+    pub profile_inventory_changes: Vec<crate::server::journal::Change>,
     pub profile_states:
         std::collections::BTreeMap<(String, u128), bloxgloom_host_api::gameplay::ProfileCell>,
     pub player_operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
@@ -373,6 +411,9 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        actor_inventory_revision: participants.actor_inventory_revision,
+        profile_inventories: participants.profile_inventories,
+        profile_inventory_before: Default::default(),
         profile_services: participants.profile_services,
         player_operations_enabled: matches!(&action, Some(Event::ActionRequested { .. })),
         players: participants.players,
@@ -505,13 +546,19 @@ pub(super) fn plan_with_lifecycles(
     {
         plan.entity_schedules.entry(*entity).or_insert(None);
     }
+    let profile_inventory_changes = player_inventory::prepare(
+        &catalog,
+        std::mem::take(&mut snapshot.profile_inventory_before),
+        &mut plan.inventories,
+    )?;
     let inventory = if snapshot.inventory_read {
         let (profile, before) = actor.expect("inventory read requires actor capture");
         let owner = bloxgloom_host_api::gameplay::InventoryId::Player(profile);
-        Some(match plan.inventories.remove(&owner) {
+        let after = match plan.inventories.remove(&owner) {
             Some(slots) => inventory::apply(&catalog, before, slots).map_err(error)?,
             None => before.clone(),
-        })
+        };
+        (after != *before).then_some(after)
     } else {
         None
     };
@@ -766,6 +813,7 @@ pub(super) fn plan_with_lifecycles(
         entity_updates.extend(despawns);
     }
     Ok(WorldPlan {
+        profile_inventory_changes,
         profile_states: plan.profile_states,
         player_operations: plan.player_operations,
         world_time: plan.world_time,

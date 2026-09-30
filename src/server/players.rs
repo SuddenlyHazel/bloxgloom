@@ -3,6 +3,7 @@ use super::State;
 pub(super) mod admission;
 mod callbacks;
 pub(super) mod delivery;
+pub(super) mod inventory;
 mod lifecycle;
 mod operations;
 mod pending;

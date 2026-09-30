@@ -44,10 +44,23 @@ pub(super) fn prepare(
             .get(&event.profile)
             .cloned()
             .map(Ok)
-            .unwrap_or_else(|| state.inventory_store.load(event.profile))?,
+            .unwrap_or_else(|| {
+                state
+                    .profile_inventory_cache
+                    .get(
+                        event.profile,
+                        state
+                            .durability
+                            .inventory_revisions
+                            .get(&event.profile)
+                            .copied(),
+                    )
+                    .map_err(crate::server::gameplay::error)
+            })?,
     };
     let (result, reads) = invoke(state, reg, event, &before, final_session)?;
     let crate::server::gameplay::PlayerDecision {
+        profile_inventory_changes,
         mut decision,
         inventory,
         operations,
@@ -121,6 +134,7 @@ pub(super) fn prepare(
         state.durability.pending_profile_inserts() + current_insert,
         profile_states,
     )?);
+    changes.extend(profile_inventory_changes);
     let session = event
         .player
         .as_ref()
@@ -142,7 +156,7 @@ pub(super) fn prepare(
             ))
         })
         .transpose()?;
-    Ok(CommitAction {
+    let action = CommitAction {
         client_id,
         profile: Some(event.profile),
         action_id: None,
@@ -168,5 +182,13 @@ pub(super) fn prepare(
             session,
             operations,
         }),
-    })
+    };
+    let changes = crate::server::durable::action_changes(&action, state.world.catalog())?;
+    if crate::server::journal::Transaction::new(1, tick.get(), changes).exceeds_size_limit() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "player lifecycle exceeds transaction size limit",
+        ));
+    }
+    Ok(action)
 }

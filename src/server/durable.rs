@@ -229,6 +229,7 @@ pub(super) struct CommitAction {
     /// scheduling only: never part of the WAL change set, delivered as
     /// tick attempts at the commit barrier when this action applies.
     pub(super) entity_wakes: Vec<EntityId>,
+    /// Related owner cells and explicitly prepared profile inventory participants.
     pub(super) owner_changes: Vec<crate::server::journal::Change>,
     pub(super) player_publication: Option<super::players::Published>,
 }

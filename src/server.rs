@@ -15,6 +15,7 @@ mod entity_checkpoint;
 mod fire;
 mod gameplay;
 mod interest;
+mod inventory_loading;
 mod journal;
 mod lifecycle;
 #[cfg(test)]
@@ -188,6 +189,7 @@ struct State {
     admission_limit: usize,
     world: World,
     inventory_store: InventoryStore,
+    profile_inventory_cache: players::inventory::Cache,
     position_store: PositionStore,
     appearance_store: appearance::Store,
     admin_profile: Option<u128>,
@@ -615,6 +617,7 @@ fn server_state_with_startup(
         notifications,
         admission_limit,
         world,
+        profile_inventory_cache: players::inventory::Cache::new(inventory_store.clone()),
         inventory_store,
         position_store,
         appearance_store,

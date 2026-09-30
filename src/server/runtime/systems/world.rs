@@ -388,6 +388,8 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             action: None,
         },
         Participants {
+            actor_inventory_revision: None,
+            profile_inventories: None,
             profile_services: None,
             players: &[],
             action_id: None,

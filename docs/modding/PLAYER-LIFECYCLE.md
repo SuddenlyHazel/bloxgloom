@@ -2,7 +2,7 @@
 
 This is the active reference for the player-services goal. The
 [gap assessment](../../LUAU-SCRIPTING-GAPS.md#2-player-and-lifecycle-hooks)
-defines the remaining scope. VM lifetime, chat/combat, region hooks and save
+records the completed agreed scope and deferred mechanics. VM lifetime, chat/combat, region hooks and save
 converters are outside this work.
 
 ## Landed: exact identity and action queries
@@ -80,6 +80,9 @@ Joined/Spawned. Joining may return `deny` (1..255 UTF-8 bytes) or a `spawn` trip
 The host validates finite coordinates, world bounds and authoritative collision,
 requests missing terrain and retries before installing the avatar. Joining cannot
 publish state, inventory rewards or timers. Use Joined for these effects.
+Admission services run in stable service-key order and all must accept; the first
+denial/error ends admission. Denial reasons are logged server-side; the current
+pre-Welcome protocol closes the connection without a dedicated rejection frame.
 
 Joined/Spawned queue after successful admission. Leaving/Left capture the final
 player view and session bytes without blocking disconnection or permitting a veto.
@@ -94,8 +97,9 @@ Decisions may replace `state`, `public_state` (at most 1024 bytes), and
 `session_state` (at most 4096 bytes). Session bytes and timers apply after the
 receipt only if the exact admitted session is still live; disconnect removes
 live session state immediately. Final leave callbacks receive captured bytes.
-Lifecycle callbacks currently support ordinary inventory operations for their
-profile and gameplay queries; world/entity writes are rejected as a whole.
+Lifecycle callbacks support ordinary inventory operations for their profile and
+other authorized profiles, plus gameplay queries; world/entity writes are
+rejected as a whole.
 
 `profile_delay` and `session_delay` accept 1..100000 logical ticks or false to
 suspend. Omitting them retains an existing deadline. Timer callbacks consume their
@@ -236,7 +240,8 @@ the action result reaches its caller; committed inventory/profile effects still
 recover normally. Kicks do not create durable admission bans. Use durable
 profile policy for bans through the general profile-state service below.
 
-Wire version 17 adds the exact-session notice/removal frame. Cross-profile inventory remains the next increment.
+Wire version 17 adds the exact-session notice/removal frame. Profile inventory
+transactions reuse the existing inventory frames and WAL domain.
 
 ## Landed: runtime appearance
 
@@ -274,7 +279,7 @@ and uses builtin palette indices 1, 2 and 3. Player arguments support names and
 exact session tokens, including Tab completion. Set the server's local admin
 profile to exercise it; declaring the package capability alone does not grant
 its command to non-admin callers. This operation uses existing wire version 17
-and client host contract 7. Cross-profile inventory remains.
+and client host contract 7.
 
 ## Landed: runtime teleport
 
@@ -313,7 +318,7 @@ never affected. Clients that refuse to acknowledge remain unable to move.
 A teleport request replay returns its existing receipt without repeating the
 reset. Multiple teleports are applied in plan order; the last reset must be
 acknowledged. Storage failures stop mutation before movement publication.
-Cross-profile inventory remains the next player-service increment; per-player physics changes remain
+Per-player physics changes remain
 outside this goal.
 
 The lifecycle fixture includes `/welcome:recall <player>`, an Admin command
@@ -377,3 +382,61 @@ replacement session and is not replayed after a crash. Admission denial currentl
 closes the pending handshake; the reason is logged server-side rather than sent
 as a dedicated admission-rejection frame. These policies use claimed profiles,
 not authenticated remote accounts or a new global role database.
+
+
+## Profile inventory transactions
+
+Gameplay actions and post-admission lifecycle callbacks can pass a
+`BloxProfileId` to `inventory`, `give`, `take`, `move_slots`, and
+`transfer_inventory`. `"player"` remains the host-selected actor alias. Obtain
+another profile from the captured directory or explicitly decode a canonical
+`profile:<32 lowercase hex digits>` through `c.profile_id`. Session handles,
+strings, table lookalikes and zero profiles are rejected. A profile identity does
+not grant authority: every other-profile access, including reads and cached
+reads across composed handlers, requires the executing package's
+`bloxgloom:players/v1` capability. Command caller permissions remain separate.
+Joining cannot publish inventory mutations; use Joined or a durable profile timer.
+
+```luau
+local target = c.player_by_session(e.command_arguments[1])
+assert(target)
+assert(c.transfer_inventory("player", e.slot, target.profile, 0, 1))
+c.set_profile_state("welcome:policy", target.profile, "role:builder", "builder")
+```
+
+Profile inventories have 36 slots. Method slot arguments are zero-based and
+returned readonly sequences are one-based. Transfers preserve exact component
+bytes and total counts, respect insertion/extraction permissions and the 128-item
+stack cap, and return false without partial fulfillment if the requested move
+cannot be made. `give` explicitly creates items; `take` explicitly consumes them.
+A callback can capture its actor and up to seven other profile inventories, under
+the shared 4096-operation budget. Inventory, package-owned profile-state, and
+supported ordinary-action world/entity effects share one WAL transaction. Invalid
+host calls latch rejection even through `pcall`; terminal errors, stale captures,
+quota failures and oversized WAL records publish none of the candidate effects.
+Readonly queries and exact round trips retain dependencies without writing an
+unchanged inventory.
+
+An offline profile loads asynchronously through a bounded worker pool. While a
+load is pending, the whole candidate is deferred and retried in a fresh VM; partial
+work is discarded. This also applies to an offline profile timer's actor inventory.
+A missing file uses the native empty inventory; a corrupt file rejects access and
+never silently replaces saved items. Committed overlays take precedence over
+pending disk results. Inventory revisions and read reservations fence conflicting
+native/script writes and admission until the outstanding receipt is applied.
+Nothing reads a client-supplied inventory as authoritative.
+
+The target is the durable profile, so a completed transfer survives disconnect,
+reconnect and restart and appears in that profile's next inventory snapshot.
+Each affected online profile receives its own reliable committed inventory frame;
+queue pressure uses the normal disconnect/reconnect recovery policy. Appearance,
+teleport, notices and kicks still target an exact session instead. Action receipt
+replay never repeats transfers or profile-state changes. Readonly committed
+observers receive each affected profile and inventory revision, never private
+slots, and retain their advisory delivery guarantees.
+
+The welcome package's Admin command `/welcome:manage <player> 4` demonstrates a
+one-item transfer from the caller's selected slot into the first compatible target
+slot, followed by a receipt-bound notice. It creates no items and refuses self,
+empty-source and full-target attempts. No world schema or wire-version change is
+needed for these existing inventory-domain participants.

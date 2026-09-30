@@ -72,6 +72,7 @@ fn apply_committed_action_inner(
     if !action.terrain_reads.is_current()
         || !action.terrain_reads.entities_current(&state.entities)
         || !action.terrain_reads.profiles_current(&state.system_runtime)
+        || !action.terrain_reads.inventories_current(state)
     {
         return Err(io::Error::other(
             "committed terrain dependency changed before apply",
@@ -117,6 +118,8 @@ fn apply_committed_action_inner(
             .filter(|change| is_owner_publication_key(&change.key))
             .cloned(),
     );
+    let profile_inventories =
+        super::super::players::inventory::decode(&action.owner_changes, state.world.catalog())?;
     let world_edits = std::mem::take(&mut action.world_edits);
     let chunk_checkpoints: Vec<_> = world_edits
         .iter()
@@ -150,6 +153,9 @@ fn apply_committed_action_inner(
             .apply_replayed_owner_changes(&owner_changes)?;
         super::super::players::delivery::publish_changes(state, &owner_changes)?;
     }
+    for (profile, inventory) in &profile_inventories {
+        super::super::players::inventory::install(state, *profile, inventory)?;
+    }
     if let Some(published) = action.player_publication.take() {
         super::super::players::committed(state, published)?;
     }
@@ -174,26 +180,9 @@ fn apply_committed_action_inner(
     }
 
     if let (Some(profile), Some(inventory)) = (action.profile, &action.inventory) {
-        state
-            .durability
-            .inventory_revisions
-            .insert(profile, inventory.revision);
-        state
-            .durability
-            .inventory_overlay
-            .insert(profile, inventory.clone());
-        if let Some(client) = action
-            .client_id
-            .and_then(|id| state.clients.get_mut(&id))
-            .filter(|client| client.profile == profile)
-        {
-            client.inventory = inventory.clone();
-        }
-        state.durability.remember_checkpoint(
-            durable::inventory_state_key(profile),
-            InventoryStore::encode_snapshot_with_catalog(inventory, state.world.catalog())?,
-        );
+        super::super::players::inventory::install(state, profile, inventory)?;
     }
+
     let mut result = None;
     if let Some(transition) = action.receipt_transition.take() {
         let profile = transition.profile;
@@ -270,6 +259,7 @@ fn apply_committed_action_inner(
         pickups: action.pickups,
         fire_bursts,
     });
+    super::super::players::inventory::publish(state, profile_inventories);
     if completed_pickup && let Some(id) = action.client_id {
         state.durability.retry_pickups.remove(&id);
     }

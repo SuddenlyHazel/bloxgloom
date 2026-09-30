@@ -7,9 +7,10 @@
 //! string, never text. Give creates items explicitly; take consumes them. False /
 //! nil means no change, not partial fulfillment. Transfer is atomic across owners.
 //!
-//! Owner is "player" (only the requesting actor) or an entity ID handle, as in
-//! an event drop candidate's `id` field. Entity access/slot permissions/delays remain host
-//! decisions. No profile IDs or private entity payloads cross this boundary.
+//! Owner is "player" (the host-selected actor), an exact entity ID handle or an
+//! exact profile ID handle. Other profiles require package players authority in
+//! actions/post-admission lifecycle. Entity access/slot permissions/delays remain
+//! host decisions; private entity payloads do not cross this boundary.
 //! Fixed raw field reads never invoke metamethods or traverse arbitrary tables.
 //! Context bounds inventories to 256 slots; the live host validates component
 //! payloads to 1024 bytes and counts to 128. Decode checks those limits before
@@ -129,6 +130,11 @@ fn owner(context: &Context<'_>, value: Value) -> Result<InventoryId, Error> {
         Value::String(s) if s.as_bytes().as_ref() == b"player" => context
             .player()
             .ok_or_else(|| invalid("event has no player inventory")),
+        Value::UserData(ref handle) if handle.is::<crate::server::script::handles::ProfileId>() => {
+            Ok(InventoryId::Player(
+                crate::server::script::handles::profile_value(value).map_err(invalid)?,
+            ))
+        }
         Value::UserData(_) => Ok(InventoryId::Entity(
             crate::server::script::handles::entity_value(value).map_err(invalid)?,
         )),
@@ -140,7 +146,7 @@ fn owner(context: &Context<'_>, value: Value) -> Result<InventoryId, Error> {
             field(&t, "entity_hi")?,
         )?)),
         _ => Err(invalid(
-            "inventory owner must be player or an entity ID handle",
+            "inventory owner must be player, a profile ID or an entity ID handle",
         )),
     }
 }

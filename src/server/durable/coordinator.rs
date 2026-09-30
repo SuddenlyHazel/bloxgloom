@@ -276,6 +276,34 @@ fn process_queue(
                         return Err(error);
                     }
                 }
+                // A bounded VM can still compose large valid components and
+                // terrain. Oversized unsubmitted plans are denials, not a dead writer.
+                if !action.owner_changes.is_empty() {
+                    let changes = super::action_changes(&action, state.world.catalog())?;
+                    if crate::server::journal::Transaction::new(1, tick.get(), changes)
+                        .exceeds_size_limit()
+                    {
+                        cancel_prepared_entities(state, &action);
+                        let profile = action.profile.ok_or_else(|| {
+                            io::Error::other("oversized non-command gameplay action")
+                        })?;
+                        let action_id = action.action_id.ok_or_else(|| {
+                            io::Error::other("oversized non-command gameplay action")
+                        })?;
+                        let payload = action
+                            .receipt_value
+                            .clone()
+                            .ok_or_else(|| io::Error::other("missing action receipt"))?;
+                        action = rejected_action(
+                            state,
+                            &request,
+                            profile,
+                            action_id,
+                            payload,
+                            "action exceeds transaction size limit",
+                        );
+                    }
+                }
                 if let Some(entities) = &action.entities
                     && let Err(error) = state.entities.validate_prepared(entities)
                 {

@@ -98,6 +98,9 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    pub(in crate::server) fn exceeds_size_limit(&self) -> bool {
+        codec::transaction_size(self).is_none_or(|size| size > MAX_RECORD_BYTES)
+    }
     pub fn new(id: u128, tick: u64, changes: Vec<Change>) -> Self {
         Self { id, tick, changes }
     }

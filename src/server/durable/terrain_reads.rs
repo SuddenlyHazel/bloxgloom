@@ -7,10 +7,48 @@ use crate::world::{ChunkReadStamp, World};
 pub(in crate::server) struct TerrainReads {
     pub clock: Option<crate::server::world_time::ReadStamp>,
     profiles: BTreeMap<(crate::server::registry::SystemId, u128), Option<u64>>,
+    inventories: BTreeMap<u128, u64>,
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
     entities: super::super::entities::EntityDependencies,
 }
 impl TerrainReads {
+    pub fn inventory(&mut self, profile: u128, revision: u64) -> io::Result<()> {
+        if let Some(old) = self.inventories.get(&profile) {
+            if *old != revision {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "inventory read changed during planning",
+                ));
+            }
+        } else {
+            if self.inventories.len() >= 8 {
+                return Err(io::Error::new(
+                    ErrorKind::QuotaExceeded,
+                    "profile inventory read limit exceeded",
+                ));
+            }
+            self.inventories.insert(profile, revision);
+        }
+        Ok(())
+    }
+    pub fn inventories_current(&self, state: &crate::server::State) -> bool {
+        self.inventories.iter().all(|(profile, revision)| {
+            state
+                .clients
+                .values()
+                .find(|c| c.profile == *profile)
+                .map(|c| c.inventory.revision)
+                .or_else(|| {
+                    state
+                        .durability
+                        .inventory_overlay
+                        .get(profile)
+                        .map(|i| i.revision)
+                })
+                .or_else(|| state.durability.inventory_revisions.get(profile).copied())
+                .is_none_or(|current| current == *revision)
+        })
+    }
     pub fn profile(
         &mut self,
         system: &crate::server::registry::SystemId,
@@ -97,6 +135,9 @@ impl TerrainReads {
             return Err(io::Error::new(ErrorKind::WouldBlock, "stale terrain read"));
         }
         self.entities(other.entities)?;
+        for (profile, revision) in other.inventories {
+            self.inventory(profile, revision)?;
+        }
         for ((system, profile), revision) in other.profiles {
             self.profile(&system, profile, revision)?;
         }
@@ -126,6 +167,7 @@ impl TerrainReads {
             && self.entities.is_empty()
             && self.clock.is_none()
             && self.profiles.is_empty()
+            && self.inventories.is_empty()
     }
     pub fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
         self.terrain
@@ -133,6 +175,12 @@ impl TerrainReads {
             .copied()
             .map(chunk_state_key)
             .chain(self.entities.keys())
+            .chain(
+                self.inventories
+                    .keys()
+                    .copied()
+                    .map(super::inventory_state_key),
+            )
             .chain(self.profiles.keys().map(|(system, profile)| {
                 crate::server::runtime::owner_codec::owner_state_key(
                     system,

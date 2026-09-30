@@ -40,6 +40,7 @@ pub struct Block {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     Unavailable(Cell),
+    Deferred(String),
     UnknownContent(String),
     InventoryUnavailable(InventoryId),
     Invalid(String),
@@ -50,6 +51,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Deferred(reason) => f.write_str(reason),
             Self::Unavailable(cell) => write!(f, "terrain unavailable at {cell:?}"),
             Self::UnknownContent(key) => write!(f, "unknown content: {key}"),
             Self::InventoryUnavailable(owner) => write!(f, "inventory unavailable: {owner:?}"),
@@ -63,6 +65,13 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn authorize_inventory(
+        &self,
+        _owner: InventoryId,
+        _namespace: Option<&str>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
     fn profile_state(
         &mut self,
         _namespace: &str,

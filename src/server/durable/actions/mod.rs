@@ -433,7 +433,7 @@ fn plan_block_edit(
             &mut terrain_reads,
             &coords,
             &removals,
-            (profile, &updated),
+            (profile, &updated, inventory_before.revision),
             position,
             tick.get(),
         )?;
@@ -502,7 +502,7 @@ fn plan_block_edit(
         &mut terrain_reads,
         &coords,
         &removals,
-        (profile, &inventory_before),
+        (profile, &inventory_before, inventory_before.revision),
         position,
         tick.get(),
     )?;
@@ -553,7 +553,7 @@ fn plan_gameplay_removals(
     reads: &mut TerrainReads,
     edits: &[crate::server::gameplay::Edit],
     removals: &[crate::server::gameplay::Removal],
-    actor: (u128, &Inventory),
+    actor: (u128, &Inventory, u64),
     actor_position: [f32; 3],
     tick: u64,
 ) -> io::Result<crate::server::gameplay::WorldPlan> {
@@ -570,11 +570,13 @@ fn plan_gameplay_removals(
             action: None,
         },
         crate::server::gameplay::Participants {
+            actor_inventory_revision: Some(actor.2),
+            profile_inventories: None,
             profile_services: None,
             players: &[],
             action_id: None,
             clock: None,
-            actor: Some(actor),
+            actor: Some((actor.0, actor.1)),
             actor_position: Some(actor_position),
             admin: false,
             entities: &state.entities,

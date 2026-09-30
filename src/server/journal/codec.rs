@@ -6,6 +6,19 @@ use super::{
 };
 use std::io;
 
+pub(super) fn transaction_size(transaction: &Transaction) -> Option<usize> {
+    transaction
+        .changes
+        .iter()
+        .try_fold(2usize + 16 + 8 + 4, |total, change| {
+            total
+                .checked_add(1 + change.key.domain.len() + 4 + change.key.bytes.len() + 4)
+                .and_then(|sum| sum.checked_add(change.before.len()))
+                .and_then(|sum| sum.checked_add(4))
+                .and_then(|sum| sum.checked_add(change.after.len()))
+        })
+}
+
 pub(super) fn validate_transaction(
     transaction: &Transaction,
     require_sorted: bool,
@@ -17,7 +30,11 @@ pub(super) fn validate_transaction(
         return Err(invalid_input("invalid journal change count"));
     }
     let mut previous: Option<&StateKey> = None;
-    let mut total = 2usize + 16 + 8 + 4;
+    let total = transaction_size(transaction)
+        .ok_or_else(|| invalid_input("journal transaction length overflow"))?;
+    if total > MAX_RECORD_BYTES {
+        return Err(invalid_input("journal transaction exceeds size limit"));
+    }
     for change in &transaction.changes {
         validate_key(&change.key)?;
         if change.key.domain == super::CLOCK_DOMAIN {
@@ -41,15 +58,6 @@ pub(super) fn validate_transaction(
             }
         }
         previous = Some(&change.key);
-        total = total
-            .checked_add(1 + change.key.domain.len() + 4 + change.key.bytes.len() + 4)
-            .and_then(|sum| sum.checked_add(change.before.len()))
-            .and_then(|sum| sum.checked_add(4))
-            .and_then(|sum| sum.checked_add(change.after.len()))
-            .ok_or_else(|| invalid_input("journal transaction length overflow"))?;
-        if total > MAX_RECORD_BYTES {
-            return Err(invalid_input("journal transaction exceeds size limit"));
-        }
     }
     Ok(())
 }

@@ -192,10 +192,7 @@ fn bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline() {
         assert!(connection.encode_receiver.is_none());
         assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
         // Advance deterministic host time, not the socket or a sleeping worker.
-        let workers = InventoryWorkers {
-            sender: None,
-            workers: Vec::new(),
-        };
+        let workers = InventoryWorkers::disabled();
         assert_eq!(
             connection
                 .poll(

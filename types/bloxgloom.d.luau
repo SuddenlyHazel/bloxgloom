@@ -368,7 +368,9 @@ export type BloxEntity = {
     data: string, -- registered public projection, not private state
 }
 --- The acting player, or an exact entity identity. Host access checks still apply.
-export type BloxInventoryOwner = "player" | BloxEntityId
+--- Other profiles require package players/v1 in actions/post-admission lifecycle.
+--- An invocation captures its actor and at most seven other profile inventories.
+export type BloxInventoryOwner = "player" | BloxEntityId | BloxProfileId
 --- An item stack. Count is 1..128; component bytes follow the item's registered schema.
 export type BloxStack = { item: string, count: number, components: { version: number, bytes: string }? }
 --- An inventory slot. A missing stack means empty; insert/extract describe permitted transfers.

@@ -332,6 +332,19 @@ fn luau_player_profile_timer_runs_offline_on_logical_deadline_after_restart() {
     );
     crate::server::players::drive(&mut state, TickId::new(1000)).unwrap();
     complete_barrier(&mut state, CommitBarrier::AllStaged).unwrap();
+    // Offline inventories load on workers; retry at the same logical tick so
+    // file completion cannot consume extra game time or lose the due timer.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while state
+        .system_runtime
+        .profile_deadline(&system, PROFILE)
+        .is_some()
+    {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(1));
+        crate::server::players::drive(&mut state, TickId::new(1000)).unwrap();
+        complete_barrier(&mut state, CommitBarrier::AllStaged).unwrap();
+    }
     assert_eq!(
         state.system_runtime.profile_deadline(&system, PROFILE),
         None

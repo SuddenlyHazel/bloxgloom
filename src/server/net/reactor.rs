@@ -9,7 +9,7 @@ use super::ContentHandshake;
 mod codec;
 mod connection;
 mod metrics;
-use crate::inventory::{Inventory, InventoryStore};
+use crate::server::inventory_loading::InventoryWorkers;
 use crate::server::{INPUT_CAPACITY, MAX_CLIENTS, SimulationInput, State, run_simulation_ticks};
 use codec::CodecWorkers;
 use connection::Connection;
@@ -18,9 +18,9 @@ use polling::{Event as PollEvent, Events, Poller};
 use std::collections::VecDeque;
 use std::io::{self, ErrorKind};
 use std::net::{Shutdown, TcpListener};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 const IO_POLL_TIMEOUT: Duration = Duration::from_millis(10);
@@ -47,75 +47,6 @@ fn has_admission_capacity_with_limit(
     limit: usize,
 ) -> bool {
     connection_count.saturating_add(pending_leave_count) < limit
-}
-
-struct InventoryLoadRequest {
-    profile: u128,
-    reply: SyncSender<io::Result<Inventory>>,
-}
-
-/// Bounded, fixed-size pool for the filesystem portion of the join handshake.
-struct InventoryWorkers {
-    sender: Option<SyncSender<InventoryLoadRequest>>,
-    workers: Vec<JoinHandle<()>>,
-}
-
-impl InventoryWorkers {
-    fn new(store: InventoryStore) -> io::Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel(MAX_CLIENTS);
-        let receiver = Arc::new(Mutex::new(receiver));
-        let mut workers = Vec::with_capacity(INVENTORY_WORKERS);
-        for index in 0..INVENTORY_WORKERS {
-            let receiver = Arc::clone(&receiver);
-            let store = store.clone();
-            let worker = thread::Builder::new()
-                .name(format!("server-inventory-{index}"))
-                .spawn(move || inventory_worker(store, receiver))?;
-            workers.push(worker);
-        }
-        Ok(Self {
-            sender: Some(sender),
-            workers,
-        })
-    }
-
-    fn request(&self, profile: u128) -> Result<Receiver<io::Result<Inventory>>, ()> {
-        let (reply, receiver) = mpsc::sync_channel(1);
-        let request = InventoryLoadRequest { profile, reply };
-        match self
-            .sender
-            .as_ref()
-            .expect("inventory pool is active")
-            .try_send(request)
-        {
-            Ok(()) => Ok(receiver),
-            Err(TrySendError::Full(_)) => Err(()),
-            Err(TrySendError::Disconnected(_)) => Err(()),
-        }
-    }
-}
-
-fn inventory_worker(store: InventoryStore, receiver: Arc<Mutex<Receiver<InventoryLoadRequest>>>) {
-    loop {
-        let request = receiver
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .recv();
-        let Ok(request) = request else {
-            return;
-        };
-        let result = store.load(request.profile);
-        let _ = request.reply.try_send(result);
-    }
-}
-
-impl Drop for InventoryWorkers {
-    fn drop(&mut self) {
-        drop(self.sender.take());
-        for worker in self.workers.drain(..) {
-            let _ = worker.join();
-        }
-    }
 }
 
 struct PendingLeave {
@@ -174,7 +105,7 @@ fn serve_listener_inner(
     let outbound = Arc::clone(&state.outbound);
     let content =
         ContentHandshake::with_bundle(state.world.catalog_arc(), state.client_bundle.as_deref())?;
-    let workers = InventoryWorkers::new(inventory_store)?;
+    let workers = InventoryWorkers::new(inventory_store, MAX_CLIENTS, INVENTORY_WORKERS)?;
     let poller = Arc::new(Poller::new()?);
     outbound.install_poller(Arc::clone(&poller))?;
     let codecs = CodecWorkers::new(

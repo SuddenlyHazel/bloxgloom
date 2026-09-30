@@ -1,13 +1,14 @@
 # Luau scripting gaps
 
-Current assessment: September 30, 2026, after Phase 8 and basic runtime tools closure.
+Current assessment: September 30, 2026, after Phase 8, basic runtime tools and player-services closure.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
 scheduled work, UI and authored visuals. It still leaves gaps that limit larger
 mods and new game modes. This document records those gaps and their practical
-impact. Section 1 records the subsequently completed basic runtime tools goal;
-the remaining sections describe open gaps.
+impact. Sections 1 and 2 record the completed basic runtime tools and agreed
+player-services goals; their deferred mechanics and subsequent sections remain
+open gaps.
 
 See [SCRIPTING.md](SCRIPTING.md) for the implemented Luau API and
 [Phase 8 acceptance](docs/modding/PHASE-8-ACCEPTANCE.md) for verification and the
@@ -78,13 +79,13 @@ runtime movement or cosmetic-change authority.
 
 | Existing surface | What it does not yet provide |
 | --- | --- |
-| Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Cross-profile inventory operations |
-| Package-owned lifecycle and ordinary gameplay profile state, atomic rewards and profile/session timers | Cross-profile inventory access |
+| Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Account authentication remains separate |
+| Package-owned lifecycle/gameplay profile state, atomic profile inventory transactions and profile/session timers | Global account/role databases remain separate |
 | Validated admission/reconnect spawn proposals, runtime teleport and cosmetic replacement, frozen player rules/palettes | Per-player physics remains deferred |
 | Client lifecycle callbacks, selected local public state and targeted status notices | General chat transport and hooks |
 | Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 
-The remaining player-service implementation centers on cross-profile inventory. Native and Luau post-commit observers are advisory:
+The agreed player-services implementation is complete. Native and Luau post-commit observers remain advisory:
 they can be dropped under pressure and are not replayed after restart. They
 cannot safely be the only mechanism awarding a quest reward or recording a
 player's first visit.
@@ -283,56 +284,35 @@ add save converters, or implement every proposed player mechanic at once.
 
 #### Execution status
 
-Goal active. Identity/directory queries are committed. Lifecycle registration,
-admission/spawn decisions, durable profile and session state, atomic rewards and
-profile/session deadlines are implemented and verified. The second increment
-passes 1,132 workspace tests, strict Clippy, formatting and typed Luau analysis.
-Typed command targeting and a reconnect-scoped client roster now pass all 1,137
-workspace tests, strict Clippy, formatting and typed Luau analysis, including
-real-listener stale-session rejection. Committed Luau observers now pass all 1,141
-workspace tests, strict Clippy, formatting and typed Luau analysis. Readonly public
-changes run on the native bounded advisory lane, with inert client identities;
-real-listener coverage verifies an exhausted callback cannot block a commit or
-later observers. Local public profile-state transport and client ready/change/
-disconnect callbacks now pass all 1,147 workspace tests, strict Clippy, formatting
-and typed Luau analysis. Real-client coverage verifies panel updates/reconnect
-cleanup; the authored panel preview was rendered and inspected. Additional player
-operations are implemented; cross-profile inventory remains.
-General package-owned profile-state access is implemented in ordinary actions and
-lifecycle callbacks, with explicit offline identity decoding, revision/existence
-read fences, deadline preservation and receipt-gated public delivery. Role/ban
-examples use the same durable cells; no native operator promotion is implied.
-This increment passes all 1,166 workspace tests, strict Clippy, formatting and
-typed Luau analysis, including real-listener rollback/restart/admission coverage.
-Cross-profile inventory transactions remain the final service increment.
+The agreed goal is complete. Identity/directory queries, typed player commands,
+admission/spawn and join/leave hooks, package-owned profile/session state,
+profile/session scheduling, committed observers, client lifecycle/public state,
+notices/kicks, appearance, teleport and cross-profile inventories are implemented.
+Roles and admission bans use package-owned durable cells; they do not promote a
+profile to native operator or authenticate an account.
 
-Land the work in reviewable increments:
+Final verification passes **1,175 workspace tests** (1,139 game and 36 host API),
+`cargo fmt --all -- --check`, strict all-target/all-feature Clippy and typed Luau
+analysis of the runnable welcome package. Real nonblocking-listener tests use
+isolated saves and exercise joins, cancelled admission, rollback, reconnect,
+restart and client retirement. The public-state panel and native appearance
+previews were rendered and inspected. Graphify was refreshed after the code edits.
 
-The first increment exposes exact actor profile/session identities and captured
-online-player queries in gameplay action callbacks, with honest profile-claim
-trust metadata. Its real-listener regression checks readonly views and rollback
-after a caught forged-session operation. See the
-[active player-services reference](docs/modding/PLAYER-LIFECYCLE.md) for landed APIs.
+| Accepted requirement | Regression evidence |
+| --- | --- |
+| Exact identities, captured discovery, claimed-profile trust and typed/stale command targets | `src/server/net/tests/script_startup/gameplay/players.rs`, `src/client/lifecycle/tests.rs` |
+| Admission composition, atomic first-join progress/rewards, reconnect and cleanup | `src/server/net/tests/script_startup/gameplay/players.rs`, `src/server/net/tests/script_startup/join_lifecycle.rs` |
+| Offline logical profile timers and cancelled session timers | `src/server/net/tests/script_startup/gameplay/players.rs`, `src/server/net/tests/script_startup/gameplay/player_inventory/lifecycle.rs` |
+| General owned profile state, roles/bans, revision/existence fences and restart | `src/server/net/tests/script_startup/gameplay/profile_state.rs` |
+| Authorized session operations, validated spawn/teleport and prediction reset | `src/server/net/tests/script_startup/gameplay/player_operations.rs`, `src/server/net/tests/script_startup/gameplay/player_teleport.rs`, `src/server/net/tests/script_startup/appearance/operations.rs` |
+| Conserved live/offline inventory transactions, concurrent writers, read reservations, corruption and WAL size rejection | `src/server/net/tests/script_startup/gameplay/player_inventory.rs`, its adjacent `concurrency.rs`/`lifecycle.rs`, `crates/host-api/src/gameplay/tests.rs` |
+| Advisory readonly observations and isolated client lifecycle/public projections | `src/server/net/tests/script_startup/gameplay/observers.rs`, `src/client/player_services/tests.rs`, `src/client/lifecycle/tests.rs` |
 
-1. Player identities, captured directory, command targeting and trust metadata.
-2. Lifecycle registration, profile/session state and atomic first-join effects.
-3. Spawn/teleport, targeted inventory/appearance/message operations and scheduling.
-4. Committed observations, client lifecycle and selected player-state delivery.
-5. Integrated example, editor/runtime documentation, real-listener/reconnect/restart
-   regressions, full workspace tests, formatting and strict Clippy.
-
-Existing VM lifetime and package installation rules remain in force. Any changed
-save or wire contract is versioned; no prerelease save converters are introduced.
-
-Evidence: [gameplay events](crates/host-api/src/gameplay/handlers.rs),
-[Luau gameplay bindings](src/server/script/gameplay/bindings.rs),
-[gameplay services](SCRIPTING.md#gameplay-context-services),
-[profile owner systems](SCRIPTING.md#durable-owner-systems),
-[player admission and removal](src/server.rs),
-[session player entities](src/server/entities/player.rs),
-[player rules](docs/modding/PLAYER-RULES.md),
-[native committed-observer contract](crates/host-api/src/gameplay/observations.rs)
-and [advisory observer delivery](src/server/notifications.rs).
+The runnable example is `fixtures/player-lifecycle/`; the
+[active player-services reference](docs/modding/PLAYER-LIFECYCLE.md) records
+bindings, operation limits, event ordering, retry/receipt semantics and remaining
+engine boundaries. Region hooks, chat/combat/respawn, per-player physics, custom
+geometry, authentication, VM reuse and save converters remain follow-up work.
 
 ### 3. Dynamic UI and input
 

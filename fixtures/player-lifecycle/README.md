@@ -43,3 +43,8 @@ These are policies on claimed profiles, with the engine's existing identity trus
 
 `/welcome:manage <player> 1` applies the registered server uniform. These modes
 share one command so the example respects the target-action discovery bound.
+
+`/welcome:manage <player> 4` transfers one item from the operator's selected slot
+to the recipient's first compatible slot. It preserves component bytes and the
+128-item stack cap; it creates no items. The recipient receives the committed
+inventory and a notice. An empty source or full recipient rejects the operation.

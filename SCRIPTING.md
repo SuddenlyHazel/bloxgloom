@@ -374,13 +374,18 @@ host coordinate sequences are readonly. A block descriptor contains `state`,
 | `c.transfer_inventory(from,source,to,destination,count)` | Moves an exact count between authorized owners |
 | `c.move_slots(owner,source,destination,count)` | Moves an exact count within an authorized owner |
 | `c.collect_drop(id,max_count)` | Credits an eligible drop to the acting player's finite inventory |
-| `c.admin_give(item,count)` | Host-authenticated admin-only item grant; returns boolean |
-| `c.admin_spawn(key)` | Host-authenticated admin-only creature spawn |
+| `c.admin_give(item,count)` | Host-authorized operator-only item grant; returns boolean |
+| `c.admin_spawn(key)` | Host-authorized operator-only creature spawn |
 | `c.world_time()` | In gameplay action callbacks, a readonly captured `{elapsed_ms,cycle_ms}` daylight phase; observes this action's staged changes |
 | `c.admin_set_time(elapsed_ms)` | In gameplay action callbacks, stage an admin-authorized integer phase `0 <= elapsed_ms < cycle_ms`; commits with the action's world, inventory and entity changes |
 
 Gameplay inventory slots are zero-based; returned sequences are one-based.
-An owner is `"player"` or an exact entity ID handle, never an arbitrary profile.
+An owner is `"player"`, an exact entity ID handle, or an exact profile ID handle.
+Access to another profile requires the executing server package's
+`bloxgloom:players/v1` capability and an action or post-admission lifecycle context.
+Profile handles identify durable inventories, including offline ones; session
+handles and profile strings are not inventory owners. See
+[profile inventory transactions](docs/modding/PLAYER-LIFECYCLE.md#profile-inventory-transactions).
 A slot contains optional `stack` and boolean `insert`/`extract` permissions.
 A stack is `{item="package:item",count=1,components={version=1,bytes="binary"}}`;
 omit components for a plain stack. Counts are 1–128; component payloads are
@@ -391,7 +396,8 @@ Transfers preserve exact components and never create items. False/nil from an
 ordinary unsuccessful inventory operation means no change. Creation through
 `give`, drop spawning or declared recipes is explicit server-script authority;
 the client cannot invoke it directly or nominate another actor. Admin services
-recheck the authenticated actor even when called by a player-permission action.
+recheck the host-selected operator permission of the admitted actor even when
+called by a player-permission action. Profile claims are not authenticated accounts.
 The current daylight cycle lasts 1,200,000 ms. `verdant:noon` in the combined
 example demonstrates a mod command using the same public clock operation as
 `time set noon`. Clock reads fence manual changes while ordinary elapsed time

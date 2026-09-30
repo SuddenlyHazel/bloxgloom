@@ -119,6 +119,12 @@ impl Context<'_> {
     }
 
     fn load_inventory(&mut self, owner: InventoryId) -> Result<(), Error> {
+        if let Err(error) = self
+            .snapshot
+            .authorize_inventory(owner, self.handler_namespace.as_deref())
+        {
+            return self.fail(error);
+        }
         if self.inventories.contains_key(&owner) {
             return Ok(());
         }

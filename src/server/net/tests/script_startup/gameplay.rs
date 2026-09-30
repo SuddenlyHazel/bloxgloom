@@ -20,6 +20,8 @@ mod entities;
 mod inventory;
 #[path = "gameplay/observers.rs"]
 mod observers;
+#[path = "gameplay/player_inventory.rs"]
+mod player_inventory;
 #[path = "gameplay/player_operations.rs"]
 mod player_operations;
 #[path = "gameplay/player_teleport.rs"]
@@ -83,6 +85,13 @@ struct Peer {
 }
 impl Peer {
     fn connect(address: std::net::SocketAddr, catalog: Arc<Catalog>) -> Self {
+        Self::connect_profile(address, catalog, PROFILE)
+    }
+    fn connect_profile(
+        address: std::net::SocketAddr,
+        catalog: Arc<Catalog>,
+        profile: u128,
+    ) -> Self {
         let mut stream = TcpStream::connect(address).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -91,7 +100,7 @@ impl Peer {
             &mut stream,
             &ClientMessage::Hello {
                 name: "luau-action".into(),
-                profile: PROFILE,
+                profile,
                 content_fingerprint: catalog.fingerprint(),
             },
         )
@@ -410,6 +419,8 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                actor_inventory_revision: None,
+                profile_inventories: None,
                 profile_services: None,
                 players: &[],
                 action_id: None,

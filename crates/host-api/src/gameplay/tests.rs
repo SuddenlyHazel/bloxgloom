@@ -253,6 +253,16 @@ fn ignored_failures_cannot_publish_partial_operations() {
 
 struct Inventories(BTreeMap<InventoryId, Vec<Slot>>);
 impl Snapshot for Inventories {
+    fn authorize_inventory(
+        &self,
+        owner: InventoryId,
+        namespace: Option<&str>,
+    ) -> Result<(), Error> {
+        if owner == InventoryId::Player(8) && namespace != Some("test") {
+            return Err(Error::Invalid("profile inventory authority denied".into()));
+        }
+        Ok(())
+    }
     fn seed(&self) -> u64 {
         23
     }
@@ -354,5 +364,55 @@ fn transfers_preserve_components_and_failed_capacity_checks_preserve_both_sides(
     assert_eq!(
         plan.inventories[&b][0].as_ref().unwrap().components,
         tagged.components
+    );
+}
+
+#[test]
+fn cached_profile_inventory_rechecks_each_handler_authority_and_latches_denial() {
+    use std::sync::Arc;
+    struct Query(bool);
+    impl Handler for Query {
+        fn handle(&self, context: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            if self.0 {
+                context.inventory(InventoryId::Player(8))?;
+                assert!(context.give(InventoryId::Player(7), Stack::new("test:stone", 1))?);
+            } else {
+                assert!(context.inventory(InventoryId::Player(8)).is_err());
+            }
+            Ok(())
+        }
+    }
+    let empty = Slot {
+        stack: None,
+        insert: true,
+        extract: true,
+    };
+    let mut world = Inventories(BTreeMap::from([
+        (InventoryId::Player(7), vec![empty.clone()]),
+        (InventoryId::Player(8), vec![empty]),
+    ]));
+    let event = Event::ActionRequested {
+        action: "test:act".into(),
+        position: [0.; 3],
+        cell: None,
+        entity: None,
+        slot: 0,
+        arguments: vec![],
+    };
+    let mut context = Context::new(&mut world, 16);
+    for (key, grant) in [("test:allowed", true), ("other:denied", false)] {
+        let registration = HandlerRegistration {
+            key: key.into(),
+            version: 1,
+            event: EventKind::ActionRequested,
+            target: None,
+            handler: Arc::new(Query(grant)),
+        };
+        let result = context.dispatch(&registration, &event);
+        result.unwrap();
+    }
+    assert!(
+        context.finish().is_err(),
+        "caught cached-owner access kept a partial grant"
     );
 }

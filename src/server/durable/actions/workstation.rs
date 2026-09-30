@@ -139,6 +139,8 @@ pub(super) fn place(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            actor_inventory_revision: Some(inventory_before.revision),
+            profile_inventories: None,
             profile_services: None,
             players: &[],
             action_id: None,
@@ -286,6 +288,8 @@ pub(super) fn remove(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            actor_inventory_revision: None,
+            profile_inventories: None,
             profile_services: None,
             players: &[],
             action_id: None,

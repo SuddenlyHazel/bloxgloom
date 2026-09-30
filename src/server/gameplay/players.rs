@@ -2,6 +2,7 @@
 use super::*;
 use bloxgloom_host_api::players::{Decision, Event, Registration, State};
 pub(in crate::server) struct PlayerDecision {
+    pub profile_inventory_changes: Vec<crate::server::journal::Change>,
     pub decision: Decision,
     pub inventory: Option<crate::inventory::Inventory>,
     pub operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
@@ -27,6 +28,9 @@ pub(in crate::server) fn invoke(
     let actor = participants.actor;
     let catalog = world.catalog_arc();
     let mut snapshot = WorldSnapshot {
+        actor_inventory_revision: participants.actor_inventory_revision,
+        profile_inventories: participants.profile_inventories,
+        profile_inventory_before: Default::default(),
         profile_services: participants.profile_services,
         player_operations_enabled: event.kind != bloxgloom_host_api::players::EventKind::Joining,
         players: participants.players,
@@ -80,11 +84,17 @@ pub(in crate::server) fn invoke(
         &plan.player_operations,
         &[],
     )?;
+    let profile_inventory_changes = player_inventory::prepare(
+        &catalog,
+        std::mem::take(&mut snapshot.profile_inventory_before),
+        &mut plan.inventories,
+    )?;
     let inventory = if let Some((profile, before)) = actor {
         plan.inventories
             .remove(&bloxgloom_host_api::gameplay::InventoryId::Player(profile))
             .map(|slots| inventory::apply(&catalog, before, slots).map_err(error))
             .transpose()?
+            .filter(|after| after != before)
     } else {
         None
     };
@@ -95,6 +105,7 @@ pub(in crate::server) fn invoke(
         ));
     }
     Ok(PlayerDecision {
+        profile_inventory_changes,
         decision,
         inventory,
         operations: plan.player_operations,

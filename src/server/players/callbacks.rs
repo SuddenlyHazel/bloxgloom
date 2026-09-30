@@ -58,6 +58,13 @@ pub(super) fn invoke(
         &mut reads,
         &mut requested,
         crate::server::gameplay::Participants {
+            actor_inventory_revision: None,
+            profile_inventories: Some(crate::server::gameplay::InventoryCapture {
+                clients: &state.clients,
+                overlay: &state.durability.inventory_overlay,
+                revisions: &state.durability.inventory_revisions,
+                cache: &mut state.profile_inventory_cache,
+            }),
             profile_services: Some(&state.system_runtime),
             players: &players,
             action_id: None,
@@ -119,6 +126,7 @@ pub(in crate::server) fn admit(
         let decision = result.decision;
         if !result.operations.is_empty()
             || !result.profile_states.is_empty()
+            || !result.profile_inventory_changes.is_empty()
             || result.inventory.is_some()
             || decision.state.is_some()
             || decision.session_data.is_some()

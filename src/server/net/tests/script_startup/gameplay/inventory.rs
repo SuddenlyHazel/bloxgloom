@@ -453,9 +453,10 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
     .unwrap()
     .unwrap();
     state.entities.apply_committed(spawn).unwrap();
+    let mut reads = crate::server::durable::TerrainReads::default();
     let planned = plan_removals(
         &mut state.world,
-        &mut Default::default(),
+        &mut reads,
         &mut Vec::new(),
         OperationInput {
             edits: &[],
@@ -472,6 +473,8 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
             }),
         },
         Participants {
+            actor_inventory_revision: None,
+            profile_inventories: None,
             profile_services: None,
             players: &[],
             action_id: None,
@@ -483,10 +486,13 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
         },
     )
     .unwrap();
-    // An inventory read remains a transaction participant even with no write.
-    let captured = planned.inventory.unwrap();
-    assert_eq!(captured.slots, inventory.slots);
-    assert_eq!(captured.revision, inventory.revision);
+    // Readonly inventories retain a reservation without an identical WAL write.
+    assert!(planned.inventory.is_none());
+    assert!(
+        reads
+            .keys()
+            .any(|key| key == crate::server::durable::inventory_state_key(PROFILE))
+    );
     assert!(planned.drop_takes.is_empty());
     assert!(planned.entity_updates.is_empty());
 }

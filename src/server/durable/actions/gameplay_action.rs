@@ -165,6 +165,13 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            actor_inventory_revision: None,
+            profile_inventories: Some(crate::server::gameplay::InventoryCapture {
+                clients: &state.clients,
+                overlay: &state.durability.inventory_overlay,
+                revisions: &state.durability.inventory_revisions,
+                cache: &mut state.profile_inventory_cache,
+            }),
             profile_services: Some(&state.system_runtime),
             players: &players,
             action_id: Some(action_id),
@@ -238,6 +245,13 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
     }
     let entities =
         crate::server::gameplay::combine_entities(&state.entities, entities, plan.entity_updates)?;
+    let mut profile_changes = crate::server::players::state::prepare_writes(
+        &state.system_runtime,
+        &catalog,
+        state.durability.pending_profile_inserts(),
+        plan.profile_states,
+    )?;
+    profile_changes.extend(plan.profile_inventory_changes);
     let deltas = prepared_deltas(&plan.edits, &plan.prepared);
     Ok(CommitAction {
         client_id: Some(client_id),
@@ -267,12 +281,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             .transpose()?,
         entities,
         entity_wakes: vec![],
-        owner_changes: crate::server::players::state::prepare_writes(
-            &state.system_runtime,
-            &catalog,
-            state.durability.pending_profile_inserts(),
-            plan.profile_states,
-        )?,
+        owner_changes: profile_changes,
         player_publication: crate::server::players::Published::operations(plan.player_operations),
     })
 }
