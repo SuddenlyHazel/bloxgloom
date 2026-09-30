@@ -1,0 +1,270 @@
+{
+  "node_count": 11078,
+  "unverified_node_count": 0,
+  "raw_edge_count": 30092,
+  "non_object_edges": 0,
+  "missing_endpoint_edges": 0,
+  "dangling_endpoint_edges": 1864,
+  "external_reference_edges": 0,
+  "self_loop_edges": 0,
+  "valid_candidate_edges": 28228,
+  "exact_duplicate_edges": 264,
+  "directed_unique_endpoint_pairs": 26469,
+  "directed_same_endpoint_collapsed_edges": 1759,
+  "undirected_unique_endpoint_pairs": 26444,
+  "undirected_same_endpoint_collapsed_edges": 1784,
+  "same_endpoint_group_count": 1086,
+  "relation_variant_groups": 145,
+  "source_file_variant_groups": 0,
+  "source_location_variant_groups": 561,
+  "context_variant_groups": 277,
+  "post_build_graph_type": "Graph",
+  "post_build_node_count": 11355,
+  "post_build_edge_count": 28263,
+  "post_build_error": "",
+  "producer_suppression": {
+    "path": "/Users/hazel/.local/share/uv/tools/graphifyy/lib/python3.13/site-packages/graphify/extract.py",
+    "total_sites": 12,
+    "sites": [
+      {
+        "line": 1651,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2184,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2186,
+        "name": "seen_doc_refs",
+        "tuple_arity": 0,
+        "sample": "seen_doc_refs: set[str] = set()"
+      },
+      {
+        "line": 2556,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = {n[\"id\"] for n in nodes}"
+      },
+      {
+        "line": 2703,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids = {n.get(\"id\") for n in nodes}"
+      },
+      {
+        "line": 3429,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 3598,
+        "name": "seen_keys",
+        "tuple_arity": 0,
+        "sample": "seen_keys: set[tuple] = set()"
+      },
+      {
+        "line": 5675,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 5783,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 5862,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 6377,
+        "name": "seen_ids",
+        "tuple_arity": 0,
+        "sample": "seen_ids: set[str] = set()"
+      },
+      {
+        "line": 6378,
+        "name": "seen_edges",
+        "tuple_arity": 4,
+        "sample": "seen_edges: set[tuple[str, str, str, str | None]] = set()"
+      }
+    ],
+    "error": ""
+  },
+  "examples": [
+    {
+      "source": "src_server_net_reactor_metrics_transportstats",
+      "target": "src_server_net_reactor_metrics_rs_atomicu64",
+      "edge_count": 23,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src/server/net/reactor/metrics.rs"
+      ],
+      "source_locations": [
+        "L15",
+        "L16",
+        "L17",
+        "L18",
+        "L19",
+        "L20",
+        "L21",
+        "L22",
+        "L23",
+        "L24",
+        "L25",
+        "L26",
+        "L27",
+        "L28",
+        "L29",
+        "L30",
+        "L31",
+        "L32",
+        "L33",
+        "L34",
+        "L35",
+        "L36",
+        "L37"
+      ],
+      "contexts": [
+        "field"
+      ]
+    },
+    {
+      "source": "src_content_catalog",
+      "target": "src_content_rs_string",
+      "edge_count": 16,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src/content.rs"
+      ],
+      "source_locations": [
+        "L219",
+        "L221",
+        "L233",
+        "L239",
+        "L240",
+        "L241",
+        "L242",
+        "L243",
+        "L251",
+        "L259",
+        "L260",
+        "L261",
+        "L262",
+        "L263",
+        "L264",
+        "L265"
+      ],
+      "contexts": [
+        "generic_arg"
+      ]
+    },
+    {
+      "source": "src_server_registry_registryerror",
+      "target": "src_server_registry_systemid",
+      "edge_count": 16,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src/server/registry.rs"
+      ],
+      "source_locations": [
+        "L322",
+        "L327",
+        "L332",
+        "L335",
+        "L338",
+        "L341",
+        "L344",
+        "L347",
+        "L359",
+        "L364",
+        "L365",
+        "L368",
+        "L369",
+        "L375",
+        "L379",
+        "L380"
+      ],
+      "contexts": [
+        "field",
+        "generic_arg"
+      ]
+    },
+    {
+      "source": "src_client_clientapp",
+      "target": "src_client_rs_option",
+      "edge_count": 15,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src/client.rs"
+      ],
+      "source_locations": [
+        "L292",
+        "L293",
+        "L299",
+        "L300",
+        "L302",
+        "L304",
+        "L311",
+        "L312",
+        "L313",
+        "L322",
+        "L323",
+        "L333",
+        "L335",
+        "L350",
+        "L356"
+      ],
+      "contexts": [
+        "field"
+      ]
+    },
+    {
+      "source": "src_content_catalog",
+      "target": "src_content_rs_vec",
+      "edge_count": 13,
+      "relations": [
+        "references"
+      ],
+      "source_files": [
+        "src/content.rs"
+      ],
+      "source_locations": [
+        "L236",
+        "L237",
+        "L246",
+        "L247",
+        "L248",
+        "L249",
+        "L252",
+        "L253",
+        "L254",
+        "L255",
+        "L256",
+        "L257",
+        "L258"
+      ],
+      "contexts": [
+        "field"
+      ]
+    }
+  ]
+}
