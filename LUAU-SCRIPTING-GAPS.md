@@ -1,12 +1,13 @@
 # Luau scripting gaps
 
-Current assessment: September 30, 2026, after Phase 8.
+Current assessment: September 30, 2026, after Phase 8 and basic runtime tools closure.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
 scheduled work, UI and authored visuals. It still leaves gaps that limit larger
 mods and new game modes. This document records those gaps and their practical
-impact; it does not expand the approved implementation scope.
+impact. Section 1 records the subsequently completed basic runtime tools goal;
+the remaining sections describe open gaps.
 
 See [SCRIPTING.md](SCRIPTING.md) for the implemented Luau API and
 [Phase 8 acceptance](docs/modding/PHASE-8-ACCEPTANCE.md) for verification and the
@@ -15,130 +16,41 @@ services; others require new engine capabilities.
 
 ## Major gaps
 
-### 1. Basic runtime tools
+### 1. Basic runtime tools — closed
 
-These are everyday authoring tools: calculations, diagnostics and enough
-execution context to understand failures. Their absence affects mods that
-already fit the supported gameplay contracts. Ordinary calculations and useful
-logging should be available across server and client callback contexts.
+The shared runtime now exposes ordinary Luau libraries: table/string, math,
+utf8, bit32, buffer, vector, integer and in-invocation coroutines. Native
+`math.random` is seeded from stable host inputs before module initialization;
+`math.randomseed` remains available to authors. Server and client startup and
+presentation use the same setup. `debug.info`/`debug.traceback` and `os.difftime`
+are available; uncaptured OS clocks, wall time and timezone helpers remain absent.
 
-#### What exists today
+Scripts can call `log.trace/debug/info/warn/error` with a message and simple typed
+fields, or use `print`. The bridge attaches entry package/version, executing
+module, callback, side and invocation correlation, then emits through the
+existing bounded background tracing writer. Per-invocation record/byte limits
+suppress excess diagnostics without changing random draws or staged effects.
+Imported helpers retain their source identity. Failed invocations retain their
+attempt diagnostics; retries can repeat them. `evaluated` records do not prove
+that a transaction committed or a client command was displayed.
 
-The common runner initializes Luau with its base operations and table/string
-libraries. It omits the entire `math` library and explicitly removes `print`.
-There is no replacement script logging API. Scripts can use `assert`, `error`
-and protected calls; host failures carry package/module identity, and runtime
-limits reject runaway callbacks. Editor types and Luau LSP provide static
-authoring feedback.
+Host rejection semantics remain intact, including caught invalid operations and
+retryable unavailable inputs. Coroutine execution shares latched VM limits;
+protected calls cannot turn a limit violation into successful execution.
+Editor definitions and the Jade garden demonstrate server/client logging,
+buffers and deterministic randomness. Client host contract 3 advertises the new
+runtime on unchanged wire version 13.
 
-The engine already has structured `tracing` output and a bounded background
-writer configured through `RUST_LOG`. That infrastructure reports engine
-activity and script failures, but scripts cannot submit their own diagnostic
-records. A successful callback can therefore make a wrong decision without
-giving its author a practical way to inspect why.
+The [runtime tools reference](docs/modding/RUNTIME-TOOLS.md) documents exact
+library support, seed inputs, diagnostic budgets and attempt-versus-commit
+semantics. VM reuse, cross-invocation coroutine persistence, live debugging and
+hot reload remain separate work; this closure does not change VM lifetime.
 
-#### Ordinary math
-
-The runner excludes math because its random state is not a captured host input.
-That decision also excludes unrelated helpers such as rounding, minima/maxima,
-square roots and trigonometry.
-
-| Mod task | Missing convenience and consequence |
-| --- | --- |
-| Aim a creature or orient an effect | Trigonometric helpers and angle calculations require handwritten replacements |
-| Normalize a direction or compare distances | Square-root helpers are unavailable; squared comparisons work for some tasks but do not supply normalization |
-| Sample procedural patterns | Sine/cosine and rounding helpers are missing even when generation uses host-owned random samples |
-| Clamp and interpolate presentation values | Authors repeat small utility implementations instead of using familiar library functions |
-
-**Closure direction:** expose the ordinary Luau math surface, including its
-useful constants, while giving randomness an explicit host contract. Keep
-`math.random` / `math.randomseed` unavailable unless they are replaced with a
-documented deterministic service. Use captured host random inputs where those
-services already exist; a fresh VM's private random state must not determine a
-retryable gameplay decision.
-
-Document supported functions in the runtime inventory and editor definitions.
-Test both a simulation calculation and a client presentation calculation through
-the common runner. Math results still pass through existing host validation:
-NaN, infinity or out-of-range coordinates must not enter authoritative state.
-Do not claim that ordinary floating-point math provides bit-identical results
-across all platforms without establishing that requirement separately.
-
-#### Script-authored diagnostics
-
-An author should be able to record a branch decision, recipe selection, state
-transition or unexpected input without deliberately failing the callback.
-Restoring native `print` alone would bypass the existing structured logging and
-background writer.
-
-**Closure direction:** provide a familiar logging interface backed by `tracing`,
-with trace/debug/info/warn/error severity, a message and optional simple typed
-fields. A `print`-style convenience could route through the same implementation.
-The host should attach package/version, the executing module, callback kind and
-client/server side. Attach an action or owner identity when available. Imported
-helper diagnostics should retain the helper's source identity and the invoking
-package's context.
-
-Formatting and emission belong on the callback worker path, using the existing
-background writer. Define bounds for record count, message/field bytes and field
-types so logging does not become unbounded formatting or queue work. Avoid
-implicit deep serialization of tables or mutable engine objects. Report
-suppressed diagnostics without flooding the output, and let normal filtering
-control verbosity. These are diagnostics budgets, not gameplay authority.
-
-#### Retries, failure and commit semantics
-
-A gameplay callback may run again after a stale read or admission deferral.
-It may also stage effects and then fail. Logging needs an explicit policy for
-both cases:
-
-- Diagnostic records describe an execution attempt. They do not prove that an
-  inventory transfer, world edit or other staged effect committed.
-- Retain useful attempt diagnostics when execution fails. Buffering everything
-  until gameplay success would discard the messages needed to diagnose failure.
-- Include correlation and outcome information when available, and document that
-  retries can repeat messages. Do not promise exactly-once logging.
-- If authors need notification that an effect committed, provide that through
-  a committed-outcome service; ordinary logging must not impersonate it.
-- Log filtering or a saturated diagnostic queue must not change the gameplay
-  plan. Logging cannot become a hidden source of world/inventory mutations.
-
-The same distinction matters in client presentation: a callback producing a
-visual command does not prove the command was installed or displayed.
-
-#### Useful failure reporting
-
-Preserve existing source attribution and expose the difference between a script
-error, invalid host operation, unavailable input, stale dependency and resource
-limit where the host knows it. Include source locations/tracebacks when
-available. Caught invalid host operations already poison gameplay plans; the
-resulting rejection should remain diagnosable even if the script used `pcall`.
-
-Keep timing and budget diagnostics in host tooling. A script-visible wall clock
-is not required for profiling and would introduce another uncontrolled input to
-retryable simulation. Existing interrupt checks are not an exact bytecode
-instruction count and should not be labeled as one.
-
-#### Completion criteria and implementation order
-
-1. Enable ordinary math in the shared runner, with the randomness policy
-   documented and checked.
-2. Add the logging bridge and editor definitions, using existing filtering and
-   worker output. Exercise it in one server and one client fixture.
-3. Verify the meaningful edge cases: a helper module's attribution, a failed
-   callback retaining diagnostics, a retried action repeating attempt records,
-   and logging saturation leaving authoritative results unchanged.
-4. Document the supported API, limits and execution-versus-commit semantics.
-
-This is the highest-priority gap because it improves nearly every mod without
-requiring a new game mechanic. It does not depend on a live debugger, hot reload,
-filesystem access or imported models. The API shape above is a proposed closure
-direction; math and script logging remain unimplemented today.
-
-Evidence: [common runner and sandbox](src/server/script.rs),
-[runtime regressions](src/server/script/tests.rs),
-[engine logging](src/logging.rs) and
-[runtime inventory](SCRIPTING.md#runtime-delivery-and-save-compatibility).
+Evidence: [shared runtime](src/server/script/runtime.rs),
+[diagnostics bridge](src/server/script/runtime/diagnostics.rs),
+[runtime regressions](src/server/script/runtime/tests.rs),
+[action retry regression](src/server/net/tests/script_startup/gameplay/runtime_tools.rs)
+and [combined fixture](fixtures/combined-mod/README.md).
 
 ### 2. Player and lifecycle hooks
 

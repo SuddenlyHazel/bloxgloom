@@ -411,9 +411,10 @@ never server modules or original paths. Its SHA-256 cache key verifies exact
 canonical bytes; it does not authenticate who supplied that key. Registered catalog PNGs are decoded and
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
-admission. The offer includes client host contract version **2** (wire version
-**12**): opaque identity handles, authored UI, bounded session replica callbacks
-and declared visual resources. An unsupported contract is rejected before bytes
+admission. The offer includes client host contract version **3** (wire version
+**13**): opaque identity handles, authored UI, bounded session replica callbacks,
+declared visual resources and [basic runtime tools](RUNTIME-TOOLS.md), including
+seeded native randomness and structured logging. An unsupported contract is rejected before bytes
 are requested or a cached artifact is acknowledged. This versions the public
 host API, not a Luau compiler patch release. Before `ContentReady`, every delivered
 client/shared module is compiled, without executing dormant modules; syntax

@@ -808,11 +808,17 @@ session. See [the complete shader contracts](docs/modding/AUTHORED-VISUALS.md),
 
 ## Runtime, delivery and save compatibility
 
-Scripts have Luau base operations and table/string libraries in a sandbox with
-readonly globals. The host removes `require`, `print`, `gcinfo`, `getfenv` and
-`setfenv`; it does not supply OS, debug or math libraries, a clock, OS randomness,
-file loaders, sockets or native module loading. Use host random helpers and
-explicit state. Imports retain the defining module's authority; dependencies
+Scripts have Luau base operations, table/string, math, utf8, bit32, buffer,
+vector, integer and coroutine libraries in a sandbox with readonly globals.
+`debug.info`/`debug.traceback` and `os.difftime` are available. The host seeds
+native `math.random` before module initialization from stable invocation inputs;
+authors retain `math.randomseed`. `log.trace/debug/info/warn/error` and `print`
+submit bounded attempt diagnostics to tracing. See [runtime tools](docs/modding/RUNTIME-TOOLS.md)
+for seed inputs, field limits and execution-versus-commit semantics.
+
+The host removes `require`, `gcinfo`, `getfenv` and `setfenv`; it does not supply
+a process/wall clock, OS entropy, file loaders, sockets or native module loading.
+Use captured host time and explicit state. Imports retain the defining module's authority; dependencies
 sharing a VM are not mutually untrusted security compartments.
 
 | Resource | Current limit |
@@ -837,7 +843,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 2 (wire version 12).
+publisher. The negotiated client host contract is version 3 (wire version 13).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.
@@ -869,8 +875,8 @@ is outside this surface.
 ## Authoring tools and runnable examples
 
 [Editor types](types/bloxgloom.d.luau) provide callback aliases and nominal handle
-types; [IDE setup](docs/modding/IDE.md) explains their use. They are editor-only,
-not runtime globals. Runtime validation remains authoritative: the types include startup creature/machine/storage declarations and all gameplay
+types and the runtime `log` declaration; [IDE setup](docs/modding/IDE.md) explains
+their use. Callback type aliases are editor-only. Runtime validation remains authoritative: the types include startup creature/machine/storage declarations and all gameplay
 event shapes, while runtime validation still enforces ownership, bounds and
 capabilities.
 

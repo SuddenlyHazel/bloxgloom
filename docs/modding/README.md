@@ -27,6 +27,8 @@ impact on larger mods.
   authoritative cross-chunk reads/edits and a durable intent relay in Luau.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the
   currently bound callbacks; runtime validation remains authoritative.
+- [Runtime tools](RUNTIME-TOOLS.md): standard libraries, deterministic native
+  randomness, coroutines and structured attempt diagnostics on server and client.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
 - [Player rules](PLAYER-RULES.md): startup-selected, negotiated body, movement,
   spawn and eye contract.

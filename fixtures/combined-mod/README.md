@@ -14,7 +14,7 @@ cargo run --release -- client 127.0.0.1:4000
 For one-process local iteration with your normal admin profile, run:
 
 ```sh
-RUST_LOG=warn,bloxgloom=debug cargo run --release -- local-packages fixtures/combined-mod/packages /path/to/new-jade-garden-save
+RUST_LOG=warn,bloxgloom=info,bloxgloom::script=debug cargo run --release -- local-packages fixtures/combined-mod/packages /path/to/new-jade-garden-save
 ```
 
 Use F4 `give bloxgloom:stick 16` when you need sticks. A dedicated server does
@@ -25,6 +25,14 @@ Rust recompilation is needed when running an already-built game binary.
 `RUST_LOG` controls structured stderr diagnostics; package/module errors retain
 source identity. Server callbacks run in fresh VMs, so persistent state belongs
 in the transaction or owner bytes rather than module globals.
+
+With script DEBUG enabled, downloaded client startup logs `Garden presentation prepared`
+after checking a binary buffer, and the planting callback logs `Plant proposed`.
+Both include seeded random samples. These describe execution attempts; the
+action receipt establishes whether the edit and cost committed. Retries may
+repeat the planting log. See [runtime tools](../../docs/modding/RUNTIME-TOOLS.md)
+for library support, seed inputs and diagnostic budgets. This example needs
+matching client/server binaries supporting client host contract 3.
 
 F4 `verdant:noon` calls the public Luau clock API to set daylight to noon.
 It requires the same authenticated admin profile as `time set noon`; a mod

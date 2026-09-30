@@ -2,7 +2,7 @@
 
 This repository recommends **JohnnyMorganz.luau-lsp** (VS Code extensions panel). Open the repository root as your workspace, install the recommended extension, and reopen a `.luau` package file. The checked-in `.vscode/settings.json` selects the **standard** (non-Roblox) platform, disables Rojo sourcemaps, and loads `types/bloxgloom.d.luau` as `@bloxgloom`. These workspace settings affect only editors that use them; they do not alter Bloxgloom's runtime or require Rojo. Other editors can point luau-lsp at the same definition file.
 
-The definition file supplies **type aliases and nominal handle types**, not runtime globals. Annotate the host-supplied callback arguments in your modules, for example:
+The definition file supplies **type aliases and nominal handle types** for host callbacks, plus the actual runtime `log` global. The aliases are editor-only; see [runtime tools](RUNTIME-TOOLS.md) for logging field validation and supported libraries. Annotate the host-supplied callback arguments in your modules, for example:
 
 ```luau
 return function(host: BloxStartupHost)
