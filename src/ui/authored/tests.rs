@@ -248,7 +248,7 @@ fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() 
 #[test]
 fn shared_handler_has_no_native_authority_and_hidden_ancestor_removes_focus() {
     let mut session = dynamic(
-        "return function(i) assert(io == nil and os == nil and debug == nil and require == nil and print == nil and getfenv == nil and setfenv == nil and game == nil and world == nil and inventory == nil); assert(i.sequence == 1 and i.event == 'uidemo:store'); return {{op='visible',node='uidemo:welcome/root',value=false}} end",
+        "return function(i) assert(io == nil and os.clock == nil and os.time == nil and os.date == nil and type(debug.traceback) == 'function' and require == nil and type(print) == 'function' and getfenv == nil and setfenv == nil and game == nil and world == nil and inventory == nil); assert(i.sequence == 1 and i.event == 'uidemo:store'); return {{op='visible',node='uidemo:welcome/root',value=false}} end",
         2,
     );
     session.activate();

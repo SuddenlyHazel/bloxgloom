@@ -128,7 +128,7 @@ fn imports_are_lexical_direct_dependencies_not_transitive_or_paths() {
             assert(not pcall(import, '/etc/passwd'))
             assert(not pcall(import, 'bridge:undeclared'))
             assert(not pcall(import, string.rep('x', 130)))
-            assert(require == nil and os == nil and io == nil and getfenv == nil and setfenv == nil)
+            assert(require == nil and os.clock == nil and os.time == nil and os.date == nil and io == nil and getfenv == nil and setfenv == nil)
             return import('bridge:main')()
         end
     "#,

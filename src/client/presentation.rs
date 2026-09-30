@@ -142,7 +142,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
         id: request.script.module.clone(),
         source: request.script.source.clone(),
     };
-    crate::server::run_presentation(module, |lua, entry| {
+    crate::server::run_presentation(module, request.sequence, |lua, entry| {
         let input = lua.create_table()?;
         input.raw_set("sequence", request.sequence)?;
         input.raw_set("event", request.event.as_str())?;

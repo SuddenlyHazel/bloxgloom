@@ -110,6 +110,8 @@ impl Default for TransferSelection {
     }
 }
 pub struct Context<'a> {
+    /// Exact persisted machine identity, independent of dispatch order.
+    pub id: u64,
     pub tick: u64,
     pub due: u64,
     pub slots: &'a [Option<Slot<'a>>],

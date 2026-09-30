@@ -139,6 +139,7 @@ pub(super) fn place(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            action_id: None,
             clock: None,
             actor: Some((command.profile, &inventory)),
             actor_position: context.client(command.id).map(|client| client.position()),
@@ -281,6 +282,7 @@ pub(super) fn remove(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            action_id: None,
             clock: None,
             actor: Some((command.profile, &inventory_before)),
             actor_position: context.client(command.id).map(|client| client.position()),

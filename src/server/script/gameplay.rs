@@ -248,6 +248,17 @@ impl Handler for ScriptHandler {
         // Live commands/timers -> gameplay planner -> registered Context
         // dispatch on the server coordinator, never the client/window thread.
         let rejected = RefCell::new(None);
+        let seed = super::runtime::Seed::new().word(context.random_stream_seed());
+        let (seed, correlation) = if let Some(id) = context.action_id() {
+            (
+                seed.bytes(&id.to_le_bytes()).finish(),
+                format!("action:{id:032x}"),
+            )
+        } else {
+            let event = format!("{event:?}");
+            let seed = seed.bytes(event.as_bytes()).finish();
+            (seed, format!("event:{seed:016x}"))
+        };
         let result = super::run_with(
             &Program::Package {
                 snapshot: Arc::clone(&self.snapshot),
@@ -255,7 +266,27 @@ impl Handler for ScriptHandler {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
-            |lua, entry| bindings::invoke(lua, entry, context, event, &rejected),
+            super::runtime::Execution::new(
+                match event {
+                    Event::ActionRequested { .. } => "ActionRequested",
+                    Event::BlockRemoved { .. } => "BlockRemoved",
+                    Event::BlockPlaced { .. } => "BlockPlaced",
+                    Event::NeighborChanged { .. } => "NeighborChanged",
+                    Event::EntityTick { .. } => "EntityTick",
+                    Event::PickupRequested { .. } => "PickupRequested",
+                },
+                seed,
+                correlation,
+            ),
+            |lua, entry| {
+                bindings::invoke(lua, entry, context, event, &rejected)?;
+                if let Some(error) = rejected.borrow().as_ref() {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "host operation rejected: {error}"
+                    )));
+                }
+                Ok(())
+            },
         );
         // Preserve Unavailable, including when caught by pcall: the host requests
         // missing terrain and retains retry eligibility. Never stringify it into

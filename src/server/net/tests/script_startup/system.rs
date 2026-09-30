@@ -47,7 +47,13 @@ fn luau_owner_after_dependencies_are_resolved_before_save_creation() {
 #[test]
 fn luau_system_legacy_identity() {
     let fixture = Fixture::new();
-    fixture.system(REGISTER, SOURCE);
+    // Source bytes participate in the identity. Keep this historical fixture
+    // exact even though runnable fixtures now assert the expanded runtime.
+    let legacy = SOURCE.replace(
+        "assert(os.clock == nil and os.time == nil and os.date == nil and type(print) == 'function' and require == nil)",
+        "assert(os == nil and print == nil and require == nil)",
+    );
+    fixture.system(REGISTER, &legacy);
     let state = fixture.open().unwrap();
     let manifest = crate::content::ContentManifest::from_catalog(state.world.catalog());
     let entry = manifest
@@ -377,7 +383,7 @@ const SOURCE: &str = r#"
 local calls = 0
 return function(c)
     calls += 1; assert(calls == 1)
-    assert(os == nil and print == nil and require == nil)
+    assert(os.clock == nil and os.time == nil and os.date == nil and type(print) == 'function' and require == nil)
     assert(c.owner[1] == 0 and c.owner[2] == 5 and c.owner[3] == 0)
     assert(c.tick_hi == 0 and c.revision_hi == 0)
     assert(string.byte(c.data,2) == 255)

@@ -8,7 +8,7 @@
 use crate::server::client_bundle::ClientBundle;
 
 mod readiness;
-use mlua::{Lua, LuaOptions, StdLib, Value, VmState};
+use mlua::{Lua, Value, VmState};
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::io;
@@ -86,11 +86,11 @@ fn display(value: mlua::LuaString, max: usize) -> mlua::Result<String> {
 fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<(), String> {
     let id = identity(&bundle, entry);
     let fail = |error: mlua::Error| format!("client startup {id}: {error}");
-    let lua = Lua::new_with(StdLib::TABLE | StdLib::STRING, LuaOptions::default()).map_err(fail)?;
-    for name in ["require", "print", "gcinfo", "getfenv", "setfenv"] {
-        lua.globals().set(name, Value::Nil).map_err(fail)?;
-    }
-    lua.sandbox(true).map_err(fail)?;
+    let (lua, diagnostics) = crate::server::script_runtime::create(
+        &id,
+        crate::server::script_runtime::Execution::new("client_startup", 0, "startup").client(),
+    )
+    .map_err(fail)?;
     lua.set_memory_limit(8 * 1024 * 1024).map_err(fail)?;
     let deadline = Instant::now() + Duration::from_millis(50);
     let interrupts = Rc::new(Cell::new(10_000u64));
@@ -213,8 +213,14 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
         function.call::<()>(host)
     })();
     if exceeded.get() || Instant::now() >= deadline {
+        diagnostics.finish("execution_limit");
         return Err(format!("client startup {id}: execution limit exceeded"));
     }
+    diagnostics.finish(if result.is_ok() {
+        "evaluated"
+    } else {
+        "script_error"
+    });
     result.map_err(fail)?;
     let output = registrations.borrow();
     if let Some(ui) = bundle.ui() {

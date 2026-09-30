@@ -10,11 +10,13 @@ pub(crate) mod handles;
 mod imports;
 pub(in crate::server::script) mod machine;
 pub mod package;
+pub(crate) mod runtime;
 pub(super) mod startup;
 mod system;
 mod values;
 
-use mlua::{Function, Lua, LuaOptions, StdLib, VmState};
+use mlua::{Function, Lua, VmState};
+use runtime::{Execution, Seed};
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::io;
@@ -224,7 +226,34 @@ impl Drop for ScriptWorker {
 }
 
 fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, ScriptError> {
-    run_with(&program, limits, |lua, entry| {
+    let execution = match &program {
+        Program::Package {
+            invocation: Invocation::Startup,
+            ..
+        } => Execution::new("startup", 0, "startup"),
+        Program::Package {
+            invocation: Invocation::Generation(context),
+            ..
+        } => {
+            let seed = context
+                .chunk
+                .iter()
+                .fold(Seed::new().word(context.seed), |seed, axis| {
+                    seed.word(*axis as u64)
+                })
+                .finish();
+            Execution::new("generation", seed, format!("chunk:{:?}", context.chunk))
+        }
+        _ => Execution::new(
+            "source",
+            Seed::new()
+                .word(input.seed as u64)
+                .word(input.tick as u64)
+                .finish(),
+            format!("tick:{}", input.tick),
+        ),
+    };
+    run_with(&program, limits, execution, |lua, entry| {
         if let Program::Package {
             snapshot,
             entry: key,
@@ -256,6 +285,7 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
 fn run_with<T>(
     program: &Program,
     limits: Limits,
+    execution: Execution,
     invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
 ) -> Result<T, ScriptError> {
     let id = program.identity();
@@ -268,19 +298,7 @@ fn run_with<T>(
         return Err(fail(ScriptFailure::SourceTooLarge));
     }
 
-    // Deliberately omit OS, debug, and math (whose random state is not a host
-    // input). Safe new_with disallows loading native C modules; Luau sandbox
-    // makes globals read-only. Never expose a file loader or Rust I/O callback.
-    let lua = Lua::new_with(StdLib::TABLE | StdLib::STRING, LuaOptions::default())
-        .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
-    // Luau's base library includes `require`, `print` (native stdout), and
-    // `gcinfo` (VM-state-dependent), even without optional libraries.
-    for name in ["require", "print", "gcinfo", "getfenv", "setfenv"] {
-        lua.globals()
-            .set(name, mlua::Value::Nil)
-            .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
-    }
-    lua.sandbox(true)
+    let (lua, diagnostics) = runtime::create(&id, execution)
         .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
     lua.set_memory_limit(limits.max_memory_bytes)
         .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
@@ -343,6 +361,10 @@ fn run_with<T>(
         invoke(&lua, entry)
     })();
     if let Some((reason, module)) = exceeded.take() {
+        diagnostics.finish(match reason {
+            LimitExceeded::Time => "time_limit",
+            LimitExceeded::Instructions => "instruction_limit",
+        });
         return Err(ScriptError {
             module,
             failure: match reason {
@@ -352,23 +374,41 @@ fn run_with<T>(
         });
     }
     if Instant::now() >= deadline {
+        diagnostics.finish("time_limit");
         return Err(fail(ScriptFailure::TimeLimit));
     }
-    result.map_err(|error| {
+    let result = result.map_err(|error| {
         error
             .downcast_ref::<ScriptError>()
             .cloned()
             .unwrap_or_else(|| fail(ScriptFailure::Lua(error.to_string())))
-    })
+    });
+    diagnostics.finish(if result.is_ok() {
+        "evaluated"
+    } else {
+        "script_error"
+    });
+    result
 }
 
 /// Client presentation uses the same isolated, instruction/memory/time-bounded
 /// source sandbox, with its own closed input/output adapter and worker.
 pub(crate) fn run_presentation<T>(
     module: SourceModule,
+    sequence: u32,
     invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
 ) -> Result<T, ScriptError> {
-    run_with(&Program::Source(module), Limits::default(), invoke)
+    run_with(
+        &Program::Source(module),
+        Limits::default(),
+        Execution::new(
+            "presentation",
+            u64::from(sequence),
+            format!("sequence:{sequence}"),
+        )
+        .client(),
+        invoke,
+    )
 }
 
 #[derive(Clone, Copy)]

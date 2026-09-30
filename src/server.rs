@@ -34,6 +34,7 @@ mod runtime;
 mod script;
 pub(crate) use script::package::PackageSnapshot;
 pub(crate) use script::package::client as client_bundle;
+pub(crate) use script::runtime as script_runtime;
 pub(crate) use script::{SourceModule, handles as script_handles, run_presentation};
 mod simulation;
 mod spawn;

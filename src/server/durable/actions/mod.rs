@@ -564,6 +564,7 @@ fn plan_gameplay_removals(
             action: None,
         },
         crate::server::gameplay::Participants {
+            action_id: None,
             clock: None,
             actor: Some(actor),
             actor_position: Some(actor_position),

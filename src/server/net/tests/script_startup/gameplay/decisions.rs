@@ -15,7 +15,7 @@ end"#;
 const BLOCK_SOURCE: &str = r#"return function(c,e)
     assert(not pcall(function() e.cell[1] = 99 end))
     assert(not pcall(function() e.previous.state = 'forged' end))
-    assert(os == nil and print == nil and require == nil)
+    assert(os.clock == nil and os.time == nil and os.date == nil and type(print) == 'function' and require == nil)
     if e.kind == 'BlockRemoved' then
         assert(e.previous.block_type == 'bloxgloom:sand' and e.cause == 'Break')
         assert(type(e.random_lo) == 'number' and type(e.random_hi) == 'number')

@@ -354,6 +354,14 @@ impl ScriptSystem {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
+            super::runtime::Execution::new(
+                "owner",
+                super::runtime::Seed::new()
+                    .bytes(format!("{:?}", context.owner).as_bytes())
+                    .word(context.revision)
+                    .finish(),
+                format!("owner:{:?}/revision:{}", context.owner, context.revision),
+            ),
             |lua, entry| {
                 bindings::invoke(
                     lua,

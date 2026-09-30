@@ -47,7 +47,7 @@ fn local_source_is_deterministic_and_runs_on_worker() {
 #[test]
 fn sandbox_excludes_native_io_and_attributes_errors() {
     let worker = ScriptWorker::spawn(Limits::default()).unwrap();
-    let source = "return function(_) return (os or io or debug or require or loadfile or print or gcinfo) ~= nil and 1 or 0 end";
+    let source = "return function(_) return (os.clock or os.time or os.date or io or require or loadfile or gcinfo) ~= nil and 1 or 0 end";
     assert_eq!(
         worker
             .execute(module("demo:sandbox", source), input())

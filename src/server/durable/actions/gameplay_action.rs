@@ -164,6 +164,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            action_id: Some(action_id),
             clock: Some(state.world_time.capture()),
             actor: Some((profile, &before)),
             actor_position: Some(position),

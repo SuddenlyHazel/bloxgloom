@@ -153,6 +153,15 @@ impl Behavior for ScriptCreature {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
+            super::runtime::Execution::new(
+                "creature_tick",
+                super::runtime::Seed::new()
+                    .word(context.id)
+                    .word(context.next_tick.unwrap_or(0))
+                    .bytes(&state.private)
+                    .finish(),
+                format!("entity:{}/due:{:?}", context.id, context.next_tick),
+            ),
             |lua, entry| invoke(lua, entry, context, &state.private, self.max_private),
         );
         let result = result.map_err(|error| {
@@ -205,6 +214,15 @@ impl Behavior for ScriptCreature {
     }
 
     fn interact(&self, payload: &Payload, request: &[u8]) -> Result<Payload, Error> {
+        self.interact_at(payload, request, 0, 0)
+    }
+    fn interact_at(
+        &self,
+        payload: &Payload,
+        request: &[u8],
+        id: u64,
+        revision: u64,
+    ) -> Result<Payload, Error> {
         let Some(snapshot) = &self.snapshot else {
             return Err(Error::InvalidState);
         };
@@ -219,6 +237,16 @@ impl Behavior for ScriptCreature {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
+            super::runtime::Execution::new(
+                "creature_interaction",
+                super::runtime::Seed::new()
+                    .word(id)
+                    .word(revision)
+                    .bytes(&state.private)
+                    .bytes(request)
+                    .finish(),
+                format!("entity:{id}/revision:{revision}"),
+            ),
             |lua, entry| {
                 let host = lua.create_table()?;
                 host.set("event", "interact")?;

@@ -205,9 +205,11 @@ fn incompatible_runtime_offer_fails_before_request_even_with_verified_cache() {
             "{error}"
         );
         assert!(
-            error
-                .to_string()
-                .contains("runtime contract 3; this client supports 2"),
+            error.to_string().contains(&format!(
+                "runtime contract {}; this client supports {}",
+                crate::protocol::CLIENT_RUNTIME_VERSION + 1,
+                crate::protocol::CLIENT_RUNTIME_VERSION
+            )),
             "{error}"
         );
         worker.join().unwrap();

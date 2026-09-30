@@ -62,6 +62,10 @@ pub trait Snapshot {
             "world clock unavailable in this context".into(),
         ))
     }
+    /// Stable authenticated request identity, retained across action retries.
+    fn action_id(&self) -> Option<u128> {
+        None
+    }
     fn tick(&self) -> u64;
     fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
@@ -134,6 +138,18 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    pub fn action_id(&self) -> Option<u128> {
+        self.snapshot.action_id()
+    }
+    /// Stable per-handler seed for host-provided sequential PRNGs. Does not
+    /// consume the script operation budget; it reads immutable world metadata.
+    pub fn random_stream_seed(&self) -> u64 {
+        let mut salt = 0xcbf2_9ce4_8422_2325u64;
+        for byte in self.handler_key.as_deref().unwrap_or("").bytes() {
+            salt = (salt ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        cell_random(self.snapshot.seed() ^ salt, [0; 3], 0)
+    }
     pub fn tick(&self) -> u64 {
         self.snapshot.tick()
     }

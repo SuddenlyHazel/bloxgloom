@@ -114,6 +114,17 @@ pub trait Behavior: Send + Sync + 'static {
     fn public(&self, state: &Payload) -> Result<Vec<u8>, Error>;
     fn pose(&self, public: &[u8]) -> Result<Pose, Error>;
     fn tick(&self, context: &Context<'_>) -> Result<Plan, Error>;
+    /// Optional captured identity for retryable interactions. Existing native
+    /// behaviors can retain the simpler own-state hook.
+    fn interact_at(
+        &self,
+        state: &Payload,
+        request: &[u8],
+        _id: u64,
+        _revision: u64,
+    ) -> Result<Payload, Error> {
+        self.interact(state, request)
+    }
     fn interact(&self, _state: &Payload, _request: &[u8]) -> Result<Payload, Error> {
         Err(Error::InvalidState)
     }

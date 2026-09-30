@@ -70,6 +70,7 @@ fn luau_machine_negotiates_plans_and_restarts() {
     let plan = machine
         .behavior
         .plan(&Context {
+            id: 1,
             tick: 100,
             due: 100,
             slots: &[None, None, None],
@@ -328,6 +329,7 @@ fn luau_machine_ports_and_transfer_work_negotiate_and_restart() {
     let plan = machine
         .behavior
         .plan(&Context {
+            id: 1,
             tick: 100,
             due: 100,
             slots: &[None, None, None],
@@ -652,6 +654,7 @@ fn luau_machine_rejects_invalid_ports_and_undeclared_transfer_work() {
         machine
             .behavior
             .plan(&Context {
+                id: 1,
                 tick: 100,
                 due: 100,
                 slots: &[None, None, None],

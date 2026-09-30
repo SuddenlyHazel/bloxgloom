@@ -48,6 +48,17 @@ impl api::Behavior for ScriptMachine {
                 invocation: Invocation::Integer,
             },
             Limits::default(),
+            super::runtime::Execution::new(
+                "machine",
+                super::runtime::Seed::new()
+                    .word(context.id)
+                    .word(context.due)
+                    .bytes(context.data)
+                    .word(u64::from(context.fuel))
+                    .word(u64::from(context.progress))
+                    .finish(),
+                format!("entity:{}/due:{}", context.id, context.due),
+            ),
             |lua, entry| invoke(lua, entry, context, &self.ports),
         )
         .map_err(|error| {

@@ -18,6 +18,8 @@ mod decisions;
 mod entities;
 #[path = "gameplay/inventory.rs"]
 mod inventory;
+#[path = "gameplay/runtime_tools.rs"]
+mod runtime_tools;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";
@@ -33,7 +35,7 @@ return function(c, e)
     assert(c.player_position[1] == 0.5 and c.player_position[2] == 80 and c.player_position[3] == 0.5)
     assert(not pcall(function() c.player_position[1] = 2 end))
     assert(type(c.tick_lo) == 'number' and type(c.tick_hi) == 'number')
-    assert(print == nil and require == nil and os == nil)
+    assert(type(print) == 'function' and require == nil and os.clock == nil and os.time == nil and os.date == nil)
     assert(c.transfer(e.slot, 1, 1))
     local previous = c.block(2,80,0).state
     local next = if previous == 'bloxgloom:air' then 'bloxgloom:glowstone' else 'bloxgloom:sand'
@@ -398,6 +400,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                action_id: None,
                 clock: None,
                 actor: Some((PROFILE, &inventory)),
                 actor_position: Some([0.5, 80.0, 0.5]),

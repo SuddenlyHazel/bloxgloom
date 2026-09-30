@@ -8,4 +8,6 @@ return function(context: BloxGameplayContext, event: BloxActionEvent): ()
     assert(stack ~= nil and stack.item == 'bloxgloom:stick', 'Select a stick')
     assert(context.take('player', event.slot, 1) ~= nil, 'Need one stick')
     context.set_block(event.cell[1], event.cell[2], event.cell[3], 'verdant:jade')
+    -- Attempt diagnostics survive failure; this does not claim the edit committed.
+    log.debug('Plant proposed', {cost=1, sample=math.random(), x=event.cell[1], y=event.cell[2], z=event.cell[3]})
 end

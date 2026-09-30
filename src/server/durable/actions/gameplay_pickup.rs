@@ -61,6 +61,7 @@ pub(super) fn plan(
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            action_id: None,
             clock: None,
             actor: Some((profile, &original)),
             actor_position: Some(position),

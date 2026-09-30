@@ -71,6 +71,7 @@ fn phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart() 
             .unwrap()
             .behavior
             .plan(&bloxgloom_host_api::machine::Context {
+                id: 1,
                 tick: 100,
                 due: 100,
                 slots: &[None, None, None],

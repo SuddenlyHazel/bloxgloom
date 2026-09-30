@@ -171,7 +171,12 @@ impl EntityInteractionPolicy for Adapter {
         let payload = self
             .0
             .behavior
-            .interact(&snapshot.private_payload, request)
+            .interact_at(
+                &snapshot.private_payload,
+                request,
+                snapshot.id.get(),
+                snapshot.revision,
+            )
             .map_err(error)?;
         self.encode(&payload)
             .map_err(|_| EntityError::InvalidPayload)?;

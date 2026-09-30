@@ -9,6 +9,7 @@ mod entity_inventory;
 pub(super) mod inventory;
 
 pub(super) struct Participants<'a> {
+    pub action_id: Option<u128>,
     pub clock: Option<super::world_time::Capture>,
     pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
     pub actor_position: Option<[f32; 3]>,
@@ -45,6 +46,7 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    action_id: Option<u128>,
     clock: Option<super::world_time::Capture>,
     world: &'a mut World,
     reads: &'a mut TerrainReads,
@@ -59,6 +61,9 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn action_id(&self) -> Option<u128> {
+        self.action_id
+    }
     fn world_time(&mut self) -> Result<bloxgloom_host_api::gameplay::WorldTime, Error> {
         let clock = self
             .clock
@@ -329,6 +334,7 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        action_id: participants.action_id,
         clock: participants.clock,
         world,
         reads,

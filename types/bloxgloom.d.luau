@@ -1,9 +1,23 @@
 --- Editor-only callback types for Bloxgloom package modules. Annotate callback
---- arguments explicitly; these are not globals or a replacement for host validation.
+--- arguments explicitly; callback aliases do not create globals or replace host validation.
+--- The log declaration describes the runtime global installed by the shared sandbox.
 ---
 --- Exact identities and counters are immutable host-created handles. Pass IDs
 --- back unchanged, compare IDs/revisions with ==, and use tick helpers for time.
 --- These handles are values, not permission grants; host authority checks apply.
+
+--- Diagnostics describe an execution attempt, not a committed gameplay effect.
+--- 64 records / 16 KiB per invocation; messages <=2048 UTF-8 bytes.
+--- At most 16 fields: keys <=64 bytes, string values <=1024 bytes; no nested tables.
+export type BloxLogFields = {[string]: string | number | boolean}
+--- Generic field argument accepts ordinary inline records; runtime validates scalar values.
+declare log: {
+    trace: <T>(message: string, fields: T?) -> (),
+    debug: <T>(message: string, fields: T?) -> (),
+    info: <T>(message: string, fields: T?) -> (),
+    warn: <T>(message: string, fields: T?) -> (),
+    error: <T>(message: string, fields: T?) -> (),
+}
 
 --- Exact entity identity. Host-created and immutable; supports == and tostring.
 --- Use as a table key or pass directly to entity/inventory services. No arithmetic.

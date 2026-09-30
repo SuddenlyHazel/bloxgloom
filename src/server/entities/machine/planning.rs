@@ -105,6 +105,7 @@ impl EntityTickPolicy for Adapter {
             .definition
             .behavior
             .plan(&api::Context {
+                id: snapshot.id.get(),
                 tick,
                 due,
                 slots: &slots,
