@@ -78,9 +78,9 @@ runtime movement or cosmetic-change authority.
 
 | Existing surface | What it does not yet provide |
 | --- | --- |
-| Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Runtime teleport, appearance and cross-profile inventory operations |
+| Exact profile/session/avatar handles, captured directory, typed player commands, targeted notices and session kicks | Runtime teleport and cross-profile inventory operations |
 | Package-owned lifecycle state, atomic first-join rewards and profile/session timers | Ordinary gameplay access to another profile's progress and inventory |
-| Validated admission/reconnect spawn proposals, frozen player rules and palettes | Runtime teleport and appearance operations; per-player physics remains deferred |
+| Validated admission/reconnect spawn proposals, frozen player rules/palettes and runtime cosmetic replacement | Runtime teleport; per-player physics remains deferred |
 | Client lifecycle callbacks, selected local public state and targeted status notices | General chat transport and hooks |
 | Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 

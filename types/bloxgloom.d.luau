@@ -31,6 +31,7 @@ export type BloxPlayerView = {
     entity: BloxEntityId?,
     name: string,
     position: {number},
+    appearance: {skin:number,shirt:number,pants:number,flags:number},
     online: boolean,
     identity_trust: "claimed_profile",
 }
@@ -294,6 +295,8 @@ export type BloxGameplayContext = {
     --- Requires the executing package's players/v1 capability. Exact online session; after receipt, no replay.
     message_player: (session: BloxSessionId, text: string) -> (),
     kick_player: (session: BloxSessionId, reason: string) -> (),
+    --- Registered integer palette indices, players/v1 authority, exact session. Native cosmetic save precedes replication.
+    set_player_appearance: (session: BloxSessionId, skin: number, shirt: number, pants: number) -> (),
     --- Available in gameplay action callbacks; captured phase, with read-your-writes.
     world_time: () -> {elapsed_ms: number, cycle_ms: number},
     --- Integer 0 <= phase < cycle_ms; operator-selected admin profile, atomic with this action.

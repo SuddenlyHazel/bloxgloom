@@ -92,6 +92,7 @@ pub(in crate::server) fn admit(
     epoch: u64,
     mut position: [f32; 3],
     inventory: &Inventory,
+    appearance: [u8; 4],
 ) -> io::Result<[f32; 3]> {
     let registrations = state
         .world
@@ -115,6 +116,7 @@ pub(in crate::server) fn admit(
                 entity: 0,
                 name: name.into(),
                 position,
+                appearance,
             }),
             transition: epoch,
         };

@@ -66,6 +66,11 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn valid_player_appearance(&self, palettes: [u8; 3]) -> bool {
+        self.world
+            .catalog()
+            .valid_appearance([palettes[0], palettes[1], palettes[2], 0])
+    }
     fn player_authority(&self, namespace: &str) -> bool {
         self.player_operations_enabled && self.world.catalog().player_authority(namespace)
     }

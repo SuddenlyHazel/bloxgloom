@@ -52,16 +52,24 @@ pub(in crate::server) fn join_named_client(
         },
         None => spawn_position_cached(state)?,
     };
-    let position = super::admit(state, profile, name, action_epoch, position, &inventory)?;
+    let appearance = state
+        .appearance_store
+        .load(profile, state.world.catalog())?;
+    let position = super::admit(
+        state,
+        profile,
+        name,
+        action_epoch,
+        position,
+        &inventory,
+        appearance,
+    )?;
     let id = state.next_id;
     let next_id = state
         .next_id
         .checked_add(1)
         .ok_or_else(|| io::Error::other("player ID exhausted"))?;
     let socket = socket.try_clone()?;
-    let appearance = state
-        .appearance_store
-        .load(profile, state.world.catalog())?;
     let (owned_entity_id, spawn_delta) = state
         .player_entities
         .spawn_session_with_appearance(id, position, appearance)

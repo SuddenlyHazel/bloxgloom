@@ -17,6 +17,15 @@ pub(crate) fn present(lua: &Lua, player: &Player) -> mlua::Result<mlua::Table> {
     let position = lua.create_sequence_from(player.position)?;
     position.set_readonly(true);
     view.set("position", position)?;
+    let appearance = lua.create_table()?;
+    for (key, value) in ["skin", "shirt", "pants", "flags"]
+        .into_iter()
+        .zip(player.appearance)
+    {
+        appearance.raw_set(key, value)?;
+    }
+    appearance.set_readonly(true);
+    view.set("appearance", appearance)?;
     view.set("online", true)?;
     view.set("identity_trust", "claimed_profile")?;
     view.set_readonly(true);
@@ -29,6 +38,22 @@ pub(super) fn install<'scope>(
     context: &'scope RefCell<&mut Context<'_>>,
     rejected: &'scope RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
+    host.set(
+        "set_player_appearance",
+        scope.create_function(
+            |_, (session, skin, shirt, pants): (Value, Value, Value, Value)| {
+                checked(rejected, || {
+                    let session = handles::session_value(session).map_err(invalid)?;
+                    let palette = |value| integer(value, 0, 255).map(|v| v as u8).map_err(invalid);
+                    context.borrow_mut().set_player_appearance(
+                        session.profile,
+                        session.epoch,
+                        [palette(skin)?, palette(shirt)?, palette(pants)?],
+                    )
+                })
+            },
+        )?,
+    )?;
     for (key, kick) in [("message_player", false), ("kick_player", true)] {
         host.set(
             key,

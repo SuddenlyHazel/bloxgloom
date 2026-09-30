@@ -26,6 +26,10 @@ pub(super) fn capture(state: &State) -> Vec<Player> {
                 .map_or(0, |id| id.get()),
             name: client.name.clone(),
             position: client.position(),
+            appearance: state
+                .player_entities
+                .appearance_for_session(id)
+                .unwrap_or([0; 4]),
         })
         .collect();
     players.sort_by_key(|player| player.profile);

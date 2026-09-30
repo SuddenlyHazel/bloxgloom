@@ -231,6 +231,15 @@ impl PlayerEntityStore {
         self.by_session.get(&session_id).map(|view| view.id)
     }
 
+    pub(in crate::server) fn appearance_for_session(&self, session_id: u64) -> Option<[u8; 4]> {
+        self.by_session
+            .get(&session_id)?
+            .payload
+            .as_slice()
+            .try_into()
+            .ok()
+    }
+
     pub(in crate::server) fn public_views_for_chunk_bounded(
         &self,
         chunk: ChunkKey,

@@ -286,7 +286,7 @@ pub(in crate::server) fn committed(state: &mut State, published: Published) -> i
     } = published
     else {
         if let Published::Operations(operations) = published {
-            super::operations::apply(state, operations);
+            return super::operations::apply(state, operations);
         }
         return Ok(());
     };
@@ -316,6 +316,5 @@ pub(in crate::server) fn committed(state: &mut State, published: Published) -> i
             state.player_runtime.sessions.remove(&session_key);
         }
     }
-    super::operations::apply(state, operations);
-    Ok(())
+    super::operations::apply(state, operations)
 }

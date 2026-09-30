@@ -1,8 +1,9 @@
 //! Transient session effects apply once after receipt, never to a replacement.
 use super::State;
 use bloxgloom_host_api::gameplay::{PlayerOperation, PlayerOperationKind};
+use std::io;
 
-pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) {
+pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) -> io::Result<()> {
     for operation in operations {
         let Some(id) = state
             .clients
@@ -14,6 +15,10 @@ pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) {
             continue;
         };
         let (kicked, text) = match operation.kind {
+            PlayerOperationKind::Appearance(palettes) => {
+                crate::server::appearance::select(state, id, palettes)?;
+                continue;
+            }
             PlayerOperationKind::Message(text) => (false, text),
             PlayerOperationKind::Kick(reason) => (true, reason),
         };
@@ -30,4 +35,5 @@ pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) {
             state.remove_client(id);
         }
     }
+    Ok(())
 }

@@ -23,7 +23,8 @@ end
 ```
 
 Views contain `profile`, `session`, optional public `entity`, Hello `name`,
-readonly authoritative `position`, `online=true` and
+readonly authoritative `position` and `appearance` (skin/shirt/pants indices and
+reserved flags), `online=true` and
 `identity_trust="claimed_profile"`. The list is readonly and sorted by exact
 profile identity. An unknown/offline profile or departed session returns nil.
 These are captured values, not references to mutable client objects.
@@ -236,5 +237,44 @@ recover normally. Kicks do not create durable admission bans. Use durable
 profile policy for bans when the general profile-state service is available.
 
 Wire version 16 adds the exact-session notice/removal frame. Runtime teleport,
-appearance mutation, cross-profile inventory and ordinary gameplay access to
+cross-profile inventory and ordinary gameplay access to
 profile state remain the next increments.
+
+## Landed: runtime appearance
+
+`c.set_player_appearance(session, skin, shirt, pants)` accepts three exact integer
+palette indices in 0..255. Each must exist in the frozen startup appearance
+catalog. Arbitrary colors, model replacements and reserved appearance flags
+cannot be supplied. The executing package needs `players/v1`; caller permissions
+are checked independently. It is available in action and admitted lifecycle
+callbacks under the same 64-operation plan bound as notices and kicks.
+
+Player views expose a readonly `appearance` table with `skin`, `shirt`, `pants`
+and `flags`. Directory/profile/session queries see proposed appearance changes
+within their own plan; another callback sees them only after publication. Script
+errors, invalid palettes, forged/stale sessions or caught invalid host calls
+discard the plan's cosmetic and inventory proposals together.
+
+After the action WAL receipt, publication rechecks the exact session and calls
+the native cosmetic path. The atomic per-profile appearance file commits before
+the public avatar revision changes. Both target and nearby peers receive normal
+entity replication, without terrain remeshing. Repeating an identical cosmetic
+selection is a no-op; replaying an action receipt does not repeat any operation.
+Reconnect/restart reads the saved appearance for that profile. A replacement
+session is never affected by an old intent.
+
+Appearance keeps its existing separate file durability boundary: inventory and
+profile progression are recorded in the WAL, while the cosmetic file is saved
+after its receipt. A crash between those boundaries can preserve progress and
+the previous cosmetic. These cosmetic intents are not replayed during recovery.
+Storage failure stops server mutation before publishing the new avatar; the
+atomic file remains the recovery authority. Do not use a costume as a critical
+reward flag; store that flag in durable profile state.
+
+The lifecycle fixture includes `/welcome:uniform <player>` as an Admin command
+and uses builtin palette indices 1, 2 and 3. Player arguments support names and
+exact session tokens, including Tab completion. Set the server's local admin
+profile to exercise it; declaring the package capability alone does not grant
+its command to non-admin callers. This operation uses existing wire version 16
+and client host contract 6. Runtime teleport, cross-profile inventory and general
+gameplay access to profile state remain.

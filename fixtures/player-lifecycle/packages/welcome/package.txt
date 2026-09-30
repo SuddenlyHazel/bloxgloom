@@ -7,6 +7,7 @@ requires bloxgloom:actions/v1
 module server main server/main.luau
 module server progress server/progress.luau
 module server inspect server/inspect.luau
+module server uniform server/uniform.luau
 module server audit server/audit.luau
 module client client_startup client/startup.luau
 module client player client/player.luau

@@ -713,6 +713,15 @@ with best-effort delivery of the reason. These transient effects are not replaye
 after a crash. Command-caller permissions are checked separately from the server
 package capability. See [session operations](docs/modding/PLAYER-LIFECYCLE.md#landed-targeted-notices-and-session-kicks).
 
+`c.set_player_appearance(session, skin, shirt, pants)` uses the same package
+capability and exact-session checks. Only registered integer palette indices
+are accepted. Queries see proposed values within the plan, and errors discard
+them. After receipt, the native atomic profile cosmetic save precedes avatar
+replication. Its file is a separate durability boundary from inventory/progress
+in the WAL; these intents are not replayed after a crash. Readonly player views
+include `appearance = {skin, shirt, pants, flags}`. See
+[cosmetic operations](docs/modding/PLAYER-LIFECYCLE.md#landed-runtime-appearance).
+
 ## Committed server observations
 
 `register_committed_observer(key, revision, module)` requires `actions/v1` and

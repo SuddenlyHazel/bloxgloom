@@ -6,6 +6,8 @@ use crate::protocol::{PublicEntity, PublicEntityChange};
 use crate::server::client_bundle::{CacheKey, ClientBundle};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+#[path = "appearance/operations.rs"]
+mod operations;
 
 const CALL: &str = "h.register_player_appearance('demo:wardrobe', 1, 'bloxgloom:humanoid/v1', {skins={{0.1,0.9,0.2}}, shirts={{0.9,0.1,0.2}}, pants={{0.1,0.2,0.9}}})";
 fn source(extra: &str) -> String {
@@ -17,6 +19,9 @@ struct Peer {
     catalog: Catalog,
     own: u64,
     views: BTreeMap<u64, PublicEntity>,
+    epoch: u64,
+    next_seq: u64,
+    inventory_revision: u64,
 }
 impl Peer {
     fn connect(address: std::net::SocketAddr, profile: u128, expected: &Catalog) -> Self {
@@ -56,6 +61,9 @@ impl Peer {
             catalog,
             own: 0,
             views: BTreeMap::new(),
+            epoch: 0,
+            next_seq: 1,
+            inventory_revision: 0,
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -77,6 +85,13 @@ impl Peer {
         self.stream.set_read_timeout(Some(remaining)).unwrap();
         let message = protocol::read_server_with_catalog(&mut self.stream, &self.catalog).unwrap();
         match &message {
+            ServerMessage::ActionSession {
+                epoch, next_seq, ..
+            } => {
+                self.epoch = *epoch;
+                self.next_seq = *next_seq;
+            }
+            ServerMessage::Inventory { revision, .. } => self.inventory_revision = *revision,
             ServerMessage::OwnedEntity { id } => self.own = *id,
             ServerMessage::EntitySnapshotPage(page) => {
                 for view in &page.entities {

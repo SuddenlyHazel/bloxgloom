@@ -11,6 +11,7 @@ mod entities;
 mod handlers;
 mod inventory;
 mod observations;
+mod player_operations;
 mod players;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
@@ -20,7 +21,8 @@ pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
 pub use observations::{
     Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
 };
-pub use players::{Player, PlayerOperation, PlayerOperationKind};
+pub use player_operations::{PlayerOperation, PlayerOperationKind};
+pub use players::Player;
 
 pub type Cell = [i32; 3];
 
@@ -61,6 +63,9 @@ impl std::error::Error for Error {}
 pub trait Snapshot {
     /// Granted server-package authority, separate from command-caller admin.
     fn player_authority(&self, _namespace: &str) -> bool {
+        false
+    }
+    fn valid_player_appearance(&self, _palettes: [u8; 3]) -> bool {
         false
     }
     fn players(&mut self) -> Result<Vec<Player>, Error> {
