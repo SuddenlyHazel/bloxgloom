@@ -349,6 +349,43 @@ lack direct access to the general host-managed anchored lifecycle.
 retaining atomic placement cost, footprint ownership, invalidation and bounded
 refunds.
 
+#### Accepted implementation scope
+
+Goal active: expose the existing general Rust anchored contract through
+`register_anchored`, with a dedicated package capability and immutable server
+callback modules. This is a general own-state device lifecycle, alongside the
+existing storage and machine specializations.
+
+- Register owned entity/block identities, placement item/cost, immutable footprint,
+  schema/private/public bounds, polling interval, observed terrain and default
+  interaction bytes before the catalog freezes.
+- Initialize private binary state at placement; validate saved/proposed bytes and
+  project explicit bounded public bytes without exposing private state to clients.
+- Interact through the existing exact entity/revision/reach-checked action path.
+  Interaction updates own state; it does not grant arbitrary inventory authority.
+- React to captured neighbor/support terrain on the worker path, with keep/update/
+  remove decisions. Polling deadlines persist across restart; terrain wakes are
+  advisory and callback invocation counts are not elapsed game time.
+- Preserve atomic placement debit, footprint occupancy/ownership, complete
+  removal/invalidation, and cause-specific refunds capped by the placement debit.
+  Unload is not removal. Callback failures publish no partial state or economy.
+- Deliver closed inert declarations to the client, with matching catalog/action
+  identities and public projections, without shipping executable server behavior.
+
+Use the native bounds: at most 64 footprint/observed cells, offsets within ±16,
+private bytes at most 64 KiB, public bytes at most 4 KiB, placement cost 1..128,
+refund no greater than cost, and interaction bytes at most 239. Per-package
+registration is bounded and the existing target-action budget still applies.
+
+Land a persistent counter example and focused integration tests for placement,
+secondary-cell interaction, replay, captured neighbor reactions, support loss,
+removal/refund, rollback, reconnect and restart through the real nonblocking
+listener with isolated saves. Verify malformed declarations/callbacks and client
+bundle round trips, inspect a production block preview, run workspace tests,
+formatting, strict Clippy and typed Luau analysis, refresh Graphify and commit.
+General dynamic UI, imported models, VM reuse and save converters remain outside
+this goal.
+
 Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs) and
 [unbound interfaces](SCRIPTING.md#features-requiring-engine-work-or-native-extensions).
 
