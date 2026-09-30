@@ -1,14 +1,14 @@
 # Luau scripting gaps
 
-Current assessment: September 30, 2026, after Phase 8, basic runtime tools and player-services closure.
+Current assessment: September 30, 2026, after Phase 8, basic runtime tools, player-services and general anchored-entity closure.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
 scheduled work, UI and authored visuals. It still leaves gaps that limit larger
 mods and new game modes. This document records those gaps and their practical
-impact. Sections 1 and 2 record the completed basic runtime tools and agreed
-player-services goals; their deferred mechanics and subsequent sections remain
-open gaps.
+impact. Sections 1, 2 and 4 record the completed runtime tools, player-services and
+general anchored-entity goals. Their stated limitations and the other sections
+remain open gaps.
 
 See [SCRIPTING.md](SCRIPTING.md) for the implemented Luau API and
 [Phase 8 acceptance](docs/modding/PHASE-8-ACCEPTANCE.md) for verification and the
@@ -334,24 +334,24 @@ gameplay requests.
 
 Evidence: [authored UI](SCRIPTING.md#client-startup-and-authored-ui).
 
-### 4. General persistent block entities
+### 4. General persistent block entities — closed
 
-The Rust host API has a general anchored-behavior contract. Luau exposes the
-storage and machine specializations, but cannot register arbitrary anchored
-behavior with its own initialization, state projection, reaction, interaction
-and removal/refund policy.
+Luau now binds the native general anchored-behavior lifecycle through
+`register_anchored` and `bloxgloom:anchored_entities/v1`. Mod developers can define
+own-state devices with durable private binary state, explicit public projection,
+initialization, validation, interaction, neighbor/support reactions and bounded
+cause-specific refunds. Storage and machines retain their specialized contracts.
 
-**Impact:** custom devices and persistent structures must fit a storage/machine
-declaration or assemble behavior from lower-level world/entity services. They
-lack direct access to the general host-managed anchored lifecycle.
+The host owns atomic placement costs, footprint reservation, durable scheduling,
+complete removal/invalidation and refund publication. Client declarations are
+inert and preserve the server's catalog/action identities.
 
-**Closure direction:** bind general anchored declarations and callbacks while
-retaining atomic placement cost, footprint ownership, invalidation and bounded
-refunds.
+See the [Luau anchored API](docs/modding/ANCHORED-ENTITIES.md) and runnable
+[counter package](fixtures/anchored-counter/README.md).
 
 #### Accepted implementation scope
 
-Goal active: expose the existing general Rust anchored contract through
+Completed scope: expose the existing general Rust anchored contract through
 `register_anchored`, with a dedicated package capability and immutable server
 callback modules. This is a general own-state device lifecycle, alongside the
 existing storage and machine specializations.
@@ -386,8 +386,21 @@ formatting, strict Clippy and typed Luau analysis, refresh Graphify and commit.
 General dynamic UI, imported models, VM reuse and save converters remain outside
 this goal.
 
-Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs) and
-[unbound interfaces](SCRIPTING.md#features-requiring-engine-work-or-native-extensions).
+Acceptance on September 30, 2026: all 1,185 workspace tests passed (1,149 game
+and 36 host API), including real nonblocking-listener placement, interaction,
+replay, support removal, refund conservation, rollback and restart. Formatting,
+strict all-target/all-feature Clippy and the counter's Luau analysis passed.
+The production block preview was rendered and inspected; Graphify was refreshed.
+
+The binding preserves the native own-state limits: interactions do not grant
+arbitrary inventory/world authority, observations capture current terrain rather
+than every edit, and public bytes require authored presentation. This closure
+does not add dynamic UI, imported models, VM reuse, hot reload or save converters.
+
+Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs),
+[Luau adapter](src/server/script/anchored.rs),
+[real-listener tests](src/server/net/tests/script_startup/anchored.rs) and
+[client codec tests](src/server/script/package/client/declarations/anchored/tests.rs).
 
 ### 5. Flexible entities, motion and presentation
 
@@ -464,11 +477,9 @@ and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
 
 ## Suggested priority
 
-1. Ordinary math helpers and structured script logging.
-2. Player/lifecycle hooks and public player services.
-3. General anchored entities and dynamic UI/input.
-4. Larger-package composition and typed replica access, driven by real mods.
-5. Additional motion, audio and richer presentation contracts.
+1. Dynamic UI/input, including collections, controls and declared input bindings.
+2. Larger-package composition and typed replica access, driven by real mods.
+3. Additional motion, audio and richer presentation contracts.
 
 Compatibility diagnostics should improve alongside those changes. Imported
 models, hot reload and native fire migration remain deferred; save conversion
