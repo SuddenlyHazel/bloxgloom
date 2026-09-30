@@ -270,6 +270,7 @@ pub(crate) use lifecycle::tests::exercise_player_services;
 #[cfg(test)]
 pub(crate) use movement::teleport_tests::exercise_player_teleport;
 mod mesh_queue;
+mod observations;
 pub(crate) mod presentation;
 pub(crate) mod startup;
 mod workers;
@@ -295,6 +296,7 @@ struct Keys {
 }
 
 struct ClientApp {
+    observations: Arc<presentation::Observations>,
     package_ui: Option<crate::ui::authored::Session>,
     visual_session: Option<presentation::VisualSession>,
     player_services: Option<player_services::Lane>,
@@ -379,6 +381,7 @@ impl ClientApp {
         let config_writer = ConfigWriter::new(&config, config_path);
         let entity_registry = EntityClientRegistry::builtins(&catalog);
         Self {
+            observations: Arc::new(Default::default()),
             package_ui: network.package_ui(),
             visual_session: network.visual_session(),
             player_services: None,
@@ -982,7 +985,10 @@ impl ClientApp {
                     self.player_roster = players;
                 }
             }
-            ServerMessage::WorldTime { elapsed_ms } => self.world_time.synchronize(elapsed_ms),
+            ServerMessage::WorldTime { elapsed_ms } => {
+                self.world_time.synchronize(elapsed_ms);
+                self.observe_time(elapsed_ms);
+            }
             ServerMessage::Welcome { id, seed } => {
                 self.world_seed = Some(seed);
                 tracing::info!(player_id = id, world_seed = seed, "connected to server")
@@ -1036,6 +1042,7 @@ impl ClientApp {
                 }
                 let modified = chunk.version != 0;
                 self.chunks.insert(key, Arc::new(chunk));
+                self.observe_installed_blocks(&[key], vec![], false, None);
                 self.queue_relight(key, modified);
             }
             ServerMessage::WorldSnapshotStart(_)
@@ -1050,6 +1057,8 @@ impl ClientApp {
                 ) {
                     Assembly::Waiting => {}
                     Assembly::Installed(keys) => {
+                        let (cells, truncated) = self.replicas.take_installed_cells();
+                        self.observe_installed_blocks(&keys, cells, truncated, None);
                         if let Some(ui) = &mut self.package_ui {
                             ui.replica_event(
                                 "replica:world",
@@ -1099,23 +1108,23 @@ impl ClientApp {
                 block,
             } => {
                 if let Some(chunk) = self.chunks.get_mut(&key) {
-                    if version == chunk.version + 1 {
+                    if chunk.version.checked_add(1) == Some(version) {
                         if let Some(index) = Chunk::index([x as usize, y as usize, z as usize]) {
                             let updated = Arc::make_mut(chunk);
                             updated.blocks.set(index, block);
                             updated.version = version;
                             self.queue_edited_chunk_relight(key);
-                            if let Some(ui) = &mut self.package_ui {
-                                ui.replica_event(
-                                    "replica:block",
-                                    format!(
-                                        "version={version};block={}",
-                                        self.catalog
-                                            .state(block)
-                                            .map_or("unknown", |state| state.key.as_str())
-                                    ),
-                                );
-                            }
+                            self.observe_installed_blocks(
+                                &[key],
+                                vec![(key, [x, y, z])],
+                                false,
+                                Some(format!(
+                                    "version={version};block={}",
+                                    self.catalog
+                                        .state(block)
+                                        .map_or("unknown", |state| state.key.as_str())
+                                )),
+                            );
                         }
                     } else if version > chunk.version {
                         self.queue_command(ClientMessage::Resync { key });
@@ -1141,8 +1150,8 @@ impl ClientApp {
                 };
                 if let Some(ui) = &mut self.package_ui {
                     ui.action_result(action_id, accepted, &reason);
-                    ui.replica_event("replica:action", format!("accepted={accepted}"));
                 }
+                self.observe_action(action_id, accepted, &reason);
                 trace::event(format_args!("ack {action_id} accepted={accepted}"));
                 if !accepted {
                     self.show_status(format!("Action rejected: {reason}"));
@@ -1176,21 +1185,9 @@ impl ClientApp {
                 self.effective_view_distance = radius;
             }
             ServerMessage::Inventory { revision, slots } => {
-                if revision >= self.inventory.revision {
+                if revision > self.inventory.revision || self.observations.inventory.is_none() {
                     self.inventory = Inventory { revision, slots };
-                    if let Some(ui) = &mut self.package_ui {
-                        let items = self
-                            .inventory
-                            .slots
-                            .iter()
-                            .flatten()
-                            .map(|stack| usize::from(stack.count))
-                            .sum::<usize>();
-                        ui.replica_event(
-                            "replica:inventory",
-                            format!("revision={revision};items={items}"),
-                        );
-                    }
+                    self.observe_inventory();
                 }
             }
             ServerMessage::Drops { revision, items } => {
@@ -1277,6 +1274,7 @@ impl ClientApp {
             keep
         });
         self.replicas.retain(|key| self.chunks.contains_key(&key));
+        self.prune_observed_blocks();
         self.lighting_revisions
             .retain(|key, _| self.chunks.contains_key(key));
         self.light_samples

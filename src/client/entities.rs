@@ -48,6 +48,8 @@ pub(super) struct Replicas {
     snapshots: HashMap<ChunkKey, PendingSnapshot>,
     commits: BTreeMap<u64, PendingCommit>,
     last_commit: u64,
+    installed_cells: Vec<(ChunkKey, [u8; 3])>,
+    cells_truncated: bool,
 }
 
 pub(super) enum Assembly {
@@ -59,6 +61,13 @@ pub(super) enum Assembly {
 }
 
 impl Replicas {
+    /// Cells become observable only after the whole commit has installed.
+    pub(super) fn take_installed_cells(&mut self) -> (Vec<(ChunkKey, [u8; 3])>, bool) {
+        (
+            std::mem::take(&mut self.installed_cells),
+            std::mem::take(&mut self.cells_truncated),
+        )
+    }
     pub(super) fn action_at(&self, target: [i32; 3], catalog: &Catalog) -> Option<&PublicEntity> {
         self.kiln_at(target, catalog).or_else(|| {
             let key = crate::world::world_to_chunk(target[0], target[1], target[2]).0;
@@ -650,6 +659,15 @@ impl Replicas {
             self.insert_avatars(key, avatars);
         }
         self.entity_revisions.extend(revised_entity_versions);
+        for part in &parts {
+            for cell in &part.blocks {
+                if self.installed_cells.len() < 64 {
+                    self.installed_cells.push((part.key, cell.local));
+                } else {
+                    self.cells_truncated = true;
+                }
+            }
+        }
         // Entity motion changes avatar state, not chunk geometry or lighting.
         // Only block-bearing owners need a mesh/relight request.
         Ok(changed_block_keys)

@@ -2,6 +2,10 @@
 //! action, but the client composes the request and the server owns its effects.
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
+mod observations;
+#[cfg(test)]
+pub(crate) use observations::SlotView;
+pub(crate) use observations::{ActionView, BlockView, InventoryView, Observations, WorldView};
 mod widgets;
 pub(crate) use widgets::ControlValue;
 mod visual;
@@ -29,6 +33,7 @@ pub(crate) struct Request {
     pub(crate) node: Option<String>,
     pub(crate) values: Vec<(String, ControlValue)>,
     pub(crate) replica: bool,
+    pub(crate) observations: Arc<Observations>,
     pub(crate) entities: Vec<EntityView>,
     /// IDs entering or leaving the bounded presented window since the prior
     /// dispatched entity callback. Leaving does not imply server despawn.
@@ -150,6 +155,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
     };
     crate::server::run_presentation(module, request.sequence, |lua, entry| {
         let input = lua.create_table()?;
+        input.raw_set("replica", request.observations.lua(lua)?)?;
         input.raw_set("sequence", request.sequence)?;
         input.raw_set("event", request.event.as_str())?;
         input.raw_set("value", request.value)?;

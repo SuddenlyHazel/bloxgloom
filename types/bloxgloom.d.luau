@@ -474,7 +474,9 @@ export type BloxClientStartupHost = {
     --- Set a declared parameter on an owned material/effect. Its declared type and bounds are checked by the host.
     set_parameter: (owned_resource: string, parameter_name: string, value: BloxVisualParameterValue) -> (),
     --- Select an owned client module for bounded public replica presentation callbacks in this session.
-    set_replica_handler: (own_client_module: string) -> (),
+    --- observations=true adds inventory/block/world/action notifications.
+    --- Default false preserves existing entity/anchor callback behavior.
+    set_replica_handler: (own_client_module: string, observations: boolean?) -> (),
     --- Requires players/v1. One own-package module; multiple packages compose.
     set_player_handler: (own_client_module: string) -> (),
 }
@@ -496,6 +498,39 @@ export type BloxClientPlayerEvent = {
 }
 
 --- Local UI event input. The handler runs in a fresh sandbox; explicit state carries document-local data between events.
+--- Readonly authoritative replica data already installed on this client.
+--- Unknown inventory/world values are nil; a zero inventory revision is valid.
+export type BloxReplicaSnapshot = {
+    inventory: BloxReplicaInventory?,
+    world: BloxReplicaWorld?,
+    --- Up to 64 recent installed block observations. No procedural fallback.
+    blocks: {BloxReplicaBlock},
+    blocks_truncated: boolean,
+    --- Up to 16 own-session receipts scoped to this callback's package.
+    actions: {BloxReplicaAction},
+}
+--- Own player's installed finite inventory; no other profiles or containers.
+export type BloxReplicaInventory = {
+    revision: BloxRevision,
+    revision_lo: number,
+    revision_hi: number,
+    --- Dense 36-entry sequence. slot is zero-based; stack is nil for empty slots.
+    slots: {BloxReplicaInventorySlot},
+}
+export type BloxReplicaInventorySlot = {slot: number, stack: BloxStack?}
+--- Latest received server clock sample; presentation interpolation is excluded.
+export type BloxReplicaWorld = {elapsed_ms: number, cycle_ms: number}
+--- Bounded recent installed block observations, rather than arbitrary terrain access.
+export type BloxReplicaBlock = {
+    position: {x: number, y: number, z: number},
+    state: string,
+    revision: BloxRevision,
+    revision_lo: number,
+    revision_hi: number,
+}
+--- Recent own-session receipts. id is the exact canonical 32-hex-digit action ID.
+export type BloxReplicaAction = {id: string, key: string?, accepted: boolean, reason: string}
+
 export type BloxUiInput = {
     --- Client event sequence used to match asynchronous presentation results. Not a server tick or entity revision.
     sequence: number,
@@ -513,6 +548,7 @@ export type BloxUiInput = {
     value_typed: BloxUiValue?,
     --- Readonly map of editable widget values, keyed by stable widget identity.
     values: {[string]: BloxUiValue},
+    replica: BloxReplicaSnapshot,
 }
 --- Presentation updates or one gameplay action request. Action targets come from the current selection/aim and are checked by the server.
 export type BloxUiValue = boolean | number | string
@@ -568,6 +604,7 @@ export type BloxReplicaInput = {
     texts: {[string]: string},
     --- Typed control values for the active document owned by this package; otherwise empty.
     values: {[string]: BloxUiValue},
+    replica: BloxReplicaSnapshot,
     --- Current bounded public entity window. Do not treat this subset as every entity in the world.
     entities: {BloxReplicaEntity},
     --- Exact IDs entering this callback's tracked window. Use each record's id handle.

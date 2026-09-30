@@ -527,12 +527,17 @@ fn block_and_entity_changes_wait_for_whole_cross_chunk_commit() {
     ));
     assert_eq!(chunks[&key(0)].version, 0);
     assert_eq!(chunks[&key(1)].version, 0);
+    assert_eq!(replicas.take_installed_cells(), (vec![], false));
     assert!(matches!(
         accept(&mut replicas, ServerMessage::WorldCommitPart(first.clone()), &catalog, &mut chunks),
         Assembly::Installed(keys) if keys == vec![key(0), key(1)]
     ));
     assert_eq!(chunks[&key(0)].block([0, 0, 0]), Some(STONE));
     assert_eq!(chunks[&key(1)].block([1, 0, 0]), Some(DIRT));
+    assert_eq!(
+        replicas.take_installed_cells(),
+        (vec![(key(0), [0, 0, 0]), (key(1), [1, 0, 0])], false)
+    );
     assert!(replicas.entities_in(key(0)).unwrap().contains_key(&12));
     assert!(matches!(
         accept(

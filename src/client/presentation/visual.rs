@@ -1,6 +1,6 @@
 //! UI-independent replica presentation. One immutable downloaded module, one
 //! outstanding worker call, and one replacement snapshot per connection.
-use super::{Command, EffectBuffer, EntityView, Reply, Request, Script, Worker};
+use super::{Command, EffectBuffer, EntityView, Observations, Reply, Request, Script, Worker};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 #[cfg(test)]
@@ -8,17 +8,20 @@ use std::sync::Arc;
 mod tests;
 
 struct PendingBatch {
-    anchored: bool,
+    anchored: Option<bool>,
+    event: String,
+    value: String,
     entities: Vec<EntityView>,
-    total: usize,
 }
 
 pub(crate) struct VisualSession {
+    observation_events: bool,
     script: Arc<Script>,
     worker: Worker,
     sequence: u32,
     pending: Option<u32>,
     queued: VecDeque<PendingBatch>,
+    observations: Arc<Observations>,
     poses: BTreeMap<u64, [f32; 3]>,
     tints: BTreeMap<u64, [f32; 3]>,
     previous_mobile: Vec<u64>,
@@ -30,6 +33,9 @@ pub(crate) struct VisualSession {
 }
 
 impl VisualSession {
+    pub(crate) fn enable_observation_events(&mut self) {
+        self.observation_events = true;
+    }
     #[cfg(test)]
     pub(crate) fn new(script: Arc<Script>) -> std::io::Result<Self> {
         Self::with_parameters(script, Default::default())
@@ -39,11 +45,13 @@ impl VisualSession {
         parameters: crate::render::parameters::State,
     ) -> std::io::Result<Self> {
         Ok(Self {
+            observation_events: false,
             script,
             worker: Worker::spawn()?,
             sequence: 0,
             pending: None,
             queued: VecDeque::new(),
+            observations: Arc::new(Observations::default()),
             poses: BTreeMap::new(),
             tints: BTreeMap::new(),
             previous_mobile: Vec::new(),
@@ -66,7 +74,7 @@ impl VisualSession {
     pub(crate) fn anchors(&mut self, entities: Vec<EntityView>, total: usize) {
         if total == 0
             && self.previous_anchors.is_empty()
-            && !self.queued.iter().any(|batch| batch.anchored)
+            && !self.queued.iter().any(|batch| batch.anchored == Some(true))
         {
             return;
         }
@@ -92,19 +100,58 @@ impl VisualSession {
             self.failure = Some("invalid visual replica input".into());
             return;
         }
-        if let Some(batch) = self
+        self.enqueue(PendingBatch {
+            anchored: Some(anchored),
+            event: if anchored {
+                "replica:anchors"
+            } else {
+                "replica:entities"
+            }
+            .into(),
+            value: format!("total={total}"),
+            entities,
+        });
+    }
+
+    pub(crate) fn observe(&mut self, event: &str, value: String, observations: Arc<Observations>) {
+        if self.failure.is_some() {
+            return;
+        }
+        if event.len() > 64
+            || !event.starts_with("replica:")
+            || !event.is_ascii()
+            || event.bytes().any(|c| c.is_ascii_control())
+            || value.len() > 640
+            || !value.is_ascii()
+            || observations.validate().is_err()
+        {
+            self.failure = Some("invalid visual observation input".into());
+            return;
+        }
+        self.observations = Arc::clone(&observations);
+        if !self.observation_events {
+            return;
+        }
+        self.enqueue(PendingBatch {
+            anchored: None,
+            event: event.into(),
+            value,
+            entities: vec![],
+        });
+    }
+
+    fn enqueue(&mut self, batch: PendingBatch) {
+        if let Some(previous) = self
             .queued
             .iter_mut()
-            .find(|batch| batch.anchored == anchored)
+            .find(|previous| previous.event == batch.event)
         {
-            batch.entities = entities;
-            batch.total = total;
+            *previous = batch;
+        } else if self.queued.len() < 8 {
+            self.queued.push_back(batch);
         } else {
-            self.queued.push_back(PendingBatch {
-                anchored,
-                entities,
-                total,
-            });
+            self.failure = Some("visual observation queue exceeded".into());
+            return;
         }
         self.dispatch();
     }
@@ -120,12 +167,16 @@ impl VisualSession {
             self.failure = Some("visual sequence exhausted".into());
             return;
         };
-        let previous = if batch.anchored {
-            &self.previous_anchors
-        } else {
-            &self.previous_mobile
+        let previous = match batch.anchored {
+            Some(true) => self.previous_anchors.as_slice(),
+            Some(false) => self.previous_mobile.as_slice(),
+            None => &[],
         };
-        let (entered, left) = super::window_changes(previous, &batch.entities);
+        let (entered, left) = if batch.anchored.is_some() {
+            super::window_changes(previous, &batch.entities)
+        } else {
+            (vec![], vec![])
+        };
         let current = batch
             .entities
             .iter()
@@ -134,19 +185,15 @@ impl VisualSession {
         let request = Request {
             script: Arc::clone(&self.script),
             sequence,
-            event: if batch.anchored {
-                "replica:anchors"
-            } else {
-                "replica:entities"
-            }
-            .into(),
-            value: format!("total={}", batch.total),
+            event: batch.event,
+            value: batch.value,
             state: String::new(),
             texts: vec![],
             node: None,
             values: vec![],
             replica: true,
             entities: batch.entities,
+            observations: Arc::new(self.observations.for_owner(self.owner())),
             entered,
             left,
         };
@@ -154,17 +201,18 @@ impl VisualSession {
             Ok(()) => {
                 self.sequence = sequence;
                 self.pending = Some(sequence);
-                if batch.anchored {
-                    self.previous_anchors = current;
-                } else {
-                    self.previous_mobile = current;
+                match batch.anchored {
+                    Some(true) => self.previous_anchors = current,
+                    Some(false) => self.previous_mobile = current,
+                    None => {}
                 }
             }
             Err(std::sync::mpsc::TrySendError::Full(request)) => {
                 self.queued.push_front(PendingBatch {
                     anchored: batch.anchored,
                     entities: request.entities,
-                    total: batch.total,
+                    event: request.event,
+                    value: request.value,
                 });
             }
             Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
@@ -199,7 +247,6 @@ impl VisualSession {
                 }
             }
             if !reply.replica
-                || !(reply.entity_batch || reply.anchor_batch)
                 || commands.iter().any(|command| !match command {
                     Command::Visual(id, values) | Command::Tint(id, values) => {
                         reply.entity_batch

@@ -8,6 +8,7 @@ use taffy::prelude::*;
 
 #[derive(Debug)]
 pub(crate) struct Session {
+    pub(super) observations: Arc<crate::client::presentation::Observations>,
     pub(super) resources: Arc<Resources>,
     document: usize,
     pub(super) active: Document,
@@ -60,6 +61,7 @@ impl Session {
         };
         let active = resources.documents[0].clone();
         let mut session = Self {
+            observations: Arc::new(Default::default()),
             resources,
             document: 0,
             active,

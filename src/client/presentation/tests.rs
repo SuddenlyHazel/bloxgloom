@@ -18,6 +18,7 @@ fn authored_action_arguments_are_exact_bytes_and_bounded() {
         node: None,
         values: vec![],
         replica: false,
+        observations: Arc::new(Observations::default()),
         entities: vec![],
         entered: vec![],
         left: vec![],
@@ -48,6 +49,7 @@ fn tint_commands_reject_nonfinite_and_out_of_range_channels() {
             node: None,
             values: vec![],
             replica: true,
+            observations: Arc::new(Observations::default()),
             entities: vec![],
             entered: vec![],
             left: vec![],
@@ -83,6 +85,7 @@ fn spark_commands_reject_unbounded_color_and_offset() {
             node: None,
             values: vec![],
             replica: true,
+            observations: Arc::new(Observations::default()),
             entities: vec![],
             entered: vec![],
             left: vec![],
@@ -111,6 +114,7 @@ fn spark_commands_preserve_defaults_and_bounded_custom_appearance() {
             node: None,
             values: vec![],
             replica: true,
+            observations: Arc::new(Observations::default()),
             entities: vec![],
             entered: vec![],
             left: vec![],
@@ -139,6 +143,7 @@ fn replica_commands_roundtrip_exact_handles_and_reject_forged_or_wrong_kind_valu
         node: None,
         values: vec![],
         replica: true,
+        observations: Arc::new(Observations::default()),
         entities: vec![EntityView {
             id,
             key: "demo:creature".into(),
@@ -162,4 +167,18 @@ fn replica_commands_roundtrip_exact_handles_and_reject_forged_or_wrong_kind_valu
     ] {
         assert!(run(request(forged)).is_err(), "accepted {forged}");
     }
+}
+
+#[test]
+fn local_ui_callback_receives_typed_replica_without_a_replica_event() {
+    let observations = Observations {
+        inventory: Some(InventoryView {
+            revision: u64::MAX,
+            slots: (0..36).map(|slot| SlotView { slot, stack: None }).collect(),
+        }),
+        ..Default::default()
+    };
+    let request=Request{script:Arc::new(Script{module:"demo:ui".into(),source:"return function(e) assert(e.event=='demo:click'); assert(#e.replica.inventory.slots==36); assert(e.replica.inventory.revision_hi==4294967295); assert(e.replica.inventory.slots[1].stack==nil); return {} end".into()}),
+        sequence:1,event:"demo:click".into(),value:String::new(),state:String::new(),texts:vec![],node:None,values:vec![],replica:false,entities:vec![],observations:Arc::new(observations),entered:vec![],left:vec![]};
+    assert!(run(request).unwrap().is_empty());
 }

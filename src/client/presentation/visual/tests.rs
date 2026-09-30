@@ -95,3 +95,63 @@ fn anchor_batch_cannot_set_mobile_pose() {
     );
     assert_eq!(session.visual_pose(2), None);
 }
+
+#[test]
+fn typed_observations_coalesce_and_remain_available_to_ui_less_entity_callbacks() {
+    let script = Arc::new(Script {
+        module: "demo@1:visuals".into(),
+        source: r#"
+        return function(e)
+            assert(#e.replica.inventory.slots==36)
+            assert(#e.replica.actions==1 and e.replica.actions[1].key=='demo:use')
+            if e.event=='replica:inventory' then
+                assert(e.replica.inventory.revision_lo==tonumber(e.value))
+                return {}
+            end
+            assert(e.event=='replica:entities' and e.replica.inventory.revision_lo==11)
+            assert(#e.entered==1 and #e.left==0)
+            return {{op='visual',id_lo=e.entities[1].id_lo,id_hi=e.entities[1].id_hi,yaw=0.1,bob=0,squash=0}}
+        end
+    "#
+        .into(),
+    });
+    let snapshot = |revision| {
+        Arc::new(Observations {
+            inventory: Some(super::super::InventoryView {
+                revision,
+                slots: (0..36)
+                    .map(|slot| super::super::SlotView { slot, stack: None })
+                    .collect(),
+            }),
+            actions: vec![
+                super::super::ActionView {
+                    id: (1u128 << 64) | 1,
+                    key: Some("demo:use".into()),
+                    accepted: true,
+                    reason: String::new(),
+                },
+                super::super::ActionView {
+                    id: (1u128 << 64) | 2,
+                    key: Some("other:use".into()),
+                    accepted: true,
+                    reason: String::new(),
+                },
+            ],
+            ..Default::default()
+        })
+    };
+    let mut session = VisualSession::new(script).unwrap();
+    session.enable_observation_events();
+    session.observe("replica:inventory", "7".into(), snapshot(7));
+    session.observe("replica:inventory", "9".into(), snapshot(9));
+    session.observe("replica:inventory", "11".into(), snapshot(11));
+    session.entities(vec![view(1, false)], 1);
+    assert_eq!(session.queued.len(), 2);
+    session.wait_for_test().unwrap();
+    session.poll();
+    session.wait_for_test().unwrap();
+    session.poll();
+    session.wait_for_test().unwrap();
+    assert_eq!(session.sequence, 3);
+    assert_eq!(session.visual_pose(1), Some([0.1, 0.0, 0.0]));
+}

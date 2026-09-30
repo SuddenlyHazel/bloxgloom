@@ -83,6 +83,14 @@ impl Session {
                 .map(|(i, n)| (n.id.clone(), self.text_at(i).to_owned()))
                 .collect(),
             replica: false,
+            observations: std::sync::Arc::new(
+                self.observations.for_owner(
+                    self.document()
+                        .id
+                        .split_once(':')
+                        .map_or("", |(owner, _)| owner),
+                ),
+            ),
             entities: vec![],
             entered: vec![],
             left: vec![],
@@ -124,6 +132,28 @@ impl Session {
     /// requests. Queue bounded snapshots while a local UI callback is running.
     pub(crate) fn replica_event(&mut self, event: &str, value: String) {
         self.queue_replica(event, value, vec![]);
+    }
+
+    pub(crate) fn observe(
+        &mut self,
+        event: &str,
+        value: String,
+        observations: std::sync::Arc<crate::client::presentation::Observations>,
+    ) {
+        self.observations = observations;
+        self.replica_event(event, value);
+    }
+
+    pub(crate) fn observe_extra(
+        &mut self,
+        event: &str,
+        value: String,
+        observations: std::sync::Arc<crate::client::presentation::Observations>,
+    ) {
+        self.observations = observations;
+        if self.startup.replica_observations {
+            self.replica_event(event, value);
+        }
     }
 
     pub(crate) fn replica_owner(&self) -> Option<&str> {
@@ -268,6 +298,10 @@ impl Session {
                 .map(|(index, node)| (node.id.clone(), self.text_at(index).to_owned()))
                 .collect(),
             replica: true,
+            observations: std::sync::Arc::new(
+                self.observations
+                    .for_owner(self.replica_owner().unwrap_or("")),
+            ),
             node: None,
             values: if owns_document {
                 self.control_values()

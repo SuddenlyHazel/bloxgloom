@@ -89,7 +89,12 @@ impl Network {
             Arc::clone(script),
             self.startup.parameters.clone(),
         ) {
-            Ok(session) => Some(session),
+            Ok(mut session) => {
+                if self.startup.replica_observations {
+                    session.enable_observation_events();
+                }
+                Some(session)
+            }
             Err(error) => {
                 tracing::warn!(%error, "visual presentation worker unavailable");
                 None

@@ -16,6 +16,7 @@ impl ClientApp {
         self.player_states.clear();
         self.player_state_snapshot = 0;
         self.package_ui = None;
+        self.observations = Arc::new(Default::default());
         self.visual_session = None;
         // Renderer owns the package UI textures, material and effect pipelines.
         // A later session constructs a new renderer against its frozen catalog.

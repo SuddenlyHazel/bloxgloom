@@ -22,6 +22,7 @@ pub(crate) struct State {
     pub(crate) texts: BTreeMap<String, String>,
     pub(crate) states: BTreeMap<String, String>,
     pub(crate) replica: Option<Arc<crate::client::presentation::Script>>,
+    pub(crate) replica_observations: bool,
     pub(crate) player_handlers: BTreeMap<String, String>,
     pub(crate) parameters: crate::render::parameters::State,
 }
@@ -189,36 +190,39 @@ pub(super) fn execute_event(
         let handler_state = Rc::clone(&registrations);
         host.set(
             "set_replica_handler",
-            lua.create_function(move |_, module: mlua::LuaString| {
-                let key = ascii(module, 129)?;
-                let (owner, local) = key
-                    .split_once(':')
-                    .ok_or_else(|| mlua::Error::RuntimeError("invalid replica module".into()))?;
-                if !startup
-                    || owner != handler_owner
-                    || !identifier(local)
-                    || handler_state.borrow().replica.is_some()
-                {
-                    return Err(mlua::Error::RuntimeError(
-                        "invalid or duplicate replica handler".into(),
-                    ));
-                }
-                let source = handler_bundle
-                    .packages()
-                    .get(owner)
-                    .and_then(|package| package.sources.get(local))
-                    .ok_or_else(|| {
-                        mlua::Error::RuntimeError(
-                            "replica handler must be a declared client module".into(),
-                        )
+            lua.create_function(
+                move |_, (module, observations): (mlua::LuaString, Option<bool>)| {
+                    let key = ascii(module, 129)?;
+                    let (owner, local) = key.split_once(':').ok_or_else(|| {
+                        mlua::Error::RuntimeError("invalid replica module".into())
                     })?;
-                handler_state.borrow_mut().replica =
-                    Some(Arc::new(crate::client::presentation::Script {
-                        module: identity(&handler_bundle, &key),
-                        source: source.source.clone(),
-                    }));
-                Ok(())
-            })?,
+                    if !startup
+                        || owner != handler_owner
+                        || !identifier(local)
+                        || handler_state.borrow().replica.is_some()
+                    {
+                        return Err(mlua::Error::RuntimeError(
+                            "invalid or duplicate replica handler".into(),
+                        ));
+                    }
+                    let source = handler_bundle
+                        .packages()
+                        .get(owner)
+                        .and_then(|package| package.sources.get(local))
+                        .ok_or_else(|| {
+                            mlua::Error::RuntimeError(
+                                "replica handler must be a declared client module".into(),
+                            )
+                        })?;
+                    handler_state.borrow_mut().replica =
+                        Some(Arc::new(crate::client::presentation::Script {
+                            module: identity(&handler_bundle, &key),
+                            source: source.source.clone(),
+                        }));
+                    handler_state.borrow_mut().replica_observations = observations.unwrap_or(false);
+                    Ok(())
+                },
+            )?,
         )?;
         let parameters = Rc::clone(&registrations);
         let parameter_owner = entry.split_once(':').unwrap().0.to_owned();
@@ -307,6 +311,9 @@ pub(super) fn execute_event(
     }
     state.texts.extend(output.texts.clone());
     state.states.extend(output.states.clone());
+    if output.replica.is_some() {
+        state.replica_observations = output.replica_observations;
+    }
     state.replica = output.replica.clone().or_else(|| state.replica.take());
     state.parameters = output.parameters.clone();
     Ok(())
