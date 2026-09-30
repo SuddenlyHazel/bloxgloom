@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 11;
+const WIRE_VERSION: u8 = 12;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 /// Fixed vertical streaming/retention radius shared by server and client.
@@ -35,6 +35,10 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    /// Administrator control of the server clock; no inventory/world-WAL mutation.
+    SetWorldTime {
+        elapsed_ms: u64,
+    },
     /// Select registered skin/shirt/pants indices for this authenticated profile.
     /// Model zero is the frozen humanoid; clients cannot send RGB or a profile ID.
     SelectAppearance {
@@ -407,6 +411,13 @@ pub fn write_client_with_catalog(
             out.extend(action_id.to_le_bytes());
             out.push(*slot);
             out.extend(count.to_le_bytes());
+        }
+        ClientMessage::SetWorldTime { elapsed_ms } => {
+            if *elapsed_ms >= crate::daylight::CYCLE_MS {
+                return Err(invalid("invalid world time"));
+            }
+            out.push(17);
+            out.extend(elapsed_ms.to_le_bytes());
         }
         ClientMessage::AdminGive {
             action_id,
@@ -991,6 +1002,13 @@ pub fn read_client_with_catalog(
         14 => ClientMessage::BundleRequest {
             identity: bundle::read_identity(&mut c)?,
         },
+        17 => {
+            let elapsed_ms = c.u64()?;
+            if elapsed_ms >= crate::daylight::CYCLE_MS {
+                return Err(invalid("invalid world time"));
+            }
+            ClientMessage::SetWorldTime { elapsed_ms }
+        }
         16 => ClientMessage::SelectAppearance {
             palettes: [c.u8()?, c.u8()?, c.u8()?],
         },

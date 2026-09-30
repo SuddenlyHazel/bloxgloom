@@ -868,3 +868,28 @@ fn world_time_wire_wrap_boundary_and_invalid_samples() {
         .is_err()
     );
 }
+
+#[test]
+fn set_world_time_request_round_trips_and_rejects_invalid_phase() {
+    for elapsed_ms in [
+        0,
+        crate::daylight::INITIAL_MS,
+        crate::daylight::CYCLE_MS - 1,
+    ] {
+        let message = ClientMessage::SetWorldTime { elapsed_ms };
+        let mut wire = Vec::new();
+        write_client(&mut wire, &message).unwrap();
+        assert_eq!(read_client(wire.as_slice()).unwrap(), message);
+        wire[6..14].copy_from_slice(&crate::daylight::CYCLE_MS.to_le_bytes());
+        assert!(read_client(wire.as_slice()).is_err());
+    }
+    assert!(
+        write_client(
+            &mut Vec::new(),
+            &ClientMessage::SetWorldTime {
+                elapsed_ms: crate::daylight::CYCLE_MS,
+            }
+        )
+        .is_err()
+    );
+}

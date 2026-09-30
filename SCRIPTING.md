@@ -823,7 +823,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 2 (wire version 11).
+publisher. The negotiated client host contract is version 2 (wire version 12).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

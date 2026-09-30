@@ -30,7 +30,7 @@ fn world_time_resumes_saved_phase_and_rejects_corrupt_state() {
 }
 
 #[test]
-fn local_listener_delivers_shared_world_time_and_recovers_it() {
+fn local_listener_delivers_shared_world_time_admin_changes_and_recovers_it() {
     use crate::protocol::{self, ClientMessage, ServerMessage};
     use std::net::TcpStream;
     let root = temporary();
@@ -70,10 +70,11 @@ fn local_listener_delivers_shared_world_time_and_recovers_it() {
             }
         }
     };
-    let (address, server) = crate::server::start_local_server(7, root.clone()).unwrap();
+    let (address, server) =
+        crate::server::start_local_server_with_admin(7, root.clone(), 0x8675).unwrap();
     let (mut peer, joined) = connect(address, 0x8675);
     assert!(joined >= CYCLE_MS * 3 / 4);
-    let (second_peer, second_time) = connect(address, 0x8676);
+    let (mut second_peer, second_time) = connect(address, 0x8676);
     assert!(second_time >= joined && second_time - joined < 1000);
     let updated = loop {
         if let ServerMessage::WorldTime { elapsed_ms } = protocol::read_server(&mut peer).unwrap() {
@@ -81,12 +82,52 @@ fn local_listener_delivers_shared_world_time_and_recovers_it() {
         }
     };
     assert!(updated > joined && updated - joined < 3000);
+    // A remote client cannot promote itself to administrator or move the clock.
+    protocol::write_client(
+        &mut second_peer,
+        &ClientMessage::SetWorldTime {
+            elapsed_ms: INITIAL_MS,
+        },
+    )
+    .unwrap();
+    loop {
+        if let ServerMessage::EditRejected { reason } =
+            protocol::read_server(&mut second_peer).unwrap()
+        {
+            assert!(reason.contains("administrator"));
+            break;
+        }
+    }
+    loop {
+        if let ServerMessage::WorldTime { elapsed_ms } = protocol::read_server(&mut peer).unwrap() {
+            assert!(elapsed_ms >= CYCLE_MS * 3 / 4);
+            break;
+        }
+    }
+    protocol::write_client(&mut peer, &ClientMessage::SetWorldTime { elapsed_ms: 0 }).unwrap();
+    let changed = loop {
+        if let ServerMessage::WorldTime { elapsed_ms } = protocol::read_server(&mut peer).unwrap()
+            && elapsed_ms < 3000
+        {
+            break elapsed_ms;
+        }
+    };
+    loop {
+        if let ServerMessage::WorldTime { elapsed_ms } =
+            protocol::read_server(&mut second_peer).unwrap()
+            && elapsed_ms < 3000
+        {
+            assert!(elapsed_ms >= changed && elapsed_ms - changed < 1000);
+            break;
+        }
+    }
+
     server.stop().unwrap();
     drop(peer);
     drop(second_peer);
     let (address, server) = crate::server::start_local_server(7, root.clone()).unwrap();
     let (peer, resumed) = connect(address, 0x8675);
-    assert!(resumed >= updated && resumed - updated < 3000);
+    assert!(resumed >= changed && resumed - changed < 3000);
     server.stop().unwrap();
     drop(peer);
     fs::remove_dir_all(root).unwrap();

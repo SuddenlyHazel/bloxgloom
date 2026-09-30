@@ -71,10 +71,12 @@ fn binding_targets(catalog: &Catalog, named: &bindings::NamedBindings) -> Vec<Bi
 
 #[cfg(test)]
 mod tests;
+mod time;
 
 enum Command {
     Help,
     Appearance([u8; 3]),
+    Time(u64),
     Registered(Request),
 }
 
@@ -112,6 +114,7 @@ fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
     let normalized;
     let key = match key {
         "help" if values.is_empty() => return Ok(Command::Help),
+        "time" => return time::parse(&values).map(Command::Time),
         "appearance" => {
             if values.len() != 3 {
                 return Err("Usage: appearance <skin> <shirt> <pants>");
@@ -305,7 +308,7 @@ impl ClientApp {
                         - 1
                 });
                 self.show_status(format!(
-                    "appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
+                    "time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
                     maxima[0], maxima[1], maxima[2]
                 ));
             }
@@ -315,6 +318,11 @@ impl ClientApp {
                 self.queue_command(ClientMessage::SelectAppearance { palettes });
                 self.admin_input.clear();
                 self.show_status("Appearance selection submitted");
+            }
+            Ok(Command::Time(elapsed_ms)) => {
+                self.queue_command(ClientMessage::SetWorldTime { elapsed_ms });
+                self.admin_input.clear();
+                self.show_status("Time change submitted");
             }
             Ok(Command::Registered(request)) => self.submit_admin_command(request),
             Err(message) => self.show_status(message),

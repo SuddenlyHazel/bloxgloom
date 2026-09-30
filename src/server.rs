@@ -770,6 +770,7 @@ fn join_client(
 
 fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Result<()> {
     match message {
+        ClientMessage::SetWorldTime { elapsed_ms } => world_time::set_time(state, id, elapsed_ms),
         ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
         ClientMessage::Hello { .. } => {
             Err(io::Error::new(ErrorKind::InvalidData, "duplicate Hello"))

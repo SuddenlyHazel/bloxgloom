@@ -13,6 +13,7 @@ pub(super) struct Clock {
     started: Instant,
     last_publish: Instant,
     last_save: Instant,
+    checkpoint_pending: bool,
     sender: Option<SyncSender<u64>>,
     worker: Option<JoinHandle<io::Result<()>>>,
 }
@@ -55,6 +56,7 @@ impl Clock {
             started,
             last_publish: started,
             last_save: started,
+            checkpoint_pending: false,
             sender: Some(sender),
             worker: Some(worker),
         })
@@ -66,19 +68,40 @@ impl Clock {
     }
 
     pub(super) fn poll(&mut self) -> Option<u64> {
-        if self.last_save.elapsed() >= Duration::from_secs(5)
-            && self
-                .sender
-                .as_ref()
-                .is_some_and(|sender| sender.try_send(self.now()).is_ok())
-        {
-            self.last_save = Instant::now();
+        if self.checkpoint_pending || self.last_save.elapsed() >= Duration::from_secs(5) {
+            self.checkpoint();
         }
         if self.last_publish.elapsed() < Duration::from_secs(1) {
             return None;
         }
         self.last_publish = Instant::now();
         Some(self.now())
+    }
+
+    fn checkpoint(&mut self) {
+        if self
+            .sender
+            .as_ref()
+            .is_some_and(|sender| sender.try_send(self.now()).is_ok())
+        {
+            self.last_save = Instant::now();
+            self.checkpoint_pending = false;
+        }
+    }
+
+    fn set(&mut self, time: u64) -> io::Result<()> {
+        if time >= CYCLE_MS {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid world time",
+            ));
+        }
+        self.initial = time;
+        self.started = Instant::now();
+        self.last_publish = Instant::now();
+        self.checkpoint_pending = true;
+        self.checkpoint();
+        Ok(())
     }
 
     pub(super) fn finish(&mut self) -> io::Result<()> {
@@ -93,6 +116,27 @@ impl Clock {
         }
         Ok(())
     }
+}
+
+pub(super) fn set_time(state: &mut super::State, session: u64, time: u64) -> io::Result<()> {
+    let Some(client) = state.clients.get(&session) else {
+        return Ok(());
+    };
+    if state.admin_profile != Some(client.profile) {
+        client.enqueue(crate::protocol::ServerMessage::EditRejected {
+            reason: "Time requires administrator".into(),
+        });
+        return Ok(());
+    }
+    state.world_time.set(time)?;
+    let elapsed_ms = state.world_time.now();
+    for client in state.clients.values() {
+        // Advisory updates are repaired by the next periodic sample.
+        let _ = client
+            .sender
+            .try_send(crate::protocol::ServerMessage::WorldTime { elapsed_ms });
+    }
+    Ok(())
 }
 
 impl Drop for Clock {

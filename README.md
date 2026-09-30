@@ -207,7 +207,7 @@ The next foundation task is the independent extension crate, completing any miss
 
 Code entry points: [`src/server/runtime.rs`](src/server/runtime.rs), [`src/server/runtime/systems.rs`](src/server/runtime/systems.rs), [`src/server/durable/admission.rs`](src/server/durable/admission.rs), [`src/server/durable/receipt.rs`](src/server/durable/receipt.rs), [`src/server/durable/entity_dispatch.rs`](src/server/durable/entity_dispatch.rs), [`src/server/durable/publication/dispatch.rs`](src/server/durable/publication/dispatch.rs), [`src/server/streaming.rs`](src/server/streaming.rs), [`src/server/entity_checkpoint/worker.rs`](src/server/entity_checkpoint/worker.rs), and [`src/client/workers.rs`](src/client/workers.rs).
 
-Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight, sky, fog, stars, and the moon follow the server clock. Lamps keep their light through the night. Time is saved in `world.time` every five seconds and at shutdown, and resumes when the server restarts; it pauses while the server is offline.
+Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight, sky, fog, stars, and the moon follow the server clock. Lamps keep their light through the night. In the local F4 console, run `time set sunrise`, `time set noon`, `time set sunset`, or `time set midnight`; `time set 18:30` sets a 24-hour clock time. Only the server administrator can change it, and all clients receive the new time. Time is saved in `world.time` every five seconds and at shutdown, and resumes when the server restarts; it pauses while the server is offline.
 
 ## Development and previews
 

@@ -160,3 +160,45 @@ fn appearance_command_selects_only_negotiated_palettes_without_a_gameplay_reques
     ));
     assert!(parse("appearance 7 8 6", &catalog).is_err());
 }
+
+#[test]
+fn time_command_supports_phases_and_clock_times_and_rejects_invalid_input() {
+    let catalog = Catalog::builtins();
+    let cycle = crate::daylight::CYCLE_MS;
+    for (input, expected) in [
+        ("/time set sunrise", 0),
+        ("time dawn", 0),
+        ("time set 06:00", 0),
+        ("time set noon", cycle / 4),
+        ("time day", cycle / 4),
+        ("time 12:00", cycle / 4),
+        ("time set sunset", cycle / 2),
+        ("time dusk", cycle / 2),
+        ("time 18:00", cycle / 2),
+        ("time set midnight", cycle * 3 / 4),
+        ("time night", cycle * 3 / 4),
+        ("time 00:00", cycle * 3 / 4),
+        ("time set 18:30", cycle * 25 / 48),
+    ] {
+        assert!(
+            matches!(parse(input, &catalog), Ok(Command::Time(time)) if time == expected),
+            "{input}"
+        );
+    }
+    for input in [
+        "time",
+        "time set",
+        "time set noon extra",
+        "time add noon",
+        "time 24:00",
+        "time 12:60",
+        "time 6:00",
+        "time -1:00",
+        "time a2:00",
+        "time 00:aa",
+        "time 12000",
+        "time set day night",
+    ] {
+        assert!(parse(input, &catalog).is_err(), "{input}");
+    }
+}
