@@ -122,6 +122,43 @@ pub(crate) struct PackageActionProbe {
 }
 
 impl PackageActionProbe {
+    pub(crate) fn connect_document(address: &str, profile: u128, path: PathBuf) -> Self {
+        let network = Network::connect(address, 1, profile).unwrap();
+        let mut app = ClientApp::new(network, Config::default(), path);
+        app.config.selected_slot = 0;
+        app.package_ui.as_mut().unwrap().resize(640, 360, 1.0);
+        Self { app }
+    }
+    pub(crate) fn session_mut(&mut self) -> &mut crate::ui::authored::Session {
+        self.app.package_ui.as_mut().unwrap()
+    }
+
+    pub(crate) fn select_slot(&mut self, slot: usize) {
+        self.app.config.selected_slot = slot;
+    }
+
+    pub(crate) fn open_recipe_binding(&mut self) {
+        assert!(self.app.package_binding_key(KeyCode::KeyB, false, false));
+        assert_eq!(self.app.screen, UiScreen::Package);
+        self.session_mut().wait_for_presentation().unwrap();
+    }
+
+    pub(crate) fn submit_ui_action(&mut self) -> ClientMessage {
+        let id = action_id(self.app.actions.epoch, self.app.actions.next_seq);
+        self.app.pump_package_action();
+        assert_eq!(self.feedback(), "WAITING FOR SERVER");
+        self.app.pending_actions[&id].clone()
+    }
+
+    pub(crate) fn resend(&mut self, message: &ClientMessage) {
+        assert!(self.app.network.send(message.clone()));
+    }
+
+    pub(crate) fn inventory_count(&self, slot: usize) -> u16 {
+        self.app.inventory.slots[slot]
+            .as_ref()
+            .map_or(0, |stack| stack.count)
+    }
     pub(crate) fn connect(address: &str, profile: u128, path: PathBuf) -> Self {
         Self::connect_for(address, profile, path, "uitarget:light")
     }

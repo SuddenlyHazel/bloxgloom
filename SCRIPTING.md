@@ -674,7 +674,7 @@ It runs once per connection before content readiness and returns `function(host)
 These services have presentation authority only. Startup state is reset on
 join/reconnect/server switch and is not saved gameplay state.
 
-UI documents declare fixed JSON widget trees with these kinds:
+Version-1 UI documents declare these widget kinds:
 
 | Widget | Behavior |
 | --- | --- |
@@ -686,14 +686,21 @@ UI documents declare fixed JSON widget trees with these kinds:
 
 Styles support width/height, padding, gaps, row layout, colors and packaged fonts.
 The renderer provides scrolling, wrapping, focus, selection, clipboard and IME.
-Luau cannot directly call egui or create/remove/rearrange widgets. There are no
-authored sliders, checkboxes, selects, tables, multiline inputs, HTML/CSS or UI
-animations.
+Version-2 documents additionally support `scroll_panel`, `table`, `checkbox`,
+`slider`, `select` and `multiline_input`. Callback `children` commands create,
+remove and reorder bounded descendants of existing containers; `value` commands
+update typed controls. Stable identities retain edit/focus state and stale tree
+intents are rejected. Declared input actions support scope, focus handling and
+persisted local rebindings. See the [dynamic UI/input reference](docs/modding/DYNAMIC-UI.md)
+and [recipe-browser example](fixtures/recipe-browser/README.md) for the complete
+schema, callback fields and limits. Direct egui/HTML and UI animation authoring
+remain unbound.
 
 A document opts into events with
 `"presentation":{"capability":"local-ui","module":"garden:view"}`.
 The module returns `function(input)` with `sequence`, namespaced `event`, widget
-`value`, explicit local `state`, and current `texts`. Return a dense list of up
+`value`, explicit local `state`, and current `texts`. Widget events also include
+stable `node`, editable `value_typed` and readonly typed `values`. Return a dense list of up
 to 16 commands:
 
 ```luau
@@ -706,7 +713,8 @@ return {
 }
 ```
 
-Text/state command values are bounded to 128 UTF-8 bytes without control characters. Nodes,
+State and ordinary text command values are bounded to 128 UTF-8 bytes without
+control characters. Multiline inputs permit 1024 UTF-8 bytes and line feeds. Nodes,
 documents, resource parameters, events and actions are checked for ownership.
 A UI result can request at most one package-owned action with up to 130 raw
 binary argument bytes. The client supplies its current selected item or aimed

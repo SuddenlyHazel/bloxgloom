@@ -7,7 +7,7 @@ mod visuals;
 pub use visuals::render_visual_previews;
 mod egui_ui;
 pub use block::render_block_preview;
-pub use egui_ui::render_egui_previews;
+pub use egui_ui::{render_egui_previews, render_package_egui_previews};
 mod perf;
 
 use perf::run_perf_benchmark_async;

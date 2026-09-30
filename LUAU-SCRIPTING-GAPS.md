@@ -314,29 +314,35 @@ bindings, operation limits, event ordering, retry/receipt semantics and remainin
 engine boundaries. Region hooks, chat/combat/respawn, per-player physics, custom
 geometry, authentication, VM reuse and save converters remain follow-up work.
 
-### 3. Dynamic UI and input
+### 3. Dynamic UI and input — closed within agreed scope
 
-Authored UI consists of fixed JSON trees containing panels, labels, images,
-buttons and single-line inputs. Callbacks can change text, visibility and local
-state, but cannot create, remove or rearrange widgets. There are no authored
-sliders, checkboxes, selects, tables, multiline inputs or UI animations, and no
-general custom keybinding API.
+Version-2 authored documents now support dynamic subtree creation, deletion and
+reordering, scroll panels and tables, checkboxes, finite sliders, selects and
+multiline inputs. Stable widget identities retain compatible values and focus;
+stale renderer intents cannot target replacement widgets. Version-1 documents
+retain their original contract.
 
-**Impact:** dynamically sized inventories, recipe browsers, quest lists,
-configuration screens and management interfaces are awkward or blocked. The
-existing native inventory screens do not provide a general dynamic UI toolkit
-for Luau authors.
+Callbacks receive readonly typed control values and emit bounded, atomic widget
+updates from the presentation worker. Declared physical-letter actions support
+persisted rebindings, game/UI scope, focus and modifier handling. Gameplay
+requests still pass through server authorization and durable receipts.
 
-**Closure direction:** support data-driven collections and widget updates,
-additional controls, and declared input bindings with focus handling. Keep
-callback work on presentation workers and preserve server authorization for
-gameplay requests.
+The runnable recipe browser exercises search, category and selection filtering,
+dynamic rows, quantity and notes, and finite server-owned crafting. Real listener
+tests cover output-capacity rollback, component rejection, duplicate requests,
+inventory conservation and save/restart recovery. Regression tests cover whole
+reply rollback, bounds, stale intents, focus/value retention and package-private
+local UI state.
 
-Evidence: [authored UI](SCRIPTING.md#client-startup-and-authored-ui).
+Evidence: [dynamic UI contract](docs/modding/DYNAMIC-UI.md),
+[recipe browser](fixtures/recipe-browser/README.md),
+[runtime tree implementation](src/ui/authored/dynamic.rs),
+[regressions](src/ui/authored/tests/dynamic.rs) and
+[real-server acceptance](src/server/net/tests/script_startup/recipe_browser.rs).
 
 #### Accepted implementation scope
 
-Goal active: extend verified authored documents with a version-2 widget contract
+Implemented: extend verified authored documents with a version-2 widget contract
 while preserving version-1 documents. Add bounded dynamic subtree replacement
 for creating, deleting and reordering data-driven collections; stable widget
 identities and retained edit/focus state; scrolling containers and table layouts;
@@ -357,6 +363,18 @@ formatting, strict Clippy and fixture Luau analysis, update Graphify and commit.
 Animation authoring, direct egui/HTML access, imported models, VM reuse and save
 converters remain follow-up work outside this implementation scope.
 
+#### Verification
+
+The workspace suite passes 1203 tests (1167 game and 36 host API tests).
+Formatting, strict all-target/all-feature Clippy and strict recipe-fixture Luau
+analysis pass. Production egui previews were inspected at 1280×720 and 640×360,
+including the populated and search-filtered browser.
+
+The release `perf 300 6` scene retains 18,573,688 mesh bytes and 88,026 visible
+triangles. Compared with the recorded phase-8 run, scene setup is 2391 ms versus
+2329 ms, steady CPU median 0.310 ms versus 0.313 ms, and steady GPU median
+0.286 ms versus 0.289 ms. These are separate historical measurements, not a
+controlled UI benchmark; this scene excludes live gameplay and package callbacks.
 
 ### 4. General persistent block entities — closed
 
@@ -501,9 +519,8 @@ and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
 
 ## Suggested priority
 
-1. Dynamic UI/input, including collections, controls and declared input bindings.
-2. Larger-package composition and typed replica access, driven by real mods.
-3. Additional motion, audio and richer presentation contracts.
+1. Larger-package composition and typed replica access, driven by real mods.
+2. Additional motion, audio and richer presentation contracts.
 
 Compatibility diagnostics should improve alongside those changes. Imported
 models, hot reload and native fire migration remain deferred; save conversion

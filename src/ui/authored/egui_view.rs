@@ -152,7 +152,26 @@ impl Session {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.draw_children(ui, index, atlas, intents));
                         } else if node.kind == Kind::Table {
+                            let columns = self
+                                .children(index)
+                                .into_iter()
+                                .map(|child| {
+                                    if self.document().nodes[child].kind.container() {
+                                        self.children(child).len()
+                                    } else {
+                                        1
+                                    }
+                                })
+                                .max()
+                                .unwrap_or(1)
+                                .max(1);
+                            let gap = f32::from(node.style.gap);
+                            let cell_width =
+                                ((width - gap * (columns - 1) as f32) / columns as f32).max(1.0);
                             egui::Grid::new("table")
+                                .num_columns(columns)
+                                .min_col_width(cell_width)
+                                .max_col_width(cell_width)
                                 .striped(true)
                                 .spacing([f32::from(node.style.gap); 2])
                                 .show(ui, |ui| {

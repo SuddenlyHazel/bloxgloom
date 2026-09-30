@@ -4,10 +4,15 @@ use super::*;
 
 pub fn render_egui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
-    pollster::block_on(render(directory))
+    pollster::block_on(render(directory, None))
 }
 
-async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
+pub fn render_package_egui_previews(directory: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    pollster::block_on(render(directory, Some(root)))
+}
+
+async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Error>> {
     // Use the same world scene as the native UI preview so the overlay is
     // judged in the setting where it actually appears.
     let backdrops = [(1280, 720), (640, 360)]
@@ -35,22 +40,37 @@ async fn render(directory: &Path) -> Result<(), Box<dyn Error>> {
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
     let mut renderer = egui_wgpu::Renderer::new(&device, FORMAT, Default::default());
-    let package_snapshot = crate::server::PackageSnapshot::discover(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages"),
-    )?;
+    let default_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages");
+    let package_snapshot = crate::server::PackageSnapshot::discover(root.unwrap_or(&default_root))?;
     let package_resources = Arc::clone(
         package_snapshot
             .client_bundle()
             .ui()
             .ok_or("missing package UI")?,
     );
-    let package_session = crate::ui::authored::Session::new(Arc::clone(&package_resources));
+    let mut package_session = crate::ui::authored::Session::new(Arc::clone(&package_resources));
     let mut updated_session = crate::ui::authored::Session::new(Arc::clone(&package_resources));
-    updated_session.apply_egui(crate::ui::authored::EguiIntent::Input(
-        4,
-        "café garden".into(),
-    ));
-    updated_session.wait_for_presentation()?;
+    if root.is_some() {
+        for session in [&mut package_session, &mut updated_session] {
+            if let Some((_, key)) = session.declared_bindings().first() {
+                session.binding_key(*key, &Default::default(), Default::default(), false, false);
+                session.wait_for_presentation()?;
+            }
+        }
+        if let Some(index) = updated_session.node_index("recipe:browser/search") {
+            updated_session.apply_egui(crate::ui::authored::EguiIntent::Input(
+                index,
+                "crush".into(),
+            ));
+            updated_session.wait_for_presentation()?;
+        }
+    } else {
+        updated_session.apply_egui(crate::ui::authored::EguiIntent::Input(
+            4,
+            "café garden".into(),
+        ));
+        updated_session.wait_for_presentation()?;
+    }
     let screens = [
         (UiScreen::Playing, "playing"),
         (UiScreen::Container, "container"),

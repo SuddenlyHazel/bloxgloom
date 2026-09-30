@@ -35,6 +35,8 @@ impact on larger mods.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
 - [Player rules](PLAYER-RULES.md): startup-selected, negotiated body, movement,
   spawn and eye contract.
+- [Dynamic UI and input](DYNAMIC-UI.md): runtime collections, new controls,
+  stable focus and declared rebindable actions, with a real recipe browser.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
 - [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):

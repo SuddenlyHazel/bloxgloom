@@ -13,12 +13,11 @@ bytes and the verified image atlas are installed in the session's egui context.
 Document text and visibility can change through bounded local or replica
 callbacks. Text input uses egui's selection, focus, clipboard and IME path;
 the retained values and callback results are capped at 128 UTF-8 bytes.
-The authored set is limited to nested panels, labels, static images, buttons
-and single-line inputs. Modders declare these in JSON and cannot call egui or
-create widgets from Luau at runtime. Checkboxes, sliders, dropdowns, tables,
-multiline inputs and animations are not exposed. See
-`LUAU-PACKAGES.md#authored-ui-widgets-and-current-limits` for the authoring
-contract.
+Version-2 documents add dynamic descendants, scrolling/table containers,
+checkboxes, sliders, selects and multiline editing. Stable IDs retain edit/focus
+state; Lua replies are validated atomically. See [dynamic UI/input](DYNAMIC-UI.md)
+for the current authoring contract. Direct egui access and animation authoring
+remain outside this surface.
 
 Luau executes on the bounded presentation worker, never inside the draw pass.
 It may submit one package-owned action key and up to 130 argument bytes. The
@@ -29,5 +28,5 @@ permissions and durable effects. Receipts provide the authoritative result.
 The earlier Taffy layout and bitmap renderer remain available to old headless
 preview fixtures. They are no longer used to paint production screens. The
 document format is intentionally bounded and widget based; it does not accept
-HTML/CSS or arbitrary script-created controls. Accessibility beyond egui's
+HTML/CSS or arbitrary unverified controls. Accessibility beyond egui's
 keyboard focus and platform text handling remains a future refinement.

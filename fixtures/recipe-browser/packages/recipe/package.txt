@@ -1,0 +1,17 @@
+format 2
+package recipe
+version 1.0.0
+entry main
+requires bloxgloom:actions/v1
+module server main server/main.luau
+module server craft server/craft.luau
+module client view client/view.luau
+asset ui-document browser assets/ui/browser.json
+asset ui-style panel assets/ui/panel.json
+asset ui-style scroll assets/ui/scroll.json
+asset ui-style list assets/ui/list.json
+asset ui-style row assets/ui/row.json
+asset ui-style label assets/ui/label.json
+asset ui-style field assets/ui/field.json
+asset ui-style button assets/ui/button.json
+asset ui-font body assets/fonts/body.ttf

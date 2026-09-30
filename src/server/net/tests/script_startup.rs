@@ -34,6 +34,8 @@ mod join_lifecycle;
 mod machine;
 #[path = "script_startup/player.rs"]
 mod player;
+#[path = "script_startup/recipe_browser.rs"]
+mod recipe_browser;
 #[path = "script_startup/showcase.rs"]
 mod showcase;
 #[path = "script_startup/system.rs"]

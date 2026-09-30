@@ -36,8 +36,7 @@ in its own save directory so `content.map` remains its stable save identity.
 
 # Authored UI widgets and current limits
 
-Package UI documents declare a fixed widget tree in JSON. The supported kinds
-are:
+Version-1 package UI documents declare these widget kinds in JSON:
 
 | Kind | Current behavior |
 | --- | --- |
@@ -49,12 +48,14 @@ are:
 
 Styles provide width, height, padding, gaps, row layout, colors and packaged
 fonts. egui supplies document scrolling and text wrapping. Luau callbacks may
-change text and visibility or retain a bounded state string, but they cannot
-create, remove or rearrange widgets. Modders cannot call egui directly from
-Luau. There are currently no authored checkboxes, sliders, dropdown/select
-controls, tables, multiline inputs, HTML/CSS or UI animations. Adding one of
-these requires extending the verified document schema and its Rust renderer.
-See `fixtures/packages/uidemo/assets/ui/welcome.json` for all five kinds.
+change text and visibility or retain a bounded state string. Version-2 documents
+add dynamic descendant replacement, scrolling/table containers, checkboxes,
+sliders, selects, multiline inputs and declared rebindable input actions. See
+[dynamic UI/input](DYNAMIC-UI.md) for the current schema, typed callback values,
+stable identities, focus and atomic-update contract, and the
+[recipe browser](../../fixtures/recipe-browser/README.md) for a runnable example.
+Direct egui, HTML/CSS and general animation authoring remain unbound.
+`fixtures/packages/uidemo/assets/ui/welcome.json` retains the version-1 example.
 
 # Package shape
 

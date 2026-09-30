@@ -1,0 +1,14 @@
+{"version":2,"presentation":{"capability":"local-ui","module":"recipe:view"},"bindings":[{"key":"recipe:browser","event":"recipe:open","default":"B","scope":"game","open":true}],"nodes":[
+  {"id":"root","kind":"panel","style":"recipe:panel"},
+  {"id":"controls","parent":0,"kind":"scroll_panel","style":"recipe:scroll"},
+  {"id":"title","parent":1,"kind":"label","style":"recipe:label","text":"RECIPE BROWSER"},
+  {"id":"search","parent":1,"kind":"input","style":"recipe:field","text":"","event":"recipe:filter"},
+  {"id":"selected_only","parent":1,"kind":"checkbox","style":"recipe:label","text":"Show selected recipe only","checked":false,"event":"recipe:filter"},
+  {"id":"category","parent":1,"kind":"select","style":"recipe:field","options":[{"key":"all","label":"All categories"},{"key":"crushing","label":"Crushing"},{"key":"pressing","label":"Pressing"}],"selected":"all","event":"recipe:filter"},
+  {"id":"quantity","parent":1,"kind":"slider","style":"recipe:label","text":"Quantity","min":1,"max":8,"step":1,"value":1,"event":"recipe:filter"},
+  {"id":"selection","parent":1,"kind":"label","style":"recipe:label","text":"Press B from play to populate recipes"},
+  {"id":"list","parent":1,"kind":"scroll_panel","style":"recipe:list"},
+  {"id":"recipes","parent":8,"kind":"table","style":"recipe:row"},
+  {"id":"craft","parent":1,"kind":"button","style":"recipe:button","text":"CRAFT [SERVER]","event":"recipe:craft"},
+  {"id":"notes","parent":1,"kind":"multiline_input","style":"recipe:field","text":"Notes stay on this client.\nChoose the matching input in your hotbar."}
+]}

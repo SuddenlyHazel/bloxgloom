@@ -282,10 +282,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("egui-preview") => {
             let directory = args.next().unwrap_or_else(|| "egui-previews".to_string());
+            let package_root = args.next();
             if args.next().is_some() {
-                return Err("usage: egui-preview [output-dir]".into());
+                return Err("usage: egui-preview [output-dir] [package-root]".into());
             }
-            preview::render_egui_previews(std::path::Path::new(&directory))?;
+            if let Some(root) = package_root {
+                preview::render_package_egui_previews(
+                    std::path::Path::new(&directory),
+                    std::path::Path::new(&root),
+                )?;
+            } else {
+                preview::render_egui_previews(std::path::Path::new(&directory))?;
+            }
             println!("wrote egui previews to {directory}");
         }
         Some("daylight-preview") => {
