@@ -62,8 +62,14 @@ impl<S: tracing::Subscriber> Layer<S> for Capture {
 }
 fn capture<T>(f: impl FnOnce() -> T) -> (T, Vec<BTreeMap<String, String>>) {
     let events = Events::default();
+    // Tracing's single-dispatch fast path consults the registering thread's
+    // default. Parallel tests can first register our shared logging callsite
+    // on a thread with no subscriber and cache `never`. Keep two dispatches
+    // live so registration considers the scoped capture on every thread.
+    let sentinel = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let subscriber = tracing_subscriber::registry().with(Capture(Arc::clone(&events)));
     let result = tracing::subscriber::with_default(subscriber, f);
+    drop(sentinel);
     let records = events.lock().unwrap().clone();
     (result, records)
 }
@@ -86,7 +92,7 @@ fn failed_attempts_keep_diagnostics_and_helper_source_identity() {
         assert!(error.to_string().contains("failed after diagnostics"));
         diagnostics.finish("script_error");
     });
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 2, "{events:?}");
     assert!(
         events[0]["module"].contains("tools@1.0.0:helper"),
         "{events:?}"
