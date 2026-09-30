@@ -77,6 +77,7 @@ pub(in crate::server) struct Declarations {
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
+    pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
     pub(super) storage: Vec<StorageDeclaration>,
     pub(super) creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
@@ -98,6 +99,7 @@ impl Declarations {
         let mut entities = Vec::new();
         let mut systems = Vec::new();
         let mut player_lifecycles = Vec::new();
+        let mut observers = Vec::new();
         let mut storage = Vec::new();
         let mut creatures = Vec::new();
         let mut machines = Vec::new();
@@ -141,6 +143,7 @@ impl Declarations {
             textures.extend(declarations.textures);
             handlers.extend(declarations.handlers);
             player_lifecycles.extend(declarations.player_lifecycles);
+            observers.extend(declarations.observers);
             entities.extend(declarations.entities);
             storage.extend(declarations.storage);
             creatures.extend(declarations.creatures);
@@ -176,6 +179,7 @@ impl Declarations {
             entities,
             systems,
             player_lifecycles,
+            observers,
             storage,
             creatures,
             machines,
@@ -195,6 +199,9 @@ impl Declarations {
 
 impl Extension for Declarations {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        for observer in &self.observers {
+            registrar.gameplay_observer(observer.clone())?;
+        }
         for registration in &self.player_lifecycles {
             registrar.player_lifecycle(registration.clone())?;
         }
@@ -247,6 +254,7 @@ impl Extension for Declarations {
 #[derive(Default)]
 pub(super) struct Pending {
     pub(super) player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
+    pub(super) observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
     items: Vec<Item>,
@@ -298,6 +306,8 @@ pub(super) fn invoke(
     )?;
     let players =
         super::players::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let observer =
+        super::observers::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let namespace = namespace.to_owned();
     let texture_namespace = namespace.clone();
     let block_namespace = namespace.clone();
@@ -555,6 +565,7 @@ pub(super) fn invoke(
     host.set("register_machine", machine)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
+    host.set("register_committed_observer", observer)?;
     host.set("register_player_lifecycle", players)?;
     host.set("register_handler", handler)?;
     host.set("register_system", system)?;

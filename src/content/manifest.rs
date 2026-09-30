@@ -232,14 +232,15 @@ impl ContentManifest {
             }
         }
         for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
-            let observer = local
+            if let Some(observer) = local
                 .gameplay_observers
                 .values()
                 .find(|o| o.key == entry.key)
-                .ok_or_else(|| invalid("missing gameplay observer"))?;
-            resolved
-                .gameplay_observers
-                .insert(entry.id, observer.clone());
+            {
+                resolved
+                    .gameplay_observers
+                    .insert(entry.id, observer.clone());
+            }
         }
         resolved.gameplay_dispatch = local.gameplay_dispatch.clone();
         resolved.client_metadata.entities = local.client_metadata.entities.clone();
@@ -248,7 +249,7 @@ impl ContentManifest {
         for entry in self
             .entries
             .iter()
-            .filter(|entry| matches!(entry.kind, b'G' | b'Y' | b'Q'))
+            .filter(|entry| matches!(entry.kind, b'G' | b'Y' | b'Q' | b'O'))
         {
             if local
                 .client_metadata

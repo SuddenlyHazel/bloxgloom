@@ -290,8 +290,11 @@ profile/session deadlines are implemented and verified. The second increment
 passes 1,132 workspace tests, strict Clippy, formatting and typed Luau analysis.
 Typed command targeting and a reconnect-scoped client roster now pass all 1,137
 workspace tests, strict Clippy, formatting and typed Luau analysis, including
-real-listener stale-session rejection. Player operations and client/observer
-delivery remain.
+real-listener stale-session rejection. Committed Luau observers now pass all 1,141
+workspace tests, strict Clippy, formatting and typed Luau analysis. Readonly public
+changes run on the native bounded advisory lane, with inert client identities;
+real-listener coverage verifies an exhausted callback cannot block a commit or
+later observers. Player operations and client lifecycle/state delivery remain.
 Land the work in reviewable increments:
 
 The first increment exposes exact actor profile/session identities and captured

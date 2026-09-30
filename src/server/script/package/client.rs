@@ -45,6 +45,7 @@ use super::{MAX_ASSET_BYTES, MAX_ASSETS, MAX_MODULES, MAX_PACKAGES, MAX_SOURCE_B
 use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
 
 mod declarations;
+mod observers;
 mod players;
 
 const MAGIC: &[u8] = b"BGCLIENT\x07";
@@ -233,6 +234,9 @@ impl ClientBundle {
         }
         if CacheKey(Sha256::digest(bytes).into()) != expected {
             return Err(error("<client-bundle>", "SHA-256 integrity mismatch"));
+        }
+        if bytes.starts_with(observers::MAGIC) {
+            return observers::decode(bytes, expected);
         }
         if bytes.starts_with(players::MAGIC) {
             return players::decode(bytes, expected);

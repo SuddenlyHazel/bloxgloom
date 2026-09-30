@@ -69,6 +69,8 @@ export type BloxStartupHost = {
     register_generator: (key: string, revision: number, module: string) -> (),
     -- Optional command facet: empty-target only; action key is its name.
     register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block" | "entity", target_key: string?, module: string, command: BloxCommand?) -> (),
+    -- Readonly advisory post-WAL callback; actions/v1, at most eight/package.
+    register_committed_observer: (key: string, revision: number, module: string) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
@@ -563,3 +565,19 @@ export type BloxPlayerLifecycleDecision = {
     spawn: BloxTriple?, deny: string?,
 }
 export type BloxPlayerLifecycleCallback = (BloxGameplayContext, BloxPlayerLifecycleEvent) -> BloxPlayerLifecycleDecision?
+
+--- Readonly advisory post-commit event. Delivery can drop and is never replayed.
+export type BloxCommittedEntity = {
+    kind: "Spawned" | "Updated" | "Removed",
+    entity: BloxEntityId,
+    entity_type: string,
+    position: {number}?,
+    anchor: {number}?,
+    data: string?,
+}
+export type BloxCommittedEvent = {
+    kind: "Committed",
+    blocks: {{cell: {number}, state: string}},
+    entities: {BloxCommittedEntity},
+    inventory: {profile: BloxProfileId, revision: BloxRevision}?,
+}

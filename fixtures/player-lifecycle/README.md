@@ -1,5 +1,8 @@
 # Player lifecycle package
 
+The server audit callback logs committed inventory revisions through the readonly
+observer lane. It is advisory; first-join rewards use durable profile decisions.
+
 Run from the repository root with a fresh temporary save:
 
 ```sh

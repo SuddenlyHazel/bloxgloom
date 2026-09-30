@@ -9,6 +9,7 @@ mod generation;
 pub(crate) mod handles;
 mod imports;
 pub(in crate::server::script) mod machine;
+mod observers;
 pub mod package;
 mod players;
 pub(crate) mod runtime;

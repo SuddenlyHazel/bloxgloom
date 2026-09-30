@@ -77,6 +77,13 @@ impl Catalog {
                     .map(|(id, h)| (*id, h.key.as_str()))
                     .collect::<Vec<_>>(),
             ),
+            b'O' => (
+                128,
+                self.gameplay_observers
+                    .iter()
+                    .map(|(id, p)| (*id, p.key.as_str()))
+                    .collect::<Vec<_>>(),
+            ),
             b'Q' => (
                 128,
                 self.player_lifecycles

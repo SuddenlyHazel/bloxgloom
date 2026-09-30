@@ -7,3 +7,4 @@ requires bloxgloom:actions/v1
 module server main server/main.luau
 module server progress server/progress.luau
 module server inspect server/inspect.luau
+module server audit server/audit.luau

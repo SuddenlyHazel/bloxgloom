@@ -700,6 +700,20 @@ See [the UI fixture](fixtures/packages/uidemo/),
 [entity-target UI actions](fixtures/ui-entity-actions/README.md), and
 [UI foundation](docs/modding/UI-FOUNDATION.md).
 
+## Committed server observations
+
+`register_committed_observer(key, revision, module)` requires `actions/v1` and
+registers an own-package readonly `function(event: BloxCommittedEvent)` callback.
+Eight observers per package and 128 per installation are allowed. The event
+contains public block/entity changes and optional profile/inventory revision,
+without private inventory slots or a mutation context. Exact identities use host
+handles. It runs after WAL commit/publication on a separate bounded worker lane.
+Delivery is advisory: queue overflow, oversized events and shutdown can drop it;
+restart does not replay it. Errors and execution limits cannot veto a commit.
+Use atomic player lifecycle decisions and durable profile timers for critical
+progression. See [the player reference](docs/modding/PLAYER-LIFECYCLE.md#landed-committed-observers)
+and [the runnable audit callback](fixtures/player-lifecycle/packages/welcome/server/audit.luau).
+
 ## Public replica presentation
 
 A client replica handler receives the local presentation fields plus advisory
@@ -848,7 +862,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 4 (wire version 14).
+publisher. The negotiated client host contract is version 5 (wire version 14).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

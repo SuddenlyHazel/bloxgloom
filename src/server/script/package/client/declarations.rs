@@ -60,6 +60,18 @@ pub(super) struct Startup {
 }
 
 impl Startup {
+    pub(super) fn permits_observers(&self, namespace: &str) -> bool {
+        self.packages.iter().any(|p| {
+            p.key.split_once(':').map(|p| p.0) == Some(namespace)
+                && p.requires.iter().any(|r| r == composition::ACTIONS)
+        })
+    }
+    pub(super) fn set_observer_identities(
+        &mut self,
+        identities: Vec<crate::content::client_metadata::Identity>,
+    ) {
+        self.runtime.set_observers(identities);
+    }
     pub(super) fn permits_players(&self, namespace: &str) -> bool {
         self.packages.iter().any(|p| {
             p.key.split_once(':').map(|p| p.0) == Some(namespace)
@@ -538,7 +550,8 @@ impl ClientBundle {
         {
             return Err(invalid());
         }
-        super::players::wrap(result, declarations)
+        let result = super::players::wrap(result, declarations)?;
+        super::observers::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.

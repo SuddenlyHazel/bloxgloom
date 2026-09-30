@@ -1,21 +1,21 @@
-//! V42 wraps an unchanged canonical artifact with inert player-service identities.
-//! Neither private initial state nor executable server callbacks reach clients.
+//! V43 wraps an unchanged canonical artifact with inert committed-observer identities.
+//! Executable server callbacks and sources never reach clients.
 use super::*;
 use crate::content::client_metadata::Identity;
 
-pub(super) const MAGIC: &[u8] = b"BGCLIENT\x2a";
+pub(super) const MAGIC: &[u8] = b"BGCLIENT\x2b";
 
 pub(super) fn wrap(
     bundle: ClientBundle,
     declarations: &crate::server::script::startup::Declarations,
 ) -> Result<ClientBundle, ScriptError> {
-    if declarations.player_lifecycles.is_empty() {
+    if declarations.observers.is_empty() {
         return Ok(bundle);
     }
-    if declarations.player_lifecycles.len() > 128 {
+    if declarations.observers.len() > 128 {
         return Err(invalid());
     }
-    let mut registrations = declarations.player_lifecycles.iter().collect::<Vec<_>>();
+    let mut registrations = declarations.observers.iter().collect::<Vec<_>>();
     registrations.sort_by(|a, b| a.key.cmp(&b.key));
     let mut writer = Writer(MAGIC.to_vec());
     writer.field(&bundle.bytes)?;
@@ -23,9 +23,9 @@ pub(super) fn wrap(
     for registration in registrations {
         writer.field(registration.key.as_bytes())?;
         let identity = Identity::new(
-            b'Q',
+            b'O',
             registration.key.clone(),
-            &registration.fingerprint_bytes(),
+            &registration.version.to_le_bytes(),
         );
         writer.field(&identity.fingerprint.to_le_bytes())?;
     }
@@ -36,7 +36,7 @@ pub(super) fn wrap(
 pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, ScriptError> {
     let mut reader = Reader(&bytes[MAGIC.len()..]);
     let inner = reader.field(MAX_BUNDLE_BYTES)?;
-    if inner.starts_with(MAGIC) || inner.starts_with(super::observers::MAGIC) {
+    if inner.starts_with(MAGIC) {
         return Err(invalid());
     }
     let mut bundle = ClientBundle::decode_verify(inner, CacheKey(Sha256::digest(inner).into()))?;
@@ -56,7 +56,7 @@ pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, S
         bundle.packages.get(namespace).ok_or_else(invalid)?;
         // The startup metadata retains only public capability declarations.
         let startup = bundle.declarations.as_ref().ok_or_else(invalid)?;
-        if !startup.permits_players(namespace) {
+        if !startup.permits_observers(namespace) {
             return Err(invalid());
         }
         let own = per_package.entry(namespace.into()).or_default();
@@ -67,7 +67,7 @@ pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, S
         let fingerprint = u64::from_le_bytes(reader.field(8)?.try_into().map_err(|_| invalid())?);
         previous = key.clone();
         identities.push(Identity {
-            kind: b'Q',
+            kind: b'O',
             key,
             fingerprint,
         });
@@ -79,7 +79,7 @@ pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, S
         .declarations
         .as_mut()
         .ok_or_else(invalid)?
-        .set_player_identities(identities);
+        .set_observer_identities(identities);
     bundle.bytes = bytes.to_vec();
     bundle.key = expected;
     Ok(bundle)

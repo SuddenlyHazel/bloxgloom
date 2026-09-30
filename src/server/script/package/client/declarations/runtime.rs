@@ -22,10 +22,17 @@ pub(super) struct Runtime {
     handlers: Vec<Identity>,
     systems: Vec<Identity>,
     players: Vec<Identity>,
+    observers: Vec<Identity>,
     generation: Vec<(String, u32)>,
 }
 
 impl Runtime {
+    pub(in crate::server::script::package::client) fn set_observers(
+        &mut self,
+        identities: Vec<Identity>,
+    ) {
+        self.observers = identities;
+    }
     pub(in crate::server::script::package::client) fn set_players(
         &mut self,
         identities: Vec<Identity>,
@@ -342,6 +349,7 @@ impl Runtime {
             .iter()
             .chain(&self.systems)
             .chain(&self.players)
+            .chain(&self.observers)
         {
             catalog.client_runtime_identity(identity.clone())?;
         }

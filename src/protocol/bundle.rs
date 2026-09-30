@@ -7,7 +7,7 @@ use std::io;
 /// Version of the delivered client host contract (opaque identities, authored
 /// UI, session replica callbacks and visual resources). This is an API contract,
 /// not a compiler patch version: compatible compiler updates keep this value.
-pub const CLIENT_RUNTIME_VERSION: u32 = 4;
+pub const CLIENT_RUNTIME_VERSION: u32 = 5;
 
 pub const MAX_BUNDLE_PART: usize = 60 * 1024;
 

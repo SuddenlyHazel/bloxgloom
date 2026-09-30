@@ -51,7 +51,7 @@ The arguments are key, revision (1..65535), private byte bound (1..4096), initia
 binary state and callback module. Eight services per package and 128 per
 installation are allowed. Service keys cannot collide with owner-system keys.
 Changing the frozen package implementation changes the save compatibility identity.
-The client bundle carries an inert service identity with runtime contract 4;
+The client bundle carries an inert service identity with runtime contract 5;
 private initial state and executable registrations are not projected into metadata.
 
 The module returns `function(context, event)` and may return nil or a decision:
@@ -127,8 +127,33 @@ revision so the next publish retries. Clients accept newer snapshots and clear t
 roster on disconnect/server switch; late messages cannot revive it. The roster is
 command discovery metadata, without private profile state or global positions.
 
+## Landed: committed observers
+
+With `requires bloxgloom:actions/v1`, register
+`h.register_committed_observer("demo:audit", 1, "demo:observe")`. Keys and modules
+belong to the declaring package; revisions are 1..65535. Eight observers per
+package and 128 per installation are allowed. Invalid declarations refuse startup
+even when caught by `pcall`. The bundle exports inert compatibility fingerprints,
+without server source or executable client observers.
+
+The callback returns `function(event: BloxCommittedEvent)`. Readonly `blocks`
+contain cell/state; `entities` contain Spawned/Updated/Removed, exact entity
+handles and public fields; optional `inventory` contains an exact profile handle
+and resulting revision, without slots. There is no mutation context. This is the
+native commit surface; it does not invent events for profile-only state updates,
+movement, appearance or world-clock changes.
+
+Delivery occurs after WAL sync/publication on a separate observer worker, in
+frozen registration order. The queue holds 32 events; events exceeding 256 KiB
+or arriving under pressure can drop. Shutdown need not drain the queue, and
+restart never replays advisory observations. Each Luau callback uses a fresh
+bounded VM. An error or exhausted budget is logged and does not block a commit
+or poison later callbacks. Use lifecycle state plus atomic inventory decisions
+and durable profile deadlines for critical rewards/progression. Observer logs
+and presentation notifications cannot promise exactly-once delivery.
+
 ## Remaining implementation
 
-Additional authorized player operations,
-committed observers and client lifecycle/state delivery remain in progress.
+Additional authorized player operations and client lifecycle/state delivery
+remain in progress.
 The client/server/save contracts will be versioned when their formats change.

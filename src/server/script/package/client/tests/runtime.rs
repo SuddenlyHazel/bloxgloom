@@ -1,5 +1,57 @@
 use super::*;
 
+#[test]
+fn observer_metadata_is_inert_bounded_and_rejects_nested_envelopes() {
+    let (inner, _) = metadata();
+    let envelope = |inner: &[u8], keys: &[&str]| {
+        let mut writer = Writer(super::super::observers::MAGIC.to_vec());
+        writer.field(inner).unwrap();
+        writer.count(keys.len()).unwrap();
+        for name in keys {
+            writer.field(name.as_bytes()).unwrap();
+            writer.field(&17_u64.to_le_bytes()).unwrap();
+        }
+        writer.0
+    };
+    let bytes = envelope(&inner, &["demo:audit"]);
+    let bundle = ClientBundle::decode_verify(&bytes, key(&bytes)).unwrap();
+    let catalog = bundle.session_catalog().unwrap();
+    assert_eq!(catalog.gameplay_observers().count(), 0);
+    assert!(
+        crate::content::ContentManifest::from_catalog(&catalog)
+            .entries
+            .iter()
+            .any(|e| e.kind == b'O' && e.key == "demo:audit")
+    );
+    for keys in [
+        &[][..],
+        &["missing:audit"][..],
+        &["demo:audit", "demo:audit"][..],
+        &["demo:z", "demo:a"][..],
+        &[
+            "demo:a", "demo:b", "demo:c", "demo:d", "demo:e", "demo:f", "demo:g", "demo:h",
+            "demo:i",
+        ][..],
+    ] {
+        let bad = envelope(&inner, keys);
+        assert!(ClientBundle::decode_verify(&bad, key(&bad)).is_err());
+    }
+    for end in 0..bytes.len() {
+        let bad = &bytes[..end];
+        assert!(ClientBundle::decode_verify(bad, key(bad)).is_err());
+    }
+    let nested = envelope(&bytes, &["demo:audit"]);
+    assert!(ClientBundle::decode_verify(&nested, key(&nested)).is_err());
+    // Player envelopes may be inside an observer envelope, but not vice versa:
+    // otherwise alternating wrappers could recurse without a depth bound.
+    let mut player = Writer(super::super::players::MAGIC.to_vec());
+    player.field(&bytes).unwrap();
+    player.count(1).unwrap();
+    player.field(b"demo:progress").unwrap();
+    player.field(&17_u64.to_le_bytes()).unwrap();
+    assert!(ClientBundle::decode_verify(&player.0, key(&player.0)).is_err());
+}
+
 // Full artifact framing, not a decoder-only helper. Offsets point at the u32
 // values so malformed counts/tags can be tested with a freshly valid SHA digest.
 fn metadata() -> (Vec<u8>, BTreeMap<&'static str, usize>) {
