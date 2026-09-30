@@ -31,6 +31,11 @@ pub(crate) struct Composition {
 }
 
 impl Composition {
+    pub(super) fn requires(&self, capability: &str) -> bool {
+        self.packages
+            .values()
+            .any(|p| p.definition.requires.iter().any(|r| r == capability))
+    }
     pub(super) fn identities(&self) -> Vec<(u8, u32, &str, u64)> {
         self.packages
             .iter()

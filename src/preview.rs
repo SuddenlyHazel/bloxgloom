@@ -563,7 +563,10 @@ async fn render_previews_at(
         let snapshot =
             crate::server::PackageSnapshot::discover(package_root.unwrap_or(&default_root))
                 .map_err(|error| format!("package UI preview: {error:?}"))?;
-        let bundle = Arc::clone(snapshot.client_bundle());
+        let bundle = match package_root {
+            Some(root) => crate::server::package_bundle_for_preview(root)?,
+            None => Arc::clone(snapshot.client_bundle()),
+        };
         let resources = Arc::clone(bundle.ui().ok_or("missing package UI")?);
         ui_renderer.install_package_ui(&device, &queue, &resources);
         Some(match package_root {

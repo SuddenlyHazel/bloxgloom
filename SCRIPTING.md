@@ -716,6 +716,16 @@ and [the runnable audit callback](fixtures/player-lifecycle/packages/welcome/ser
 
 ## Public replica presentation
 
+Client startup also supports `set_player_handler(own_module)` with `players/v1`,
+one handler per package. Its presentation-only host can update owned UI text/state
+and declared visual parameters. The readonly event contains SessionReady,
+PlayerStateChanged or SessionDisconnected, exact local profile/session handles,
+and only that package's explicitly public profile projections. State snapshots
+coalesce on a separate worker; disconnect bypasses queues and discards old replies.
+Private profile/session bytes and inventory slots are not included.
+See [local player delivery and lifecycle](docs/modding/PLAYER-LIFECYCLE.md#landed-local-public-state-and-client-lifecycle)
+for ordering, limits and failure semantics.
+
 A client replica handler receives the local presentation fields plus advisory
 observations: `replica:inventory`, `replica:block`, `replica:world`,
 `replica:action`, `replica:entities`, and `replica:anchors`. The first four carry
@@ -862,7 +872,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 5 (wire version 14).
+publisher. The negotiated client host contract is version 6 (wire version 15).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

@@ -943,3 +943,74 @@ fn player_roster_round_trips_exact_sessions_and_rejects_noncanonical_membership(
         .is_err()
     );
 }
+
+#[test]
+fn player_state_snapshots_preserve_binary_projection_and_bound_service_keys() {
+    let state = PlayerState {
+        key: format!("demo:{}", "a".repeat(64)),
+        revision: u64::MAX,
+        public: vec![0, 255, 1],
+    };
+    let message = ServerMessage::PlayerStates {
+        profile: u128::MAX,
+        session: u64::MAX,
+        snapshot: 1,
+        states: vec![state.clone()],
+    };
+    let mut wire = Vec::new();
+    write_server(&mut wire, &message).unwrap();
+    assert_eq!(wire.len(), server_wire_len(&message));
+    let ServerMessage::PlayerStates {
+        profile,
+        session,
+        snapshot,
+        states,
+    } = read_server(wire.as_slice()).unwrap()
+    else {
+        panic!("expected states");
+    };
+    assert_eq!((profile, session, snapshot), (u128::MAX, u64::MAX, 1));
+    assert_eq!(states, vec![state.clone()]);
+    for states in [
+        vec![state.clone(), state.clone()],
+        vec![PlayerState {
+            public: vec![0; 1025],
+            ..state.clone()
+        }],
+        vec![PlayerState {
+            key: "missing-colon".into(),
+            ..state.clone()
+        }],
+        vec![state; 129],
+    ] {
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::PlayerStates {
+                    profile: 1,
+                    session: 1,
+                    snapshot: 1,
+                    states
+                }
+            )
+            .is_err()
+        );
+    }
+    for (profile, session, snapshot) in [(0, 1, 1), (1, 0, 1), (1, 1, 0)] {
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::PlayerStates {
+                    profile,
+                    session,
+                    snapshot,
+                    states: vec![]
+                }
+            )
+            .is_err()
+        );
+    }
+    for end in 0..wire.len() {
+        assert!(read_server(&wire[..end]).is_err());
+    }
+}

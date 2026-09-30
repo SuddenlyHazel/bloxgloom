@@ -8,3 +8,9 @@ module server main server/main.luau
 module server progress server/progress.luau
 module server inspect server/inspect.luau
 module server audit server/audit.luau
+module client client_startup client/startup.luau
+module client player client/player.luau
+asset ui-document progress assets/ui/progress.json
+asset ui-style panel assets/ui/panel.json
+asset ui-style label assets/ui/label.json
+asset ui-font body assets/fonts/body.ttf

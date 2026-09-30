@@ -153,6 +153,31 @@ impl Session {
         }
     }
 
+    pub(crate) fn apply_player_update(
+        &mut self,
+        update: &crate::client::startup::State,
+    ) -> std::result::Result<(), String> {
+        self.resources.validate_startup(update)?;
+        self.startup.texts.extend(update.texts.clone());
+        self.startup.states.extend(update.states.clone());
+        for (index, node) in self.resources.documents[self.document]
+            .nodes
+            .iter()
+            .enumerate()
+        {
+            if let Some(value) = update.texts.get(&node.id) {
+                if node.kind == Kind::Input {
+                    self.inputs[index] = value.clone();
+                } else {
+                    self.texts[index] = value.clone();
+                }
+            }
+        }
+        if let Some(value) = update.states.get(&self.document().id) {
+            self.state = value.clone();
+        }
+        Ok(())
+    }
     pub(crate) fn next_document(&mut self) {
         self.document = (self.document + 1) % self.resources.documents.len();
         self.reset();

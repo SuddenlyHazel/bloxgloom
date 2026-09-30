@@ -388,6 +388,7 @@ pub(super) fn tick_with_inputs(
         let phase_started = Instant::now();
         if phase == Phase::Publish {
             players::publish_roster(context.state);
+            players::delivery::publish(context.state)?;
         }
         if phase == Phase::Simulation {
             players::drive(context.state, tick)?;

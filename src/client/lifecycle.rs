@@ -6,9 +6,15 @@ use super::*;
 impl ClientApp {
     pub(super) fn retire_session(&mut self) {
         self.disconnected = true;
+        if let Some(lane) = self.player_services.take() {
+            lane.close(self.failure.as_deref().unwrap_or("session retired"));
+        }
+        self.player_parameter_updates.clear();
         self.network.retire();
         self.player_roster.clear();
         self.roster_revision = 0;
+        self.player_states.clear();
+        self.player_state_snapshot = 0;
         self.package_ui = None;
         self.visual_session = None;
         // Renderer owns the package UI textures, material and effect pipelines.
@@ -20,6 +26,25 @@ impl ClientApp {
         self.actions = ActionTracker::default();
         self.action_choices.clear();
         self.active_action = None;
+    }
+
+    pub(super) fn poll_player_services(&mut self) {
+        let Some(lane) = &self.player_services else {
+            return;
+        };
+        let outputs = lane.replies.try_iter().take(64).collect::<Vec<_>>();
+        for mut output in outputs {
+            if let Some(ui) = &mut self.package_ui
+                && let Err(error) = ui.apply_player_update(&output)
+            {
+                self.fail_session(error);
+                return;
+            }
+            for update in output.parameters.take_updates() {
+                self.player_parameter_updates
+                    .insert((update.resource.clone(), update.name.clone()), update);
+            }
+        }
     }
 
     pub(super) fn fail_session(&mut self, reason: impl Into<String>) {

@@ -19,6 +19,8 @@ pub(super) enum Incoming {
 }
 
 pub(super) struct Network {
+    /// Profile actually sent in this connection's Hello, independent of UI config.
+    pub(super) profile: u128,
     // Closing channel senders alone cannot wake a reader blocked in socket I/O.
     socket: Option<TcpStream>,
     #[cfg(test)]
@@ -59,6 +61,23 @@ impl Network {
             crate::ui::authored::Session::with_startup(Arc::clone(resources), startup)
         })
     }
+    pub(super) fn player_services(
+        &self,
+        profile: u128,
+        session: u64,
+        states: Vec<crate::protocol::PlayerState>,
+    ) -> io::Result<Option<super::player_services::Lane>> {
+        let Some(bundle) = &self._bundle else {
+            return Ok(None);
+        };
+        super::player_services::Lane::spawn(
+            Arc::clone(bundle),
+            &self.startup,
+            profile,
+            session,
+            states,
+        )
+    }
     pub(super) fn visual_session(&self) -> Option<crate::client::presentation::VisualSession> {
         let bundle = self._bundle.as_ref()?;
         let script = self.startup.replica.as_ref()?;
@@ -82,6 +101,7 @@ impl Network {
         let (_, incoming) = mpsc::sync_channel(1);
         let (outgoing, _) = mpsc::sync_channel(1);
         Self {
+            profile: 0,
             socket: None,
             #[cfg(test)]
             stopped: None,
@@ -100,6 +120,7 @@ impl Network {
         let (outgoing, _) = mpsc::sync_channel(1);
         (
             Self {
+                profile: 0,
                 socket: None,
                 #[cfg(test)]
                 stopped: None,
@@ -241,6 +262,7 @@ impl Network {
         // Own cleanup before spawning: if either OS thread cannot be created,
         // the socket/channels still close and any already-started worker wakes.
         let network = Self {
+            profile,
             socket: Some(control),
             #[cfg(test)]
             stopped: Some(stopped),

@@ -19,8 +19,10 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 14;
+const WIRE_VERSION: u8 = 15;
+mod player_states;
 mod players;
+pub use player_states::PlayerState;
 pub use players::PlayerSummary;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
@@ -135,6 +137,12 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerStates {
+        profile: u128,
+        session: u64,
+        snapshot: u64,
+        states: Vec<PlayerState>,
+    },
     PlayerRoster {
         revision: u64,
         players: Vec<PlayerSummary>,
@@ -230,6 +238,15 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
         + match message {
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
+            ServerMessage::PlayerStates { states, .. } => {
+                16 + 8
+                    + 8
+                    + 2
+                    + states
+                        .iter()
+                        .map(|s| 1 + s.key.len() + 8 + 2 + s.public.len())
+                        .sum::<usize>()
+            }
             ServerMessage::PlayerRoster { players, .. } => {
                 8 + 2 + players.iter().map(|p| 24 + 1 + p.name.len()).sum::<usize>()
             }
@@ -515,6 +532,21 @@ pub fn write_server_with_catalog(
         ServerMessage::BundlePart { offset, bytes } => {
             out.push(20);
             bundle::write_part(&mut out, *offset, bytes)?;
+        }
+        ServerMessage::PlayerStates {
+            profile,
+            session,
+            snapshot,
+            states,
+        } => {
+            if *profile == 0 || *session == 0 || *snapshot == 0 {
+                return Err(invalid("invalid player state session"));
+            }
+            out.push(24);
+            out.extend(profile.to_le_bytes());
+            out.extend(session.to_le_bytes());
+            out.extend(snapshot.to_le_bytes());
+            player_states::write(&mut out, states)?;
         }
         ServerMessage::PlayerRoster { revision, players } => {
             out.push(23);
@@ -1274,6 +1306,20 @@ pub fn read_server_with_catalog(
                 cells.push([c.i32()?, c.i32()?, c.i32()?]);
             }
             ServerMessage::FireBursts { cells }
+        }
+        24 => {
+            let profile = c.u128()?;
+            let session = c.u64()?;
+            let snapshot = c.u64()?;
+            if profile == 0 || session == 0 || snapshot == 0 {
+                return Err(invalid("invalid player state session"));
+            }
+            ServerMessage::PlayerStates {
+                profile,
+                session,
+                snapshot,
+                states: player_states::read(&mut c)?,
+            }
         }
         23 => ServerMessage::PlayerRoster {
             revision: c.u64()?,

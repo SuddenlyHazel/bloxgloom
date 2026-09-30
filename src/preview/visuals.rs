@@ -44,9 +44,7 @@ impl Resources {
         opaque: &mut wgpu::RenderPipeline,
         cutout: &mut wgpu::RenderPipeline,
     ) -> Result<Self, Box<dyn Error>> {
-        let snapshot = crate::server::PackageSnapshot::discover(root)
-            .map_err(|e| format!("visual preview: {e:?}"))?;
-        let bundle = Arc::clone(snapshot.client_bundle());
+        let bundle = crate::server::package_bundle_for_preview(root)?;
         let mut startup = crate::client::startup::prepare(bundle.clone())?;
         let updates = startup.parameters.take_updates();
         let material = if let Some(source) = bundle.material() {

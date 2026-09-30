@@ -262,8 +262,11 @@ mod join_worker;
 mod joining;
 mod kiln;
 mod lifecycle;
+mod player_services;
 #[cfg(test)]
 pub(crate) use lifecycle::tests::exercise_join_lifecycle;
+#[cfg(test)]
+pub(crate) use lifecycle::tests::exercise_player_services;
 mod mesh_queue;
 pub(crate) mod presentation;
 pub(crate) mod startup;
@@ -292,6 +295,8 @@ struct Keys {
 struct ClientApp {
     package_ui: Option<crate::ui::authored::Session>,
     visual_session: Option<presentation::VisualSession>,
+    player_services: Option<player_services::Lane>,
+    player_parameter_updates: BTreeMap<(String, String), crate::render::parameters::Update>,
     catalog: Arc<crate::content::Catalog>,
     inventory: Inventory,
     drop_animator: DropAnimator,
@@ -325,6 +330,8 @@ struct ClientApp {
     owned_entity_id: Option<u64>,
     player_roster: Vec<crate::protocol::PlayerSummary>,
     roster_revision: u64,
+    player_state_snapshot: u64,
+    player_states: Vec<crate::protocol::PlayerState>,
     pending_upload: VecDeque<ChunkMesh>,
     pending_commands: VecDeque<ClientMessage>,
     position: Vec3,
@@ -370,6 +377,8 @@ impl ClientApp {
         Self {
             package_ui: network.package_ui(),
             visual_session: network.visual_session(),
+            player_services: None,
+            player_parameter_updates: BTreeMap::new(),
             drop_animator: DropAnimator::new(now, Arc::clone(&catalog)),
             catalog,
             inventory: Inventory::default(),
@@ -403,6 +412,8 @@ impl ClientApp {
             owned_entity_id: None,
             player_roster: vec![],
             roster_revision: 0,
+            player_state_snapshot: 0,
+            player_states: vec![],
             pending_upload: VecDeque::new(),
             pending_commands: VecDeque::new(),
             position: Vec3::new(0.5, 40.0, 0.5),
@@ -903,6 +914,47 @@ impl ClientApp {
             | ServerMessage::BundlePart { .. } => {
                 self.fail_session("Unexpected content manifest after handshake");
             }
+            ServerMessage::PlayerStates {
+                profile,
+                session,
+                snapshot,
+                states,
+            } => {
+                if profile != self.network.profile || session != self.actions.epoch || session == 0
+                {
+                    self.fail_session("Public player state has wrong session identity");
+                    return;
+                }
+                if snapshot > self.player_state_snapshot {
+                    let keys = states
+                        .iter()
+                        .map(|s| s.key.as_str())
+                        .collect::<BTreeSet<_>>();
+                    if keys.len() != states.len()
+                        || states.iter().any(|s| s.public.len() > 1024)
+                        || keys != self.catalog.player_service_keys()
+                    {
+                        self.fail_session("Public player state differs from negotiated services");
+                        return;
+                    }
+                    if let Some(lane) = &self.player_services {
+                        lane.update(profile, session, states.clone());
+                    } else {
+                        match self
+                            .network
+                            .player_services(profile, session, states.clone())
+                        {
+                            Ok(lane) => self.player_services = lane,
+                            Err(error) => {
+                                self.fail_session(format!("client player worker: {error}"));
+                                return;
+                            }
+                        }
+                    }
+                    self.player_state_snapshot = snapshot;
+                    self.player_states = states;
+                }
+            }
             ServerMessage::PlayerRoster { revision, players } => {
                 if revision > self.roster_revision {
                     self.roster_revision = revision;
@@ -1176,6 +1228,7 @@ impl ClientApp {
         if let Some(visual) = &mut self.visual_session {
             visual.poll();
         }
+        self.poll_player_services();
         if !self.disconnected {
             self.pump_package_action();
         }
@@ -1562,6 +1615,7 @@ impl ClientApp {
         if let Some(visual) = &mut self.visual_session {
             parameter_updates.extend(visual.take_parameters());
         }
+        parameter_updates.extend(std::mem::take(&mut self.player_parameter_updates).into_values());
         if let Some(renderer) = &mut self.renderer {
             for update in &parameter_updates {
                 if let Err(error) = renderer.set_visual_parameter(update) {

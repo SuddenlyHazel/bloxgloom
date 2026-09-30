@@ -57,6 +57,8 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
             name: "fixture".into(),
             action_epoch: 1,
             last_roster_revision: 0,
+            last_player_state_revision: 0,
+            last_player_states: None,
             profile: 17,
             inventory,
             last_drops_revision: u64::MAX,

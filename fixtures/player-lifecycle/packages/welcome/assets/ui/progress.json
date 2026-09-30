@@ -1,0 +1,5 @@
+{"version":1,"nodes":[
+  {"id":"root","kind":"panel","style":"welcome:panel"},
+  {"id":"title","parent":0,"kind":"label","style":"welcome:label","text":"Player lifecycle"},
+  {"id":"status","parent":0,"kind":"label","style":"welcome:label","text":"Waiting for profile progress"}
+]}

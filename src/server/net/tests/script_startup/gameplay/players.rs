@@ -57,6 +57,101 @@ impl Fixture {
         std::fs::write(self.0.join("packages/demo/player.luau"), source).unwrap();
     }
 }
+
+#[test]
+fn player_public_projection_is_local_receipt_gated_and_recovers_over_listener() {
+    let fixture = Fixture::new();
+    fixture.player_service(r#"return function(c,e)
+        if e.kind=='PlayerJoined' and e.state=='' then
+            c.give('player',{item='bloxgloom:stick',count=1})
+            return {state='SECRET:'..tostring(e.profile), public_state=string.char(0,255)..tostring(e.profile)}
+        end
+    end"#);
+    let mut previous_epoch = 0;
+    for _ in 0..2 {
+        let state = Box::new(fixture.open().unwrap());
+        let catalog = state.world.catalog_arc();
+        serve(state, |address| {
+            let mut peer = Peer::connect(address, Arc::clone(&catalog));
+            assert!(peer.epoch > previous_epoch);
+            previous_epoch = peer.epoch;
+            let expected = [&[0, 255][..], format!("profile:{PROFILE:032x}").as_bytes()].concat();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                if let ServerMessage::PlayerStates {
+                    profile,
+                    session,
+                    snapshot,
+                    states,
+                } = peer.read(deadline)
+                {
+                    assert_eq!((profile, session), (PROFILE, peer.epoch));
+                    assert!(snapshot > 0);
+                    assert_eq!(states.len(), 1);
+                    if states[0].revision > 0 {
+                        assert_eq!(states[0].key, "demo:progress");
+                        assert_eq!(states[0].public, expected);
+                        break;
+                    }
+                }
+            }
+            peer.inventory_at(1);
+            let other_profile = PROFILE + 1;
+            let mut other = TcpStream::connect(address).unwrap();
+            other
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            protocol::write_client(
+                &mut other,
+                &ClientMessage::Hello {
+                    name: "other".into(),
+                    profile: other_profile,
+                    content_fingerprint: catalog.fingerprint(),
+                },
+            )
+            .unwrap();
+            let (fingerprint, _) = receive_content_manifest(&mut other);
+            protocol::write_client(&mut other, &ClientMessage::ContentReady { fingerprint })
+                .unwrap();
+            let other_public = [
+                &[0, 255][..],
+                format!("profile:{other_profile:032x}").as_bytes(),
+            ]
+            .concat();
+            loop {
+                if let ServerMessage::PlayerStates {
+                    profile, states, ..
+                } = protocol::read_server(&mut other).unwrap()
+                {
+                    assert_eq!(profile, other_profile);
+                    if states[0].revision > 0 {
+                        assert_eq!(states[0].public, other_public);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+}
+
+#[test]
+fn player_client_ready_updates_panel_and_retires_hooks_on_real_reconnect() {
+    let fixture = Fixture::new();
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/player-lifecycle/packages");
+    let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
+        .with_local_packages(&root)
+        .unwrap();
+    let state = Box::new(
+        crate::server::server_state_with_startup(7, fixture.0.join("save"), 2, startup).unwrap(),
+    );
+    serve(state, |address| {
+        crate::client::exercise_player_services(
+            &address.to_string(),
+            fixture.0.join("unused-client-config"),
+        )
+    });
+}
 #[test]
 fn luau_player_first_join_reward_state_and_session_survive_listener_restart() {
     use crate::server::{parallel::OwnerKey, registry::SystemId};

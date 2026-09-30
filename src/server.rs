@@ -50,6 +50,15 @@ pub(crate) fn package_catalog_for_preview(
         .with_local_packages(root)
         .map(startup::ServerStartup::into_preview_catalog)
 }
+pub(crate) fn package_bundle_for_preview(
+    root: &std::path::Path,
+) -> std::io::Result<Arc<client_bundle::ClientBundle>> {
+    let startup = startup::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+        .with_local_packages(root)?;
+    startup
+        .client_bundle
+        .ok_or_else(|| io::Error::other("missing prepared package bundle"))
+}
 mod streaming;
 mod voxel_view;
 
@@ -122,6 +131,8 @@ struct Client {
     name: String,
     action_epoch: u64,
     last_roster_revision: u64,
+    last_player_state_revision: u64,
+    last_player_states: Option<Vec<crate::protocol::PlayerState>>,
     profile: u128,
     inventory: Inventory,
     last_drops_revision: u64,
@@ -183,6 +194,7 @@ struct State {
     player_entities: PlayerEntityStore,
     player_runtime: players::Runtime,
     roster_revision: u64,
+    player_state_revision: u64,
     /// Frozen notification-effect declarations installed at startup. Entity
     /// plans emit wakes against this registry; delivery only schedules
     /// transient tick attempts and never persists anything.
@@ -610,6 +622,7 @@ fn server_state_with_startup(
         player_entities: PlayerEntityStore::default(),
         player_runtime: players::Runtime::default(),
         roster_revision: 1,
+        player_state_revision: 1,
         effect_kinds,
         entity_public_revision,
         block_actions,

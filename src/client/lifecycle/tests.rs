@@ -1,5 +1,62 @@
 use super::*;
 
+pub(crate) fn exercise_player_services(address: &str, path: PathBuf) {
+    let mut previous = 0;
+    for _ in 0..2 {
+        let network = Network::connect(address, 1, 0x7374617465).unwrap();
+        let bundle = Arc::downgrade(network.bundle_for_test().unwrap());
+        let mut app = ClientApp::new(
+            network,
+            Config {
+                profile: 0x7374617465,
+                view_distance: 1,
+                ..Default::default()
+            },
+            path.clone(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match app.network.incoming.recv_timeout(Duration::from_millis(10)) {
+                Ok(Incoming::Message(message)) => app.accept(*message),
+                Ok(Incoming::Closed(reason)) => panic!("{reason}"),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(error) => panic!("{error}"),
+            }
+            assert!(!app.disconnected, "{:?}", app.failure);
+            app.poll_player_services();
+            if app.package_ui.as_ref().unwrap().text_at(2) == "Profile progress: level:1" {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "client player panel did not update"
+            );
+        }
+        assert!(app.actions.epoch > previous);
+        previous = app.actions.epoch;
+        assert_eq!(app.player_states.len(), 1);
+        assert_eq!(app.player_states[0].public, b"level:1");
+        let stopped = app.network.take_worker_completion().unwrap();
+        app.retire_session();
+        assert!(
+            app.player_services.is_none()
+                && app.player_states.is_empty()
+                && app.package_ui.is_none()
+        );
+        drop(app);
+        for _ in 0..2 {
+            stopped.recv_timeout(Duration::from_secs(10)).unwrap();
+        }
+        while bundle.upgrade().is_some() {
+            assert!(
+                Instant::now() < deadline,
+                "retired player callback retained session bundle"
+            );
+            std::thread::yield_now();
+        }
+    }
+}
+
 fn read(app: &ClientApp, deadline: Instant) -> ServerMessage {
     match app
         .network
@@ -303,4 +360,89 @@ fn player_roster_accepts_newer_snapshots_and_is_cleared_when_session_retires() {
         app.player_roster.is_empty(),
         "late roster resurrected a retired session"
     );
+}
+
+#[test]
+fn public_player_snapshots_validate_session_and_services_then_clear_on_retirement() {
+    let mut network = Network::disconnected_for_test();
+    network.profile = 1;
+    let mut catalog = (*network.catalog).clone();
+    catalog
+        .client_runtime_identity(crate::content::client_metadata::Identity::new(
+            b'Q',
+            "demo:progress".into(),
+            b"contract",
+        ))
+        .unwrap();
+    network.catalog = Arc::new(catalog);
+    let mut app = ClientApp::new(
+        network,
+        Config {
+            profile: 1,
+            ..Default::default()
+        },
+        std::env::temp_dir().join("unused-player-state-config"),
+    );
+    app.accept(ServerMessage::ActionSession {
+        epoch: 5,
+        next_seq: 1,
+        acked_seq: 0,
+    });
+    let state = crate::protocol::PlayerState {
+        key: "demo:progress".into(),
+        revision: 1,
+        public: vec![0, 255],
+    };
+    app.accept(ServerMessage::PlayerStates {
+        profile: 1,
+        session: 5,
+        snapshot: 2,
+        states: vec![state.clone()],
+    });
+    assert_eq!(app.player_states, vec![state.clone()]);
+    app.accept(ServerMessage::PlayerStates {
+        profile: 1,
+        session: 5,
+        snapshot: 1,
+        states: vec![],
+    });
+    assert_eq!(app.player_states, vec![state.clone()]);
+    app.retire_session();
+    app.accept(ServerMessage::PlayerStates {
+        profile: 1,
+        session: 5,
+        snapshot: 3,
+        states: vec![state.clone()],
+    });
+    assert!(app.player_states.is_empty());
+    assert_eq!(app.player_state_snapshot, 0);
+    for (profile, session, states) in [
+        (2, 5, vec![state.clone()]),
+        (1, 4, vec![state]),
+        (1, 5, vec![]),
+    ] {
+        let mut network = Network::disconnected_for_test();
+        network.profile = 1;
+        network.catalog = Arc::clone(&app.catalog);
+        let mut fresh = ClientApp::new(
+            network,
+            Config {
+                profile: 1,
+                ..Default::default()
+            },
+            std::env::temp_dir().join("unused-fresh-player-state-config"),
+        );
+        fresh.accept(ServerMessage::ActionSession {
+            epoch: 5,
+            next_seq: 1,
+            acked_seq: 0,
+        });
+        fresh.accept(ServerMessage::PlayerStates {
+            profile,
+            session,
+            snapshot: 1,
+            states,
+        });
+        assert!(fresh.disconnected && fresh.player_states.is_empty());
+    }
 }

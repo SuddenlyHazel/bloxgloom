@@ -300,6 +300,8 @@ fn actor(state: &mut State, inventory: Inventory) -> TcpStream {
             name: "fixture".into(),
             action_epoch: 1,
             last_roster_revision: 0,
+            last_player_state_revision: 0,
+            last_player_states: None,
             profile: PROFILE,
             inventory,
             last_drops_revision: u64::MAX,

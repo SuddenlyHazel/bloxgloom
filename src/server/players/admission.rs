@@ -120,6 +120,8 @@ pub(in crate::server) fn join_named_client(
             name: name.into(),
             action_epoch,
             last_roster_revision: 0,
+            last_player_state_revision: 0,
+            last_player_states: None,
             profile,
             inventory,
             last_drops_revision: u64::MAX,

@@ -165,7 +165,7 @@ The [Jade garden](../../fixtures/combined-mod/README.md) demonstrates server-sid
 branch diagnostics and client startup diagnostics, ordinary buffers and seeded
 randomness. [IDE setup](IDE.md) describes the editor definitions for `log`.
 
-Client host contract **5**, on wire version **14**, includes this
+Client host contract **6**, on wire version **15**, includes this
 runtime. Older client contracts are rejected before bundle execution. Use matching
 client/server binaries. Source edits still affect frozen content fingerprints;
 use a fresh garden save when testing the updated fixture. This change introduces

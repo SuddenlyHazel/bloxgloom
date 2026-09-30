@@ -148,7 +148,7 @@ fn apply_committed_action_inner(
             .apply_replayed_owner_changes(&owner_changes)?;
     }
     if let Some(published) = action.player_publication.take() {
-        super::super::players::committed(state, published);
+        super::super::players::committed(state, published)?;
     }
     // Delivery at the commit barrier: the producer's transaction is now
     // durable, so its routed wakes become transient tick attempts. They wait

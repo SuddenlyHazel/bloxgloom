@@ -430,6 +430,24 @@ export type BloxClientStartupHost = {
     set_parameter: (owned_resource: string, parameter_name: string, value: BloxVisualParameterValue) -> (),
     --- Select an owned client module for bounded public replica presentation callbacks in this session.
     set_replica_handler: (own_client_module: string) -> (),
+    --- Requires players/v1. One own-package module; multiple packages compose.
+    set_player_handler: (own_client_module: string) -> (),
+}
+
+--- Callback host: presentation only. Registrations are startup-only.
+export type BloxClientPlayerHost = {
+    set_text: (owned_document_node: string, text: string) -> (),
+    set_state: (owned_document: string, state: string) -> (),
+    set_parameter: (owned_resource: string, parameter_name: string, value: BloxVisualParameterValue) -> (),
+}
+export type BloxClientPlayerEvent = {
+    kind: "SessionReady" | "PlayerStateChanged" | "SessionDisconnected",
+    profile: BloxProfileId,
+    session: BloxSessionId,
+    identity_trust: "claimed_profile",
+    -- Only this package's explicitly public projections, never private state.
+    states: {[string]: {revision: BloxRevision, public: string}},
+    reason: string,
 }
 
 --- Local UI event input. The handler runs in a fresh sandbox; explicit state carries document-local data between events.

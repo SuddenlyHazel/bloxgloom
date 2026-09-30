@@ -51,7 +51,7 @@ The arguments are key, revision (1..65535), private byte bound (1..4096), initia
 binary state and callback module. Eight services per package and 128 per
 installation are allowed. Service keys cannot collide with owner-system keys.
 Changing the frozen package implementation changes the save compatibility identity.
-The client bundle carries an inert service identity with runtime contract 5;
+The client bundle carries an inert service identity with runtime contract 6;
 private initial state and executable registrations are not projected into metadata.
 
 The module returns `function(context, event)` and may return nil or a decision:
@@ -121,7 +121,7 @@ a floating-point number. The existing eight-field/130-byte command bound applies
 actor inventory revision and every player target's live profile/session pair
 before invoking the handler, including retries. A handle grants no admin authority.
 
-Wire version 14 carries a bounded, sorted roster of at most 256 admitted players,
+Wire version 15 carries a bounded, sorted roster of at most 256 admitted players,
 with profile/session/name and a roster revision. Queue pressure retains the pending
 revision so the next publish retries. Clients accept newer snapshots and clear the
 roster on disconnect/server switch; late messages cannot revive it. The roster is
@@ -154,6 +154,43 @@ and presentation notifications cannot promise exactly-once delivery.
 
 ## Remaining implementation
 
-Additional authorized player operations and client lifecycle/state delivery
-remain in progress.
+Additional authorized player operations remain in progress.
 The client/server/save contracts will be versioned when their formats change.
+
+## Landed: local public state and client lifecycle
+
+Wire 15 delivers a full local-player snapshot containing each frozen player-service
+key, committed owner revision and explicit public bytes (at most 1024 per service).
+Missing profile cells have revision zero and empty public state. The packet includes
+the exact profile/session pair and an increasing snapshot sequence. It sends after
+admission and retries under queue pressure. Only that profile's committed projections
+are sent; private profile/session bytes are never implicitly included. Publication
+invalidates only the affected profile's delivery cache. Clients validate identities
+and negotiated service keys, ignore older snapshots, and clear all values on retirement.
+
+During client startup, register one own-package callback with
+`h.set_player_handler("demo:player")`; this requires `players/v1`. Separate packages
+compose rather than replacing one another's handler. The module returns
+`function(host: BloxClientPlayerHost, event: BloxClientPlayerEvent)`. It can update
+owned UI text/state and declared visual parameters. Registration methods are
+startup-only; no callback can request gameplay actions or modify server state.
+Imports use the same client/shared dependency rules as startup.
+
+`SessionReady` runs after the first valid local-player snapshot is installed.
+`PlayerStateChanged` receives later snapshots. `SessionDisconnected` receives the
+last captured snapshot and bounded reason; its presentation replies are discarded.
+Inputs contain exact `profile`/`session`, honest `identity_trust`, and a readonly
+`states` map of this package's service keys to `{revision, public}`. Updates coalesce;
+callbacks do not promise one invocation per intermediate commit. Public-state
+delivery contains no event for private inventory contents.
+
+All callbacks execute on a session-owned worker in fresh bounded VMs (8 MiB,
+10000 interrupts, 50 ms per invocation), including imports. An invalid host call,
+even when caught, refuses the entire local output; other packages and later events
+continue. Disconnect signals bypass the update/reply queues, so retirement never
+waits on script execution or a full queue. An admitted callback may finish before
+the final disconnect hook, but its old replies cannot update a replacement session.
+Shutdown can interrupt final advisory hooks; server cleanup never relies on them.
+
+The runnable welcome package updates an authored profile panel from these bytes.
+Open it with F6; reconnect should retain `level:1` while replacing the session handle.

@@ -7,6 +7,7 @@
 //! No VM, host callback, or registration survives the worker invocation.
 use crate::server::client_bundle::ClientBundle;
 
+pub(super) mod players;
 mod readiness;
 use mlua::{Lua, Value, VmState};
 use std::cell::{Cell, RefCell};
@@ -21,6 +22,7 @@ pub(crate) struct State {
     pub(crate) texts: BTreeMap<String, String>,
     pub(crate) states: BTreeMap<String, String>,
     pub(crate) replica: Option<Arc<crate::client::presentation::Script>>,
+    pub(crate) player_handlers: BTreeMap<String, String>,
     pub(crate) parameters: crate::render::parameters::State,
 }
 
@@ -84,11 +86,26 @@ fn display(value: mlua::LuaString, max: usize) -> mlua::Result<String> {
 }
 
 fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<(), String> {
+    execute_event(bundle, entry, state, None)
+}
+
+pub(super) fn execute_event(
+    bundle: Arc<ClientBundle>,
+    entry: &str,
+    state: &mut State,
+    event: Option<&players::Event<'_>>,
+) -> Result<(), String> {
     let id = identity(&bundle, entry);
-    let fail = |error: mlua::Error| format!("client startup {id}: {error}");
+    let phase = event.map_or("client startup", |_| "client player callback");
+    let fail = |error: mlua::Error| format!("{phase} {id}: {error}");
     let (lua, diagnostics) = crate::server::script_runtime::create(
         &id,
-        crate::server::script_runtime::Execution::new("client_startup", 0, "startup").client(),
+        crate::server::script_runtime::Execution::new(
+            event.map_or("client_startup", |e| e.kind),
+            event.map_or(0, |e| e.seed()),
+            "local_session",
+        )
+        .client(),
     )
     .map_err(fail)?;
     lua.set_memory_limit(8 * 1024 * 1024).map_err(fail)?;
@@ -117,6 +134,17 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
         let value = load(&lua, Arc::clone(&bundle), entry, &cached, &stack)?;
         let function: mlua::Function = lua.unpack(value)?;
         let host = lua.create_table()?;
+        let startup = event.is_none();
+        host.set(
+            "set_player_handler",
+            players::declarer(
+                &lua,
+                Rc::clone(&registrations),
+                Arc::clone(&bundle),
+                entry.split_once(':').unwrap().0.to_owned(),
+                startup,
+            )?,
+        )?;
         let owner = entry.split_once(':').unwrap().0.to_owned();
         let texts = Rc::clone(&registrations);
         let text_owner = owner.clone();
@@ -166,7 +194,8 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
                 let (owner, local) = key
                     .split_once(':')
                     .ok_or_else(|| mlua::Error::RuntimeError("invalid replica module".into()))?;
-                if owner != handler_owner
+                if !startup
+                    || owner != handler_owner
                     || !identifier(local)
                     || handler_state.borrow().replica.is_some()
                 {
@@ -210,7 +239,36 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
                 },
             )?,
         )?;
-        function.call::<()>(host)
+        if let Some(event) = event {
+            // A caught invalid host call still rejects the whole local update.
+            let failed = Rc::new(Cell::new(false));
+            let entries = host
+                .pairs::<String, mlua::Function>()
+                .collect::<mlua::Result<Vec<_>>>()?;
+            for (key, function) in entries {
+                let failed = Rc::clone(&failed);
+                host.set(
+                    key,
+                    lua.create_function(move |_, args: mlua::MultiValue| {
+                        let result = function.call::<mlua::MultiValue>(args);
+                        if result.is_err() {
+                            failed.set(true);
+                        }
+                        result
+                    })?,
+                )?;
+            }
+            host.set_readonly(true);
+            function.call::<()>((host, event.present(&lua, entry.split_once(':').unwrap().0)?))?;
+            if failed.get() {
+                return Err(mlua::Error::RuntimeError(
+                    "player callback rejected a host operation".into(),
+                ));
+            }
+            Ok(())
+        } else {
+            function.call::<()>(host)
+        }
     })();
     if exceeded.get() || Instant::now() >= deadline {
         diagnostics.finish("execution_limit");
@@ -235,6 +293,17 @@ fn execute(bundle: Arc<ClientBundle>, entry: &str, state: &mut State) -> Result<
         return Err(format!(
             "client startup {id}: only one replica handler per session"
         ));
+    }
+    for (owner, module) in &output.player_handlers {
+        if state
+            .player_handlers
+            .insert(owner.clone(), module.clone())
+            .is_some()
+        {
+            return Err(format!(
+                "client startup {id}: duplicate player handler owner"
+            ));
+        }
     }
     state.texts.extend(output.texts.clone());
     state.states.extend(output.states.clone());

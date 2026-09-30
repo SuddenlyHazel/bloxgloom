@@ -149,6 +149,12 @@ pub struct ClientBundle {
 }
 
 impl ClientBundle {
+    pub(crate) fn permits_player_services(&self, owner: &str) -> bool {
+        self.declarations
+            .as_ref()
+            .is_some_and(|d| d.permits_players(owner))
+    }
+
     pub(crate) fn parameter_state(&self) -> Result<crate::render::parameters::State, String> {
         let mut state = crate::render::parameters::State::default();
         if let Some(source) = &self.material {

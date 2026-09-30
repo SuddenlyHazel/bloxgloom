@@ -14,6 +14,18 @@ profile, then restart the server against the same save. The reward remains three
 sticks. The private kit flag and reward share the main WAL record; temporary
 participation state starts fresh on every connection.
 
+Press F6 to open the authored profile panel. It reads `level:1` from the server's
+explicit public projection through SessionReady/PlayerStateChanged callbacks.
+Client disconnect callbacks run off the window thread, log the retired session,
+and cannot apply stale replies to a replacement connection. Private kit/session
+bytes are not delivered.
+
+Render the initial panel with:
+
+```sh
+cargo run -- ui-preview /tmp/bloxgloom-player-panel fixtures/player-lifecycle/packages
+```
+
 See [the active API reference](../../docs/modding/PLAYER-LIFECYCLE.md).
 
 Open the command console and enter `/welcome:inspect <name>`. Tab completes a

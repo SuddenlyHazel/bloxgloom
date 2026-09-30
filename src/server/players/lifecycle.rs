@@ -267,7 +267,18 @@ pub(in crate::server) fn drive(state: &mut State, tick: TickId) -> io::Result<()
     }
     Ok(())
 }
-pub(in crate::server) fn committed(state: &mut State, published: Published) {
+pub(in crate::server) fn committed(state: &mut State, published: Published) -> io::Result<()> {
+    state.player_state_revision = state
+        .player_state_revision
+        .checked_add(1)
+        .ok_or_else(|| io::Error::other("player state revision exhausted"))?;
+    for client in state
+        .clients
+        .values_mut()
+        .filter(|c| c.profile == published.key.1)
+    {
+        client.last_player_state_revision = 0;
+    }
     state.player_runtime.active.remove(&published.key);
     state
         .player_runtime
@@ -283,4 +294,5 @@ pub(in crate::server) fn committed(state: &mut State, published: Published) {
             state.player_runtime.sessions.remove(&key);
         }
     }
+    Ok(())
 }

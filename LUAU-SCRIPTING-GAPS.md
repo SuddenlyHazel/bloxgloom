@@ -64,28 +64,28 @@ status below distinguishes planned work from bindings already landed.
 #### What exists today
 
 The gameplay event contract covers block removal/placement, neighbor changes,
-actions, entity ticks and pickup requests. It has no player join/leave, chat,
-spawn/respawn or health-related events. Existing gameplay callbacks can read the
-acting player's captured feet position and operate on that player's inventory.
-The host determines the actor; scripts cannot nominate another player by passing
-an arbitrary profile ID to an inventory operation.
+actions, entity ticks and pickup requests. Player services now add admission,
+joined/spawned/leaving/left hooks, durable profile state, temporary session state
+and logical profile/session timers. Action callbacks have an exact captured player
+directory and typed player command targets. The host still owns actor selection
+and inventory effects; a profile/session handle is an identity value, not authority.
 
 The server already owns session admission, movement, public player entities,
 profile-keyed inventories, saved positions and cosmetic selections. Luau can
 select world-wide player rules and appearance palettes at startup, but those
-rules are immutable during play. Public player rendering does not supply a
-server-side Luau player directory or authority over player movement.
+rules are immutable during play. The player directory does not itself grant
+runtime movement or cosmetic-change authority.
 
 | Existing surface | What it does not yet provide |
 | --- | --- |
-| Acting-player position and inventory in gameplay callbacks | A profile/session handle for the actor, player lookup or operations on another player |
-| Profile-partitioned owner systems and exact `BloxProfileId` handles | Discovering newly joined profiles, automatic owner initialization, or a gameplay-to-profile-state service |
-| Startup player rules and appearance declarations | Runtime per-player movement, spawn or appearance operations |
-| Authored commands, action receipts and client UI | General chat, player lifecycle callbacks, or general server-to-player messages |
-| Native Rust post-commit observers | A Luau observer binding or reliable durable quest/reward delivery |
+| Exact profile/session/avatar handles, captured directory and typed player commands | Additional authorized operations on another player |
+| Package-owned lifecycle state, atomic first-join rewards and profile/session timers | Ordinary gameplay access to another profile's progress and inventory |
+| Validated admission/reconnect spawn proposals, frozen player rules and palettes | Runtime teleport and appearance operations; per-player physics remains deferred |
+| Client lifecycle callbacks and selected local public state | General chat and targeted server-to-player messages |
+| Native and Luau readonly post-commit observers | Exactly-once notification delivery; critical rewards use durable decisions |
 
-Profile-owned state is therefore a useful foundation, but it is not yet a
-complete player persistence API. Native post-commit observers are advisory:
+The remaining player-service work centers on authorized runtime operations and
+gameplay access to profile state. Native and Luau post-commit observers are advisory:
 they can be dropped under pressure and are not replayed after restart. They
 cannot safely be the only mechanism awarding a quest reward or recording a
 player's first visit.
@@ -294,7 +294,11 @@ real-listener stale-session rejection. Committed Luau observers now pass all 1,1
 workspace tests, strict Clippy, formatting and typed Luau analysis. Readonly public
 changes run on the native bounded advisory lane, with inert client identities;
 real-listener coverage verifies an exhausted callback cannot block a commit or
-later observers. Player operations and client lifecycle/state delivery remain.
+later observers. Local public profile-state transport and client ready/change/
+disconnect callbacks now pass all 1,147 workspace tests, strict Clippy, formatting
+and typed Luau analysis. Real-client coverage verifies panel updates/reconnect
+cleanup; the authored panel preview was rendered and inspected. Additional player
+operations and ordinary gameplay access to profile state remain.
 Land the work in reviewable increments:
 
 The first increment exposes exact actor profile/session identities and captured
