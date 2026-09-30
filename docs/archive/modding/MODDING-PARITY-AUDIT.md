@@ -1,10 +1,16 @@
 # Built-in capability parity audit
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 ## Baseline and verdict
 
 ### Approved unified gameplay implementation
 
-[The approved implementation plan](../IMPLEMENTATION-PLAN.md) is the active execution
+[The approved implementation plan](IMPLEMENTATION-PLAN.md) is the active execution
 record, including Luau/mlua and fire migration. Phase 1 now has a shared staged
 terrain/drop context and startup-registered removal decision handlers. Normal
 breaks, replacement/support-loss harvest and anchored placement's displaced plants
@@ -79,7 +85,7 @@ in the root plan:
   projections, interaction and support/neighbor reactions are implemented. Fire
   footprint invalidation now combines terrain/entity/refund changes with the fire
   state in one WAL record. This is lifecycle compatibility, not migration of fire
-  behavior to the public API. See [anchored behaviors](../ANCHORED-BEHAVIORS.md).
+  behavior to the public API. See [anchored behaviors](../../modding/ANCHORED-BEHAVIORS.md).
 - **Recovery review fix:** anchored output encoding now checks canonical decoding
   before admission. `anchored_codec_tests.rs` rejects an unrecoverable callback
   output before WAL admission and checks valid-state recovery.
@@ -93,7 +99,7 @@ in the root plan:
   checking deferred loading, WAL conflict and listener restart. Bounded public
   cross-owner wake flags also persist and resume, without delivering payloads.
   Bounded neighbor queries now share the authoritative capture and WAL read
-  fences; atomic world effects remain open. See [registered systems](../REGISTERED-SYSTEMS.md).
+  fences; atomic world effects remain open. See [registered systems](../../modding/REGISTERED-SYSTEMS.md).
 
 Content/composition and stock-client action discovery are now merged and personally
 reviewed in main. Public state/item/PNG/material/geometry declarations, component

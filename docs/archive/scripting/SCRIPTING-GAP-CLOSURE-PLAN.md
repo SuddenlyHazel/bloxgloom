@@ -1,10 +1,16 @@
 # Scripting Gap Closure Plan
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 Status: Proposed implementation roadmap. This document plans the work requested
 in the scripting gap review; it does not mark features implemented or authorize
 starting implementation. The current surface is described in
-[SCRIPTING.md](SCRIPTING.md). The existing
-[modding implementation plan](docs/modding/IMPLEMENTATION-PLAN.md) remains the
+[SCRIPTING.md](../../../SCRIPTING.md). The existing
+[modding implementation plan](../modding/IMPLEMENTATION-PLAN.md) remains the
 progress record for work already underway.
 
 The goal is to let mod developers build substantial gameplay and presentation
@@ -32,7 +38,7 @@ available through a capable public API.
   work rather than forcing developers into tiny packages or toy callbacks.
 - Keep scripts deterministic where world generation or replay requires it.
   Supply time and randomness through explicit host contracts.
-- Follow the prerelease save policy in [AGENTS.md](AGENTS.md): increment the
+- Follow the prerelease save policy in [AGENTS.md](../../../AGENTS.md): increment the
   default world-folder version for incompatible changes. Do not build world or
   entity-schema converters in this work.
 
@@ -324,7 +330,7 @@ Acceptance:
 
 Implement each milestone as small reviewable slices with focused modules and
 useful adjacent tests. Commit completed slices with messages describing their
-behavior. Update [SCRIPTING.md](SCRIPTING.md), types, examples and the existing
+behavior. Update [SCRIPTING.md](../../../SCRIPTING.md), types, examples and the existing
 implementation progress record when the corresponding behavior actually ships.
 Document proposals here without relabeling unfinished features as supported.
 

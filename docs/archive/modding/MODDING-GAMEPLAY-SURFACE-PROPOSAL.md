@@ -1,6 +1,12 @@
 # Proposal: one coherent gameplay API
 
-**Consolidated successor:** [current implementation plan](../IMPLEMENTATION-PLAN.md)
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
+**Consolidated successor:** [current implementation plan](IMPLEMENTATION-PLAN.md)
 is the single proposal for approval and full implementation. This document is
 retained as design background; use the successor's scope and continuation record.
 

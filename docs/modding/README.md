@@ -1,12 +1,14 @@
 # Modding: start here
 
-**Current status:** All eight phases of the approved non-deferred
-[implementation plan](IMPLEMENTATION-PLAN.md) are done. The
+**Current status:** All eight phases of the approved non-deferred modding
+implementation are done. The
 [Phase 8 acceptance record](PHASE-8-ACCEPTANCE.md) contains the production parity
 audit and integrated verification evidence. [SCRIPTING.md](../../SCRIPTING.md)
 is the implemented Luau API inventory. Native fire migration, imported custom
 models and live hot reload remain deferred; the native Rust extension API has
 additional interfaces that are not Luau bindings.
+[Current Luau gaps](../../LUAU-SCRIPTING-GAPS.md) records the limitations and their
+impact on larger mods.
 
 ## Try authoring now
 
@@ -45,14 +47,13 @@ additional interfaces that are not Luau bindings.
 [Owner systems](REGISTERED-SYSTEMS.md) · [Host lifecycle](HOST-LIFECYCLE.md) ·
 [Dynamic entities](DYNAMIC-ENTITIES.md) · [Anchored behaviors](ANCHORED-BEHAVIORS.md).
 
-These references describe narrower supported surfaces. Where an older page
-calls its own slice “complete,” that does **not** override the current plan's
-phase status or imply all built-in behavior is available to mods.
+These references describe specific supported surfaces. Use the implemented
+Luau inventory and current gaps document to distinguish native Rust interfaces
+from Luau bindings; older slice-level completion notes describe their own scope.
 
 ## Historical design and audit
 
-The [history index](history/README.md) contains superseded proposals, the
-earlier surface plan and the original baseline parity audit. They explain why
-the system was designed this way, but are **not** current implementation or
-completion status. General game/renderer/performance docs remain in `docs/`
-outside this folder.
+The [archive](../archive/README.md) contains the completed implementation plan,
+superseded proposals, foundation plans and original baseline parity audit.
+They preserve design decisions and historical results; they are not active
+implementation instructions or a current list of missing capabilities.

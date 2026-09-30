@@ -1,5 +1,11 @@
 # Complete modding implementation proposal
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 **Status: Complete for the approved non-deferred scope (September 30, 2026).**
 
 The user approved full implementation and instructed personal review,
@@ -11,9 +17,9 @@ surface and making it usable by mod authors and players. It consolidates the
 previous discussion. Once approved, implement the entire non-deferred scope;
 do not stop after the host API, a runtime experiment, or one demonstration mod.
 
-This document supersedes [the earlier gameplay proposal](history/MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
-[The earlier surface plan](history/MODDING-SURFACE-PLAN.md) remains a historical
-record of work already done. [Start at the modding index](README.md) for the
+This document supersedes [the earlier gameplay proposal](MODDING-GAMEPLAY-SURFACE-PROPOSAL.md).
+[The earlier surface plan](MODDING-SURFACE-PLAN.md) remains a historical
+record of work already done. [Start at the modding index](../../modding/README.md) for the
 current authoring and reference documents.
 
 ## 1. What approval means
@@ -1021,7 +1027,7 @@ replacement or installation of a cancelled candidate. Package shader compilation
 runs asynchronously; window/surface setup and final installation stay on the
 window thread. Disk caching is not required. Marketplace/CDN infrastructure is
 permanently outside the project. Phase 8's integrated acceptance is recorded
-in [its final report](PHASE-8-ACCEPTANCE.md).
+in [its final report](../../modding/PHASE-8-ACCEPTANCE.md).
 
 #### Phase 6 — authored UI · Done
 
@@ -1112,7 +1118,7 @@ terrain-only measurements exclude authored shaders/effects, live presentation,
 networking and present, so they do not establish an authored-effect frame budget.
 The resource/work bounds and package GPU behavior have separate regressions.
 
-See [authored visuals](AUTHORED-VISUALS.md) for exact limits and authoring APIs.
+See [authored visuals](../../modding/AUTHORED-VISUALS.md) for exact limits and authoring APIs.
 Imported custom models and live hot reload remain deferred. Actor cuboids keep
 their existing pose/tint interface, and UI icons keep their UI renderer; those
 paths do not expose the voxel material hooks.
@@ -1126,7 +1132,7 @@ authenticated daylight commands now use public gameplay plans and the common
 WAL, and a Luau package can register/deliver up to 32 actions instead of one.
 The shared registry retains its 256 total / eight per exact target bounds.
 
-See [Phase 8 acceptance](PHASE-8-ACCEPTANCE.md) for the production audit, runnable
+See [Phase 8 acceptance](../../modding/PHASE-8-ACCEPTANCE.md) for the production audit, runnable
 fixtures, measurements, retained screenshots, limits and reproduction commands.
 
 - [x] Ship a runnable combined package with content, gameplay, scheduled work,
@@ -1212,7 +1218,7 @@ This section exists so compaction or a new session does not restart the design.
   explicitly authorizes parallel, scoped agents with personal review and commits;
   prefer `coder-fast` and reserve `coder-smart` for unusually difficult work.
 - **Current work (September 30, 2026):** Phases 1–8 are done for the approved
-  non-deferred scope. [Phase 8 acceptance](PHASE-8-ACCEPTANCE.md) records the
+  non-deferred scope. [Phase 8 acceptance](../../modding/PHASE-8-ACCEPTANCE.md) records the
   public-clock and multi-action parity fixes, authoring docs/types, real-listener
   combined load/recovery checks and generated visual/performance evidence.
   Workspace tests pass **1083 game + 34 host API**, with strict Clippy,

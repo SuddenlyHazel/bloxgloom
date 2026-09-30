@@ -1,8 +1,14 @@
 # Execution foundation: next implementation slices
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 ## Goal
 
-Historical next architecture proposal: [built-in/mod capability parity](docs/modding/history/MODDING-SURFACE-PLAN.md).
+Historical next architecture proposal: [built-in/mod capability parity](../modding/MODDING-SURFACE-PLAN.md).
 It defines the complete host surface needed for future mod-created gameplay,
 including lifecycle, client interaction/presentation, and an external-boundary
 proof. It is a proposal; the implementation slices below retain their historical status.
@@ -20,19 +26,19 @@ The execution contract we are working toward:
   host physics, and a durable pause/resume interaction. Production listener,
   worker, client targeting, and recovery verified. **655 tests passed**, strict
   Clippy and formatting passed; release previews inspected. Default save is now
-  `world-v12`. See [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md).
+  `world-v12`. See [dynamic entities](../../modding/DYNAMIC-ENTITIES.md).
 
 - **Done:** registered inventory views/screens and independent container
   persistence. External fixture opens from either block and transfers/reopens
   after restart through the real client/listener. **652 tests passed**, formatting
   and strict Clippy passed, and release UI previews were inspected. Default save is `world-v11`;
-   see [registered inventories](docs/modding/REGISTERED-INVENTORIES.md).
+   see [registered inventories](../../modding/REGISTERED-INVENTORIES.md).
 
 - **Done:** first public storage-lifecycle surface and external fixture. Chest
   uses the registered lifecycle path; a separately compiled nine-slot/two-cell
   storage block exercises cross-chunk persistence, refunds, conflicts, retries,
-   and the real listener. **647 tests passed**. See [host lifecycle](docs/modding/HOST-LIFECYCLE.md)
-   and the [historical modding surface plan](docs/modding/history/MODDING-SURFACE-PLAN.md).
+   and the real listener. **647 tests passed**. See [host lifecycle](../../modding/HOST-LIFECYCLE.md)
+   and the [historical modding surface plan](../modding/MODDING-SURFACE-PLAN.md).
 
 - **Done:** worker-based entity policy dispatch and initial regression tests (`ace635b`, `9b229f1`).
 - **Done:** direct review of the worker slice, including its production call path.
@@ -45,11 +51,11 @@ The execution contract we are working toward:
 - **Done:** slice 5B, streaming checkpoints and bounded capture, reviewed with the parked-fire and rotation-latency limits below.
 - **Deferred by user:** independent extension crate below; validate the foundation with real gameplay first.
 - **Done:** first wandering NPC, Mossbun (`b6b478a`), registered within the repository. Parent reviewed the server/client paths, inspected the rendered preview and independently ran **12 Mossbun-filtered tests**, all passing. Coder reported **609 full-suite tests passed** and clean check/fmt/strict Clippy. This demonstrates the in-repository entity path, not external-crate API completeness.
-- **Done:** creature movement follow-up, implemented directly without delegation: shared body locomotion and accelerating gravity, bounded local ground A*, persisted AI deadlines/waypoints, client actor interpolation and procedural animation. **621 tests passed**, strict Clippy passed, and the production animation preview frames were inspected. Schema 2 uses `world-v7`; see [capabilities and limits](docs/CREATURE-MOVEMENT.md). No live game window was observed.
+- **Done:** creature movement follow-up, implemented directly without delegation: shared body locomotion and accelerating gravity, bounded local ground A*, persisted AI deadlines/waypoints, client actor interpolation and procedural animation. **621 tests passed**, strict Clippy passed, and the production animation preview frames were inspected. Schema 2 uses `world-v7`; see capabilities and limits (`docs/CREATURE-MOVEMENT.md`; historical reference removed from the working tree). No live game window was observed.
 - **Parked:** fire spread and its migration.
-- **Done:** passive 27-slot Chest using the same storage codec, inventory ports, and interactions as Hopper. Verified Chest/Hopper persistence and conservation, collection retries, and the full Kiln/Hopper/Chest chain over the real listener. **640 tests passed**, strict Clippy passed, and compact/enlarged UI previews were inspected. New content uses `world-v10`; see [Chest details](docs/CHEST.md).
-- **Done:** Hopper inventory automation: registered public inventory capabilities, atomic pushes/pulls, three-slot controls, and a feed/cook/collect chain. Verified blocked outputs, stale destination conflicts, restart/break conservation, and moving-player placement over the real listener. **635 tests passed**, with strict Clippy and inspected previews. New catalog content uses `world-v9`; see [Hopper details](docs/HOPPER.md).
-- **Done:** playable Kiln workstation on the shared anchored-entity path: right-click UI, all-inventory-slot transfers, recipe-relative progress, public contents summary, and masonry/lit art. Verified place/load/cook/restart/collect/retry/break across a seam; **627 tests passed** and strict Clippy passed. Inspected desktop/compact UI and lit/unlit previews. See [Kiln details](docs/KILN.md). Schema 2 changes the default test save to `world-v8`.
+- **Done:** passive 27-slot Chest using the same storage codec, inventory ports, and interactions as Hopper. Verified Chest/Hopper persistence and conservation, collection retries, and the full Kiln/Hopper/Chest chain over the real listener. **640 tests passed**, strict Clippy passed, and compact/enlarged UI previews were inspected. New content uses `world-v10`; see Chest details (`docs/CHEST.md`; historical reference removed from the working tree).
+- **Done:** Hopper inventory automation: registered public inventory capabilities, atomic pushes/pulls, three-slot controls, and a feed/cook/collect chain. Verified blocked outputs, stale destination conflicts, restart/break conservation, and moving-player placement over the real listener. **635 tests passed**, with strict Clippy and inspected previews. New catalog content uses `world-v9`; see Hopper details (`docs/HOPPER.md`; historical reference removed from the working tree).
+- **Done:** playable Kiln workstation on the shared anchored-entity path: right-click UI, all-inventory-slot transfers, recipe-relative progress, public contents summary, and masonry/lit art. Verified place/load/cook/restart/collect/retry/break across a seam; **627 tests passed** and strict Clippy passed. Inspected desktop/compact UI and lit/unlit previews. See Kiln details (`docs/KILN.md`; historical reference removed from the working tree). Schema 2 changes the default test save to `world-v8`.
 
 ## First: review the current worker slice — done
 

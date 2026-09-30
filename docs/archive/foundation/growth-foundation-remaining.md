@@ -1,5 +1,11 @@
 # Growth foundation: remaining implementation
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 This is the code work still needed from [the growth foundation plan](growth-foundation-plan.md). It excludes acceptance gates, soak runs, performance targets, and public mod packaging/scripting.
 
 1. **World-backed owner runtime.** Put chunk, independent-entity, and profile state in durable owner cells with revisioned read snapshots, sparse active/scheduled work, and barrier-owned mutation. The current registered handler runtime holds transient internal owner values.

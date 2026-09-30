@@ -1,6 +1,6 @@
 # Public storage lifecycle boundary
 
-The first implementation of the [historical modding surface plan](history/MODDING-SURFACE-PLAN.md)
+The first implementation of the [historical modding surface plan](../archive/modding/MODDING-SURFACE-PLAN.md)
 provides a separately compilable host API and moves Chest's server lifecycle onto
 it. It is a declarative storage capability, not yet the complete entity/modding API.
 

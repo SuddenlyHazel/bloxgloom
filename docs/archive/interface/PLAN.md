@@ -1,5 +1,11 @@
 # Bloxgloom interface plan
 
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
 Status: implemented and headlessly validated. This replaces the original world-architecture plan; the authoritative server, terrain, persistence, chunk renderer, and movement were already in the repository when this phase began. The live 60 FPS target still needs validation on a visible desktop during chunk streaming; headless measurements cannot establish presented gameplay FPS.
 
 ## Goal

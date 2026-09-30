@@ -1,6 +1,12 @@
 # Plan: built-in/mod capability parity
 
-**Historical record; current status:** [approved implementation plan](../IMPLEMENTATION-PLAN.md).
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
+**Historical record; current status:** [approved implementation plan](IMPLEMENTATION-PLAN.md).
 It consolidates the full host, Luau, package delivery, UI and shader scope into one
 approval and execution plan. The user approved full implementation; Luau/mlua
 selection and inclusion of previously deferred fire migration are now active
@@ -71,7 +77,7 @@ mid-wave drain, independent motion conflict filtering, and reserved command/pick
 capacity. Client workers coalesce superseded jobs and give background work every
 fourth dispatch; geometry/seams have immediate capacity through upload. Bulk
 snapshot backlog is bounded before FIFO admission. See
-[player-response path](../../PLAYER-RESPONSE-PATH.md) for scope, invariants, tests,
+player-response path (`docs/PLAYER-RESPONSE-PATH.md`; historical reference removed from the working tree) for scope, invariants, tests,
 and repeatable measurements. Existing world-v14 saves remain compatible.
 
 **702 tests passed** (698 engine + 4 host API), strict workspace Clippy and format
@@ -113,9 +119,9 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   setup 1723.9 ms; 17,292,744 mesh bytes (unchanged); steady CPU/GPU medians
   0.315/0.286 ms. Content-branch baseline was 1709.2 ms setup and
   0.301/0.292 ms CPU/GPU; these small differences do not establish a regression.
-  See [content](../REGISTERED-CONTENT.md), [actions](../REGISTERED-ACTIONS.md),
-  [anchored behaviors](../ANCHORED-BEHAVIORS.md), and
-  [owner systems](../REGISTERED-SYSTEMS.md) for supported bounds.
+  See [content](../../modding/REGISTERED-CONTENT.md), [actions](../../modding/REGISTERED-ACTIONS.md),
+  [anchored behaviors](../../modding/ANCHORED-BEHAVIORS.md), and
+  [owner systems](../../modding/REGISTERED-SYSTEMS.md) for supported bounds.
 
 - **Registered machine slice implemented:** public scheduled behavior, bounded
   private bytes, registered footprints, item filters, recipes/fuels, named/sided
@@ -123,7 +129,7 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   and Hopper use the generic adapter; their older implementations are test-only
   regression references. The independent Crusher fixture exercises manual input,
   automated feed/extraction, processing, restart, and refunds over the real listener.
-    Default save at that slice: **`world-v13`**. See [registered machines](../REGISTERED-MACHINES.md)
+    Default save at that slice: **`world-v13`**. See [registered machines](../../modding/REGISTERED-MACHINES.md)
    for supported contracts.
   **659 workspace/all-feature tests passed**, with clean formatting and strict Clippy;
   the release shared-inventory preview was inspected.
@@ -135,20 +141,20 @@ measure live edit response. Existing `BLOXGLOOM_TRACE_EDITS` traces client stage
   compiled Copperling fixture spawns, patrols, pauses on interaction, and recovers
   through the real listener/client paths. **655 tests passed**, strict Clippy and
    formatting passed, and release previews were inspected. The default save
-    at that slice was **`world-v12`**. See [dynamic entities](../DYNAMIC-ENTITIES.md).
+    at that slice was **`world-v12`**. See [dynamic entities](../../modding/DYNAMIC-ENTITIES.md).
 
 - **Registered inventory slice implemented:** shared inventory-view schema,
   descriptor-based opening/layout/slot access/status widgets, independent bounded
   container snapshots, and a fully usable external fixture through the real client
   and listener. Chest, Hopper, and Kiln use the same screen contracts. Default save
    at that slice was `world-v11`. **652 tests passed**, with clean formatting and strict Clippy;
-  see [registered inventories](../REGISTERED-INVENTORIES.md).
+  see [registered inventories](../../modding/REGISTERED-INVENTORIES.md).
 
 - **First lifecycle slice implemented:** dependency-free public API crate,
   declarative storage lifecycle registration, Chest migration, and a separate
   nine-slot/two-block extension fixture. Verified production transactions,
   restart/refund conservation, conflicts/retries, and real-listener replication;
-  **647 tests passed**. See [implementation and limits](../HOST-LIFECYCLE.md).
+  **647 tests passed**. See [implementation and limits](../../modding/HOST-LIFECYCLE.md).
 - Storage, inventory screens, creatures, machines, bounded anchored callbacks,
   registered content, actions and composed controls are exposed. Owner systems
   currently mutate only their own persistent bytes. The broader world, player,

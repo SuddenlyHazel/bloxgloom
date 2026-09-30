@@ -1,7 +1,8 @@
 # Phase 8: examples, parity and integrated verification
 
 Acceptance date: September 30, 2026. All non-deferred Phase 8 work is complete.
-The [implementation plan](IMPLEMENTATION-PLAN.md) defines the agreed scope;
+The [completed, archived implementation plan](../archive/modding/IMPLEMENTATION-PLAN.md)
+defines the agreed scope;
 this record covers its final phase and distinguishes host mechanisms, gameplay
 policy, Luau bindings and deferred features.
 

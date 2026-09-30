@@ -86,5 +86,5 @@ registration remains narrower than the internal built-in catalog. Port faces are
 world-space, with no facing-relative transform. `TransferSelection` exposes
 optional source/destination slots, count and an `Any`, exact item or `SameAsSlot`
 stack selector; the host still enforces port permissions and exact components.
-The historical `docs/modding/history/MODDING-SURFACE-PLAN.md` predates these
+The historical [surface plan](../archive/modding/MODDING-SURFACE-PLAN.md) predates these
 additions and is not the current acceptance record.

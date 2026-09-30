@@ -2,12 +2,14 @@
 
 Bloxgloom is a Rust multiplayer voxel game. The dedicated server owns a procedural, editable world; the desktop client renders streamed chunks with `wgpu` and uses `winit` for input.
 
-The client/server event flow and tick loop are documented in [docs/runtime-architecture.md](docs/runtime-architecture.md). The active foundation contract and its remaining acceptance gates are in [docs/growth-foundation-plan.md](docs/growth-foundation-plan.md); it is not a claim that the whole foundation is complete. The earlier simulation design and implementation record remain in [docs/server-simulation.md](docs/server-simulation.md).
+The current client/server execution paths are documented in the
+[architecture diagrams below](#current-execution-architecture).
 
-**Modding:** Start at [docs/modding/](docs/modding/README.md) for the current
-implementation plan, phase status, authoring examples and API reference.
-Superseded plans and the baseline parity audit are labeled under
-[modding/history](docs/modding/history/README.md).
+**Modding:** Start at [docs/modding/](docs/modding/README.md) for authoring
+examples and API references. The approved eight-phase implementation is complete;
+[Phase 8 acceptance](docs/modding/PHASE-8-ACCEPTANCE.md) records the evidence and
+[LUAU-SCRIPTING-GAPS.md](LUAU-SCRIPTING-GAPS.md) lists the current limitations.
+Earlier plans and audits are preserved in [docs/archive/](docs/archive/README.md).
 
 The world generates on demand as players travel, with no fixed horizontal boundary. Temperature, moisture, and uplift create plains, forests, deserts, tundra, and rocky highlands with distinct landforms and surface layers. A deterministic wave-function-collapse pass makes constrained ground-cover patches that match across independently generated regions. Biome-aware flowers, ferns, grass, and broadleaf trees add vegetation that stays consistent across chunk borders; plants can be broken and collected. Caves remain below the surface, but the new-world spawn has a solid floor beneath it; the world has an immutable solid bottom at Y = −64. Built-in blocks use pixel-art assets in `assets/textures/`. Opaque blocks use greedy chunk meshes; foliage uses a separate cutout mesh. The sky has world-anchored clouds and shares a fixed sun direction with terrain lighting, so the sun moves across the view when you turn.
 
@@ -17,7 +19,7 @@ Voxel skylight travels down open columns and diffuses into caves; placeable glow
 
 The current default save directory is `world-v18/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
 
-Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and bounded client delivery now exist, but the [full modding plan](docs/modding/IMPLEMENTATION-PLAN.md) is still in progress.
+Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and server-delivered client content are implemented; see the [current scripting reference](SCRIPTING.md).
 
 ### HDR presentation
 
@@ -99,7 +101,7 @@ The server targets a 50 Hz fixed-step simulation even with no clients connected.
 
 ## Current execution architecture
 
-These diagrams describe the current Rust execution paths. **Solid arrows are implemented paths. Dashed arrows and nodes labelled `PENDING` are planned work, not active execution.** Entity tick policies and registered owner handlers use separate worker dispatchers but share durable admission and ordered receipt handling. The reviewed implementation record and remaining work are in [EXECUTION-FOUNDATION-PLAN.md](EXECUTION-FOUNDATION-PLAN.md).
+These diagrams describe the current Rust execution paths. **Solid arrows are implemented paths. Dashed arrows and nodes labelled `PENDING` are planned work, not active execution.** Entity tick policies and registered owner handlers use separate worker dispatchers but share durable admission and ordered receipt handling. The earlier [execution foundation record](docs/archive/foundation/EXECUTION-FOUNDATION-PLAN.md) is archived; its checklist is a historical snapshot.
 
 ### Server threads and workers
 
@@ -233,7 +235,7 @@ Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight
 
 ## Development and previews
 
-The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, UI, and meshing checks. The interface implementation and validation record are in [PLAN.md](PLAN.md).
+The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, UI, and meshing checks. The original interface implementation and validation record is preserved in the [archived interface plan](docs/archive/interface/PLAN.md).
 
 For visual debugging without a desktop display, run `cargo run -- preview preview.png` or `cargo run -- preview desert.png -928 -1024` to center the render near specified world coordinates. This renders terrain through the same GPU shader and mesh pipeline and writes a PNG that can be inspected directly.
 

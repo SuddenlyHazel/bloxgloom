@@ -1,6 +1,12 @@
 # Growth foundation plan
 
-Status: **not foundation-complete**. This is the execution plan and an honest inventory of what has landed. It supersedes the expansion steps in [server-simulation.md](server-simulation.md); that document remains an as-built record. The [runtime architecture](runtime-architecture.md) describes an earlier deployed baseline and may lag the commits below.
+> **Archived September 30, 2026.** Historical snapshot, not an active plan or
+> current API reference. Status, limits and instructions below reflect the time
+> of writing. Start at [current modding docs](../../../docs/modding/README.md),
+> [Phase 8 acceptance](../../../docs/modding/PHASE-8-ACCEPTANCE.md) and
+> [current Luau gaps](../../../LUAU-SCRIPTING-GAPS.md).
+
+Status: **not foundation-complete**. This is the execution plan and an honest inventory of what has landed. It supersedes the expansion steps in server-simulation.md (`docs/server-simulation.md`; historical reference removed from the working tree); that document remains an as-built record. The runtime architecture (`docs/runtime-architecture.md`; historical reference removed from the working tree) describes an earlier deployed baseline and may lag the commits below.
 
 ## Delivery inventory (2026-09-24)
 
@@ -31,7 +37,7 @@ The acceptance criteria below remain targets except where this inventory records
 
 The following paragraphs describe the pre-campaign code and measurements, **not the current implementation**.
 
-The multithread effort delivered a real 50 Hz coordinator, bounded worker/queue machinery, deterministic movement jobs over immutable voxel views, explicit barriers, off-thread chunk loading and disk/socket I/O, and WAL-gated commits. It did **not** deliver the workload the effort was meant to address: a generally parallel gameplay runtime for heavy future systems. Movement is the only parallel gameplay work; its workers were only 2.71%/3.48% utilized in the documented slowest clustered/spread 16-player [headless baseline](server-simulation.md#measured-server-baseline). Drop motion, durable planning/application, effect consumption, and publication remain coordinator-owned. The startup registry validates metadata, but `BuiltinHandler::from_id` still dispatches a closed set of built-ins. The multithread foundation is **incomplete**, not merely awaiting performance tuning.
+The multithread effort delivered a real 50 Hz coordinator, bounded worker/queue machinery, deterministic movement jobs over immutable voxel views, explicit barriers, off-thread chunk loading and disk/socket I/O, and WAL-gated commits. It did **not** deliver the workload the effort was meant to address: a generally parallel gameplay runtime for heavy future systems. Movement is the only parallel gameplay work; its workers were only 2.71%/3.48% utilized in the documented slowest clustered/spread 16-player headless baseline (`docs/server-simulation.md`; historical reference removed from the working tree). Drop motion, durable planning/application, effect consumption, and publication remain coordinator-owned. The startup registry validates metadata, but `BuiltinHandler::from_id` still dispatches a closed set of built-ins. The multithread foundation is **incomplete**, not merely awaiting performance tuning.
 
 The existing boundaries can be reused, but moving only one more low-cost loop to a worker would repeat the mistake. The required outcome is parallel **ownership of substantial world simulation**: many active chunks and entities must execute concurrently, route cross-chunk effects without a serial per-effect loop, and apply disjoint committed changes without funneling every cell through the coordinator. The coordinator remains the clock, admission, and barrier authority; it must not remain the hot-path world executor.
 
