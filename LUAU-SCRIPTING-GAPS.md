@@ -509,8 +509,11 @@ and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
   text/numeric arguments or aliases.
 - Daylight reads and admin clock control are available only in gameplay action
   callbacks; scheduled planners and other callbacks use logical ticks.
-- Client inventory/block/world/action observations are bounded ASCII summaries,
-  rather than general typed replica queries.
+- Typed local inventory/block/world/action observations are implemented with
+  readonly bounded snapshots, real-listener acceptance and production UI previews;
+  see the
+  [typed replica scope and verification](docs/modding/TYPED-REPLICAS.md).
+  General world queries and remote-player inventory access are outside that scope.
 - Machine callbacks select declared transformations; they do not expose a
   general arbitrary inventory-processing planner.
 - Native item-icon callbacks and per-stack render callbacks are not Luau bindings.
@@ -519,7 +522,7 @@ and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
 
 ## Suggested priority
 
-1. Larger-package composition and typed replica access, driven by real mods.
+1. Larger-package composition, driven by real mods.
 2. Additional motion, audio and richer presentation contracts.
 
 Compatibility diagnostics should improve alongside those changes. Imported

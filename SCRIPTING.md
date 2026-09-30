@@ -669,7 +669,7 @@ It runs once per connection before content readiness and returns `function(host)
 | `host.set_text("package:document/node",text)` | Initializes owned UI text |
 | `host.set_state("package:document",state)` | Initializes explicit document-local state |
 | `host.set_parameter(resource,name,value)` | Initializes a declared owned material/effect parameter |
-| `host.set_replica_handler("package:module")` | Registers one own-package client/shared replica handler |
+| `host.set_replica_handler("package:module", observations?)` | Registers one own-package client/shared replica handler; optional true enables additional typed observation events |
 
 These services have presentation authority only. Startup state is reset on
 join/reconnect/server switch and is not saved gameplay state.
@@ -789,8 +789,13 @@ for ordering, limits and failure semantics.
 A client replica handler receives the local presentation fields plus advisory
 observations: `replica:inventory`, `replica:block`, `replica:world`,
 `replica:action`, `replica:entities`, and `replica:anchors`. The first four carry
-bounded ASCII summaries in `input.value`; they are not a general client world
-query API. Observations coalesce by kind behind a bounded queue.
+bounded ASCII summaries in `input.value`. All presentation callbacks also receive
+readonly `input.replica`: local inventory slots and exact component bytes,
+recent installed block states, sampled server world time and package-owned
+terminal action receipts. Unknown inventory/time are nil. Revisions remain exact
+handles; windows are bounded and observations coalesce by kind. See
+[typed replicas](docs/modding/TYPED-REPLICAS.md) for limits, event opt-in and
+ordering. This is not a general client world-query API.
 
 Mobile and anchor events each maintain a separate sorted window of at most
 16 package-owned public views. `input.entities` records contain exact `id`,

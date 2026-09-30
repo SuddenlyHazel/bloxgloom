@@ -190,7 +190,12 @@ with `host.set_replica_handler('package:module')`. Its function receives the
 bounded local presentation input and returns the same command list as authored
 UI events. Accepted inventory, block, world-assembly and action-result
 observations use `replica:inventory`, `replica:block`, `replica:world` and
-`replica:action`, with bounded ASCII summaries in `input.value`. The callback
+`replica:action`, with bounded ASCII summaries in `input.value`. Readonly typed
+snapshots are also available as `input.replica` in UI and replica callbacks.
+Use `host.set_replica_handler('package:module', true)` to enable additional clock,
+block-installation and UI-free observation notifications. See
+[typed replica snapshots](TYPED-REPLICAS.md) for exact revisions, inventory
+components, package receipt filtering, coalescing and reconnect semantics. The callback
 runs on the session-owned presentation worker, never the window/network thread.
 Replies may update owned document text/visibility/state but **cannot** request
 actions. Observations are advisory and coalesced by kind behind a bounded

@@ -37,6 +37,8 @@ impact on larger mods.
   spawn and eye contract.
 - [Dynamic UI and input](DYNAMIC-UI.md): runtime collections, new controls,
   stable focus and declared rebindable actions, with a real recipe browser.
+- [Typed client replicas](TYPED-REPLICAS.md): readonly local inventory, installed
+  block observations, sampled world time and package-owned action receipts.
 - [Authored UI foundation](UI-FOUNDATION.md): renderer/layout decision and
   current limitations.
 - [First WGSL effect example](../../fixtures/effect-packages/sepia/README.md):
