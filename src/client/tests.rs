@@ -1,6 +1,9 @@
 use super::*;
 use crate::raycast::Face;
 
+#[path = "input_bindings/tests.rs"]
+mod input_bindings;
+
 pub(crate) struct ReplicationProbe {
     replicas: Replicas,
     registry: EntityClientRegistry,

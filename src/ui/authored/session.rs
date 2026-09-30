@@ -10,7 +10,9 @@ use taffy::prelude::*;
 pub(crate) struct Session {
     pub(super) resources: Arc<Resources>,
     document: usize,
+    pub(super) active: Document,
     pub(super) document_generation: u64,
+    pub(super) tree_generation: u64,
     pub(super) rects: Vec<UiRect>,
     pub(super) clips: Vec<UiRect>,
     pub(super) inputs: Vec<String>,
@@ -56,10 +58,13 @@ impl Session {
             Ok(worker) => (worker, None),
             Err(error) => (None, Some(format!("presentation worker: {error}"))),
         };
+        let active = resources.documents[0].clone();
         let mut session = Self {
             resources,
             document: 0,
+            active,
             document_generation: 0,
+            tree_generation: 0,
             rects: Vec::new(),
             clips: Vec::new(),
             inputs: Vec::new(),
@@ -92,6 +97,8 @@ impl Session {
     }
 
     fn reset(&mut self) {
+        self.active = self.resources.documents[self.document].clone();
+        self.tree_generation = self.tree_generation.wrapping_add(1);
         // Invalidate an outstanding result without admitting a second job.
         self.document_generation = self.document_generation.wrapping_add(1);
         self.expected = None;
@@ -112,11 +119,7 @@ impl Session {
             .iter()
             .map(|n| n.text.clone())
             .collect();
-        for (index, node) in self.resources.documents[self.document]
-            .nodes
-            .iter()
-            .enumerate()
-        {
+        for (index, node) in self.active.nodes.iter().enumerate() {
             if let Some(text) = self.startup.texts.get(&node.id) {
                 self.texts[index] = text.clone();
             }
@@ -133,19 +136,15 @@ impl Session {
             .nodes
             .iter()
             .map(|n| {
-                if n.kind == Kind::Input {
-                    n.text.clone()
+                if n.kind.input() {
+                    n.control.initial(n.kind, &n.text)
                 } else {
                     String::new()
                 }
             })
             .collect();
-        for (index, node) in self.resources.documents[self.document]
-            .nodes
-            .iter()
-            .enumerate()
-        {
-            if node.kind == Kind::Input
+        for (index, node) in self.active.nodes.iter().enumerate() {
+            if matches!(node.kind, Kind::Input | Kind::MultilineInput)
                 && let Some(text) = self.startup.texts.get(&node.id)
             {
                 self.inputs[index] = text.clone();
@@ -157,22 +156,21 @@ impl Session {
         &mut self,
         update: &crate::client::startup::State,
     ) -> std::result::Result<(), String> {
-        self.resources.validate_startup(update)?;
-        self.startup.texts.extend(update.texts.clone());
-        self.startup.states.extend(update.states.clone());
-        for (index, node) in self.resources.documents[self.document]
-            .nodes
+        let mut startup = self.startup.clone();
+        startup.texts.extend(update.texts.clone());
+        startup.states.extend(update.states.clone());
+        self.resources.validate_startup(&startup)?;
+        let commands = update
+            .texts
             .iter()
-            .enumerate()
-        {
-            if let Some(value) = update.texts.get(&node.id) {
-                if node.kind == Kind::Input {
-                    self.inputs[index] = value.clone();
-                } else {
-                    self.texts[index] = value.clone();
-                }
-            }
-        }
+            .filter(|(id, _)| self.node_index(id).is_some())
+            .map(|(id, value)| {
+                crate::client::presentation::Command::Text(id.clone(), value.clone())
+            })
+            .collect::<Vec<_>>();
+        let candidate = self.prepare_widgets(&commands, true)?;
+        self.commit_widgets(candidate);
+        self.startup = startup;
         if let Some(value) = update.states.get(&self.document().id) {
             self.state = value.clone();
         }
@@ -187,7 +185,7 @@ impl Session {
         &self.resources
     }
     pub(super) fn document(&self) -> &Document {
-        &self.resources.documents[self.document]
+        &self.active
     }
 
     pub(crate) fn resize(&mut self, width: u32, height: u32, scale: f32) {
@@ -292,7 +290,8 @@ impl Session {
 
     fn focusable(&self, i: usize) -> bool {
         self.is_visible(i)
-            && matches!(self.document().nodes[i].kind, Kind::Button | Kind::Input)
+            && (self.document().nodes[i].kind == Kind::Button
+                || self.document().nodes[i].kind.input())
             && self
                 .clips
                 .get(i)

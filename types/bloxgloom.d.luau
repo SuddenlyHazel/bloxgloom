@@ -507,10 +507,26 @@ export type BloxUiInput = {
     state: string,
     --- Current document text values keyed by node identity.
     texts: { [string]: string },
+    --- Stable widget identity for widget events; nil for declared input actions.
+    node: string?,
+    --- Typed current value for an editable widget event.
+    value_typed: BloxUiValue?,
+    --- Readonly map of editable widget values, keyed by stable widget identity.
+    values: {[string]: BloxUiValue},
 }
 --- Presentation updates or one gameplay action request. Action targets come from the current selection/aim and are checked by the server.
+export type BloxUiValue = boolean | number | string
+--- Dynamic forest roots attach to the target container; parent indices are zero-based within this array.
+export type BloxUiNode = {
+    id: string, parent: number?, kind: "panel" | "scroll_panel" | "table" | "label" | "image" | "button" | "input" | "multiline_input" | "checkbox" | "slider" | "select",
+    style: string, text: string?, image: string?, event: string?,
+    checked: boolean?, value: number?, min: number?, max: number?, step: number?,
+    options: {{key: string, label: string}}?, selected: string?,
+}
 export type BloxUiCommand =
     { op: "text", node: string, value: string }
+    | { op: "value", node: string, value: BloxUiValue }
+    | { op: "children", node: string, nodes: {BloxUiNode} }
     | { op: "visible", node: string, value: boolean }
     | { op: "state", value: string }
     | { op: "parameter", resource: string, name: string, value: BloxVisualParameterValue }
@@ -550,6 +566,8 @@ export type BloxReplicaInput = {
     state: string,
     --- Local presentation text map supplied to this callback.
     texts: {[string]: string},
+    --- Typed control values for the active document owned by this package; otherwise empty.
+    values: {[string]: BloxUiValue},
     --- Current bounded public entity window. Do not treat this subset as every entity in the world.
     entities: {BloxReplicaEntity},
     --- Exact IDs entering this callback's tracked window. Use each record's id handle.
@@ -560,6 +578,8 @@ export type BloxReplicaInput = {
 --- Local presentation updates. Entity commands must reference an entity in the current replica window; they do not change gameplay.
 export type BloxReplicaCommand =
     { op: "text", node: string, value: string }
+    | { op: "value", node: string, value: BloxUiValue }
+    | { op: "children", node: string, nodes: {BloxUiNode} }
     | { op: "visible", node: string, value: boolean }
     | { op: "state", value: string }
     | { op: "parameter", resource: string, name: string, value: BloxVisualParameterValue }

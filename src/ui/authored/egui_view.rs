@@ -5,8 +5,13 @@ use egui::{Color32, FontFamily, FontId, RichText, Vec2};
 
 #[derive(Debug)]
 pub(crate) enum Intent {
+    Guarded {
+        generation: u64,
+        intent: Box<Intent>,
+    },
     Activate(usize),
     Input(usize, String),
+    Focus(usize),
     NextDocument,
 }
 
@@ -38,6 +43,20 @@ impl Resources {
 
 impl Session {
     pub(crate) fn draw_egui(
+        &self,
+        ui: &mut egui::Ui,
+        atlas: Option<egui::TextureId>,
+        intents: &mut Vec<Intent>,
+    ) {
+        let mut current = Vec::new();
+        self.draw_egui_inner(ui, atlas, &mut current);
+        intents.extend(current.into_iter().map(|intent| Intent::Guarded {
+            generation: self.tree_generation,
+            intent: Box::new(intent),
+        }));
+    }
+
+    fn draw_egui_inner(
         &self,
         ui: &mut egui::Ui,
         atlas: Option<egui::TextureId>,
@@ -119,34 +138,41 @@ impl Session {
                     FontFamily::Name(id.clone().into())
                 }),
         );
-        match node.kind {
-            Kind::Panel => {
-                let background = rgba(node.style.background);
-                let children = self
-                    .document()
-                    .nodes
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(child, widget)| (widget.parent == Some(index)).then_some(child))
-                    .collect::<Vec<_>>();
+        ui.push_id(&node.id, |ui| match node.kind {
+            Kind::Panel | Kind::ScrollPanel | Kind::Table => {
                 egui::Frame::new()
-                    .fill(background)
+                    .fill(rgba(node.style.background))
                     .inner_margin(egui::Margin::same(node.style.padding as i8))
                     .show(ui, |ui| {
                         ui.set_width(width);
-                        ui.set_min_height(height);
-                        if node.style.row {
-                            ui.horizontal_wrapped(|ui| {
-                                for child in &children {
-                                    self.draw_node(ui, *child, atlas, intents);
-                                    ui.add_space(f32::from(node.style.gap));
-                                }
-                            });
+                        if node.kind == Kind::ScrollPanel {
+                            egui::ScrollArea::both()
+                                .id_salt("scroll-panel")
+                                .max_height(height)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| self.draw_children(ui, index, atlas, intents));
+                        } else if node.kind == Kind::Table {
+                            egui::Grid::new("table")
+                                .striped(true)
+                                .spacing([f32::from(node.style.gap); 2])
+                                .show(ui, |ui| {
+                                    for child in self.children(index) {
+                                        if !self.is_visible(child) {
+                                            continue;
+                                        }
+                                        if self.document().nodes[child].kind.container() {
+                                            for cell in self.children(child) {
+                                                self.draw_node(ui, cell, atlas, intents);
+                                            }
+                                        } else {
+                                            self.draw_node(ui, child, atlas, intents);
+                                        }
+                                        ui.end_row();
+                                    }
+                                });
                         } else {
-                            for child in children {
-                                self.draw_node(ui, child, atlas, intents);
-                                ui.add_space(f32::from(node.style.gap));
-                            }
+                            ui.set_min_height(height);
+                            self.draw_children(ui, index, atlas, intents);
                         }
                     });
             }
@@ -170,16 +196,91 @@ impl Session {
                     intents.push(Intent::Activate(index));
                 }
             }
-            Kind::Input => {
-                let mut value = self.text_at(index).to_owned();
+            Kind::Input | Kind::MultilineInput => {
+                let mut value = self.inputs[index].clone();
+                let edit = if node.kind == Kind::MultilineInput {
+                    egui::TextEdit::multiline(&mut value)
+                } else {
+                    egui::TextEdit::singleline(&mut value)
+                };
                 let response = ui.add_sized(
                     [width, height],
-                    egui::TextEdit::singleline(&mut value)
+                    edit.id(egui::Id::new(&node.id))
                         .font(font)
-                        .char_limit(MAX_TEXT),
+                        .char_limit(super::controls::Control::limit(node.kind)),
                 );
+                if response.has_focus() {
+                    intents.push(Intent::Focus(index));
+                }
                 if response.changed() {
+                    trim_bytes(&mut value, super::controls::Control::limit(node.kind));
                     intents.push(Intent::Input(index, value));
+                }
+            }
+            Kind::Checkbox => {
+                let mut checked = self.inputs[index] == "true";
+                let response = ui.add_sized(
+                    [width, height],
+                    egui::Checkbox::new(
+                        &mut checked,
+                        RichText::new(self.text_at(index)).font(font).color(color),
+                    ),
+                );
+                if response.has_focus() {
+                    intents.push(Intent::Focus(index));
+                }
+                if response.changed() {
+                    intents.push(Intent::Input(index, checked.to_string()));
+                }
+            }
+            Kind::Slider => {
+                if let super::controls::Control::Slider {
+                    value: initial,
+                    min,
+                    max,
+                    step,
+                } = node.control
+                {
+                    let mut value = self.inputs[index].parse::<f64>().unwrap_or(initial);
+                    let mut slider = egui::Slider::new(&mut value, min..=max)
+                        .text(RichText::new(self.text_at(index)).font(font).color(color));
+                    if let Some(step) = step {
+                        slider = slider.step_by(step);
+                    }
+                    let response = ui.add_sized([width, height], slider);
+                    if response.has_focus() {
+                        intents.push(Intent::Focus(index));
+                    }
+                    if response.changed() {
+                        intents.push(Intent::Input(
+                            index,
+                            super::controls::Control::number(value),
+                        ));
+                    }
+                }
+            }
+            Kind::Select => {
+                if let super::controls::Control::Select { options, .. } = &node.control {
+                    ui.label(RichText::new(self.text_at(index)).font(font).color(color));
+                    let mut selected = self.inputs[index].clone();
+                    let response = egui::ComboBox::from_id_salt("select")
+                        .width(width)
+                        .selected_text(node.control.display(&selected))
+                        .show_ui(ui, |ui| {
+                            for option in options {
+                                ui.selectable_value(
+                                    &mut selected,
+                                    option.key.clone(),
+                                    &option.label,
+                                );
+                            }
+                        });
+                    if response.response.has_focus() {
+                        intents.push(Intent::Focus(index));
+                    }
+                    if selected != self.inputs[index] {
+                        intents.push(Intent::Input(index, selected));
+                    }
                 }
             }
             Kind::Image => {
@@ -195,21 +296,71 @@ impl Session {
                     ui.add(egui::Image::new((texture, Vec2::new(width, height))).uv(uv));
                 }
             }
+        });
+    }
+
+    fn children(&self, index: usize) -> Vec<usize> {
+        self.document()
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(child, widget)| (widget.parent == Some(index)).then_some(child))
+            .collect()
+    }
+    fn draw_children(
+        &self,
+        ui: &mut egui::Ui,
+        index: usize,
+        atlas: Option<egui::TextureId>,
+        intents: &mut Vec<Intent>,
+    ) {
+        let node = &self.document().nodes[index];
+        let children = self.children(index);
+        if node.style.row {
+            ui.horizontal_wrapped(|ui| {
+                for child in children {
+                    self.draw_node(ui, child, atlas, intents);
+                    ui.add_space(f32::from(node.style.gap));
+                }
+            });
+        } else {
+            for child in children {
+                self.draw_node(ui, child, atlas, intents);
+                ui.add_space(f32::from(node.style.gap));
+            }
         }
     }
 
     pub(crate) fn apply_egui(&mut self, intent: Intent) {
         match intent {
+            Intent::Guarded { generation, intent } if generation == self.tree_generation => {
+                self.apply_egui(*intent)
+            }
+            Intent::Focus(index)
+                if self
+                    .document()
+                    .nodes
+                    .get(index)
+                    .is_some_and(|n| n.kind.input())
+                    && self.is_visible(index) =>
+            {
+                self.focused = Some(index)
+            }
             Intent::Activate(index) if self.egui_focusable(index, Kind::Button) => {
                 self.focused = Some(index);
                 self.activate();
             }
-            Intent::Input(index, value) if self.egui_focusable(index, Kind::Input) => {
+            Intent::Input(index, value)
+                if self
+                    .document()
+                    .nodes
+                    .get(index)
+                    .is_some_and(|node| node.kind.input())
+                    && self.is_visible(index) =>
+            {
                 self.focused = Some(index);
-                if value.len() > MAX_TEXT
-                    || value.chars().any(char::is_control)
-                    || !self.can_dispatch(index)
-                {
+                let node = &self.document().nodes[index];
+                if !node.control.validate(node.kind, &value) || !self.can_dispatch(index) {
                     return;
                 }
                 let old = std::mem::replace(&mut self.inputs[index], value);
@@ -233,4 +384,14 @@ impl Session {
 
 fn rgba(value: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(value[0], value[1], value[2], value[3])
+}
+
+fn trim_bytes(value: &mut String, limit: usize) {
+    if value.len() > limit {
+        let mut end = limit;
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+    }
 }

@@ -1,6 +1,46 @@
 use super::*;
 
 impl ClientApp {
+    /// Declared input is queued onto the presentation worker before native
+    /// command discovery. Busy/repeated keys remain consumed by their binding.
+    pub(super) fn package_binding_key(
+        &mut self,
+        code: KeyCode,
+        repeat: bool,
+        keyboard_focus: bool,
+    ) -> bool {
+        if !matches!(self.screen, UiScreen::Playing | UiScreen::Package)
+            || !self.input_modifiers.is_empty()
+        {
+            return false;
+        }
+        let ui_open = self.screen == UiScreen::Package;
+        let Some(session) = &mut self.package_ui else {
+            return false;
+        };
+        if !session.binding_reserved(
+            code,
+            &self.config.named_bindings,
+            self.config.bindings,
+            ui_open,
+            keyboard_focus,
+        ) {
+            return false;
+        }
+        if !repeat
+            && session.binding_key(
+                code,
+                &self.config.named_bindings,
+                self.config.bindings,
+                ui_open,
+                keyboard_focus,
+            ) == Some(true)
+        {
+            self.set_screen(UiScreen::Package);
+        }
+        true
+    }
+
     /// Do not drain the network mailbox until this all-or-nothing resource
     /// installation succeeds. Failure drops the candidate renderer/session.
     pub(super) fn begin_window_install(
@@ -94,6 +134,25 @@ impl ClientApp {
         event: WindowEvent,
     ) {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
+            return;
+        }
+        if let WindowEvent::ModifiersChanged(modifiers) = &event {
+            self.input_modifiers = modifiers.state();
+        }
+        if matches!(event, WindowEvent::Focused(false)) {
+            self.input_modifiers = winit::keyboard::ModifiersState::empty();
+        }
+        if let WindowEvent::KeyboardInput { event, .. } = &event
+            && event.state == ElementState::Pressed
+            && let PhysicalKey::Code(code) = event.physical_key
+            && self.package_binding_key(
+                code,
+                event.repeat,
+                self.renderer
+                    .as_ref()
+                    .is_some_and(Renderer::egui_wants_keyboard_input),
+            )
+        {
             return;
         }
         if self.screen.uses_egui() {

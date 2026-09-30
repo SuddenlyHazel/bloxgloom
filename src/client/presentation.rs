@@ -2,6 +2,8 @@
 //! action, but the client composes the request and the server owns its effects.
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, SyncSender};
+mod widgets;
+pub(crate) use widgets::ControlValue;
 mod visual;
 pub(crate) use visual::VisualSession;
 mod effects;
@@ -24,6 +26,8 @@ pub(crate) struct Request {
     pub(crate) value: String,
     pub(crate) state: String,
     pub(crate) texts: Vec<(String, String)>,
+    pub(crate) node: Option<String>,
+    pub(crate) values: Vec<(String, ControlValue)>,
     pub(crate) replica: bool,
     pub(crate) entities: Vec<EntityView>,
     /// IDs entering or leaving the bounded presented window since the prior
@@ -62,6 +66,8 @@ pub(crate) fn window_changes(previous: &[u64], current: &[EntityView]) -> (Vec<u
 pub(crate) enum Command {
     Text(String, String),
     Visible(String, bool),
+    Value(String, String),
+    Children(String, Vec<crate::ui::authored::RawNode>),
     State(String),
     Action(String, Vec<u8>),
     Parameter(crate::render::parameters::Update),
@@ -152,7 +158,19 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
         for (id, text) in request.texts {
             texts.raw_set(id, text)?;
         }
+        texts.set_readonly(true);
         input.raw_set("texts", texts)?;
+        input.raw_set("node", request.node.as_deref())?;
+        let values = lua.create_table()?;
+        for (id, value) in request.values {
+            let value = value.lua(lua)?;
+            if request.node.as_deref() == Some(id.as_str()) {
+                input.raw_set("value_typed", value.clone())?;
+            }
+            values.raw_set(id, value)?;
+        }
+        values.set_readonly(true);
+        input.raw_set("values", values)?;
         let entities = lua.create_table()?;
         for (index, entity) in request.entities.iter().enumerate() {
             let view = lua.create_table()?;
@@ -194,6 +212,7 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
             list.set_readonly(true);
             input.raw_set(name, list)?;
         }
+        input.set_readonly(true);
         let output: mlua::Table = entry.call(input)?;
         // Do not trust raw_len alone: sparse/associative tables must not bypass
         // traversal limits. Reject the seventeenth pair before decoding it.
@@ -225,7 +244,15 @@ fn run(request: Request) -> Result<Vec<Command>, String> {
                 }),
                 "text" => Command::Text(
                     text(&command, "node", 194)?,
-                    display_text(&command, "value", 128)?,
+                    widgets::display_text(command.raw_get("value")?)?,
+                ),
+                "children" => Command::Children(
+                    text(&command, "node", 194)?,
+                    widgets::nodes(command.raw_get("nodes")?)?,
+                ),
+                "value" => Command::Value(
+                    text(&command, "node", 194)?,
+                    widgets::value(command.raw_get("value")?)?,
                 ),
                 "visible" => {
                     let mlua::Value::Boolean(value) = command.raw_get("value")? else {

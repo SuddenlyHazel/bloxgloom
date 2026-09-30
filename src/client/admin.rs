@@ -179,7 +179,15 @@ fn parse_with_players(
 
 impl ClientApp {
     pub(super) fn binding_targets(&self) -> Vec<BindingTarget> {
-        binding_targets(&self.catalog, &self.config.named_bindings)
+        let mut targets = binding_targets(&self.catalog, &self.config.named_bindings);
+        if let Some(session) = &self.package_ui {
+            for (key, _) in session.declared_bindings() {
+                if !targets.iter().any(|target| matches!(target, BindingTarget::Named(old) | BindingTarget::Absent(old) if old == &key)) {
+                    targets.push(BindingTarget::Named(key));
+                }
+            }
+        }
+        targets
     }
 
     pub(super) fn binding_view(&self) -> Option<String> {
@@ -200,7 +208,13 @@ impl ClientApp {
                 BindingTarget::Builtin(Builtin::KilnFuel) => Some(self.config.bindings.kiln_fuel),
                 BindingTarget::Builtin(Builtin::Drop) => Some(self.config.bindings.drop),
                 BindingTarget::Named(key) | BindingTarget::Absent(key) => {
-                    self.config.named_bindings.0.get(key).copied()
+                    self.config.named_bindings.0.get(key).copied().or_else(|| {
+                        self.package_ui
+                            .as_ref()?
+                            .declared_bindings()
+                            .into_iter()
+                            .find_map(|(name, value)| (name == *key).then_some(value))
+                    })
                 }
             };
             let label: String = target.label().chars().take(65).collect();

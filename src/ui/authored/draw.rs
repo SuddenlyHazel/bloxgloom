@@ -69,18 +69,39 @@ impl Session {
             if let Some(image) = &node.image {
                 quad(builder, rect, clip, self.resources.images[image], [1.0; 4]);
             }
-            if matches!(node.kind, Kind::Label | Kind::Button | Kind::Input) {
+            if node.kind.textual() {
                 let font = &self.resources.fonts[node.style.font.as_ref().unwrap()];
-                let text = self.text_at(index);
+                let value;
+                let text = if matches!(node.kind, Kind::Checkbox | Kind::Slider | Kind::Select) {
+                    value = format!(
+                        "{} {}",
+                        self.text_at(index),
+                        node.control.display(&self.inputs[index])
+                    );
+                    value.as_str()
+                } else {
+                    self.text_at(index)
+                };
                 let padding = f32::from(node.style.padding) * self.scale;
                 let mut x = rect.x + padding;
-                for byte in text.bytes() {
+                let mut y = rect.y + padding;
+                for character in text.chars() {
+                    if character == '\n' {
+                        x = rect.x + padding;
+                        y += 25.0 * self.scale;
+                        continue;
+                    }
+                    let byte = if character.is_ascii() && !character.is_control() {
+                        character as u8
+                    } else {
+                        b'?'
+                    };
                     let glyph = &font[(byte - b' ') as usize];
                     quad(
                         builder,
                         UiRect {
                             x: x + glyph.offset[0] * self.scale,
-                            y: rect.y + padding + glyph.offset[1] * self.scale,
+                            y: y + glyph.offset[1] * self.scale,
                             width: glyph.uv.width * self.scale,
                             height: glyph.uv.height * self.scale,
                         },
@@ -90,11 +111,13 @@ impl Session {
                     );
                     x += glyph.advance * self.scale;
                 }
-                if node.kind == Kind::Input && self.focused == Some(index) {
+                if matches!(node.kind, Kind::Input | Kind::MultilineInput)
+                    && self.focused == Some(index)
+                {
                     let caret = session::intersect(
                         UiRect {
                             x,
-                            y: rect.y + padding + 3.0 * self.scale,
+                            y: y + 3.0 * self.scale,
                             width: self.scale,
                             height: 22.0 * self.scale,
                         },

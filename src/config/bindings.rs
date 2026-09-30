@@ -11,7 +11,7 @@ pub(crate) struct NamedBindings(pub BTreeMap<String, KeyCode>);
 impl NamedBindings {
     pub fn bind(&mut self, action: &str, key: KeyCode, builtins: Bindings) -> bool {
         if !valid_action_key(action)
-            || self.0.len() >= 32 && !self.0.contains_key(action)
+            || self.0.len() >= 64 && !self.0.contains_key(action)
             || !allowed_key(key)
             || builtins.action(key).is_some()
             || self

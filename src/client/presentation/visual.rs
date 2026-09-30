@@ -143,6 +143,8 @@ impl VisualSession {
             value: format!("total={}", batch.total),
             state: String::new(),
             texts: vec![],
+            node: None,
+            values: vec![],
             replica: true,
             entities: batch.entities,
             entered,

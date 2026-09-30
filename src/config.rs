@@ -225,7 +225,7 @@ fn parse_config(contents: &str) -> Config {
         let key = key.trim();
         let value = value.trim();
         if let Some(action) = key.strip_prefix("bind_action.") {
-            if config.named_bindings.0.len() >= 32 && !config.named_bindings.0.contains_key(action)
+            if config.named_bindings.0.len() >= 64 && !config.named_bindings.0.contains_key(action)
             {
                 continue;
             }

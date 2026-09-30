@@ -1,59 +1,15 @@
-//! Closed package UI schema. Only verified bytes enter here, on preparation
-//! threads before publication. Drawing never evaluates source or performs I/O.
-//!
-//! Format-2 manifests classify ui-document/ui-style JSON under assets/ui/,
-//! ui-font TTF under assets/fonts/, and ui-image PNG under assets/ui/. Documents
-//! are {version:1,nodes:[...]}; each node names id, kind, style and an earlier
-//! panel's parent index (except the first root). Text/image/event are optional
-//! kind-specific fields. All resource/event refs are package:local, restricted
-//! to the owning package even when it has declared dependencies. Resolved widget
-//! identities are immutable package:document/node strings.
-//!
-//! Global UI bounds: 8 documents, 256 nodes, 64 styles, 4 fonts, 16 images, 4096
-//! text bytes including each input's full 128-byte capacity. Per document: 64
-//! nodes, depth 16, 16 KiB JSON. PNGs are static, <=256x256, <=262144 total pixels.
-//! Fonts use a restricted TTF profile (see font_limits); the legacy preview
-//! rasterizes ASCII glyphs with fontdue. Production egui uses the verified TTF
-//! bytes and image atlas. All resources must fit a fixed 1024x1024 RGBA atlas.
-//! Existing bundle asset/byte limits also apply.
-//!
-//! Egui lays out and draws panels, labels, images, buttons and inputs in live
-//! play, including bounded scrolling, wrapping and platform text editing. The
-//! earlier Taffy layout and atlas painter remain for legacy headless previews.
-//! F6 opens/closes; PageDown cycles lexical documents. Reconnect resets local state;
-//! close/reopen retains it; document cycling resets it and invalidates old replies.
-//!
-//! Optional document `presentation:{capability:"local-ui",module:"package:module"}`
-//! opts into a package-owned verified client/shared module (no imports). A fresh
-//! bounded Luau sandbox runs on the client presentation worker for each button
-//! click/Enter or changed input. It returns a function accepting {sequence,event,
-//! value,state,texts}; texts maps full widget IDs to current bounded UTF-8 text. Sequence
-//! numbers start at 1 per connection, increase on admission, and survive document
-//! switches. Script globals never survive; `state` is an explicit 128-byte string.
-//! Return a dense array of <=16 commands: {op:"text",node:"package:doc/id",value:
-//! "UTF-8"}, {op:"visible",node:...,value:boolean}, or {op:"state",value:"UTF-8"}.
-//! Text/state are <=128 bytes. Only the active document is writable. Hidden
-//! ancestors hide descendants and remove focus, but retain layout space.
-//! An `action` command can request a package-owned registered item/empty/block/entity
-//! action; scripts supply its bounded key and optional <=130-byte argument string.
-//! The client composes the identity-fenced request from its current selection,
-//! streamed target and inventory revision, then the server
-//! authorizes/stages the effect and returns a durable action receipt. Host-owned
-//! chrome reports pending, denial and acceptance; local script text is not proof
-//! of server application. Switching documents invalidates old feedback.
-//! Results validate atomically; errors are module/event-attributed and disable
-//! handlers until reset. One outstanding event, request and reply queues of one;
-//! busy clicks/edits are rejected (visible BUSY status), never queued for retry.
-//! Local retained dynamic text is bounded by 64 nodes x 128 bytes (plus inputs),
-//! independent of the static 4096-byte resource budget. Disconnect drops worker
-//! channels without waiting on the window thread; late replies cannot enter a
-//! new session. The sandbox never receives world/inventory references or native
-//! networking handles.
-//!
-//! Unsupported: HTML/CSS, arbitrary script-created widget trees, animations and
-//! hot reload. Without the explicit capability, event IDs remain inert.
-//! `fixtures/packages/uidemo` is the sample used by ui-preview and loopback tests.
+//! Verified package widgets, frozen resources and bounded local UI sessions.
+//! Version 1 retains the original fixed five-kind schema; version 2 adds typed
+//! controls, scroll/table containers, dynamic descendants and declared bindings.
+//! Callback evaluation and command decoding happen on presentation workers.
+//! Runtime candidate trees validate atomically against frozen resources before
+//! publication. Drawing never evaluates source or performs I/O. Stable IDs retain
+//! edits/focus; actual egui intents carry tree generations to reject stale input.
+//! See docs/modding/DYNAMIC-UI.md for limits, authority and event semantics.
+pub(crate) mod bindings;
+mod controls;
 mod draw;
+mod dynamic;
 mod egui_view;
 mod events;
 mod raster;
@@ -64,6 +20,7 @@ use std::collections::BTreeMap;
 
 use crate::server::client_bundle::ClientPackage;
 pub(crate) use egui_view::Intent as EguiIntent;
+pub(crate) use schema::RawNode;
 pub(crate) use session::Session;
 use {raster::Atlas, schema::*};
 
@@ -79,17 +36,20 @@ pub(crate) struct Resources {
     fonts: BTreeMap<String, Vec<raster::Glyph>>,
     font_sources: BTreeMap<String, Vec<u8>>,
     images: BTreeMap<String, super::UiRect>,
+    styles: BTreeMap<String, Style>,
 }
 
-#[derive(Debug)]
-struct Document {
+#[derive(Clone, Debug)]
+pub(crate) struct Document {
     id: String,
+    version: u8,
     nodes: Vec<Widget>,
+    bindings: Vec<bindings::Binding>,
     script: Option<std::sync::Arc<crate::client::presentation::Script>>,
 }
 
-#[derive(Debug)]
-struct Widget {
+#[derive(Clone, Debug)]
+pub(crate) struct Widget {
     id: String,
     parent: Option<usize>,
     kind: Kind,
@@ -97,6 +57,7 @@ struct Widget {
     text: String,
     image: Option<String>,
     event: Option<String>,
+    control: controls::Control,
 }
 
 impl Resources {
@@ -111,9 +72,10 @@ impl Resources {
     ) -> std::result::Result<(), String> {
         for key in state.texts.keys() {
             if !self.documents.iter().any(|document| {
-                document.nodes.iter().any(|node| {
-                    node.id == *key && matches!(node.kind, Kind::Label | Kind::Button | Kind::Input)
-                })
+                document
+                    .nodes
+                    .iter()
+                    .any(|node| node.id == *key && node.kind.textual())
             }) {
                 return Err(format!("client startup {key}: unknown text target"));
             }
@@ -121,6 +83,32 @@ impl Resources {
         for key in state.states.keys() {
             if !self.documents.iter().any(|document| document.id == *key) {
                 return Err(format!("client startup {key}: unknown document"));
+            }
+        }
+        for document in &self.documents {
+            let bytes = document
+                .nodes
+                .iter()
+                .map(|node| {
+                    let text = state.texts.get(&node.id).unwrap_or(&node.text).len();
+                    text + if node.kind.input() {
+                        controls::Control::limit(node.kind)
+                    } else {
+                        0
+                    } + match &node.control {
+                        controls::Control::Select { options, .. } => options
+                            .iter()
+                            .map(|option| option.key.len() + option.label.len())
+                            .sum::<usize>(),
+                        _ => 0,
+                    }
+                })
+                .sum::<usize>();
+            if bytes > 32 * 1024 {
+                return Err(format!(
+                    "client startup {}: runtime UI text budget exceeded",
+                    document.id
+                ));
             }
         }
         Ok(())
@@ -179,6 +167,8 @@ impl Resources {
         }
         let mut nodes = 0;
         let mut text_bytes = 0;
+        let mut version2 = false;
+        let mut binding_keys = std::collections::BTreeSet::new();
         for (owner, package) in packages {
             for (local, (kind, bytes)) in &package.ui_assets {
                 if *kind != 2 {
@@ -189,26 +179,44 @@ impl Resources {
                 }
                 let raw: RawDocument = json(bytes)?;
                 let document = raw.resolve(owner, local, package, &styles, &images)?;
+                version2 |= document.version == 2;
+                for binding in &document.bindings {
+                    if !binding_keys.insert(binding.key.clone()) || binding_keys.len() > 64 {
+                        return Err(INVALID);
+                    }
+                }
                 nodes += document.nodes.len();
                 // Reserve the full capacity of each input, not just initial text.
                 text_bytes += document
                     .nodes
                     .iter()
                     .map(|n| {
-                        if n.kind == Kind::Input {
-                            MAX_TEXT
+                        let text = if n.kind.input() {
+                            controls::Control::limit(n.kind)
+                                + if document.version == 2 {
+                                    n.text.len()
+                                } else {
+                                    0
+                                }
                         } else {
                             n.text.len()
+                        };
+                        text + match &n.control {
+                            controls::Control::Select { options, .. } => options
+                                .iter()
+                                .map(|option| option.key.len() + option.label.len())
+                                .sum::<usize>(),
+                            _ => 0,
                         }
                     })
                     .sum::<usize>();
-                if nodes > 256 || text_bytes > 4096 {
-                    return Err(INVALID);
-                }
                 documents.push(document);
             }
         }
-        if documents.is_empty() {
+        if documents.is_empty()
+            || nodes > if version2 { 1024 } else { 256 }
+            || text_bytes > if version2 { 32768 } else { 4096 }
+        {
             return Err(INVALID);
         }
         Ok(Some(Self {
@@ -217,6 +225,7 @@ impl Resources {
             fonts,
             font_sources,
             images,
+            styles,
         }))
     }
 }

@@ -32,6 +32,36 @@ impl Session {
         if !self.can_dispatch(i) {
             return false;
         }
+        self.send_event(
+            script,
+            event,
+            self.inputs[i].clone(),
+            Some(self.document().nodes[i].id.clone()),
+        )
+    }
+
+    pub(crate) fn dispatch_event(&mut self, event: String, value: String) -> bool {
+        let Some(script) = self.document().script.clone() else {
+            return false;
+        };
+        if self.pending.is_some()
+            || self.action.is_some()
+            || self.in_flight.is_some()
+            || self.failure.is_some()
+            || self.worker.is_none()
+        {
+            return false;
+        }
+        self.send_event(script, event, value, None)
+    }
+
+    fn send_event(
+        &mut self,
+        script: std::sync::Arc<crate::client::presentation::Script>,
+        event: String,
+        value: String,
+        node: Option<String>,
+    ) -> bool {
         let Some(sequence) = self.sequence.checked_add(1) else {
             self.failure = Some("presentation event sequence exhausted".into());
             return false;
@@ -40,14 +70,16 @@ impl Session {
             script,
             sequence,
             event,
-            value: self.inputs[i].clone(),
+            value,
+            node,
+            values: self.control_values(),
             state: self.state.clone(),
             texts: self
                 .document()
                 .nodes
                 .iter()
                 .enumerate()
-                .filter(|(_, n)| matches!(n.kind, Kind::Label | Kind::Button | Kind::Input))
+                .filter(|(_, n)| n.kind.textual())
                 .map(|(i, n)| (n.id.clone(), self.text_at(i).to_owned()))
                 .collect(),
             replica: false,
@@ -215,21 +247,33 @@ impl Session {
             _ => (vec![], vec![]),
         };
         let current = entities.iter().map(|entity| entity.id).collect::<Vec<_>>();
+        let owns_document =
+            self.replica_owner() == self.document().id.split_once(':').map(|(owner, _)| owner);
         let request = Request {
             script,
             sequence,
             event: event.clone(),
             value: value.clone(),
-            state: self.state.clone(),
+            state: if owns_document {
+                self.state.clone()
+            } else {
+                String::new()
+            },
             texts: self
                 .document()
                 .nodes
                 .iter()
                 .enumerate()
-                .filter(|(_, node)| matches!(node.kind, Kind::Label | Kind::Button | Kind::Input))
+                .filter(|(_, node)| owns_document && node.kind.textual())
                 .map(|(index, node)| (node.id.clone(), self.text_at(index).to_owned()))
                 .collect(),
             replica: true,
+            node: None,
+            values: if owns_document {
+                self.control_values()
+            } else {
+                vec![]
+            },
             entities: entities.clone(),
             entered,
             left,
@@ -289,22 +333,30 @@ impl Session {
                     self.parameters.check(&parameter_owner, update)?;
                 }
             }
+            let candidate = self
+                .prepare_widgets(
+                    &commands,
+                    !reply.replica || self.replica_owner() == Some(owner.as_str()),
+                )
+                .map_err(|error| {
+                    format!(
+                        "{}: invalid local-ui target: {error}",
+                        if reply.replica {
+                            "replica handler"
+                        } else {
+                            &self.document().script.as_ref().unwrap().module
+                        }
+                    )
+                })?;
             // Validate the whole batch before modifying anything. Target IDs must
             // name this exact document, not even another document of this package.
             let valid = commands.iter().all(|c| match c {
                 Command::State(_) => true,
                 Command::Parameter(_) => true,
-                Command::Text(id, _) => {
-                    (!reply.replica || self.replica_owner() == Some(owner.as_str()))
-                        && self.document().nodes.iter().any(|n| {
-                            n.id == *id
-                                && matches!(n.kind, Kind::Label | Kind::Button | Kind::Input)
-                        })
-                }
-                Command::Visible(id, _) => {
-                    (!reply.replica || self.replica_owner() == Some(owner.as_str()))
-                        && self.document().nodes.iter().any(|n| n.id == *id)
-                }
+                Command::Text(_, _)
+                | Command::Value(_, _)
+                | Command::Visible(_, _)
+                | Command::Children(_, _) => true,
                 Command::Action(key, _) if !reply.replica => key
                     .split_once(':')
                     .is_some_and(|(package, local)| package == owner && identifier(local)),
@@ -352,6 +404,7 @@ impl Session {
                     }
                 ));
             }
+            self.commit_widgets(candidate);
             if reply.entity_batch {
                 self.visual_poses.clear();
                 self.visual_tints.clear();
@@ -367,28 +420,10 @@ impl Session {
                             .apply(&parameter_owner, &[update])
                             .expect("validated parameter batch");
                     }
-                    Command::Text(id, value) => {
-                        let i = self
-                            .document()
-                            .nodes
-                            .iter()
-                            .position(|n| n.id == id)
-                            .unwrap();
-                        if self.document().nodes[i].kind == Kind::Input {
-                            self.inputs[i] = value;
-                        } else {
-                            self.texts[i] = value;
-                        }
-                    }
-                    Command::Visible(id, visible) => {
-                        let i = self
-                            .document()
-                            .nodes
-                            .iter()
-                            .position(|n| n.id == id)
-                            .unwrap();
-                        self.visible[i] = visible;
-                    }
+                    Command::Text(_, _)
+                    | Command::Value(_, _)
+                    | Command::Visible(_, _)
+                    | Command::Children(_, _) => {}
                     Command::Action(key, arguments) => {
                         self.feedback = Some("REQUESTING ACTION".into());
                         self.action = Some((key, arguments));
@@ -421,7 +456,10 @@ impl Session {
     }
 
     pub(crate) fn text_at(&self, i: usize) -> &str {
-        if self.document().nodes[i].kind == Kind::Input {
+        if matches!(
+            self.document().nodes[i].kind,
+            Kind::Input | Kind::MultilineInput
+        ) {
             &self.inputs[i]
         } else {
             &self.texts[i]
