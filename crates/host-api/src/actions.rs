@@ -197,7 +197,8 @@ fn key(s: &str) -> bool {
 pub enum CommandPermission {
     /// Any connected player with a nonzero server session profile.
     Player,
-    /// Only the server-configured admin profile, never a client claim.
+    /// Only the server-configured local admin profile. Hello profile ownership
+    /// is claimed; this selection does not establish remote account authentication.
     Admin,
 }
 
@@ -341,6 +342,7 @@ impl Action {
             out.push(command.arguments.len() as u8);
             for argument in &command.arguments {
                 let (kind, bound) = match argument {
+                    CommandArgument::Player => (3, 0),
                     CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
                     CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
                     CommandArgument::Count { default } => (2, default.unwrap_or(0)),

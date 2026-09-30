@@ -19,7 +19,9 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 13;
+const WIRE_VERSION: u8 = 14;
+mod players;
+pub use players::PlayerSummary;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 /// Fixed vertical streaming/retention radius shared by server and client.
@@ -133,6 +135,10 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerRoster {
+        revision: u64,
+        players: Vec<PlayerSummary>,
+    },
     BundleOffer {
         identity: BundleIdentity,
     },
@@ -224,6 +230,9 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
         + match message {
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
+            ServerMessage::PlayerRoster { players, .. } => {
+                8 + 2 + players.iter().map(|p| 24 + 1 + p.name.len()).sum::<usize>()
+            }
             ServerMessage::WorldTime { .. } => 8,
             ServerMessage::Welcome { .. } => 8 + 8,
             ServerMessage::Position { .. } => 8 + 12,
@@ -506,6 +515,11 @@ pub fn write_server_with_catalog(
         ServerMessage::BundlePart { offset, bytes } => {
             out.push(20);
             bundle::write_part(&mut out, *offset, bytes)?;
+        }
+        ServerMessage::PlayerRoster { revision, players } => {
+            out.push(23);
+            out.extend(revision.to_le_bytes());
+            players::write(&mut out, players)?;
         }
         ServerMessage::WorldTime { elapsed_ms } => {
             if *elapsed_ms >= crate::daylight::CYCLE_MS {
@@ -1261,6 +1275,10 @@ pub fn read_server_with_catalog(
             }
             ServerMessage::FireBursts { cells }
         }
+        23 => ServerMessage::PlayerRoster {
+            revision: c.u64()?,
+            players: players::read(&mut c)?,
+        },
         22 => {
             let elapsed_ms = c.u64()?;
             if elapsed_ms >= crate::daylight::CYCLE_MS {

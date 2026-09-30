@@ -273,6 +273,7 @@ impl ClientApp {
                         match code {
                             KeyCode::Escape | KeyCode::F4 => self.set_screen(UiScreen::Playing),
                             KeyCode::Enter | KeyCode::NumpadEnter => self.admin_run(),
+                            KeyCode::Tab => self.complete_player_command(),
                             KeyCode::Backspace => {
                                 self.admin_input.pop();
                             }

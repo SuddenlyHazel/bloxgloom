@@ -67,14 +67,14 @@ pub trait Snapshot {
             "world clock unavailable in this context".into(),
         ))
     }
-    /// Stable authenticated request identity, retained across action retries.
+    /// Stable server-accepted request identity, retained across action retries.
     fn action_id(&self) -> Option<u128> {
         None
     }
     fn tick(&self) -> u64;
     fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
-    /// Captured authoritative feet position for this authenticated actor.
+    /// Captured authoritative feet position for this admitted actor.
     /// Never derive this from an action's client-supplied target coordinates.
     fn player_position(&self) -> Option<[f32; 3]> {
         None
@@ -84,7 +84,8 @@ pub trait Snapshot {
     fn pickup_eligible(&self, _drop_id: u64) -> bool {
         false
     }
-    /// Server-authenticated admin identity, never derived from request bytes.
+    /// Whether the server selected this admitted profile for local admin privileges.
+    /// Hello claims profile ownership; this flag does not establish account authentication.
     fn admin(&self) -> bool {
         false
     }
@@ -164,7 +165,7 @@ impl<'a> Context<'a> {
     pub fn player_position(&self) -> Option<[f32; 3]> {
         self.snapshot.player_position()
     }
-    /// Explicit creative grant, gated by the host's authenticated admin session.
+    /// Explicit creative grant, gated by the host's selected local admin session.
     /// Ordinary `give` remains available to gameplay rewards without admin access.
     pub fn admin_give(&mut self, item: &str, count: u16) -> Result<bool, Error> {
         self.charge()?;

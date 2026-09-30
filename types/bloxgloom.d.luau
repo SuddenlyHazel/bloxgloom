@@ -193,6 +193,7 @@ export type BloxPlayerAppearance = {
 -- wire/event.arguments always includes every field with explicit default values.
 export type BloxCommandArgument = { kind: "item_key" | "entity_key", max_bytes: number }
     | { kind: "count", default: number? }
+    | { kind: "player" }
 export type BloxCommand = { permission: "Player" | "Admin", arguments: { BloxCommandArgument }? }
 
 --- Chunk coordinates, or a fixed-width hexadecimal owner identity (16 digits for entity, 32 for profile).
@@ -255,6 +256,8 @@ export type BloxActionEvent = {
     slot: number,
     --- Raw validated action argument bytes. May contain zero bytes; empty string means no arguments.
     arguments: string,
+    --- Readonly ordered values for command actions; player fields are exact session handles.
+    command_arguments: { (string | number | BloxSessionId) }?,
     --- Target entity identity, or nil when this is not an entity target.
     entity: BloxEntityId?,
 }

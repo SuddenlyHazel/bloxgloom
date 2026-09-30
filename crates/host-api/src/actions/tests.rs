@@ -366,3 +366,35 @@ fn ordered_command_schema_has_canonical_bounded_arguments_and_identity() {
     command.arguments = vec![CommandArgument::Count { default: Some(0) }];
     assert!(command.max_encoded_len().is_none());
 }
+
+#[test]
+fn typed_player_arguments_preserve_full_width_identity_and_reject_forged_bytes() {
+    let command = Command {
+        permission: CommandPermission::Player,
+        arguments: vec![
+            CommandArgument::Player,
+            CommandArgument::Count { default: Some(1) },
+        ],
+    };
+    let token = format!("session:{:032x}:{:016x}", u128::MAX, u64::MAX);
+    let bytes = command.encode_arguments(&[&token]).unwrap();
+    assert_eq!(bytes.len(), 25);
+    assert_eq!(
+        command.decode_arguments(&bytes),
+        Some(vec![
+            CommandValue::Player {
+                profile: u128::MAX,
+                session: u64::MAX
+            },
+            CommandValue::Count(1)
+        ])
+    );
+    assert!(command.decode_arguments(&bytes[..23]).is_none());
+    assert!(command.decode_arguments(&[0; 25]).is_none());
+    let mut extra = bytes.clone();
+    extra.push(1);
+    assert!(command.decode_arguments(&extra).is_none());
+    assert!(command.encode_arguments(&["Alice"]).is_none());
+    assert!(command.encode_arguments(&["session:1:2"]).is_none());
+    assert!(command.encode_arguments(&[&token.to_uppercase()]).is_none());
+}

@@ -119,6 +119,7 @@ pub(in crate::server) fn join_named_client(
         Client {
             name: name.into(),
             action_epoch,
+            last_roster_revision: 0,
             profile,
             inventory,
             last_drops_revision: u64::MAX,

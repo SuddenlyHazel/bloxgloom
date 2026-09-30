@@ -57,6 +57,7 @@ pub(in crate::server::script) fn handler_declarer(
                     handler: Arc::new(ScriptHandler {
                         snapshot: Arc::clone(&snapshot),
                         module,
+                        command: None,
                     }),
                 };
                 handler.validate().map_err(|_| "invalid handler contract")?;

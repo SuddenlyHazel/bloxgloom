@@ -386,6 +386,9 @@ pub(super) fn tick_with_inputs(
     };
     for (phase_index, phase) in Phase::ALL.into_iter().enumerate() {
         let phase_started = Instant::now();
+        if phase == Phase::Publish {
+            players::publish_roster(context.state);
+        }
         if phase == Phase::Simulation {
             players::drive(context.state, tick)?;
         }

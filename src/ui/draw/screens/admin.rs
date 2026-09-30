@@ -8,6 +8,7 @@ fn command_signature(action: &Action) -> Option<String> {
     let mut signature = action.key.clone();
     for argument in &command.arguments {
         match argument {
+            CommandArgument::Player => signature.push_str(" <player>"),
             CommandArgument::ItemKey { .. } => signature.push_str(" <item>"),
             CommandArgument::EntityKey { .. } => signature.push_str(" <entity>"),
             CommandArgument::Count { default: Some(_) } => signature.push_str(" [count]"),

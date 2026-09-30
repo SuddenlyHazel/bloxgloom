@@ -419,3 +419,53 @@ fn luau_player_lifecycle_example_uses_supported_server_only_package_format() {
         .unwrap();
     assert_eq!(startup.catalog().player_lifecycles().count(), 1);
 }
+
+#[test]
+fn luau_player_command_roster_checks_target_session_before_handler_over_listener() {
+    let fixture = Fixture::new();
+    fixture.action("return function(h) h.register_action('demo:shift',1,'Target','empty',nil,'demo:action',{permission='Player',arguments={{kind='player'}}}) end",r#"return function(c,e)
+        local target=c.player_by_session(e.command_arguments[1])
+        assert(target and target.profile==c.player_profile)
+        assert(not pcall(function() e.command_arguments[1]=1 end))
+        assert(c.give('player',{item='bloxgloom:stick',count=1}))
+    end"#);
+    let state = Box::new(fixture.open().unwrap());
+    let catalog = state.world.catalog_arc();
+    serve(state, |address| {
+        let mut peer = Peer::connect(address, catalog.clone());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let players = loop {
+            if let ServerMessage::PlayerRoster { revision, players } = peer.read(deadline) {
+                assert!(revision > 0);
+                break players;
+            }
+        };
+        assert_eq!(players.len(), 1);
+        assert_eq!(players[0].session, peer.epoch);
+        let schema = catalog
+            .action("demo:shift")
+            .unwrap()
+            .command
+            .as_ref()
+            .unwrap();
+        let token = format!("session:{PROFILE:032x}:{:016x}", peer.epoch);
+        fn request(peer: &mut Peer, arguments: Vec<u8>) -> ClientMessage {
+            let mut request = peer.request(0);
+            if let ClientMessage::EntityInteract { payload, .. } = &mut request {
+                let mut value = Request::decode(payload).unwrap();
+                value.arguments = arguments;
+                *payload = value.encode().unwrap();
+            }
+            request
+        }
+        let accepted = request(&mut peer, schema.encode_arguments(&[&token]).unwrap());
+        assert!(peer.send(&accepted).0);
+        peer.inventory_at(1);
+        let mut stale = schema.encode_arguments(&[&token]).unwrap();
+        stale[16..24].copy_from_slice(&(peer.epoch + 1).to_le_bytes());
+        let rejected = request(&mut peer, stale);
+        let (accepted, reason) = peer.send(&rejected);
+        assert!(!accepted && reason.contains("session is stale"), "{reason}");
+        assert_eq!(peer.inventory.slots[0].as_ref().unwrap().count, 1);
+    });
+}

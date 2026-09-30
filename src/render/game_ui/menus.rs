@@ -286,6 +286,7 @@ fn admin(ui: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog, intents: &mu
                 let mut signature = action.key.clone();
                 for argument in &action.command.as_ref().unwrap().arguments {
                     signature.push_str(match argument {
+                        CommandArgument::Player => " <player>",
                         CommandArgument::ItemKey { .. } => " <item>",
                         CommandArgument::EntityKey { .. } => " <entity>",
                         CommandArgument::Count { default: Some(_) } => " [count]",

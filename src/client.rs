@@ -323,6 +323,8 @@ struct ClientApp {
     world_seed: Option<u64>,
     world_time: world_time::Clock,
     owned_entity_id: Option<u64>,
+    player_roster: Vec<crate::protocol::PlayerSummary>,
+    roster_revision: u64,
     pending_upload: VecDeque<ChunkMesh>,
     pending_commands: VecDeque<ClientMessage>,
     position: Vec3,
@@ -399,6 +401,8 @@ impl ClientApp {
             world_seed: None,
             world_time: world_time::Clock::default(),
             owned_entity_id: None,
+            player_roster: vec![],
+            roster_revision: 0,
             pending_upload: VecDeque::new(),
             pending_commands: VecDeque::new(),
             position: Vec3::new(0.5, 40.0, 0.5),
@@ -898,6 +902,12 @@ impl ClientApp {
             | ServerMessage::BundleOffer { .. }
             | ServerMessage::BundlePart { .. } => {
                 self.fail_session("Unexpected content manifest after handshake");
+            }
+            ServerMessage::PlayerRoster { revision, players } => {
+                if revision > self.roster_revision {
+                    self.roster_revision = revision;
+                    self.player_roster = players;
+                }
             }
             ServerMessage::WorldTime { elapsed_ms } => self.world_time.synchronize(elapsed_ms),
             ServerMessage::Welcome { id, seed } => {

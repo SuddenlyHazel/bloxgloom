@@ -32,6 +32,9 @@ pub(in crate::server) struct Runtime {
     pub(super) failed: BTreeSet<JobKey>,
 }
 impl Runtime {
+    pub(in crate::server) fn is_admitted(&self, profile: u128, epoch: u64) -> bool {
+        self.admitted.contains(&(profile, epoch))
+    }
     #[cfg(test)]
     pub(in crate::server) fn session_count(&self) -> usize {
         self.sessions.len()
@@ -81,6 +84,7 @@ pub(in crate::server) fn joined(state: &mut State, id: u64) {
         .player_runtime
         .admitted
         .insert((player.profile, player.session));
+    state.roster_revision = state.roster_revision.wrapping_add(1);
     let regs = state
         .world
         .catalog()
@@ -112,6 +116,7 @@ pub(in crate::server) fn leaving(state: &mut State, id: u64) {
     if !state.player_runtime.admitted.remove(&(profile, epoch)) {
         return;
     }
+    state.roster_revision = state.roster_revision.wrapping_add(1);
     let player = capture(state).into_iter().find(|p| p.profile == profile);
     let regs = state
         .world

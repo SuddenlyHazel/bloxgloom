@@ -69,6 +69,7 @@ fn binding_targets(catalog: &Catalog, named: &bindings::NamedBindings) -> Vec<Bi
     targets
 }
 
+mod players;
 #[cfg(test)]
 mod tests;
 mod time;
@@ -100,7 +101,15 @@ fn registered(catalog: &Catalog, key: &str, values: &[&str]) -> Result<Request, 
     })
 }
 
+#[cfg(test)]
 fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
+    parse_with_players(input, catalog, &[])
+}
+fn parse_with_players(
+    input: &str,
+    catalog: &Catalog,
+    roster: &[crate::protocol::PlayerSummary],
+) -> Result<Command, &'static str> {
     // Bound token traversal/capture even for callers outside the text widget.
     if input.len() > 1024 {
         return Err("Command is too long");
@@ -163,6 +172,8 @@ fn parse(input: &str, catalog: &Catalog) -> Result<Command, &'static str> {
         }
         key => key,
     };
+    let values = players::normalize(catalog, key, &values, roster)?;
+    let values = values.iter().map(String::as_str).collect::<Vec<_>>();
     registered(catalog, key, &values).map(Command::Registered)
 }
 
@@ -291,8 +302,14 @@ impl ClientApp {
         self.show_status("Command submitted");
     }
 
+    pub(super) fn complete_player_command(&mut self) {
+        match players::complete(&self.admin_input, &self.catalog, &self.player_roster) {
+            Ok(input) => self.admin_input = input,
+            Err(message) => self.show_status(message),
+        }
+    }
     pub(super) fn admin_run(&mut self) {
-        match parse(&self.admin_input, &self.catalog) {
+        match parse_with_players(&self.admin_input, &self.catalog, &self.player_roster) {
             Ok(Command::Help) => {
                 let commands = self
                     .catalog

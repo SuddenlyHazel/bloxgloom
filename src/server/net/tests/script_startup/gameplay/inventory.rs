@@ -299,6 +299,7 @@ fn actor(state: &mut State, inventory: Inventory) -> TcpStream {
         crate::server::Client {
             name: "fixture".into(),
             action_epoch: 1,
+            last_roster_revision: 0,
             profile: PROFILE,
             inventory,
             last_drops_revision: u64::MAX,

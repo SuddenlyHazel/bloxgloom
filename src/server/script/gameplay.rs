@@ -201,6 +201,7 @@ fn command_schema(value: Value) -> Result<Vec<CommandArgument>, &'static str> {
             }
         }
         let argument = match kind.as_deref() {
+            Some("player") if default.is_none() && max_bytes.is_none() => CommandArgument::Player,
             Some("item_key") if default.is_none() => CommandArgument::ItemKey {
                 max_bytes: max_bytes.ok_or("key requires max_bytes")?,
             },
@@ -233,7 +234,11 @@ pub(super) fn registration(
         version: snapshot.gameplay_version(&module, action.version),
         event: EventKind::ActionRequested,
         target: Some(action.key.clone()),
-        handler: Arc::new(ScriptHandler { snapshot, module }),
+        handler: Arc::new(ScriptHandler {
+            snapshot,
+            module,
+            command: action.command.clone(),
+        }),
     };
     (action, handler)
 }
@@ -241,6 +246,7 @@ pub(super) fn registration(
 struct ScriptHandler {
     snapshot: Arc<PackageSnapshot>,
     module: String,
+    command: Option<Command>,
 }
 
 impl Handler for ScriptHandler {
@@ -279,7 +285,8 @@ impl Handler for ScriptHandler {
                 correlation,
             ),
             |lua, entry| {
-                bindings::invoke(lua, entry, context, event, &rejected)?;
+                let fields = events::fields_with_command(lua, event, self.command.as_ref())?;
+                bindings::invoke_fields::<()>(lua, entry, context, fields, &rejected)?;
                 if let Some(error) = rejected.borrow().as_ref() {
                     return Err(mlua::Error::RuntimeError(format!(
                         "host operation rejected: {error}"

@@ -266,3 +266,41 @@ fn preparation_failure_is_preserved_and_retires_session() {
     assert!(app.disconnected);
     assert!(app.renderer.is_none());
 }
+
+#[test]
+fn player_roster_accepts_newer_snapshots_and_is_cleared_when_session_retires() {
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        std::env::temp_dir().join("unused-player-roster-config"),
+    );
+    let alice = crate::protocol::PlayerSummary {
+        profile: u128::MAX,
+        session: u64::MAX,
+        name: "Alice".into(),
+    };
+    app.accept(ServerMessage::PlayerRoster {
+        revision: 2,
+        players: vec![alice.clone()],
+    });
+    app.accept(ServerMessage::PlayerRoster {
+        revision: 1,
+        players: vec![],
+    });
+    assert_eq!(app.player_roster, vec![alice]);
+    app.retire_session();
+    assert!(app.player_roster.is_empty());
+    assert_eq!(app.roster_revision, 0);
+    app.accept(ServerMessage::PlayerRoster {
+        revision: 3,
+        players: vec![crate::protocol::PlayerSummary {
+            profile: 2,
+            session: 1,
+            name: "late".into(),
+        }],
+    });
+    assert!(
+        app.player_roster.is_empty(),
+        "late roster resurrected a retired session"
+    );
+}

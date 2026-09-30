@@ -12,16 +12,6 @@ use bloxgloom_host_api::gameplay::Cell;
 pub(in crate::server::script) mod players;
 mod queries;
 
-pub(super) fn invoke(
-    lua: &Lua,
-    entry: Function,
-    context: &mut Context<'_>,
-    event: &Event,
-    rejected: &RefCell<Option<Error>>,
-) -> mlua::Result<()> {
-    invoke_fields(lua, entry, context, events::fields(lua, event)?, rejected)
-}
-
 pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
     lua: &Lua,
     entry: Function,
@@ -88,7 +78,7 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
             })?,
         )?;
         // These are public host operations, not a script-selected admin token.
-        // Every invocation checks the server-authenticated actor before staging.
+        // Every invocation checks the server-selected local admin profile before staging.
         host.set(
             "admin_give",
             scope.create_function(|_, (item, count): (Value, Value)| {

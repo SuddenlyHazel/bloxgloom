@@ -19,7 +19,7 @@ impl Catalog {
             .all(|value| match value {
                 CommandValue::ItemKey(key) => self.item_by_key(key).is_some(),
                 CommandValue::EntityKey(key) => self.entity_type_id_by_key(key).is_some(),
-                CommandValue::Count(_) => true,
+                CommandValue::Count(_) | CommandValue::Player { .. } => true,
             })
             .then_some(values)
     }

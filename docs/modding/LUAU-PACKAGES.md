@@ -412,7 +412,7 @@ canonical bytes; it does not authenticate who supplied that key. Registered cata
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
 admission. The offer includes client host contract version **4** (wire version
-**13**): opaque identity handles, authored UI, bounded session replica callbacks,
+**14**): opaque identity handles, authored UI, bounded session replica callbacks,
 declared visual resources and [basic runtime tools](RUNTIME-TOOLS.md), including
 seeded native randomness and structured logging. An unsupported contract is rejected before bytes
 are requested or a cached artifact is acknowledged. This versions the public

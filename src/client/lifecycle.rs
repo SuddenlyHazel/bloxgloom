@@ -7,6 +7,8 @@ impl ClientApp {
     pub(super) fn retire_session(&mut self) {
         self.disconnected = true;
         self.network.retire();
+        self.player_roster.clear();
+        self.roster_revision = 0;
         self.package_ui = None;
         self.visual_session = None;
         // Renderer owns the package UI textures, material and effect pipelines.

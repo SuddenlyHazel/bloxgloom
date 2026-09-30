@@ -164,16 +164,25 @@ fn plan_observed_request(
         // freezes the permission; profile/admin authority belongs to the server.
         // Retried planning passes these checks again before invoking any handler.
         if profile == 0 || client.profile != profile {
-            return Err(denied("command requires an authenticated player"));
+            return Err(denied("command requires an admitted player"));
         }
         if command.permission == CommandPermission::Admin && state.admin_profile != Some(profile) {
             return Err(denied("command requires admin permission"));
         }
-        if catalog
+        let values = catalog
             .command_arguments(command, &request.arguments)
-            .is_none()
-        {
-            return Err(denied("invalid command arguments"));
+            .ok_or_else(|| denied("invalid command arguments"))?;
+        for value in values {
+            if let bloxgloom_host_api::actions::CommandValue::Player { profile, session } = value {
+                let target = state
+                    .clients
+                    .values()
+                    .find(|c| c.profile == profile)
+                    .ok_or_else(|| denied("player target is offline"))?;
+                if target.action_epoch != session {
+                    return Err(denied("player session is stale"));
+                }
+            }
         }
     }
     // Screen transfers are live-slot intents. Other actions retain the actor's

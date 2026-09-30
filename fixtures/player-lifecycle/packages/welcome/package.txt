@@ -3,5 +3,7 @@ package welcome
 version 1.0.0
 entry main
 requires bloxgloom:players/v1
+requires bloxgloom:actions/v1
 module server main server/main.luau
 module server progress server/progress.luau
+module server inspect server/inspect.luau

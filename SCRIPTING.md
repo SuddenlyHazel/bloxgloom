@@ -316,11 +316,15 @@ host.register_action("garden:grant", 1, "Grant", "empty", nil,
 ```
 
 Permission is `Player` or `Admin`. The ordered argument schema supports
-`item_key`, `entity_key` (with `max_bytes` 3–128), and `count` (1–128, optional
-default). There are at most eight fields and 130 encoded bytes. Defaults can
+`item_key`, `entity_key` (with `max_bytes` 3–128), `count` (1–128, optional
+default), and `player` (an exact live profile/session target). There are at most eight fields and 130 encoded bytes. Defaults can
 make trailing text arguments optional; the binary callback input includes their
 explicit values. Keys use a one-byte length followed by namespaced ASCII bytes;
-counts use one byte. Scripts must interpret and validate argument semantics.
+counts use one byte; player targets use a 16-byte profile and 8-byte session epoch.
+Command callbacks receive readonly typed `command_arguments` alongside the raw bytes.
+Name lookup and Tab completion use the server roster; missing, ambiguous or stale
+player targets are rejected. See [player commands](docs/modding/PLAYER-LIFECYCLE.md#landed-typed-player-commands-and-client-roster).
+Scripts must still interpret their own argument semantics.
 No command aliases or arbitrary text argument schema are bound.
 
 Register an exact gameplay decision owner with
@@ -328,7 +332,7 @@ Register an exact gameplay decision owner with
 
 | Event | Callback fields beyond `kind` |
 | --- | --- |
-| `ActionRequested` (from `register_action`) | `action`, `position`, selected zero-based `slot`, binary `arguments`, optional `cell` and `entity` |
+| `ActionRequested` (from `register_action`) | `action`, `position`, selected zero-based `slot`, binary `arguments`, optional typed `command_arguments`, `cell` and `entity` |
 | `BlockRemoved` | `cell`, `previous` block descriptor, `cause`, deterministic `random` sample |
 | `BlockPlaced` | `cell`, `previous`, `placed` |
 | `NeighborChanged` | `cell`, `changed` cell, `previous`, `current` |
@@ -844,7 +848,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 4 (wire version 13).
+publisher. The negotiated client host contract is version 4 (wire version 14).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

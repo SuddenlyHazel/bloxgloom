@@ -29,3 +29,31 @@ pub(super) fn capture(state: &State) -> Vec<Player> {
     players.sort_by_key(|player| player.profile);
     players
 }
+
+/// A full bounded snapshot retries under queue pressure, so membership converges.
+pub(super) fn publish_roster(state: &mut State) {
+    let mut players = state
+        .clients
+        .values()
+        .filter(|c| state.player_runtime.is_admitted(c.profile, c.action_epoch))
+        .map(|c| crate::protocol::PlayerSummary {
+            profile: c.profile,
+            session: c.action_epoch,
+            name: c.name.clone(),
+        })
+        .collect::<Vec<_>>();
+    players.sort_by_key(|p| p.profile);
+    for client in state.clients.values_mut() {
+        if client.last_roster_revision != state.roster_revision
+            && client
+                .sender
+                .try_send(crate::protocol::ServerMessage::PlayerRoster {
+                    revision: state.roster_revision,
+                    players: players.clone(),
+                })
+                .is_ok()
+        {
+            client.last_roster_revision = state.roster_revision;
+        }
+    }
+}

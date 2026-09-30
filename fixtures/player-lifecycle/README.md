@@ -12,3 +12,8 @@ sticks. The private kit flag and reward share the main WAL record; temporary
 participation state starts fresh on every connection.
 
 See [the active API reference](../../docs/modding/PLAYER-LIFECYCLE.md).
+
+Open the command console and enter `/welcome:inspect <name>`. Tab completes a
+unique name prefix to an exact session token. The server logs the selected player;
+an ambiguous, departed or stale target is rejected before the callback runs.
+The command is permitted for ordinary admitted players; it grants no admin role.

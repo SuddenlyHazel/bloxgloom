@@ -5,6 +5,8 @@ pub const MAX_COMMAND_ARGUMENTS: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandArgument {
+    /// Exact live profile/session target. Display names are resolved by the client before encoding.
+    Player,
     ItemKey {
         max_bytes: u8,
     },
@@ -20,6 +22,7 @@ pub enum CommandArgument {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandValue {
+    Player { profile: u128, session: u64 },
     ItemKey(String),
     EntityKey(String),
     Count(u8),
@@ -43,6 +46,7 @@ impl Command {
         let mut optional = false;
         for argument in &self.arguments {
             length += match argument {
+                CommandArgument::Player if !optional => 24,
                 CommandArgument::ItemKey { max_bytes }
                 | CommandArgument::EntityKey { max_bytes }
                     if !optional && (3..=128).contains(max_bytes) =>
@@ -75,6 +79,26 @@ impl Command {
         let mut bytes = Vec::with_capacity(max);
         for (index, argument) in self.arguments.iter().enumerate() {
             match argument {
+                CommandArgument::Player => {
+                    let token = values.get(index)?.strip_prefix("session:")?;
+                    let (profile, session) = token.split_once(':')?;
+                    if profile.len() != 32
+                        || session.len() != 16
+                        || !profile
+                            .bytes()
+                            .chain(session.bytes())
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    {
+                        return None;
+                    }
+                    let profile = u128::from_str_radix(profile, 16).ok()?;
+                    let session = u64::from_str_radix(session, 16).ok()?;
+                    if profile == 0 || session == 0 {
+                        return None;
+                    }
+                    bytes.extend(profile.to_le_bytes());
+                    bytes.extend(session.to_le_bytes());
+                }
                 CommandArgument::ItemKey { max_bytes }
                 | CommandArgument::EntityKey { max_bytes } => {
                     let value = *values.get(index)?;
@@ -110,6 +134,17 @@ impl Command {
         }
         let mut values = Vec::with_capacity(self.arguments.len());
         for argument in &self.arguments {
+            if matches!(argument, CommandArgument::Player) {
+                let (target, rest) = bytes.split_at_checked(24)?;
+                let profile = u128::from_le_bytes(target[..16].try_into().ok()?);
+                let session = u64::from_le_bytes(target[16..].try_into().ok()?);
+                if profile == 0 || session == 0 {
+                    return None;
+                }
+                values.push(CommandValue::Player { profile, session });
+                bytes = rest;
+                continue;
+            }
             let (&first, rest) = bytes.split_first()?;
             bytes = rest;
             values.push(match argument {

@@ -202,3 +202,65 @@ fn time_command_supports_phases_and_clock_times_and_rejects_invalid_input() {
         assert!(parse(input, &catalog).is_err(), "{input}");
     }
 }
+
+#[test]
+fn player_command_names_completion_and_reconnect_use_exact_sessions() {
+    use crate::protocol::PlayerSummary;
+    use bloxgloom_host_api::actions::CommandValue;
+    let mut catalog = Catalog::builtins();
+    let schema = Descriptor {
+        permission: CommandPermission::Player,
+        arguments: vec![CommandArgument::Player],
+    };
+    catalog
+        .register_action(Action {
+            key: "demo:target".into(),
+            version: 1,
+            label: "Target".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(schema.clone()),
+        })
+        .unwrap();
+    let alice = PlayerSummary {
+        profile: u128::MAX,
+        session: u64::MAX,
+        name: "Alice".into(),
+    };
+    let roster = vec![alice.clone()];
+    let Command::Registered(request) =
+        parse_with_players("demo:target Alice", &catalog, &roster).unwrap()
+    else {
+        panic!("not a command");
+    };
+    assert_eq!(
+        schema.decode_arguments(&request.arguments),
+        Some(vec![CommandValue::Player {
+            profile: alice.profile,
+            session: alice.session
+        }])
+    );
+    let completed = players::complete("demo:target Ali", &catalog, &roster).unwrap();
+    assert!(completed.contains(&players::token(&alice)));
+    assert!(players::complete("demo:target", &catalog, &roster).is_err());
+    let replacement = PlayerSummary {
+        session: alice.session - 1,
+        ..alice.clone()
+    };
+    assert!(
+        parse_with_players(&completed, &catalog, &[replacement]).is_err(),
+        "completed old session retargeted reconnect"
+    );
+    let ambiguous = vec![
+        alice,
+        PlayerSummary {
+            profile: 2,
+            session: 1,
+            name: "Alice".into(),
+        },
+    ];
+    assert!(parse_with_players("demo:target Alice", &catalog, &ambiguous).is_err());
+    assert!(players::complete("demo:target Ali", &catalog, &ambiguous).is_err());
+    assert!(parse_with_players("demo:target Nobody", &catalog, &roster).is_err());
+}

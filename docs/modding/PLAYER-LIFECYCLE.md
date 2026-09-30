@@ -105,8 +105,30 @@ cancel on disconnect and cannot target a replacement connection. A terminal time
 callback failure is logged and suppressed in this process until its registration/
 deadline changes; it never silently commits a replacement value.
 
+## Landed: typed player commands and client roster
+
+An empty-target action's command schema may contain `{kind = "player"}`.
+Text input accepts a unique exact online name or
+`session:<32 lowercase profile hex digits>:<16 lowercase epoch hex digits>`.
+Tab completes a unique name prefix to that exact session token. Duplicate names,
+unknown/offline players and completed tokens from an older connection are rejected.
+The wire argument uses 16 profile bytes plus 8 session bytes; neither passes through
+a floating-point number. The existing eight-field/130-byte command bound applies.
+
+`event.command_arguments` is a readonly ordered list. Player fields are
+`BloxSessionId` handles; key fields are strings and counts are numbers. Raw
+`event.arguments` remains available. The host checks command-caller permission,
+actor inventory revision and every player target's live profile/session pair
+before invoking the handler, including retries. A handle grants no admin authority.
+
+Wire version 14 carries a bounded, sorted roster of at most 256 admitted players,
+with profile/session/name and a roster revision. Queue pressure retains the pending
+revision so the next publish retries. Clients accept newer snapshots and clear the
+roster on disconnect/server switch; late messages cannot revive it. The roster is
+command discovery metadata, without private profile state or global positions.
+
 ## Remaining implementation
 
-Typed command targeting, additional authorized player operations,
+Additional authorized player operations,
 committed observers and client lifecycle/state delivery remain in progress.
 The client/server/save contracts will be versioned when their formats change.

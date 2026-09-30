@@ -168,6 +168,7 @@ impl Runtime {
                 writer.count(command.arguments.len())?;
                 for argument in &command.arguments {
                     let (kind, bound) = match argument {
+                        CommandArgument::Player => (3, 0),
                         CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
                         CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
                         CommandArgument::Count { default } => (2, default.unwrap_or(0)),
@@ -239,9 +240,10 @@ impl Runtime {
                 let count = reader.count(MAX_COMMAND_ARGUMENTS)?;
                 let mut arguments = Vec::with_capacity(count);
                 for _ in 0..count {
-                    let kind = reader.count(2)?;
+                    let kind = reader.count(3)?;
                     let bound = reader.count(128)? as u8;
                     arguments.push(match kind {
+                        3 if bound == 0 => CommandArgument::Player,
                         0 => CommandArgument::ItemKey { max_bytes: bound },
                         1 => CommandArgument::EntityKey { max_bytes: bound },
                         2 => CommandArgument::Count {

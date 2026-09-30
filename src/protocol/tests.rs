@@ -897,3 +897,49 @@ fn set_world_time_request_round_trips_and_rejects_invalid_phase() {
         .is_err()
     );
 }
+
+#[test]
+fn player_roster_round_trips_exact_sessions_and_rejects_noncanonical_membership() {
+    let player = PlayerSummary {
+        profile: u128::MAX,
+        session: u64::MAX,
+        name: "Alice".into(),
+    };
+    let message = ServerMessage::PlayerRoster {
+        revision: 1,
+        players: vec![player.clone()],
+    };
+    let mut wire = Vec::new();
+    write_server(&mut wire, &message).unwrap();
+    assert_eq!(wire.len(), server_wire_len(&message));
+    let ServerMessage::PlayerRoster { revision, players } = read_server(wire.as_slice()).unwrap()
+    else {
+        panic!("expected roster");
+    };
+    assert_eq!(revision, 1);
+    assert_eq!(players, vec![player.clone()]);
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::PlayerRoster {
+                revision: 1,
+                players: vec![player.clone(), player]
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::PlayerRoster {
+                revision: 1,
+                players: vec![PlayerSummary {
+                    profile: 1,
+                    session: 0,
+                    name: "Alice".into()
+                }]
+            }
+        )
+        .is_err()
+    );
+}

@@ -121,6 +121,7 @@ const MOVEMENT_QUEUE_CAPACITY: usize = 256;
 struct Client {
     name: String,
     action_epoch: u64,
+    last_roster_revision: u64,
     profile: u128,
     inventory: Inventory,
     last_drops_revision: u64,
@@ -181,6 +182,7 @@ struct State {
     entities: EntityStore,
     player_entities: PlayerEntityStore,
     player_runtime: players::Runtime,
+    roster_revision: u64,
     /// Frozen notification-effect declarations installed at startup. Entity
     /// plans emit wakes against this registry; delivery only schedules
     /// transient tick attempts and never persists anything.
@@ -607,6 +609,7 @@ fn server_state_with_startup(
         entities,
         player_entities: PlayerEntityStore::default(),
         player_runtime: players::Runtime::default(),
+        roster_revision: 1,
         effect_kinds,
         entity_public_revision,
         block_actions,

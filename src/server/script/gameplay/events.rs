@@ -19,7 +19,15 @@ fn triple<T: mlua::IntoLua>(lua: &Lua, values: [T; 3]) -> mlua::Result<Table> {
     Ok(value)
 }
 
+#[cfg(test)]
 pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
+    fields_with_command(lua, event, None)
+}
+pub(super) fn fields_with_command(
+    lua: &Lua,
+    event: &Event,
+    command: Option<&bloxgloom_host_api::actions::Command>,
+) -> mlua::Result<Table> {
     let fields = lua.create_table()?;
     match event {
         Event::ActionRequested {
@@ -136,6 +144,27 @@ pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
             candidates.set_readonly(true);
             fields.set("drops", candidates)?;
         }
+    }
+    if let (Some(command), Event::ActionRequested { arguments, .. }) = (command, event) {
+        let values = command
+            .decode_arguments(arguments)
+            .ok_or_else(|| mlua::Error::RuntimeError("invalid typed command arguments".into()))?;
+        let list = lua.create_table()?;
+        for (index, value) in values.into_iter().enumerate() {
+            use bloxgloom_host_api::actions::CommandValue;
+            match value {
+                CommandValue::Player { profile, session } => list.raw_set(
+                    index + 1,
+                    crate::server::script::handles::session(lua, profile, session)?,
+                )?,
+                CommandValue::ItemKey(key) | CommandValue::EntityKey(key) => {
+                    list.raw_set(index + 1, key)?
+                }
+                CommandValue::Count(count) => list.raw_set(index + 1, count)?,
+            }
+        }
+        list.set_readonly(true);
+        fields.set("command_arguments", list)?;
     }
     fields.set_readonly(true);
     Ok(fields)
