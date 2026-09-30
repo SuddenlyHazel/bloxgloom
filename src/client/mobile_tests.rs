@@ -170,6 +170,16 @@ impl Drop for NetworkedVisualProbe {
     }
 }
 impl MobileProbe {
+    pub(crate) fn fire_visuals(
+        &mut self,
+        camera: Vec3,
+        facing: Vec3,
+    ) -> Vec<crate::render::VisualFire> {
+        self.app
+            .fire_animator
+            .visuals(Instant::now(), camera, facing)
+    }
+
     pub(crate) fn new(catalog: Arc<crate::content::Catalog>, path: PathBuf) -> Self {
         let (mut network, incoming) = Network::idle_for_test();
         network.catalog = catalog;

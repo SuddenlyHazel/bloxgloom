@@ -220,7 +220,9 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
     barrier(&mut state);
     crate::server::durable::fire::run_delivery(&mut state, TickId::new(13)).unwrap();
     barrier(&mut state);
+    state.durability.publish_queue.clear();
     crate::server::durable::fire::run_source(&mut state, TickId::new(14)).unwrap();
+    assert!(state.durability.publish_queue.is_empty());
     assert_eq!(
         state.durability.pending.len(),
         1,
@@ -235,6 +237,11 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
         );
     }
     barrier(&mut state);
+    assert_eq!(state.durability.publish_queue.len(), 1);
+    assert_eq!(
+        state.durability.publish_queue[0].fire_bursts,
+        vec![[2, 79, 2], [4, 79, 2]]
+    );
     for x in [2, 4] {
         for y in [79, 80] {
             assert!(

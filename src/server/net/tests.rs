@@ -1,6 +1,8 @@
 use super::*;
 #[path = "tests/extension_anchored.rs"]
 mod extension_anchored;
+#[path = "tests/fire.rs"]
+mod fire;
 #[path = "tests/generation.rs"]
 mod generation;
 #[cfg(unix)]

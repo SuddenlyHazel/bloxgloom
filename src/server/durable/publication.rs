@@ -31,7 +31,24 @@ pub(super) fn apply_committed_action(
     action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
-    apply_committed_action_inner(state, action, entity_permit, true)
+    apply_committed_action_inner(state, action, entity_permit, true, Vec::new())
+}
+
+/// Keep the burn cue in the same publication as its combined block/entity
+/// removal, after the WAL receipt and before optional client presentation.
+pub(super) fn apply_committed_fire_action(
+    state: &mut State,
+    action: CommitAction,
+    entity_permit: Option<super::MirrorPermit>,
+    transaction: &FireTransaction,
+) -> io::Result<()> {
+    apply_committed_action_inner(
+        state,
+        action,
+        entity_permit,
+        true,
+        transaction.burned_cells(),
+    )
 }
 
 /// An owner-state and world edit already share one WAL record; this applies
@@ -42,7 +59,7 @@ pub(super) fn apply_committed_owner_world(
     action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
 ) -> io::Result<()> {
-    apply_committed_action_inner(state, action, entity_permit, false)
+    apply_committed_action_inner(state, action, entity_permit, false, Vec::new())
 }
 
 fn apply_committed_action_inner(
@@ -50,6 +67,7 @@ fn apply_committed_action_inner(
     mut action: CommitAction,
     entity_permit: Option<super::MirrorPermit>,
     complete_expiry: bool,
+    fire_bursts: Vec<[i32; 3]>,
 ) -> io::Result<()> {
     if !action.terrain_reads.is_current() || !action.terrain_reads.entities_current(&state.entities)
     {
@@ -230,7 +248,7 @@ fn apply_committed_action_inner(
         deltas: action.deltas,
         entity_commit,
         pickups: action.pickups,
-        fire_bursts: Vec::new(),
+        fire_bursts,
     });
     if completed_pickup && let Some(id) = action.client_id {
         state.durability.retry_pickups.remove(&id);

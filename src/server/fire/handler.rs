@@ -282,7 +282,7 @@ fn rejected(reason: &'static str) -> SystemHandlerError {
     SystemHandlerError::Rejected(reason.into())
 }
 
-fn world_cell(owner: ChunkKey, cell: u16) -> Option<CellCoord> {
+pub(super) fn world_cell(owner: ChunkKey, cell: u16) -> Option<CellCoord> {
     let local = [
         i64::from(cell % 16),
         i64::from(cell / 256),

@@ -97,7 +97,12 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
     drain_wal(&mut state);
     run_delivery(&mut state, TickId::new(3)).unwrap();
     drain_wal(&mut state);
+    state.durability.publish_queue.clear();
     run_source(&mut state, TickId::new(4)).unwrap();
+    assert!(
+        state.durability.publish_queue.is_empty(),
+        "flames must wait for the WAL receipt"
+    );
     assert_eq!(
         state.world.cached_block(9, 95, 8),
         Some(GRASS),
@@ -106,6 +111,18 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
     drain_wal(&mut state);
     assert_eq!(state.world.cached_block(9, 95, 8), Some(AIR));
     assert_eq!(state.world.cached_block(9, 96, 8), Some(AIR));
+    let effects = &state.durability.publish_queue;
+    assert_eq!(
+        effects.len(),
+        1,
+        "burn and support cleanup share one publication"
+    );
+    assert_eq!(
+        effects[0].fire_bursts,
+        vec![[9, 95, 8]],
+        "only the burned grass gets a flame, not its unsupported flower"
+    );
+    assert_eq!(effects[0].deltas.len(), 2);
     let drops = crate::server::drops::nearby(&state.entities, [9.5, 95.5, 8.5]);
     assert_eq!(
         drops

@@ -252,6 +252,16 @@ pub(in crate::server) struct FireTransaction {
 }
 
 impl FireTransaction {
+    /// Actual burns survive conversion to a combined gameplay removal. Support
+    /// and footprint cleanup may change additional cells, which are not flames.
+    pub(in crate::server) fn burned_cells(&self) -> Vec<[i32; 3]> {
+        self.burns
+            .iter()
+            .filter_map(|&cell| super::handler::world_cell(self.owner, cell))
+            .map(|cell| [cell.x, cell.y, cell.z])
+            .collect()
+    }
+
     pub(in crate::server) fn changes(&self) -> &[Change] {
         &self.changes
     }

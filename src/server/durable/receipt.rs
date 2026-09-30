@@ -112,10 +112,11 @@ fn advance_receipts(state: &mut State, wait_through: Option<u128>) -> io::Result
                             state
                                 .fire
                                 .validate_synced_batch(std::slice::from_ref(&transaction))?;
-                            super::publication::apply_committed_action(
+                            super::publication::apply_committed_fire_action(
                                 state,
                                 action,
                                 commit.entity_permit,
+                                &transaction,
                             )?;
                             super::publication::publish_committed_fire_after_world(
                                 state,
