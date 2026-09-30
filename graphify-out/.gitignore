@@ -7,3 +7,4 @@
 /.graphify_semantic.json
 /.graphify_analysis.json
 /.graphify_chunk_*.json
+/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
