@@ -334,6 +334,30 @@ gameplay requests.
 
 Evidence: [authored UI](SCRIPTING.md#client-startup-and-authored-ui).
 
+#### Accepted implementation scope
+
+Goal active: extend verified authored documents with a version-2 widget contract
+while preserving version-1 documents. Add bounded dynamic subtree replacement
+for creating, deleting and reordering data-driven collections; stable widget
+identities and retained edit/focus state; scrolling containers and table layouts;
+checkboxes, finite sliders, selects and multiline text. Expose current control
+values and events to bounded presentation workers, and atomically validate whole
+reply batches before changing widgets or submitting gameplay requests.
+
+Declare package-owned input actions with defaults, persisted local rebindings,
+explicit game/UI scope and focus/conflict handling. Keys invoke presentation
+callbacks; existing semantic actions still require server authorization. No
+Luau evaluation, network I/O or config writes may run in the draw pass.
+
+Deliver a searchable recipe-browser package with dynamic rows, selection and a
+finite server-authorized recipe action. Verify schema/ownership/bounds, structural
+rollback, state/focus retention, input routing and actual server receipts. Inspect
+production egui screenshots at desktop and compact sizes, run workspace tests,
+formatting, strict Clippy and fixture Luau analysis, update Graphify and commit.
+Animation authoring, direct egui/HTML access, imported models, VM reuse and save
+converters remain follow-up work outside this implementation scope.
+
+
 ### 4. General persistent block entities — closed
 
 Luau now binds the native general anchored-behavior lifecycle through
