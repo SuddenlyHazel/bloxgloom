@@ -58,7 +58,8 @@ This gap is about integrating mods with people playing the world: identifying
 players, responding to their arrival and departure, storing their progress,
 querying their current state, and applying server-owned player operations.
 It affects ordinary quests and multiplayer modes as well as administration.
-The following API directions are proposals for review, not implemented bindings.
+The following directions define the authorized implementation goal. Completion
+status below distinguishes planned work from bindings already landed.
 
 #### What exists today
 
@@ -225,6 +226,36 @@ Initial player spawning already exists; configurable respawn and combat rules
 need additional engine behavior. Custom player geometry remains part of the
 separately deferred model work.
 
+#### Additional scope accepted for implementation
+
+- **Player-targeted commands:** typed player arguments with name completion,
+  resolving to exact profile/session identities. Ambiguous names, missing players
+  and stale session targets must produce useful errors.
+- **Per-player scheduling:** periodic work, cooldowns and delayed actions tied to
+  profiles or sessions. Profile timers use persisted logical deadlines and continue
+  while offline; session timers end on disconnect. Neither silently interprets
+  server downtime as elapsed wall time.
+- **Spawn selection:** mods may propose validated first-join and reconnect
+  positions, enabling lobbies, team spawns and checkpoints. The host retains
+  terrain loading, collision validation and authoritative placement.
+- **Client lifecycle and player-state delivery:** session-ready and disconnect
+  callbacks, selected package-owned state snapshots/updates for the local player,
+  and reset on reconnect/server switch. Private profile bytes are not implicitly
+  exposed to other players or the client.
+- **Session-local state:** temporary package-owned participation state, distinct
+  from durable profile progress, with explicit disconnect cleanup.
+- **Identity trust:** identify what the host verified before invoking admission
+  hooks. The current protocol claims a profile identity; it does not prove account
+  ownership cryptographically. Local operator-selected admin identity must not be
+  advertised as general remote account authentication. Authentication credentials
+  and an account service remain separate work.
+
+Region enter/leave hooks remain follow-up work. Chat, health/combat/respawn,
+per-player movement modifiers, custom geometry, VM reuse and save converters
+are outside this goal. Admission policy can implement package-owned bans/roles
+through durable profile state; this goal does not prescribe a separate account
+or global role database.
+
 #### Completion criteria and implementation order
 
 1. Specify profile/session/avatar identity, actor lookup, online queries and
@@ -250,6 +281,20 @@ Document event ordering, allowed operations, failure behavior, delivery limits
 and server/client availability in the runtime inventory and editor definitions.
 These are review criteria for this gap, not authorization to change VM lifetime,
 add save converters, or implement every proposed player mechanic at once.
+
+#### Execution status
+
+Goal active. Land the work in reviewable increments:
+
+1. Player identities, captured directory, command targeting and trust metadata.
+2. Lifecycle registration, profile/session state and atomic first-join effects.
+3. Spawn/teleport, targeted inventory/appearance/message operations and scheduling.
+4. Committed observations, client lifecycle and selected player-state delivery.
+5. Integrated example, editor/runtime documentation, real-listener/reconnect/restart
+   regressions, full workspace tests, formatting and strict Clippy.
+
+Existing VM lifetime and package installation rules remain in force. Any changed
+save or wire contract is versioned; no prerelease save converters are introduced.
 
 Evidence: [gameplay events](crates/host-api/src/gameplay/handlers.rs),
 [Luau gameplay bindings](src/server/script/gameplay/bindings.rs),
