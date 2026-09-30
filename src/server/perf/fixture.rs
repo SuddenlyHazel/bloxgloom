@@ -304,6 +304,7 @@ fn add_clients_and_seed_drops(
                 radius: STREAM_RADIUS,
                 movement: MovementState::new(position, 0),
                 pending_moves: Default::default(),
+                movement_reset: Default::default(),
             },
         );
         receivers.push(receiver);

@@ -146,6 +146,7 @@ pub(in crate::server) fn join_named_client(
             radius: DEFAULT_VIEW,
             movement: MovementState::new(position, 0),
             pending_moves: VecDeque::new(),
+            movement_reset: Default::default(),
         },
     );
     if let Err(error) = state.queue_player_entity_deltas(vec![spawn_delta]) {

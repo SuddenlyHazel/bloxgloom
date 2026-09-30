@@ -75,6 +75,7 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
             radius: DEFAULT_VIEW,
             movement: MovementState::new(position, 0),
             pending_moves: Default::default(),
+            movement_reset: Default::default(),
         },
     );
     peer

@@ -411,8 +411,8 @@ never server modules or original paths. Its SHA-256 cache key verifies exact
 canonical bytes; it does not authenticate who supplied that key. Registered catalog PNGs are decoded and
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
-admission. The offer includes client host contract version **6** (wire version
-**15**): opaque identity handles, authored UI, bounded session replica callbacks,
+admission. The offer includes client host contract version **7** (wire version
+**17**): opaque identity handles, authored UI, bounded session replica callbacks,
 declared visual resources and [basic runtime tools](RUNTIME-TOOLS.md), including
 seeded native randomness and structured logging. An unsupported contract is rejected before bytes
 are requested or a cached artifact is acknowledged. This versions the public

@@ -5,6 +5,7 @@ use crate::world::{Chunk, ChunkKey};
 use glam::Vec3;
 use std::collections::HashMap;
 use std::sync::Arc;
+mod teleport;
 
 pub(super) fn predict_player_movement(
     chunks: &HashMap<ChunkKey, Arc<Chunk>>,
@@ -30,5 +31,7 @@ pub(super) fn predict_player_movement(
     .unwrap_or(position)
 }
 
+#[cfg(test)]
+pub(crate) mod teleport_tests;
 #[cfg(test)]
 mod tests;

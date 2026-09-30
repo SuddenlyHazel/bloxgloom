@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 16;
+const WIRE_VERSION: u8 = 17;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -39,12 +39,17 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    MovementReady {
+        session: u64,
+        reset: u64,
+        next_seq: u64,
+    },
     /// Compatibility command; uses the registered admin-time gameplay/WAL path.
     SetWorldTime {
         action_id: u128,
         elapsed_ms: u64,
     },
-    /// Select registered skin/shirt/pants indices for this authenticated profile.
+    /// Select registered skin/shirt/pants indices for this server-admitted profile.
     /// Model zero is the frozen humanoid; clients cannot send RGB or a profile ID.
     SelectAppearance {
         palettes: [u8; 3],
@@ -137,6 +142,12 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerTeleport {
+        profile: u128,
+        session: u64,
+        reset: u64,
+        position: [f32; 3],
+    },
     PlayerNotice {
         profile: u128,
         session: u64,
@@ -242,6 +253,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
+            ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
@@ -346,6 +358,19 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::MovementReady {
+            session,
+            reset,
+            next_seq,
+        } => {
+            if *session == 0 || *reset == 0 || *next_seq == 0 || *next_seq == u64::MAX {
+                return Err(invalid("invalid movement reset"));
+            }
+            out.push(18);
+            out.extend(session.to_le_bytes());
+            out.extend(reset.to_le_bytes());
+            out.extend(next_seq.to_le_bytes());
+        }
         ClientMessage::BundleRequest { identity } => {
             out.push(14);
             bundle::write_identity(&mut out, identity)?;
@@ -532,6 +557,21 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::PlayerTeleport {
+            profile,
+            session,
+            reset,
+            position,
+        } => {
+            validate_teleport(*profile, *session, *reset, *position)?;
+            out.push(26);
+            out.extend(profile.to_le_bytes());
+            out.extend(session.to_le_bytes());
+            out.extend(reset.to_le_bytes());
+            for value in position {
+                out.extend(value.to_le_bytes());
+            }
+        }
         ServerMessage::BundleOffer { identity } => {
             out.push(19);
             bundle::write_identity(&mut out, identity)?;
@@ -1085,6 +1125,19 @@ pub fn read_client_with_catalog(
                 elapsed_ms,
             }
         }
+        18 => {
+            let session = c.u64()?;
+            let reset = c.u64()?;
+            let next_seq = c.u64()?;
+            if session == 0 || reset == 0 || next_seq == 0 || next_seq == u64::MAX {
+                return Err(invalid("invalid movement reset"));
+            }
+            ClientMessage::MovementReady {
+                session,
+                reset,
+                next_seq,
+            }
+        }
         16 => ClientMessage::SelectAppearance {
             palettes: [c.u8()?, c.u8()?, c.u8()?],
         },
@@ -1328,6 +1381,19 @@ pub fn read_server_with_catalog(
             }
             ServerMessage::FireBursts { cells }
         }
+        26 => {
+            let profile = c.u128()?;
+            let session = c.u64()?;
+            let reset = c.u64()?;
+            let position = [c.f32()?, c.f32()?, c.f32()?];
+            validate_teleport(profile, session, reset, position)?;
+            ServerMessage::PlayerTeleport {
+                profile,
+                session,
+                reset,
+                position,
+            }
+        }
         25 => {
             let profile = c.u128()?;
             let session = c.u64()?;
@@ -1381,3 +1447,21 @@ pub fn read_server_with_catalog(
 #[cfg(test)]
 #[path = "protocol/tests.rs"]
 mod tests;
+
+fn validate_teleport(
+    profile: u128,
+    session: u64,
+    reset: u64,
+    position: [f32; 3],
+) -> io::Result<()> {
+    if profile == 0
+        || session == 0
+        || reset == 0
+        || position
+            .iter()
+            .any(|v| !v.is_finite() || v.abs() >= 1_000_000.0)
+    {
+        return Err(invalid("invalid player teleport"));
+    }
+    Ok(())
+}

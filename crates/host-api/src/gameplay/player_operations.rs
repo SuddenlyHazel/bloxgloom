@@ -2,20 +2,42 @@
 use super::{Context, Error};
 
 /// Apply once after receipt to the exact live session, without crash replay.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlayerOperation {
     pub profile: u128,
     pub session: u64,
     pub kind: PlayerOperationKind,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PlayerOperationKind {
     Message(String),
     Kick(String),
     /// Saved through the native profile cosmetic file before avatar publication.
     Appearance([u8; 3]),
+    /// Absolute feet position. The committer validates authoritative final terrain.
+    Teleport([f32; 3]),
 }
 impl Context<'_> {
+    pub fn teleport_player(
+        &mut self,
+        profile: u128,
+        session: u64,
+        position: [f32; 3],
+    ) -> Result<(), Error> {
+        self.player_target(profile, session)?;
+        if position
+            .iter()
+            .any(|v| !v.is_finite() || v.abs() >= 1_000_000.0)
+        {
+            return self.fail(Error::Invalid("invalid player teleport position".into()));
+        }
+        self.plan.player_operations.push(PlayerOperation {
+            profile,
+            session,
+            kind: PlayerOperationKind::Teleport(position),
+        });
+        Ok(())
+    }
     pub fn message_player(&mut self, profile: u128, session: u64, text: &str) -> Result<(), Error> {
         self.notice(profile, session, text, false)
     }

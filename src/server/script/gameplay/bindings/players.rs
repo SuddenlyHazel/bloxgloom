@@ -39,6 +39,30 @@ pub(super) fn install<'scope>(
     rejected: &'scope RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
     host.set(
+        "teleport_player",
+        scope.create_function(|_, (session, x, y, z): (Value, Value, Value, Value)| {
+            checked(rejected, || {
+                let session = handles::session_value(session).map_err(invalid)?;
+                let number = |value: Value| {
+                    let value = match value {
+                        Value::Integer(n) => n as f64,
+                        Value::Number(n) => n,
+                        _ => return Err(invalid("expected finite coordinate")),
+                    };
+                    if !value.is_finite() || value.abs() >= 1_000_000.0 {
+                        return Err(invalid("invalid player teleport position"));
+                    }
+                    Ok(value as f32)
+                };
+                context.borrow_mut().teleport_player(
+                    session.profile,
+                    session.epoch,
+                    [number(x)?, number(y)?, number(z)?],
+                )
+            })
+        })?,
+    )?;
+    host.set(
         "set_player_appearance",
         scope.create_function(
             |_, (session, skin, shirt, pants): (Value, Value, Value, Value)| {

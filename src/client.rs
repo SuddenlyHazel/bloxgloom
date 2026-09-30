@@ -267,6 +267,8 @@ mod player_services;
 pub(crate) use lifecycle::tests::exercise_join_lifecycle;
 #[cfg(test)]
 pub(crate) use lifecycle::tests::exercise_player_services;
+#[cfg(test)]
+pub(crate) use movement::teleport_tests::exercise_player_teleport;
 mod mesh_queue;
 pub(crate) mod presentation;
 pub(crate) mod startup;
@@ -354,6 +356,7 @@ struct ClientApp {
     pending_actions: BTreeMap<u128, ClientMessage>,
     deferred_actions: BTreeMap<u128, Instant>,
     unacked: VecDeque<(u64, Vec3)>,
+    movement_reset: u64,
     frame_count: u64,
     last_report: Instant,
     frame_ms: Vec<f32>,
@@ -432,6 +435,7 @@ impl ClientApp {
             last_visible_chunks: 0,
             last_frame: now,
             next_seq: 1,
+            movement_reset: 0,
             actions: ActionTracker::default(),
             pending_actions: BTreeMap::new(),
             deferred_actions: BTreeMap::new(),
@@ -1011,6 +1015,14 @@ impl ClientApp {
                 }
                 self.position = predicted;
             }
+            ServerMessage::PlayerTeleport {
+                profile,
+                session,
+                reset,
+                position,
+            } => {
+                self.accept_teleport(profile, session, reset, position);
+            }
             ServerMessage::Chunk(chunk) => {
                 let key = chunk.key;
                 if self
@@ -1422,7 +1434,11 @@ impl ClientApp {
                 .intent_blocks_per_second
             * dt.min(0.05);
         let seq = self.next_seq;
-        self.next_seq += 1;
+        let Some(next) = self.next_seq.checked_add(1) else {
+            self.fail_session("Movement sequence exhausted");
+            return;
+        };
+        self.next_seq = next;
         if self.unacked.len() >= 256 {
             return;
         }

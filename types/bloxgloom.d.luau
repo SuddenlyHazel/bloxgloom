@@ -297,6 +297,8 @@ export type BloxGameplayContext = {
     kick_player: (session: BloxSessionId, reason: string) -> (),
     --- Registered integer palette indices, players/v1 authority, exact session. Native cosmetic save precedes replication.
     set_player_appearance: (session: BloxSessionId, skin: number, shirt: number, pants: number) -> (),
+    --- Absolute feet position, players/v1 authority. Host fences final terrain and resets old movement input/prediction.
+    teleport_player: (session: BloxSessionId, x: number, y: number, z: number) -> (),
     --- Available in gameplay action callbacks; captured phase, with read-your-writes.
     world_time: () -> {elapsed_ms: number, cycle_ms: number},
     --- Integer 0 <= phase < cycle_ms; operator-selected admin profile, atomic with this action.

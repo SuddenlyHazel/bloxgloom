@@ -722,6 +722,15 @@ in the WAL; these intents are not replayed after a crash. Readonly player views
 include `appearance = {skin, shirt, pants, flags}`. See
 [cosmetic operations](docs/modding/PLAYER-LIFECYCLE.md#landed-runtime-appearance).
 
+`c.teleport_player(session, x, y, z)` stages a validated absolute feet position
+under the same capability. The native planner checks final authoritative terrain,
+including this plan's edits, and requests unknown chunks before retrying. Collision
+reads fence the transaction. After receipt, the native position save and avatar
+replication run, while a server/client reset handshake discards old movement
+and prediction. Saved position uses a separate file durability boundary from
+WAL progression, with no crash replay of the teleport intent. See
+[teleport semantics](docs/modding/PLAYER-LIFECYCLE.md#landed-runtime-teleport).
+
 ## Committed server observations
 
 `register_committed_observer(key, revision, module)` requires `actions/v1` and
@@ -894,7 +903,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 6 (wire version 16).
+publisher. The negotiated client host contract is version 7 (wire version 17).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

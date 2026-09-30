@@ -52,7 +52,7 @@ The arguments are key, revision (1..65535), private byte bound (1..4096), initia
 binary state and callback module. Eight services per package and 128 per
 installation are allowed. Service keys cannot collide with owner-system keys.
 Changing the frozen package implementation changes the save compatibility identity.
-The client bundle carries an inert service identity with runtime contract 6;
+The client bundle carries an inert service identity with runtime contract 7;
 private initial state and executable registrations are not projected into metadata.
 
 The module returns `function(context, event)` and may return nil or a decision:
@@ -122,7 +122,7 @@ a floating-point number. The existing eight-field/130-byte command bound applies
 actor inventory revision and every player target's live profile/session pair
 before invoking the handler, including retries. A handle grants no admin authority.
 
-Wire version 16 carries a bounded, sorted roster of at most 256 admitted players,
+Wire version 17 carries a bounded, sorted roster of at most 256 admitted players,
 with profile/session/name and a roster revision. Queue pressure retains the pending
 revision so the next publish retries. Clients accept newer snapshots and clear the
 roster on disconnect/server switch; late messages cannot revive it. The roster is
@@ -160,7 +160,7 @@ The client/server/save contracts will be versioned when their formats change.
 
 ## Landed: local public state and client lifecycle
 
-Wire 16 delivers a full local-player snapshot containing each frozen player-service
+Wire 17 delivers a full local-player snapshot containing each frozen player-service
 key, committed owner revision and explicit public bytes (at most 1024 per service).
 Missing profile cells have revision zero and empty public state. The packet includes
 the exact profile/session pair and an increasing snapshot sequence. It sends after
@@ -236,8 +236,7 @@ the action result reaches its caller; committed inventory/profile effects still
 recover normally. Kicks do not create durable admission bans. Use durable
 profile policy for bans when the general profile-state service is available.
 
-Wire version 16 adds the exact-session notice/removal frame. Runtime teleport,
-cross-profile inventory and ordinary gameplay access to
+Wire version 17 adds the exact-session notice/removal frame. Cross-profile inventory and ordinary gameplay access to
 profile state remain the next increments.
 
 ## Landed: runtime appearance
@@ -275,6 +274,51 @@ The lifecycle fixture includes `/welcome:uniform <player>` as an Admin command
 and uses builtin palette indices 1, 2 and 3. Player arguments support names and
 exact session tokens, including Tab completion. Set the server's local admin
 profile to exercise it; declaring the package capability alone does not grant
-its command to non-admin callers. This operation uses existing wire version 16
-and client host contract 6. Runtime teleport, cross-profile inventory and general
+its command to non-admin callers. This operation uses existing wire version 17
+and client host contract 7. Cross-profile inventory and general
 gameplay access to profile state remain.
+
+## Landed: runtime teleport
+
+`c.teleport_player(session, x, y, z)` stages an absolute authoritative feet
+position. It requires the executing package's `players/v1` capability and an
+exact online session, in an action or admitted lifecycle callback. Coordinates
+must be finite and strictly inside ±1,000,000, above bedrock. Player directory
+queries see the proposed position in the same plan. The captured actor position
+used by other gameplay authorization remains the invocation's original position.
+
+The native planner checks the frozen body against authoritative destination
+terrain after all proposed block edits. It captures collision reads, including
+air, as transaction dependencies: changes to those chunks conflict until the
+receipt is applied. Unknown chunks are requested through the normal background
+terrain workers and the action retries; they never become guessed air. An
+obstruction, invalid coordinate or forged target rejects all proposed inventory,
+terrain and player effects. There is no automatic search for a nearby safe spot.
+
+After receipt, the exact session is checked again. The native position file
+saves before authoritative movement, avatar motion and streaming center change.
+New interest and chunk snapshots use that center. The position file keeps its
+existing separate durability boundary from WAL inventory/progression, as cosmetic
+files do: a crash between boundaries can retain progress with the old position.
+Session teleport intents are not replayed during recovery. Reconnect uses the
+saved position, revalidating collision under the existing spawn policy.
+
+Wire version 17 and client host contract 7 add a movement reset and acknowledgment.
+The server clears queued movement and movement credit, then gates old input until
+the client acknowledges the latest reset with its next movement sequence. The
+client clears unacknowledged prediction deltas and installs the new position
+before acknowledging. Old or duplicate reset acknowledgments cannot reopen a
+later reset, and acknowledged old sequence numbers cannot move the player. Each
+new reset has a session-scoped monotonic identity. A replacement session is
+never affected. Clients that refuse to acknowledge remain unable to move.
+
+A teleport request replay returns its existing receipt without repeating the
+reset. Multiple teleports are applied in plan order; the last reset must be
+acknowledged. Storage failures stop mutation before movement publication.
+Cross-profile inventory and ordinary gameplay access to durable profile state
+remain the next player-service increments; per-player physics changes remain
+outside this goal.
+
+The lifecycle fixture includes `/welcome:recall <player>`, an Admin command
+that teleports the selected session to the caller's captured feet position and
+sends a status notice. It uses the same native validation and reset handshake.

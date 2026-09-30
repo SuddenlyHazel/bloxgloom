@@ -8,6 +8,7 @@ mod entities;
 mod entity_inventory;
 pub(in crate::server) mod inventory;
 mod players;
+mod teleport;
 pub(in crate::server) use players::invoke as invoke_player;
 
 pub(super) struct Participants<'a> {
@@ -657,6 +658,13 @@ pub(super) fn plan_with_lifecycles(
     } else {
         world.prepare_edits(&final_edits)?
     };
+    teleport::validate(
+        world,
+        reads,
+        requested,
+        &plan.player_operations,
+        &final_edits,
+    )?;
     let mut entity_spawns = Vec::with_capacity(plan.entity_spawns.len());
     for spawn in plan.entity_spawns {
         let id = catalog.entity_type_id_by_key(&spawn.key).ok_or_else(|| {

@@ -22,6 +22,8 @@ mod inventory;
 mod observers;
 #[path = "gameplay/player_operations.rs"]
 mod player_operations;
+#[path = "gameplay/player_teleport.rs"]
+mod player_teleport;
 #[path = "gameplay/players.rs"]
 mod players;
 #[path = "gameplay/runtime_tools.rs"]

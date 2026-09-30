@@ -10,4 +10,7 @@ return function(h: BloxStartupHost)
     h.register_action("welcome:uniform", 1, "Apply server uniform", "empty", nil, "welcome:uniform", {
         permission = "Admin", arguments = {playerArgument},
     })
+    h.register_action("welcome:recall", 1, "Recall player here", "empty", nil, "welcome:recall", {
+        permission = "Admin", arguments = {playerArgument},
+    })
 end

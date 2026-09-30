@@ -149,6 +149,7 @@ struct Client {
     radius: u8,
     movement: MovementState,
     pending_moves: VecDeque<MovementCommand>,
+    movement_reset: movement::Reset,
 }
 
 impl Client {
@@ -709,6 +710,11 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             Ok(())
         }
         ClientMessage::Move { seq, dx, dy, dz } => queue_move(state, id, seq, [dx, dy, dz]),
+        ClientMessage::MovementReady {
+            session,
+            reset,
+            next_seq,
+        } => movement::movement_ready(state, id, session, reset, next_seq),
         ClientMessage::Edit { .. }
         | ClientMessage::InventoryMove { .. }
         | ClientMessage::DropStack { .. }
@@ -724,6 +730,9 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
 
 fn queue_move(state: &mut State, id: u64, seq: u64, delta: [f32; 3]) -> io::Result<()> {
     let Some(client) = state.clients.get_mut(&id) else {
+        return Ok(());
+    };
+    if client.movement_reset.pending {
         return Ok(());
     };
     if seq <= client.movement.last_seq()

@@ -69,6 +69,13 @@ pub(in crate::server) fn invoke(
             "player lifecycle callbacks cannot stage world/entity writes",
         ));
     }
+    super::teleport::validate(
+        snapshot.world,
+        snapshot.reads,
+        snapshot.requested,
+        &plan.player_operations,
+        &[],
+    )?;
     let inventory = if let Some((profile, before)) = actor {
         plan.inventories
             .remove(&bloxgloom_host_api::gameplay::InventoryId::Player(profile))

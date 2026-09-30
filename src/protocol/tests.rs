@@ -1069,3 +1069,73 @@ fn player_notices_preserve_exact_session_and_reject_invalid_text_and_flags() {
         );
     }
 }
+
+#[test]
+fn teleport_and_ready_frames_preserve_full_width_identities_and_strict_bounds() {
+    let mut wire = Vec::new();
+    write_server(
+        &mut wire,
+        &ServerMessage::PlayerTeleport {
+            profile: u128::MAX,
+            session: u64::MAX,
+            reset: u64::MAX,
+            position: [-999999.5, 300.0, 999999.5],
+        },
+    )
+    .unwrap();
+    let message = read_server(wire.as_slice()).unwrap();
+    assert_eq!(wire.len(), server_wire_len(&message));
+    assert!(matches!(
+        message,
+        ServerMessage::PlayerTeleport {
+            profile: u128::MAX,
+            session: u64::MAX,
+            reset: u64::MAX,
+            position: [-999999.5, 300.0, 999999.5]
+        }
+    ));
+    for end in 0..wire.len() {
+        assert!(read_server(&wire[..end]).is_err());
+    }
+    for (profile, session, reset, position) in [
+        (0, 1, 1, [0.0; 3]),
+        (1, 0, 1, [0.0; 3]),
+        (1, 1, 0, [0.0; 3]),
+        (1, 1, 1, [f32::NAN, 0.0, 0.0]),
+        (1, 1, 1, [1_000_000.0, 0.0, 0.0]),
+    ] {
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::PlayerTeleport {
+                    profile,
+                    session,
+                    reset,
+                    position
+                }
+            )
+            .is_err()
+        );
+    }
+    let ready = ClientMessage::MovementReady {
+        session: u64::MAX,
+        reset: u64::MAX,
+        next_seq: u64::MAX - 1,
+    };
+    let mut wire = Vec::new();
+    write_client(&mut wire, &ready).unwrap();
+    assert_eq!(read_client(wire.as_slice()).unwrap(), ready);
+    for (session, reset, next_seq) in [(0, 1, 1), (1, 0, 1), (1, 1, 0), (1, 1, u64::MAX)] {
+        assert!(
+            write_client(
+                Vec::new(),
+                &ClientMessage::MovementReady {
+                    session,
+                    reset,
+                    next_seq
+                }
+            )
+            .is_err()
+        );
+    }
+}

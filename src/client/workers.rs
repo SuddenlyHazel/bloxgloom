@@ -136,6 +136,14 @@ impl Network {
     }
 
     #[cfg(test)]
+    pub(super) fn capture_outgoing_for_test() -> (Self, Receiver<ClientMessage>) {
+        let mut network = Self::disconnected_for_test();
+        let (outgoing, receiver) = mpsc::sync_channel(2);
+        network.outgoing = outgoing;
+        (network, receiver)
+    }
+
+    #[cfg(test)]
     pub(super) fn connect(addr: &str, view_distance: u8, profile: u128) -> io::Result<Self> {
         Self::connect_controlled(
             addr,

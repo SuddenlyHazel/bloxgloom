@@ -25,12 +25,17 @@ impl Context<'_> {
             Err(error) => return self.fail(error),
         };
         for operation in &self.plan.player_operations {
-            if let super::PlayerOperationKind::Appearance(palettes) = operation.kind
-                && let Some(player) = players
-                    .iter_mut()
-                    .find(|p| p.profile == operation.profile && p.session == operation.session)
+            if let Some(player) = players
+                .iter_mut()
+                .find(|p| p.profile == operation.profile && p.session == operation.session)
             {
-                player.appearance = [palettes[0], palettes[1], palettes[2], 0];
+                match operation.kind {
+                    super::PlayerOperationKind::Appearance(palettes) => {
+                        player.appearance = [palettes[0], palettes[1], palettes[2], 0]
+                    }
+                    super::PlayerOperationKind::Teleport(position) => player.position = position,
+                    _ => {}
+                }
             }
         }
         Ok(players)

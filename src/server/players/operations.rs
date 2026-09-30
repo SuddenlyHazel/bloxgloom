@@ -15,6 +15,10 @@ pub(super) fn apply(state: &mut State, operations: Vec<PlayerOperation>) -> io::
             continue;
         };
         let (kicked, text) = match operation.kind {
+            PlayerOperationKind::Teleport(position) => {
+                crate::server::movement::teleport(state, id, position)?;
+                continue;
+            }
             PlayerOperationKind::Appearance(palettes) => {
                 crate::server::appearance::select(state, id, palettes)?;
                 continue;

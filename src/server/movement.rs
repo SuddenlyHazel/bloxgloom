@@ -10,7 +10,9 @@ use bloxgloom_host_api::player::PlayerRules;
 use std::time::Duration;
 
 mod coordinator;
+mod teleport;
 pub(super) use coordinator::advance_players;
+pub(super) use teleport::{Reset, ready as movement_ready, teleport};
 
 /// Work executed by the player-movement worker pool in one simulation tick.
 /// The capacity denominator spans dispatch through the completed barrier;

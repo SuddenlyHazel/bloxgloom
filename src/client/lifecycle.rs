@@ -24,6 +24,7 @@ impl ClientApp {
         self.pending_actions.clear();
         self.deferred_actions.clear();
         self.actions = ActionTracker::default();
+        self.movement_reset = 0;
         self.action_choices.clear();
         self.active_action = None;
     }

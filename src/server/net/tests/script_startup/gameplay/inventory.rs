@@ -318,6 +318,7 @@ fn actor(state: &mut State, inventory: Inventory) -> TcpStream {
             radius: crate::server::DEFAULT_VIEW,
             movement: crate::server::movement::MovementState::new([0.5, 80., 0.5], 0),
             pending_moves: Default::default(),
+            movement_reset: Default::default(),
         },
     );
     peer
