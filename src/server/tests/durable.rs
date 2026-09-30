@@ -421,6 +421,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
         &mut state,
         &mut tick,
         vec![SimulationInput::Join {
+            name: format!("player-{profile:x}"),
             profile,
             inventory: Box::new(stale),
             sender,

@@ -168,6 +168,7 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
         sender: first_sender,
         socket: first_socket,
         profile: first_profile,
+        ..
     } = first
     else {
         panic!("expected first join request");
@@ -192,6 +193,7 @@ fn socket_join_reloads_inventory_after_coordinator_refresh() {
         sender: second_sender,
         socket: second_socket,
         profile: second_profile,
+        ..
     } = second
     else {
         panic!("expected refreshed join request");

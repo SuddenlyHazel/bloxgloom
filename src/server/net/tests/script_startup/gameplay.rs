@@ -18,6 +18,8 @@ mod decisions;
 mod entities;
 #[path = "gameplay/inventory.rs"]
 mod inventory;
+#[path = "gameplay/players.rs"]
+mod players;
 #[path = "gameplay/runtime_tools.rs"]
 mod runtime_tools;
 
@@ -400,6 +402,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                players: &[],
                 action_id: None,
                 clock: None,
                 actor: Some((PROFILE, &inventory)),

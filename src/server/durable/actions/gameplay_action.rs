@@ -152,6 +152,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         arguments: request.arguments.clone(),
     };
     let mut requested = Vec::new();
+    let players = crate::server::players::capture(state);
     let plan = crate::server::gameplay::plan_with_lifecycles(
         &mut state.world,
         &mut reads,
@@ -164,6 +165,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            players: &players,
             action_id: Some(action_id),
             clock: Some(state.world_time.capture()),
             actor: Some((profile, &before)),

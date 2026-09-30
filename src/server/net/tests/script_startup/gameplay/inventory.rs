@@ -297,6 +297,8 @@ fn actor(state: &mut State, inventory: Inventory) -> TcpStream {
     state.clients.insert(
         1,
         crate::server::Client {
+            name: "fixture".into(),
+            action_epoch: 1,
             profile: PROFILE,
             inventory,
             last_drops_revision: u64::MAX,
@@ -466,6 +468,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
             }),
         },
         Participants {
+            players: &[],
             action_id: None,
             clock: None,
             actor: Some((PROFILE, &inventory)),

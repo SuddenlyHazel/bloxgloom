@@ -13,6 +13,21 @@ pub(crate) struct Revision(pub u64);
 pub(crate) struct Tick(pub u64);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProfileId(pub u128);
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SessionId {
+    pub profile: u128,
+    pub epoch: u64,
+}
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "session:{:032x}:{:016x}", self.profile, self.epoch)
+    }
+}
+impl UserData for SessionId {
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        identity_methods(methods);
+    }
+}
 
 macro_rules! display_token {
     ($ty:ident, $prefix:literal, $width:literal) => {
@@ -107,6 +122,18 @@ pub(crate) fn tick(lua: &Lua, value: u64) -> mlua::Result<AnyUserData> {
 }
 pub(crate) fn profile(lua: &Lua, value: u128) -> mlua::Result<AnyUserData> {
     intern(lua, ProfileId(value))
+}
+pub(crate) fn session(lua: &Lua, profile: u128, epoch: u64) -> mlua::Result<AnyUserData> {
+    intern(lua, SessionId { profile, epoch })
+}
+pub(crate) fn session_value(value: Value) -> Result<SessionId, &'static str> {
+    let Value::UserData(value) = value else {
+        return Err("expected session ID handle");
+    };
+    value
+        .borrow::<SessionId>()
+        .map(|v| *v)
+        .map_err(|_| "expected session ID handle")
 }
 pub(crate) fn entity_value(value: Value) -> Result<u64, &'static str> {
     let Value::UserData(value) = value else {

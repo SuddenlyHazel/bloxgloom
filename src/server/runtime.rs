@@ -222,6 +222,7 @@ fn reject_simulation_input(state: &mut State, input: SimulationInput) {
 fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickId) {
     match input {
         SimulationInput::Join {
+            name,
             profile,
             inventory,
             sender,
@@ -235,6 +236,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
                 )))));
             } else {
                 state.pending_joins.push_back(PendingJoin {
+                    name,
                     profile,
                     inventory: *inventory,
                     sender,
@@ -316,9 +318,10 @@ fn process_pending_joins(state: &mut State, tick: TickId) {
                     continue;
                 }
             };
-        match join_client(
+        match join_named_client(
             state,
             join.profile,
+            &join.name,
             action_epoch,
             join.inventory.clone(),
             join.sender.clone(),

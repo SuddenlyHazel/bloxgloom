@@ -99,6 +99,7 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
         state,
         tick,
         vec![SimulationInput::Join {
+            name: format!("player-{profile:x}"),
             profile,
             inventory: Box::new(inventory),
             sender,

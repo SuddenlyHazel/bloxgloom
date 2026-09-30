@@ -802,6 +802,7 @@ fn plan_reaction_removal(
             action: None,
         },
         crate::server::gameplay::Participants {
+            players: &[],
             action_id: None,
             clock: None,
             actor: None,

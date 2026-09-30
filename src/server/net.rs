@@ -181,6 +181,7 @@ pub(super) fn serve_client(
         let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
         input
             .try_send(SimulationInput::Join {
+                name: name.clone(),
                 profile,
                 inventory: Box::new(loaded_inventory),
                 sender: sender.clone(),

@@ -124,7 +124,7 @@ fn view(lua: &Lua, entity: &Entity) -> mlua::Result<Table> {
     Ok(result)
 }
 
-fn latch(rejected: &RefCell<Option<Error>>, error: &mlua::Error) {
+pub(super) fn latch(rejected: &RefCell<Option<Error>>, error: &mlua::Error) {
     rejected
         .borrow_mut()
         .get_or_insert_with(|| invalid(&error.to_string()));

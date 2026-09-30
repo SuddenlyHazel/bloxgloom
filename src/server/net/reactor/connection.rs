@@ -79,6 +79,7 @@ pub(super) struct Connection {
     write_interest: bool,
     phase: Phase,
     deadline: Instant,
+    name: String,
     profile: Option<u128>,
     sequence: u64,
     player_id: Option<u64>,
@@ -115,6 +116,7 @@ impl Connection {
             write_interest: false,
             phase: Phase::AwaitHello,
             deadline: Instant::now() + HELLO_TIMEOUT,
+            name: String::new(),
             profile: None,
             sequence: 0,
             player_id: None,
@@ -279,6 +281,7 @@ impl Connection {
                 let sender = self.outbound_sender.as_ref().unwrap().clone();
                 let (reply, receiver) = mpsc::sync_channel(1);
                 match input.try_send(SimulationInput::Join {
+                    name: self.name.clone(),
                     profile,
                     inventory: Box::new(inventory),
                     sender: sender.clone(),
@@ -651,6 +654,7 @@ impl Connection {
                     content_fingerprint: _,
                 },
             ) if !name.is_empty() && !name.chars().any(char::is_control) && profile != 0 => {
+                self.name = name;
                 self.profile = Some(profile);
                 self.phase = if content.bundle.is_some() {
                     Phase::SendingBundleOffer

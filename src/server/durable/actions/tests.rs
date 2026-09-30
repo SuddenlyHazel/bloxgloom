@@ -54,6 +54,8 @@ fn add_test_client(state: &mut State, position: [f32; 3], inventory: Inventory) 
     state.clients.insert(
         1,
         Client {
+            name: "fixture".into(),
+            action_epoch: 1,
             profile: 17,
             inventory,
             last_drops_revision: u64::MAX,

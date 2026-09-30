@@ -21,6 +21,20 @@ declare log: {
 
 --- Exact entity identity. Host-created and immutable; supports == and tostring.
 --- Use as a table key or pass directly to entity/inventory services. No arithmetic.
+--- Exact connection identity: stable profile plus durable server-issued epoch.
+declare extern type BloxSessionId with
+end
+
+export type BloxPlayerView = {
+    profile: BloxProfileId,
+    session: BloxSessionId,
+    entity: BloxEntityId?,
+    name: string,
+    position: {number},
+    online: boolean,
+    identity_trust: "claimed_profile",
+}
+
 declare extern type BloxEntityId with
 end
 
@@ -266,6 +280,10 @@ export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedE
 
 --- Server transaction services. Proposed mutations commit together; an error rejects the transaction.
 export type BloxGameplayContext = {
+    player_profile: BloxProfileId?,
+    players: () -> {BloxPlayerView},
+    player_by_profile: (profile: BloxProfileId) -> BloxPlayerView?,
+    player_by_session: (session: BloxSessionId) -> BloxPlayerView?,
     --- Available in gameplay action callbacks; captured phase, with read-your-writes.
     world_time: () -> {elapsed_ms: number, cycle_ms: number},
     --- Integer 0 <= phase < cycle_ms; authenticated admin, atomic with this action.

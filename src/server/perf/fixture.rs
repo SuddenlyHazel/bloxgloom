@@ -283,6 +283,8 @@ fn add_clients_and_seed_drops(
         state.clients.insert(
             id,
             Client {
+                name: "fixture".into(),
+                action_epoch: 1,
                 profile,
                 inventory,
                 last_drops_revision: u64::MAX,

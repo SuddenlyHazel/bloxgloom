@@ -11,6 +11,7 @@ mod entities;
 mod handlers;
 mod inventory;
 mod observations;
+mod players;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
@@ -19,6 +20,7 @@ pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
 pub use observations::{
     Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
 };
+pub use players::Player;
 
 pub type Cell = [i32; 3];
 
@@ -57,6 +59,9 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn players(&mut self) -> Result<Vec<Player>, Error> {
+        Ok(Vec::new())
+    }
     fn world_time(&mut self) -> Result<WorldTime, Error> {
         Err(Error::Invalid(
             "world clock unavailable in this context".into(),

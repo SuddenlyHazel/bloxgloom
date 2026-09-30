@@ -286,6 +286,12 @@ add save converters, or implement every proposed player mechanic at once.
 
 Goal active. Land the work in reviewable increments:
 
+The first increment exposes exact actor profile/session identities and captured
+online-player queries in gameplay action callbacks, with honest profile-claim
+trust metadata. Its real-listener regression checks readonly views and rollback
+after a caught forged-session operation. See the
+[active player-services reference](docs/modding/PLAYER-LIFECYCLE.md) for landed APIs.
+
 1. Player identities, captured directory, command targeting and trust metadata.
 2. Lifecycle registration, profile/session state and atomic first-join effects.
 3. Spawn/teleport, targeted inventory/appearance/message operations and scheduling.

@@ -9,6 +9,7 @@
 //! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
+mod players;
 mod queries;
 
 pub(super) fn invoke(
@@ -20,6 +21,12 @@ pub(super) fn invoke(
 ) -> mlua::Result<()> {
     let fields = events::fields(lua, event)?;
     let host = lua.create_table()?;
+    if let Some(profile) = context.player_profile() {
+        host.set(
+            "player_profile",
+            crate::server::script::handles::profile(lua, profile)?,
+        )?;
+    }
     host.set(
         "tick",
         crate::server::script::handles::tick(lua, context.tick())?,
@@ -41,6 +48,7 @@ pub(super) fn invoke(
     lua.scope(|scope| {
         super::inventory::install(scope, &host, &context, rejected)?;
         queries::install(scope, &host, &context, rejected)?;
+        players::install(scope, &host, &context, rejected)?;
         host.set(
             "world_time",
             scope.create_function(|lua, ()| {

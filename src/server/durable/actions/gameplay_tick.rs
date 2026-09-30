@@ -66,6 +66,7 @@ pub(in crate::server) fn plan(
             }),
         },
         crate::server::gameplay::Participants {
+            players: &[],
             action_id: None,
             clock: None,
             actor: None,
