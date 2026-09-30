@@ -54,24 +54,212 @@ and [combined fixture](fixtures/combined-mod/README.md).
 
 ### 2. Player and lifecycle hooks
 
+This gap is about integrating mods with people playing the world: identifying
+players, responding to their arrival and departure, storing their progress,
+querying their current state, and applying server-owned player operations.
+It affects ordinary quests and multiplayer modes as well as administration.
+The following API directions are proposals for review, not implemented bindings.
+
+#### What exists today
+
 The gameplay event contract covers block removal/placement, neighbor changes,
-actions, entity ticks and pickup requests. There are no general join/leave or
-chat hooks, player enumeration service, or broad runtime player-state API.
-Player rules select an immutable contract at startup rather than providing
-per-player runtime movement overrides.
+actions, entity ticks and pickup requests. It has no player join/leave, chat,
+spawn/respawn or health-related events. Existing gameplay callbacks can read the
+acting player's captured feet position and operate on that player's inventory.
+The host determines the actor; scripts cannot nominate another player by passing
+an arbitrary profile ID to an inventory operation.
 
-**Impact:** server modes, quests, moderation and permissions systems cannot
-fully integrate with player lifecycle through Luau. Persistent profile-owned
-state exists, but does not supply these missing hooks or services.
+The server already owns session admission, movement, public player entities,
+profile-keyed inventories, saved positions and cosmetic selections. Luau can
+select world-wide player rules and appearance palettes at startup, but those
+rules are immutable during play. Public player rendering does not supply a
+server-side Luau player directory or authority over player movement.
 
-**Closure direction:** add explicit player lifecycle events, public player
-queries and authorized player operations. Separate retryable gameplay decisions
-from notifications of committed outcomes. Chat and additional player mechanics
-need engine contracts as well as bindings.
+| Existing surface | What it does not yet provide |
+| --- | --- |
+| Acting-player position and inventory in gameplay callbacks | A profile/session handle for the actor, player lookup or operations on another player |
+| Profile-partitioned owner systems and exact `BloxProfileId` handles | Discovering newly joined profiles, automatic owner initialization, or a gameplay-to-profile-state service |
+| Startup player rules and appearance declarations | Runtime per-player movement, spawn or appearance operations |
+| Authored commands, action receipts and client UI | General chat, player lifecycle callbacks, or general server-to-player messages |
+| Native Rust post-commit observers | A Luau observer binding or reliable durable quest/reward delivery |
 
-Evidence: [event contract](crates/host-api/src/gameplay/handlers.rs),
-[gameplay services](SCRIPTING.md#gameplay-context-services) and
-[player rules](SCRIPTING.md#player-rules-and-appearance).
+Profile-owned state is therefore a useful foundation, but it is not yet a
+complete player persistence API. Native post-commit observers are advisory:
+they can be dropped under pressure and are not replayed after restart. They
+cannot safely be the only mechanism awarding a quest reward or recording a
+player's first visit.
+
+#### Player identity and discovery
+
+**Closure direction:** expose exact, host-created player identities and a
+useful player query service. Ordinary server mods should be able to identify
+their actor, list online players and look up a known profile. These should be
+normal supported operations rather than a collection of fixture-specific hooks.
+
+Keep three identities distinct:
+
+- **Profile:** stable across reconnects and restarts; owns inventory and durable
+  mod progress. Use an exact handle, never a floating-point ID or display name.
+- **Session:** one admitted connection. A reconnect creates a new session; an
+  old delayed operation must not accidentally act on the replacement session.
+- **Player entity:** the current public avatar. Its lifetime does not determine
+  ownership of the profile's saved state.
+
+A proposed player view would expose profile/session/entity handles, online
+status, display name, authoritative position and public appearance where
+available. An offline profile lookup must distinguish saved profile data from
+live session state; it must not fabricate a position or inventory from a client
+replica. Define which records can be looked up without creating save data.
+
+Queries need captured revisions and clear consistency rules for retryable
+callbacks. Online enumeration should have deterministic ordering and pagination
+or an explicit result limit. Callbacks need explicit results for an offline,
+unknown or departed player. Document which operations target a stable profile
+and which require a particular live session.
+
+#### Lifecycle events and admission
+
+**Closure direction:** support lifecycle registration with defined transition
+points. Illustrative event names below describe behavior, not final API spelling.
+
+| Proposed hook | Meaning and useful context |
+| --- | --- |
+| `PlayerJoining` | Optional admission decision after the host establishes the profile and validates the content handshake, before admitting gameplay; can accept or deny with a reason |
+| `PlayerJoined` | A session was admitted; identifies profile, session, current avatar and authoritative initial position |
+| `PlayerLeaving` / `PlayerLeft` | Departure preparation versus completed departure; retains identity and a captured final view without pretending the connection is still usable |
+| `PlayerSpawned` | An avatar entered play at a validated position; distinguish initial admission from later relocation or respawn |
+| World startup/shutdown | Optional world-lifecycle hooks for initialization and cleanup, with explicit recovery and graceful-shutdown semantics |
+
+Define reconnect, duplicate-profile rejection, cancelled bundle downloads,
+failed client startup, admission retries, timeout, explicit disconnect and server
+shutdown separately. A socket connection is not a successful player join.
+Failed or cancelled joins must not produce a successful `PlayerJoined` event.
+
+Joining and departure also need a clear ordering relative to profile loading,
+mod-state initialization, spawn validation, outstanding durable actions, public
+avatar publication and removal. A departed session cannot veto disconnect or
+hold network cleanup hostage. Hooks should run on appropriate callback workers;
+file I/O and network cleanup must not wait on arbitrary script execution.
+
+Multiple packages should be able to subscribe to lifecycle notifications.
+Admission decisions need a separately defined composition rule, such as all
+registered gates accepting, stable evaluation order and a predictable denial
+reason. Do not reuse the current singular block-decision ownership rule as an
+accidental restriction on lifecycle subscribers.
+
+#### Persistent player state and authoritative decisions
+
+A quest, first-join kit or permission record needs a way to connect the host's
+profile identity to package-owned durable bytes. A fixed list of profile seeds
+in a startup manifest cannot discover everyone who may join later.
+
+**Closure direction:** provide lifecycle-driven profile-state initialization
+and reads/updates of a package's own profile state in relevant server callbacks.
+Define schema, size limits, absent-state behavior and revision fencing. Joining
+must not initialize the same state twice, and reconnecting must not reset it.
+Namespaced ownership allows multiple mods to maintain independent progress.
+
+Separate two callback contracts explicitly:
+
+- **Retryable decisions** read captured inputs and propose authoritative effects.
+  State changes, first-join flags and inventory rewards must commit together when
+  they form one gameplay decision. Give attempts stable transition identities
+  and deterministic random inputs; stale dependencies or unavailable inputs may
+  require another attempt.
+- **Committed notifications** report what actually happened and cannot veto or
+  amend it. Define whether delivery is best-effort or durable, its ordering,
+  replay behavior and deduplication identity. Binding the existing advisory
+  observer is useful, but does not supply durable follow-up work by itself.
+
+For example, setting `starter_kit_received` and granting the kit should be one
+transaction. An advisory `PlayerJoined` notification that grants a kit without
+a durable guard can lose or duplicate rewards. Critical follow-up work needs an
+atomic decision or a durable scheduled job, not an assumed exactly-once event.
+
+A player's inventory remains keyed by profile, with the existing 128-item stack
+cap and exact components. Existing profile-owner scheduling should be reused
+where it fits, rather than introducing a second unrelated persistence system.
+Crash recovery must not manufacture live connections or replay an advisory join
+notification as though the player were currently online.
+
+#### Player operations and permissions
+
+**Closure direction:** add useful typed, server-owned operations alongside the
+queries. Candidate operations include validated teleport/spawn placement,
+public appearance changes, targeted messages and authorized inventory operations
+on an identified profile. Administrative kick, admission bans and role/permission
+management need explicit host contracts and persistence policies too.
+
+Ordinary mods need practical authority to run their game modes. Define granted
+server-package capabilities and command-caller permissions separately: a trusted
+server rule acting on another player is not the same operation as a client
+request asking to promote itself. The host validates targets and grants authority;
+a script-supplied admin flag or player handle is not an authorization token.
+
+Player movement changes must update the authoritative movement state, collision
+checks and client prediction/replication together. Define how teleport interacts
+with queued input, chunk availability and saved position. Per-player movement
+modifiers require a runtime contract understood by both server and client; changing
+one number in Lua cannot safely implement them under the current frozen rules.
+
+Cross-player inventory services must retain conservation, exact components and
+transaction validation. Missing/offline targets and stale sessions need explicit
+outcomes. Disconnects are session operations, while a persisted ban or profile
+state update has a different lifetime and durability requirement.
+
+#### Chat and additional player mechanics
+
+There is no bound chat message or general message-delivery service to intercept.
+A useful chat feature first needs server/client transport, text presentation,
+authoritative sender identity and delivery semantics. Luau can then provide
+formatting, routing, moderation and command integration. Define accepted text,
+size/rate limits, recipients and whether moderation decides before delivery or
+observes an already delivered message. A command argument is not a substitute
+for a complete chat pipeline.
+
+Health, damage, death, respawn, teams and per-player movement modifiers are
+separate mechanics to specify where the engine does not already support them.
+The player API should make those future additions straightforward, but adding
+an event named `PlayerDied` does not create authoritative health or combat.
+Initial player spawning already exists; configurable respawn and combat rules
+need additional engine behavior. Custom player geometry remains part of the
+separately deferred model work.
+
+#### Completion criteria and implementation order
+
+1. Specify profile/session/avatar identity, actor lookup, online queries and
+   package-owned profile-state initialization. Bind the existing foundations.
+2. Add join/leave lifecycle decisions and notifications with explicit admission,
+   retry, commit and reconnect semantics. Demonstrate a persistent first-join
+   reward and reconnect-safe progress in one runnable package.
+3. Add the agreed player operations and permission model. Verify movement and
+   inventory effects through their real authoritative paths.
+4. Expose the useful native committed-observer surface with honest delivery
+   guarantees; add durable follow-up support where critical mod behavior needs it.
+5. Scope chat and additional player mechanics as explicit engine contracts,
+   with client support, rather than claiming lifecycle bindings close them all.
+
+Verify real nonblocking-listener joins and disconnects with isolated saves:
+cancelled joins emit no successful event; duplicate/retried admission does not
+duplicate rewards; reconnect retains state but replaces session identity; stale
+session work cannot affect a new connection; failed hooks do not publish partial
+inventory/state changes or prevent cleanup; restart preserves committed progress;
+and multiple mods compose without silently replacing one another's hooks.
+
+Document event ordering, allowed operations, failure behavior, delivery limits
+and server/client availability in the runtime inventory and editor definitions.
+These are review criteria for this gap, not authorization to change VM lifetime,
+add save converters, or implement every proposed player mechanic at once.
+
+Evidence: [gameplay events](crates/host-api/src/gameplay/handlers.rs),
+[Luau gameplay bindings](src/server/script/gameplay/bindings.rs),
+[gameplay services](SCRIPTING.md#gameplay-context-services),
+[profile owner systems](SCRIPTING.md#durable-owner-systems),
+[player admission and removal](src/server.rs),
+[session player entities](src/server/entities/player.rs),
+[player rules](docs/modding/PLAYER-RULES.md),
+[native committed-observer contract](crates/host-api/src/gameplay/observations.rs)
+and [advisory observer delivery](src/server/notifications.rs).
 
 ### 3. Dynamic UI and input
 
