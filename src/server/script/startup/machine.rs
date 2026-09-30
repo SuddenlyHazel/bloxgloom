@@ -56,6 +56,10 @@ pub(super) fn declarer(
                 .iter()
                 .any(|old| old.machine.entity == entity || old.machine.block == block)
                 || pending
+                    .anchored
+                    .iter()
+                    .any(|old| old.entity == entity || old.block == block)
+                || pending
                     .storage
                     .iter()
                     .any(|old| old.storage.entity == entity || old.storage.block == block)

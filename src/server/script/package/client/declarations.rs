@@ -5,6 +5,7 @@
 use super::*;
 use bloxgloom_host_api::{composition, content};
 use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
+pub(super) mod anchored;
 mod appearance;
 mod components;
 mod creature;
@@ -56,6 +57,7 @@ pub(super) struct Startup {
     storage: Vec<crate::server::script::startup::StorageDeclaration>,
     creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
     machines: Vec<crate::server::script::startup::MachineDeclaration>,
+    anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     runtime: runtime::Runtime,
 }
 
@@ -551,7 +553,8 @@ impl ClientBundle {
             return Err(invalid());
         }
         let result = super::players::wrap(result, declarations)?;
-        super::observers::wrap(result, declarations)
+        let result = super::observers::wrap(result, declarations)?;
+        anchored::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -591,6 +594,9 @@ impl ClientBundle {
                         for declaration in &startup.storage {
                             catalog.extension_storage(&declaration.storage)?;
                             catalog.register_inventory_screen(declaration.screen.clone())?;
+                        }
+                        for declaration in &startup.anchored {
+                            catalog.register_anchored(declaration.clone())?;
                         }
                         for declaration in &startup.machines {
                             catalog.register_machine_identity(&declaration.machine)?;
@@ -740,6 +746,7 @@ impl Startup {
             storage: Vec::new(),
             creatures: Vec::new(),
             machines: Vec::new(),
+            anchored: Vec::new(),
             runtime: runtime::Runtime::default(),
         };
         for (name, package) in packages {
@@ -747,15 +754,7 @@ impl Startup {
                 return Err(invalid());
             }
             let mut requires = Vec::new();
-            for _ in 0..reader.count(if machines {
-                8
-            } else if creatures {
-                7
-            } else if storage {
-                6
-            } else {
-                4
-            })? {
+            for _ in 0..reader.count(10)? {
                 let requirement = reader.text(64)?;
                 if ![
                     composition::CONTENT,
@@ -767,6 +766,7 @@ impl Startup {
                     composition::INVENTORY_SCREENS,
                     composition::MOBILE_ENTITIES,
                     composition::MACHINES,
+                    composition::ANCHORED_ENTITIES,
                 ]
                 .contains(&requirement.as_str())
                     || requires.last().is_some_and(|last| last >= &requirement)

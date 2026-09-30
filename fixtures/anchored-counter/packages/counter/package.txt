@@ -1,0 +1,9 @@
+format 2
+package counter
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:anchored_entities/v1
+module server main server/main.luau
+module server behavior server/behavior.luau
+asset texture tile assets/textures/counter.png

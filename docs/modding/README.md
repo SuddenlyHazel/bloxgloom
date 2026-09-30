@@ -23,6 +23,9 @@ impact on larger mods.
    local presentation state.
 - [Targeted authored-UI action](../../fixtures/ui-target-actions/README.md):
   a client-aimed block request with server-owned reach, cost and receipt.
+- [Persistent counter block](../../fixtures/anchored-counter/README.md): general
+  anchored placement, private/public state, interaction, neighbor reactions and
+  atomic removal/refunds. See the [Luau anchored API](ANCHORED-ENTITIES.md).
 - [Neighborhood owner system](../../fixtures/neighborhood/README.md):
   authoritative cross-chunk reads/edits and a durable intent relay in Luau.
 - [IDE setup](IDE.md): opt-in Luau LSP settings and editor-only types for the

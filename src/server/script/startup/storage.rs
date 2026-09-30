@@ -54,6 +54,14 @@ pub(super) fn declarer(
                     .storage
                     .iter()
                     .any(|old| old.storage.entity == entity || old.storage.block == block)
+                    || pending
+                        .anchored
+                        .iter()
+                        .any(|old| old.entity == entity || old.block == block)
+                    || pending
+                        .machines
+                        .iter()
+                        .any(|old| old.machine.entity == entity || old.machine.block == block)
                 {
                     return Err("duplicate storage entity or block");
                 }

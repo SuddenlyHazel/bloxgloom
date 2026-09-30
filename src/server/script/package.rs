@@ -172,8 +172,8 @@ impl PackageSnapshot {
         &self,
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
         use bloxgloom_host_api::composition::{
-            ACTIONS, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, MACHINES, MOBILE_ENTITIES,
-            OWNER_SYSTEMS, Package, STORAGE,
+            ACTIONS, ANCHORED_ENTITIES, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS,
+            MACHINES, MOBILE_ENTITIES, OWNER_SYSTEMS, Package, STORAGE,
         };
         self.packages
             .iter()
@@ -188,6 +188,7 @@ impl PackageSnapshot {
                             && c != STORAGE
                             && c != INVENTORY_SCREENS
                             && c != MOBILE_ENTITIES
+                            && c != ANCHORED_ENTITIES
                             && c != MACHINES
                     })
                 {
@@ -239,6 +240,21 @@ impl PackageSnapshot {
             .into_iter()
             .all(|capability| p.manifest.requires.contains(capability))
         })
+    }
+
+    pub(super) fn permits_anchored(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            [
+                bloxgloom_host_api::composition::CONTENT,
+                bloxgloom_host_api::composition::ANCHORED_ENTITIES,
+            ]
+            .into_iter()
+            .all(|c| p.manifest.requires.contains(c))
+        })
+    }
+
+    pub(super) fn anchored_schema(&self, entry: &str, version: u16) -> u64 {
+        self.execution_identity(b"luau-anchored-binary-v1", entry, &version.to_le_bytes())
     }
 
     pub(super) fn permits_machines(&self, package: &str) -> bool {

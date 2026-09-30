@@ -415,6 +415,21 @@ errors, stale reads or failed commits do not partially apply the script's effect
 Retries get a fresh VM. See [bindings](src/server/script/gameplay/bindings.rs)
 and [inventory services](src/server/script/gameplay/inventory.rs).
 
+## General persistent block entities
+
+With `bloxgloom:content/v1` and `bloxgloom:anchored_entities/v1`, use
+`h.register_anchored(declaration)` for package-owned persistent devices. Register
+an existing block, immutable footprint, placement cost/refund policy, binary state
+bounds and a pure server callback module. The module handles Initialize,
+Validate, Public, Interact, React and Refund events through the native anchored
+worker/WAL lifecycle. Reactions use persistent polling plus captured neighbor
+terrain; interaction is own-state only and removals clear the whole footprint
+with capped refunds. Clients receive inert declarations and explicit public bytes.
+
+See [the anchored API reference](docs/modding/ANCHORED-ENTITIES.md) for the full
+contract and [the counter package](fixtures/anchored-counter/README.md) for a
+runnable example. Typed callbacks use `BloxAnchoredEvent`/`BloxAnchoredReply`.
+
 ## Persistent gameplay entities and exact handles
 
 `host.register_entity(key, schema_version, state_bytes, public_bytes, delay?)`
@@ -925,9 +940,9 @@ fallback terrain or local presentation state as authoritative.
 ## Features requiring engine work or native extensions
 
 The broader [Rust host references](docs/modding/README.md) are not automatically
-Luau bindings. For example, the Luau manifest does not accept the native item
-icon or general anchored-behavior capabilities. Storage/machines offer specific
-anchored lifecycles, not arbitrary anchored behavior registration.
+Luau bindings. For example, native item-icon callbacks are not bound. General
+anchored behavior is available through `register_anchored`; storage and machines
+retain their specialized inventory and recipe contracts.
 
 There is no bound API for arbitrary block meshes, partial collision shapes,
 translucent/liquid physics, imported models, custom player models, per-stack

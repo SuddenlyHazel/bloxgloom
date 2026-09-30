@@ -36,7 +36,7 @@ pub(super) fn wrap(
 pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, ScriptError> {
     let mut reader = Reader(&bytes[MAGIC.len()..]);
     let inner = reader.field(MAX_BUNDLE_BYTES)?;
-    if inner.starts_with(MAGIC) {
+    if inner.starts_with(super::declarations::anchored::MAGIC) || inner.starts_with(MAGIC) {
         return Err(invalid());
     }
     let mut bundle = ClientBundle::decode_verify(inner, CacheKey(Sha256::digest(inner).into()))?;

@@ -79,6 +79,8 @@ export type BloxStartupHost = {
     register_player_lifecycle: (key: string, revision: number, max_state_bytes: number, initial_state: string, module: string) -> (),
     register_creature: (declaration: BloxCreatureDeclaration) -> (),
     register_machine: (declaration: BloxMachineDeclaration) -> (),
+    --- Requires content + anchored_entities/v1. Pure own-state server behavior; at most eight/package.
+    register_anchored: (declaration: BloxAnchoredDeclaration) -> (),
     register_storage: (entity: string, previously_registered_block: string, title: string, slots: number, columns: number, options: BloxStorageOptions?) -> (),
     -- Requires content/v1. Exactly one selection across the entire package set;
     -- key belongs to this package, revision is an integer in 1..4294967295.
@@ -93,6 +95,30 @@ export type BloxStartupHost = {
 }
 
 --- Storage footprint offsets are integer triples (-2..2), include {0,0,0}, and have at most eight cells.
+--- General anchored geometry uses the full native 64-cell/±16-coordinate bounds.
+export type BloxAnchoredFootprintCell = {offset: BloxTriple, state: string?}
+export type BloxAnchoredDeclaration = {
+    entity: string, block: string, module: string,
+    schema_version: number, max_state_bytes: number, max_public_bytes: number,
+    interval: number,
+    placement_item: string?, anchor_state: string?,
+    placement_cost: number?, removal_refund: number?,
+    footprint: {BloxAnchoredFootprintCell}?, observe: {BloxTriple}?, interaction: string?,
+}
+export type BloxAnchoredCell = {offset: BloxTriple, state: string, solid: boolean}
+--- All event tables/sequences are readonly; no live host APIs are given.
+export type BloxAnchoredEvent =
+    {kind: "Initialize", anchor: BloxTriple}
+    | {kind: "Validate", state: string}
+    | {kind: "Public", state: string}
+    | {kind: "Interact", state: string, request: string}
+    | {kind: "React", state: string, anchor: BloxTriple, tick: BloxTick, cells: {BloxAnchoredCell}}
+    | {kind: "Refund", state: string, cause: "Broken" | "Reaction" | "WorldEdit", maximum: number}
+--- Initialize/Interact return private bytes; Public returns public bytes.
+--- Validate returns true/nil or false; React returns nil, {state=bytes} or {remove=true}.
+--- Refund returns integer 0..maximum or nil for the configured maximum.
+export type BloxAnchoredReply = string | boolean | number | {state: string} | {remove: boolean} | nil
+
 export type BloxStorageOptions = {
     footprint: {BloxTriple}?,
     hint: string?,

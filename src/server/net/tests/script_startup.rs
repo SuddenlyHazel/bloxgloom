@@ -6,6 +6,8 @@ use crate::server::startup::ServerStartup;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[path = "script_startup/anchored.rs"]
+mod anchored;
 #[path = "script_startup/appearance.rs"]
 mod appearance;
 #[path = "script_startup/bundle.rs"]
