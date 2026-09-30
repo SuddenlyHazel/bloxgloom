@@ -122,7 +122,7 @@ arbitrary data-file or save-file declarations.
 Startup modules return `function(host)`. Call services with a dot, such as
 `host.register_item(...)`. Declare each required capability with a `requires`
 line. Unsupported capabilities fail startup, even if a broader Rust API supports
-them. The currently accepted manifest capabilities are the eight names below.
+them. The currently accepted manifest capabilities are the names below.
 
 | Registration | Required `bloxgloom:` capability suffixes | Limit per package |
 | --- | --- | --- |
@@ -131,6 +131,7 @@ them. The currently accepted manifest capabilities are the eight names below.
 | `register_generator` | `generation/v1` | One |
 | `register_action`, `register_handler`, `register_entity` | `actions/v1` | 32 actions, 32 handlers, 32 entity definitions |
 | `register_system` | `owner_systems/v1` | One |
+| `register_player_lifecycle` | `players/v1` | Eight; 128 in the installation |
 | `register_storage` | `content/v1`, `storage/v1`, `inventory_screens/v1` | Eight |
 | `register_creature` | `content/v1`, `mobile_entities/v1` | Eight |
 | `register_machine` | `content/v1`, `machines/v1`, `inventory_screens/v1` | Eight |
@@ -843,7 +844,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 3 (wire version 13).
+publisher. The negotiated client host contract is version 4 (wire version 13).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.
@@ -904,3 +905,8 @@ The implemented binding inventory lives in [server scripting](src/server/script.
 [manifest parsing](src/server/script/package/manifest.rs), and
 [client presentation](src/client/presentation.rs). Consult these when extending
 the engine, rather than treating historical proposals as available APIs.
+
+Player-service lifecycle registration, events, state limits, admission policy,
+scheduling and atomic first-join rewards are documented in
+[PLAYER-LIFECYCLE.md](docs/modding/PLAYER-LIFECYCLE.md). Profile ownership remains
+claimed by Hello; server session handles are exact connection identities.

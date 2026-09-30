@@ -72,6 +72,8 @@ export type BloxStartupHost = {
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
+    -- Requires players/v1; own-package key/module, revision 1..65535, private state cap 1..4096.
+    register_player_lifecycle: (key: string, revision: number, max_state_bytes: number, initial_state: string, module: string) -> (),
     register_creature: (declaration: BloxCreatureDeclaration) -> (),
     register_machine: (declaration: BloxMachineDeclaration) -> (),
     register_storage: (entity: string, previously_registered_block: string, title: string, slots: number, columns: number, options: BloxStorageOptions?) -> (),
@@ -543,3 +545,18 @@ export type BloxMachineWork = {kind: "process"} | {
     item: string?, same_as_slot: number?,
 }
 export type BloxMachinePlanner = (BloxMachineContext) -> (string, number, boolean | {BloxMachineWork})
+
+--- Captured inputs. Profile bytes persist; session bytes end with this connection.
+export type BloxPlayerLifecycleEvent = {
+    kind: "PlayerJoining" | "PlayerJoined" | "PlayerLeaving" | "PlayerLeft" | "PlayerSpawned" | "ProfileTick" | "SessionTick",
+    profile: BloxProfileId, player: BloxPlayerView?, transition: BloxTick,
+    identity_trust: "claimed_profile", state: string, public_state: string, session_state: string,
+}
+export type BloxPlayerLifecycleDecision = {
+    state: string?, public_state: string?, session_state: string?,
+    --- Integer 1..100000 ticks; false suspends; omitted retains the deadline (ticks are one-shot).
+    profile_delay: (number | boolean)?, session_delay: (number | boolean)?,
+    --- Admission only; authoritative collision/terrain validation precedes installation.
+    spawn: BloxTriple?, deny: string?,
+}
+export type BloxPlayerLifecycleCallback = (BloxGameplayContext, BloxPlayerLifecycleEvent) -> BloxPlayerLifecycleDecision?

@@ -571,6 +571,8 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: participants,
     }))
 }

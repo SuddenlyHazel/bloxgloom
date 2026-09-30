@@ -15,6 +15,7 @@ pub mod inventory;
 pub mod lifecycle;
 pub mod machine;
 pub mod player;
+pub mod players;
 pub mod system;
 pub use inventory::{InventoryScreen, SlotGroup, StatusField, StatusFormat};
 pub use lifecycle::{FootprintCell, StorageBlockEntity};
@@ -39,6 +40,14 @@ pub struct CubeBlock {
 /// Implemented by the host's startup collector. Calls declare content; they do
 /// not mutate a running world. Resolution/validation happens before storage opens.
 pub trait Registrar {
+    fn player_lifecycle(
+        &mut self,
+        _registration: players::Registration,
+    ) -> Result<(), RegistrationError> {
+        Err(RegistrationError(
+            "player lifecycle unsupported by this registrar".into(),
+        ))
+    }
     fn generation_contributor(
         &mut self,
         _contributor: generation::Registration,

@@ -1,7 +1,15 @@
 //! Server player services, separate from world/entity ownership.
 use super::State;
 pub(super) mod admission;
+mod callbacks;
+mod lifecycle;
+mod pending;
+mod preparation;
+pub(super) use callbacks::admit;
+pub(super) use pending::JoinGuard;
+pub(super) mod state;
 use bloxgloom_host_api::gameplay::Player;
+pub(super) use lifecycle::{Published, Runtime, committed, drive, joined, leaving};
 
 pub(super) fn capture(state: &State) -> Vec<Player> {
     let mut players: Vec<_> = state

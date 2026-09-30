@@ -45,6 +45,8 @@ fn probe_place(
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     })
 }

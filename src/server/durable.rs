@@ -229,6 +229,8 @@ pub(super) struct CommitAction {
     /// scheduling only: never part of the WAL change set, delivered as
     /// tick attempts at the commit barrier when this action applies.
     pub(super) entity_wakes: Vec<EntityId>,
+    pub(super) owner_changes: Vec<crate::server::journal::Change>,
+    pub(super) player_publication: Option<super::players::Published>,
 }
 
 impl CommitAction {
@@ -250,6 +252,8 @@ impl CommitAction {
             clock_change: None,
             entities: None,
             entity_wakes: Vec::new(),
+            owner_changes: vec![],
+            player_publication: None,
         }
     }
 }
@@ -441,6 +445,23 @@ impl Durability {
             self.entity_publication_frontier = frontier;
         }
         Ok(staged)
+    }
+
+    pub(super) fn pending_profile_inserts(&self) -> usize {
+        self.pending
+            .iter()
+            .map(|pending| match &pending.payload {
+                PendingPayload::Action(action) | PendingPayload::FireAction(_, action) => action
+                    .owner_changes
+                    .iter()
+                    .filter(|change| {
+                        change.key.domain == super::runtime::owner_codec::OWNER_STATE_DOMAIN
+                            && change.before.is_empty()
+                    })
+                    .count(),
+                _ => 0,
+            })
+            .sum()
     }
 
     pub(super) fn profile_reserved(&self, profile: u128) -> bool {

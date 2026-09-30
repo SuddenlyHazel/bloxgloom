@@ -450,6 +450,34 @@ impl DurableOwnerStore {
             .map(|cell| (cell.revision, cell.value.clone()))
     }
 
+    pub fn has_insert_room(&self, pending: usize) -> bool {
+        self.cells
+            .len()
+            .saturating_add(self.reserved_inserts)
+            .saturating_add(pending)
+            < super::systems::MAX_OWNER_VALUES_PER_SYSTEM
+    }
+    pub fn deadline(&self, system: &SystemId, owner: OwnerKey) -> Option<u64> {
+        self.cells
+            .get(&(system.clone(), owner))
+            .and_then(|cell| cell.due_tick)
+    }
+    /// A receipt clears or advances a deadline; observing it never consumes it.
+    pub fn due_profiles(&self, system: &SystemId, tick: u64, limit: usize) -> Vec<(u64, u128)> {
+        self.schedule_by_system
+            .range((system.clone(), 0, FIRST_OWNER)..)
+            .take_while(|(s, due, _)| s == system && *due <= tick)
+            .filter_map(|(_, due, owner)| {
+                if let OwnerKey::Profile(profile) = owner {
+                    Some((*due, *profile))
+                } else {
+                    None
+                }
+            })
+            .take(limit)
+            .collect()
+    }
+
     #[cfg(test)]
     pub fn cell_count(&self) -> usize {
         self.cells.len()
@@ -469,6 +497,16 @@ impl DurableOwnerStore {
         system: &SystemId,
         owner: OwnerKey,
         value: &OwnerData,
+    ) -> Result<Change, OwnerDurableError> {
+        self.stage_scheduled_insert(system, owner, value, None)
+    }
+
+    pub fn stage_scheduled_insert(
+        &self,
+        system: &SystemId,
+        owner: OwnerKey,
+        value: &OwnerData,
+        due_tick: Option<u64>,
     ) -> Result<Change, OwnerDurableError> {
         let descriptor =
             self.descriptors
@@ -491,7 +529,7 @@ impl DurableOwnerStore {
         Ok(Change::new(
             owner_state_key(system, owner),
             Vec::new(),
-            encode_cell_value(0, descriptor.codec_version, None, &encoded),
+            encode_cell_value(0, descriptor.codec_version, due_tick, &encoded),
         ))
     }
 

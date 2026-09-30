@@ -59,6 +59,21 @@ pub(super) struct Startup {
     runtime: runtime::Runtime,
 }
 
+impl Startup {
+    pub(super) fn permits_players(&self, namespace: &str) -> bool {
+        self.packages.iter().any(|p| {
+            p.key.split_once(':').map(|p| p.0) == Some(namespace)
+                && p.requires.iter().any(|r| r == composition::PLAYERS)
+        })
+    }
+    pub(super) fn set_player_identities(
+        &mut self,
+        identities: Vec<crate::content::client_metadata::Identity>,
+    ) {
+        self.runtime.set_players(identities);
+    }
+}
+
 impl ClientBundle {
     /// Called only after every authoritative startup entry succeeds. Discovery's
     /// final absent-metadata marker is replaced; source/asset bytes stay intact.
@@ -523,7 +538,7 @@ impl ClientBundle {
         {
             return Err(invalid());
         }
-        Ok(result)
+        super::players::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -734,6 +749,7 @@ impl Startup {
                     composition::GENERATION,
                     composition::ACTIONS,
                     composition::OWNER_SYSTEMS,
+                    composition::PLAYERS,
                     composition::STORAGE,
                     composition::INVENTORY_SCREENS,
                     composition::MOBILE_ENTITIES,

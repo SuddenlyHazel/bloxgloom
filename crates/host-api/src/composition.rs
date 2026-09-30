@@ -2,6 +2,7 @@
 //! This is not discovery/loading. A caller registers its complete package bundle.
 
 pub const CONTENT: &str = "bloxgloom:content/v1";
+pub const PLAYERS: &str = "bloxgloom:players/v1";
 pub const STORAGE: &str = "bloxgloom:storage/v1";
 pub const MACHINES: &str = "bloxgloom:machines/v1";
 pub const MOBILE_ENTITIES: &str = "bloxgloom:mobile_entities/v1";

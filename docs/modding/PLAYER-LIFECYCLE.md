@@ -39,9 +39,74 @@ prove ownership of an account. Operator-selected local admin identity and
 server-issued action epochs do not change that trust level. No authentication
 service is introduced by exposing these handles.
 
+## Landed: lifecycle state and scheduling
+
+Declare `requires bloxgloom:players/v1` and register an own-package service:
+
+```luau
+h.register_player_lifecycle("demo:progress", 1, 64, "", "demo:player")
+```
+
+The arguments are key, revision (1..65535), private byte bound (1..4096), initial
+binary state and callback module. Eight services per package and 128 per
+installation are allowed. Service keys cannot collide with owner-system keys.
+Changing the frozen package implementation changes the save compatibility identity.
+The client bundle carries an inert service identity with runtime contract 4;
+private initial state and executable registrations are not projected into metadata.
+
+The module returns `function(context, event)` and may return nil or a decision:
+
+```luau
+return function(c: BloxGameplayContext, e: BloxPlayerLifecycleEvent): BloxPlayerLifecycleDecision?
+    if e.kind == "PlayerJoined" and e.state == "" then
+        assert(c.give("player", {item = "bloxgloom:stick", count = 3}))
+        return {state = "kit", public_state = "level:1", session_state = "connected"}
+    end
+    return nil
+end
+```
+
+`event` is readonly. It contains exact `profile`, optional captured `player`,
+`transition`, `identity_trust`, private `state`, selected `public_state` and
+`session_state` binary strings. Initial state is used when that package/profile
+has no committed cell. Progress is scoped by the service key and stable profile,
+without conflating avatar identity or server session epochs.
+
+Events are `PlayerJoining`, `PlayerJoined`, `PlayerSpawned`, `PlayerLeaving`,
+`PlayerLeft`, `ProfileTick` and `SessionTick`. Joining runs after content readiness
+and durable epoch allocation; a cancelled or failed pending join never queues
+Joined/Spawned. Joining may return `deny` (1..255 UTF-8 bytes) or a `spawn` triple.
+The host validates finite coordinates, world bounds and authoritative collision,
+requests missing terrain and retries before installing the avatar. Joining cannot
+publish state, inventory rewards or timers. Use Joined for these effects.
+
+Joined/Spawned queue after successful admission. Leaving/Left capture the final
+player view and session bytes without blocking disconnection or permitting a veto.
+Callbacks run in bounded fresh VMs on the server coordinator, independent of the
+socket reactor. Four queued callbacks are attempted per tick. Profile/inventory
+changes share one revision-fenced WAL record and become visible only after sync.
+Script errors, caught invalid host calls, oversized states and unsupported
+operations publish no partial reward or progress. Critical first-join behavior
+belongs to this durable state/reward callback, not a transient notification.
+
+Decisions may replace `state`, `public_state` (at most 1024 bytes), and
+`session_state` (at most 4096 bytes). Session bytes and timers apply after the
+receipt only if the exact admitted session is still live; disconnect removes
+live session state immediately. Final leave callbacks receive captured bytes.
+Lifecycle callbacks currently support ordinary inventory operations for their
+profile and gameplay queries; world/entity writes are rejected as a whole.
+
+`profile_delay` and `session_delay` accept 1..100000 logical ticks or false to
+suspend. Omitting them retains an existing deadline. Timer callbacks consume their
+one-shot deadline unless they return another delay. Profile deadlines are saved
+with the state, resume on the recovered logical tick timeline and run while the
+profile is offline. Downtime does not consume wall-clock time. Session deadlines
+cancel on disconnect and cannot target a replacement connection. A terminal timer
+callback failure is logged and suppressed in this process until its registration/
+deadline changes; it never silently commits a replacement value.
+
 ## Remaining implementation
 
-Typed command targeting, lifecycle/admission/spawn registration, atomic durable
-profile state, session state, scheduling, authorized player operations,
+Typed command targeting, additional authorized player operations,
 committed observers and client lifecycle/state delivery remain in progress.
 The client/server/save contracts will be versioned when their formats change.

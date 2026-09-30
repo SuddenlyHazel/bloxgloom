@@ -96,7 +96,7 @@ fn apply_committed_action_inner(
     // through the caller's fatal path. Wake and cursor changes must reach
     // publication: filtering to the state domain only would silently drop
     // them here.
-    let owner_changes: Vec<Change> = action
+    let mut owner_changes: Vec<Change> = action
         .entities
         .as_ref()
         .map(|entities| {
@@ -108,6 +108,13 @@ fn apply_committed_action_inner(
                 .collect()
         })
         .unwrap_or_default();
+    owner_changes.extend(
+        action
+            .owner_changes
+            .iter()
+            .filter(|change| is_owner_publication_key(&change.key))
+            .cloned(),
+    );
     let world_edits = std::mem::take(&mut action.world_edits);
     let chunk_checkpoints: Vec<_> = world_edits
         .iter()
@@ -139,6 +146,9 @@ fn apply_committed_action_inner(
         state
             .system_runtime
             .apply_replayed_owner_changes(&owner_changes)?;
+    }
+    if let Some(published) = action.player_publication.take() {
+        super::super::players::committed(state, published);
     }
     // Delivery at the commit barrier: the producer's transaction is now
     // durable, so its routed wakes become transient tick attempts. They wait

@@ -184,6 +184,7 @@ impl PackageSnapshot {
                             && c != GENERATION
                             && c != ACTIONS
                             && c != OWNER_SYSTEMS
+                            && c != bloxgloom_host_api::composition::PLAYERS
                             && c != STORAGE
                             && c != INVENTORY_SCREENS
                             && c != MOBILE_ENTITIES
@@ -211,6 +212,14 @@ impl PackageSnapshot {
                 })
             })
             .collect()
+    }
+
+    pub(super) fn permits_players(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            p.manifest
+                .requires
+                .contains(bloxgloom_host_api::composition::PLAYERS)
+        })
     }
 
     pub(super) fn permits_content(&self, package: &str) -> bool {

@@ -180,6 +180,7 @@ struct State {
     admin_profile: Option<u128>,
     entities: EntityStore,
     player_entities: PlayerEntityStore,
+    player_runtime: players::Runtime,
     /// Frozen notification-effect declarations installed at startup. Entity
     /// plans emit wakes against this registry; delivery only schedules
     /// transient tick attempts and never persists anything.
@@ -262,6 +263,7 @@ impl State {
     /// Release every authoritative interest pin with the session. Other
     /// clients' subscriptions keep their own pins on shared chunks.
     fn remove_client(&mut self, id: u64) -> Option<Client> {
+        players::leaving(self, id);
         let client = self.clients.remove(&id)?;
         if let Err(error) = self.position_store.save(client.profile, client.position()) {
             self.durability.failed = true;
@@ -297,6 +299,7 @@ impl State {
 }
 
 struct PendingJoin {
+    guard: players::JoinGuard,
     name: String,
     profile: u128,
     inventory: Inventory,
@@ -320,6 +323,7 @@ enum JoinResponse {
 
 enum SimulationInput {
     Join {
+        guard: players::JoinGuard,
         name: String,
         profile: u128,
         inventory: Box<Inventory>,
@@ -602,6 +606,7 @@ fn server_state_with_startup(
         admin_profile: None,
         entities,
         player_entities: PlayerEntityStore::default(),
+        player_runtime: players::Runtime::default(),
         effect_kinds,
         entity_public_revision,
         block_actions,

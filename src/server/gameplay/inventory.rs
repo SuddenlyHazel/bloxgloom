@@ -63,7 +63,7 @@ pub(in crate::server) fn stack(
     Ok(stack)
 }
 
-pub(super) fn apply(
+pub(in crate::server) fn apply(
     catalog: &Catalog,
     before: &Inventory,
     slots: Vec<Option<Stack>>,

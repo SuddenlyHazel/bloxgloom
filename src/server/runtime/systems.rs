@@ -32,7 +32,6 @@ use super::owner_commit::{
 #[cfg(test)]
 use super::owner_durable::OwnerSystemConfig;
 use super::owner_durable::{DurableOwnerStore, OwnerDurableError};
-#[cfg(test)]
 use super::owner_durable::{OwnerWrite, PreparedOwnerWave};
 use super::owner_effects::{OwnerEffectPatch, route_and_consume};
 use super::owner_wake::PendingWakeStore;
@@ -276,6 +275,37 @@ impl SystemRuntime {
             .map_err(OwnerDurableError::io)
     }
 
+    pub(in crate::server) fn stage_profile_insert(
+        &self,
+        system: &SystemId,
+        profile: u128,
+        value: &OwnerData,
+        due_tick: Option<u64>,
+    ) -> io::Result<Change> {
+        self.durable
+            .stage_scheduled_insert(system, OwnerKey::Profile(profile), value, due_tick)
+            .map_err(OwnerDurableError::io)
+    }
+
+    pub(in crate::server) fn has_profile_insert_room(&self, pending: usize) -> bool {
+        self.durable.has_insert_room(pending)
+    }
+    pub(in crate::server) fn profile_deadline(
+        &self,
+        system: &SystemId,
+        profile: u128,
+    ) -> Option<u64> {
+        self.durable.deadline(system, OwnerKey::Profile(profile))
+    }
+    pub(in crate::server) fn due_profiles(
+        &self,
+        system: &SystemId,
+        tick: u64,
+        limit: usize,
+    ) -> Vec<(u64, u128)> {
+        self.durable.due_profiles(system, tick, limit)
+    }
+
     pub(in crate::server) fn owner_snapshot(
         &self,
         system: &SystemId,
@@ -313,7 +343,6 @@ impl SystemRuntime {
     /// changes without applying anything. Used by tests driving
     /// multi-domain commits; the live path prepares from validated patches
     /// inside [`SystemRuntime::stage_registered_wave`].
-    #[cfg(test)]
     pub(in crate::server) fn prepare_owner_wave(
         &self,
         system: &SystemId,

@@ -533,6 +533,8 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(matches!(
@@ -2225,6 +2227,8 @@ fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(spawn),
     };
     settle_commit_action(&mut state, &spawn_action, 1);
@@ -2643,6 +2647,8 @@ fn stage_entity_spawn(
         clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     };
     assert!(
         state
@@ -2717,6 +2723,8 @@ fn stage_entity_spawn_batch(
         clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     };
     assert!(
         state
@@ -3593,6 +3601,8 @@ fn stage_entity_update(
         clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     };
     assert!(
         state

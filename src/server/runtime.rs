@@ -222,6 +222,7 @@ fn reject_simulation_input(state: &mut State, input: SimulationInput) {
 fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickId) {
     match input {
         SimulationInput::Join {
+            guard,
             name,
             profile,
             inventory,
@@ -236,6 +237,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
                 )))));
             } else {
                 state.pending_joins.push_back(PendingJoin {
+                    guard,
                     name,
                     profile,
                     inventory: *inventory,
@@ -267,7 +269,11 @@ fn process_pending_joins(state: &mut State, tick: TickId) {
         let Some(join) = state.pending_joins.pop_front() else {
             break;
         };
+        if join.guard.cancelled() {
+            continue;
+        }
         if join.queued_at.elapsed() >= JOIN_DEFER_TIMEOUT {
+            join.guard.cancel();
             let _ = join
                 .reply
                 .try_send(JoinResponse::Completed(Box::new(Err(io::Error::new(
@@ -329,15 +335,17 @@ fn process_pending_joins(state: &mut State, tick: TickId) {
         ) {
             Ok(reply) => {
                 let id = reply.id;
-                if join
-                    .reply
-                    .try_send(JoinResponse::Completed(Box::new(Ok(reply))))
-                    .is_err()
+                if !join.guard.admit()
+                    || join
+                        .reply
+                        .try_send(JoinResponse::Completed(Box::new(Ok(reply))))
+                        .is_err()
                 {
                     state.remove_client(id);
                 } else {
                     let claimed = state.durability.claim_epoch_grant(join.profile);
                     debug_assert_eq!(claimed, Some(action_epoch));
+                    players::joined(state, id);
                 }
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
@@ -378,6 +386,9 @@ pub(super) fn tick_with_inputs(
     };
     for (phase_index, phase) in Phase::ALL.into_iter().enumerate() {
         let phase_started = Instant::now();
+        if phase == Phase::Simulation {
+            players::drive(context.state, tick)?;
+        }
         let system_count = context.state.phase_plan.systems(phase).len();
         if system_count == 0 {
             return Err(io::Error::other(format!(

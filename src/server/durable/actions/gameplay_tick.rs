@@ -125,5 +125,7 @@ pub(in crate::server) fn plan(
         clock_change: None,
         entities,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     }))
 }

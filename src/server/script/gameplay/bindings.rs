@@ -9,7 +9,7 @@
 //! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
-mod players;
+pub(in crate::server::script) mod players;
 mod queries;
 
 pub(super) fn invoke(
@@ -19,7 +19,16 @@ pub(super) fn invoke(
     event: &Event,
     rejected: &RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
-    let fields = events::fields(lua, event)?;
+    invoke_fields(lua, entry, context, events::fields(lua, event)?, rejected)
+}
+
+pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
+    lua: &Lua,
+    entry: Function,
+    context: &mut Context<'_>,
+    fields: mlua::Table,
+    rejected: &RefCell<Option<Error>>,
+) -> mlua::Result<R> {
     let host = lua.create_table()?;
     if let Some(profile) = context.player_profile() {
         host.set(
@@ -242,7 +251,7 @@ pub(super) fn invoke(
             })?,
         )?;
         host.set_readonly(true);
-        entry.call::<()>((host, fields))
+        entry.call::<R>((host, fields))
     })
 }
 

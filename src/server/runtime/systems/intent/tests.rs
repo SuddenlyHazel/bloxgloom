@@ -325,6 +325,8 @@ fn ignition_chain(bootstrap: bool) {
         fire_seed: None,
         clock_change: None,
         entity_wakes: vec![],
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(

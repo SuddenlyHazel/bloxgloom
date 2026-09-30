@@ -222,6 +222,28 @@ impl<'a> Context<'a> {
         result
     }
 
+    /// Runs a frozen player-service registration with the same operation budget
+    /// and package ownership rules as ordinary gameplay decisions.
+    pub fn dispatch_player(
+        &mut self,
+        registration: &crate::players::Registration,
+        event: &crate::players::Event,
+        state: &crate::players::State,
+        session_data: &[u8],
+    ) -> Result<crate::players::Decision, Error> {
+        self.handler_namespace = registration
+            .key
+            .split_once(':')
+            .map(|(ns, _)| ns.to_owned());
+        self.handler_key = Some(registration.key.clone());
+        let result = registration
+            .behavior
+            .handle(self, event, state, session_data);
+        self.handler_namespace = None;
+        self.handler_key = None;
+        result
+    }
+
     /// Stable per-handler random word. The caller chooses an explicit cell and
     /// sequence, so retries do not depend on callback order or VM RNG state.
     pub fn random(&mut self, cell: Cell, sequence: u64) -> Result<u64, Error> {

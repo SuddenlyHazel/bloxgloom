@@ -220,6 +220,17 @@ impl ContentManifest {
         resolved.player_rules = local.player_rules();
         resolved.player_selection = local.player_selection.clone();
         resolved.player_appearance = local.player_appearance.clone();
+        for entry in self.entries.iter().filter(|entry| entry.kind == b'Q') {
+            if let Some(registration) = local
+                .player_lifecycles
+                .values()
+                .find(|r| r.key == entry.key)
+            {
+                resolved
+                    .player_lifecycles
+                    .insert(entry.id, registration.clone());
+            }
+        }
         for entry in self.entries.iter().filter(|entry| entry.kind == b'O') {
             let observer = local
                 .gameplay_observers
@@ -237,7 +248,7 @@ impl ContentManifest {
         for entry in self
             .entries
             .iter()
-            .filter(|entry| matches!(entry.kind, b'G' | b'Y'))
+            .filter(|entry| matches!(entry.kind, b'G' | b'Y' | b'Q'))
         {
             if local
                 .client_metadata
@@ -405,7 +416,7 @@ impl ContentManifest {
         for entry in &self.entries {
             if !matches!(
                 entry.kind,
-                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G' | b'O'
+                b'B' | b'S' | b'I' | b'E' | b'P' | b'T' | b'U' | b'Y' | b'G' | b'O' | b'Q'
             ) || entry.id >= MAX_ASSIGNED_ID
                 || entry.key.is_empty()
                 || entry.key.len() > if entry.kind == b'S' { 512 } else { 255 }

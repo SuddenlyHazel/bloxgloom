@@ -27,6 +27,7 @@ mod mobile;
 mod observers;
 mod owner_systems;
 pub(crate) mod player;
+mod players;
 mod public;
 pub use ids::{BlockStateId, BlockTypeId, EntityTypeId, ItemId, TextureId};
 #[allow(unused_imports)] // Public extension and manifest-inspection API.
@@ -231,6 +232,8 @@ pub struct Catalog {
         std::sync::Arc<bloxgloom_host_api::gameplay::ObserverRegistration>,
     >,
     item_icons: HashMap<String, std::sync::Arc<bloxgloom_host_api::icon::ItemIcon>>,
+    player_lifecycles:
+        std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::players::Registration>>,
     owner_systems:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::system::System>>,
     anchored_blocks: Vec<Option<EntityTypeId>>,
@@ -282,6 +285,7 @@ impl Catalog {
             gameplay_observers: Default::default(),
             gameplay_dispatch: Default::default(),
             item_icons: HashMap::new(),
+            player_lifecycles: Default::default(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),
             anchored_entities: Vec::new(),
@@ -787,6 +791,14 @@ impl Catalog {
                 self.definition_fingerprint(b'O', *id),
             ));
         }
+        for (id, lifecycle) in &self.player_lifecycles {
+            entries.push((
+                b'Q',
+                *id,
+                lifecycle.key.as_str(),
+                self.definition_fingerprint(b'Q', *id),
+            ));
+        }
         for (id, system) in &self.owner_systems {
             entries.push((
                 b'Y',
@@ -846,6 +858,7 @@ impl Catalog {
             b'G' => add(&self.gameplay_handlers[&id].fingerprint_bytes()),
             b'O' => add(&self.gameplay_observers[&id].version.to_le_bytes()),
             b'Y' => add(&self.owner_systems[&id].fingerprint_bytes()),
+            b'Q' => add(&self.player_lifecycles[&id].fingerprint_bytes()),
             b'B' => {
                 let block = self.block_type(BlockTypeId(id)).unwrap();
                 add(block.key.as_bytes());

@@ -30,7 +30,7 @@
 //! entity ID halves and eligible counts; only the host chooses those candidates.
 //! Event tables and nested blocks/triples are readonly; u64 IDs/random/ticks use
 //! `_lo`/`_hi` u32 halves. See `bindings` and `inventory` for staged operations.
-mod bindings;
+pub(in crate::server::script) mod bindings;
 mod declarations;
 mod events;
 mod inventory;

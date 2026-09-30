@@ -115,6 +115,8 @@ fn stage_edit(state: &mut State, cell: [i32; 3], block: crate::content::BlockSta
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(
@@ -446,6 +448,8 @@ fn dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(entities),
     };
     assert!(

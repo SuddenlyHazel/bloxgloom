@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     gameplay_observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     gameplay_handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -25,6 +26,16 @@ pub(crate) struct Registration {
     pub(crate) generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 impl Registrar for Registration {
+    fn player_lifecycle(
+        &mut self,
+        registration: bloxgloom_host_api::players::Registration,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        registration.validate()?;
+        self.player_lifecycles.push(registration);
+        Ok(())
+    }
+
     fn generation_contributor(
         &mut self,
         contributor: bloxgloom_host_api::generation::Registration,
@@ -216,6 +227,7 @@ impl Registration {
             + self.gameplay_entities.len()
             + self.gameplay_handlers.len()
             + self.gameplay_observers.len()
+            + self.player_lifecycles.len()
             + self.cubes.len()
             + self.definitions.len()
             + self.screens.len()
@@ -306,6 +318,12 @@ impl Registration {
         registration
             .gameplay_observers
             .sort_by(|a, b| a.key.cmp(&b.key));
+        registration
+            .player_lifecycles
+            .sort_by(|a, b| a.key.cmp(&b.key));
+        for lifecycle in &registration.player_lifecycles {
+            candidate.register_player_lifecycle(lifecycle.clone())?;
+        }
         for observer in &registration.gameplay_observers {
             candidate.register_gameplay_observer(observer.clone())?;
         }

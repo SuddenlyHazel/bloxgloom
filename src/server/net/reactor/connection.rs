@@ -80,6 +80,7 @@ pub(super) struct Connection {
     phase: Phase,
     deadline: Instant,
     name: String,
+    join_guard: crate::server::players::JoinGuard,
     profile: Option<u128>,
     sequence: u64,
     player_id: Option<u64>,
@@ -117,6 +118,7 @@ impl Connection {
             phase: Phase::AwaitHello,
             deadline: Instant::now() + HELLO_TIMEOUT,
             name: String::new(),
+            join_guard: crate::server::players::JoinGuard::default(),
             profile: None,
             sequence: 0,
             player_id: None,
@@ -160,6 +162,7 @@ impl Connection {
         if now >= self.deadline && self.phase != Phase::Active {
             if self.phase == Phase::AwaitJoin {
                 tracing::debug!(player_id = ?self.player_id, connection_key = self.poll_key, "connection closing");
+                self.join_guard.cancel();
                 self.peer_closed = true;
                 let _ = self.socket.shutdown(Shutdown::Both);
             } else {
@@ -170,6 +173,7 @@ impl Connection {
             }
         }
 
+        self.poll_pending_join_socket()?;
         self.poll_async(now, workers, input, pending_leaves)?;
         self.flush_pending_command(input)?;
         if self.pending_command.is_none() {
@@ -217,7 +221,7 @@ impl Connection {
         );
         let read_interest = !self.peer_closed
             && self.phase != Phase::Closed
-            && !waiting_for_join
+            && (!waiting_for_join || self.input_buffer.len() <= MAX_FRAME + 4 + SOCKET_CHUNK)
             && self.decode_receiver.is_none()
             && self.pending_decode_frame.is_none()
             && self.pending_command.is_none();
@@ -281,6 +285,7 @@ impl Connection {
                 let sender = self.outbound_sender.as_ref().unwrap().clone();
                 let (reply, receiver) = mpsc::sync_channel(1);
                 match input.try_send(SimulationInput::Join {
+                    guard: self.join_guard.clone(),
                     name: self.name.clone(),
                     profile,
                     inventory: Box::new(inventory),
@@ -552,6 +557,48 @@ impl Connection {
         }
     }
 
+    /// Keep observing EOF while admission waits, without decoding early commands.
+    /// Only the nonblocking reactor reads sockets; the coordinator sees a guard.
+    fn poll_pending_join_socket(&mut self) -> io::Result<()> {
+        if !matches!(
+            self.phase,
+            Phase::ReadyToLoadInventory
+                | Phase::LoadingInventory
+                | Phase::ReadyToJoin
+                | Phase::AwaitJoin
+        ) || self.peer_closed
+        {
+            return Ok(());
+        }
+        let mut read = 0;
+        let mut buffer = [0u8; SOCKET_CHUNK];
+        while read < READ_BUDGET {
+            match self.socket.read(&mut buffer) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "pending join disconnected",
+                    ));
+                }
+                Ok(count) => {
+                    self.input_buffer.extend_from_slice(&buffer[..count]);
+                    self.stats.input(count);
+                    read += count;
+                    if self.input_buffer.len() > MAX_FRAME + 4 + SOCKET_CHUNK {
+                        return Err(io::Error::new(
+                            ErrorKind::InvalidData,
+                            "pending join input buffer overflow",
+                        ));
+                    }
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
     fn poll_read(&mut self, codecs: &CodecWorkers) -> io::Result<bool> {
         if matches!(
             self.phase,
@@ -720,6 +767,7 @@ impl Connection {
     }
 
     pub(super) fn disconnect(&mut self, pending_leaves: &mut VecDeque<PendingLeave>) {
+        self.join_guard.cancel();
         if self.peer_closed || self.phase == Phase::Closed {
             return;
         }

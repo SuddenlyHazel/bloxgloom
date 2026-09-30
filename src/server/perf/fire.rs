@@ -348,6 +348,8 @@ fn fixture_action(
         clock_change: None,
         entities: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     }
 }
 

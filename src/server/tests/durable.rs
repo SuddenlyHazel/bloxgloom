@@ -172,6 +172,8 @@ fn outstanding_terrain_edit_defers_drop_motion_until_replanned_single_and_batche
             clock_change: None,
             entities: None,
             entity_wakes: Vec::new(),
+            owner_changes: vec![],
+            player_publication: None,
         };
         assert!(
             state
@@ -421,6 +423,7 @@ fn deferred_join_refreshes_inventory_captured_before_a_checkpoint() {
         &mut state,
         &mut tick,
         vec![SimulationInput::Join {
+            guard: crate::server::players::JoinGuard::default(),
             name: format!("player-{profile:x}"),
             profile,
             inventory: Box::new(stale),
@@ -1755,6 +1758,8 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(expired),
     };
     assert!(

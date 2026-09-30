@@ -202,6 +202,8 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
         fire_seed: Some(seed.clone()),
         clock_change: None,
         entity_wakes: vec![],
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(

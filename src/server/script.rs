@@ -10,6 +10,7 @@ pub(crate) mod handles;
 mod imports;
 pub(in crate::server::script) mod machine;
 pub mod package;
+mod players;
 pub(crate) mod runtime;
 pub(super) mod startup;
 mod system;

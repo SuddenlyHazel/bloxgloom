@@ -257,6 +257,8 @@ fn plan_observed_request(
                 clock_change: None,
                 entities: None,
                 entity_wakes: vec![],
+                owner_changes: vec![],
+                player_publication: None,
             })
         }
         Operation::Inventory | Operation::EntityRequest(_) => {

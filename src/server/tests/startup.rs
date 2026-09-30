@@ -160,6 +160,8 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(matches!(
@@ -324,6 +326,8 @@ fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edit
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: None,
     };
     assert!(matches!(
@@ -1723,6 +1727,8 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
         clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     };
     assert!(
         state
@@ -2050,6 +2056,8 @@ fn stage_tamper_batch(
         clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     };
     assert!(
         state
@@ -2253,6 +2261,8 @@ fn tamper_action(
         clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     }
 }
 

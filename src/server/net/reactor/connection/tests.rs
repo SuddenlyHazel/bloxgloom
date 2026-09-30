@@ -217,3 +217,36 @@ fn bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline() {
         &second.pending_write.as_ref().unwrap().bytes
     ));
 }
+
+#[test]
+fn pending_join_observes_eof_without_decoding_buffered_commands() {
+    let (mut connection, mut peer, _content) = test_connection();
+    connection.phase = Phase::AwaitJoin;
+    protocol::write_client(&mut peer, &ClientMessage::SetView { radius: 4 }).unwrap();
+    let received_by = Instant::now() + Duration::from_secs(1);
+    while connection.input_buffer.is_empty() {
+        connection.poll_pending_join_socket().unwrap();
+        assert!(
+            Instant::now() < received_by,
+            "pending bytes never reached reactor"
+        );
+        thread::yield_now();
+    }
+    assert!(connection.player_id.is_none());
+    peer.shutdown(Shutdown::Both).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        if let Err(error) = connection.poll_pending_join_socket() {
+            assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+            connection.disconnect(&mut VecDeque::new());
+            assert!(connection.join_guard.cancelled());
+            assert!(!connection.join_guard.admit());
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "closed pending peer was not observed"
+        );
+        thread::yield_now();
+    }
+}

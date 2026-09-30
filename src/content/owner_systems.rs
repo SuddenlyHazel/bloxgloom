@@ -10,7 +10,9 @@ impl Catalog {
         system: System,
     ) -> Result<(), RegistrationError> {
         system.validate()?;
-        if self.owner_systems.len() >= 128 || self.owner_systems().any(|old| old.key == system.key)
+        if self.owner_systems.len() >= 128
+            || self.owner_systems().any(|old| old.key == system.key)
+            || self.player_lifecycles().any(|old| old.key == system.key)
         {
             return Err(RegistrationError(
                 "duplicate or over-limit owner system".into(),

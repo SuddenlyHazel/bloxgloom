@@ -272,6 +272,8 @@ pub(in crate::server) fn plan_durable_request(
                 fire_seed: None,
                 clock_change: None,
                 entity_wakes: Vec::new(),
+                owner_changes: vec![],
+                player_publication: None,
                 entities: Some(entities),
             }))
         }
@@ -482,6 +484,8 @@ fn plan_block_edit(
             clock_change: None,
             entities,
             entity_wakes: Vec::new(),
+            owner_changes: vec![],
+            player_publication: None,
         });
     }
 
@@ -538,6 +542,8 @@ fn plan_block_edit(
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities,
     })
 }

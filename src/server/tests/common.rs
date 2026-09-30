@@ -99,6 +99,7 @@ pub(super) fn join(state: &mut State, tick: &mut u64, profile: u128) -> Session 
         state,
         tick,
         vec![SimulationInput::Join {
+            guard: crate::server::players::JoinGuard::default(),
             name: format!("player-{profile:x}"),
             profile,
             inventory: Box::new(inventory),
@@ -302,6 +303,8 @@ fn stage_entity_batch(
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(batch),
     };
     assert!(

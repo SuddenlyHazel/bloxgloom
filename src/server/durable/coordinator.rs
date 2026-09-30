@@ -575,6 +575,8 @@ fn stage_motion_batch(
         clock_change: None,
         entities,
         entity_wakes: wakes,
+        owner_changes: vec![],
+        player_publication: None,
     };
     if let Err(error) = state.entities.validate_prepared(
         batch_action

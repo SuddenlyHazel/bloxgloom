@@ -355,6 +355,8 @@ fn add_clients_and_seed_drops(
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(spawns),
     };
     let tick = crate::server::simulation::TickId::new(1);

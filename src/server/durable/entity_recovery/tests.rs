@@ -278,6 +278,8 @@ fn one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(spawn),
     };
     let sequence = live.durability.writer.sequence();
@@ -365,6 +367,8 @@ fn synced_entity_action_reaches_checkpoint_mirror_before_restart() {
         fire_seed: None,
         clock_change: None,
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
         entities: Some(spawn),
     };
     let permit = live

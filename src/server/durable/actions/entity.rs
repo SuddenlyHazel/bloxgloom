@@ -338,6 +338,8 @@ pub(in crate::server) fn plan_interact(
         clock_change: None,
         entities: Some(entities),
         entity_wakes: wakes,
+        owner_changes: vec![],
+        player_publication: None,
     })
 }
 
@@ -757,6 +759,8 @@ pub(in crate::server) fn commit_tick_plan(
         clock_change: None,
         entities: Some(entities),
         entity_wakes: wakes,
+        owner_changes: vec![],
+        player_publication: None,
     }))
 }
 

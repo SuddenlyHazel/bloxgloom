@@ -21,10 +21,17 @@ pub(super) struct Runtime {
     entities: Vec<Entity>,
     handlers: Vec<Identity>,
     systems: Vec<Identity>,
+    players: Vec<Identity>,
     generation: Vec<(String, u32)>,
 }
 
 impl Runtime {
+    pub(in crate::server::script::package::client) fn set_players(
+        &mut self,
+        identities: Vec<Identity>,
+    ) {
+        self.players = identities;
+    }
     pub(super) fn counts(&self) -> [usize; 5] {
         [
             self.actions.len(),
@@ -328,7 +335,12 @@ impl Runtime {
             }
             catalog.register_action(action.clone())?;
         }
-        for identity in self.handlers.iter().chain(&self.systems) {
+        for identity in self
+            .handlers
+            .iter()
+            .chain(&self.systems)
+            .chain(&self.players)
+        {
             catalog.client_runtime_identity(identity.clone())?;
         }
         Ok(())

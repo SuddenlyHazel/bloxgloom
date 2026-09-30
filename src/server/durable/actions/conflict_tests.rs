@@ -90,6 +90,8 @@ fn action(entities: PreparedEntityTransaction) -> CommitAction {
         clock_change: None,
         entities: Some(entities),
         entity_wakes: Vec::new(),
+        owner_changes: vec![],
+        player_publication: None,
     }
 }
 

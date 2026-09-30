@@ -112,6 +112,7 @@ impl Composition {
             for c in &definition.requires {
                 if ![
                     api::CONTENT,
+                    api::PLAYERS,
                     api::STORAGE,
                     api::MACHINES,
                     api::MOBILE_ENTITIES,

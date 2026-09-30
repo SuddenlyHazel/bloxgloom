@@ -284,7 +284,11 @@ add save converters, or implement every proposed player mechanic at once.
 
 #### Execution status
 
-Goal active. Land the work in reviewable increments:
+Goal active. Identity/directory queries are committed. Lifecycle registration,
+admission/spawn decisions, durable profile and session state, atomic rewards and
+profile/session deadlines are implemented and verified. The second increment
+passes 1,132 workspace tests, strict Clippy, formatting and typed Luau analysis. Command targeting, player operations and client/observer delivery remain.
+Land the work in reviewable increments:
 
 The first increment exposes exact actor profile/session identities and captured
 online-player queries in gameplay action callbacks, with honest profile-claim

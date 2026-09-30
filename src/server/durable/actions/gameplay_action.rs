@@ -266,6 +266,8 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             .transpose()?,
         entities,
         entity_wakes: vec![],
+        owner_changes: vec![],
+        player_publication: None,
     })
 }
 

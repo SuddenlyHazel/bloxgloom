@@ -287,6 +287,9 @@ impl ServerStartup {
                 descriptor.partition(),
             )?);
         }
+        for registration in self.catalog.player_lifecycles() {
+            configs.push(super::players::state::config(registration)?);
+        }
         Ok(configs)
     }
 

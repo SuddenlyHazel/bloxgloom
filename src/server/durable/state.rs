@@ -12,7 +12,7 @@ pub(in crate::server) fn action_changes(
     action: &CommitAction,
     catalog: &crate::content::Catalog,
 ) -> io::Result<Vec<Change>> {
-    let mut changes = Vec::new();
+    let mut changes = action.owner_changes.clone();
     if let Some(change) = &action.clock_change {
         changes.push(change.clone());
     }

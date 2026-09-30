@@ -52,6 +52,7 @@ pub(in crate::server) fn join_named_client(
         },
         None => spawn_position_cached(state)?,
     };
+    let position = super::admit(state, profile, name, action_epoch, position, &inventory)?;
     let id = state.next_id;
     let next_id = state
         .next_id

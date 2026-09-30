@@ -6,7 +6,9 @@ use bloxgloom_host_api::gameplay::{Block, Cell, Context, Error, Snapshot};
 use std::io;
 mod entities;
 mod entity_inventory;
-pub(super) mod inventory;
+pub(in crate::server) mod inventory;
+mod players;
+pub(in crate::server) use players::invoke as invoke_player;
 
 pub(super) struct Participants<'a> {
     pub players: &'a [bloxgloom_host_api::gameplay::Player],
