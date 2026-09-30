@@ -115,6 +115,7 @@ fn moving_object_lighting_keeps_completed_field_during_relight_then_accepts_dark
         sky: 15,
         glow: 0,
         bounce: [3, 4, 5],
+        glow_bounce: [0; 3],
     };
     app.chunks.insert(
         key,
@@ -179,6 +180,7 @@ fn moving_objects_sample_current_local_light_across_negative_chunk_seams() {
         sky: 0,
         glow: 13,
         bounce: [7, 9, 11],
+        glow_bounce: [0; 3],
     };
     let mut samples = vec![LightSample::default(); crate::world::CHUNK_VOLUME].into_boxed_slice();
     samples[Chunk::index(local).unwrap()] = lit;

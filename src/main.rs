@@ -1,6 +1,7 @@
 mod client;
 mod config;
 mod content;
+mod daylight;
 mod gameplay;
 mod inventory;
 mod items;
@@ -274,6 +275,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_egui_previews(std::path::Path::new(&directory))?;
             println!("wrote egui previews to {directory}");
+        }
+        Some("daylight-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "daylight-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: daylight-preview [output-dir]".into());
+            }
+            preview::render_daylight_previews(std::path::Path::new(&directory))?;
+            println!("wrote daylight previews to {directory}");
         }
         Some("lighting-preview") => {
             let directory = args

@@ -75,6 +75,7 @@ use outbound::{OutboundQueue, OutboundTelemetry};
 use parallel::PhaseExecutor;
 use position_store::PositionStore;
 use registry::PhasePlan;
+mod world_time;
 use runtime::run_simulation_ticks;
 use runtime::systems::SystemRuntime;
 #[cfg(test)]
@@ -193,6 +194,7 @@ struct State {
     durability: Durability,
     fire: FireRuntime,
     recovered_tick: u64,
+    world_time: world_time::Clock,
     phase_plan: PhasePlan,
     system_runtime: SystemRuntime,
     loader: ChunkLoader,
@@ -554,6 +556,7 @@ fn server_state_with_startup(
             owner_configs,
         )?;
     let recovered_tick = durability.recovered_tick.max(recovered_fire.last_tick());
+    let world_time = world_time::Clock::open(&save_dir)?;
     // Only startup may synchronously load the origin terrain. Each live join
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
@@ -603,6 +606,7 @@ fn server_state_with_startup(
         durability,
         fire,
         recovered_tick,
+        world_time,
         phase_plan,
         system_runtime,
         loader,
@@ -720,6 +724,9 @@ fn join_client(
         ServerMessage::Inventory {
             revision: inventory.revision,
             slots: inventory.slots.clone(),
+        },
+        ServerMessage::WorldTime {
+            elapsed_ms: state.world_time.now(),
         },
     ] {
         if sender.try_send(message).is_err() {

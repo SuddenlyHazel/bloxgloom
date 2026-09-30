@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32> };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct VertexInput {
@@ -12,6 +12,7 @@ struct VertexInput {
     @location(7) pose: vec4<f32>,
     @location(8) color: vec3<f32>,
     @location(9) tint: vec3<f32>,
+    @location(10) glow_bounce: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -50,11 +51,12 @@ struct VertexOutput {
     let sky = f32(input.light_levels.x) / 15.0;
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3<f32>(f32(input.bounce.x), f32(input.bounce.y), f32(input.bounce.z)) / 255.0;
-    let sun = max(dot(normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
+    let glow_bounce = vec3<f32>(f32(input.glow_bounce.x), f32(input.glow_bounce.y), f32(input.glow_bounce.z)) / 255.0;
+    let sun = max(dot(normal, normalize(camera.sun.xyz)), 0.0);
     let light = vec3<f32>(0.012, 0.015, 0.022)
-        + sky * (vec3<f32>(0.31, 0.40, 0.53) + sun * vec3<f32>(0.77, 0.66, 0.47))
+        + sky * camera.sun.w * (vec3<f32>(0.31, 0.40, 0.53) + sun * vec3<f32>(0.77, 0.66, 0.47))
         + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
-        + bounce * 1.35;
+        + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
     output.color = albedo * input.tint * light;
     output.distance = output.clip.w;
     output.sky = sky;
@@ -63,6 +65,6 @@ struct VertexOutput {
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let fog = smoothstep(38.0, 135.0, input.distance);
-    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky);
+    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), camera.horizon.xyz, input.sky);
     return vec4<f32>(mix(input.color, fog_sky, fog), 1.0);
 }

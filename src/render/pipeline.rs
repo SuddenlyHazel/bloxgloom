@@ -1,6 +1,5 @@
 use super::custom;
 use super::material;
-use super::shader::with_world_sun;
 use super::{DEPTH_FORMAT, VERTEX_FLOATS};
 use crate::content::Catalog;
 use wgpu::util::DeviceExt;
@@ -45,14 +44,7 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
         "{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
         custom::TYPES
     );
-    create_voxel_pipeline_source(
-        device,
-        queue,
-        format,
-        catalog,
-        &with_world_sun(&source),
-        None,
-    )
+    create_voxel_pipeline_source(device, queue, format, catalog, &source, None)
 }
 
 /// Prepared on a worker; the renderer still owns vertex geometry, projection,
@@ -81,7 +73,7 @@ pub(crate) fn create_custom_voxel_pipeline(
                     queue,
                     format,
                     catalog,
-                    &with_world_sun(&source),
+                    &source,
                     Some(&gpu.layout),
                 );
                 if let Some(error) = pollster::block_on(error_scope.pop()) {
@@ -115,7 +107,7 @@ fn create_voxel_pipeline_source(
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
-        size: 64,
+        size: 96,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -123,7 +115,7 @@ fn create_voxel_pipeline_source(
         label: Some("camera layout"),
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
+            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
@@ -268,7 +260,7 @@ fn create_voxel_pipeline_source(
         bind_group_layouts: &layouts,
         immediate_size: 0,
     });
-    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32];
+    let attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32, 4 => Float32x2, 5 => Float32, 6 => Float32];
     let make_pipeline = |label, cull_mode, fragment_entry| {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(label),

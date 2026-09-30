@@ -328,12 +328,19 @@ pub(super) async fn run_perf_benchmark_async(
         queue.write_buffer(
             &sky_buffer,
             0,
-            bytemuck::cast_slice(&render::sky_camera_data(camera, PERF_WIDTH, PERF_HEIGHT)),
+            bytemuck::cast_slice(&render::sky_camera_data(
+                camera,
+                PERF_WIDTH,
+                PERF_HEIGHT,
+                render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            )),
         );
         queue.write_buffer(
             &camera_buffer,
             0,
-            bytemuck::cast_slice(&matrix.to_cols_array()),
+            bytemuck::cast_slice(
+                &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS).camera_data(matrix),
+            ),
         );
         queue.write_buffer(
             &target_camera_buffer,

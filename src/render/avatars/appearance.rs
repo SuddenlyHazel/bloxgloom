@@ -20,7 +20,5 @@ pub(super) fn shader(catalog: &Catalog) -> String {
         }
         palettes.push_str(");\n");
     }
-    super::super::shader::with_world_sun(
-        &include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes),
-    )
+    include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes)
 }

@@ -90,7 +90,10 @@ fn render(
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
     let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: bytemuck::cast_slice(&camera.to_cols_array()),
+        contents: bytemuck::cast_slice(
+            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                .camera_data(camera),
+        ),
         usage: wgpu::BufferUsages::UNIFORM,
     });
     let mut renderer =
@@ -105,6 +108,7 @@ fn render(
         cosmetics,
         light_levels: [15, 0, 0, 0],
         bounce: [0; 4],
+        glow_bounce: [0; 4],
         tint: if x > 0.0 { tint } else { [1.0; 3] },
     });
     renderer.set(queue, &avatars);

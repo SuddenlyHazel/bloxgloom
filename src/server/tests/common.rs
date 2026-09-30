@@ -209,6 +209,23 @@ pub(super) fn wait_for_inventory(
     panic!("inventory condition was not reached");
 }
 
+/// Wait for a real snapshot subscription, including its epoch, revisions, and pin.
+/// Marking only `sent` skips those invariants and races asynchronous streaming.
+pub(super) fn wait_for_subscription(state: &mut State, tick: &mut u64, id: u64, key: ChunkKey) {
+    for _ in 0..1_000 {
+        let client = &state.clients[&id];
+        if client.sent.contains(&key) {
+            assert!(client.sent_epochs.contains_key(&key));
+            assert!(client.sent_block_versions.contains_key(&key));
+            assert!(client.sent_entity_revisions.contains_key(&key));
+            return;
+        }
+        run_empty_tick(state, tick);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    panic!("chunk {key:?} was not subscribed for session {id}");
+}
+
 pub(super) fn action_result(messages: &[ServerMessage], action_id: u128) -> Option<bool> {
     messages.iter().find_map(|message| match message {
         ServerMessage::ActionResult {

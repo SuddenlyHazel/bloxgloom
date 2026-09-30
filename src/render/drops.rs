@@ -32,14 +32,18 @@ impl VisualDrop {
         self.scale * catalog.drop_size(self.item).multiplier()
     }
 
-    fn light_attributes(&self) -> [f32; 3] {
+    fn light_attributes(&self) -> [f32; 4] {
         let bounce = u32::from(self.light.bounce[0])
             | (u32::from(self.light.bounce[1]) << 8)
             | (u32::from(self.light.bounce[2]) << 16);
+        let glow_bounce = u32::from(self.light.glow_bounce[0])
+            | (u32::from(self.light.glow_bounce[1]) << 8)
+            | (u32::from(self.light.glow_bounce[2]) << 16);
         [
             f32::from(self.light.sky) / 15.0,
             f32::from(self.light.glow) / 15.0,
             bounce as f32,
+            glow_bounce as f32,
         ]
     }
 }
@@ -186,6 +190,7 @@ mod tests {
                     sky: 3,
                     glow: 12,
                     bounce: [17, 29, 43],
+                    glow_bounce: [7, 9, 11],
                 },
             ] {
                 let mesh = mesh(&[VisualDrop {
@@ -208,6 +213,15 @@ mod tests {
                     assert_eq!(
                         [bounce as u8, (bounce >> 8) as u8, (bounce >> 16) as u8],
                         light.bounce
+                    );
+                    let glow_bounce = vertex[12] as u32;
+                    assert_eq!(
+                        [
+                            glow_bounce as u8,
+                            (glow_bounce >> 8) as u8,
+                            (glow_bounce >> 16) as u8
+                        ],
+                        light.glow_bounce
                     );
                 }
             }

@@ -478,7 +478,12 @@ fn sky_basis_tracks_camera_turns_in_world_space() {
         pitch: sun.y.asin(),
         fov_y_radians: 70.0f32.to_radians(),
     };
-    let facing_data = sky_camera_data(facing, 1280, 720);
+    let facing_data = sky_camera_data(
+        facing,
+        1280,
+        720,
+        daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+    );
     let facing_center = Vec3::new(facing_data[0], facing_data[1], facing_data[2]);
     assert!(facing_center.dot(sun) > 0.999);
 
@@ -487,7 +492,12 @@ fn sky_basis_tracks_camera_turns_in_world_space() {
         pitch: -sun.y.asin(),
         ..facing
     };
-    let away_data = sky_camera_data(away, 1280, 720);
+    let away_data = sky_camera_data(
+        away,
+        1280,
+        720,
+        daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+    );
     let away_center = Vec3::new(away_data[0], away_data[1], away_data[2]);
     assert!(away_center.dot(sun) < -0.999);
     assert!((facing_data[7] - facing_data[11] * (1280.0 / 720.0)).abs() < 1e-6);

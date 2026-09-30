@@ -123,6 +123,7 @@ fn mesh_chunk_with_catalog(
                                     sky: 15,
                                     glow: 0,
                                     bounce: [0; 3],
+                                    glow_bounce: [0; 3],
                                 },
                                 |field| field.face(p, axis, side),
                             );
@@ -133,7 +134,10 @@ fn mesh_chunk_with_catalog(
                             mask[i + n * j] = u64::from(block.id.get())
                                 | (u64::from(sample.sky) << 32)
                                 | (u64::from(sample.glow) << 36)
-                                | (u64::from(bounce_level) << 40);
+                                | (u64::from(bounce_level) << 40)
+                                | (u64::from(
+                                    sample.glow_bounce.iter().copied().max().unwrap_or(0) / 16,
+                                ) << 44);
                         }
                     }
                 }
@@ -216,6 +220,7 @@ fn mesh_chunk_with_catalog(
                                         sky: 15,
                                         glow: 0,
                                         bounce: [0; 3],
+                                        glow_bounce: [0; 3],
                                     },
                                     |field| field.face(p, axis, side),
                                 );
@@ -223,7 +228,10 @@ fn mesh_chunk_with_catalog(
                                 let material = u64::from(block.id.get())
                                     | (u64::from(sample.sky) << 32)
                                     | (u64::from(sample.glow) << 36)
-                                    | (u64::from(bounce) << 40);
+                                    | (u64::from(bounce) << 40)
+                                    | (u64::from(
+                                        sample.glow_bounce.iter().copied().max().unwrap_or(0) / 16,
+                                    ) << 44);
                                 emit_quad(
                                     &mut out.cutout_vertices,
                                     &mut out.cutout_indices,
@@ -376,7 +384,7 @@ fn emit_quad(
         vertices.extend_from_slice(&normal);
         let (texture_u, texture_v) =
             face_uv(axis, du as f32, dv as f32, width as f32, height as f32);
-        let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0], |field| {
+        let corner_light = light.map_or([sky, glow, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], |field| {
             field.corner([axis, u, v], side, slice, [i + du, j + dv])
         });
         // Every 24-bit integer is represented exactly by f32. Packing RGB
@@ -384,6 +392,9 @@ fn emit_quad(
         let packed_bounce = (corner_light[2] * 255.0).round() as u32
             | (((corner_light[3] * 255.0).round() as u32) << 8)
             | (((corner_light[4] * 255.0).round() as u32) << 16);
+        let packed_glow_bounce = (corner_light[5] * 255.0).round() as u32
+            | (((corner_light[6] * 255.0).round() as u32) << 8)
+            | (((corner_light[7] * 255.0).round() as u32) << 16);
         vertices.extend_from_slice(&[
             texture_u,
             texture_v,
@@ -391,6 +402,7 @@ fn emit_quad(
             corner_light[0],
             corner_light[1],
             packed_bounce as f32,
+            packed_glow_bounce as f32,
         ]);
     }
     // (u, v, axis) is cyclic for every axis, so +axis is CCW.
@@ -413,9 +425,13 @@ fn emit_plant(
             sky: 15,
             glow: 0,
             bounce: [0; 3],
+            glow_bounce: [0; 3],
         },
         |field| field.face(p, 1, 1),
     );
+    let packed_glow_bounce = u32::from(sample.glow_bounce[0])
+        | (u32::from(sample.glow_bounce[1]) << 8)
+        | (u32::from(sample.glow_bounce[2]) << 16);
     let packed_bounce = u32::from(sample.bounce[0])
         | (u32::from(sample.bounce[1]) << 8)
         | (u32::from(sample.bounce[2]) << 16);
@@ -450,6 +466,7 @@ fn emit_plant(
                 f32::from(sample.sky) / 15.0,
                 f32::from(sample.glow) / 15.0,
                 packed_bounce as f32,
+                packed_glow_bounce as f32,
             ]);
         }
         out.cutout_indices

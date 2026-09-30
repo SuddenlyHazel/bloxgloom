@@ -144,7 +144,10 @@ fn material_fragment(input: BgSurface) -> BgSurface {
     queue.write_buffer(
         &camera,
         0,
-        bytemuck::cast_slice(&glam::Mat4::IDENTITY.to_cols_array()),
+        bytemuck::cast_slice(
+            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                .camera_data(glam::Mat4::IDENTITY),
+        ),
     );
 
     // Package-owned tile through the item/cutout pipeline in both sky and dark
@@ -158,8 +161,9 @@ fn material_fragment(input: BgSurface) -> BgSurface {
     ] {
         let base = (vertices.len() / VERTEX_FLOATS) as u32;
         for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
-            vertices
-                .extend_from_slice(&[x, y, 0.5, 0.0, 1.0, 0.0, 0.25, 0.25, layer, sky, 0.0, 0.0]);
+            vertices.extend_from_slice(&[
+                x, y, 0.5, 0.0, 1.0, 0.0, 0.25, 0.25, layer, sky, 0.0, 0.0, 0.0,
+            ]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -181,8 +185,9 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         let x1 = x0 + 0.5;
         let base = (vertices.len() / VERTEX_FLOATS) as u32;
         for (x, y) in [(x0, 0.0), (x1, 0.0), (x1, 1.0), (x0, 1.0)] {
-            vertices
-                .extend_from_slice(&[x, y, 0.25, 0.0, 1.0, 0.0, uv[0], uv[1], 12.0, 1.0, 0.0, 0.0]);
+            vertices.extend_from_slice(&[
+                x, y, 0.25, 0.0, 1.0, 0.0, uv[0], uv[1], 12.0, 1.0, 0.0, 0.0, 0.0,
+            ]);
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

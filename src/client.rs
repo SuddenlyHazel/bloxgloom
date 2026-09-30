@@ -268,6 +268,7 @@ mod mesh_queue;
 pub(crate) mod presentation;
 pub(crate) mod startup;
 mod workers;
+mod world_time;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
 #[cfg(test)]
 pub(crate) use mobile_tests::NetworkedVisualProbe;
@@ -320,6 +321,7 @@ struct ClientApp {
     light_samples: HashMap<ChunkKey, (u64, Box<[LightSample]>)>,
     next_lighting_revision: u64,
     world_seed: Option<u64>,
+    world_time: world_time::Clock,
     owned_entity_id: Option<u64>,
     pending_upload: VecDeque<ChunkMesh>,
     pending_commands: VecDeque<ClientMessage>,
@@ -395,6 +397,7 @@ impl ClientApp {
             light_samples: HashMap::new(),
             next_lighting_revision: 1,
             world_seed: None,
+            world_time: world_time::Clock::default(),
             owned_entity_id: None,
             pending_upload: VecDeque::new(),
             pending_commands: VecDeque::new(),
@@ -896,6 +899,7 @@ impl ClientApp {
             | ServerMessage::BundlePart { .. } => {
                 self.fail_session("Unexpected content manifest after handshake");
             }
+            ServerMessage::WorldTime { elapsed_ms } => self.world_time.synchronize(elapsed_ms),
             ServerMessage::Welcome { id, seed } => {
                 self.world_seed = Some(seed);
                 eprintln!("connected as player {id}, world seed {seed}")
@@ -1657,6 +1661,12 @@ impl ClientApp {
             let sample = self.light_at(avatar.position + Vec3::Y * height);
             avatar.light_levels = [sample.sky, sample.glow, 0, 0];
             avatar.bounce = [sample.bounce[0], sample.bounce[1], sample.bounce[2], 0];
+            avatar.glow_bounce = [
+                sample.glow_bounce[0],
+                sample.glow_bounce[1],
+                sample.glow_bounce[2],
+                0,
+            ];
         }
         let mut visual_fire = self
             .fire_animator
@@ -1668,6 +1678,7 @@ impl ClientApp {
             visual_fire.extend(visual.effects(now, &visual_avatars));
         }
         if let Some(renderer) = &mut self.renderer {
+            renderer.set_world_time(self.world_time.now());
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
             renderer.set_avatars(&visual_avatars);

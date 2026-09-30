@@ -146,6 +146,10 @@ fn bounced_mode_reflects_surface_color_without_leaking_into_default() {
     let face = [7, 6, 9];
     assert_eq!(default.face(face, 2, 0).bounce, [0; 3]);
     let reflected = bounced.face(face, 2, 0).bounce;
+    assert_ne!(reflected, [0; 3]);
+    // Sealed rooms have no sunlight: their reflections must survive at night.
+    assert_eq!(bounced.face(face, 2, 0).glow_bounce, reflected);
+    assert_eq!(default.face(face, 2, 0).glow_bounce, [0; 3]);
     Arc::make_mut(known.get_mut(&key).unwrap())
         .blocks
         .set(Chunk::index([7, 6, 10]).unwrap(), STONE);
@@ -156,6 +160,7 @@ fn bounced_mode_reflects_surface_color_without_leaking_into_default() {
         .set(Chunk::index([7, 6, 7]).unwrap(), AIR);
     let dark = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
     assert_eq!(dark.face(face, 2, 0).bounce, [0; 3]);
+    assert_eq!(dark.face(face, 2, 0).glow_bounce, [0; 3]);
 }
 
 #[test]
@@ -175,6 +180,10 @@ fn opening_a_roof_shaft_relights_the_cave() {
     }
     let field = LightField::build(key, &known, 0xB10C_6100);
     assert_eq!(field.face([8, 5, 8], 1, 1).sky, 15);
+    let reflected = LightField::build_with_bounce(key, &known, 0xB10C_6100, true);
+    let daylight = reflected.face([8, 5, 8], 1, 1);
+    assert_ne!(daylight.bounce, [0; 3]);
+    assert_eq!(daylight.glow_bounce, [0; 3]);
     Arc::make_mut(known.get_mut(&key).unwrap())
         .blocks
         .set(Chunk::index([8, 8, 8]).unwrap(), STONE);

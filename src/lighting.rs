@@ -19,12 +19,15 @@ pub struct LightSample {
     pub sky: u8,
     pub glow: u8,
     pub bounce: [u8; 3],
+    /// Emission-only reflection, retained when sunlight fades.
+    pub glow_bounce: [u8; 3],
 }
 
 pub struct LightField {
     sky: Vec<u8>,
     glow: Vec<u8>,
     bounce: Option<Vec<[u8; 3]>>,
+    glow_bounce: Option<Vec<[u8; 3]>>,
 }
 
 impl LightField {
@@ -121,7 +124,14 @@ impl LightField {
         propagate(&blocks, &mut sky, sky_frontier, catalog);
         propagate(&blocks, &mut glow, glow_frontier, catalog);
         let bounce = bounced.then(|| build_bounce(&blocks, &sky, &glow, catalog));
-        Self { sky, glow, bounce }
+        let glow_bounce = (bounced && glow.iter().any(|&value| value != 0))
+            .then(|| build_bounce(&blocks, &vec![0; VOLUME], &glow, catalog));
+        Self {
+            sky,
+            glow,
+            bounce,
+            glow_bounce,
+        }
     }
 
     pub fn face(&self, local: [usize; 3], axis: usize, side: i32) -> LightSample {
@@ -136,6 +146,10 @@ impl LightField {
             sky: self.sky[at],
             glow: self.glow[at],
             bounce: self.bounce.as_ref().map_or([0; 3], |bounce| bounce[at]),
+            glow_bounce: self
+                .glow_bounce
+                .as_ref()
+                .map_or([0; 3], |bounce| bounce[at]),
         }
     }
 
@@ -147,12 +161,13 @@ impl LightField {
         side: i32,
         slice: usize,
         corner: [usize; 2],
-    ) -> [f32; 5] {
+    ) -> [f32; 8] {
         let [axis, u, v] = axes;
         let [corner_u, corner_v] = corner;
         let mut sky = 0u32;
         let mut glow = 0u32;
         let mut bounce = [0u32; 3];
+        let mut glow_bounce = [0u32; 3];
         for du in [-1isize, 0] {
             for dv in [-1isize, 0] {
                 let mut point = [CHUNK_SIZE; 3];
@@ -164,6 +179,11 @@ impl LightField {
                 let at = index(point[0], point[1], point[2]);
                 sky += u32::from(self.sky[at]);
                 glow += u32::from(self.glow[at]);
+                if let Some(field) = &self.glow_bounce {
+                    for channel in 0..3 {
+                        glow_bounce[channel] += u32::from(field[at][channel]);
+                    }
+                }
                 if let Some(field) = &self.bounce {
                     for channel in 0..3 {
                         bounce[channel] += u32::from(field[at][channel]);
@@ -177,6 +197,9 @@ impl LightField {
             bounce[0] as f32 / 1020.0,
             bounce[1] as f32 / 1020.0,
             bounce[2] as f32 / 1020.0,
+            glow_bounce[0] as f32 / 1020.0,
+            glow_bounce[1] as f32 / 1020.0,
+            glow_bounce[2] as f32 / 1020.0,
         ]
     }
 }

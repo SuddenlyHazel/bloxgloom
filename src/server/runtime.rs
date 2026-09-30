@@ -61,6 +61,14 @@ pub(super) fn run_simulation_ticks(
     loop {
         thread::sleep(FIXED_STEP.saturating_sub(clock.backlog()));
         let now = Instant::now();
+        if let Some(elapsed_ms) = state.world_time.poll() {
+            for client in state.clients.values() {
+                // The next sample repairs a dropped advisory clock update.
+                let _ = client
+                    .sender
+                    .try_send(ServerMessage::WorldTime { elapsed_ms });
+            }
+        }
         let elapsed = now.duration_since(last_clock);
         last_clock = now;
         let batch = clock
@@ -129,6 +137,7 @@ pub(super) fn run_simulation_ticks(
             }
             if disconnected {
                 state.save_connected_positions()?;
+                state.world_time.finish()?;
                 return Ok(());
             }
         }

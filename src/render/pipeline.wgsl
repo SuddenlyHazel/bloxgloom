@@ -1,5 +1,5 @@
 
-struct Camera { view_projection: mat4x4<f32> };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -8,6 +8,7 @@ struct VertexInput {
     @location(3) layer: f32,
     @location(4) light_levels: vec2<f32>,
     @location(5) bounce_packed: f32,
+    @location(6) glow_bounce_packed: f32,
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -26,16 +27,18 @@ struct VertexOutput {
     var output: VertexOutput;
     let vertex = bg_vertex(BgVertex(input.position, input.normal, input.uv), u32(input.layer));
     output.position = camera.view_projection * vec4<f32>(vertex.position, 1.0);
-    let sunlight = max(dot(vertex.normal, normalize(WORLD_SUN_DIRECTION)), 0.0);
+    let sunlight = max(dot(vertex.normal, normalize(camera.sun.xyz)), 0.0);
     let sky = input.light_levels.x;
     let glow = input.light_levels.y;
     let encoded = u32(input.bounce_packed);
     let bounce = vec3<f32>(f32(encoded & 255u), f32((encoded >> 8u) & 255u), f32((encoded >> 16u) & 255u)) / 255.0;
+    let glow_encoded = u32(input.glow_bounce_packed);
+    let glow_bounce = vec3<f32>(f32(glow_encoded & 255u), f32((glow_encoded >> 8u) & 255u), f32((glow_encoded >> 16u) & 255u)) / 255.0;
     output.light = vec3<f32>(0.012, 0.015, 0.022)
-        + sky * (vec3<f32>(0.31, 0.40, 0.53)
+        + sky * camera.sun.w * (vec3<f32>(0.31, 0.40, 0.53)
             + sunlight * vec3<f32>(0.77, 0.66, 0.47))
         + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
-        + bounce * 1.35;
+        + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
     output.uv = vertex.uv;
     output.layer = i32(input.layer);
     output.distance = output.position.w;
@@ -50,7 +53,7 @@ fn surface(input: VertexOutput, albedo: vec4f) -> BgSurface {
 }
 fn shade(input: VertexOutput, surface: BgSurface) -> vec4<f32> {
     let fog = smoothstep(38.0, 135.0, input.distance);
-    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), vec3<f32>(0.59, 0.72, 0.82), input.sky_level);
+    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), camera.horizon.xyz, input.sky_level);
     return vec4<f32>(mix(surface.albedo.rgb * surface.light + surface.emission, fog_sky, fog), 1.0);
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {

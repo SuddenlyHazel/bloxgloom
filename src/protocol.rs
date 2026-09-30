@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 10;
+const WIRE_VERSION: u8 = 11;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
 pub const MAX_VIEW_DISTANCE: u8 = 6;
 /// Fixed vertical streaming/retention radius shared by server and client.
@@ -135,6 +135,10 @@ pub enum ServerMessage {
         offset: u32,
         bytes: Vec<u8>,
     },
+    /// Server clock milliseconds within the twenty-minute world day.
+    WorldTime {
+        elapsed_ms: u64,
+    },
     Welcome {
         id: u64,
         seed: u64,
@@ -215,6 +219,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
         + match message {
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
+            ServerMessage::WorldTime { .. } => 8,
             ServerMessage::Welcome { .. } => 8 + 8,
             ServerMessage::Position { .. } => 8 + 12,
             ServerMessage::Chunk(chunk) => {
@@ -485,6 +490,13 @@ pub fn write_server_with_catalog(
         ServerMessage::BundlePart { offset, bytes } => {
             out.push(20);
             bundle::write_part(&mut out, *offset, bytes)?;
+        }
+        ServerMessage::WorldTime { elapsed_ms } => {
+            if *elapsed_ms >= crate::daylight::CYCLE_MS {
+                return Err(invalid("invalid world time"));
+            }
+            out.push(22);
+            out.extend(elapsed_ms.to_le_bytes());
         }
         ServerMessage::Welcome { id, seed } => {
             out.push(1);
@@ -1221,6 +1233,13 @@ pub fn read_server_with_catalog(
                 cells.push([c.i32()?, c.i32()?, c.i32()?]);
             }
             ServerMessage::FireBursts { cells }
+        }
+        22 => {
+            let elapsed_ms = c.u64()?;
+            if elapsed_ms >= crate::daylight::CYCLE_MS {
+                return Err(invalid("invalid world time"));
+            }
+            ServerMessage::WorldTime { elapsed_ms }
         }
         _ => return Err(invalid("unknown server message")),
     };

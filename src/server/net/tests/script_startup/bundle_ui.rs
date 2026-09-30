@@ -125,6 +125,7 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                     cosmetics: [0; 4],
                     light_levels: [0; 4],
                     bounce: [0; 4],
+                    glow_bounce: [0; 4],
                     tint: [1.0; 3],
                 };
                 let effects = session.effects(std::time::Instant::now(), &[avatar]);

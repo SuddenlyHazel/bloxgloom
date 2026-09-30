@@ -207,6 +207,8 @@ The next foundation task is the independent extension crate, completing any miss
 
 Code entry points: [`src/server/runtime.rs`](src/server/runtime.rs), [`src/server/runtime/systems.rs`](src/server/runtime/systems.rs), [`src/server/durable/admission.rs`](src/server/durable/admission.rs), [`src/server/durable/receipt.rs`](src/server/durable/receipt.rs), [`src/server/durable/entity_dispatch.rs`](src/server/durable/entity_dispatch.rs), [`src/server/durable/publication/dispatch.rs`](src/server/durable/publication/dispatch.rs), [`src/server/streaming.rs`](src/server/streaming.rs), [`src/server/entity_checkpoint/worker.rs`](src/server/entity_checkpoint/worker.rs), and [`src/client/workers.rs`](src/client/workers.rs).
 
+Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight, sky, fog, stars, and the moon follow the server clock. Lamps keep their light through the night. Time is saved in `world.time` every five seconds and at shutdown, and resumes when the server restarts; it pauses while the server is offline.
+
 ## Development and previews
 
 The client logs FPS, frame-time percentiles, visible chunks, triangles, and upload backlog every five seconds. Run `cargo test` for the world, protocol, server, UI, and meshing checks. The interface implementation and validation record are in [PLAN.md](PLAN.md).
@@ -216,6 +218,8 @@ For visual debugging without a desktop display, run `cargo run -- preview previe
 Run `cargo run -- ui-preview ui-previews` to render the Playing, Inventory, Admin, Pause, and Settings screens at 1280×720, 640×360, and 640×360 with 2× requested UI scale, plus sun-facing and sun-away views, without opening a game window.
 
 Run `cargo run -- lighting-preview lighting-previews` to compare a sealed cave, a lamp under default lighting, and the same lamp under bounced lighting through the production mesh and GPU shader pipeline.
+
+Run `cargo run --release -- daylight-preview daylight-previews` for sunrise, noon, sunset, midnight, and sealed cave comparisons with and without a lamp.
 
 Run `cargo run -- vegetation-preview vegetation-preview.png` to inspect trees and plant cutouts through the production GPU path without opening a window.
 

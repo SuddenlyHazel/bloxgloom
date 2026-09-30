@@ -645,12 +645,7 @@ fn live_placement_harvest_and_drop_stack_survive_restart() {
     let feet_y = session.joined.position[1] as i32;
     let target_y = feet_y + 2;
     let target_key = world_to_chunk(0, target_y, 0).0;
-    state
-        .clients
-        .get_mut(&session.id)
-        .unwrap()
-        .sent
-        .insert(target_key);
+    wait_for_subscription(&mut state, &mut tick, session.id, target_key);
 
     let placed = command_and_wait(
         &mut state,

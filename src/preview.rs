@@ -1,5 +1,7 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
+mod daylight;
+pub use daylight::render_daylight_previews;
 mod block;
 mod visuals;
 pub use visuals::render_visual_previews;
@@ -498,6 +500,24 @@ async fn render_previews_with_packages(
     scene: PreviewScene,
     package_root: Option<&Path>,
 ) -> Result<(), Box<dyn Error>> {
+    render_previews_at(
+        outputs,
+        center_chunk,
+        scene,
+        package_root,
+        crate::daylight::INITIAL_MS,
+    )
+    .await
+}
+
+async fn render_previews_at(
+    outputs: Vec<PreviewOutput>,
+    center_chunk: (i32, i32),
+    scene: PreviewScene,
+    package_root: Option<&Path>,
+    world_time: u64,
+) -> Result<(), Box<dyn Error>> {
+    let atmosphere = render::daylight::Atmosphere::at(world_time);
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -1064,6 +1084,7 @@ async fn render_previews_with_packages(
                 cosmetics: [0, 0, 0, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_bounce: [0; 4],
                 tint: [1.0; 3],
             },
             render::VisualAvatar {
@@ -1098,6 +1119,7 @@ async fn render_previews_with_packages(
                 cosmetics: [2, 4, 2, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_bounce: [0; 4],
                 tint: if let PreviewScene::Creature(_, Some(tint)) = scene {
                     tint
                 } else {
@@ -1118,6 +1140,7 @@ async fn render_previews_with_packages(
                 cosmetics: [4, 1, 4, 0],
                 light_levels: [15, 0, 0, 0],
                 bounce: [0; 4],
+                glow_bounce: [0; 4],
                 tint: [1.0; 3],
             },
         ];
@@ -1173,13 +1196,14 @@ async fn render_previews_with_packages(
                 camera,
                 output.width,
                 output.height,
+                atmosphere,
             )),
         );
         let matrix = render::view_projection(camera, output.width, output.height);
         queue.write_buffer(
             &camera_buffer,
             0,
-            bytemuck::cast_slice(&matrix.to_cols_array()),
+            bytemuck::cast_slice(&atmosphere.camera_data(matrix)),
         );
         let has_target = matches!(scene, PreviewScene::Surface)
             && output.screen == UiScreen::Playing

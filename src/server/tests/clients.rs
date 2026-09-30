@@ -373,10 +373,8 @@ fn multiple_clients_receive_edit_delta_then_resync_snapshot_in_order() {
     let local_wire = local.map(|coordinate| coordinate as u8);
     let original_version = state.world.cached_version(key).unwrap();
     assert_ne!(state.world.cached_block(0, block_y, 0), Some(AIR));
-    state.clients.get_mut(&first.id).unwrap().sent.insert(key);
-    state.clients.get_mut(&second.id).unwrap().sent.insert(key);
-    assert!(state.world.pin_resident_chunk(key));
-    assert!(state.world.pin_resident_chunk(key));
+    wait_for_subscription(&mut state, &mut tick, first.id, key);
+    wait_for_subscription(&mut state, &mut tick, second.id, key);
 
     run_tick(
         &mut state,

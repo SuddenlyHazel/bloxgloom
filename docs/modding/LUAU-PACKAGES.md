@@ -398,7 +398,7 @@ canonical bytes; it does not authenticate who supplied that key. Registered cata
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
 admission. The offer includes client host contract version **2** (wire version
-**10**): opaque identity handles, authored UI, bounded session replica callbacks
+**11**): opaque identity handles, authored UI, bounded session replica callbacks
 and declared visual resources. An unsupported contract is rejected before bytes
 are requested or a cached artifact is acknowledged. This versions the public
 host API, not a Luau compiler patch release. Before `ContentReady`, every delivered

@@ -12,9 +12,9 @@ mod mesh;
 pub(crate) mod parameters;
 mod preparation;
 pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};
+pub(crate) mod daylight;
 mod pipeline;
 pub(crate) mod post;
-mod shader;
 mod sky;
 mod target;
 mod visibility;
@@ -55,7 +55,7 @@ pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth3
 pub(crate) const UPLOAD_BYTES_PER_FRAME: usize = 1024 * 1024;
 pub(crate) const UPLOAD_MESHES_PER_FRAME: usize = 2;
 pub(crate) const MAX_PENDING_MESHES: usize = 128;
-pub(crate) const VERTEX_FLOATS: usize = 12;
+pub(crate) const VERTEX_FLOATS: usize = 13;
 pub(crate) const SUN_DIRECTION: Vec3 = Vec3::new(-0.55, 0.65, -0.52);
 pub(crate) const SKY_COLOR: wgpu::Color = wgpu::Color {
     r: 0.43,
@@ -112,6 +112,7 @@ pub struct RenderStats {
 }
 pub struct Renderer {
     catalog: Arc<Catalog>,
+    atmosphere: daylight::Atmosphere,
     instance: wgpu::Instance,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -272,6 +273,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
         Ok(Self {
+            atmosphere: daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
             catalog,
             instance,
             window,
@@ -327,6 +329,10 @@ impl Renderer {
     pub fn configure_post(&mut self, enabled: bool, exposure: f32, bloom_strength: f32) {
         self.post
             .configure(&self.queue, enabled, exposure, bloom_strength);
+    }
+
+    pub(crate) fn set_world_time(&mut self, time: u64) {
+        self.atmosphere = daylight::Atmosphere::at(time);
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
@@ -520,12 +526,13 @@ impl Renderer {
                 camera,
                 self.config.width,
                 self.config.height,
+                self.atmosphere,
             )),
         );
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&view_projection.to_cols_array()),
+            bytemuck::cast_slice(&self.atmosphere.camera_data(view_projection)),
         );
         if let Some(gpu) = &mut self.material_gpu {
             gpu.update(&self.queue);

@@ -95,6 +95,9 @@ fn outbound_wire_lengths_match_serialized_frames() {
             offset: 0,
             bytes: vec![1, 2, 3],
         },
+        ServerMessage::WorldTime {
+            elapsed_ms: crate::daylight::INITIAL_MS,
+        },
         ServerMessage::Welcome { id: 1, seed: 2 },
         ServerMessage::Position {
             ack_seq: 3,
@@ -838,4 +841,30 @@ fn committed_fire_cues_round_trip_with_a_strict_cell_bound() {
     let mut invalid = wire;
     invalid[6] = 0; // 4-byte prefix, version, tag, count
     assert!(read_server(invalid.as_slice()).is_err());
+}
+
+#[test]
+fn world_time_wire_wrap_boundary_and_invalid_samples() {
+    for elapsed_ms in [
+        0,
+        crate::daylight::INITIAL_MS,
+        crate::daylight::CYCLE_MS - 1,
+    ] {
+        let mut wire = Vec::new();
+        write_server(&mut wire, &ServerMessage::WorldTime { elapsed_ms }).unwrap();
+        assert!(matches!(read_server(wire.as_slice()).unwrap(),
+            ServerMessage::WorldTime { elapsed_ms: decoded } if decoded == elapsed_ms));
+        // Reject out-of-range clocks received from the network as well as sent locally.
+        wire[6..14].copy_from_slice(&crate::daylight::CYCLE_MS.to_le_bytes());
+        assert!(read_server(wire.as_slice()).is_err());
+    }
+    assert!(
+        write_server(
+            &mut Vec::new(),
+            &ServerMessage::WorldTime {
+                elapsed_ms: crate::daylight::CYCLE_MS,
+            }
+        )
+        .is_err()
+    );
 }
