@@ -1,6 +1,6 @@
 # Complete modding implementation proposal
 
-**Status: Approved — implementation in progress.**
+**Status: Complete for the approved non-deferred scope (September 30, 2026).**
 
 The user approved full implementation and instructed personal review,
 incremental documentation updates and commits, continued execution, scoped
@@ -404,7 +404,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Done |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Done |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Done |
-| 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | In progress |
+| 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Done |
 
 ### Remaining work by phase (living checklist)
 
@@ -737,8 +737,8 @@ client reconstructs both state keys in the verified catalog. A real-listener
 test places an authored machine, deposits finite input and fuel, observes the
 active state in the client replica, then checks the active world state and
 remaining fuel after restart. Foreign or unpowered active states fail before
-publishing a save. Live release-window inspection of this transition remains
-part of Phase 8 acceptance.
+publishing a save. Phase 8 used the §13 generated-preview fallback; a
+live-window recording of this transition was not available.
 The package-root `block-preview` command rendered both registered states with
 the normal GPU mesh/material path. Both images were inspected: the authored
 texture is present and the active emission changes nearby lighting subtly.
@@ -974,7 +974,7 @@ The integrated two-thread root suite passed **1036/1036**, host API **34/34**,
 formatting and strict all-target/all-feature Clippy. The current release
 `local-packages` command joined and rejoined the same save through a real
 loopback listener. This macOS session exposed only the lock screen to capture;
-live release-window visual acceptance remains a Phase 8 task. Per `AGENTS.md`,
+Phase 8 subsequently used the §13 preview fallback. Per `AGENTS.md`,
 the current authored creature, screen, block-state and effect visuals were
 inspected through headless previews for this phase.
 
@@ -1020,7 +1020,8 @@ DNS/filesystem cancellation may wait for the OS; the retained worker prevents
 replacement or installation of a cancelled candidate. Package shader compilation
 runs asynchronously; window/surface setup and final installation stay on the
 window thread. Disk caching is not required. Marketplace/CDN infrastructure is
-permanently outside the project. Phase 8's wider acceptance remains open.
+permanently outside the project. Phase 8's integrated acceptance is recorded
+in [its final report](PHASE-8-ACCEPTANCE.md).
 
 #### Phase 6 — authored UI · Done
 
@@ -1116,34 +1117,43 @@ Imported custom models and live hot reload remain deferred. Actor cuboids keep
 their existing pose/tint interface, and UI icons keep their UI renderer; those
 paths do not expose the voxel material hooks.
 
-#### Phase 8 — examples and integrated verification · In progress
+#### Phase 8 — examples and integrated verification · Done
 
-**Working:** `fixtures/combined-mod/` now gives one runnable `verdant` package
-with a package-textured cube and WGSL albedo, authoritative stick-for-block
-action from authored UI, downloaded client startup text and durable scheduled
-growth. Focused real-listener/restart tests cover the original single client
-and two simultaneously connected profiles making independent finite-inventory
-actions on separate targets; stale action denials preserve each profile's
-balance and restart recovers both edits, both inventories and owner state. Its
-package UI was inspected at 1280×720 and 640×360 through
-`ui-preview <dir> <package-root>`.
+**Landed:** the combined `verdant` package, complete implemented Luau binding
+inventory and editor types, runnable local workflow, production builtin parity
+audit and representative integrated verification. The audit closed two gaps:
+authenticated daylight commands now use public gameplay plans and the common
+WAL, and a Luau package can register/deliver up to 32 actions instead of one.
+The shared registry retains its 256 total / eight per exact target bounds.
 
-The user reports the Jade example working in the live game; this is a useful
-manual check, not a GPU timing or mixed-load measurement. Cross-server switching
-has automated coverage but the user's live switch test is deferred. The
-two-profile test is partial concurrency evidence, not a sustained mixed-load
-response or background-progress measurement; those and the broader audit remain open.
+See [Phase 8 acceptance](PHASE-8-ACCEPTANCE.md) for the production audit, runnable
+fixtures, measurements, retained screenshots, limits and reproduction commands.
 
-- [ ] Ship a runnable combined package with content, gameplay, scheduled work,
-  UI and custom visuals; finish reconciling the complete implemented Luau API
-  and local workflow documentation with that example.
-- [ ] Audit for remaining non-deferred builtin-only production paths and
-  reconcile docs with the actual host contract and deferred scope.
-- [ ] Exercise real download/join/switch/restart, mixed-load response and live
-  release-window visuals; run the §13 tests, formatting, Clippy and relevant
-  rendering/performance comparisons. The latest integrated two-thread suite is
-  **1024/1024**. The user reported the Jade example working live, but that does
-  not close mixed-load, cross-server visual or other cross-system checks.
+- [x] Ship a runnable combined package with content, gameplay, scheduled work,
+  UI and custom visuals; reconcile the complete implemented Luau API, editor
+  types and local workflow documentation with that example.
+- [x] Audit remaining non-deferred builtin-only production paths and reconcile
+  docs with the actual host contract. Native fire migration remains the explicit
+  deferred parity exception; broader native extension interfaces are disclosed.
+- [x] Verify real download/join/switch/restart and mixed-load response; inspect
+  release-generated UI/material/effect previews using the §13 fallback because
+  no release game window was available. Workspace verification passes **1083
+  game tests + 34 host API tests**, formatting and strict Clippy. Strict Luau
+  analysis passes for all seven garden/showcase server modules. Normal/bounced
+  rendering benchmarks retain separate setup, mesh, CPU and GPU results.
+
+The two-profile loopback workload uses real client UI/command workers while
+fresh downloads/cancellations compete with planting, transfers, block edits and
+movement. Automatically scheduled growth advances; restart preserves its state,
+world edits and exact inventories. A focused run recorded 320 successful action
+samples (p95 86.97 ms), 64 movement samples (p95 37.68 ms), 61 completed transfers
+and 30 cancellations. These are representative local response-processing
+measurements, not internet/display guarantees or a 128-player soak. Automated
+session/visual-contract checks cover reconnect, cross-server switching and
+resource reset; screenshots do not claim live-window switching acceptance.
+
+Default saves are now `world-v18` / `world-v18-fixture`, wire version 13. Use
+fresh saves and matching builds; no prerelease converter was introduced.
 
 ### Explicitly deferred outside the phases
 
@@ -1201,14 +1211,16 @@ This section exists so compaction or a new session does not restart the design.
   but has since been removed from Phase 2 and deferred by the user. The user
   explicitly authorizes parallel, scoped agents with personal review and commits;
   prefer `coder-fast` and reserve `coder-smart` for unusually difficult work.
-- **Current work (September 29, 2026):** Phases 1–7 are done. The user has
-  requested a goal to land all non-deferred Phase 8 work. The integrated root
-  suite passed **1079/1079** after tracing integration, with strict Clippy and
-  formatting clean. Phase 8 now reconciles authoring docs/editor types, audits
-  production parity and completes representative combined-load/session/visual
-  checks. Native fire migration remains deferred; its presentation bug was
-  subsequently fixed and the user confirmed it working live.
-- **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
+- **Current work (September 30, 2026):** Phases 1–8 are done for the approved
+  non-deferred scope. [Phase 8 acceptance](PHASE-8-ACCEPTANCE.md) records the
+  public-clock and multi-action parity fixes, authoring docs/types, real-listener
+  combined load/recovery checks and generated visual/performance evidence.
+  Workspace tests pass **1083 game + 34 host API**, with strict Clippy,
+  formatting and seven-module strict Luau analysis clean. Native fire migration,
+  imported custom models and live hot reload remain explicitly deferred.
+- **Recent reviewed increments:** `0420a4d` reconciles authoring/types,
+  `e7f0605` adds sustained combined-load/recovery coverage, and `67f4240` closes
+  public-clock and multi-action parity gaps. Earlier, `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,
   `533571e` retires failed/closed modded client sessions, and `6c4528b` adds

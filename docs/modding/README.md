@@ -1,18 +1,19 @@
 # Modding: start here
 
-**Current status:** The [implementation plan](IMPLEMENTATION-PLAN.md) is the
-authoritative progress and acceptance record. Phases 1–7, including server
-packages/joining, authored UI and authored visuals, are marked done. Integrated
-verification (Phase 8) remains open; completed phases do **not** imply full
-modding support. See its [phase table and living checklist](IMPLEMENTATION-PLAN.md#12-implementation-order-and-deliverables)
-before treating a capability as complete.
+**Current status:** All eight phases of the approved non-deferred
+[implementation plan](IMPLEMENTATION-PLAN.md) are done. The
+[Phase 8 acceptance record](PHASE-8-ACCEPTANCE.md) contains the production parity
+audit and integrated verification evidence. [SCRIPTING.md](../../SCRIPTING.md)
+is the implemented Luau API inventory. Native fire migration, imported custom
+models and live hot reload remain deferred; the native Rust extension API has
+additional interfaces that are not Luau bindings.
 
 ## Try authoring now
 
 - [Combined Jade garden package](../../fixtures/combined-mod/README.md): one
   runnable Luau package with a placeable textured cube, authorized action,
   scheduled growth, authored UI, downloaded startup text and WGSL material.
-  It is an integrated example, **not** a claim that all phases are done.
+  It also demonstrates the authenticated public daylight command.
 - [Local Luau packages](LUAU-PACKAGES.md): runnable
   [`uidemo`](../../fixtures/packages/uidemo/) example, manifest, command line,
   and current server/client bindings. Its button now sends an authorized
