@@ -856,9 +856,9 @@ is outside this surface.
 
 [Editor types](types/bloxgloom.d.luau) provide callback aliases and nominal handle
 types; [IDE setup](docs/modding/IDE.md) explains their use. They are editor-only,
-not runtime globals. Runtime validation remains authoritative: some bindings,
-such as machine/creature registration and storage options, are more extensive
-than the current type definitions.
+not runtime globals. Runtime validation remains authoritative: the types include startup creature/machine/storage declarations and all gameplay
+event shapes, while runtime validation still enforces ownership, bounds and
+capabilities.
 
 Use these previews to inspect actual rendered package content:
 

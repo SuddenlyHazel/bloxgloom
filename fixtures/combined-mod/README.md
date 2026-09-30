@@ -11,6 +11,21 @@ cargo run --release -- server-packages fixtures/combined-mod/packages 127.0.0.1:
 cargo run --release -- client 127.0.0.1:4000
 ```
 
+For one-process local iteration with your normal admin profile, run:
+
+```sh
+RUST_LOG=warn,bloxgloom=debug cargo run --release -- local-packages fixtures/combined-mod/packages /path/to/new-jade-garden-save
+```
+
+Use F4 `give bloxgloom:stick 16` when you need sticks. A dedicated server does
+not grant admin access by default. After changing scripts or assets, stop the
+server, select a fresh save directory when content identity changes, and
+restart/reconnect. The client downloads and verifies the new artifact; no
+Rust recompilation is needed when running an already-built game binary.
+`RUST_LOG` controls structured stderr diagnostics; package/module errors retain
+source identity. Server callbacks run in fresh VMs, so persistent state belongs
+in the transaction or owner bytes rather than module globals.
+
 Select a stick, aim at visible stone within reach, then press **F6** and click
 **Plant in aimed stone** (or focus it with Tab and press Enter). The UI passes
 only the action key; the client samples its current streamed-world ray hit and
@@ -36,8 +51,11 @@ cargo run -- ui-preview /path/to/output-dir fixtures/combined-mod/packages
 
 The preview does not show jade world geometry or validate live gameplay visuals.
 
-The renderer still supports only one package albedo target and one-state cube
-geometry; this example does not demonstrate imported models, typed shader
-parameters, general client replica callbacks, or live reload. The bundled
-Roboto Mono subset and its license come from `fixtures/ui-target-actions/`;
-the jade PNG and WGSL example come from `fixtures/material-packages/jade/`.
+This example uses the compatible version-1 albedo material and one-state cube
+registration. The engine also supports explicit legal block states, multiple
+version-2 material targets, typed parameters, composed effect graphs and public
+replica callbacks; see [Prism](../visual-packages/prism/README.md) and the
+[Phase 4 showcase](../phase4-showcase/README.md). Imported models and live
+reload remain deferred. The bundled Roboto Mono subset and its license come
+from `fixtures/ui-target-actions/`; the jade PNG and WGSL example come from
+`fixtures/material-packages/jade/`.

@@ -404,7 +404,7 @@ is not done until every non-deferred phase and §13 criteria are satisfied.
 | 5 | Server package delivery, cache, negotiated session catalogs and join/switch lifecycle | Done |
 | 6 | Select/integrate the Rust UI foundation, expose authored UI to Luau and migrate built-in interfaces | Done |
 | 7 | WGSL shader/material/effect registration and package-delivered visual resources | Done |
-| 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | Planned |
+| 8 | Finish authoring documentation/examples, close remaining built-in-only paths and complete integrated verification | In progress |
 
 ### Remaining work by phase (living checklist)
 
@@ -1147,8 +1147,9 @@ response or background-progress measurement; those and the broader audit remain 
 
 ### Explicitly deferred outside the phases
 
-Native fire propagation/delivery migration and investigation of its unverified
-optional visual cue are parked by user direction. The existing server-owned fire
+Native fire propagation/delivery migration remains parked by user direction.
+The optional visual cue was subsequently fixed in `4acfedd` and verified by
+the user; paced wood/leaves-only spread followed in `782bfba`. The existing server-owned fire
 behavior remains active; it is a **disclosed parity exception**, not a completed
 public-system migration. Revisit only on a new scope decision. This exception
 does not reduce any other Phase 2 gameplay, WAL or item-conservation requirement.
@@ -1200,13 +1201,13 @@ This section exists so compaction or a new session does not restart the design.
   but has since been removed from Phase 2 and deferred by the user. The user
   explicitly authorizes parallel, scoped agents with personal review and commits;
   prefer `coder-fast` and reserve `coder-smart` for unusually difficult work.
-- **Current work (September 29, 2026):** Phases 1–4 are done; native fire
-  migration remains explicitly deferred. Phases 5–8 remain in progress.
-  Bounded Luau content, gameplay, owners, generation and client replica
-  callbacks are accepted through Phase 4. Client package/resource readiness,
-  UI migration, richer visuals and final mixed-load/release-window verification
-  remain in later phases. The latest Phase 4 two-thread root suite passed
-  **1036/1036**, host API **34/34**, with strict Clippy and formatting clean.
+- **Current work (September 29, 2026):** Phases 1–7 are done. The user has
+  requested a goal to land all non-deferred Phase 8 work. The integrated root
+  suite passed **1079/1079** after tracing integration, with strict Clippy and
+  formatting clean. Phase 8 now reconciles authoring docs/editor types, audits
+  production parity and completes representative combined-load/session/visual
+  checks. Native fire migration remains deferred; its presentation bug was
+  subsequently fixed and the user confirmed it working live.
 - **Recent reviewed increments:** `c864aeb` adds the single-package Jade garden
   example, `caaaced` binds Luau neighborhood reads/edits, `663bec8` previews
   verified package UI with startup state, `e156f2d` fixes the kiln test harness,

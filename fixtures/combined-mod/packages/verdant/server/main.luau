@@ -1,4 +1,5 @@
-return function(host)
+--!strict
+return function(host: BloxStartupHost): ()
     host.register_texture('verdant:tile', 'jade')
     host.register_block('verdant:jade', 'Jade', 'verdant:tile')
     host.register_action('verdant:plant', 1, 'Plant jade in aimed stone', 'block', 'bloxgloom:stone', 'verdant:plant')

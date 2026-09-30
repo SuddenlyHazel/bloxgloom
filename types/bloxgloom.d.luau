@@ -44,7 +44,9 @@ export type BloxStartupHost = {
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
     register_system: (declaration: BloxSystemDeclaration) -> (),
-    register_storage: (entity: string, previously_registered_block: string, title: string, slots: number, columns: number) -> (),
+    register_creature: (declaration: BloxCreatureDeclaration) -> (),
+    register_machine: (declaration: BloxMachineDeclaration) -> (),
+    register_storage: (entity: string, previously_registered_block: string, title: string, slots: number, columns: number, options: BloxStorageOptions?) -> (),
     -- Requires content/v1. Exactly one selection across the entire package set;
     -- key belongs to this package, revision is an integer in 1..4294967295.
     -- Immutable for this world/session. Any change (including key/revision or
@@ -55,6 +57,50 @@ export type BloxStartupHost = {
     -- Appends to builtin skin/shirt/pants indices (6/8/6). Model must be
     -- "bloxgloom:humanoid/v1". No custom geometry or physics are implied.
     register_player_appearance: (key: string, revision: number, model: string, palettes: BloxPlayerAppearance) -> (),
+}
+
+--- Storage footprint offsets are integer triples (-2..2), include {0,0,0}, and have at most eight cells.
+export type BloxStorageOptions = {
+    footprint: {BloxTriple}?,
+    hint: string?,
+    --- Ordered groups must cover every slot exactly once.
+    groups: {{label: string, count: number}}?,
+}
+
+--- Ground creature declaration. Bodies and model cuboids are host validated; no imported models.
+export type BloxCreatureDeclaration = {
+    key: string, module: string, schema: number, revision: number,
+    max_state_bytes: number, initial_state: string?, interval: number,
+    read_radius: number?, reads_neighbours: boolean?, wakes_on_terrain_change: boolean?,
+    body: {half_width: number, height: number, speed: number},
+    interaction: string?,
+    animation: {
+        stride_rate: number?, stride_amplitude: number?, idle_rate: number?,
+        idle_bob: number?, walk_bob: number?, fall_stretch: number?, landing_squash: number?,
+    }?,
+    model: {{min: BloxTriple, max: BloxTriple, color: BloxTriple,
+        motion: ("body" | "left_foot" | "right_foot")?}},
+}
+
+--- Exact binary item components. Version is 1..65535; bytes are 1..1024 bytes.
+export type BloxComponents = {version: number, bytes: string}
+export type BloxMachineRecipe = {
+    key: string, input: string, input_count: number,
+    input_components: ("empty" | "present" | BloxComponents)?,
+    output: string, output_count: number,
+    output_components: ("empty" | "preserve_input" | BloxComponents)?,
+    pulses: number,
+}
+--- Automation slots here are 1-based; gameplay inventory methods use 0-based slots.
+export type BloxMachinePort = {name: string, faces: {BloxTriple}, insert: {number}?, extract: {number}?}
+export type BloxMachineDeclaration = {
+    entity: string, block: string, module: string, schema: number, revision: number,
+    interval: number, title: string, hint: string?, footprint: {BloxTriple}?,
+    --- Declare exactly one of recipe or recipes (up to eight disjoint recipes).
+    recipe: BloxMachineRecipe?, recipes: {BloxMachineRecipe}?,
+    fuel: {item: string, pulses: number, components: ("empty" | "present" | BloxComponents)?}?,
+    active_state: string?, variants: {{state: string, active_state: string?}}?,
+    ports: {BloxMachinePort}?,
 }
 
 export type BloxBlockOptions = {
@@ -182,6 +228,28 @@ export type BloxActionEvent = {
     --- Target entity identity, or nil when this is not an entity target.
     entity: BloxEntityId?,
 }
+--- Removal decisions include deterministic random in [0,1), plus legacy exact halves.
+export type BloxRemovedEvent = {
+    kind: "BlockRemoved", cell: BloxTriple, previous: BloxBlock,
+    cause: "Break" | "Replacement" | "SupportLoss" | "WorldEdit" | "Burn" | "AnchoredBreak",
+    random: number, random_lo: number, random_hi: number,
+}
+export type BloxPlacedEvent = {kind: "BlockPlaced", cell: BloxTriple, previous: BloxBlock, placed: BloxBlock}
+export type BloxNeighbourEvent = {
+    kind: "NeighborChanged", cell: BloxTriple, changed: BloxTriple, previous: BloxBlock, current: BloxBlock,
+}
+export type BloxEntityTickEvent = {
+    kind: "EntityTick", entity: BloxEntityId, position: BloxTriple, tick: BloxTick,
+    entity_lo: number, entity_hi: number, tick_lo: number, tick_hi: number,
+}
+export type BloxPickupEvent = {
+    kind: "PickupRequested", position: BloxTriple,
+    drops: {{id: BloxEntityId, count: number, entity_lo: number, entity_hi: number}},
+}
+--- Match kind before accessing event-specific fields.
+export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedEvent
+    | BloxNeighbourEvent | BloxEntityTickEvent | BloxPickupEvent
+
 --- Server transaction services. Proposed mutations commit together; an error rejects the transaction.
 export type BloxGameplayContext = {
     --- Current logical server tick. Use :before and :elapsed_since for time comparisons.
@@ -426,3 +494,11 @@ export type BloxMachineContext = {
     slots: {BloxMachineSlot?},
 }
 export type BloxMachineSlot = {item: number, count: number, has_components: boolean}
+
+--- Ordered work proposals; the host resolves exact finite stacks and permitted peers.
+export type BloxMachineWork = {kind: "process"} | {
+    kind: "transfer", offset: BloxTriple, port: string, peer_port: string?,
+    push: boolean, count: number?, source_slot: number?, destination_slot: number?,
+    item: string?, same_as_slot: number?,
+}
+export type BloxMachinePlanner = (BloxMachineContext) -> (string, number, boolean | {BloxMachineWork})

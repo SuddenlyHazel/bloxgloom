@@ -1,16 +1,18 @@
-return function(host)
+--!strict
+return function(host: BloxStartupHost): ()
     host.register_texture('demo:press_idle', 'press_idle')
     host.register_texture('demo:press_lit', 'press_lit')
-    host.register_block('demo:press', 'Press', 'demo:press_idle', {
-        properties = { lit = {'off', 'on'} },
-        states = {
+    local pressStates: {BloxBlockState} = {
             { lit = 'off' },
             { lit = 'on', emission = 12, textures = {
                 top = 'demo:press_lit',
                 side = 'demo:press_lit',
                 bottom = 'demo:press_idle',
             } },
-        },
+        }
+    host.register_block('demo:press', 'Press', 'demo:press_idle', {
+        properties = { lit = {'off', 'on'} },
+        states = pressStates,
     })
     host.register_machine {
         entity = 'demo:press_machine', block = 'demo:press',
