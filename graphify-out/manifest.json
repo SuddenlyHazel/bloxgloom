@@ -780,9 +780,9 @@
     "semantic_hash": "a301dd57f0d6d29b1cd9b7847e3bc283"
   },
   "src/client/mobile_tests.rs": {
-    "mtime": 1790732878.736779,
-    "seen": 1790733691.551509,
-    "ast_hash": "156432f91d4f52cebb097a68e2c528e1",
+    "mtime": 1790735184.6605756,
+    "seen": 1790735342.013201,
+    "ast_hash": "9cd6ab2c06ad1db1a437386f1a7dcb7c",
     "semantic_hash": ""
   },
   "src/client/movement.rs": {
@@ -1674,10 +1674,10 @@
     "semantic_hash": "b96ec5228a01f06b31066c6e1d6b7d31"
   },
   "src/server/durable/actions/anchored_tests.rs": {
-    "mtime": 1790630395.9503064,
-    "seen": 1790731263.4305139,
-    "ast_hash": "3db28fb2a22a8c0b7240887b245ab698",
-    "semantic_hash": "3db28fb2a22a8c0b7240887b245ab698"
+    "mtime": 1790735184.8985918,
+    "seen": 1790735342.0134091,
+    "ast_hash": "a609ddc78da832cc4f8d6dc54f5c87b4",
+    "semantic_hash": ""
   },
   "src/server/durable/actions/chest_tests.rs": {
     "mtime": 1790470451.6973813,
@@ -1920,10 +1920,10 @@
     "semantic_hash": "62f0a0b9f8f482ecb0184b87e333542b"
   },
   "src/server/durable/fire/tests.rs": {
-    "mtime": 1790550269.4512887,
-    "seen": 1790731263.430547,
-    "ast_hash": "6581abcdf08939206edec330fe0f3647",
-    "semantic_hash": "6581abcdf08939206edec330fe0f3647"
+    "mtime": 1790734965.0333648,
+    "seen": 1790735342.0134542,
+    "ast_hash": "cb58938703d885870106b8ef4a38c90a",
+    "semantic_hash": ""
   },
   "src/server/durable/owner.rs": {
     "mtime": 1790606598.6059766,
@@ -1950,10 +1950,10 @@
     "semantic_hash": "caf6fe347ac19b469c3e379bd3e8f251"
   },
   "src/server/durable/publication.rs": {
-    "mtime": 1790609359.7924404,
-    "seen": 1790731263.430551,
-    "ast_hash": "386a9041910d59a24871853f3c2583bf",
-    "semantic_hash": "386a9041910d59a24871853f3c2583bf"
+    "mtime": 1790735185.0163555,
+    "seen": 1790735342.01346,
+    "ast_hash": "509cbadda62224fb057f5e17e8ece7d4",
+    "semantic_hash": ""
   },
   "src/server/durable/publication/commit.rs": {
     "mtime": 1790446900.8177722,
@@ -1986,10 +1986,10 @@
     "semantic_hash": "39e4aa0a76924fc5bdab050cdf65f11a"
   },
   "src/server/durable/receipt.rs": {
-    "mtime": 1790606255.3013065,
-    "seen": 1790731263.4305558,
-    "ast_hash": "625e60d9e2561f737f0d3dd8d709a9fd",
-    "semantic_hash": "625e60d9e2561f737f0d3dd8d709a9fd"
+    "mtime": 1790735063.7028298,
+    "seen": 1790735342.0134661,
+    "ast_hash": "495896c074fd293870958dd097b9f3bf",
+    "semantic_hash": ""
   },
   "src/server/durable/receipts.rs": {
     "mtime": 1790292267.1943226,
@@ -2418,10 +2418,10 @@
     "semantic_hash": "7c033d31ce077b1633c91b16fa8352f5"
   },
   "src/server/fire/handler.rs": {
-    "mtime": 1790287346.1067595,
-    "seen": 1790731263.430618,
-    "ast_hash": "1872fbd02e4d0e35aeb8297c10d6c878",
-    "semantic_hash": "1872fbd02e4d0e35aeb8297c10d6c878"
+    "mtime": 1790735063.7004604,
+    "seen": 1790735342.0135438,
+    "ast_hash": "993f6ce4e50ea7b0a71e94582dc80a74",
+    "semantic_hash": ""
   },
   "src/server/fire/pending.rs": {
     "mtime": 1790286351.5736856,
@@ -2430,10 +2430,10 @@
     "semantic_hash": "6a9b1de8637d7cf37e549fe9d6776490"
   },
   "src/server/fire/scheduler.rs": {
-    "mtime": 1790450092.6318247,
-    "seen": 1790731263.4306188,
-    "ast_hash": "4bf3df6e5deeaa464f1ab683f1fc0b31",
-    "semantic_hash": "4bf3df6e5deeaa464f1ab683f1fc0b31"
+    "mtime": 1790735063.7013962,
+    "seen": 1790735342.013546,
+    "ast_hash": "defefce17f9e253097f38961893bfbec",
+    "semantic_hash": ""
   },
   "src/server/fire/scheduler/encode.rs": {
     "mtime": 1790291817.3271515,
@@ -2664,10 +2664,10 @@
     "semantic_hash": "2d79b21eb392e6b0b7a2e43f922b5d29"
   },
   "src/server/net/tests.rs": {
-    "mtime": 1790699824.555366,
-    "seen": 1790731263.43065,
-    "ast_hash": "74eb5ab22628caf36dcb87ceee7e0694",
-    "semantic_hash": "74eb5ab22628caf36dcb87ceee7e0694"
+    "mtime": 1790735185.3290005,
+    "seen": 1790735342.013589,
+    "ast_hash": "1f922e118d7fbf472410a8ef207ed76b",
+    "semantic_hash": ""
   },
   "src/server/net/tests/extension_actions.rs": {
     "mtime": 1790522097.7929752,
@@ -4611,6 +4611,12 @@
     "mtime": 1790733990.6301398,
     "seen": 1790734088.006668,
     "ast_hash": "c79e4f137f77b048309cbde83a31fe27",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/fire.rs": {
+    "mtime": 1790735423.9262025,
+    "seen": 1790735483.725441,
+    "ast_hash": "340cc1edcdebdb7a61b2e220bcaf241b",
     "semantic_hash": ""
   }
 }
