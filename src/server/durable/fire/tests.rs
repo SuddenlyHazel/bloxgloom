@@ -106,6 +106,7 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: Some(seed.clone()),
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -240,6 +241,7 @@ fn check_seeded_fire_restart() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: Some(seed.clone()),
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -332,6 +334,7 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: Some(seed.clone()),
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };

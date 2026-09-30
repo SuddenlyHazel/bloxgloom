@@ -351,6 +351,7 @@ fn add_clients_and_seed_drops(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(spawns),
     };

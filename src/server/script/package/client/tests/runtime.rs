@@ -61,7 +61,7 @@ fn runtime_metadata_rejects_unknown_shapes_and_unbounded_counts_with_valid_diges
     assert!(catalog.entity_type_id_by_key("demo:counter").is_some());
     assert!(catalog.gameplay_entity("demo:counter").is_none());
     for (field, value) in [
-        ("actions", 2),
+        ("actions", 33),
         ("action_version", 0),
         ("action_version", 65536),
         ("target", 3),

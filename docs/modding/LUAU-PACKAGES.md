@@ -1,4 +1,10 @@
-# Local Luau packages (work in progress)
+# Local Luau packages
+
+The complete implemented binding inventory is [SCRIPTING.md](../../SCRIPTING.md).
+This page explains package structure and the delivery/presentation workflow.
+The [combined garden](../../fixtures/combined-mod/README.md) is the starting
+example; [Phase 8 acceptance](PHASE-8-ACCEPTANCE.md) records the integrated checks
+and the explicitly deferred scope.
 
 # Try the UI example
 
@@ -111,9 +117,11 @@ pickup-flight meshes, not inventory, pickup eligibility, server age, or world
 ownership. Unknown or mistyped item options fail startup, even under `pcall`.
 Each package may declare at most 32 textures, 32 blocks and 32 items total.
 Keys must use their package's namespace; script and registrar errors abort startup before
-opening the save. For `register_block`, the optional fourth argument accepts
-only the boolean `flammable` and `supports_plant` flags. Unknown or mistyped options
-abort startup; geometry and light values remain at the opaque-cube defaults.
+opening the save. For `register_block`, the optional fourth argument also accepts
+documented geometry, material, support/collision flags, emission/reflectance,
+face textures and explicit legal properties/states. See
+[content registration](REGISTERED-CONTENT.md) and [the full binding reference](../../SCRIPTING.md#textures-and-blocks).
+Unknown or mistyped options abort startup; omitted fields retain the cube defaults.
 See `src/server/script/package.rs` and
 `src/server/script/startup.rs` for exact syntax, bounds and Unix path
 restrictions. With the generation capability, an entry may also call
@@ -125,7 +133,7 @@ and `set_block`. `random_at(x,y,z,salt?)` returns a deterministic sample in
 The host consumes the exact world seed internally. Bump the declared revision whenever its output changes;
 `world.meta` rejects incompatible restarts. Scripts run in fresh bounded VMs
 on generation workers and never write neighboring chunks directly.
-Local packages may register one semantic action under the actions capability:
+Local packages may register up to 32 semantic actions under the actions capability:
 
 ```lua
 host.register_action("example:shift", 1, "Shift", "item", "bloxgloom:stick", "example:shift")
@@ -156,9 +164,15 @@ captured entity with `c.update_entity(e.id,e.revision,state)` or removes it with
 Machine inputs supply exact `tick` and `due` values. Creature ticks and public
 neighbour views supply `id` handles.
 
-Older word fields and validated word-argument forms remain runtime compatibility
-paths for existing modules. They are omitted from the public editor types and
-fixtures. New authoring uses handles; no saved or wire ID format changes.
+Older word fields and validated word-argument forms remain compatibility paths
+for existing modules. Fixtures use exact handles; editor types describe legacy
+word fields where useful for event input. New authoring uses handles.
+
+Action callbacks also expose `c.world_time()` and `c.admin_set_time(elapsed_ms)`.
+The latter rechecks the authenticated admin actor and stages a daylight phase
+in the same WAL transaction as world/entity/inventory effects. See
+`verdant:noon` in the combined package for a zero-argument authored command.
+Logical ticks remain the scheduling API; daylight clock control is an action service.
 
 Its module returns `function(context, event)`, with scoped `block(x,y,z)`,
 `set_block(x,y,z,state)` and exact-stack `transfer(from_slot,to_slot,count)`

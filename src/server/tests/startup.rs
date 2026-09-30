@@ -158,6 +158,7 @@ fn external_owner_chunk_reads_defer_until_loaded_and_recover_exact_world_observa
         changed_cells: vec![crate::server::effects::CellCoord::new(128, 96, 0)],
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -321,6 +322,7 @@ fn external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edit
         )],
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -1718,6 +1720,7 @@ fn entity_and_owner_state_commit_as_one_atomic_record() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
     };
@@ -2044,6 +2047,7 @@ fn stage_tamper_batch(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
     };
@@ -2246,6 +2250,7 @@ fn tamper_action(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
     }

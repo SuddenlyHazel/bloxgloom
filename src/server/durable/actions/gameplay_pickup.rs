@@ -61,6 +61,7 @@ pub(super) fn plan(
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            clock: None,
             actor: Some((profile, &original)),
             actor_position: Some(position),
             admin: false,
@@ -145,6 +146,7 @@ pub(super) fn plan(
             .collect(),
         pickups,
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities,
     }))

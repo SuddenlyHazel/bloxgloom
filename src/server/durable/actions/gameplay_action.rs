@@ -164,6 +164,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             action: Some(event),
         },
         crate::server::gameplay::Participants {
+            clock: Some(state.world_time.capture()),
             actor: Some((profile, &before)),
             actor_position: Some(position),
             admin: state.admin_profile == Some(profile),
@@ -256,6 +257,10 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             .collect(),
         pickups: vec![],
         fire_seed: None,
+        clock_change: plan
+            .world_time
+            .map(|time| state.world_time.prepare(time))
+            .transpose()?,
         entities,
         entity_wakes: vec![],
     })

@@ -113,6 +113,7 @@ fn stage_edit(state: &mut State, cell: [i32; 3], block: crate::content::BlockSta
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -443,6 +444,7 @@ fn dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(entities),
     };

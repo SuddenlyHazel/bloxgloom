@@ -87,6 +87,7 @@ fn action(entities: PreparedEntityTransaction) -> CommitAction {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(entities),
         entity_wakes: Vec::new(),
     }

@@ -12,6 +12,7 @@ fn combined_mod_mixed_load_preserves_response_progress_and_restart() {
     let fixture = Fixture::new();
     let mut state = Box::new(open(&fixture));
     state.admission_limit = 8;
+    state.admin_profile = Some(PROFILE);
     state.spawn_anchor = [0.5, 80.0, 0.5];
     for x in -1..=6 {
         for z in -1..=3 {
@@ -52,6 +53,9 @@ fn combined_mod_mixed_load_preserves_response_progress_and_restart() {
                 client
             })
             .collect();
+        let command = clients[0].mixed_command("verdant:noon");
+        let (accepted, reason) = clients[0].result(&command);
+        assert!(accepted, "authored clock command failed: {reason}");
         downloads.resume();
         let started = Instant::now();
         let workers: Vec<_> = clients

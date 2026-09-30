@@ -3,6 +3,7 @@ return function(host: BloxStartupHost): ()
     host.register_texture('verdant:tile', 'jade')
     host.register_block('verdant:jade', 'Jade', 'verdant:tile')
     host.register_action('verdant:plant', 1, 'Plant jade in aimed stone', 'block', 'bloxgloom:stone', 'verdant:plant')
+    host.register_action('verdant:noon', 1, 'Set noon', 'empty', nil, 'verdant:time', {permission='Admin'})
     host.register_system {
         key='verdant:growth', schema=1, revision=1, module='verdant:grow',
         max_state_bytes=8, max_jobs_per_tick=1, read_world=true,

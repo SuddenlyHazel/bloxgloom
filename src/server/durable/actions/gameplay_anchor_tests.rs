@@ -291,6 +291,7 @@ fn action_and_tick_expand_secondary_cell_once_and_refund_final_inventory_on_rest
             changed_cells: vec![],
             pickups: vec![],
             fire_seed: None,
+            clock_change: None,
             entities,
             entity_wakes: vec![],
         };

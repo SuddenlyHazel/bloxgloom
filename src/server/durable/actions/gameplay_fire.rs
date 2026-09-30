@@ -44,6 +44,7 @@ pub(in crate::server) fn plan(
             action: None,
         },
         crate::server::gameplay::Participants {
+            clock: None,
             actor: None,
             actor_position: None,
             admin: false,
@@ -99,6 +100,7 @@ pub(in crate::server) fn plan(
         world_edits: planned.prepared,
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities,
     })

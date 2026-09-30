@@ -169,6 +169,7 @@ fn outstanding_terrain_edit_defers_drop_motion_until_replanned_single_and_batche
             changed_cells: Vec::new(),
             pickups: Vec::new(),
             fire_seed: None,
+            clock_change: None,
             entities: None,
             entity_wakes: Vec::new(),
         };
@@ -1751,6 +1752,7 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(expired),
     };

@@ -5,11 +5,13 @@
 //! Entity services are added here as host transaction participants are unified.
 use std::collections::BTreeMap;
 
+mod clock;
 mod definition;
 mod entities;
 mod handlers;
 mod inventory;
 mod observations;
+pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
@@ -55,6 +57,11 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn world_time(&mut self) -> Result<WorldTime, Error> {
+        Err(Error::Invalid(
+            "world clock unavailable in this context".into(),
+        ))
+    }
     fn tick(&self) -> u64;
     fn seed(&self) -> u64;
     fn player(&self) -> Option<u128>;
@@ -102,6 +109,7 @@ pub struct DropSpawn {
 /// Constructing a plan does not publish anything or bypass host validation.
 #[derive(Debug, Default)]
 pub struct Plan {
+    pub world_time: Option<u64>,
     pub blocks: BTreeMap<Cell, String>,
     pub drops: Vec<DropSpawn>,
     pub inventories: BTreeMap<InventoryId, Vec<Option<Stack>>>,

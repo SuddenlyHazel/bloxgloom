@@ -94,6 +94,7 @@ fn empty_action() -> CommitAction {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: None,
         entity_wakes: Vec::new(),
     }

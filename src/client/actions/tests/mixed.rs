@@ -2,6 +2,12 @@
 use super::*;
 
 impl PackageActionProbe {
+    pub(crate) fn mixed_command(&mut self, text: &str) -> ClientMessage {
+        let id = action_id(self.app.actions.epoch, self.app.actions.next_seq);
+        self.app.admin_input = text.into();
+        self.app.admin_run();
+        self.app.pending_actions[&id].clone()
+    }
     pub(crate) fn mixed_drain(&mut self) {
         while let Ok(incoming) = self.app.network.incoming.try_recv() {
             match incoming {

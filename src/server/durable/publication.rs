@@ -86,6 +86,9 @@ fn apply_committed_action_inner(
             .validate_committed(entities)
             .map_err(io::Error::other)?;
     }
+    if let Some(change) = &action.clock_change {
+        state.world_time.validate(change)?;
+    }
     // Owner cells, durable wake flags, and rotation cursors piggybacked
     // on this transaction through `add_related_change` ride the same WAL
     // record and the same receipt. Their before-values are rechecked at
@@ -112,6 +115,10 @@ fn apply_committed_action_inner(
         .map(|edit| (edit.key, edit.after_snapshot.clone()))
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
+    if let Some(change) = action.clock_change.take() {
+        state.world_time.apply(change)?;
+        crate::server::world_time::publish(state);
+    }
     let mut entity_commit = None;
     if let (Some(entities), Some(permit)) = (action.entities.take(), entity_permit) {
         let mut commit = state

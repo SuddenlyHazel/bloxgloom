@@ -15,7 +15,7 @@ Placing glowstone ignites adjacent wood and leaves after one second of simulatio
 
 Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. This is the default lighting mode. In Settings, `LIGHTING: BOUNCED` enables a more expensive single diffuse RGB bounce from block surfaces, including color bleed. It is a voxel approximation, not path tracing or multi-bounce GI. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits or quality changes, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
 
-The current default save directory is `world-v17/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
+The current default save directory is `world-v18/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and bounded client delivery now exist, but the [full modding plan](docs/modding/IMPLEMENTATION-PLAN.md) is still in progress.
 
@@ -35,12 +35,12 @@ With a recent Rust toolchain, run a local game with one command:
 cargo run
 ```
 
-This starts a local server and client in the same process and saves edits in `world-v17/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
+This starts a local server and client in the same process and saves edits in `world-v18/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
 
 For a dedicated multiplayer server, start the server in one terminal:
 
 ```sh
-cargo run -- server 127.0.0.1:4000 world-v17
+cargo run -- server 127.0.0.1:4000 world-v18
 ```
 
 Start one or more clients in other terminals:
@@ -49,7 +49,7 @@ Start one or more clients in other terminals:
 cargo run -- client 127.0.0.1:4000
 ```
 
-The server defaults to `127.0.0.1:4000` and saves edits in `world-v17/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines have passed, but the combined gameplay acceptance workload remains unverified.
+The server defaults to `127.0.0.1:4000` and saves edits in `world-v18/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines and a representative two-player combined gameplay/download workload have passed. The latter does not establish 128-player combined-load performance; see the [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md).
 
 Client and server diagnostics use `tracing`, with timestamps, levels, module targets,
 thread names, and structured fields. Local play shares one process-wide subscriber.
@@ -229,7 +229,7 @@ The next foundation task is the independent extension crate, completing any miss
 
 Code entry points: [`src/server/runtime.rs`](src/server/runtime.rs), [`src/server/runtime/systems.rs`](src/server/runtime/systems.rs), [`src/server/durable/admission.rs`](src/server/durable/admission.rs), [`src/server/durable/receipt.rs`](src/server/durable/receipt.rs), [`src/server/durable/entity_dispatch.rs`](src/server/durable/entity_dispatch.rs), [`src/server/durable/publication/dispatch.rs`](src/server/durable/publication/dispatch.rs), [`src/server/streaming.rs`](src/server/streaming.rs), [`src/server/entity_checkpoint/worker.rs`](src/server/entity_checkpoint/worker.rs), and [`src/client/workers.rs`](src/client/workers.rs).
 
-Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight, sky, fog, stars, and the moon follow the server clock. Lamps keep their light through the night. In the local F4 console, run `time set sunrise`, `time set noon`, `time set sunset`, or `time set midnight`; `time set 18:30` sets a 24-hour clock time. Only the server administrator can change it, and all clients receive the new time. Time is saved in `world.time` every five seconds and at shutdown, and resumes when the server restarts; it pauses while the server is offline.
+Worlds run a synchronized 20-minute day/night cycle, beginning at noon. Sunlight, sky, fog, stars, and the moon follow the server clock. Lamps keep their light through the night. In the local F4 console, run `time set sunrise`, `time set noon`, `time set sunset`, or `time set midnight`; `time set 18:30` sets a 24-hour clock time. Only the server administrator can change it, and all clients receive the new time. Clock commands use the shared gameplay WAL and public Luau `world_time`/`admin_set_time` operations. Elapsed phase is checkpointed in `world.time` every five seconds and at shutdown, and resumes when the server restarts; it pauses while the server is offline. A checkpoint lagging a committed command resumes from that command.
 
 ## Development and previews
 
@@ -259,7 +259,7 @@ Run `cargo run --release -- chest-preview chest-previews` for Chest/Hopper block
 
 Inventory screens are now registered content shared by Chest, Hopper, Kiln, and extensions. Run `cargo run --release -- inventory-preview bloxgloom:kiln inventory-previews` to preview a registered screen.
 
-To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v17-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
+To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v18-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
 
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 

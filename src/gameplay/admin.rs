@@ -3,6 +3,7 @@ use bloxgloom_host_api::gameplay::{Context, Error, Event, Handler};
 
 pub(crate) const GIVE: &str = "bloxgloom:admin_give";
 pub(crate) const SPAWN: &str = "bloxgloom:admin_spawn";
+pub(crate) const TIME: &str = "bloxgloom:admin_time";
 
 pub(crate) struct Admin;
 impl Handler for Admin {
@@ -14,6 +15,13 @@ impl Handler for Admin {
             return Err(Error::Invalid("expected admin action".into()));
         };
         match action.as_str() {
+            TIME => {
+                let bytes: [u8; 8] = arguments
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| Error::Invalid("invalid world time request".into()))?;
+                context.admin_set_time(u64::from_le_bytes(bytes))
+            }
             GIVE => {
                 let (&length, rest) = arguments
                     .split_first()

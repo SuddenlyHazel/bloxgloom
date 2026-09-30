@@ -5,6 +5,7 @@ use super::*;
 use crate::world::{ChunkReadStamp, World};
 #[derive(Clone, Debug, Default)]
 pub(in crate::server) struct TerrainReads {
+    pub clock: Option<crate::server::world_time::ReadStamp>,
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
     entities: super::super::entities::EntityDependencies,
 }
@@ -59,6 +60,9 @@ impl TerrainReads {
             return Err(io::Error::new(ErrorKind::WouldBlock, "stale terrain read"));
         }
         self.entities(other.entities)?;
+        if self.clock.is_none() {
+            self.clock = other.clock;
+        }
         for (key, stamp) in other.terrain {
             if !self.terrain.contains_key(&key) && self.terrain.len() >= 256 {
                 return Err(io::Error::new(
@@ -72,9 +76,13 @@ impl TerrainReads {
     }
     pub fn is_current(&self) -> bool {
         self.terrain.values().all(ChunkReadStamp::is_current)
+            && self
+                .clock
+                .as_ref()
+                .is_none_or(crate::server::world_time::ReadStamp::is_current)
     }
     pub fn is_empty(&self) -> bool {
-        self.terrain.is_empty() && self.entities.is_empty()
+        self.terrain.is_empty() && self.entities.is_empty() && self.clock.is_none()
     }
     pub fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
         self.terrain
@@ -82,5 +90,10 @@ impl TerrainReads {
             .copied()
             .map(chunk_state_key)
             .chain(self.entities.keys())
+            .chain(
+                self.clock
+                    .iter()
+                    .map(|_| crate::server::world_time::state_key()),
+            )
     }
 }

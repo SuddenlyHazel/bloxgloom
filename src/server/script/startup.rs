@@ -12,28 +12,15 @@
 //! saved with item identity and mirrored as inert client compatibility metadata;
 //! they never change the 128 stack cap or authorize client-owned pickup timing.
 //!
-//! Each package may declare 32 bounded PNG-backed textures by local asset name
-//! and 32 items with builtin or own registered textures. `register_block(key,
-//! name, texture)` additionally declares up to 32 uniform opaque, solid cubes
-//! with one default state and a same-key placeable item. Cubes use white swatches,
-//! no properties, no emission, no flammability or plant support, and the ordinary
-//! 128 item stack cap. No arbitrary geometry or material flags are exposed.
-//! Keys must belong to the entry package; imported helpers may receive the
-//! callback but gain only that entry's authority. No undeclared assets or grants
-//! are registered. Texture/item and entity schema metadata are exported
-//! as inert client metadata. Handler/owner-system compatibility hashes do not
-//! export callbacks, owner seeds, codecs, or execution authority; generators
-//! export key/revision only and remain server-executed.
-//! Every dependency entry runs too; library packages can
-//! return a no-op entry and export helpers from other modules.
-//! With `requires bloxgloom:generation/v1`, an entry may additionally declare one
-//! `host.register_generator("demo:terrain", 1, "demo:terrain")`. The named own
-//! module returns a function receiving a chunk context (see `generation`).
-//! `bloxgloom:actions/v1` permits one `register_action` declaration (see `gameplay`).
-//! It also permits 32 exact `register_handler` gameplay decision owners.
-//! It permits 32 `register_entity` fixed-byte schemas (see `entities`) as well.
-//! `bloxgloom:owner_systems/v1` permits one persistent chunk `register_system`
-//! declaration (see `system`); plans run on existing owner workers, not this worker.
+//! Startup registers namespaced content, actions/decision handlers, entities,
+//! owner systems, generators, storage, machines and creatures through public
+//! contracts. See SCRIPTING.md for the complete current binding inventory and
+//! bounds. Blocks support explicit states, face textures, light/material flags
+//! and cube/crossed geometry; the three-argument form keeps cube defaults.
+//! Imported helpers retain only the entry package's declaration authority.
+//! Public metadata is negotiated; server callbacks, owner seeds and codecs
+//! stay server-only. Dependency entries run too and may import declared helpers.
+//! Fresh bounded VMs retain source identity and run callbacks on host workers.
 //!
 //! The bundle records identity:package with public contract version 1. Source
 //! semver is checked exactly during discovery, not persisted or converted to
@@ -158,7 +145,7 @@ impl Declarations {
             if let Some(system) = declarations.system {
                 systems.push(system);
             }
-            if let Some(declaration) = declarations.action {
+            for declaration in declarations.actions {
                 actions.push(super::gameplay::registration(
                     Arc::clone(&snapshot),
                     declaration,
@@ -259,7 +246,7 @@ pub(super) struct Pending {
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
     pub(super) generation: Option<super::generation::Declaration>,
-    pub(super) action: Option<super::gameplay::Declaration>,
+    pub(super) actions: Vec<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) storage: Vec<storage::Declaration>,

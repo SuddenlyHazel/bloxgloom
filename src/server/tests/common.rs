@@ -299,6 +299,7 @@ fn stage_entity_batch(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(batch),
     };

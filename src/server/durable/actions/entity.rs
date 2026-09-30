@@ -335,6 +335,7 @@ pub(in crate::server) fn plan_interact(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(entities),
         entity_wakes: wakes,
     })
@@ -753,6 +754,7 @@ pub(in crate::server) fn commit_tick_plan(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(entities),
         entity_wakes: wakes,
     }))
@@ -800,6 +802,7 @@ fn plan_reaction_removal(
             action: None,
         },
         crate::server::gameplay::Participants {
+            clock: None,
             actor: None,
             actor_position: None,
             admin: false,

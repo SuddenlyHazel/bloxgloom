@@ -876,17 +876,21 @@ fn set_world_time_request_round_trips_and_rejects_invalid_phase() {
         crate::daylight::INITIAL_MS,
         crate::daylight::CYCLE_MS - 1,
     ] {
-        let message = ClientMessage::SetWorldTime { elapsed_ms };
+        let message = ClientMessage::SetWorldTime {
+            action_id: (1 << 64) | 1,
+            elapsed_ms,
+        };
         let mut wire = Vec::new();
         write_client(&mut wire, &message).unwrap();
         assert_eq!(read_client(wire.as_slice()).unwrap(), message);
-        wire[6..14].copy_from_slice(&crate::daylight::CYCLE_MS.to_le_bytes());
+        wire[22..30].copy_from_slice(&crate::daylight::CYCLE_MS.to_le_bytes());
         assert!(read_client(wire.as_slice()).is_err());
     }
     assert!(
         write_client(
             &mut Vec::new(),
             &ClientMessage::SetWorldTime {
+                action_id: (1 << 64) | 1,
                 elapsed_ms: crate::daylight::CYCLE_MS,
             }
         )

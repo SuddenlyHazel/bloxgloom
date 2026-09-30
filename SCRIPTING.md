@@ -1,10 +1,11 @@
 # Scripting capabilities for mod developers
 
-This guide describes the implemented Luau package surface as of September 29,
-2026. It covers server scripting, client presentation, and the assets scripts
-can use. It does not imply complete parity with built-in gameplay or the broader
-native Rust extension API. The [implementation plan](docs/modding/IMPLEMENTATION-PLAN.md)
-tracks remaining integration work.
+This guide describes the implemented Luau package surface as of September 30,
+2026. It covers server scripting, client presentation and assets. The
+[Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md) audits builtin
+parity and records integrated verification. Native fire migration remains
+deferred, and the broader native Rust extension API includes interfaces that
+are not Luau bindings; the limitations below state that distinction explicitly.
 
 ## Start a package
 
@@ -128,7 +129,7 @@ them. The currently accepted manifest capabilities are the eight names below.
 | `register_texture`, `register_block`, `register_item`, `register_tag` | `content/v1` | 32 textures, 32 blocks, 32 items, 32 tags |
 | `register_player_rules`, `register_player_appearance` | `content/v1` | One rules selection and one appearance declaration across the entire package set |
 | `register_generator` | `generation/v1` | One |
-| `register_action`, `register_handler`, `register_entity` | `actions/v1` | One action, 32 handlers, 32 entity definitions |
+| `register_action`, `register_handler`, `register_entity` | `actions/v1` | 32 actions, 32 handlers, 32 entity definitions |
 | `register_system` | `owner_systems/v1` | One |
 | `register_storage` | `content/v1`, `storage/v1`, `inventory_screens/v1` | Eight |
 | `register_creature` | `content/v1`, `mobile_entities/v1` | Eight |
@@ -299,6 +300,9 @@ Target kinds are `item`, `block`, `entity`, or `empty` (with a nil target key).
 The module returns `function(c, event)` and stages effects through the server's
 gameplay transaction. The host validates session, target, reach, line of sight,
 observed revisions, permissions and commit dependencies.
+One package can register up to 32 actions. The frozen shared action registry
+allows 256 actions in total and eight for one exact targeting context, including
+builtins; registration rejects excess declarations rather than truncating discovery.
 
 An empty-target action can also expose a command under its action key:
 
@@ -367,6 +371,8 @@ host coordinate sequences are readonly. A block descriptor contains `state`,
 | `c.collect_drop(id,max_count)` | Credits an eligible drop to the acting player's finite inventory |
 | `c.admin_give(item,count)` | Host-authenticated admin-only item grant; returns boolean |
 | `c.admin_spawn(key)` | Host-authenticated admin-only creature spawn |
+| `c.world_time()` | In gameplay action callbacks, a readonly captured `{elapsed_ms,cycle_ms}` daylight phase; observes this action's staged changes |
+| `c.admin_set_time(elapsed_ms)` | In gameplay action callbacks, stage an admin-authorized integer phase `0 <= elapsed_ms < cycle_ms`; commits with the action's world, inventory and entity changes |
 
 Gameplay inventory slots are zero-based; returned sequences are one-based.
 An owner is `"player"` or an exact entity ID handle, never an arbitrary profile.
@@ -381,6 +387,14 @@ ordinary unsuccessful inventory operation means no change. Creation through
 `give`, drop spawning or declared recipes is explicit server-script authority;
 the client cannot invoke it directly or nominate another actor. Admin services
 recheck the authenticated actor even when called by a player-permission action.
+The current daylight cycle lasts 1,200,000 ms. `verdant:noon` in the combined
+example demonstrates a mod command using the same public clock operation as
+`time set noon`. Clock reads fence manual changes while ordinary elapsed time
+continues; the value is the callback's captured phase. The last clock command
+is in the common WAL, and periodic `world.time` checkpoints retain subsequent
+elapsed time. A lagging checkpoint resumes from the last committed command.
+Generation, owner planners and non-action gameplay callbacks use logical ticks;
+the daylight clock service is not bound in those contexts.
 
 World/entity operations remain bounded by the host's captured reads, interaction
 scope, ownership and schema rules. The production gameplay context has a shared

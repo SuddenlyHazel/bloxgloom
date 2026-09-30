@@ -9,6 +9,7 @@ mod entity_inventory;
 pub(super) mod inventory;
 
 pub(super) struct Participants<'a> {
+    pub clock: Option<super::world_time::Capture>,
     pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
     pub actor_position: Option<[f32; 3]>,
     pub admin: bool,
@@ -44,6 +45,7 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    clock: Option<super::world_time::Capture>,
     world: &'a mut World,
     reads: &'a mut TerrainReads,
     requested: &'a mut Vec<ChunkKey>,
@@ -57,6 +59,14 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn world_time(&mut self) -> Result<bloxgloom_host_api::gameplay::WorldTime, Error> {
+        let clock = self
+            .clock
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("world clock unavailable in this context".into()))?;
+        self.reads.clock = Some(clock.stamp.clone());
+        Ok(clock.time)
+    }
     fn pickup_eligible(&self, drop_id: u64) -> bool {
         self.actor_position
             .filter(|_| self.actor.is_some())
@@ -252,6 +262,7 @@ pub(super) struct OperationInput<'a> {
 }
 
 pub(super) struct WorldPlan {
+    pub world_time: Option<u64>,
     pub entity_updates: Vec<super::entities::PreparedEntityTransaction>,
     pub entity_spawns: Vec<super::entities::EntitySpawn>,
     pub edits: Vec<Edit>,
@@ -318,6 +329,7 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        clock: participants.clock,
         world,
         reads,
         requested,
@@ -699,6 +711,7 @@ pub(super) fn plan_with_lifecycles(
         entity_updates.extend(despawns);
     }
     Ok(WorldPlan {
+        world_time: plan.world_time,
         entity_updates,
         entity_spawns,
         edits: final_edits,

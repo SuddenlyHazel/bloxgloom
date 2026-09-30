@@ -36,7 +36,8 @@ pub(in crate::server) fn plan_durable_request(
             };
             let profile = client.profile;
             let action_id = match message {
-                ClientMessage::Edit { action_id, .. }
+                ClientMessage::SetWorldTime { action_id, .. }
+                | ClientMessage::Edit { action_id, .. }
                 | ClientMessage::InventoryMove { action_id, .. }
                 | ClientMessage::DropStack { action_id, .. }
                 | ClientMessage::AdminGive { action_id, .. }
@@ -68,6 +69,25 @@ pub(in crate::server) fn plan_durable_request(
             // the same frozen action registry and gameplay context as packages.
             // Only edits retain their separate host reach/placement validation.
             match message {
+                ClientMessage::SetWorldTime { elapsed_ms, .. } => registered::plan_request(
+                    state,
+                    *id,
+                    profile,
+                    action_id,
+                    [0; 3],
+                    bloxgloom_host_api::actions::Request {
+                        key: crate::gameplay::admin::TIME.into(),
+                        version: 1,
+                        slot: 0,
+                        inventory_revision,
+                        entity: 0,
+                        entity_revision: 0,
+                        arguments: elapsed_ms.to_le_bytes().to_vec(),
+                    },
+                    receipt_value,
+                    tick,
+                )
+                .map(Some),
                 ClientMessage::AdminSpawnEntity { entity_type, .. } => {
                     let key = state
                         .world
@@ -250,6 +270,7 @@ pub(in crate::server) fn plan_durable_request(
                 changed_cells: Vec::new(),
                 pickups: Vec::new(),
                 fire_seed: None,
+                clock_change: None,
                 entity_wakes: Vec::new(),
                 entities: Some(entities),
             }))
@@ -458,6 +479,7 @@ fn plan_block_edit(
                 .collect(),
             pickups: Vec::new(),
             fire_seed,
+            clock_change: None,
             entities,
             entity_wakes: Vec::new(),
         });
@@ -514,6 +536,7 @@ fn plan_block_edit(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities,
     })
@@ -541,6 +564,7 @@ fn plan_gameplay_removals(
             action: None,
         },
         crate::server::gameplay::Participants {
+            clock: None,
             actor: Some(actor),
             actor_position: Some(actor_position),
             admin: false,

@@ -320,9 +320,15 @@ impl ClientApp {
                 self.show_status("Appearance selection submitted");
             }
             Ok(Command::Time(elapsed_ms)) => {
-                self.queue_command(ClientMessage::SetWorldTime { elapsed_ms });
-                self.admin_input.clear();
-                self.show_status("Time change submitted");
+                self.submit_admin_command(Request {
+                    key: crate::gameplay::admin::TIME.into(),
+                    version: 1,
+                    slot: 0,
+                    inventory_revision: self.inventory.revision,
+                    entity: 0,
+                    entity_revision: 0,
+                    arguments: elapsed_ms.to_le_bytes().to_vec(),
+                });
             }
             Ok(Command::Registered(request)) => self.submit_admin_command(request),
             Err(message) => self.show_status(message),

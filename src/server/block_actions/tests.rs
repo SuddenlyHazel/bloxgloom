@@ -43,6 +43,7 @@ fn probe_place(
         changed_cells: vec![CellCoord::new(command.x, command.y, command.z)],
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     })

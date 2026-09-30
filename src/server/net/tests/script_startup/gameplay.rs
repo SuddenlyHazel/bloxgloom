@@ -294,7 +294,6 @@ fn luau_action_registration_and_persisted_source_identity_fail_closed() {
         REGISTER.replace("'item'", "'entity'"),
         REGISTER.replace("'bloxgloom:stick'", "'demo:missing'"),
         "return function(h) pcall(function() h.register_action({},1,'Bad','empty',nil,'demo:action') end) end".into(),
-        "return function(h) for i=1,2 do pcall(function() h.register_action('demo:a' .. i,1,'Use','empty',nil,'demo:action') end) end end".into(),
     ] {
         fixture.action(&register, SOURCE);
         assert!(fixture.open().is_err());
@@ -399,6 +398,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 }),
             },
             Participants {
+                clock: None,
                 actor: Some((PROFILE, &inventory)),
                 actor_position: Some([0.5, 80.0, 0.5]),
                 admin: false,

@@ -345,6 +345,7 @@ fn fixture_action(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed,
+        clock_change: None,
         entities: None,
         entity_wakes: Vec::new(),
     }

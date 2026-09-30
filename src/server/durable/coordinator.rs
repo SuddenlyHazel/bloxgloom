@@ -25,7 +25,8 @@ pub(in crate::server) fn handle_live_message(
     _tick: TickId,
 ) -> io::Result<()> {
     let action_id = match &message {
-        ClientMessage::Edit { action_id, .. }
+        ClientMessage::SetWorldTime { action_id, .. }
+        | ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }
@@ -259,7 +260,8 @@ fn process_queue(
                     }
                     let accepted = action.inventory.is_some()
                         || !action.world_edits.is_empty()
-                        || action.entities.is_some();
+                        || action.entities.is_some()
+                        || action.clock_change.is_some();
                     let reason = if accepted {
                         String::new()
                     } else {
@@ -400,6 +402,7 @@ fn batchable_motion(action: &CommitAction) -> bool {
         && action.profile.is_none()
         && action.action_id.is_none()
         && action.fire_seed.is_none()
+        && action.clock_change.is_none()
 }
 
 /// Capacity outcomes from batch combination: the deterministic tail sheds
@@ -569,6 +572,7 @@ fn stage_motion_batch(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities,
         entity_wakes: wakes,
     };
@@ -874,7 +878,8 @@ fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
 
 fn command_action_id(message: &ClientMessage) -> Option<u128> {
     match message {
-        ClientMessage::Edit { action_id, .. }
+        ClientMessage::SetWorldTime { action_id, .. }
+        | ClientMessage::Edit { action_id, .. }
         | ClientMessage::InventoryMove { action_id, .. }
         | ClientMessage::DropStack { action_id, .. }
         | ClientMessage::AdminGive { action_id, .. }

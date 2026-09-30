@@ -276,6 +276,7 @@ fn one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(spawn),
     };
@@ -362,6 +363,7 @@ fn synced_entity_action_reaches_checkpoint_mirror_before_restart() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(spawn),
     };

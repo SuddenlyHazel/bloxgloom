@@ -223,6 +223,7 @@ pub(super) struct CommitAction {
     pub(super) changed_cells: Vec<CellCoord>,
     pub(super) pickups: Vec<DroppedItem>,
     pub(super) fire_seed: Option<FireSeed>,
+    pub(super) clock_change: Option<crate::server::journal::Change>,
     pub(super) entities: Option<PreparedEntityBatch>,
     /// Routed wake destinations declared by an entity plan. Transient
     /// scheduling only: never part of the WAL change set, delivered as
@@ -246,6 +247,7 @@ impl CommitAction {
             changed_cells: Vec::new(),
             pickups: Vec::new(),
             fire_seed: None,
+            clock_change: None,
             entities: None,
             entity_wakes: Vec::new(),
         }

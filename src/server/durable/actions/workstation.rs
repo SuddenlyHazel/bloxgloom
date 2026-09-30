@@ -139,6 +139,7 @@ pub(super) fn place(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            clock: None,
             actor: Some((command.profile, &inventory)),
             actor_position: context.client(command.id).map(|client| client.position()),
             admin: false,
@@ -215,6 +216,7 @@ pub(super) fn place(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(entities),
     })
@@ -279,6 +281,7 @@ pub(super) fn remove(
         context.seed(),
         tick.get(),
         crate::server::gameplay::Participants {
+            clock: None,
             actor: Some((command.profile, &inventory_before)),
             actor_position: context.client(command.id).map(|client| client.position()),
             admin: false,
@@ -374,6 +377,7 @@ pub(super) fn remove(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(entities),
     })

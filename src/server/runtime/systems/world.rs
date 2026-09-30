@@ -388,6 +388,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             action: None,
         },
         Participants {
+            clock: None,
             actor: None,
             actor_position: None,
             admin: false,
@@ -566,6 +567,7 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: participants,
     }))

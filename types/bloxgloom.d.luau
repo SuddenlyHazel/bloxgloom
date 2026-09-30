@@ -252,6 +252,15 @@ export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedE
 
 --- Server transaction services. Proposed mutations commit together; an error rejects the transaction.
 export type BloxGameplayContext = {
+    --- Available in gameplay action callbacks; captured phase, with read-your-writes.
+    world_time: () -> {elapsed_ms: number, cycle_ms: number},
+    --- Integer 0 <= phase < cycle_ms; authenticated admin, atomic with this action.
+    admin_set_time: (elapsed_ms: number) -> (),
+    admin_give: (item: string, count: number) -> boolean,
+    admin_spawn: (entity_key: string) -> (),
+    player_position: BloxTriple?,
+    tick_lo: number,
+    tick_hi: number,
     --- Current logical server tick. Use :before and :elapsed_since for time comparisons.
     tick: BloxTick,
     --- Deterministic sample in [0, 1). Optional sequence is an integer in 0..4294967295; defaults to zero.

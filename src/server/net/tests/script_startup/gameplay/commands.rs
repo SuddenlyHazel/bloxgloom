@@ -3,6 +3,10 @@ use super::*;
 use bloxgloom_host_api::actions::{Command, CommandArgument, CommandPermission, Target};
 #[path = "commands/builtins.rs"]
 mod builtins;
+#[path = "commands/clock.rs"]
+mod clock;
+#[path = "commands/registration.rs"]
+mod registration;
 
 fn declaration(permission: &str) -> String {
     format!(

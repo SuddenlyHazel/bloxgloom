@@ -323,6 +323,7 @@ fn ignition_chain(bootstrap: bool) {
         changed_cells: vec![],
         pickups: vec![],
         fire_seed: None,
+        clock_change: None,
         entity_wakes: vec![],
         entities: None,
     };

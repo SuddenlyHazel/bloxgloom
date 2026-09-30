@@ -24,6 +24,7 @@ fn commit(state: &mut State, batch: entities::PreparedEntityBatch) {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
     };

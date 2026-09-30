@@ -162,6 +162,7 @@ fn empty_action() -> CommitAction {
         changed_cells: vec![],
         pickups: vec![],
         fire_seed: None,
+        clock_change: None,
         entity_wakes: vec![],
         entities: None,
     }

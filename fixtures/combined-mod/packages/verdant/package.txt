@@ -8,6 +8,7 @@ requires bloxgloom:owner_systems/v1
 module server main server/main.luau
 module server plant server/plant.luau
 module server grow server/grow.luau
+module server time server/time.luau
 module client view client/view.luau
 module client client_startup client/client_startup.luau
 asset texture jade assets/textures/jade.png

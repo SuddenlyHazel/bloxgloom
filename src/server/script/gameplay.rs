@@ -2,7 +2,7 @@
 //! success is still only a candidate for the server's existing WAL transaction.
 //! No script VM/callback or mutable module state survives an invocation.
 //!
-//! Startup capability: `requires bloxgloom:actions/v1`. Declare at most one
+//! Startup capability: `requires bloxgloom:actions/v1`. Declare up to 32 actions:
 //! `h.register_action("demo:shift", 1, "Shift", "item", "bloxgloom:stick", "demo:shift")`.
 //! Arguments are own action key, u16 revision, label, target kind/key, and an
 //! own-package module. Target alternatives are `"block", key` and `"empty", nil`.
@@ -55,8 +55,8 @@ pub(super) struct Declaration {
 }
 pub(super) type Registration = (Action, HandlerRegistration);
 
-/// One own-package semantic decision and discoverable action per package.
-/// This deliberately exposes no fallback owners or other gameplay event kinds.
+/// Own-package semantic decisions and discoverable actions. Other event kinds
+/// use register_handler; neither declaration can replace a fallback owner.
 pub(super) fn declarer(
     lua: &Lua,
     pending: Rc<RefCell<Pending>>,
@@ -83,8 +83,8 @@ pub(super) fn declarer(
                 if !snapshot.permits_actions(&namespace) {
                     return Err("register_action requires bloxgloom:actions/v1");
                 }
-                if pending.action.is_some() {
-                    return Err("only one action per package is allowed");
+                if pending.actions.len() >= 32 {
+                    return Err("at most 32 actions per package are allowed");
                 }
                 let key = text(key)?;
                 let Some((owner, local)) = key.split_once(':') else {
@@ -120,7 +120,7 @@ pub(super) fn declarer(
                     command: command_declaration(command)?,
                 };
                 action.validate().map_err(|_| "invalid action contract")?;
-                pending.action = Some(Declaration { action, module });
+                pending.actions.push(Declaration { action, module });
                 Ok(())
             })();
             result.map_err(|error| {

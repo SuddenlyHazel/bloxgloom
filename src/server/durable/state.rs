@@ -13,6 +13,9 @@ pub(in crate::server) fn action_changes(
     catalog: &crate::content::Catalog,
 ) -> io::Result<Vec<Change>> {
     let mut changes = Vec::new();
+    if let Some(change) = &action.clock_change {
+        changes.push(change.clone());
+    }
     for edit in &action.world_edits {
         if edit.changed {
             changes.push(Change::new(
@@ -79,6 +82,10 @@ pub(in crate::server) fn encode_action_receipt_with_catalog(
 ) -> io::Result<Vec<u8>> {
     let mut value = vec![2];
     match message {
+        ClientMessage::SetWorldTime { elapsed_ms, .. } => {
+            value.push(6);
+            value.extend(elapsed_ms.to_le_bytes());
+        }
         ClientMessage::Edit {
             x,
             y,
@@ -150,6 +157,9 @@ pub(in crate::server::durable) fn valid_action_receipt_with_catalog(
     catalog: &crate::content::Catalog,
 ) -> bool {
     match value {
+        [2, 6, rest @ ..] if rest.len() == 8 => {
+            u64::from_le_bytes(rest.try_into().unwrap()) < crate::daylight::CYCLE_MS
+        }
         [2, 5, a, b, c, d] => catalog
             .mobile_entity(crate::content::EntityTypeId(u32::from_le_bytes([
                 *a, *b, *c, *d,

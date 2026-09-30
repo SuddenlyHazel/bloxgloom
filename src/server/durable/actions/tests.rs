@@ -529,6 +529,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: None,
     };
@@ -2220,6 +2221,7 @@ fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entity_wakes: Vec::new(),
         entities: Some(spawn),
     };
@@ -2636,6 +2638,7 @@ fn stage_entity_spawn(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
     };
@@ -2709,6 +2712,7 @@ fn stage_entity_spawn_batch(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
     };
@@ -3584,6 +3588,7 @@ fn stage_entity_update(
         changed_cells: Vec::new(),
         pickups: Vec::new(),
         fire_seed: None,
+        clock_change: None,
         entities: Some(prepared),
         entity_wakes: Vec::new(),
     };

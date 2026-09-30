@@ -41,6 +41,35 @@ pub(super) fn invoke(
     lua.scope(|scope| {
         super::inventory::install(scope, &host, &context, rejected)?;
         queries::install(scope, &host, &context, rejected)?;
+        host.set(
+            "world_time",
+            scope.create_function(|lua, ()| {
+                let time = checked(rejected, || context.borrow_mut().world_time())?;
+                (|| {
+                    let value = lua.create_table()?;
+                    value.set("elapsed_ms", time.elapsed_ms)?;
+                    value.set("cycle_ms", time.cycle_ms)?;
+                    value.set_readonly(true);
+                    Ok(value)
+                })()
+                .inspect_err(|error: &mlua::Error| {
+                    rejected
+                        .borrow_mut()
+                        .get_or_insert_with(|| invalid(&error.to_string()));
+                })
+            })?,
+        )?;
+        host.set(
+            "admin_set_time",
+            scope.create_function(|_, value: Value| {
+                checked(rejected, || {
+                    context.borrow_mut().admin_set_time(
+                        integer(value, 0, (crate::daylight::CYCLE_MS - 1) as i64)
+                            .map_err(invalid)? as u64,
+                    )
+                })
+            })?,
+        )?;
         // These are public host operations, not a script-selected admin token.
         // Every invocation checks the server-authenticated actor before staging.
         host.set(

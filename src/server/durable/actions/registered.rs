@@ -254,6 +254,7 @@ fn plan_observed_request(
                 changed_cells: vec![],
                 pickups: vec![],
                 fire_seed: None,
+                clock_change: None,
                 entities: None,
                 entity_wakes: vec![],
             })

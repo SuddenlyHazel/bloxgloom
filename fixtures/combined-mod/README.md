@@ -26,6 +26,12 @@ Rust recompilation is needed when running an already-built game binary.
 source identity. Server callbacks run in fresh VMs, so persistent state belongs
 in the transaction or owner bytes rather than module globals.
 
+F4 `verdant:noon` calls the public Luau clock API to set daylight to noon.
+It requires the same authenticated admin profile as `time set noon`; a mod
+cannot grant itself admin access. Its server-only callback reads the captured
+phase, stages the change and observes its own staged result. Clock commands
+share the gameplay WAL, rollback and restart path with world/inventory effects.
+
 Select a stick, aim at visible stone within reach, then press **F6** and click
 **Plant in aimed stone** (or focus it with Tab and press Enter). The UI passes
 only the action key; the client samples its current streamed-world ray hit and
@@ -50,6 +56,13 @@ cargo run -- ui-preview /path/to/output-dir fixtures/combined-mod/packages
 ```
 
 The preview does not show jade world geometry or validate live gameplay visuals.
+
+`cargo test combined_mod_mixed_load -- --nocapture` exercises two real clients
+performing 320 authored actions, edits and finite transfers during fresh bundle
+downloads and cancellations. Movement acknowledgements and automatic growth
+continue, and reopening the save checks both profiles' balances and owner
+progress. Stale chunk observations are denied and retried from fresh client
+observations. Timings measure client response processing, not display latency.
 
 This example uses the compatible version-1 albedo material and one-state cube
 registration. The engine also supports explicit legal block states, multiple

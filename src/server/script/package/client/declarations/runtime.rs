@@ -39,7 +39,7 @@ impl Runtime {
     ) -> Result<Self, ScriptError> {
         // Bound capture/sort work, not just the eventual output. These mirror
         // the startup host; a new binding must explicitly extend this format.
-        if d.actions.len() > MAX_PACKAGES
+        if d.actions.len() > MAX_PACKAGES * 32
             || d.entities.len() > MAX_PACKAGES * 32
             || d.handlers.len() > MAX_PACKAGES * 32
             || d.systems.len() > MAX_PACKAGES
@@ -214,7 +214,7 @@ impl Runtime {
         requires: &[String],
     ) -> Result<(), ScriptError> {
         let mut previous = String::new();
-        let own_actions = count(reader, 1, requires, composition::ACTIONS)?;
+        let own_actions = count(reader, 32, requires, composition::ACTIONS)?;
         for _ in 0..own_actions {
             let key = own_key(reader, name, &mut previous)?;
             let version = reader.count(u16::MAX.into())? as u16;

@@ -133,9 +133,11 @@ impl Registrar for Registration {
         if self.actions.len() >= bloxgloom_host_api::actions::MAX_ACTIONS
             || self.actions.iter().any(|a| a.key == action.key)
         {
-            return Err(RegistrationError(
-                "duplicate action or action capacity exceeded".into(),
-            ));
+            return Err(RegistrationError(format!(
+                "duplicate action {} or action capacity exceeded ({} registered)",
+                action.key,
+                self.actions.len()
+            )));
         }
         self.actions.push(action);
         Ok(())

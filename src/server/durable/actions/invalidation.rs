@@ -247,6 +247,7 @@ pub(in crate::server) fn plan(
             action: None,
         },
         crate::server::gameplay::Participants {
+            clock: None,
             actor: None,
             actor_position: None,
             admin: false,
@@ -323,6 +324,7 @@ pub(in crate::server) fn plan(
             .collect(),
         pickups: vec![],
         fire_seed: None,
+        clock_change: None,
         entity_wakes: vec![],
         entities: Some(entities),
     }))
