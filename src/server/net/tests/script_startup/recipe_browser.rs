@@ -21,16 +21,27 @@ fn open(fixture: &Fixture) -> State {
     .unwrap()
 }
 
+// User controls are disabled during replica callbacks. Let the real worker
+// finish admitted advisory work before simulating the next enabled UI intent.
+fn settle(session: &mut Session) {
+    for _ in 0..16 {
+        session.poll_presentation();
+        session.wait_for_presentation().unwrap();
+    }
+}
+
 fn change(session: &mut Session, id: &str, value: &str) {
+    settle(session);
     let index = session.node_index(id).expect("declared control exists");
     session.apply_egui(EguiIntent::Input(index, value.into()));
-    session.wait_for_presentation().unwrap();
+    settle(session);
 }
 
 fn activate(session: &mut Session, id: &str) {
+    settle(session);
     let index = session.node_index(id).expect("dynamic button exists");
     session.apply_egui(EguiIntent::Activate(index));
-    session.wait_for_presentation().unwrap();
+    settle(session);
 }
 
 #[test]
@@ -80,13 +91,24 @@ fn recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_rest
                 fixture.0.join("recipe-config"),
             );
             peer.ready(AIM, crate::world::AIR, expected_revision);
+            let selection = peer
+                .session_mut()
+                .node_index("recipe:browser/selection")
+                .unwrap();
             assert!(
-                peer.session_mut()
-                    .node_index("recipe:browser/choose_stone")
-                    .is_none(),
-                "fresh sessions start with static document"
+                !peer.session_mut().text_at(selection).contains("gravel"),
+                "fresh document selection resets on reconnect"
             );
             peer.open_recipe_binding();
+            peer.wait_ui_text("recipe:browser/receipt", "No craft receipt yet");
+            let plain = if restarted {
+                "Plain input: 8; max from a matching slot: 8"
+            } else {
+                "Plain input: 6; max from a matching slot: 6"
+            };
+            peer.wait_ui_text("recipe:browser/availability", plain);
+            peer.wait_ui_text("recipe:browser/components", "v1 bytes 0/255");
+            peer.wait_ui_text("recipe:browser/world", "/1200000 ms");
             assert!(
                 peer.session_mut()
                     .node_index("recipe:browser/choose_stone")
@@ -145,6 +167,11 @@ fn recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_rest
                 assert!(peer.result(&request).0, "replay returns same receipt");
                 assert_eq!(peer.inventory_count(0), 5);
                 assert_eq!(peer.inventory_count(1), 128);
+                peer.wait_ui_text(
+                    "recipe:browser/availability",
+                    "Plain input: 5; max from a matching slot: 5",
+                );
+                peer.wait_ui_text("recipe:browser/receipt", "Craft receipt: accepted");
                 change(peer.session_mut(), "recipe:browser/quantity", "2");
                 activate(peer.session_mut(), "recipe:browser/craft");
                 let denied = peer.submit_ui_action();
@@ -154,6 +181,7 @@ fn recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_rest
                 );
                 assert_eq!(peer.inventory_count(0), 5);
                 assert_eq!(peer.inventory_count(1), 128);
+                peer.wait_ui_text("recipe:browser/receipt", "Craft receipt: denied");
                 peer.select_slot(2);
                 activate(peer.session_mut(), "recipe:browser/craft");
                 let components = peer.submit_ui_action();
@@ -163,6 +191,14 @@ fn recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_rest
                 );
                 assert_eq!(peer.inventory_count(2), 4);
                 activate(peer.session_mut(), "recipe:browser/choose_gravel");
+                let selection = peer
+                    .session_mut()
+                    .node_index("recipe:browser/selection")
+                    .unwrap();
+                assert!(
+                    peer.session_mut().text_at(selection).contains("gravel"),
+                    "selection callback must complete before craft"
+                );
                 change(peer.session_mut(), "recipe:browser/quantity", "3");
                 let notes = peer
                     .session_mut()
@@ -177,10 +213,16 @@ fn recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_rest
                 activate(peer.session_mut(), "recipe:browser/craft");
                 let reverse = peer.submit_ui_action();
                 peer.resend(&reverse);
-                assert!(peer.result(&reverse).0);
+                let result = peer.result(&reverse);
+                assert!(result.0, "reverse craft rejected: {}", result.1);
                 assert!(peer.result(&reverse).0);
                 assert_eq!(peer.inventory_count(0), 8);
                 assert_eq!(peer.inventory_count(1), 125);
+                peer.wait_ui_text(
+                    "recipe:browser/availability",
+                    "Plain input: 125; max from a matching slot: 8",
+                );
+                peer.wait_ui_text("recipe:browser/receipt", "Craft receipt: accepted");
             } else {
                 assert_eq!(peer.inventory_count(0), 8);
                 assert_eq!(peer.inventory_count(1), 125);

@@ -4,6 +4,9 @@ use crate::server::client_bundle::{CacheKey, ClientBundle};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+#[path = "tests/typed_recipe.rs"]
+mod typed_recipe;
+
 type Assets = BTreeMap<String, (u32, Vec<u8>)>;
 
 fn sample() -> Arc<ClientBundle> {

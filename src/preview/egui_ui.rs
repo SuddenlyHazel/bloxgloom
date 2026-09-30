@@ -58,6 +58,45 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
             }
         }
         if let Some(index) = updated_session.node_index("recipe:browser/search") {
+            // Representative post-craft data for offline visual QA. Live play
+            // supplies these snapshots exclusively from accepted server packets.
+            let catalog = crate::content::Catalog::builtins();
+            let mut inventory = crate::inventory::Inventory {
+                revision: 2,
+                slots: std::array::from_fn(|_| {
+                    Some(crate::inventory::Stack::new(crate::items::STICK, 128))
+                }),
+            };
+            let stone = catalog
+                .item_by_key("bloxgloom:stone")
+                .ok_or("missing stone")?;
+            let gravel = catalog
+                .item_by_key("bloxgloom:gravel")
+                .ok_or("missing gravel")?;
+            inventory.slots[0] = Some(crate::inventory::Stack::new(stone, 5));
+            inventory.slots[1] = Some(crate::inventory::Stack::new(gravel, 128));
+            inventory.slots[2] =
+                crate::inventory::Stack::with_components(stone, 4, 1, vec![0, 255]);
+            updated_session.observe(
+                "replica:inventory",
+                String::new(),
+                Arc::new(crate::client::presentation::Observations {
+                    inventory: Some(crate::client::presentation::InventoryView::from_inventory(
+                        &inventory, &catalog,
+                    )?),
+                    world: Some(crate::client::presentation::WorldView {
+                        elapsed_ms: crate::daylight::INITIAL_MS,
+                        cycle_ms: crate::daylight::CYCLE_MS,
+                    }),
+                    actions: vec![crate::client::presentation::ActionView {
+                        id: (1u128 << 64) | 1,
+                        key: Some("recipe:craft".into()),
+                        accepted: true,
+                        reason: String::new(),
+                    }],
+                    ..Default::default()
+                }),
+            );
             updated_session.apply_egui(crate::ui::authored::EguiIntent::Input(
                 index,
                 "crush".into(),

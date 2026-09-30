@@ -6,6 +6,7 @@ requires bloxgloom:actions/v1
 module server main server/main.luau
 module server craft server/craft.luau
 module client view client/view.luau
+module client client_startup client/startup.luau
 asset ui-document browser assets/ui/browser.json
 asset ui-style panel assets/ui/panel.json
 asset ui-style scroll assets/ui/scroll.json

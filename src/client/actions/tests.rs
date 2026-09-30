@@ -138,9 +138,35 @@ impl PackageActionProbe {
     }
 
     pub(crate) fn open_recipe_binding(&mut self) {
+        self.settle_ui();
         assert!(self.app.package_binding_key(KeyCode::KeyB, false, false));
         assert_eq!(self.app.screen, UiScreen::Package);
         self.session_mut().wait_for_presentation().unwrap();
+    }
+
+    pub(crate) fn settle_ui(&mut self) {
+        // At most eight advisory event kinds and one outstanding invocation.
+        // Poll starts queued work; wait handles its real worker reply.
+        for _ in 0..16 {
+            self.session_mut().poll_presentation();
+            self.session_mut().wait_for_presentation().unwrap();
+        }
+    }
+
+    pub(crate) fn wait_ui_text(&mut self, id: &str, fragment: &str) -> String {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            self.settle_ui();
+            let session = self.session_mut();
+            let index = session.node_index(id).unwrap();
+            let text = session.text_at(index).to_owned();
+            if text.contains(fragment) {
+                return text;
+            }
+            let message = self.read(deadline);
+            self.app.accept(message);
+            assert!(!self.app.disconnected);
+        }
     }
 
     pub(crate) fn submit_ui_action(&mut self) -> ClientMessage {
