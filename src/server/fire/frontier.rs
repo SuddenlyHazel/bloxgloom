@@ -64,10 +64,6 @@ impl FireFrontier {
             .is_some_and(|&(scheduled, _)| scheduled <= tick)
     }
 
-    pub(super) fn latest_tick(&self) -> u64 {
-        self.by_tick.last().map_or(0, |&(scheduled, _)| scheduled)
-    }
-
     pub(super) fn encode(&self) -> Vec<u8> {
         if self.cells.is_empty() {
             return Vec::new();

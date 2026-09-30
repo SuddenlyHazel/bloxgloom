@@ -40,9 +40,9 @@ impl FirePending {
         self.ignitions.values()
     }
 
-    pub(super) fn latest_tick(&self) -> u64 {
+    pub(super) fn latest_source_tick(&self) -> u64 {
         self.iter()
-            .map(|entry| entry.activate_at)
+            .map(|entry| entry.id.source_tick)
             .max()
             .unwrap_or(0)
     }

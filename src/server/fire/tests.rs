@@ -469,7 +469,7 @@ fn seed_mailbox_is_invisible_until_synced_and_survives_value_recovery() {
     for change in seed.changes() {
         recovered.apply_value(&change.key, &change.after).unwrap();
     }
-    assert_eq!(recovered.last_tick(), 8);
+    assert_eq!(recovered.last_tick(), 7);
     assert_eq!(recovered.checkpoint_values().len(), 4);
     let restarted = FireRuntime::new(recovered, 1).unwrap();
     assert_eq!(restarted.pending_destinations().count(), 4);
@@ -545,7 +545,7 @@ fn worker_burn_and_delivery_are_separate_wal_plans() {
         .unwrap();
     assert!(none.transactions.is_empty());
     let next = runtime
-        .prepare_source_wave(&mut world, &plan, TickId::new(2))
+        .prepare_source_wave(&mut world, &plan, TickId::new(1 + SPREAD_DELAY_TICKS))
         .unwrap();
     assert_eq!(next.transactions.len(), 1);
     assert_eq!(next.transactions[0].burns(), &[274]);
@@ -784,10 +784,7 @@ fn cpu_fixture_hashes_match_for_128_active_chunks_across_worker_counts() {
 // ---------------------------------------------------------------------------
 // Behaviour pins for the owner-path migration.
 //
-// These tests pin the OBSERVABLE outcomes of the current fire implementation
-// without changing any behaviour. After the migration onto the generic owner
-// / effect / domain path they must pass UNMODIFIED: any failure is a
-// behaviour change, not a stale test.
+// These tests protect fire timing, containment, recovery and bounded owner work.
 // ---------------------------------------------------------------------------
 
 /// Applies block edits to the authoritative world cache.
@@ -844,7 +841,7 @@ fn pin_recovered(values: &[(StateKey, Vec<u8>)]) -> FireRecovered {
 
 /// Fire crosses a chunk seam over successive ticks: the west cell burns at
 /// tick 1, its ignition is delivered into the east chunk, and the east cell
-/// burns at tick 2. Stone containment proves the fire then burns out.
+/// burns after the spread delay. Stone containment proves the fire then burns out.
 #[test]
 fn pin_fire_propagates_across_chunk_seam_over_time() {
     let save = TestDir::new();
@@ -917,30 +914,36 @@ fn pin_fire_propagates_across_chunk_seam_over_time() {
     }
     assert!(fire.pending_destinations().next().is_none());
 
-    // Tick 2: the east cell burns across the seam.
-    let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, 2);
+    // Neither delivery nor an early tick may bypass the one-second hop delay.
+    for tick in 2..=SPREAD_DELAY_TICKS {
+        assert_eq!(pin_tick(&mut fire, &mut world, tick), (0, 0, 0));
+        assert_eq!(world.cached_block(16, 65, 1), Some(WOOD));
+    }
+    let burn_tick = 1 + SPREAD_DELAY_TICKS;
+    let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, burn_tick);
     assert_eq!((delivered, sources, burned), (2, 1, 1));
     assert_eq!(world.cached_block(16, 65, 1), Some(AIR));
 
     // The contained fire burns out: later ticks are completely quiet.
-    for tick in 3..=6 {
+    for tick in burn_tick + 1..=burn_tick + 4 {
         let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, tick);
-        if tick >= 4 {
+        if tick >= burn_tick + 2 {
             assert_eq!((delivered, sources, burned), (0, 0, 0));
         }
     }
 }
 
-/// A glowstone placement ignites its wooden neighbours, the ring burns, and
-/// the fire goes out: glowstone and stone survive, wood becomes air, and the
-/// frontier disappears.
+/// Glowstone ignites only its wood/leaves neighbours after the delay. Grass,
+/// moss and stone survive, and the contained fire eventually goes out.
 #[test]
-fn pin_glowstone_ignition_burns_wood_ring_then_burns_out() {
+fn pin_glowstone_ignition_burns_only_wood_and_leaves_then_burns_out() {
     let save = TestDir::new();
     let owner = chunk(0, 4, 0);
     let mut world = World::with_capacity(62, save.0.clone(), 8).unwrap();
     world.get_chunk(owner).unwrap();
-    // Stone box 0..4 x 64..68 x 0..4 containing one lamp and six wood cells.
+    // Stone box containing a lamp, four fuels and two protected neighbours.
+    use crate::world::{GRASS, LEAVES, MOSS, WOOD_X, WOOD_Z};
+    let ring_blocks = [WOOD, WOOD_X, WOOD_Z, LEAVES, GRASS, MOSS];
     let lamp = (1, 65, 1);
     let ring = [
         (0, 65, 1),
@@ -956,8 +959,8 @@ fn pin_glowstone_ignition_burns_wood_ring_then_burns_out() {
             for z in 0..4 {
                 if (x, y, z) == lamp {
                     setup.push((x, y, z, GLOWSTONE));
-                } else if ring.contains(&(x, y, z)) {
-                    setup.push((x, y, z, WOOD));
+                } else if let Some(index) = ring.iter().position(|&cell| cell == (x, y, z)) {
+                    setup.push((x, y, z, ring_blocks[index]));
                 } else {
                     setup.push((x, y, z, STONE));
                 }
@@ -981,22 +984,26 @@ fn pin_glowstone_ignition_burns_wood_ring_then_burns_out() {
     // them. The ring burns exactly once per cell, then silence.
     let mut total_burns = 0;
     let mut quiet_ticks = 0;
-    for tick in 8..=24 {
+    for tick in 8..=7 + SPREAD_DELAY_TICKS + 4 {
         let (delivered, sources, burned) = pin_tick(&mut fire, &mut world, tick);
         total_burns += burned;
+        if tick < 7 + SPREAD_DELAY_TICKS {
+            assert_eq!(burned, 0, "initial ignition must respect the delay");
+        }
         if delivered == 0 && sources == 0 {
             quiet_ticks += 1;
         } else {
             quiet_ticks = 0;
         }
-        if quiet_ticks == 2 {
+        if total_burns == 4 && quiet_ticks == 2 {
             break;
         }
     }
-    assert_eq!(total_burns, 6, "each ring cell burns exactly once");
+    assert_eq!(total_burns, 4, "only wood and leaves burn, exactly once");
     assert_eq!(quiet_ticks, 2, "contained fire must burn out");
-    for &(x, y, z) in &ring {
-        assert_eq!(world.cached_block(x, y, z), Some(AIR));
+    for (index, &(x, y, z)) in ring.iter().enumerate() {
+        let expected = if index < 4 { AIR } else { ring_blocks[index] };
+        assert_eq!(world.cached_block(x, y, z), Some(expected));
     }
     assert_eq!(world.cached_block(lamp.0, lamp.1, lamp.2), Some(GLOWSTONE));
     assert!(

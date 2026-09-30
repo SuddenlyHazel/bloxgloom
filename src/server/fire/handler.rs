@@ -127,7 +127,7 @@ impl SystemHandler for FireHandler {
         }
         let activation = input
             .tick
-            .checked_add(1)
+            .checked_add(super::SPREAD_DELAY_TICKS)
             .ok_or_else(|| rejected("fire simulation tick exhausted"))?;
         let consumed = input.frontier.due(input.tick, input.max_due);
         let mut frontier_after = (*input.frontier).clone();

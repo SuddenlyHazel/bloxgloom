@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 struct BurnExtension;
-struct BurnGrass;
-impl bloxgloom_host_api::gameplay::Handler for BurnGrass {
+struct BurnFuel;
+impl bloxgloom_host_api::gameplay::Handler for BurnFuel {
     fn handle(
         &self,
         context: &mut bloxgloom_host_api::gameplay::Context<'_>,
@@ -24,7 +24,7 @@ impl bloxgloom_host_api::gameplay::Handler for BurnGrass {
         } = event
         else {
             return Err(bloxgloom_host_api::gameplay::Error::Invalid(
-                "expected burned grass".into(),
+                "expected burned fuel".into(),
             ));
         };
         context.spawn_drop(cell.map(|v| v as f32 + 0.5), "bloxgloom:stick", 1, 250)
@@ -35,19 +35,36 @@ impl bloxgloom_host_api::Extension for BurnExtension {
         &self,
         registrar: &mut dyn bloxgloom_host_api::Registrar,
     ) -> Result<(), bloxgloom_host_api::RegistrationError> {
+        use bloxgloom_host_api::content::{Block, BlockState, FaceTextures, Geometry, Material};
+        registrar.block(Block {
+            key: "test:fire_fuel".into(),
+            name: "FIRE FUEL".into(),
+            swatch: [0.4, 0.6, 0.3, 1.0],
+            textures: FaceTextures::uniform("bloxgloom:grass_top"),
+            geometry: Geometry::Cube,
+            material: Material::Opaque,
+            solid: true,
+            replaceable: false,
+            supports_plant: true,
+            flammable: true,
+            emission: 0,
+            reflectance: [75, 170, 65],
+            properties: Vec::new(),
+            states: vec![BlockState::default()],
+        })?;
         registrar.gameplay_handler(bloxgloom_host_api::gameplay::HandlerRegistration {
-            key: "test:burn_grass".into(),
+            key: "test:burn_fuel".into(),
             version: 1,
             event: bloxgloom_host_api::gameplay::EventKind::BlockRemoved,
-            target: Some("bloxgloom:grass".into()),
-            handler: std::sync::Arc::new(BurnGrass),
+            target: Some("test:fire_fuel".into()),
+            handler: std::sync::Arc::new(BurnFuel),
         })
     }
 }
 
 #[test]
 fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
-    use crate::world::{GRASS, RED_FLOWER};
+    use crate::world::RED_FLOWER;
     let path = temp_save();
     let startup = crate::server::startup::ServerStartup::new(std::sync::Arc::new(
         crate::content::Catalog::builtins(),
@@ -55,13 +72,18 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
     .with_extension(&BurnExtension)
     .unwrap();
     let mut state = crate::server::server_state_with_startup(71, path.clone(), 8, startup).unwrap();
+    let fuel = state
+        .world
+        .catalog()
+        .state_by_key("test:fire_fuel")
+        .unwrap();
     let (source, local) = world_to_chunk(8, 95, 8);
     let cell = Chunk::index(local).unwrap() as u16;
     let edits = state
         .world
         .prepare_edits(&[
             (8, 95, 8, GLOWSTONE),
-            (9, 95, 8, GRASS),
+            (9, 95, 8, fuel),
             (9, 96, 8, RED_FLOWER),
         ])
         .unwrap();
@@ -98,14 +120,18 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
     run_delivery(&mut state, TickId::new(3)).unwrap();
     drain_wal(&mut state);
     state.durability.publish_queue.clear();
-    run_source(&mut state, TickId::new(4)).unwrap();
+    run_source(
+        &mut state,
+        TickId::new(1 + crate::server::fire::SPREAD_DELAY_TICKS),
+    )
+    .unwrap();
     assert!(
         state.durability.publish_queue.is_empty(),
         "flames must wait for the WAL receipt"
     );
     assert_eq!(
         state.world.cached_block(9, 95, 8),
-        Some(GRASS),
+        Some(fuel),
         "burn must wait for WAL receipt"
     );
     drain_wal(&mut state);
@@ -120,7 +146,7 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
     assert_eq!(
         effects[0].fire_bursts,
         vec![[9, 95, 8]],
-        "only the burned grass gets a flame, not its unsupported flower"
+        "only the burned fuel gets a flame, not its unsupported flower"
     );
     assert_eq!(effects[0].deltas.len(), 2);
     let drops = crate::server::drops::nearby(&state.entities, [9.5, 95.5, 8.5]);
@@ -177,6 +203,16 @@ fn drain_wal(state: &mut State) {
 
 #[test]
 fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
+    // Repeated startup/replay calls use large State temporaries in debug builds.
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(check_seeded_fire_restart)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn check_seeded_fire_restart() {
     let path = temp_save();
     let mut state = server_state(71, path.clone()).unwrap();
     let (source, local) = world_to_chunk(8, 96, 8);
@@ -218,8 +254,12 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
     assert_eq!(state.world.cached_block(9, 96, 8), Some(WOOD));
     drop(state);
 
-    let mut state = server_state(71, path.clone()).unwrap();
+    state = server_state(71, path.clone()).unwrap();
     assert_eq!(state.world.cached_block(9, 96, 8), Some(WOOD));
+    assert_eq!(
+        state.recovered_tick, 1,
+        "a future ignition must not advance the recovered clock"
+    );
     assert!(
         state
             .fire
@@ -231,14 +271,36 @@ fn seeded_fire_survives_restart_and_burns_only_after_wal_receipt() {
     run_delivery(&mut state, TickId::new(3)).unwrap();
     drain_wal(&mut state);
     assert_eq!(state.world.cached_block(9, 96, 8), Some(WOOD));
-    run_source(&mut state, TickId::new(4)).unwrap();
+    drop(state);
+    // Recover again with the ignition already delivered into a future frontier.
+    state = server_state(71, path.clone()).unwrap();
+    assert_eq!(
+        state.recovered_tick, 3,
+        "a future frontier must not advance the recovered clock"
+    );
+    run_source(
+        &mut state,
+        TickId::new(crate::server::fire::SPREAD_DELAY_TICKS),
+    )
+    .unwrap();
+    drain_wal(&mut state);
+    assert_eq!(
+        state.world.cached_block(9, 96, 8),
+        Some(WOOD),
+        "restart must preserve the ignition deadline"
+    );
+    run_source(
+        &mut state,
+        TickId::new(1 + crate::server::fire::SPREAD_DELAY_TICKS),
+    )
+    .unwrap();
     drain_wal(&mut state);
     assert_eq!(state.world.cached_block(9, 96, 8), Some(AIR));
     drop(state);
 
     // The synced BGED/fire record, not the in-memory owner slot, must be
     // sufficient to restore the burn after a second process restart.
-    let state = server_state(71, path.clone()).unwrap();
+    state = server_state(71, path.clone()).unwrap();
     assert_eq!(state.world.cached_block(9, 96, 8), Some(AIR));
     drop(state);
     fs::remove_dir_all(path).unwrap();

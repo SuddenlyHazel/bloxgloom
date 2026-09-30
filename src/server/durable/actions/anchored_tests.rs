@@ -221,7 +221,11 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
     crate::server::durable::fire::run_delivery(&mut state, TickId::new(13)).unwrap();
     barrier(&mut state);
     state.durability.publish_queue.clear();
-    crate::server::durable::fire::run_source(&mut state, TickId::new(14)).unwrap();
+    crate::server::durable::fire::run_source(
+        &mut state,
+        TickId::new(11 + crate::server::fire::SPREAD_DELAY_TICKS),
+    )
+    .unwrap();
     assert!(state.durability.publish_queue.is_empty());
     assert_eq!(
         state.durability.pending.len(),
@@ -269,7 +273,11 @@ fn fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record() 
     let mut state =
         crate::server::server_state_with_startup(7, path.clone(), 8, startup()).unwrap();
     assert_eq!(count(&state), 4);
-    crate::server::durable::fire::run_source(&mut state, TickId::new(15)).unwrap();
+    crate::server::durable::fire::run_source(
+        &mut state,
+        TickId::new(12 + crate::server::fire::SPREAD_DELAY_TICKS),
+    )
+    .unwrap();
     barrier(&mut state);
     assert_eq!(count(&state), 4);
     drop(state);

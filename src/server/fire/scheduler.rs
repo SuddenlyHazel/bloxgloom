@@ -182,19 +182,15 @@ impl FireRecovered {
             .map(|cursor| cursor.last_tick)
             .max()
             .unwrap_or_default();
-        let frontier = self
-            .frontiers
-            .values()
-            .map(FireFrontier::latest_tick)
-            .max()
-            .unwrap_or(0);
+        // Frontier deadlines are future work, not elapsed simulation time.
+        // Committed delivery/source cursors cover the frontier's producer ticks.
         let pending = self
             .pending
             .values()
-            .map(FirePending::latest_tick)
+            .map(FirePending::latest_source_tick)
             .max()
             .unwrap_or(0);
-        cursor.max(frontier).max(pending)
+        cursor.max(pending)
     }
 
     #[cfg(test)]
@@ -422,7 +418,7 @@ impl FireRuntime {
         }
         let activation = tick
             .get()
-            .checked_add(1)
+            .checked_add(super::SPREAD_DELAY_TICKS)
             .ok_or_else(|| invalid("fire seed tick exhausted"))?;
         let mut updates = BTreeMap::<ChunkKey, FirePending>::new();
         for direction in 0..6u8 {

@@ -138,17 +138,14 @@ fn builtin_catalog_preserves_default_state_and_item_ids() {
             assert_eq!(catalog.item(ItemId(id)).unwrap().placeable, Some(state));
         }
     }
-    for state in [
-        world::GRASS,
-        world::MOSS,
-        world::WOOD,
-        world::LEAVES,
-        world::FERN,
-    ] {
+    for state in [world::WOOD, world::WOOD_X, world::WOOD_Z, world::LEAVES] {
         assert_ne!(catalog.block_flags(state) & FLAMMABLE, 0);
     }
-    for state in [world::AIR, world::DIRT, world::STONE, world::GLOWSTONE] {
-        assert_eq!(catalog.block_flags(state) & FLAMMABLE, 0);
+    for state in 0..=world::MAX_BUILTIN_BLOCK.0 {
+        let state = BlockStateId(state);
+        if ![world::WOOD, world::LEAVES].contains(&state) {
+            assert_eq!(catalog.block_flags(state) & FLAMMABLE, 0);
+        }
     }
     assert!(catalog.block(BlockStateId(16)).is_none());
     for (state, axis) in [

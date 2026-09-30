@@ -4,6 +4,10 @@
 //! data. A worker may prepare their next values, but only a synced WAL receipt
 //! installs them or publishes a block edit.
 
+// One second of simulation time between ignition and each subsequent hop.
+pub(in crate::server) const SPREAD_DELAY_TICKS: u64 =
+    1_000 / super::simulation::FIXED_STEP.as_millis() as u64;
+
 mod apply;
 mod bench;
 mod checkpoint;
