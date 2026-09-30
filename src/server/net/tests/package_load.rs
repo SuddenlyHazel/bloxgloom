@@ -75,7 +75,7 @@ impl Downloads {
         let worker = thread::spawn(move || {
             let mut completed = 0;
             let mut cancelled = 0;
-            for round in 0..100 {
+            for round in 0..10_000 {
                 if stopped.load(Ordering::Acquire) {
                     break;
                 }
@@ -97,12 +97,14 @@ impl Downloads {
                 else {
                     panic!("missing offer")
                 };
+                let mut announced = false;
                 let result = crate::client::bundle::receive_progress(
                     &mut peer,
                     identity,
                     None,
                     |bytes, _| {
-                        if round == 0 && bytes == protocol::MAX_BUNDLE_PART as u32 {
+                        if round == 0 && bytes > 0 && !announced {
+                            announced = true;
                             ready.send(()).unwrap();
                             released.recv_timeout(Duration::from_secs(10)).unwrap();
                         }
@@ -155,7 +157,7 @@ impl Downloads {
         );
         assert!(cancelled >= 1, "no cancelled transfers overlapped gameplay");
         eprintln!(
-            "mixed package load: {completed} complete 1.5 MiB transfers and {cancelled} cancelled attempts"
+            "mixed package load: {completed} complete fresh transfers and {cancelled} cancelled attempts"
         );
     }
 }

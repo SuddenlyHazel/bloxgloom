@@ -259,3 +259,6 @@ fn combined_mod_two_profiles_act_independently_and_recover() {
         Some((1, b"1".to_vec()))
     );
 }
+
+#[path = "combined/mixed.rs"]
+mod mixed;

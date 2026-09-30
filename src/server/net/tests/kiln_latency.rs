@@ -8,8 +8,7 @@ use crate::world::{AIR, STONE};
 use std::time::Instant;
 
 #[cfg(unix)]
-#[path = "kiln_latency/package_load.rs"]
-mod package_load;
+use super::package_load;
 
 fn observe(message: &ServerMessage, chunks: &mut ReplicationProbe) {
     chunks.accept(message.clone());

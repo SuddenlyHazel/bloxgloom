@@ -328,7 +328,8 @@ impl PackageActionProbe {
     pub(crate) fn result(&mut self, request: &ClientMessage) -> (bool, String) {
         let expected = match request {
             ClientMessage::EntityInteract { action_id, .. }
-            | ClientMessage::Edit { action_id, .. } => action_id,
+            | ClientMessage::Edit { action_id, .. }
+            | ClientMessage::InventoryMove { action_id, .. } => action_id,
             _ => unreachable!(),
         };
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -495,3 +496,6 @@ impl PackageActionProbe {
         }
     }
 }
+
+#[path = "tests/mixed.rs"]
+mod mixed;

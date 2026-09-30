@@ -6,6 +6,9 @@ mod fire;
 #[path = "tests/generation.rs"]
 mod generation;
 #[cfg(unix)]
+#[path = "tests/package_load.rs"]
+mod package_load;
+#[cfg(unix)]
 #[path = "tests/script_startup.rs"]
 mod script_startup;
 use crate::server::DEFAULT_VIEW;
