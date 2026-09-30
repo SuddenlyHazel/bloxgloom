@@ -142,7 +142,7 @@ pub(super) fn set_time(state: &mut super::State, session: u64, time: u64) -> io:
 impl Drop for Clock {
     fn drop(&mut self) {
         if let Err(error) = self.finish() {
-            eprintln!("world clock save: {error}");
+            tracing::error!(%error, "world clock save failed");
         }
     }
 }

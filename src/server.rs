@@ -144,9 +144,11 @@ impl Client {
             Ok(()) => true,
             Err(error) => {
                 let queued = self.sender.snapshot();
-                eprintln!(
-                    "disconnecting client: outbound {error:?}, {} frames / {} bytes queued",
-                    queued.queued_frames, queued.queued_bytes
+                tracing::warn!(
+                    ?error,
+                    queued_frames = queued.queued_frames,
+                    queued_bytes = queued.queued_bytes,
+                    "disconnecting client after outbound queue failure"
                 );
                 let _ = self.socket.shutdown(Shutdown::Both);
                 false
@@ -258,7 +260,7 @@ impl State {
         let client = self.clients.remove(&id)?;
         if let Err(error) = self.position_store.save(client.profile, client.position()) {
             self.durability.failed = true;
-            eprintln!("could not save player position for session {id}: {error}");
+            tracing::error!(%error, player_id = id, "player position save failed");
         }
         for &key in client.sent.iter() {
             let released = self.world.unpin_resident_chunk(key);
@@ -268,13 +270,13 @@ impl State {
             Ok(Some(delta)) => {
                 if let Err(error) = self.queue_player_entity_deltas(vec![delta]) {
                     self.durability.failed = true;
-                    eprintln!("could not publish player despawn for session {id}: {error}");
+                    tracing::error!(%error, player_id = id, "player despawn publication failed");
                 }
             }
             Ok(None) => {}
             Err(error) => {
                 self.durability.failed = true;
-                eprintln!("could not remove player entity for session {id}: {error}");
+                tracing::error!(%error, player_id = id, "player entity removal failed");
             }
         }
         Some(client)

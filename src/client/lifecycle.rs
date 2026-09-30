@@ -22,7 +22,7 @@ impl ClientApp {
 
     pub(super) fn fail_session(&mut self, reason: impl Into<String>) {
         let reason = reason.into();
-        eprintln!("Client session failed: {reason}");
+        tracing::error!(%reason, "client session failed");
         // Preserve the first failure rather than replacing it with queue closure.
         if self.failure.is_none() {
             self.failure = Some(reason);

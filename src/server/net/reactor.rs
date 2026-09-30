@@ -169,6 +169,7 @@ fn serve_listener_inner(
     let admission_limit = state.admission_limit;
     listener.set_nonblocking(true)?;
     let address = listener.local_addr()?;
+    let _span = tracing::info_span!("server", listen_addr = %address).entered();
     let inventory_store = state.inventory_store.clone();
     let outbound = Arc::clone(&state.outbound);
     let content =
@@ -191,7 +192,7 @@ fn serve_listener_inner(
         .name("server-coordinator".into())
         .spawn(move || run_simulation_ticks(*state, input_receiver))?;
 
-    eprintln!("Bloxgloom server listening on {address}");
+    tracing::info!(max_clients = admission_limit, "server listening");
     let mut connections = Vec::with_capacity(admission_limit);
     let mut pending_leaves = VecDeque::with_capacity(MAX_PENDING_LEAVES);
     let mut next_connection_key = LISTENER_KEY + 1;
@@ -225,23 +226,24 @@ fn serve_listener_inner(
         if ready.remove(&LISTENER_KEY).is_some() {
             for _ in 0..ACCEPT_BUDGET {
                 match listener.accept() {
-                    Ok((socket, _peer)) => {
+                    Ok((socket, peer)) => {
                         if !has_admission_capacity_with_limit(
                             connections.len(),
                             pending_leaves.len(),
                             admission_limit,
                         ) {
+                            tracing::debug!(%peer, "connection rejected: server full");
                             stats.admission_rejected();
                             let _ = socket.shutdown(Shutdown::Both);
                             continue;
                         }
                         if let Err(error) = socket.set_nodelay(true) {
-                            eprintln!("client socket: {error}");
+                            tracing::warn!(%error, %peer, "client socket configuration failed");
                             let _ = socket.shutdown(Shutdown::Both);
                             continue;
                         }
                         if let Err(error) = socket.set_nonblocking(true) {
-                            eprintln!("client nonblocking mode: {error}");
+                            tracing::warn!(%error, %peer, "client nonblocking mode failed");
                             let _ = socket.shutdown(Shutdown::Both);
                             continue;
                         }
@@ -256,7 +258,7 @@ fn serve_listener_inner(
                         // SAFETY: every registered stream is removed before its connection drops.
                         if let Err(error) = unsafe { poller.add(&socket, PollEvent::readable(key)) }
                         {
-                            eprintln!("register client socket: {error}");
+                            tracing::warn!(%error, %peer, connection_key = key, "client socket registration failed");
                             let _ = socket.shutdown(Shutdown::Both);
                             continue;
                         }
@@ -266,6 +268,7 @@ fn serve_listener_inner(
                             key,
                             Arc::clone(&stats),
                         ));
+                        tracing::debug!(%peer, connection_key = key, "connection accepted");
                         stats.accepted();
                     }
                     Err(error) if error.kind() == ErrorKind::WouldBlock => break,
@@ -313,7 +316,7 @@ fn serve_listener_inner(
                             | ErrorKind::ConnectionReset
                             | ErrorKind::BrokenPipe
                     ) {
-                        eprintln!("client: {error}");
+                        tracing::warn!(%error, connection_key = connections[index].poll_key, "client connection failed");
                     }
                     connections[index].disconnect(&mut pending_leaves);
                 }
@@ -328,7 +331,7 @@ fn serve_listener_inner(
             if connections[index].should_remove() {
                 let connection = connections.swap_remove(index);
                 if let Err(error) = poller.delete(&connection.socket) {
-                    eprintln!("unregister client socket: {error}");
+                    tracing::warn!(%error, connection_key = connection.poll_key, "client socket deregistration failed");
                 }
                 drop(connection);
                 stats.removed();
@@ -341,7 +344,7 @@ fn serve_listener_inner(
 
     for connection in &connections {
         if let Err(error) = poller.delete(&connection.socket) {
-            eprintln!("unregister client socket: {error}");
+            tracing::warn!(%error, connection_key = connection.poll_key, "client socket deregistration failed");
         }
         let _ = connection.socket.shutdown(Shutdown::Both);
     }

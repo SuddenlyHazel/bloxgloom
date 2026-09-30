@@ -156,7 +156,7 @@ impl Behavior for ScriptCreature {
             |lua, entry| invoke(lua, entry, context, &state.private, self.max_private),
         );
         let result = result.map_err(|error| {
-            eprintln!("creature {} tick rejected: {error}", self.module);
+            tracing::warn!(%error, module = %self.module, "creature tick rejected");
             Error::InvalidState
         })?;
         let owner = self.key.split_once(':').ok_or(Error::InvalidState)?.0;
@@ -236,7 +236,7 @@ impl Behavior for ScriptCreature {
             },
         )
         .map_err(|error| {
-            eprintln!("creature {} interaction rejected: {error}", self.module);
+            tracing::warn!(%error, module = %self.module, "creature interaction rejected");
             Error::InvalidState
         })?;
         state.private = private;

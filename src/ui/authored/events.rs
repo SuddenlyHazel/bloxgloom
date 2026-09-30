@@ -411,7 +411,7 @@ impl Session {
             Ok(())
         });
         if let Err(error) = result {
-            eprintln!("client presentation event {}: {error}", reply.sequence);
+            tracing::warn!(%error, sequence = reply.sequence, "client presentation event failed");
             self.failure = Some(error);
         }
     }

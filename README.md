@@ -51,6 +51,26 @@ cargo run -- client 127.0.0.1:4000
 
 The server defaults to `127.0.0.1:4000` and saves edits in `world-v17/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines have passed, but the combined gameplay acceptance workload remains unverified.
 
+Client and server diagnostics use `tracing`, with timestamps, levels, module targets,
+thread names, and structured fields. Local play shares one process-wide subscriber.
+Logs go to stderr through a bounded background writer; normal shutdown drains the
+queue. If the terminal cannot keep up, excess records are dropped to keep gameplay
+responsive. Preview and benchmark reports continue to use stdout.
+
+The default filter is `warn,bloxgloom=info`: game lifecycle events and warnings are
+visible, while frame statistics and detailed connection diagnostics require debug
+logging. Override it with `RUST_LOG`, for example:
+
+```sh
+RUST_LOG=warn,bloxgloom::client=debug cargo run
+RUST_LOG=warn,bloxgloom::server=debug cargo run -- server
+RUST_LOG=bloxgloom=trace cargo run
+```
+
+Invalid filters fall back to the default with a warning. ANSI colors are enabled
+only on a terminal; set `NO_COLOR=1` to disable them. `BLOXGLOOM_TRACE_EDITS=1`
+continues to enable edit-response timestamps, now through the same logger.
+
 Click the window to capture the mouse. Use WASD to fly horizontally, Space and Shift to ascend and descend. The crosshair marks the targeted block: left click harvests it, and right click places a block from the selected hotbar stack against it. Flowers drop themselves; tall grass can drop seeds, and leaves can drop leaves, sticks, and saplings. Seeds, sticks, and saplings are inventory items, not placeable blocks. Walk near a drop to pick it up. Use 1–9 or the mouse wheel to select a hotbar slot. Press Q to drop one selected item, or Shift+Q to drop its full stack.
 
 E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select a source slot, then left-click a destination to move its whole stack; right-click the destination to move half. Matching stacks merge up to 128 blocks; moving a full stack onto a different block swaps them. Escape opens the pause menu, where you can resume, change settings, or exit. F3 toggles the debug HUD. The local game also has an admin menu on F4 or the pause menu: click a catalog item to grant a stack of 128, or type `give namespace:item [count]` and press Enter. `help` lists available commands. These grants are authorized and persisted by the local server; dedicated multiplayer servers do not grant admin access by default.

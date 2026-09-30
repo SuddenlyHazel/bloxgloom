@@ -157,6 +157,7 @@ impl Connection {
         }
         if now >= self.deadline && self.phase != Phase::Active {
             if self.phase == Phase::AwaitJoin {
+                tracing::debug!(player_id = ?self.player_id, connection_key = self.poll_key, "connection closing");
                 self.peer_closed = true;
                 let _ = self.socket.shutdown(Shutdown::Both);
             } else {
@@ -331,6 +332,11 @@ impl Connection {
                         if self.peer_closed {
                             self.queue_leave(pending_leaves);
                         } else {
+                            tracing::info!(
+                                player_id = id,
+                                connection_key = self.poll_key,
+                                "player joined"
+                            );
                             self.phase = Phase::Active;
                             self.outbound_sender = None;
                         }
@@ -713,6 +719,7 @@ impl Connection {
         if self.peer_closed || self.phase == Phase::Closed {
             return;
         }
+        tracing::debug!(player_id = ?self.player_id, connection_key = self.poll_key, "connection closing");
         self.peer_closed = true;
         let _ = self.socket.shutdown(Shutdown::Both);
         if self.phase == Phase::Active {

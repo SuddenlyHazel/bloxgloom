@@ -72,7 +72,7 @@ impl Network {
         ) {
             Ok(session) => Some(session),
             Err(error) => {
-                eprintln!("visual presentation worker unavailable: {error}");
+                tracing::warn!(%error, "visual presentation worker unavailable");
                 None
             }
         }
@@ -124,6 +124,7 @@ impl Network {
         )
     }
 
+    #[tracing::instrument(name = "client_join", skip_all, fields(server_addr = %addr))]
     pub(super) fn connect_controlled(
         addr: &str,
         view_distance: u8,
@@ -131,7 +132,7 @@ impl Network {
         control: &super::join_worker::Control,
     ) -> io::Result<Self> {
         let mut stage = "connecting";
-        eprintln!("Joining {addr}: {stage}");
+        tracing::info!(stage, "joining server");
         Self::prepare(addr, view_distance, profile, &mut stage, control).map_err(|error| {
             io::Error::new(
                 error.kind(),
@@ -327,7 +328,7 @@ impl Network {
         match self.outgoing.try_send(message) {
             Ok(()) => true,
             Err(TrySendError::Full(_)) => {
-                eprintln!("client command queue full");
+                tracing::warn!("client command queue full");
                 false
             }
             Err(TrySendError::Disconnected(_)) => false,
@@ -347,7 +348,7 @@ fn preparing(
     control: &super::join_worker::Control,
 ) -> io::Result<()> {
     *stage = next;
-    eprintln!("Preparing join: {next}");
+    tracing::info!(stage = next, "preparing join");
     control.stage(next)
 }
 
@@ -508,7 +509,7 @@ impl ConfigWriter {
             while receiver.recv().is_ok() {
                 let config = snapshot.lock().unwrap().clone();
                 if let Err(error) = config.save(&path) {
-                    eprintln!("settings save: {error}");
+                    tracing::error!(%error, path = %path.display(), "settings save failed");
                 }
             }
         });

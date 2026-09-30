@@ -36,7 +36,7 @@ pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
                             dirty.retry_after = now + Duration::from_secs(1);
                         }
                     }
-                    eprintln!("checkpoint {} failed: {error}", receipt.key.domain);
+                    tracing::error!(%error, domain = %receipt.key.domain, revision = receipt.revision, "checkpoint failed");
                 }
             }
             continue;
@@ -77,7 +77,9 @@ pub(super) fn process_checkpoint_receipts(state: &mut State, now: Instant) {
                     }
                 }
             }
-            Err(error) => eprintln!("checkpoint {} failed: {error}", receipt.key.domain),
+            Err(error) => {
+                tracing::error!(%error, domain = %receipt.key.domain, revision = receipt.revision, "checkpoint failed")
+            }
         }
     }
 }

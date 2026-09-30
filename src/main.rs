@@ -6,6 +6,7 @@ mod gameplay;
 mod inventory;
 mod items;
 mod lighting;
+mod logging;
 mod physics;
 mod preview;
 mod protocol;
@@ -17,10 +18,21 @@ mod storage;
 mod ui;
 mod world;
 
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("bloxgloom: {error}");
-        std::process::exit(1);
+fn main() -> std::process::ExitCode {
+    let _logging = match logging::init() {
+        Ok(guard) => guard,
+        Err(error) => {
+            eprintln!("could not initialize logging: {error}");
+            return std::process::ExitCode::FAILURE;
+        }
+    };
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            tracing::error!(%error, "Bloxgloom failed");
+            // Returning lets the logging guard flush, including this final error.
+            std::process::ExitCode::FAILURE
+        }
     }
 }
 

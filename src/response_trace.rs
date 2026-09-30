@@ -7,9 +7,10 @@ pub(crate) fn event(message: std::fmt::Arguments<'_>) {
     if let Some(start) =
         START.get_or_init(|| std::env::var_os("BLOXGLOOM_TRACE_EDITS").map(|_| Instant::now()))
     {
-        eprintln!(
-            "edit-trace {:>10.3}ms {message}",
-            start.elapsed().as_secs_f64() * 1000.0
+        tracing::info!(
+            elapsed_ms = start.elapsed().as_secs_f64() * 1000.0,
+            %message,
+            "edit trace"
         );
     }
 }

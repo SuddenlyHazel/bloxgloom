@@ -105,7 +105,7 @@ impl JoinApp {
             self.attempt = None;
             match result {
                 Err(error) => {
-                    eprintln!("{error}");
+                    tracing::warn!(%error, server_addr = %self.address, "join failed");
                     self.error = Some(error.to_string().chars().take(2048).collect());
                 }
                 Ok(prepared) => {

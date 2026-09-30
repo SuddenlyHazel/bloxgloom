@@ -49,6 +49,7 @@ pub(in crate::server) struct CoordinatorContext<'a> {
     movement_load: movement::WorkerLoad,
 }
 
+#[tracing::instrument(name = "server_simulation", skip_all)]
 pub(super) fn run_simulation_ticks(
     mut state: State,
     input: Receiver<SimulationInput>,
@@ -129,7 +130,10 @@ pub(super) fn run_simulation_ticks(
                 ));
             }
             if state.durability.failed {
-                eprintln!("authoritative durability failed; stopping simulation coordinator");
+                tracing::error!(
+                    tick = tick.get(),
+                    "authoritative durability failed; stopping simulation coordinator"
+                );
                 for client in state.clients.values() {
                     let _ = client.socket.shutdown(Shutdown::Both);
                 }
@@ -162,33 +166,33 @@ pub(super) fn run_simulation_ticks(
                     .metrics
                     .movement_worker_utilization_percent()
                     .map_or_else(|| "n/a".to_owned(), |percent| format!("{percent:.1}%"));
-                eprintln!(
-                    "simulation: p95 {:.1} ms, p99 {:.1} ms, lagged {}/{} ticks, backlog {} ticks ({:.1} ms); phase p95 {:?} ms; movement workers {}; input {}, durable {}, snapshots {}, WAL {} bytes, loader {}, resident chunks {} ({} pinned), clients {}, drops {}; outbound {}/{} frames, {} queued bytes, {} sent bytes/tick, {} rejects; latency p95 WAL {:.1} ms, load {:.1} ms, barrier {:.1} ms",
-                    summary.p95 as f64 / 1_000_000.0,
-                    summary.p99 as f64 / 1_000_000.0,
-                    state.metrics.lagged_samples(),
-                    summary.samples,
-                    batch.backlog_ticks,
-                    batch.backlog.as_secs_f64() * 1000.0,
-                    phase_p95,
-                    movement_utilization,
-                    latest.input_queue_depth,
-                    latest.pending_durable_actions,
-                    latest.pending_world_snapshots,
-                    latest.wal_tail_bytes,
-                    latest.loader_outstanding,
-                    latest.resident_chunks,
-                    latest.pinned_chunks,
-                    latest.active_clients,
-                    latest.active_drops,
-                    latest.replication_queue_depth,
-                    latest.replication_queue_capacity,
-                    latest.replication_bytes_queued,
-                    latest.replication_bytes_sent,
-                    latest.replication_queue_rejections,
-                    latency_p95(metrics::LatencyEvent::DurableWalReceipt),
-                    latency_p95(metrics::LatencyEvent::ChunkLoad),
-                    latency_p95(metrics::LatencyEvent::PhaseBarrierWait),
+                tracing::warn!(
+                    tick_p95_ms = summary.p95 as f64 / 1_000_000.0,
+                    tick_p99_ms = summary.p99 as f64 / 1_000_000.0,
+                    lagged_ticks = state.metrics.lagged_samples(),
+                    sampled_ticks = summary.samples,
+                    backlog_ticks = batch.backlog_ticks,
+                    backlog_ms = batch.backlog.as_secs_f64() * 1000.0,
+                    ?phase_p95,
+                    %movement_utilization,
+                    input_queue = latest.input_queue_depth,
+                    pending_actions = latest.pending_durable_actions,
+                    pending_snapshots = latest.pending_world_snapshots,
+                    wal_bytes = latest.wal_tail_bytes,
+                    loader_jobs = latest.loader_outstanding,
+                    resident_chunks = latest.resident_chunks,
+                    pinned_chunks = latest.pinned_chunks,
+                    clients = latest.active_clients,
+                    drops = latest.active_drops,
+                    outbound_frames = latest.replication_queue_depth,
+                    outbound_capacity = latest.replication_queue_capacity,
+                    outbound_bytes_queued = latest.replication_bytes_queued,
+                    outbound_bytes_sent = latest.replication_bytes_sent,
+                    outbound_rejections = latest.replication_queue_rejections,
+                    wal_latency_p95_ms = latency_p95(metrics::LatencyEvent::DurableWalReceipt),
+                    load_latency_p95_ms = latency_p95(metrics::LatencyEvent::ChunkLoad),
+                    barrier_latency_p95_ms = latency_p95(metrics::LatencyEvent::PhaseBarrierWait),
+                    "simulation running behind"
                 );
             }
             report_at = Instant::now();
@@ -242,7 +246,7 @@ fn apply_simulation_input(state: &mut State, input: SimulationInput, tick: TickI
         }
         SimulationInput::Command { id, message, .. } => {
             if let Err(error) = handle_live_message(state, id, message, tick) {
-                eprintln!("client {id} command: {error}");
+                tracing::warn!(%error, player_id = id, tick = tick.get(), "client command failed");
                 if let Some(client) = state.clients.get(&id) {
                     let _ = client.socket.shutdown(Shutdown::Both);
                 }

@@ -902,7 +902,7 @@ impl ClientApp {
             ServerMessage::WorldTime { elapsed_ms } => self.world_time.synchronize(elapsed_ms),
             ServerMessage::Welcome { id, seed } => {
                 self.world_seed = Some(seed);
-                eprintln!("connected as player {id}, world seed {seed}")
+                tracing::info!(player_id = id, world_seed = seed, "connected to server")
             }
             ServerMessage::OwnedEntity { id } => {
                 if self.owned_entity_id.is_some_and(|old| old != id) {
@@ -1298,7 +1298,10 @@ impl ClientApp {
             }
         }
         if self.chunks.len() > MAX_CHUNKS {
-            eprintln!("client chunk cache exceeded target: {}", self.chunks.len());
+            tracing::warn!(
+                cached_chunks = self.chunks.len(),
+                "client chunk cache exceeded target"
+            );
         }
     }
 
@@ -1703,23 +1706,23 @@ impl ClientApp {
                         let p99 = self.frame_ms[((self.frame_ms.len() - 1) * 99) / 100];
                         self.last_fps = self.frame_count as f32 / seconds;
                         self.last_p95_ms = p95;
-                        eprintln!(
-                            "{:.1} FPS | frame p95 {:.1} ms, p99 {:.1} ms | {} chunks visible | {} triangles | {} uploads, {} pending | {} cached chunks",
-                            self.last_fps,
-                            p95,
-                            p99,
-                            stats.visible_chunks,
-                            stats.drawn_triangles,
-                            stats.uploaded_chunks,
-                            stats.pending_chunks,
-                            self.chunks.len()
+                        tracing::debug!(
+                            fps = self.last_fps,
+                            frame_p95_ms = p95,
+                            frame_p99_ms = p99,
+                            visible_chunks = stats.visible_chunks,
+                            triangles = stats.drawn_triangles,
+                            uploads = stats.uploaded_chunks,
+                            pending_uploads = stats.pending_chunks,
+                            cached_chunks = self.chunks.len(),
+                            "client frame statistics"
                         );
                         self.last_report = now;
                         self.frame_count = 0;
                         self.frame_ms.clear();
                     }
                 }
-                Err(error) => eprintln!("render error: {error:?}"),
+                Err(error) => tracing::error!(?error, "render failed"),
             }
         }
         let intents = self
@@ -1779,6 +1782,7 @@ pub fn run_client_with_admin(addr: &str) -> Result<(), Box<dyn std::error::Error
     run_client_inner(addr, true)
 }
 
+#[tracing::instrument(name = "client", skip_all, fields(server_addr = %addr))]
 fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     let mut app = joining::JoinApp::new(addr, admin_enabled);
