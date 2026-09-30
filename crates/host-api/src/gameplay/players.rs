@@ -11,7 +11,70 @@ pub struct Player {
     pub position: [f32; 3],
 }
 
+/// Receipt-bound session effects. They do not replay after crash/reconnect.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerOperation {
+    pub profile: u128,
+    pub session: u64,
+    pub kind: PlayerOperationKind,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlayerOperationKind {
+    Message(String),
+    Kick(String),
+}
+
 impl Context<'_> {
+    pub fn message_player(&mut self, profile: u128, session: u64, text: &str) -> Result<(), Error> {
+        self.player_operation(profile, session, text, false)
+    }
+    pub fn kick_player(&mut self, profile: u128, session: u64, reason: &str) -> Result<(), Error> {
+        self.player_operation(profile, session, reason, true)
+    }
+    fn player_operation(
+        &mut self,
+        profile: u128,
+        session: u64,
+        text: &str,
+        kicked: bool,
+    ) -> Result<(), Error> {
+        self.charge()?;
+        if !self
+            .handler_namespace
+            .as_deref()
+            .is_some_and(|ns| self.snapshot.player_authority(ns))
+        {
+            return self.fail(Error::Invalid("player operation authority denied".into()));
+        }
+        if text.is_empty()
+            || text.len() > 255
+            || text.chars().any(char::is_control)
+            || self.plan.player_operations.len() >= 64
+        {
+            return self.fail(Error::Invalid("invalid player operation or limit".into()));
+        }
+        let players = match self.snapshot.players() {
+            Ok(players) => players,
+            Err(error) => return self.fail(error),
+        };
+        if !players
+            .iter()
+            .any(|p| p.profile == profile && p.session == session && session != 0)
+        {
+            return self.fail(Error::Invalid("player session is not online".into()));
+        }
+        let kind = if kicked {
+            PlayerOperationKind::Kick(text.into())
+        } else {
+            PlayerOperationKind::Message(text.into())
+        };
+        self.plan.player_operations.push(PlayerOperation {
+            profile,
+            session,
+            kind,
+        });
+        Ok(())
+    }
     pub fn player_profile(&self) -> Option<u128> {
         self.snapshot.player()
     }

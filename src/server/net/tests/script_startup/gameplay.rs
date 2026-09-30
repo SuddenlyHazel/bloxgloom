@@ -20,6 +20,8 @@ mod entities;
 mod inventory;
 #[path = "gameplay/observers.rs"]
 mod observers;
+#[path = "gameplay/player_operations.rs"]
+mod player_operations;
 #[path = "gameplay/players.rs"]
 mod players;
 #[path = "gameplay/runtime_tools.rs"]

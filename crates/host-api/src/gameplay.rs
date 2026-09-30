@@ -20,7 +20,7 @@ pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
 pub use observations::{
     Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
 };
-pub use players::Player;
+pub use players::{Player, PlayerOperation, PlayerOperationKind};
 
 pub type Cell = [i32; 3];
 
@@ -59,6 +59,10 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    /// Granted server-package authority, separate from command-caller admin.
+    fn player_authority(&self, _namespace: &str) -> bool {
+        false
+    }
     fn players(&mut self) -> Result<Vec<Player>, Error> {
         Ok(Vec::new())
     }
@@ -119,6 +123,7 @@ pub struct DropSpawn {
 /// Constructing a plan does not publish anything or bypass host validation.
 #[derive(Debug, Default)]
 pub struct Plan {
+    pub player_operations: Vec<PlayerOperation>,
     pub world_time: Option<u64>,
     pub blocks: BTreeMap<Cell, String>,
     pub drops: Vec<DropSpawn>,

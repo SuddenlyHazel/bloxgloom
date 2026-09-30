@@ -3,6 +3,10 @@ use super::Catalog;
 use bloxgloom_host_api::{RegistrationError, players::Registration};
 use std::sync::Arc;
 impl Catalog {
+    pub(crate) fn player_authority(&self, namespace: &str) -> bool {
+        self.composition
+            .permits(namespace, bloxgloom_host_api::composition::PLAYERS)
+    }
     pub(crate) fn player_delivery_enabled(&self) -> bool {
         !self.player_lifecycles.is_empty()
             || self

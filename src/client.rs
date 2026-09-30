@@ -914,6 +914,21 @@ impl ClientApp {
             | ServerMessage::BundlePart { .. } => {
                 self.fail_session("Unexpected content manifest after handshake");
             }
+            ServerMessage::PlayerNotice {
+                profile,
+                session,
+                kicked,
+                text,
+            } => {
+                if profile != self.network.profile || session != self.actions.epoch || session == 0
+                {
+                    self.fail_session("Player notice has wrong session identity");
+                } else if kicked {
+                    self.fail_session(format!("Removed by server: {text}"));
+                } else {
+                    self.status = Some((text, Instant::now()));
+                }
+            }
             ServerMessage::PlayerStates {
                 profile,
                 session,

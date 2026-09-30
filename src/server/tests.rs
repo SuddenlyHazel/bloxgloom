@@ -14,6 +14,8 @@ mod drop_pins;
 mod durable;
 #[path = "tests/entity_sleep.rs"]
 mod entity_sleep;
+#[path = "tests/player_operations.rs"]
+mod player_operations;
 #[path = "tests/simulation.rs"]
 mod simulation;
 #[path = "tests/startup.rs"]

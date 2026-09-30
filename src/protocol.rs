@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 15;
+const WIRE_VERSION: u8 = 16;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -137,6 +137,12 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerNotice {
+        profile: u128,
+        session: u64,
+        kicked: bool,
+        text: String,
+    },
     PlayerStates {
         profile: u128,
         session: u64,
@@ -236,6 +242,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
+            ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
             ServerMessage::BundlePart { bytes, .. } => 4 + 2 + bytes.len(),
             ServerMessage::PlayerStates { states, .. } => {
@@ -532,6 +539,20 @@ pub fn write_server_with_catalog(
         ServerMessage::BundlePart { offset, bytes } => {
             out.push(20);
             bundle::write_part(&mut out, *offset, bytes)?;
+        }
+        ServerMessage::PlayerNotice {
+            profile,
+            session,
+            kicked,
+            text,
+        } => {
+            players::validate_notice(*profile, *session, text)?;
+            out.push(25);
+            out.extend(profile.to_le_bytes());
+            out.extend(session.to_le_bytes());
+            out.push(u8::from(*kicked));
+            out.push(text.len() as u8);
+            out.extend(text.as_bytes());
         }
         ServerMessage::PlayerStates {
             profile,
@@ -1306,6 +1327,25 @@ pub fn read_server_with_catalog(
                 cells.push([c.i32()?, c.i32()?, c.i32()?]);
             }
             ServerMessage::FireBursts { cells }
+        }
+        25 => {
+            let profile = c.u128()?;
+            let session = c.u64()?;
+            let kicked = match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid player notice kind")),
+            };
+            let len = usize::from(c.u8()?);
+            let text = String::from_utf8(c.take(len)?.to_vec())
+                .map_err(|_| invalid("invalid player notice UTF-8"))?;
+            players::validate_notice(profile, session, &text)?;
+            ServerMessage::PlayerNotice {
+                profile,
+                session,
+                kicked,
+                text,
+            }
         }
         24 => {
             let profile = c.u128()?;

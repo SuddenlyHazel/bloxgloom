@@ -4,6 +4,7 @@ pub(super) mod admission;
 mod callbacks;
 pub(super) mod delivery;
 mod lifecycle;
+mod operations;
 mod pending;
 mod preparation;
 pub(super) use callbacks::admit;

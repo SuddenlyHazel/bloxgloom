@@ -1014,3 +1014,58 @@ fn player_state_snapshots_preserve_binary_projection_and_bound_service_keys() {
         assert!(read_server(&wire[..end]).is_err());
     }
 }
+
+#[test]
+fn player_notices_preserve_exact_session_and_reject_invalid_text_and_flags() {
+    for kicked in [false, true] {
+        let message = ServerMessage::PlayerNotice {
+            profile: u128::MAX,
+            session: u64::MAX,
+            kicked,
+            text: "é".repeat(127) + "!",
+        };
+        let mut wire = Vec::new();
+        write_server(&mut wire, &message).unwrap();
+        assert_eq!(wire.len(), server_wire_len(&message));
+        let ServerMessage::PlayerNotice {
+            profile,
+            session,
+            kicked: actual,
+            text,
+        } = read_server(wire.as_slice()).unwrap()
+        else {
+            panic!("expected notice")
+        };
+        assert_eq!(
+            (profile, session, actual, text.len()),
+            (u128::MAX, u64::MAX, kicked, 255)
+        );
+        for end in 0..wire.len() {
+            assert!(read_server(&wire[..end]).is_err());
+        }
+        // Frame length, version, tag, exact profile and epoch precede the strict bool.
+        wire[4 + 2 + 16 + 8] = 2;
+        assert!(read_server(wire.as_slice()).is_err());
+    }
+    for (profile, session, text) in [
+        (0, 1, "ok".into()),
+        (1, 0, "ok".into()),
+        (1, 1, String::new()),
+        (1, 1, "x".repeat(256)),
+        (1, 1, "bad\nreason".into()),
+        (1, 1, "bad\u{0085}reason".into()),
+    ] {
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::PlayerNotice {
+                    profile,
+                    session,
+                    kicked: false,
+                    text
+                }
+            )
+            .is_err()
+        );
+    }
+}

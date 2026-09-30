@@ -49,6 +49,7 @@ pub(super) fn error(error: Error) -> io::Error {
 }
 
 struct WorldSnapshot<'a> {
+    player_operations_enabled: bool,
     players: &'a [bloxgloom_host_api::gameplay::Player],
     action_id: Option<u128>,
     clock: Option<super::world_time::Capture>,
@@ -65,6 +66,9 @@ struct WorldSnapshot<'a> {
     origins: Vec<Cell>,
 }
 impl Snapshot for WorldSnapshot<'_> {
+    fn player_authority(&self, namespace: &str) -> bool {
+        self.player_operations_enabled && self.world.catalog().player_authority(namespace)
+    }
     fn players(&mut self) -> Result<Vec<bloxgloom_host_api::gameplay::Player>, Error> {
         Ok(self.players.to_vec())
     }
@@ -274,6 +278,7 @@ pub(super) struct OperationInput<'a> {
 }
 
 pub(super) struct WorldPlan {
+    pub player_operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
     pub world_time: Option<u64>,
     pub entity_updates: Vec<super::entities::PreparedEntityTransaction>,
     pub entity_spawns: Vec<super::entities::EntitySpawn>,
@@ -341,6 +346,7 @@ pub(super) fn plan_with_lifecycles(
     // for existing harvest behavior; an expanded overlay is prepared below.
     let prepared = world.prepare_edits(edits)?;
     let mut snapshot = WorldSnapshot {
+        player_operations_enabled: matches!(&action, Some(Event::ActionRequested { .. })),
         players: participants.players,
         action_id: participants.action_id,
         clock: participants.clock,
@@ -725,6 +731,7 @@ pub(super) fn plan_with_lifecycles(
         entity_updates.extend(despawns);
     }
     Ok(WorldPlan {
+        player_operations: plan.player_operations,
         world_time: plan.world_time,
         entity_updates,
         entity_spawns,

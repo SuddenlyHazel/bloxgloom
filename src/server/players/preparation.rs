@@ -46,7 +46,8 @@ pub(super) fn prepare(
             .map(Ok)
             .unwrap_or_else(|| state.inventory_store.load(event.profile))?,
     };
-    let (decision, inventory, reads) = invoke(state, reg, event, &before, final_session)?;
+    let (decision, inventory, operations, reads) =
+        invoke(state, reg, event, &before, final_session)?;
     if decision.spawn.is_some() || decision.deny.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -134,9 +135,10 @@ pub(super) fn prepare(
         entities: None,
         entity_wakes: vec![],
         owner_changes: changes,
-        player_publication: Some(Published {
+        player_publication: Some(Published::Lifecycle {
             key: key(reg, event),
             session,
+            operations,
         }),
     })
 }

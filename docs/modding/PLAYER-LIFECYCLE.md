@@ -121,7 +121,7 @@ a floating-point number. The existing eight-field/130-byte command bound applies
 actor inventory revision and every player target's live profile/session pair
 before invoking the handler, including retries. A handle grants no admin authority.
 
-Wire version 15 carries a bounded, sorted roster of at most 256 admitted players,
+Wire version 16 carries a bounded, sorted roster of at most 256 admitted players,
 with profile/session/name and a roster revision. Queue pressure retains the pending
 revision so the next publish retries. Clients accept newer snapshots and clear the
 roster on disconnect/server switch; late messages cannot revive it. The roster is
@@ -159,7 +159,7 @@ The client/server/save contracts will be versioned when their formats change.
 
 ## Landed: local public state and client lifecycle
 
-Wire 15 delivers a full local-player snapshot containing each frozen player-service
+Wire 16 delivers a full local-player snapshot containing each frozen player-service
 key, committed owner revision and explicit public bytes (at most 1024 per service).
 Missing profile cells have revision zero and empty public state. The packet includes
 the exact profile/session pair and an increasing snapshot sequence. It sends after
@@ -194,3 +194,47 @@ Shutdown can interrupt final advisory hooks; server cleanup never relies on them
 
 The runnable welcome package updates an authored profile panel from these bytes.
 Open it with F6; reconnect should retain `level:1` while replacing the session handle.
+
+## Landed: targeted notices and session kicks
+
+Server action callbacks and admitted lifecycle callbacks can call
+`c.message_player(session, text)` and `c.kick_player(session, reason)`. The
+executing server package must declare `requires bloxgloom:players/v1`. An exact
+session handle identifies the target; it does not grant authority. Command
+caller permissions remain independently enforced by the registered command
+schema. Server rules may act on other players when this capability is granted.
+
+```luau
+local target = c.player_by_session(session)
+if target then
+    c.message_player(target.session, "Checkpoint reached")
+end
+```
+
+Text is nonempty UTF-8, at most 255 bytes, without control characters. A gameplay
+plan may contain at most 64 session operations, sharing the existing host-call
+budget. Invalid identities, unavailable targets, denied authority or invalid text
+reject the whole plan even when caught with `pcall`; preceding inventory changes
+and notices are discarded. `PlayerJoining` cannot stage session operations.
+Other gameplay contexts currently reject these operations rather than silently
+dropping them.
+
+Effects publish only after the action's WAL receipt. Duplicate action requests
+return the existing receipt without sending another notice or repeating a kick.
+These are transient session effects: crash recovery does not replay them. The
+host checks the exact profile/epoch again at publication; a departed connection
+is skipped, and its replacement is never targeted. Acceptance confirms the
+authorized intent, not guaranteed client delivery.
+
+Notices use the client's existing transient HUD status. A kick immediately
+removes the authoritative client, avatar, movement queue and session timers. The
+reactor drains its queued removal reason before closing when queue capacity
+allows; delivery of that reason is best effort under pressure. The client retires
+its entire session and shows the supplied reason. A self-kick can close before
+the action result reaches its caller; committed inventory/profile effects still
+recover normally. Kicks do not create durable admission bans. Use durable
+profile policy for bans when the general profile-state service is available.
+
+Wire version 16 adds the exact-session notice/removal frame. Runtime teleport,
+appearance mutation, cross-profile inventory and ordinary gameplay access to
+profile state remain the next increments.

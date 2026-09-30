@@ -46,3 +46,15 @@ pub(super) fn read(c: &mut Cursor<'_>) -> io::Result<Vec<PlayerSummary>> {
     }
     Ok(players)
 }
+
+pub(super) fn validate_notice(profile: u128, session: u64, text: &str) -> io::Result<()> {
+    if profile == 0
+        || session == 0
+        || text.is_empty()
+        || text.len() > 255
+        || text.chars().any(char::is_control)
+    {
+        return Err(invalid("invalid player notice"));
+    }
+    Ok(())
+}

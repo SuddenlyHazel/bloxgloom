@@ -29,6 +29,26 @@ pub(super) fn install<'scope>(
     context: &'scope RefCell<&mut Context<'_>>,
     rejected: &'scope RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
+    for (key, kick) in [("message_player", false), ("kick_player", true)] {
+        host.set(
+            key,
+            scope.create_function(move |_, (session, text_value): (Value, Value)| {
+                checked(rejected, || {
+                    let session = handles::session_value(session).map_err(invalid)?;
+                    let text = super::super::super::values::text(text_value).map_err(invalid)?;
+                    if kick {
+                        context
+                            .borrow_mut()
+                            .kick_player(session.profile, session.epoch, &text)
+                    } else {
+                        context
+                            .borrow_mut()
+                            .message_player(session.profile, session.epoch, &text)
+                    }
+                })
+            })?,
+        )?;
+    }
     host.set(
         "players",
         scope.create_function(|lua, ()| {

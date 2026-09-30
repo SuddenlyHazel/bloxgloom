@@ -31,6 +31,12 @@ pub(crate) struct Composition {
 }
 
 impl Composition {
+    pub(super) fn permits(&self, namespace: &str, capability: &str) -> bool {
+        self.packages.values().any(|p| {
+            p.definition.key.split_once(':').map(|p| p.0) == Some(namespace)
+                && p.definition.requires.iter().any(|r| r == capability)
+        })
+    }
     pub(super) fn requires(&self, capability: &str) -> bool {
         self.packages
             .values()

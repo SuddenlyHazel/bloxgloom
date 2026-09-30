@@ -700,6 +700,19 @@ See [the UI fixture](fixtures/packages/uidemo/),
 [entity-target UI actions](fixtures/ui-entity-actions/README.md), and
 [UI foundation](docs/modding/UI-FOUNDATION.md).
 
+## Targeted player operations
+
+Trusted server packages declaring `players/v1` can stage
+`c.message_player(session, text)` and `c.kick_player(session, reason)` from
+action or admitted lifecycle callbacks. Text is 1..255 UTF-8 bytes without
+control characters; at most 64 operations share one plan. Invalid calls reject
+the plan even through `pcall`. Effects publish after the durable receipt, do not
+repeat on request replay, and never follow a profile to a replacement session.
+Notices appear in the client's existing status HUD; kicks retire the session,
+with best-effort delivery of the reason. These transient effects are not replayed
+after a crash. Command-caller permissions are checked separately from the server
+package capability. See [session operations](docs/modding/PLAYER-LIFECYCLE.md#landed-targeted-notices-and-session-kicks).
+
 ## Committed server observations
 
 `register_committed_observer(key, revision, module)` requires `actions/v1` and
@@ -872,7 +885,7 @@ Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 6 (wire version 15).
+publisher. The negotiated client host contract is version 6 (wire version 16).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.

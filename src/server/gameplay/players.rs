@@ -16,10 +16,15 @@ pub(in crate::server) fn invoke(
     event: &Event,
     state: &State,
     session_data: &[u8],
-) -> io::Result<(Decision, Option<crate::inventory::Inventory>)> {
+) -> io::Result<(
+    Decision,
+    Option<crate::inventory::Inventory>,
+    Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
+)> {
     let actor = participants.actor;
     let catalog = world.catalog_arc();
     let mut snapshot = WorldSnapshot {
+        player_operations_enabled: event.kind != bloxgloom_host_api::players::EventKind::Joining,
         players: participants.players,
         action_id: None,
         clock: participants.clock,
@@ -78,5 +83,5 @@ pub(in crate::server) fn invoke(
             "uncaptured lifecycle inventory",
         ));
     }
-    Ok((decision, inventory))
+    Ok((decision, inventory, plan.player_operations))
 }

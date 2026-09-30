@@ -446,3 +446,47 @@ fn public_player_snapshots_validate_session_and_services_then_clear_on_retiremen
         assert!(fresh.disconnected && fresh.player_states.is_empty());
     }
 }
+
+#[test]
+fn player_notices_present_only_current_session_and_kicks_retire_it() {
+    for (profile, session, kicked) in [(1, 5, false), (1, 5, true), (2, 5, false), (1, 4, false)] {
+        let mut network = Network::disconnected_for_test();
+        network.profile = 1;
+        let mut app = ClientApp::new(
+            network,
+            Config::default(),
+            std::env::temp_dir().join("unused-notice-config"),
+        );
+        app.accept(ServerMessage::ActionSession {
+            epoch: 5,
+            next_seq: 1,
+            acked_seq: 0,
+        });
+        app.accept(ServerMessage::PlayerNotice {
+            profile,
+            session,
+            kicked,
+            text: "Session notice".into(),
+        });
+        if (profile, session, kicked) == (1, 5, false) {
+            assert!(!app.disconnected);
+            assert_eq!(app.status.as_ref().unwrap().0, "Session notice");
+        } else {
+            assert!(app.disconnected);
+            assert_eq!(app.actions.epoch, 0);
+            let reason = if kicked {
+                "Removed by server: Session notice"
+            } else {
+                "Player notice has wrong session identity"
+            };
+            assert_eq!(app.failure.as_deref(), Some(reason));
+            app.accept(ServerMessage::PlayerNotice {
+                profile: 1,
+                session: 5,
+                kicked: false,
+                text: "Late notice".into(),
+            });
+            assert!(app.status.is_none());
+        }
+    }
+}

@@ -291,9 +291,12 @@ export type BloxGameplayContext = {
     players: () -> {BloxPlayerView},
     player_by_profile: (profile: BloxProfileId) -> BloxPlayerView?,
     player_by_session: (session: BloxSessionId) -> BloxPlayerView?,
+    --- Requires the executing package's players/v1 capability. Exact online session; after receipt, no replay.
+    message_player: (session: BloxSessionId, text: string) -> (),
+    kick_player: (session: BloxSessionId, reason: string) -> (),
     --- Available in gameplay action callbacks; captured phase, with read-your-writes.
     world_time: () -> {elapsed_ms: number, cycle_ms: number},
-    --- Integer 0 <= phase < cycle_ms; authenticated admin, atomic with this action.
+    --- Integer 0 <= phase < cycle_ms; operator-selected admin profile, atomic with this action.
     admin_set_time: (elapsed_ms: number) -> (),
     admin_give: (item: string, count: number) -> boolean,
     admin_spawn: (entity_key: string) -> (),

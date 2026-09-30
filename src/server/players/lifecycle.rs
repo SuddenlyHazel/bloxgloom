@@ -41,9 +41,20 @@ impl Runtime {
     }
 }
 #[derive(Clone)]
-pub(in crate::server) struct Published {
-    pub(super) key: JobKey,
-    pub(super) session: Option<(SessionKey, Vec<u8>, Option<u64>)>,
+pub(in crate::server) enum Published {
+    Lifecycle {
+        key: JobKey,
+        session: Option<(SessionKey, Vec<u8>, Option<u64>)>,
+        operations: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
+    },
+    Operations(Vec<bloxgloom_host_api::gameplay::PlayerOperation>),
+}
+impl Published {
+    pub(in crate::server) fn operations(
+        ops: Vec<bloxgloom_host_api::gameplay::PlayerOperation>,
+    ) -> Option<Self> {
+        (!ops.is_empty()).then_some(Self::Operations(ops))
+    }
 }
 pub(super) fn key(reg: &Registration, event: &Event) -> JobKey {
     (
@@ -268,31 +279,43 @@ pub(in crate::server) fn drive(state: &mut State, tick: TickId) -> io::Result<()
     Ok(())
 }
 pub(in crate::server) fn committed(state: &mut State, published: Published) -> io::Result<()> {
+    let Published::Lifecycle {
+        key,
+        session,
+        operations,
+    } = published
+    else {
+        if let Published::Operations(operations) = published {
+            super::operations::apply(state, operations);
+        }
+        return Ok(());
+    };
     state.player_state_revision = state
         .player_state_revision
         .checked_add(1)
         .ok_or_else(|| io::Error::other("player state revision exhausted"))?;
-    for client in state
-        .clients
-        .values_mut()
-        .filter(|c| c.profile == published.key.1)
-    {
+    for client in state.clients.values_mut().filter(|c| c.profile == key.1) {
         client.last_player_state_revision = 0;
     }
-    state.player_runtime.active.remove(&published.key);
+    state.player_runtime.active.remove(&key);
     state
         .player_runtime
         .failed
-        .retain(|(reg, profile, _, _)| reg != &published.key.0 || *profile != published.key.1);
-    if let Some((key, data, deadline)) = published.session {
-        if state.player_runtime.admitted.contains(&(key.1, key.2)) {
+        .retain(|(reg, profile, _, _)| reg != &key.0 || *profile != key.1);
+    if let Some((session_key, data, deadline)) = session {
+        if state
+            .player_runtime
+            .admitted
+            .contains(&(session_key.1, session_key.2))
+        {
             state
                 .player_runtime
                 .sessions
-                .insert(key, Session { data, deadline });
-        } else if published.key.3 == EventKind::Left.name() {
-            state.player_runtime.sessions.remove(&key);
+                .insert(session_key, Session { data, deadline });
+        } else if key.3 == EventKind::Left.name() {
+            state.player_runtime.sessions.remove(&session_key);
         }
     }
+    super::operations::apply(state, operations);
     Ok(())
 }
