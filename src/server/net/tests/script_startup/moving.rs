@@ -4,6 +4,8 @@ use crate::{inventory::Stack, server::entities::EntityId};
 use bloxgloom_host_api::motion::{Pending, Record};
 
 const PROFILE: u128 = 0x5c71;
+#[path = "moving/lifecycle.rs"]
+mod lifecycle;
 #[path = "moving/load.rs"]
 mod load;
 const REGISTER: &str = r#"return function(h)
@@ -255,5 +257,15 @@ fn moving_seed_fixture_negotiates_models_and_client_sources_over_real_listener()
         let declaration = client.moving_entity(id).unwrap();
         assert_eq!(declaration.body.gravity_scale, 0.0);
         assert_eq!(declaration.model[0].color, [0.2, 0.5, 1.0]);
+        // Reconnect through the production immutable-bundle cache path.
+        let cached = crate::client::connect_catalog_probe(&address.to_string(), 0x541).unwrap();
+        assert_eq!(cached.fingerprint(), fingerprint);
+        let cached_id = cached.entity_type_id_by_key("throw:guided_body").unwrap();
+        let cached_model=&cached.moving_entity(cached_id).unwrap().model;
+        assert_eq!(cached_model.len(),declaration.model.len());
+        for (a,b) in cached_model.iter().zip(&declaration.model) {
+            assert_eq!((a.min,a.max,a.color),(b.min,b.max,b.color));
+            assert!(matches!(a.motion,bloxgloom_host_api::entity::PartMotion::Body));
+        }
     });
 }
