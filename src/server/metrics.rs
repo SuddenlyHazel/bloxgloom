@@ -57,6 +57,7 @@ pub(super) struct TickSample {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct MotionSample {
     pub(super) attempts: u64,
+    pub(super) steps: u64,
     pub(super) deferred: u64,
     pub(super) failed: u64,
     pub(super) capture: Duration,

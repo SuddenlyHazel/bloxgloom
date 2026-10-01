@@ -22,7 +22,7 @@ const ACTION: &str = r#"return function(c,e)
         local z=8.2+math.floor(tile/2)*8+(math.floor(index/8)%8)*0.9
         local speed=0.25
         if index == total-1 then x=15.8+(tile%2)*8; speed=8 end
-        if cluster == 1 then x=8.2;z=16.2;speed=0 end
+        if cluster == 1 then x=8.2;z=8.2;speed=0 end
         c.spawn_moving_entity('demo:projectile',{position={x,83.5,z},velocity={speed,0,0},state=string.char(index%256,math.floor(index/256))})
     end
 end"#;
@@ -110,6 +110,12 @@ fn moving_real_listener_capacity_measurements() {
                 }
             }
         }
+        // The live spawn selector uses origin X/Z; a saved profile pose selects
+        // the intended four-chunk admission point authoritatively.
+        state
+            .position_store
+            .save(PROFILE, [16.0, 80.0, 16.0])
+            .unwrap();
         let catalog = state.world.catalog_arc();
         let kind = catalog.entity_type_id_by_key("demo:projectile").unwrap();
         let stick = catalog.item_by_key("bloxgloom:stick").unwrap();
@@ -125,14 +131,39 @@ fn moving_real_listener_capacity_measurements() {
         state.tick_observer = Some(sample_tx);
         let (motion_tx, motion_rx) = mpsc::sync_channel(1024);
         state.motion_observer = Some(motion_tx);
+        let mut observation = None;
         gameplay::serve(state, |address| {
+            eprintln!("motion-load bodies={bodies} connecting");
             let mut peer = gameplay::Peer::connect(address, Arc::clone(&catalog));
+            eprintln!("motion-load bodies={bodies} connected");
             for base in (0..bodies).step_by(32) {
                 let request = request(&mut peer, base, (bodies - base).min(32), bodies, false);
                 let before = Instant::now();
                 let (accepted, reason) = peer.send(&request);
                 latencies.push(before.elapsed());
                 assert!(accepted, "{bodies} bodies launch at {base}: {reason}");
+                let accepted_count = base + (bodies - base).min(32);
+                // Terminal action receipts can precede the finite inventory
+                // update. The next request must use its new captured revision.
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while peer
+                    .inventory
+                    .slots
+                    .iter()
+                    .flatten()
+                    .map(|s| u32::from(s.count))
+                    .sum::<u32>()
+                    != 512 - accepted_count as u32
+                {
+                    peer.read(deadline);
+                }
+            }
+            if bodies == 64 {
+                // The last body can already have left the original 64-body
+                // chunk: two staged bodies still exceed its independent cap.
+                let extra = request(&mut peer, bodies, 2, bodies + 2, true);
+                let (accepted, reason) = peer.send(&extra);
+                assert!(!accepted, "per-chunk overload accepted: {reason}");
             }
             if bodies == 256 {
                 for cluster in [false, true] {
@@ -149,6 +180,9 @@ fn moving_real_listener_capacity_measurements() {
             let mut seam = false;
             let mut moving = std::collections::BTreeSet::new();
             while start.elapsed() < Duration::from_secs(2) || !seam || moving.len() < bodies {
+                if Instant::now() >= deadline {
+                    break;
+                }
                 let message = peer.read(deadline);
                 let mut observe = |entity: &protocol::PublicEntity| {
                     if entity.entity_type != kind {
@@ -165,6 +199,12 @@ fn moving_real_listener_capacity_measurements() {
                         seam = true;
                     }
                     updates += 1;
+                    if updates <= 4 {
+                        eprintln!(
+                            "motion-load pose {:?} rev={} stopped={}",
+                            pose.motion.position, pose.motion.revision, pose.stopped
+                        );
+                    }
                 };
                 match &message {
                     ServerMessage::WorldCommitPart(part) => {
@@ -184,6 +224,7 @@ fn moving_real_listener_capacity_measurements() {
                     _ => {}
                 }
             }
+            observation = Some((seam, moving.len()));
         });
         let samples: Vec<_> = sample_rx.try_iter().collect();
         assert!(
@@ -198,6 +239,14 @@ fn moving_real_listener_capacity_measurements() {
         let capture: Vec<_> = motion.iter().map(|s| s.capture).collect();
         let solve: Vec<_> = motion.iter().map(|s| s.solve).collect();
         let attempts: u64 = motion.iter().map(|s| s.attempts).sum();
+        let simulated_steps: u64 = motion.iter().map(|s| s.steps).sum();
+        if bodies == 1 {
+            assert!(
+                simulated_steps >= samples.len() as u64 / 3,
+                "frequent callbacks slowed nominal physics: {simulated_steps} steps over {} ticks",
+                samples.len()
+            );
+        }
         let deferred: u64 = motion.iter().map(|s| s.deferred).sum();
         let failed: u64 = motion.iter().map(|s| s.failed).sum();
         let pending = samples
@@ -213,6 +262,26 @@ fn moving_real_listener_capacity_measurements() {
         let state = fixture.open().unwrap();
         let saved = count(&state);
         assert_eq!(saved.len(), bodies, "committed bodies/restart");
+        eprintln!(
+            "motion-load observed={observation:?} saved={:?}",
+            saved
+                .iter()
+                .map(|(_, r)| (
+                    &r.motion,
+                    r.next_behavior_tick,
+                    r.simulation_tick,
+                    &r.pending
+                ))
+                .collect::<Vec<_>>()
+        );
+        eprintln!(
+            "motion-load debug attempts={attempts} deferred={deferred} failed={failed} next_ticks={:?}",
+            saved
+                .iter()
+                .map(|(id, _)| state.entities.snapshot(*id).unwrap().next_tick)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(observation, Some((true, bodies)));
         let record_bytes: usize = saved.iter().map(|(_, r)| r.encode().unwrap().len()).sum();
         assert!(
             saved
@@ -241,7 +310,7 @@ fn moving_real_listener_capacity_measurements() {
             rank(&latencies, 99).as_secs_f64() * 1000.0
         );
         eprintln!(
-            "motion-load-physics bodies={bodies} attempts={attempts} deferred={deferred} failed={failed} capture_tick_p50_ms={:.3} capture_tick_p95_ms={:.3} solve_tick_p50_ms={:.3} solve_tick_p95_ms={:.3} encoded_record_bytes={record_bytes}",
+            "motion-load-physics bodies={bodies} attempts={attempts} fixed_steps={simulated_steps} deferred={deferred} failed={failed} capture_tick_p50_ms={:.3} capture_tick_p95_ms={:.3} solve_tick_p50_ms={:.3} solve_tick_p95_ms={:.3} encoded_record_bytes={record_bytes}",
             rank(&capture, 50).as_secs_f64() * 1000.0,
             rank(&capture, 95).as_secs_f64() * 1000.0,
             rank(&solve, 50).as_secs_f64() * 1000.0,

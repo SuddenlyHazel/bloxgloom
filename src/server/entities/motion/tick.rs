@@ -31,6 +31,11 @@ pub(in crate::server) fn plan(
             state.motion_metrics.failed += 1;
         }
     }
+    if matches!(&result, Ok(Some(_))) {
+        state.motion_cadence.active(id);
+    } else {
+        state.motion_cadence.pause(id);
+    }
     result
 }
 fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<CommitAction>> {
@@ -50,6 +55,9 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
         .downcast_ref::<Vec<u8>>()
         .ok_or_else(|| invalid("moving record missing"))?;
     let mut record = Record::decode(bytes).map_err(|e| invalid(&e.0))?;
+    let steps = state
+        .motion_cadence
+        .steps(id, tick.saturating_sub(record.simulation_tick));
     if let Some(pending) = record.pending.clone() {
         let event = match pending {
             Pending::Impact(impact) => Event::MovingImpact { impact },
@@ -126,29 +134,32 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
     let displacement = velocity.map(|v| v * DT);
     // Reflected paths stay within a conservative captured envelope. Dynamic
     // responses can add speed, so their envelope uses the declared speed cap.
-    let bounds = if declaration.body.response == bloxgloom_host_api::motion::Response::Stop {
-        solver::swept_cells(
-            record.motion.position.map(f64::from),
-            displacement,
-            half,
-            MAX_SWEEP_CELLS,
-        )
-    } else {
-        let speed = if declaration.body.collisions.players || declaration.body.collisions.creatures
-        {
-            f64::from(declaration.body.max_speed)
+    let bounds =
+        if steps == 1 && declaration.body.response == bloxgloom_host_api::motion::Response::Stop {
+            solver::swept_cells(
+                record.motion.position.map(f64::from),
+                displacement,
+                half,
+                MAX_SWEEP_CELLS,
+            )
         } else {
-            velocity.iter().map(|v| v * v).sum::<f64>().sqrt()
-        };
-        solver::swept_cells(
-            record.motion.position.map(f64::from),
-            [0.0; 3],
-            half.map(|h| h + speed * DT),
-            MAX_SWEEP_CELLS,
-        )
-    }
-    .map_err(solver_error)?;
-    let previous =
+            let speed = if steps > 1
+                || declaration.body.collisions.players
+                || declaration.body.collisions.creatures
+            {
+                f64::from(declaration.body.max_speed)
+            } else {
+                velocity.iter().map(|v| v * v).sum::<f64>().sqrt()
+            };
+            solver::swept_cells(
+                record.motion.position.map(f64::from),
+                [0.0; 3],
+                half.map(|h| h + speed * DT * f64::from(steps)),
+                MAX_SWEEP_CELLS,
+            )
+        }
+        .map_err(solver_error)?;
+    let mut previous =
         record
             .contact
             .as_ref()
@@ -218,6 +229,7 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
         state,
         id,
         tick,
+        u64::from(steps) * STEP_TICKS,
         &declaration,
         &record,
         bounds,
@@ -237,60 +249,114 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
     {
         state.motion_metrics.capture += capture_started.elapsed();
     }
-    #[cfg(test)]
-    let solve_started = std::time::Instant::now();
-    let step = match solver::integrate_with_contact_policy(
-        solver::State {
-            position: record.motion.position.map(f64::from),
-            velocity,
-            acceleration: [0.0; 3],
-        },
-        solver::Body {
-            half_extents: half,
-            response: match declaration.body.response {
-                bloxgloom_host_api::motion::Response::Stop => solver::Response::Stop,
-                bloxgloom_host_api::motion::Response::Bounce => solver::Response::Bounce,
-                bloxgloom_host_api::motion::Response::Slide => solver::Response::Slide,
-            },
-            restitution: f64::from(declaration.body.restitution),
-        },
-        DT,
-        &colliders,
-        solver::Limits {
-            colliders: MAX_COLLIDERS,
-            sweep_cells: MAX_SWEEP_CELLS,
-            contacts: 4,
-            world_min: [
-                -999_998.0,
-                f64::from(crate::world::BEDROCK_Y) + half[1] + 0.0001,
-                -999_998.0,
-            ],
-            world_max: [999_998.0; 3],
-        },
-        solver::ContactPolicy {
-            previous,
-            pause_on_new: declaration.handles_impact,
-            max_speed: f64::from(declaration.body.max_speed),
-        },
-    ) {
-        Ok(step) => step,
-        Err(solver::Error::WorldBoundary) => {
-            return expire(
-                state,
-                id,
-                snapshot.revision,
-                tick,
-                record,
-                ExpiryReason::WorldBoundary,
-                reads,
-            );
+    let mut position = record.motion.position.map(f64::from);
+    let mut motion_velocity = record.motion.velocity.map(f64::from);
+    let mut last_step = None;
+    let mut first_new = None;
+    let mut world_boundary = false;
+    for index in 0..steps {
+        let mut velocity = motion_velocity;
+        for axis in 0..3 {
+            velocity[axis] += acceleration[axis] * DT;
         }
-        Err(error) => return Err(solver_error(error)),
-    };
-    #[cfg(test)]
-    {
-        state.motion_metrics.solve += solve_started.elapsed();
+        clamp(&mut velocity, f64::from(declaration.body.max_speed));
+        let step_colliders: Vec<_> = colliders
+            .iter()
+            .filter(|c| {
+                record.source_ticks == 0
+                    || record.source
+                        != Some(match c.target {
+                            solver::Target::Player { id, .. }
+                            | solver::Target::Creature { id, .. } => id,
+                            _ => 0,
+                        })
+            })
+            .map(|c| {
+                let shift = c.displacement.map(|v| v / f64::from(steps));
+                solver::Collider {
+                    min: std::array::from_fn(|a| c.min[a] + shift[a] * f64::from(index)),
+                    max: std::array::from_fn(|a| c.max[a] + shift[a] * f64::from(index)),
+                    displacement: shift,
+                    ..*c
+                }
+            })
+            .collect();
+        #[cfg(test)]
+        let solve_started = std::time::Instant::now();
+        let step = match solver::integrate_with_contact_policy(
+            solver::State {
+                position: position,
+                velocity,
+                acceleration: [0.0; 3],
+            },
+            solver::Body {
+                half_extents: half,
+                response: match declaration.body.response {
+                    bloxgloom_host_api::motion::Response::Stop => solver::Response::Stop,
+                    bloxgloom_host_api::motion::Response::Bounce => solver::Response::Bounce,
+                    bloxgloom_host_api::motion::Response::Slide => solver::Response::Slide,
+                },
+                restitution: f64::from(declaration.body.restitution),
+            },
+            DT,
+            &step_colliders,
+            solver::Limits {
+                colliders: MAX_COLLIDERS,
+                sweep_cells: MAX_SWEEP_CELLS,
+                contacts: 4,
+                world_min: [
+                    -999_998.0,
+                    f64::from(crate::world::BEDROCK_Y) + half[1] + 0.0001,
+                    -999_998.0,
+                ],
+                world_max: [999_998.0; 3],
+            },
+            solver::ContactPolicy {
+                previous,
+                pause_on_new: declaration.handles_impact,
+                max_speed: f64::from(declaration.body.max_speed),
+            },
+        ) {
+            Ok(step) => step,
+            Err(solver::Error::WorldBoundary) => {
+                world_boundary = true;
+                break;
+            }
+            Err(error) => return Err(solver_error(error)),
+        };
+        #[cfg(test)]
+        {
+            state.motion_metrics.solve += solve_started.elapsed();
+            state.motion_metrics.steps += 1;
+        }
+        if first_new.is_none() {
+            first_new = step
+                .contacts
+                .iter()
+                .find(|c| !previous.is_some_and(|old| old.matches(c)))
+                .copied();
+        }
+        position = step.position;
+        motion_velocity = step.velocity;
+        previous = step.resting;
+        record.remaining_ticks = record.remaining_ticks.saturating_sub(STEP_TICKS as u32);
+        record.source_ticks = record.source_ticks.saturating_sub(STEP_TICKS as u32);
+        last_step = Some(step);
+        if (declaration.handles_impact && first_new.is_some()) || record.remaining_ticks == 0 {
+            break;
+        }
     }
+    let Some(step) = last_step else {
+        return expire(
+            state,
+            id,
+            snapshot.revision,
+            tick,
+            record,
+            ExpiryReason::WorldBoundary,
+            reads,
+        );
+    };
     record.motion.position = step.position.map(|x| x as f32);
     // Persisting a rounded center inside a touched face would turn ordinary
     // resting contact into a false embedded-body failure on the next step.
@@ -317,8 +383,7 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
         .checked_add(1)
         .ok_or_else(|| invalid("moving revision exhausted"))?;
     record.simulation_tick = tick;
-    record.remaining_ticks = record.remaining_ticks.saturating_sub(STEP_TICKS as u32);
-    record.source_ticks = record.source_ticks.saturating_sub(STEP_TICKS as u32);
+
     let target_for = |target: solver::Target| -> io::Result<Target> {
         Ok(match target {
             solver::Target::Terrain { cell, state } => Target::Terrain {
@@ -337,11 +402,7 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
     record.contact = step.resting.map(|c| target_for(c.target)).transpose()?;
     record.contact_normal = step.resting.map(|c| c.normal.map(|v| v as f32));
     if declaration.handles_impact {
-        if let Some(contact) = step
-            .contacts
-            .iter()
-            .find(|c| !previous.is_some_and(|old| old.matches(c)))
-        {
+        if let Some(contact) = first_new {
             record.pending = Some(Pending::Impact(Impact {
                 entity: id.get(),
                 motion_revision: record.motion.revision,
@@ -354,6 +415,24 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
                 target: target_for(contact.target)?,
                 blocked: step.blocked.is_some(),
             }));
+        }
+    }
+    if world_boundary {
+        if declaration.handles_expiry {
+            record.pending = Some(Pending::Expiry {
+                entity: id.get(),
+                motion_revision: record.motion.revision,
+                tick,
+                reason: ExpiryReason::WorldBoundary,
+            });
+        } else {
+            return Ok(Some(commit(
+                reads,
+                state
+                    .entities
+                    .prepare_despawn(id, snapshot.revision)
+                    .map_err(io::Error::other)?,
+            )));
         }
     }
     if record.pending.is_none() && record.remaining_ticks == 0 {
