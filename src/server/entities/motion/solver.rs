@@ -168,9 +168,10 @@ pub fn swept_cells(
     Ok((min, max))
 }
 
-/// Semi-implicit Euler: velocity += acceleration * dt; displacement = velocity
-/// * dt. Gravity is included in the captured acceleration by the adapter. All
-/// slab tests use full displacement, including moving targets' relative motion.
+/// Semi-implicit Euler updates velocity by acceleration times dt, then computes
+/// displacement as velocity times dt. Gravity is included in the captured
+/// acceleration by the adapter. Slab tests use full displacement, including
+/// moving targets' relative motion.
 #[cfg(test)]
 pub fn integrate(
     state: State,

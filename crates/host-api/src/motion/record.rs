@@ -253,12 +253,10 @@ impl Record {
                 entity,
                 motion_revision,
                 ..
-            }) => {
-                if *entity == 0 || *motion_revision != self.motion.revision {
-                    return Err(invalid());
-                }
+            }) if *entity == 0 || *motion_revision != self.motion.revision => {
+                return Err(invalid());
             }
-            None => {}
+            Some(Pending::Expiry { .. }) | None => {}
         }
         Ok(())
     }
