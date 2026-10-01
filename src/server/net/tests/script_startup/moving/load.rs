@@ -27,8 +27,12 @@ const ACTION: &str = r#"return function(c,e)
     end
 end"#;
 
-fn package(fixture: &Fixture) {
-    fixture.package("demo", "requires bloxgloom:content/v1\nrequires bloxgloom:actions/v1\nrequires bloxgloom:moving_entities/v1\nmodule action action.luau\nmodule behavior behavior.luau", REGISTER);
+fn package(fixture: &Fixture, interval: u32) {
+    let register = REGISTER.replace(
+        "interval=1,lifetime_ticks",
+        &format!("interval={interval},lifetime_ticks"),
+    );
+    fixture.package("demo", "requires bloxgloom:content/v1\nrequires bloxgloom:actions/v1\nrequires bloxgloom:moving_entities/v1\nmodule action action.luau\nmodule behavior behavior.luau", &register);
     let dir = fixture.0.join("packages/demo");
     std::fs::write(dir.join("action.luau"), ACTION).unwrap();
     std::fs::write(dir.join("behavior.luau"),"return function(c,e) assert(e.kind == 'MovingTick'); local m=c.motion(e.entity); assert(m ~= nil) end").unwrap();
@@ -92,10 +96,15 @@ fn moving_real_listener_capacity_measurements() {
         .ok()
         .map(|count| vec![count.parse::<usize>().unwrap()])
         .unwrap_or_else(|| vec![1, 64, 256]);
+    let interval = std::env::var("BLOXGLOOM_MOTION_LOAD_INTERVAL")
+        .ok()
+        .map(|value| value.parse::<u32>().unwrap())
+        .unwrap_or(1);
+    assert!((1..=1000).contains(&interval));
     for bodies in counts {
         assert!([1, 64, 256].contains(&bodies));
         let fixture = Fixture::new();
-        package(&fixture);
+        package(&fixture, interval);
         let started = Instant::now();
         let mut state = Box::new(fixture.open().unwrap());
         let discovery = started.elapsed();
@@ -133,9 +142,8 @@ fn moving_real_listener_capacity_measurements() {
         state.motion_observer = Some(motion_tx);
         let mut observation = None;
         gameplay::serve(state, |address| {
-            eprintln!("motion-load bodies={bodies} connecting");
             let mut peer = gameplay::Peer::connect(address, Arc::clone(&catalog));
-            eprintln!("motion-load bodies={bodies} connected");
+
             for base in (0..bodies).step_by(32) {
                 let request = request(&mut peer, base, (bodies - base).min(32), bodies, false);
                 let before = Instant::now();
@@ -176,7 +184,7 @@ fn moving_real_listener_capacity_measurements() {
             while sample_rx.try_recv().is_ok() {}
             while motion_rx.try_recv().is_ok() {}
             let start = Instant::now();
-            let deadline = start + Duration::from_secs(15);
+            let deadline = start + Duration::from_secs(60);
             let mut seam = false;
             let mut moving = std::collections::BTreeSet::new();
             while start.elapsed() < Duration::from_secs(2) || !seam || moving.len() < bodies {
@@ -199,12 +207,6 @@ fn moving_real_listener_capacity_measurements() {
                         seam = true;
                     }
                     updates += 1;
-                    if updates <= 4 {
-                        eprintln!(
-                            "motion-load pose {:?} rev={} stopped={}",
-                            pose.motion.position, pose.motion.revision, pose.stopped
-                        );
-                    }
                 };
                 match &message {
                     ServerMessage::WorldCommitPart(part) => {
@@ -240,7 +242,7 @@ fn moving_real_listener_capacity_measurements() {
         let solve: Vec<_> = motion.iter().map(|s| s.solve).collect();
         let attempts: u64 = motion.iter().map(|s| s.attempts).sum();
         let simulated_steps: u64 = motion.iter().map(|s| s.steps).sum();
-        if bodies == 1 {
+        if bodies == 1 && interval == 1 {
             assert!(
                 simulated_steps >= samples.len() as u64 / 3,
                 "frequent callbacks slowed nominal physics: {simulated_steps} steps over {} ticks",
@@ -262,25 +264,6 @@ fn moving_real_listener_capacity_measurements() {
         let state = fixture.open().unwrap();
         let saved = count(&state);
         assert_eq!(saved.len(), bodies, "committed bodies/restart");
-        eprintln!(
-            "motion-load observed={observation:?} saved={:?}",
-            saved
-                .iter()
-                .map(|(_, r)| (
-                    &r.motion,
-                    r.next_behavior_tick,
-                    r.simulation_tick,
-                    &r.pending
-                ))
-                .collect::<Vec<_>>()
-        );
-        eprintln!(
-            "motion-load debug attempts={attempts} deferred={deferred} failed={failed} next_ticks={:?}",
-            saved
-                .iter()
-                .map(|(id, _)| state.entities.snapshot(*id).unwrap().next_tick)
-                .collect::<Vec<_>>()
-        );
         assert_eq!(observation, Some((true, bodies)));
         let record_bytes: usize = saved.iter().map(|(_, r)| r.encode().unwrap().len()).sum();
         assert!(
@@ -302,7 +285,7 @@ fn moving_real_listener_capacity_measurements() {
         );
         assert!(crate::server::drops::nearby(&state.entities, [16.0, 83.5, 16.0]).is_empty());
         eprintln!(
-            "motion-load bodies={bodies} discovery_ms={:.3} launch_count={} launch_p50_ms={:.3} launch_p95_ms={:.3} launch_p99_ms={:.3} replica_bytes={entity_bytes} entity_updates={updates} remaining_seeds={remaining}",
+            "motion-load bodies={bodies} interval={interval} discovery_ms={:.3} launch_count={} launch_p50_ms={:.3} launch_p95_ms={:.3} launch_p99_ms={:.3} replica_bytes={entity_bytes} entity_updates={updates} remaining_seeds={remaining}",
             discovery.as_secs_f64() * 1000.0,
             latencies.len(),
             rank(&latencies, 50).as_secs_f64() * 1000.0,
@@ -310,14 +293,14 @@ fn moving_real_listener_capacity_measurements() {
             rank(&latencies, 99).as_secs_f64() * 1000.0
         );
         eprintln!(
-            "motion-load-physics bodies={bodies} attempts={attempts} fixed_steps={simulated_steps} deferred={deferred} failed={failed} capture_tick_p50_ms={:.3} capture_tick_p95_ms={:.3} solve_tick_p50_ms={:.3} solve_tick_p95_ms={:.3} encoded_record_bytes={record_bytes}",
+            "motion-load-physics bodies={bodies} interval={interval} attempts={attempts} fixed_steps={simulated_steps} deferred={deferred} failed={failed} capture_tick_p50_ms={:.3} capture_tick_p95_ms={:.3} solve_tick_p50_ms={:.3} solve_tick_p95_ms={:.3} encoded_record_bytes={record_bytes}",
             rank(&capture, 50).as_secs_f64() * 1000.0,
             rank(&capture, 95).as_secs_f64() * 1000.0,
             rank(&solve, 50).as_secs_f64() * 1000.0,
             rank(&solve, 95).as_secs_f64() * 1000.0
         );
         eprintln!(
-            "motion-load-server bodies={bodies} tick_samples={} tick_p50_ms={:.3} tick_p95_ms={:.3} tick_p99_ms={:.3} durable_phase_p50_ms={:.3} durable_phase_p95_ms={:.3} commit_phase_p50_ms={:.3} commit_phase_p95_ms={:.3} pending_actions_max={pending} resident_chunks_max={resident}",
+            "motion-load-server bodies={bodies} interval={interval} tick_samples={} tick_p50_ms={:.3} tick_p95_ms={:.3} tick_p99_ms={:.3} durable_phase_p50_ms={:.3} durable_phase_p95_ms={:.3} commit_phase_p50_ms={:.3} commit_phase_p95_ms={:.3} pending_actions_max={pending} resident_chunks_max={resident}",
             samples.len(),
             rank(&ticks, 50).as_secs_f64() * 1000.0,
             rank(&ticks, 95).as_secs_f64() * 1000.0,

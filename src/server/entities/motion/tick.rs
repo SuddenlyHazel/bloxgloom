@@ -22,7 +22,8 @@ pub(in crate::server) fn plan(
     {
         state.motion_metrics.attempts += 1;
     }
-    let result = plan_inner(state, id, tick);
+    let mut active = false;
+    let result = plan_inner(state, id, tick, &mut active);
     #[cfg(test)]
     if let Err(error) = &result {
         if error.kind() == ErrorKind::WouldBlock {
@@ -31,14 +32,19 @@ pub(in crate::server) fn plan(
             state.motion_metrics.failed += 1;
         }
     }
-    if matches!(&result, Ok(Some(_))) {
+    if active && matches!(&result, Ok(Some(_))) {
         state.motion_cadence.active(id);
     } else {
         state.motion_cadence.pause(id);
     }
     result
 }
-fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<CommitAction>> {
+fn plan_inner(
+    state: &mut State,
+    id: EntityId,
+    tick: u64,
+    active: &mut bool,
+) -> io::Result<Option<CommitAction>> {
     let Some(snapshot) = state.entities.snapshot(id) else {
         return Ok(None);
     };
@@ -88,6 +94,7 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
             reads,
         );
     }
+    *active = true;
     if record
         .next_behavior_tick
         .is_some_and(|due| due <= record.simulation_tick)
