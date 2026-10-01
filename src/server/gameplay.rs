@@ -468,10 +468,9 @@ pub(super) fn plan_with_lifecycles(
             Event::MovingExpiry { entity, .. } => {
                 if let Some(s) = super::entities::EntityId::new(*entity)
                     .and_then(|id| participants.entities.snapshot(id))
+                    && let super::entities::EntityLocation::Mobile { position } = s.location
                 {
-                    if let super::entities::EntityLocation::Mobile { position } = s.location {
-                        origins.push(position.map(|x| x.floor() as i32));
-                    }
+                    origins.push(position.map(|x| x.floor() as i32));
                 }
             }
             _ => {}

@@ -20,7 +20,7 @@ pub(super) fn prepare(
             "moving entities require the typed launch service".into(),
         )));
     }
-    let mut world_count = if plan.moving_spawns.is_empty() {
+    let world_count = if plan.moving_spawns.is_empty() {
         0
     } else {
         store
@@ -32,7 +32,10 @@ pub(super) fn prepare(
             .len()
     };
     let mut spawned = std::collections::BTreeMap::new();
-    for spawn in std::mem::take(&mut plan.moving_spawns) {
+    for (offset, spawn) in std::mem::take(&mut plan.moving_spawns)
+        .into_iter()
+        .enumerate()
+    {
         let owner = spawn
             .key
             .split_once(':')
@@ -55,10 +58,11 @@ pub(super) fn prepare(
             })
             .count();
         let pending = spawned.entry(chunk).or_insert(0usize);
-        if world_count >= motion::MAX_BODIES || chunk_count + *pending >= motion::MAX_CHUNK_BODIES {
+        if world_count + offset >= motion::MAX_BODIES
+            || chunk_count + *pending >= motion::MAX_CHUNK_BODIES
+        {
             return Err(error(Error::BudgetExceeded));
         }
-        world_count += 1;
         *pending += 1;
         plan.entity_spawns.push(EntitySpawn {
             key: spawn.key,

@@ -718,7 +718,7 @@ pub(super) fn invoke(
             lua,
             Rc::clone(&pending),
             &moving_namespace,
-            Arc::clone(&snapshot),
+            Arc::clone(snapshot),
         )?,
     )?;
     host.set("register_machine", machine)?;

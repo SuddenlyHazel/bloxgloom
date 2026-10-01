@@ -90,7 +90,7 @@ pub(in crate::server) fn plan_event(
         },
         crate::server::gameplay::Participants {
             actor_inventory_revision: None,
-            profile_inventories: moving.then(|| crate::server::gameplay::InventoryCapture {
+            profile_inventories: moving.then_some(crate::server::gameplay::InventoryCapture {
                 clients: &state.clients,
                 overlay: &state.durability.inventory_overlay,
                 revisions: &state.durability.inventory_revisions,
