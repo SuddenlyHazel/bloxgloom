@@ -92,6 +92,21 @@ impl Track {
             - std::f32::consts::PI;
         self.yaw += angle * (1.0 - (-14.0 * dt).exp());
         visual.pose[0] = self.yaw;
+        if visual.model == AvatarModel::Player {
+            // Authored locomotion is presentation-only. Distance drives walk phase;
+            // a stale snapshot stops feet rather than inventing movement.
+            self.age += dt;
+            let moving = if distance > 0.0001 && !visual.airborne {
+                1.0
+            } else {
+                0.0
+            };
+            self.gait += (moving - self.gait) * (1.0 - (-18.0 * dt).exp());
+            self.stride = (self.stride + distance / 1.08).rem_euclid(3600.0);
+            visual.character_pose[0] = self.stride;
+            visual.character_pose[1] = self.age;
+            visual.character_pose[2] = self.gait;
+        }
         if matches!(visual.model, AvatarModel::Registered(_)) {
             let animation = visual.animation;
             self.age += dt;

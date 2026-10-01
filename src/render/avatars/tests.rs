@@ -22,9 +22,16 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             ],
         })
         .unwrap();
-    let original = render(&device, &queue, &builtin, [0; 4], [1.0; 3]);
-    let changed = render(&device, &queue, &authored, [6, 8, 6, 0], [1.0; 3]);
-    let tinted = render(&device, &queue, &authored, [6, 8, 6, 0], [0.0, 1.0, 0.0]);
+    let original = render(&device, &queue, &builtin, [0; 4], [1.0; 3], None);
+    let changed = render(&device, &queue, &authored, [6, 8, 6, 0], [1.0; 3], None);
+    let tinted = render(
+        &device,
+        &queue,
+        &authored,
+        [6, 8, 6, 0],
+        [0.0, 1.0, 0.0],
+        None,
+    );
     for row in 0..HEIGHT as usize {
         let start = row * WIDTH as usize * 4;
         assert_eq!(
@@ -85,6 +92,7 @@ fn render(
     catalog: &Catalog,
     selection: [u8; 4],
     tint: [f32; 3],
+    clip: Option<(&'static str, f32)>,
 ) -> Vec<u8> {
     let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
@@ -96,9 +104,15 @@ fn render(
         ),
         usage: wgpu::BufferUsages::UNIFORM,
     });
-    let mut renderer =
-        AvatarRenderer::new(device, wgpu::TextureFormat::Rgba8Unorm, &camera, catalog);
+    let mut renderer = AvatarRenderer::new(
+        device,
+        queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &camera,
+        catalog,
+    );
     let avatars = [(-0.65, [0; 4]), (0.65, selection)].map(|(x, cosmetics)| VisualAvatar {
+        character_pose: [0.0; 3],
         animation: Default::default(),
         model: AvatarModel::Player,
         pose: [0.0; 4],
@@ -111,6 +125,9 @@ fn render(
         glow_bounce: [0; 4],
         tint: if x > 0.0 { tint } else { [1.0; 3] },
     });
+    if let Some((clip, time)) = clip {
+        renderer.preview_character_clip(clip, time);
+    }
     renderer.set(queue, &avatars);
     let size = wgpu::Extent3d {
         width: WIDTH,
@@ -198,4 +215,59 @@ fn render(
     let bytes = readback.slice(..).get_mapped_range().unwrap().to_vec();
     readback.unmap();
     bytes
+}
+
+#[test]
+fn authored_gpu_character_draws_textured_animated_geometry_and_instance_tint() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let catalog = Catalog::builtins();
+    let idle = render(
+        &device,
+        &queue,
+        &catalog,
+        [0; 4],
+        [1.0; 3],
+        Some(("idle", 0.0)),
+    );
+    let walk = render(
+        &device,
+        &queue,
+        &catalog,
+        [0; 4],
+        [1.0; 3],
+        Some(("walk", 0.2)),
+    );
+    let crouch = render(
+        &device,
+        &queue,
+        &catalog,
+        [0; 4],
+        [1.0; 3],
+        Some(("crouch", 1.0)),
+    );
+    let tinted = render(
+        &device,
+        &queue,
+        &catalog,
+        [0; 4],
+        [0.0; 3],
+        Some(("idle", 0.0)),
+    );
+    assert!(idle.chunks_exact(4).filter(|p| p[0] > 20).count() > 100);
+    assert_ne!(idle, walk, "authored walk should deform the mesh");
+    assert_ne!(idle, crouch, "authored crouch should deform the mesh");
+    for row in 0..HEIGHT as usize {
+        let start = row * WIDTH as usize * 4;
+        assert_eq!(
+            &idle[start..start + WIDTH as usize * 2],
+            &tinted[start..start + WIDTH as usize * 2],
+            "another instance changed"
+        );
+    }
+    assert!(
+        tinted.iter().map(|&n| u64::from(n)).sum::<u64>()
+            < idle.iter().map(|&n| u64::from(n)).sum::<u64>()
+    );
 }

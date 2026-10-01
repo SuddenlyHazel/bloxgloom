@@ -2,6 +2,8 @@
 //! Cosmetics and lighting are public presentation state; no profile/inventory data.
 
 mod appearance;
+mod character;
+mod character_asset;
 mod mesh;
 #[cfg(test)]
 mod tests;
@@ -25,6 +27,8 @@ pub(crate) struct VisualAvatar {
     pub model: AvatarModel,
     /// Yaw, stride, body bob, squash. Never used for authoritative movement.
     pub pose: [f32; 4],
+    /// Separate from package pose offsets: walk seconds, idle seconds, walk blend.
+    pub character_pose: [f32; 3],
     pub airborne: bool,
     pub id: u64,
     pub position: Vec3,
@@ -50,7 +54,23 @@ struct AvatarInstance {
     glow_bounce: [u8; 4],
 }
 
+impl From<&VisualAvatar> for AvatarInstance {
+    fn from(avatar: &VisualAvatar) -> Self {
+        Self {
+            origin: avatar.position.to_array(),
+            cosmetics: avatar.cosmetics,
+            light_levels: avatar.light_levels,
+            bounce: avatar.bounce,
+            pose: avatar.pose,
+            tint: avatar.tint,
+            glow_bounce: avatar.glow_bounce,
+        }
+    }
+}
+
 pub(crate) struct AvatarRenderer {
+    characters: character::CharacterRenderer,
+    authored: bool,
     pipeline: wgpu::RenderPipeline,
     camera_group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
@@ -63,6 +83,7 @@ pub(crate) struct AvatarRenderer {
 impl AvatarRenderer {
     pub(crate) fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         camera_buffer: &wgpu::Buffer,
         catalog: &crate::content::Catalog,
@@ -199,7 +220,10 @@ impl AvatarRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let characters = character::CharacterRenderer::new(device, queue, format, &camera_layout);
         Self {
+            characters,
+            authored: false,
             pipeline,
             camera_group,
             vertices,
@@ -210,9 +234,19 @@ impl AvatarRenderer {
         }
     }
 
+    pub(crate) fn preview_character_clip(&mut self, clip: &'static str, time: f32) {
+        self.authored = true;
+        self.characters.preview_clip(clip, time);
+    }
+
+    pub(crate) fn set_authored(&mut self, enabled: bool) {
+        self.authored = enabled;
+    }
+
     /// Caller supplies nearest first. The bounded instance buffer never grows
     /// with world/entity population or modded entity count.
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
+        self.characters.set(queue, avatars, self.authored);
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
         for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
@@ -220,16 +254,10 @@ impl AvatarRenderer {
                 avatars
                     .iter()
                     .take(MAX_AVATARS)
-                    .filter(|a| a.model == *model)
-                    .map(|avatar| AvatarInstance {
-                        origin: avatar.position.to_array(),
-                        cosmetics: avatar.cosmetics,
-                        light_levels: avatar.light_levels,
-                        bounce: avatar.bounce,
-                        pose: avatar.pose,
-                        tint: avatar.tint,
-                        glow_bounce: avatar.glow_bounce,
-                    }),
+                    .filter(|a| {
+                        a.model == *model && !(self.authored && *model == AvatarModel::Player)
+                    })
+                    .map(AvatarInstance::from),
             );
             self.counts[index] = (instances.len() - start) as u32;
         }
@@ -239,8 +267,9 @@ impl AvatarRenderer {
     }
 
     pub(crate) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>) -> usize {
+        let character_triangles = self.characters.draw(pass, &self.camera_group);
         if self.counts.iter().all(|n| *n == 0) {
-            return 0;
+            return character_triangles;
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_group, &[]);
@@ -256,6 +285,6 @@ impl AvatarRenderer {
             start += count;
             triangles += (indices.end - indices.start) as usize * *count as usize / 3;
         }
-        triangles
+        triangles + character_triangles
     }
 }

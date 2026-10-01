@@ -243,8 +243,13 @@ impl Renderer {
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
-        let avatars =
-            avatars::AvatarRenderer::new(&device, post::HDR_FORMAT, &camera_buffer, &catalog);
+        let avatars = avatars::AvatarRenderer::new(
+            &device,
+            &queue,
+            post::HDR_FORMAT,
+            &camera_buffer,
+            &catalog,
+        );
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
         let game_ui = game_ui::GameUi::new(&window, &device, format);
@@ -371,6 +376,10 @@ impl Renderer {
 
     pub(crate) fn set_fire(&mut self, fires: &[VisualFire]) {
         self.fire.set(&self.queue, fires);
+    }
+
+    pub(crate) fn set_authored_characters(&mut self, enabled: bool) {
+        self.avatars.set_authored(enabled);
     }
 
     pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {

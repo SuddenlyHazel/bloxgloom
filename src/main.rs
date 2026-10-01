@@ -418,6 +418,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_mossbun_preview(std::path::Path::new(&path))?;
         }
+        Some("character-preview") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "character-preview.png".into());
+            let clip = args.next().unwrap_or_else(|| "idle".into());
+            let time = args
+                .next()
+                .map(|s| s.parse::<f32>())
+                .transpose()?
+                .unwrap_or(0.0);
+            if args.next().is_some() {
+                return Err("usage: character-preview [output.png] [idle|walk|crouch|tool_use_left|tool_use_right] [seconds]".into());
+            }
+            preview::render_character_preview(std::path::Path::new(&path), &clip, time)?;
+        }
         Some("avatar-preview") => {
             let path = args
                 .next()

@@ -28,6 +28,8 @@ pub struct Config {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
+    /// Render the builtin authored character kit locally; legacy palettes stay intact.
+    pub authored_characters: bool,
     pub exposure: f32,
     pub post_processing: bool,
     pub bloom_enabled: bool,
@@ -48,6 +50,7 @@ impl Default for Config {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
+            authored_characters: false,
             exposure: 1.0,
             post_processing: true,
             bloom_enabled: true,
@@ -159,6 +162,7 @@ impl Config {
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
+            authored_characters: self.authored_characters,
             exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
@@ -181,13 +185,14 @@ impl Config {
 
     fn serialize(&self) -> String {
         let mut text = format!(
-            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\nbind_inventory={}\nbind_kiln_input={}\nbind_kiln_fuel={}\nbind_drop={}\n",
+            "version={CONFIG_VERSION}\nsensitivity={}\nfov_degrees={}\nview_distance={}\nscale={}\nfullscreen={}\nbounced_gi={}\nauthored_characters={}\nselected_slot={}\ndebug_hud={}\nprofile={:032x}\nexposure={}\nbloom_strength={}\npost_processing={}\nbloom_enabled={}\nbind_inventory={}\nbind_kiln_input={}\nbind_kiln_fuel={}\nbind_drop={}\n",
             self.sensitivity,
             self.fov_degrees,
             self.view_distance,
             self.scale,
             self.fullscreen,
             self.bounced_gi,
+            self.authored_characters,
             self.selected_slot,
             self.debug_hud,
             self.profile,
@@ -287,6 +292,11 @@ fn parse_config(contents: &str) -> Config {
             "fullscreen" => {
                 if let Ok(fullscreen) = value.parse::<bool>() {
                     config.fullscreen = fullscreen;
+                }
+            }
+            "authored_characters" => {
+                if let Ok(enabled) = value.parse() {
+                    config.authored_characters = enabled;
                 }
             }
             "bounced_gi" => {

@@ -568,6 +568,9 @@ impl ClientApp {
     fn change_setting(&mut self, setting: SettingId, increase: bool) {
         let sign = if increase { 1.0 } else { -1.0 };
         match setting {
+            SettingId::Characters => {
+                self.config.authored_characters = !self.config.authored_characters
+            }
             SettingId::PostProcessing => self.config.post_processing = !self.config.post_processing,
             SettingId::Bloom => self.config.bloom_enabled = !self.config.bloom_enabled,
             SettingId::Exposure => {
@@ -790,6 +793,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
+                UiControl::Decrease(SettingId::Characters),
+                UiControl::Increase(SettingId::Characters),
                 UiControl::Back,
             ],
         }
@@ -1702,6 +1707,7 @@ impl ClientApp {
             }),
             settings: UiSettings {
                 post_processing: self.config.post_processing,
+                authored_characters: self.config.authored_characters,
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
                 bloom_strength: self.config.bloom_strength,
@@ -1779,6 +1785,7 @@ impl ClientApp {
             renderer.set_world_time(self.world_time.now());
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
+            renderer.set_authored_characters(self.config.authored_characters);
             renderer.set_avatars(&visual_avatars);
             renderer.configure_post(
                 self.config.post_processing,
