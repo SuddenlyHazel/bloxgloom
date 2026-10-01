@@ -82,7 +82,7 @@ pub(super) fn plan_changes(
                 bloxgloom_host_api::system::EntityChange::Update { state, .. } => {
                     if state.len()
                         > if catalog.moving_entity(snapshot.entity_type).is_some() {
-                            1536
+                            usize::from(definition.max_state_bytes)
                         } else {
                             1024
                         }

@@ -60,6 +60,26 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn motion_contact(
+        &mut self,
+        id: u64,
+        owner: &str,
+    ) -> Result<Option<crate::motion::MotionContact>, Error> {
+        if owner != "test" {
+            return Err(Error::Invalid("foreign motion".into()));
+        }
+        self.reads += 1;
+        Ok((id == 1).then_some(crate::motion::MotionContact {
+            motion_revision: 17,
+            tick: 21,
+            target: crate::motion::Target::Terrain {
+                cell: [0, 0, 0],
+                state: "test:stone".into(),
+            },
+            normal: [0.0, 1.0, 0.0],
+        }))
+    }
+
     fn motion(&mut self, id: u64, owner: &str) -> Result<Option<crate::motion::Motion>, Error> {
         if owner != "test" {
             return Err(Error::Invalid("foreign motion".into()));
@@ -555,4 +575,39 @@ fn moving_spawn_references_are_local_and_never_predict_durable_ids() {
         assert_eq!(plan.moving_spawns.len(), 1);
         assert_eq!(plan.moving_spawns[0].velocity, [2.0, 0.0, 0.0]);
     }
+}
+
+#[test]
+fn owned_contact_query_recaptures_absence_and_hides_staged_removal() {
+    struct Probe;
+    impl Handler for Probe {
+        fn handle(&self, c: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            let value = c.motion_contact(1)?.unwrap();
+            assert_eq!(value.motion_revision, 17);
+            assert_eq!(value.normal, [0.0, 1.0, 0.0]);
+            assert_eq!(c.motion_contact(2)?, None);
+            c.remove_entity(1)?;
+            assert_eq!(c.motion_contact(1)?, None);
+            Ok(())
+        }
+    }
+    let mut world = World { reads: 0 };
+    let mut c = Context::new(&mut world, 16);
+    c.dispatch(
+        &HandlerRegistration {
+            key: "test:contact".into(),
+            version: 1,
+            event: EventKind::EntityTick,
+            target: None,
+            handler: std::sync::Arc::new(Probe),
+        },
+        &Event::EntityTick {
+            entity: 1,
+            position: [0.0; 3],
+            tick: 0,
+        },
+    )
+    .unwrap();
+    c.finish().unwrap();
+    assert_eq!(world.reads, 3);
 }

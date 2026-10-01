@@ -5,6 +5,9 @@ use bloxgloom_host_api::gameplay::{MotionChange, MovingSpawn, SpawnReference};
 
 struct SpawnRef(SpawnReference);
 impl mlua::UserData for SpawnRef {
+    fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
+        fields.add_field_method_get("ordinal", |_, value| Ok(value.0.index()));
+    }
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(mlua::MetaMethod::ToString, |_, value, ()| {
             Ok(format!("spawn-reference:{}", value.0.index()))
@@ -18,6 +21,16 @@ pub(super) fn install<'scope>(
     context: &'scope RefCell<&mut Context<'_>>,
     rejected: &'scope RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
+    host.set(
+        "cancel_moving_entity",
+        scope.create_function(|_, id: Value| {
+            checked(rejected, || {
+                context
+                    .borrow_mut()
+                    .cancel_moving_entity(handles::entity_value(id).map_err(invalid)?)
+            })
+        })?,
+    )?;
     host.set(
         "configure_spawn",
         scope.create_function(|_, (reference, key, options): (Value, Value, Value)| {
@@ -43,6 +56,20 @@ pub(super) fn install<'scope>(
                     .spawn_moving_entity(parse_spawn(key, options)?)
             })?;
             lua.create_userdata(SpawnRef(reference))
+                .inspect_err(|error| queries::latch(rejected, error))
+        })?,
+    )?;
+    host.set(
+        "motion_contact",
+        scope.create_function(|lua, id: Value| {
+            let value = checked(rejected, || {
+                context
+                    .borrow_mut()
+                    .motion_contact(handles::entity_value(id).map_err(invalid)?)
+            })?;
+            value
+                .map(|value| events::motion_contact(lua, &value))
+                .transpose()
                 .inspect_err(|error| queries::latch(rejected, error))
         })?,
     )?;

@@ -67,6 +67,16 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn motion_contact(
+        &mut self,
+        _id: u64,
+        _owner: &str,
+    ) -> Result<Option<crate::motion::MotionContact>, Error> {
+        Err(Error::Invalid(
+            "moving contact unavailable in this context".into(),
+        ))
+    }
+
     fn motion(&mut self, _id: u64, _owner: &str) -> Result<Option<crate::motion::Motion>, Error> {
         Err(Error::Invalid(
             "moving entities unavailable in this context".into(),

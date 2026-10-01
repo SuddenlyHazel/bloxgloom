@@ -325,6 +325,10 @@ export type BloxMotion = {
 }
 export type BloxMovingTarget = {kind: "Terrain", cell: BloxTriple, state: string}
     | {kind: "Entity", entity: BloxEntityId, revision: BloxRevision}
+export type BloxMotionContact = {
+    motion_revision: BloxRevision, tick: BloxTick,
+    target: BloxMovingTarget, normal: BloxTriple,
+}
 export type BloxMovingTickEvent = {
     kind: "MovingTick", entity: BloxEntityId, tick: BloxTick, motion: BloxMotion,
 }
@@ -337,7 +341,7 @@ export type BloxMovingExpiryEvent = {
     kind: "MovingExpiry", entity: BloxEntityId, motion_revision: BloxRevision, tick: BloxTick,
     reason: "Lifetime" | "WorldBoundary",
 }
-export type BloxSpawnReference = {__brand: "BloxSpawnReference"}
+export type BloxSpawnReference = {__brand: "BloxSpawnReference", ordinal: number}
 export type BloxMovingSpawn = {
     position: BloxTriple, velocity: BloxTriple?, orientation: BloxQuaternion?, state: string,
     source: BloxEntityId?,
@@ -412,6 +416,7 @@ export type BloxGameplayContext = {
     configure_spawn: (reference: BloxSpawnReference, key: string, options: BloxMovingSpawn) -> (),
     --- Captured owned motion; nil when unavailable. Nested values are readonly.
     motion: (id: BloxEntityId) -> BloxMotion?,
+    motion_contact: (id: BloxEntityId) -> BloxMotionContact?, -- readonly captured contact, nil when free
     --- Revision-fenced steering, without a position/teleport operation.
     set_motion: (id: BloxEntityId, expected_revision: BloxRevision, options: BloxMotionChange) -> boolean,
     spawn_stack: (x: number, y: number, z: number, stack: BloxStack, delay_ms: number) -> (),
@@ -488,6 +493,7 @@ export type BloxOwnerContext = {
     spawn_moving_entity: (key: string, options: BloxMovingSpawn) -> BloxSpawnReference,
     configure_spawn: (reference: BloxSpawnReference, key: string, options: BloxMovingSpawn) -> (),
     motion: (id: BloxEntityId) -> BloxMotion?,
+    motion_contact: (id: BloxEntityId) -> BloxMotionContact?, -- readonly captured contact, nil when free
     set_motion: (id: BloxEntityId, expected_revision: BloxRevision, options: BloxMotionChange) -> boolean,
     --- Stage an owned entity update against its captured revision. A wrong/stale revision rejects the plan.
     update_entity: (id: BloxEntityId, revision: BloxRevision, state: string) -> (),
@@ -618,6 +624,7 @@ export type BloxUiInput = {
     --- Readonly map of editable widget values, keyed by stable widget identity.
     values: {[string]: BloxUiValue},
     replica: BloxReplicaSnapshot,
+    spawned: {{ordinal: number, entity: BloxEntityId}}, -- zero-based launch ordinal after receipt
 }
 --- Presentation updates or one gameplay action request. Action targets come from the current selection/aim and are checked by the server.
 export type BloxUiValue = boolean | number | string

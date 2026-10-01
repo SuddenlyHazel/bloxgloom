@@ -39,6 +39,45 @@ pub(in crate::server::script) fn motion(
     Ok(value)
 }
 
+fn moving_target(lua: &Lua, target: &bloxgloom_host_api::motion::Target) -> mlua::Result<Table> {
+    let value = lua.create_table()?;
+    match target {
+        bloxgloom_host_api::motion::Target::Terrain { cell, state } => {
+            value.set("kind", "Terrain")?;
+            value.set("cell", triple(lua, *cell)?)?;
+            value.set("state", state.as_str())?;
+        }
+        bloxgloom_host_api::motion::Target::Entity { id, revision } => {
+            value.set("kind", "Entity")?;
+            value.set("entity", crate::server::script::handles::entity(lua, *id)?)?;
+            value.set(
+                "revision",
+                crate::server::script::handles::revision(lua, *revision)?,
+            )?;
+        }
+    }
+    value.set_readonly(true);
+    Ok(value)
+}
+pub(in crate::server::script) fn motion_contact(
+    lua: &Lua,
+    contact: &bloxgloom_host_api::motion::MotionContact,
+) -> mlua::Result<Table> {
+    let value = lua.create_table()?;
+    value.set(
+        "motion_revision",
+        crate::server::script::handles::revision(lua, contact.motion_revision)?,
+    )?;
+    value.set(
+        "tick",
+        crate::server::script::handles::tick(lua, contact.tick)?,
+    )?;
+    value.set("target", moving_target(lua, &contact.target)?)?;
+    value.set("normal", triple(lua, contact.normal)?)?;
+    value.set_readonly(true);
+    Ok(value)
+}
+
 #[cfg(test)]
 pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
     fields_with_command(lua, event, None)
@@ -81,24 +120,7 @@ pub(super) fn fields_with_command(
             fields.set("normal", triple(lua, impact.normal)?)?;
             fields.set("incoming_velocity", triple(lua, impact.incoming_velocity)?)?;
             fields.set("blocked", impact.blocked)?;
-            let target = lua.create_table()?;
-            match &impact.target {
-                bloxgloom_host_api::motion::Target::Terrain { cell, state } => {
-                    target.set("kind", "Terrain")?;
-                    target.set("cell", triple(lua, *cell)?)?;
-                    target.set("state", state.as_str())?;
-                }
-                bloxgloom_host_api::motion::Target::Entity { id, revision } => {
-                    target.set("kind", "Entity")?;
-                    target.set("entity", crate::server::script::handles::entity(lua, *id)?)?;
-                    target.set(
-                        "revision",
-                        crate::server::script::handles::revision(lua, *revision)?,
-                    )?;
-                }
-            }
-            target.set_readonly(true);
-            fields.set("target", target)?;
+            fields.set("target", moving_target(lua, &impact.target)?)?;
         }
         Event::MovingExpiry {
             entity,

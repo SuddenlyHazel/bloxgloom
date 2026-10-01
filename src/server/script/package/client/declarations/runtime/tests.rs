@@ -134,3 +134,33 @@ fn command_metadata_roundtrips_schema_and_permissions_and_rejects_forgery() {
         }
     }
 }
+
+#[test]
+fn generated_motion_handler_keys_use_native_runtime_key_vocabulary() {
+    let key = format!("demo:{}.motion_tick", "x".repeat(64));
+    let runtime = Runtime {
+        handlers: vec![Identity {
+            kind: b'G',
+            key: key.clone(),
+            fingerprint: 77,
+        }],
+        ..Default::default()
+    };
+    let mut writer = Writer(Vec::new());
+    runtime.encode_package(&mut writer, "demo").unwrap();
+    let mut decoded = Runtime::default();
+    let mut reader = Reader(&writer.0);
+    decoded
+        .decode_package(
+            &mut reader,
+            "demo",
+            &[
+                composition::ACTIONS.into(),
+                composition::MOVING_ENTITIES.into(),
+            ],
+        )
+        .unwrap();
+    assert!(reader.0.is_empty());
+    assert_eq!(decoded.handlers[0].key, key);
+    assert_eq!(decoded.handlers[0].fingerprint, 77);
+}

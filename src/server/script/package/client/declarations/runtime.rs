@@ -385,9 +385,13 @@ fn own_key(
 ) -> Result<String, ScriptError> {
     let key = reader.text(129)?;
     if key <= *previous
-        || key
-            .split_once(':')
-            .is_none_or(|(owner, local)| owner != name || !identifier(local))
+        || key.split_once(':').is_none_or(|(owner, local)| {
+            owner != name
+                || local.is_empty()
+                || !local.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_.-".contains(&byte)
+                })
+        })
     {
         return Err(invalid());
     }

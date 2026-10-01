@@ -91,3 +91,27 @@ fn expiry_roundtrip() {
     });
     assert_eq!(Record::decode(&value.encode().unwrap()).unwrap(), value);
 }
+
+#[test]
+fn contact_query_tracks_captured_motion_revision_and_absence() {
+    let mut record = record();
+    record.pending = None;
+    record.contact = None;
+    record.contact_normal = None;
+    assert_eq!(record.contact_state(), None);
+    record.contact = Some(Target::Terrain {
+        cell: [1, 2, 3],
+        state: "test:stone".into(),
+    });
+    record.contact_normal = Some([0.0, 1.0, 0.0]);
+    record.motion.revision = (1u64 << 60) + 9;
+    record.simulation_tick = 17;
+    let contact = Record::decode(&record.encode().unwrap())
+        .unwrap()
+        .contact_state()
+        .unwrap();
+    assert_eq!(contact.motion_revision, record.motion.revision);
+    assert_eq!(contact.tick, 17);
+    assert_eq!(contact.target, record.contact.unwrap());
+    assert_eq!(contact.normal, [0.0, 1.0, 0.0]);
+}

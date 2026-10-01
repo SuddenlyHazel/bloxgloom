@@ -8,6 +8,9 @@ struct SpawnRef {
     scope: std::sync::Arc<()>,
 }
 impl mlua::UserData for SpawnRef {
+    fn add_fields<F: mlua::UserDataFields<Self>>(fields: &mut F) {
+        fields.add_field_method_get("ordinal", |_, value| Ok(value.index));
+    }
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(mlua::MetaMethod::ToString, |_, value, ()| {
             Ok(format!("owner-spawn-reference:{}", value.index))
@@ -91,6 +94,24 @@ pub(super) fn install<'scope>(
                 *old = spawn;
                 Ok(())
             })
+        })?,
+    )?;
+    host.set(
+        "motion_contact",
+        scope.create_function(move |lua, id: Value| {
+            let value = checked(rejected, || {
+                context
+                    .motion_contact(handles::entity_value(id)?)
+                    .map_err(|_| "owned motion contact unavailable")
+            })?;
+            value
+                .map(|value| gameplay::events::motion_contact(lua, &value))
+                .transpose()
+                .inspect_err(|_| {
+                    rejected
+                        .borrow_mut()
+                        .get_or_insert("motion contact projection failed");
+                })
         })?,
     )?;
     host.set(

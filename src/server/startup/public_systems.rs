@@ -74,9 +74,25 @@ struct OwnerWorldView<'a> {
     chunks: &'a [Arc<crate::world::Chunk>],
     entities: Option<Vec<api::OwnedEntity>>,
     motion: std::collections::BTreeMap<u64, bloxgloom_host_api::motion::Motion>,
+    contacts: std::collections::BTreeMap<u64, bloxgloom_host_api::motion::MotionContact>,
     catalog: &'a crate::content::Catalog,
 }
 impl api::WorldRead for OwnerWorldView<'_> {
+    fn motion_contact(
+        &self,
+        id: u64,
+    ) -> Result<
+        Option<bloxgloom_host_api::motion::MotionContact>,
+        bloxgloom_host_api::gameplay::Error,
+    > {
+        if self.entities.is_none() {
+            return Err(bloxgloom_host_api::gameplay::Error::Invalid(
+                "motion reads require captured entities".into(),
+            ));
+        }
+        Ok(self.contacts.get(&id).cloned())
+    }
+
     fn motion(
         &self,
         id: u64,
@@ -186,6 +202,7 @@ impl SystemHandler for Adapter {
                     })
                     .collect()
             });
+            let mut contacts = std::collections::BTreeMap::new();
             let motion = job
                 .world_entities()
                 .unwrap_or(&[])
@@ -201,11 +218,15 @@ impl SystemHandler for Adapter {
                         snapshot.private_payload.downcast_ref::<Vec<u8>>()?,
                     )
                     .ok()?;
+                    if let Some(contact) = record.contact_state() {
+                        contacts.insert(snapshot.id.get(), contact);
+                    }
                     Some((snapshot.id.get(), record.motion))
                 })
                 .collect();
             OwnerWorldView {
                 motion,
+                contacts,
                 chunks: job.world_chunks(),
                 entities,
                 catalog,

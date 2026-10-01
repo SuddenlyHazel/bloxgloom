@@ -37,6 +37,15 @@ pub enum Target {
     Terrain { cell: [i32; 3], state: String },
     Entity { id: u64, revision: u64 },
 }
+/// Owned captured contact at the current motion revision. This is host input,
+/// not a command or a client reconstruction.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionContact {
+    pub motion_revision: u64,
+    pub tick: u64,
+    pub target: Target,
+    pub normal: [f32; 3],
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExpiryReason {
     Lifetime,
@@ -78,6 +87,15 @@ pub struct Record {
     pub state: Vec<u8>,
 }
 impl Record {
+    pub fn contact_state(&self) -> Option<MotionContact> {
+        Some(MotionContact {
+            motion_revision: self.motion.revision,
+            tick: self.simulation_tick,
+            target: self.contact.clone()?,
+            normal: self.contact_normal?,
+        })
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>, RegistrationError> {
         self.validate()?;
         let mut out = vec![1];

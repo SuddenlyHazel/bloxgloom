@@ -130,3 +130,40 @@ fn every_public_removal_cause_preserves_its_exact_luau_context() {
         assert!(fields.is_readonly() && cell.is_readonly() && block.is_readonly());
     }
 }
+
+#[test]
+fn captured_motion_contact_preserves_exact_readonly_target_and_revision() {
+    let lua = Lua::new();
+    let exact = (1u64 << 60) + 9;
+    let contact = bloxgloom_host_api::motion::MotionContact {
+        motion_revision: exact,
+        tick: exact + 1,
+        target: bloxgloom_host_api::motion::Target::Entity {
+            id: exact + 2,
+            revision: exact + 3,
+        },
+        normal: [0.0, 1.0, 0.0],
+    };
+    let value = motion_contact(&lua, &contact).unwrap();
+    assert_eq!(
+        crate::server::script::handles::revision_value(value.get("motion_revision").unwrap())
+            .unwrap(),
+        exact
+    );
+    let target = value.get::<Table>("target").unwrap();
+    assert_eq!(
+        crate::server::script::handles::entity_value(target.get("entity").unwrap()).unwrap(),
+        exact + 2
+    );
+    assert_eq!(
+        crate::server::script::handles::revision_value(target.get("revision").unwrap()).unwrap(),
+        exact + 3
+    );
+    assert!(
+        value.is_readonly()
+            && target.is_readonly()
+            && value.get::<Table>("normal").unwrap().is_readonly()
+    );
+    lua.globals().set("contact", value).unwrap();
+    assert!(lua.load("contact.target.entity = nil").exec().is_err());
+}

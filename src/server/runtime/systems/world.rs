@@ -168,12 +168,23 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
-    let moving_ids = entities
-        .mobile_ids_of_types(
-            catalog.moving_entities().map(|(id, _)| id),
-            crate::server::entities::motion::MAX_BODIES,
-        )
-        .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?;
+    let has_moving_spawns = patches.iter().any(|patch| {
+        OwnerEffectPatch::entity_spawns(patch).iter().any(|spawn| {
+            catalog
+                .entity_type_id_by_key(&spawn.key)
+                .is_some_and(|id| catalog.moving_entity(id).is_some())
+        })
+    });
+    let moving_ids = if has_moving_spawns {
+        entities
+            .mobile_ids_of_types(
+                catalog.moving_entities().map(|(id, _)| id),
+                crate::server::entities::motion::MAX_BODIES,
+            )
+            .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?
+    } else {
+        Vec::new()
+    };
     let mut moving_total = moving_ids.len();
     let mut moving_chunks = std::collections::BTreeMap::new();
     for id in moving_ids {
@@ -218,7 +229,17 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                             .entity_type_id_by_key(&spawn.key)
                             .is_some_and(|id| catalog.moving_entity(id).is_some())
                         {
-                            1536
+                            usize::from(
+                                catalog
+                                    .gameplay_entity(&spawn.key)
+                                    .ok_or_else(|| {
+                                        io::Error::new(
+                                            ErrorKind::InvalidInput,
+                                            "missing moving schema",
+                                        )
+                                    })?
+                                    .max_state_bytes,
+                            )
                         } else {
                             1024
                         }

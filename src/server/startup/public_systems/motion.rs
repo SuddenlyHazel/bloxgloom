@@ -70,6 +70,9 @@ pub(super) fn prepare(
             return Err(reject("owner entity was not captured"));
         };
         if catalog.is_some_and(|catalog| catalog.moving_entity(snapshot.entity_type).is_some()) {
+            if state.len() > 1024 {
+                return Err(reject("owner moving payload exceeds 1024 bytes"));
+            }
             let mut record = Record::decode(
                 snapshot
                     .private_payload

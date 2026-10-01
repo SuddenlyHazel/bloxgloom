@@ -38,6 +38,10 @@ pub struct Context<'a> {
 /// Authoritative, bounded world input captured before the owner job starts.
 /// An out-of-scope or unloaded cell is unavailable, never procedural air.
 pub trait WorldRead {
+    fn motion_contact(&self, _id: u64) -> Result<Option<crate::motion::MotionContact>, Error> {
+        Err(Error::Invalid("motion contact reads not declared".into()))
+    }
+
     /// Captured owned motion; requires reads_entities. Absence is fenced too.
     fn motion(&self, _id: u64) -> Result<Option<crate::motion::Motion>, Error> {
         Err(Error::Invalid("motion reads not declared".into()))
@@ -52,6 +56,12 @@ pub trait WorldRead {
 }
 
 impl Context<'_> {
+    pub fn motion_contact(&self, id: u64) -> Result<Option<crate::motion::MotionContact>, Error> {
+        self.world
+            .ok_or_else(|| Error::Invalid("world reads not declared".into()))?
+            .motion_contact(id)
+    }
+
     pub fn motion(&self, id: u64) -> Result<Option<crate::motion::Motion>, Error> {
         self.world
             .ok_or_else(|| Error::Invalid("world reads not declared".into()))?

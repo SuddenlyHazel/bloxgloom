@@ -102,16 +102,39 @@ impl Context<'_> {
         Ok(())
     }
     /// Cancel a stuck owned moving object and its pending reaction atomically.
-    pub fn cancel_moving_entity(&mut self,id:u64)->Result<bool,Error> {
+    pub fn cancel_moving_entity(&mut self, id: u64) -> Result<bool, Error> {
         self.charge()?;
-        if !self.snapshot.admin(){return self.fail(Error::Invalid("admin access denied".into()))}
-        if self.motion(id)?.is_none(){return Ok(false)}
+        if !self.snapshot.admin() {
+            return self.fail(Error::Invalid("admin access denied".into()));
+        }
+        if self.motion(id)?.is_none() {
+            return Ok(false);
+        }
         self.remove_entity(id)
     }
     fn motion_owner(&self) -> Result<&str, Error> {
         self.handler_namespace
             .as_deref()
             .ok_or_else(|| Error::Invalid("motion requires registered owner".into()))
+    }
+    /// Read contact from the same owned captured entity dependency as motion.
+    pub fn motion_contact(
+        &mut self,
+        id: u64,
+    ) -> Result<Option<crate::motion::MotionContact>, Error> {
+        self.charge()?;
+        let owner = self.motion_owner()?.to_owned();
+        let value = match self.snapshot.motion_contact(id, &owner) {
+            Ok(value) => value,
+            Err(error) => return self.fail(error),
+        };
+        if matches!(
+            self.plan.entity_changes.get(&id),
+            Some(super::EntityChange::Remove { .. })
+        ) {
+            return Ok(None);
+        }
+        Ok(value)
     }
     pub fn motion(&mut self, id: u64) -> Result<Option<Motion>, Error> {
         self.charge()?;
