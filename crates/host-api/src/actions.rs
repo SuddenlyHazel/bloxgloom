@@ -8,6 +8,8 @@ mod tests;
 pub use command::{Command, CommandArgument, CommandValue, MAX_COMMAND_ARGUMENTS};
 
 pub const MAX_ACTIONS: usize = 256;
+/// Empty-target commands and ordinary actions have independent bounded pools;
+/// console commands must not consume the generic action menu's capacity.
 pub const MAX_TARGET_ACTIONS: usize = 8;
 pub const MAX_WIDGETS: usize = 8;
 // Tags 2/3/4 are the inventory/mobile/anchored identity envelopes.
@@ -62,7 +64,14 @@ impl Registry {
         action.validate()?;
         if self.0.len() >= MAX_ACTIONS
             || self.0.contains_key(&action.key)
-            || self.discover(&action.target).count() >= MAX_TARGET_ACTIONS
+            || self
+                .discover(&action.target)
+                .filter(|registered| {
+                    action.target != Target::Empty
+                        || registered.command.is_some() == action.command.is_some()
+                })
+                .count()
+                >= MAX_TARGET_ACTIONS
         {
             return Err(RegistrationError(
                 "duplicate action or action capacity exceeded".into(),

@@ -398,3 +398,38 @@ fn typed_player_arguments_preserve_full_width_identity_and_reject_forged_bytes()
     assert!(command.encode_arguments(&["session:1:2"]).is_none());
     assert!(command.encode_arguments(&[&token.to_uppercase()]).is_none());
 }
+
+#[test]
+fn empty_console_commands_do_not_consume_generic_action_capacity() {
+    let mut registry = Registry::default();
+    for index in 0..MAX_TARGET_ACTIONS {
+        let mut ordinary = action(&format!("test:ordinary_{index}"));
+        ordinary.target = Target::Empty;
+        ordinary.operation = Operation::Gameplay;
+        registry.register(ordinary).unwrap();
+        let mut command = action(&format!("test:command_{index}"));
+        command.target = Target::Empty;
+        command.operation = Operation::Gameplay;
+        command.command = Some(Command {
+            permission: CommandPermission::Admin,
+            arguments: vec![CommandArgument::Count { default: None }],
+        });
+        registry.register(command).unwrap();
+    }
+    assert_eq!(
+        registry.discover(&Target::Empty).count(),
+        MAX_TARGET_ACTIONS * 2
+    );
+    for is_command in [false, true] {
+        let mut overflow = action("test:overflow");
+        overflow.target = Target::Empty;
+        overflow.operation = Operation::Gameplay;
+        if is_command {
+            overflow.command = Some(Command {
+                permission: CommandPermission::Admin,
+                arguments: vec![],
+            });
+        }
+        assert!(registry.register(overflow).is_err());
+    }
+}

@@ -81,7 +81,8 @@ impl Catalog {
         &self,
         target: &Target,
     ) -> impl Iterator<Item = &Arc<Action>> + use<'_> {
-        // At most 256 entries inspected, at most 8 returned. Canonical key order
+        // At most 256 entries inspected: 8 per target, or 8 commands plus 8
+        // ordinary actions for Empty. Canonical key order
         // defines precedence independently of extension registration order.
         self.actions.discover(target)
     }

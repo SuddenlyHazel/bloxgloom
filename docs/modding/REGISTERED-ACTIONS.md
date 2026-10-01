@@ -131,7 +131,8 @@ admission; remove-and-restore of the same block type is still stale. A client
 version cannot authorize an edit. Other targets retain tag 5 or their existing
 identity-fenced envelopes.
 
-Bounds: 256 action definitions, 8 actions per target, 8 widgets per panel, 128-byte
+Bounds: 256 action definitions, 8 actions per target (empty targets have separate
+8-command and 8 ordinary-action pools), 8 widgets per panel, 128-byte
 action keys, 239-byte fixed policy requests, 4 bytes of inventory-control arguments.
 The canonical registered request codec allows up to 130 argument bytes for
 gameplay actions (enough for a two-byte count plus a 128-byte content key),
