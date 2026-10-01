@@ -101,3 +101,28 @@ Clouds darken the sky and outdoor skylight, with slow continuous advection.
 Lightning changes sky illumination without creating light inside sealed caves.
 There is no particle collision simulation, wetness, snow, biome climate, regional
 rainfall, gameplay weather effect or script weather API yet.
+
+## Acceptance evidence
+
+The final all-feature workspace run passed 1,391 application tests and 46 host-API
+tests (1,437 total), with five opt-in tests ignored. The 22 focused weather tests
+also passed. Coverage includes real nonblocking listener admission, shared updates
+and admin denial, persistent transitions, rotated-WAL recovery, elapsed-clock
+continuity during durable writes, deterministic scheduling and regional strikes,
+wire validation, shelter/roof clipping, stale-strike suppression, audio source
+fades and session resets. Existing block-placement and player-lifecycle examples
+remain covered by the full suite.
+
+Formatting and strict all-target/all-feature Clippy passed. Final production
+previews were rendered and inspected, including sheltered scenes using the roof
+grid. Rain remains outside the ceiling, and sealed-cave lightning stays dark.
+
+On the Apple M1 Pro, the release `perf 300 6` baseline retained 320,236 vertices,
+480,354 indices and 18,573,688 mesh/upload bytes. Scene setup was 2,336.6 ms.
+Steady CPU p50/p95/p99 were 0.310/0.440/0.567 ms; GPU values were
+0.251/0.388/0.408 ms. The preceding audio-foundation run had 2,328.1 ms setup,
+CPU p50/p95 0.312/0.468 ms and GPU 0.293/0.407 ms with identical geometry.
+These separate runs are historical comparisons, not statistically controlled
+performance changes. This headless clear-weather benchmark excludes presentation,
+live audio, client shelter sampling and active rain; bounded rain geometry and
+weather sound behavior are verified separately above.
