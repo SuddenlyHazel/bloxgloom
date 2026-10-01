@@ -1,29 +1,29 @@
 # Graph Report - bloxgloom  (2026-10-01)
 
 ## Corpus Check
-- 1109 files · ~1,776,302 words
+- 1112 files · ~1,778,604 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 50 file(s) not represented in the graph (top: .glb 14, .mesh 13, .wgsl 11)
+- Unclassified: 51 file(s) not represented in the graph (top: .glb 14, .mesh 13, .wgsl 12)
 
 ## Summary
-- 15050 nodes · 35304 edges · 795 communities (496 shown, 299 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 1927 edges (avg confidence: 0.85)
+- 15074 nodes · 35338 edges · 826 communities (532 shown, 294 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 1929 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b5a893f8`
+- Built from commit: `bf2f2f3b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- EntityTypeDescriptor
+- content
 - EntityStore
 - Port<P>
 - super
 - render_previews
-- common.rs
+- spawn_drop
 - world_to_chunk
-- temp_save_dir
+- add_test_client
 - output.rs
 - OwnerData
 - server/runtime/tests.rs
@@ -33,7 +33,7 @@
 - scheduler.rs
 - server/durable.rs
 - view
-- OwnerKey
+- PendingWakeStore
 - SystemId
 - rain.rs
 - PackageSnapshot
@@ -45,14 +45,14 @@
 - WorldSnapshot
 - MobileProbe
 - receipts.rs
-- RegistrationError
+- record.rs
 - handler.rs
 - Handler
 - ui/draw.rs
 - SystemRuntime
 - server_state_with_startup
-- EntityIndexes
 - EntityError
+- .show_status
 - Error
 - intent.rs
 - JoinApp
@@ -61,18 +61,18 @@
 - lifecycle-fixture/src/machine.rs
 - BlockActionContext
 - drops/planning.rs
-- Payload
+- MobileEntity
 - Renderer
 - UiLayout
 - server/fire/tests.rs
-- EntitySnapshot
+- VoxelView
 - server/effects.rs
 - protocol/tests.rs
 - bench.rs
 - intent/tests.rs
-- ClientApp
-- Replicas
-- Item
+- src/client.rs
+- PublicEntity
+- Tag
 - ServerStartup
 - script.rs
 - Registrar
@@ -81,28 +81,28 @@
 - parallel.rs
 - perf/fixture.rs
 - World
-- UiFrame<'_>
+- time
 - actions/entity.rs
 - PalettedBlocks
 - server/entities/tests.rs
 - conflict_tests.rs
 - GenerationError
-- lifecycle-fixture/src/system.rs
+- perf/report.rs
 - perf/fire.rs
 - ChunkCache
 - ClientMessage
-- PublicEntity
+- protocol/entities.rs
 - install
 - key
 - reactor.rs
-- Config
+- Chunk
 - .begin_window_install
 - src/world.rs
 - InventoryStore
 - Change
 - TickSample
 - tcp.rs
-- Pending
+- Item
 - GameUi
 - Diagnostics
 - owner/tests.rs
@@ -119,18 +119,18 @@
 - CommitAction
 - third_person.rs
 - package/client.rs
-- VoxelView
+- voxel_view.rs
 - Attempt
 - durable/state.rs
 - VisualAvatar
-- streaming.rs
+- dispatch.rs
 - menus.rs
 - solver.rs
 - terrain.rs
-- CharacterPreview
+- deviceext
 - ComponentMatch
 - ChunkLoader
-- Journal
+- journal.rs
 - script_startup/system.rs
 - Session
 - world/tests.rs
@@ -156,17 +156,17 @@
 - effects/registered.rs
 - host-api/src/actions.rs
 - startup/tests.rs
-- Procedural
+- Rng
 - presentation.rs
 - render/mesh.rs
-- sync
+- Buffer
 - Session
-- Registered anchored behavior
+- server/movement.rs
 - drops/entity.rs
 - MovingSpawn
 - world/generation.rs
 - publication/commit.rs
-- owner_durable/tests.rs
+- entities/types.rs
 - StorageOwner
 - HandlerRegistration
 - InventoryScreen
@@ -184,23 +184,23 @@
 - receive_content_manifest
 - entity_checkpoint/tests.rs
 - render/effects.rs
-- .finish
+- plan
 - view.rs
 - drops/queries.rs
-- EntityPublicView
-- host-api/src/machine.rs
+- entities/player.rs
+- Adapter
 - gameplay/decisions.rs
-- package
+- entities/persistence.rs
 - handles.rs
-- Engine
+- Execution
 - systems/world.rs
 - Capture
 - custom.rs
 - init
 - Scripting capabilities for mod developers
 - Composition
-- public/tests.rs
-- lighting.rs
+- inventory
+- OwnerEffectPatch
 - .bind_machine
 - UiRenderer
 - AnchoredBlockEntity
@@ -225,30 +225,30 @@
 - client/startup.rs
 - VisualFire
 - render/tests.rs
-- machine_component_tests.rs
+- entity
 - character_asset.rs
 - World
-- Writer
+- declarations/moving/tests.rs
 - SystemDescriptor
 - neighborhood.rs
 - script_startup/gameplay/profile_state.rs
 - CoordinatorContext
 - invoke
 - MovingEntity
-- .register
+- EffectKindId
 - wake.rs
-- install
-- Bindings
+- invalid
+- authored/bindings.rs
 - snapshots.rs
 - Preparation
 - prepare
 - src/preview.rs
-- Ignitions
+- stage
 - position_store.rs
 - creature/services.rs
 - draw
 - Context<'_>
-- fs
+- durable/checkpoint.rs
 - bounded.rs
 - script_startup/appearance.rs
 - pipeline.rs
@@ -259,22 +259,22 @@
 - server/appearance.rs
 - script_startup.rs
 - script_startup/bundle.rs
-- invalid
+- owner_codec.rs
 - script/generation.rs
-- request_chunk
+- prepared_deltas
 - authored.rs
 - src/composition.rs
 - Patrol
-- ClientBundle
+- ScriptError
 - client/lifecycle/tests.rs
 - parse
 - Cross-cutting integration findings
 - package/tests.rs
-- mlua
-- Adapter
+- ScriptAnchored
+- process_movement_batch
 - crate
 - State
-- Stack
+- lifecycle-fixture/src/system.rs
 - EntityTransferPolicy
 - Resources
 - Gpu
@@ -282,13 +282,13 @@
 - resolve_nodes
 - FootprintCell
 - system/intents.rs
-- validate_spawn_volume
+- ObserverRegistration
 - client/world.rs
 - registry/tests.rs
-- Hit
+- world
 - Imports
-- OwnerState
-- Transaction
+- OwnerApplyReceipt
+- decode_transaction
 - EventRealm
 - package/manifest.rs
 - Observations
@@ -297,42 +297,42 @@
 - System
 - Scripting Gap Closure Plan
 - ScriptMachine
-- invalid
+- CacheKey
 - Invalid
 - files.rs
 - Wander
 - StorageBlockEntity
-- AvatarRenderer
+- Extension
 - server/checkpoint/tests.rs
 - integer
 - route_registered_effects
 - tests/client.rs
-- runtime/memory.rs
+- mlua
 - ItemIcon
 - Adapter
-- validate_changes
+- script_startup/anchored.rs
 - Harvest
 - Mixer
-- EffectConsumerOutput
+- Self
 - position_store/tests.rs
 - declarer
 - Inputs
-- CharacterRecipe
+- bundle/memory.rs
 - script/capacity.rs
 - EntityDependencies
 - Downloads
 - Replace
 - SignalPost
-- EntityClientRegistry
-- itemid
+- EntityAdapter
+- inventory/container.rs
 - src/storage.rs
 - BootstrapContract
 - _
-- script_startup/anchored.rs
-- client_metadata.rs
-- ServerMessage
+- script_startup/gameplay/player_inventory.rs
+- ReplicationProbe
+- Stack
 - raycast_blocks
-- CodecProbe
+- Payload
 - Catalog
 - .spawn
 - script_startup/gameplay/entities.rs
@@ -345,25 +345,25 @@
 - .entity_type_id_by_key
 - queries/tests.rs
 - Player
-- .bind_mobile
+- .accept
 - 2. Player and lifecycle hooks
-- invoke
-- declarer
+- Encoder
+- Input
 - script_startup/generation.rs
 - server/gameplay/entities.rs
-- aggregate.rs
+- Config
 - streaming/entities.rs
 - publication.rs
 - src/actions/tests.rs
 - Shared<T>
-- Execution
-- journal/recovery.rs
+- extension_lifecycle.rs
+- tick/tests.rs
 - player_services/tests.rs
 - Bloxgloom interface plan
 - EntityCodecError
 - reaction_removal_tests.rs
-- nearest_unsent
-- Registry
+- navigation.rs
+- .bind_mobile
 - commands.rs
 - script_startup/player.rs
 - owner_wave/tests.rs
@@ -374,10 +374,10 @@
 - .window_event
 - drop_merge.rs
 - colliders.rs
-- coordinator/tests.rs
+- atomic
 - anchored_tests.rs
 - .handle
-- time
+- declarer
 - test_convert.py
 - clearance.rs
 - decode
@@ -388,57 +388,57 @@
 - journal/tests.rs
 - generation
 - coder.md
-- Behavior
+- validate_spawn_volume
 - coder-fast.md
 - script_startup/machine.rs
-- install
-- record.rs
-- .handle
+- kiln/codec.rs
+- host-api/src/machine.rs
+- EffectConsumerScratch
 - .draw_node
 - outbound/tests.rs
 - decode
-- join_named_client
+- spawn.rs
 - GpuPass
 - client/entities/kiln.rs
 - declarer
 - fields_with_command
-- PlayerDecision
+- invoke
 - .plan
-- plan
-- owner_commit/tests.rs
+- actions/workstation.rs
+- io
 - resolve_player_movement
-- render_avatars
+- avatars/tests.rs
 - generate-pressure.py
 - MobilePages
 - plan_observed_request
-- items.rs
+- Behavior
 - declarer
 - prepare_recovery
 - State
 - run_perf_benchmark_async
-- declarer
+- streaming.rs
 - render_previews_weather
-- Flat
+- declarer
 - validate
 - notifications.rs
 - render/effects/tests.rs
 - .new
 - chunk_loader/tests.rs
 - Public dynamic-entity surface
-- .public_view
+- Bindings
 - coordinates
-- collections
-- client/admin.rs
+- Reservation
+- .activate_control
 - render
 - Archived plans and audits
-- clip.rs
-- .fail_session
+- .load
+- ClientApp
 - .compose_current_package_action_with_args
 - Candidate
-- .get
-- Registered actions and composed controls
+- UiFrame<'_>
+- config.rs
 - .validate_player_selection
-- plan_changes
+- .advance
 - OwnerWorldView
 - visual/tests.rs
 - CharacterAsset
@@ -447,12 +447,12 @@
 - custom/tests.rs
 - General anchored block entities
 - join_lifecycle.rs
-- authored/bindings.rs
+- cold.rs
 - script_startup/moving.rs
 - quad
 - write_frame
 - script_startup/gameplay/inventory.rs
-- .generate
+- WorldTime
 - slots
 - Control
 - DroppedItem
@@ -462,21 +462,21 @@
 - run_loop
 - Agent guidance
 - startup/moving/tests.rs
-- ScriptError
-- tests/writer.rs
-- .decode
-- avatars/appearance.rs
+- owner_durable/tests.rs
+- config/tests.rs
+- Startup
+- glam
 - resources.rs
-- ObserverRegistration
+- Committed
 - package
 - public_systems/motion/tests.rs
 - recipe_browser.rs
 - client/appearance.rs
 - actors/tests.rs
-- .rotate_using
+- .owner_systems
 - reviewer.md
-- script_startup/machine/variants.rs
-- std
+- CharacterPreview
+- prepare_recovery
 - .install_egui
 - bloxgloom
 - blocks/SOURCES.md
@@ -488,157 +488,189 @@
 - ui-target-actions/packages/uitarget/assets/fonts/FONT.md
 - palette/tests.rs
 - plan_inner
-- ReplicationProbe
-- version_two
+- src/client/tests.rs
+- colliders/tests.rs
 - src/audio.rs
 - duration
 - declarer
-- invalid
+- install
 - time.rs
 - Resampler
-- Biquad
-- Spawn
+- PlayerDecision
+- admin/tests.rs
 - gameplay/admin.rs
-- src/client/tests.rs
+- EffectBuffer
 - route_effects
 - app
-- EffectConsumerScratch
+- client_metadata.rs
 - InventoryWorkers
 - require
 - SCRIPTING.md
 - Larger Luau packages and independent simulation features
 - client/observations/tests.rs
 - Context<'_>
-- MachinePayload
+- refund_stacks
 - Player lifecycle implementation
-- mpsc
+- TransferSelection
 - PlayerState
-- bloxgloom_host_api
-- declarations/moving/tests.rs
-- materials.rs
+- ui/tests.rs
+- moving/lifecycle.rs
+- Compiled
 - presentation/effects/tests.rs
-- script_startup/machine/components.rs
-- prepare
-- farming.rs
+- LifecyclePlan
+- Reaction
+- entities
 - server/drops.rs
-- InventorySearch
+- SpawnReceipt
 - Modding: start here
-- Extension
+- Behavior
 - welcome/assets/fonts/FONT.md
 - drop_pickup.rs
 - visual_contracts.rs
 - visit
 - Typed client replica snapshots
-- Chunk
-- receipts/tests.rs
+- predict_player_movement_with_stance
+- Presentation
 - Registered content and composition
-- bundle_ui.rs
+- load.rs
 - AppearanceState
-- EffectKindId
+- EffectKindRegistryFrozen
 - Dynamic authored UI and input
-- EffectBuffer
+- .public_view
 - create_target_pipeline
-- decode
-- deviceext
+- invalid
+- session_ids.rs
 - declarer
 - memory/tests.rs
-- Compiled
-- Atlas
-- .generate_budgeted
+- coordinator/tests.rs
+- decode
+- materials.rs
+- .generate
 - Authoritative moving entities
-- entities/mossbun.rs
-- loot.rs
-- transfer
-- extension_system.rs
+- combined/mixed.rs
+- entities/moving_tests.rs
+- gameplay
+- Atlas
 - CharacterRenderer
-- Capture
-- script_startup/drop_policy.rs
+- State
+- Resolved
 - render_block_preview
 - render_daylight_previews
 - typed_recipe.rs
 - Authored player vertical slice
 - LocalIndex
 - record
-- Client audio foundation
+- Game weather foundation
 - seed
-- .new
+- ServerMessage
 - presentation/observations/tests.rs
-- visibility.rs
-- Runtime
+- prepare
+- DropPolicy
 - face/README.md
 - FireAnimator
-- .append_batch
-- content/manifest.rs
-- present
-- Startup
-- key
-- texture
-- server/weather/tests.rs
+- version_two
+- PackageActionProbe
+- script_startup/machine/components.rs
+- Appearance
+- .handle
+- world_time/tests.rs
+- EffectBuffer
 - WorkstationView
-- Resolved
-- io
+- Spawn
+- journal/recovery.rs
 - menus/tests.rs
 - state
 - .from_builtin_parts
-- simulation
+- mpsc
 - declarer
 - validate_sources
 - Luau VM lifetime and module state
 - Budget
-- src/appearance.rs
-- OwnerEffectPatch
-- content
-- crouch.rs
+- decode
+- Procedural
+- stack
+- tests/anchored.rs
 - render_weather_previews
-- prepare
-- system/decisions.rs
+- std
+- visibility.rs
 - .register_inventory_screen
-- publication/tests.rs
+- receipts/tests.rs
 - Public storage lifecycle boundary
-- vm_latency.rs
-- saturating_wake_emitter
+- farming.rs
+- transfer
 - content/moving/tests.rs
-- progress_rotation
-- weather/codec.rs
-- Game weather foundation
+- sync
+- Cadence
+- .rotate_using
 - Registered inventory views and screens
+- bundle_ui.rs
 - passes
 - render/weather/tests.rs
-- EffectLimits
-- Registered inventory machines
-- gameplay
+- join_named_client
+- script_startup/drop_policy.rs
+- .handle
 - .sample_gameplay
 - prepare
-- bundle_runtime.rs
+- .inventory_policies
 - register
-- WorldTime
-- tcp/report.rs
+- server/movement/teleport.rs
+- texture
+- writer_loop
 - entities/motion.rs
-- Cadence
-- Definitions, assets, and composition
+- plan_event
+- decode
+- .run
+- .new
 - src/motion/tests.rs
-- Committed
-- tests/effects.rs
-- avatars/moving_tests.rs
-- Clock
-- metadata
-- session_ids/tests.rs
-- states
-- Catalog
-- declarations/budget.rs
-- .handle
-- Session
-- validate
-- render/camera/tests.rs
+- server/perf.rs
+- server/weather/tests.rs
+- Runtime
 - script/tests.rs
+- validate_changes
+- Clock
+- session_ids/tests.rs
+- system/decisions.rs
+- prepare
+- transfer/tests.rs
+- Catalog
+- .place_or_interact
+- avatars/mesh.rs
+- .handle
+- Registered anchored behavior
+- validate
+- .frame
+- Registered actions and composed controls
+- Registered inventory machines
+- .encode
 - .aimed_mobile
 - decode
-- benchmarks.rs
-- transfer/tests.rs
+- instant
+- src/daylight.rs
+- present
+- .prepare_benchmark_frontier_wave
+- tests/effects.rs
+- crouch.rs
+- Client audio foundation
+- State
+- avatars/moving_tests.rs
+- extension_system.rs
 - active.rs
+- probe_request
+- .attempt
+- script_startup/machine/variants.rs
 - engine/tests.rs
-- inbox
 - modding/README.md
+- entities/mossbun.rs
+- vm_latency.rs
+- metadata
+- weather/codec.rs
+- EffectLimits
+- .recipe
+- fog.rs
+- progress_rotation
+- TypedEffectKind<P, M, V, D, C>
+- Codec
+- appearance/operations.rs
 
 ## God Nodes (most connected - your core abstractions)
 1. `EntityError` - 235 edges
@@ -661,8 +693,8 @@
   docs/modding/RUNTIME-TOOLS.md → tools/character_assets/convert.py
 - `Runtime, delivery and save compatibility` --references--> `require()`  [INFERRED]
   SCRIPTING.md → tools/character_assets/convert.py
-- `Durable owner systems` --references--> `module()`  [INFERRED]
-  SCRIPTING.md → fixtures/farming-scale/generate.py
+- `private_entity_overlay_does_not_authorize_the_next_decision_owner()` --calls--> `Probe`  [INFERRED]
+  crates/host-api/src/gameplay/tests.rs → extensions/lifecycle-fixture/src/system.rs
 
 ## Import Cycles
 - 2-file cycle: `src/server/script/runtime.rs -> src/server/script/runtime/diagnostics.rs -> src/server/script/runtime.rs`
@@ -674,15 +706,15 @@
 - 3-file cycle: `src/server/parallel.rs -> src/server/parallel/owner_wave.rs -> src/server/registry.rs -> src/server/parallel.rs`
 - 4-file cycle: `src/server.rs -> src/server/net.rs -> src/server/net/reactor.rs -> src/server/net/reactor/connection.rs -> src/server.rs`
 
-## Communities (795 total, 299 thin omitted)
+## Communities (826 total, 294 thin omitted)
 
-### Community 0 - "EntityTypeDescriptor"
+### Community 0 - "content"
 Cohesion: 0.05
-Nodes (19): AnchorEchoTick, BadTick, CounterInteract, CounterTick, FarReadTick, PlayerEchoTick, PokeBlind, PokeConsumer (+11 more)
+Nodes (12): register(), EntityBlockStateChange, EntityInteractionPlan, EntityInteractionPolicy, EntityPayloadCodec, EntityTypeDescriptor, EntityTypeRegistration, EntityTypeRegistryBuilder (+4 more)
 
 ### Community 1 - "EntityStore"
-Cohesion: 0.06
-Nodes (39): encode_allocator_value(), encode_durable_record_value(), encode_motion_value(), validate_ownership_mode(), allocator_state_key(), apply_operation_to_projection(), canonical_location(), cell_state_key() (+31 more)
+Cohesion: 0.07
+Nodes (38): encode_allocator_value(), encode_motion_value(), allocator_state_key(), apply_operation_to_projection(), canonical_location(), cell_state_key(), chunk_state_key(), collect_operations() (+30 more)
 
 ### Community 2 - "Port<P>"
 Cohesion: 0.13
@@ -690,31 +722,31 @@ Nodes (6): block(), Interaction, Interaction<P>, Port, Port<P>, public_slots()
 
 ### Community 3 - "super"
 Cohesion: 0.02
-Nodes (10): abandoned_result_retires_transport(), completed_result_can_still_be_cancelled(), failure_and_retry_dispatch(), CYCLE_MS, INITIAL_MS, v2_inventory_preserves_wide_item_id_and_rejects_v1(), HAIR_MESHES, Codec (+2 more)
+Nodes (11): abandoned_result_retires_transport(), completed_result_can_still_be_cancelled(), failure_and_retry_dispatch(), HAIR_MESHES, broadcast(), clear(), mixed_runtime_catalog_joins_restarts_and_remaps_saved_identities_without_execution(), packages() (+3 more)
 
 ### Community 4 - "render_previews"
 Cohesion: 0.31
 Nodes (23): render_avatar_preview(), render_character_motion(), render_character_preview(), render_character_styles(), render_chest_previews(), render_creature_preview(), render_drop_animation_previews(), render_drop_preview() (+15 more)
 
-### Community 5 - "common.rs"
-Cohesion: 0.08
-Nodes (37): action_result(), drain_durable(), drop_active_len(), drop_candidates(), drop_nearby(), drop_stack(), reside_neighbourhood(), spawn_drop() (+29 more)
+### Community 5 - "spawn_drop"
+Cohesion: 0.09
+Nodes (38): drain_durable(), drop_active_len(), drop_candidates(), drop_nearby(), drop_stack(), reside_neighbourhood(), spawn_drop(), stage_entity_batch() (+30 more)
 
 ### Community 6 - "world_to_chunk"
-Cohesion: 0.13
-Nodes (42): public_spawn_and_self_removal_are_one_atomic_recoverable_transaction(), bin_catalog(), bin_count(), bin_startup(), BinPayload, BinPullTick, coordinator_drain_preserves_deferred_entity_tick_until_commit(), drive_poke_tick() (+34 more)
+Cohesion: 0.10
+Nodes (65): unrecoverable_anchored_outputs_are_rejected_before_admission_and_valid_state_recovers(), hopper_push_is_atomic_conflict_checked_and_resumes_after_full_destination(), registered_machine_ports_reject_wrong_faces_and_forged_destination_without_item_changes(), public_spawn_and_self_removal_are_one_atomic_recoverable_transaction(), plan_durable_request(), action_without_an_authoritative_handler_fails_before_world_creation(), register_probe(), registered_block_observation_is_required_and_remains_fenced_at_admission() (+57 more)
 
-### Community 7 - "temp_save_dir"
-Cohesion: 0.07
-Nodes (58): unrecoverable_anchored_outputs_are_rejected_before_admission_and_valid_state_recovers(), coordinator_admits_two_independent_atomic_pickups_before_applying_either(), edit(), external_storage_lifecycle_seam_restart_retries_and_exact_refunds(), external_storage_rejects_blocked_footprint_and_stale_placement_without_debit(), ids(), open(), registered_slot_permissions_are_enforced_by_server_even_for_forged_requests() (+50 more)
+### Community 7 - "add_test_client"
+Cohesion: 0.11
+Nodes (28): edit(), external_storage_lifecycle_seam_restart_retries_and_exact_refunds(), external_storage_rejects_blocked_footprint_and_stale_placement_without_debit(), ids(), open(), registered_slot_permissions_are_enforced_by_server_even_for_forged_requests(), resident(), startup() (+20 more)
 
 ### Community 8 - "output.rs"
 Cohesion: 0.08
 Nodes (16): Controls, apply_latest_controls(), AudioOutput, COMMAND_CAPACITY, fill(), OUTPUT_BATCH, OutputStats, pack_controls() (+8 more)
 
 ### Community 9 - "OwnerData"
-Cohesion: 0.06
-Nodes (12): OwnerCodec, OwnerData, Codec, config(), prepare(), prepare_writes(), OwnerCodecError, OwnerValueCodec (+4 more)
+Cohesion: 0.05
+Nodes (13): OwnerCodec, OwnerData, Codec, config(), prepare(), prepare_writes(), OwnerCodecError, OwnerValueCodec (+5 more)
 
 ### Community 10 - "server/runtime/tests.rs"
 Cohesion: 0.06
@@ -726,27 +758,27 @@ Nodes (39): 10. Custom models: explicitly deferred, 11. Developer workflow and m
 
 ### Community 13 - "OwnerPatch"
 Cohesion: 0.05
-Nodes (13): MAX_EFFECTS_PER_OWNER_JOB, MAX_OWNER_PATCH_BYTES_PER_JOB, MAX_OWNER_PATCH_WRITES_PER_JOB, MAX_OWNER_WAVE_PATCH_BYTES, MAX_OWNER_WAVE_PATCH_WRITES, OwnerJobError, OwnerPatch, OwnerRevision (+5 more)
+Nodes (15): MAX_EFFECTS_PER_OWNER_JOB, MAX_OWNER_PATCH_BYTES_PER_JOB, MAX_OWNER_PATCH_WRITES_PER_JOB, MAX_OWNER_WAVE_PATCH_BYTES, MAX_OWNER_WAVE_PATCH_WRITES, OwnerJob, OwnerJobError, OwnerPatch (+7 more)
 
 ### Community 14 - "scheduler.rs"
-Cohesion: 0.07
-Nodes (21): cursor_lane(), FireRuntime, source_transaction(), FIRE_DELIVERY_SYSTEM_ID, FIRE_LANES, FIRE_SYSTEM_ID, FireCursor, FireLoadMetrics (+13 more)
+Cohesion: 0.06
+Nodes (26): checked_body(), checksum(), finish(), key_bytes(), read_key(), cursor_lane(), FireRuntime, source_transaction() (+18 more)
 
 ### Community 15 - "server/durable.rs"
 Cohesion: 0.06
 Nodes (15): BlockDelta, CHECKPOINT_QUEUE_CAPACITY, CHECKPOINT_WORKERS, DirtyCheckpoint, Durability, FireCheckpointBatch, MAX_DEFERRED_DURABLE_ACTIONS, MAX_DIRTY_CHECKPOINT_BYTES (+7 more)
 
 ### Community 16 - "view"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (15): View, BODY, gravity_accelerates_and_sweeps_to_exact_landing_without_tunneling(), ground_motion_respects_walls_cliffs_seams_and_embedded_edits(), view(), a_new_obstacle_invalidates_the_current_waypoint_before_movement(), choices_are_restartable_latency_independent_and_early_wakes_do_not_step(), creature_follows_route_around_obstacle_and_idles_at_goal() (+7 more)
 
-### Community 17 - "OwnerKey"
-Cohesion: 0.07
-Nodes (27): ChunkKey, OwnerKey, crc32(), decode_owner_wake_key(), decode_wake_value(), encode_wake_value(), invalid_data(), OWNER_WAKE_DOMAIN (+19 more)
+### Community 17 - "PendingWakeStore"
+Cohesion: 0.08
+Nodes (24): crc32(), decode_owner_wake_key(), decode_wake_value(), encode_wake_value(), invalid_data(), OWNER_WAKE_DOMAIN, owner_wake_key(), OWNER_WAKE_MAGIC (+16 more)
 
 ### Community 18 - "SystemId"
-Cohesion: 0.05
-Nodes (41): SystemId, crc32(), decode_cell_value(), decode_cursor_value(), decode_owner_cursor_key(), decode_owner_state_key(), encode_cell_value(), encode_cursor_value() (+33 more)
+Cohesion: 0.06
+Nodes (26): ChunkKey, OwnerKey, SystemId, crc32(), decode_cell_value(), decode_owner_state_key(), encode_cell_value(), owner_state_key() (+18 more)
 
 ### Community 19 - "rain.rs"
 Cohesion: 0.11
@@ -765,108 +797,108 @@ Cohesion: 0.10
 Nodes (32): BLOCK_COUNT, Cursor, Cursor<'a>, frame(), invalid(), key(), MAX_ENTITY_INTERACT_BYTES, MAX_FIRE_BURSTS (+24 more)
 
 ### Community 23 - "Network"
-Cohesion: 0.08
-Nodes (13): ConfigWriter, connect_bundle_probe(), connect_catalog_probe(), connect_inventory_probe(), connect_ui_probe(), connect_visual_probe(), Incoming, Mesher (+5 more)
+Cohesion: 0.10
+Nodes (10): connect_bundle_probe(), connect_catalog_probe(), connect_inventory_probe(), connect_ui_probe(), connect_visual_probe(), Incoming, MesherResult, Network (+2 more)
 
 ### Community 24 - "OutboundFrame"
-Cohesion: 0.08
-Nodes (13): Identity, SharedParts, ClientQueueTelemetry, OUTBOUND_AGGREGATE_BYTE_CAPACITY, OUTBOUND_CLIENT_BYTE_CAPACITY, OUTBOUND_FRAME_CAPACITY, OutboundError, OutboundFrame (+5 more)
+Cohesion: 0.10
+Nodes (11): ClientQueueTelemetry, OUTBOUND_AGGREGATE_BYTE_CAPACITY, OUTBOUND_CLIENT_BYTE_CAPACITY, OUTBOUND_FRAME_CAPACITY, OutboundError, OutboundFrame, OutboundQueue, OutboundTelemetry (+3 more)
 
 ### Community 25 - "StateKey"
-Cohesion: 0.16
-Nodes (13): _journal_domains_are_sorted(), decode_envelope(), domain_tag(), encode_envelope(), filename(), FireCheckpointStore, is_interrupted_temporary(), MAX_FIRE_FILE_BYTES (+5 more)
+Cohesion: 0.11
+Nodes (23): decode_snapshot(), encode_snapshot(), FILE_NAME, MAGIC, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_KEYS, read_snapshot_file(), TEMP_SEQUENCE (+15 more)
 
 ### Community 26 - "WorldSnapshot"
 Cohesion: 0.07
 Nodes (10): block(), combine_entities(), dispatch_neighbors(), error(), OperationInput, Participants, plan_removals(), plan_with_lifecycles() (+2 more)
 
 ### Community 27 - "MobileProbe"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (10): MobileProbe, NetworkedVisualProbe, console_commands_reject_non_admin_and_recover_grant_over_nonblocking_listener(), creature_probe(), external_creature_spawns_moves_targets_interacts_and_recovers_over_real_listener(), mixed_response_path_keeps_edits_creatures_and_machine_progressing_across_restart(), mixed_work(), response_samples() (+2 more)
 
 ### Community 28 - "receipts.rs"
 Cohesion: 0.11
 Nodes (18): Admission, checksum(), invalid(), MAGIC, MAX_PAYLOAD, MAX_REASON, MAX_SNAPSHOT, ReceiptEvent (+10 more)
 
-### Community 29 - "RegistrationError"
-Cohesion: 0.37
-Nodes (5): Cursor, Cursor<'a>, invalid(), length(), validate_target()
+### Community 29 - "record.rs"
+Cohesion: 0.19
+Nodes (17): Cursor, Cursor<'a>, ExpiryReason, Impact, invalid(), length(), Motion, MotionContact (+9 more)
 
 ### Community 30 - "handler.rs"
-Cohesion: 0.07
-Nodes (15): FireFrontier, FireDeliveryHandler, FireDeliveryInput, FireDeliveryPatch, FireHandler, FireOwnerInput, FireOwnerPatch, MAX_DELIVERIES_PER_OWNER (+7 more)
+Cohesion: 0.05
+Nodes (22): FireFrontier, FireDeliveryHandler, FireDeliveryInput, FireDeliveryPatch, FireHandler, FireOwnerInput, FireOwnerPatch, MAX_DELIVERIES_PER_OWNER (+14 more)
 
 ### Community 31 - "Handler"
-Cohesion: 0.09
-Nodes (19): Handler, Destroy, GroundRemoved, Neighbor, Removed, ChestBreak, CollectDrop, FlowerNeighbor (+11 more)
+Cohesion: 0.11
+Nodes (18): Handler, Destroy, GroundRemoved, Neighbor, Removed, ChestBreak, CollectDrop, FlowerNeighbor (+10 more)
 
 ### Community 32 - "ui/draw.rs"
 Cohesion: 0.10
 Nodes (23): UiBuilder<'_>, UiBuilder<'_>, EDGE, FONT_HEIGHT, FONT_WIDTH, GOLD, inset(), item_color() (+15 more)
 
 ### Community 33 - "SystemRuntime"
-Cohesion: 0.08
-Nodes (8): CommitBarrier, MAX_OWNER_VALUES_PER_SYSTEM, MAX_PENDING_OWNER_WAKES, PendingRegisteredWave, PreparedRegisteredWave, RegisteredWaveInputs, RegisteredWorldInputs, SystemRuntime
+Cohesion: 0.07
+Nodes (10): CommitBarrier, SystemRuntime, MAX_OWNER_VALUES_PER_SYSTEM, MAX_PENDING_OWNER_WAKES, PendingRegisteredWave, PreparedRegisteredWave, RegisteredWaveInputs, RegisteredWorldInputs (+2 more)
 
 ### Community 34 - "server_state_with_startup"
-Cohesion: 0.11
+Cohesion: 0.10
 Nodes (40): tick_once(), server_state_with_startup(), durable_counter_startup(), durable_pair_startup(), durable_twin_startup(), entity_and_owner_state_commit_as_one_atomic_record(), external_neighbor_reads_defer_until_all_chunks_arrive_and_fence_adjacent_edits(), external_owner_can_durably_wake_another_owner_after_restart() (+32 more)
 
-### Community 35 - "EntityIndexes"
-Cohesion: 0.12
-Nodes (14): _entity_cell_key_round_trip(), Bucket, ChunkPage, decode_cell_key(), decode_cell_owner(), decode_chunk_key(), encode_cell_key(), encode_cell_owner() (+6 more)
+### Community 35 - "EntityError"
+Cohesion: 0.11
+Nodes (18): _entity_cell_key_round_trip(), Bucket, ChunkPage, decode_cell_key(), decode_cell_owner(), decode_chunk_key(), encode_cell_key(), encode_cell_owner() (+10 more)
 
-### Community 36 - "EntityError"
-Cohesion: 0.04
-Nodes (50): checked_body(), crc32(), Decoder, Decoder<'a>, Encoder, ENTITY_ALLOCATOR_MAGIC, ENTITY_ALLOCATOR_VERSION, ENTITY_CELL_VALUE_MAGIC (+42 more)
+### Community 36 - ".show_status"
+Cohesion: 0.17
+Nodes (4): escape_screen(), inventory_screen(), ClientApp, UiScreen
 
 ### Community 37 - "Error"
-Cohesion: 0.09
-Nodes (5): cached_profile_inventory_rechecks_each_handler_authority_and_latches_denial(), ignored_failures_cannot_publish_partial_operations(), Inventories, transfers_preserve_components_and_failed_capacity_checks_preserve_both_sides(), World
+Cohesion: 0.08
+Nodes (9): cached_profile_inventory_rechecks_each_handler_authority_and_latches_denial(), handler_random_is_stable_per_seed_cell_and_registration(), ignored_failures_cannot_publish_partial_operations(), Inventories, moving_spawn_references_are_local_and_never_predict_durable_ids(), private_entity_overlay_does_not_authorize_the_next_decision_owner(), staged_motion_rechecks_owner_coalesces_fields_and_rejects_caught_errors(), transfers_preserve_components_and_failed_capacity_checks_preserve_both_sides() (+1 more)
 
 ### Community 38 - "intent.rs"
-Cohesion: 0.09
-Nodes (19): blocked(), decode(), decode_key(), encode(), is_key(), key(), Reader, Reader<'a> (+11 more)
+Cohesion: 0.10
+Nodes (17): blocked(), decode(), decode_key(), encode(), is_key(), Reader, Reader<'a>, collect() (+9 more)
 
 ### Community 40 - "journal/rotation.rs"
 Cohesion: 0.14
-Nodes (37): invalid_data(), Base, BASE_FORMAT_VERSION, BASE_FORMAT_VERSION_LEGACY, BASE_MAGIC, BASE_MAX_BYTES, base_path(), check_checksum() (+29 more)
+Nodes (38): crc32(), invalid_data(), Base, BASE_FORMAT_VERSION, BASE_FORMAT_VERSION_LEGACY, BASE_MAGIC, BASE_MAX_BYTES, base_path() (+30 more)
 
 ### Community 41 - "JobKey"
 Cohesion: 0.13
-Nodes (7): BarrierError, BatchId, CancelError, JobKey, PhaseExecutor<R, E>, SubmitError, F
+Nodes (5): BatchId, CancelError, JobKey, PhaseExecutor<R, E>, SubmitError
 
 ### Community 42 - "lifecycle-fixture/src/machine.rs"
 Cohesion: 0.20
 Nodes (5): Crush, KEY, MARKED_INPUT, REFINED_INPUT, register()
 
 ### Community 43 - "BlockActionContext"
-Cohesion: 0.04
-Nodes (31): BlockActionContext, BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder, BlockActionRegistryBuilder<'a>, BlockCommitBuilder, invoke_hook(), MAX_BLOCK_ACTION_HANDLERS (+23 more)
+Cohesion: 0.07
+Nodes (22): BlockActionContext, BlockActionHooks, BlockActionRegistry, BlockActionRegistryBuilder, BlockActionRegistryBuilder<'a>, BlockCommitBuilder, invoke_hook(), MAX_BLOCK_ACTION_HANDLERS (+14 more)
 
 ### Community 44 - "drops/planning.rs"
 Cohesion: 0.13
 Nodes (25): merge_target(), plan_error(), plan_expired(), plan_spawn_stack(), plan_spawns(), plan_spawns_with_extra(), plan_stack_spawns(), plan_stack_spawns_with_extra() (+17 more)
 
-### Community 45 - "Payload"
-Cohesion: 0.08
-Nodes (17): Animation, Behavior, Body, Context, Cuboid, Error, Lifecycle, MobileEntity (+9 more)
+### Community 45 - "MobileEntity"
+Cohesion: 0.09
+Nodes (16): Animation, Behavior, Body, Context, Cuboid, Error, Lifecycle, MobileEntity (+8 more)
 
 ### Community 46 - "Renderer"
 Cohesion: 0.04
-Nodes (6): next_upload_index(), order_pending_mesh(), Renderer, RendererError, urgent_mesh_reorders_existing_pending_chunk_without_duplication(), create_depth()
+Nodes (7): next_upload_index(), order_pending_mesh(), Renderer, RendererError, RenderStats, urgent_mesh_reorders_existing_pending_chunk_without_duplication(), create_depth()
 
 ### Community 47 - "UiLayout"
-Cohesion: 0.15
-Nodes (7): centered_panel(), effective_ui_scale(), HitRect, UiLayout, UiControl, UiRect, UiScreen
+Cohesion: 0.10
+Nodes (9): InventorySearch, search_rect(), join_action_rect(), centered_panel(), effective_ui_scale(), HitRect, UiLayout, UiControl (+1 more)
 
 ### Community 48 - "server/fire/tests.rs"
 Cohesion: 0.12
 Nodes (32): cursor_key(), frontier_key(), benchmark_frontier_bootstrap_precedes_first_live_fire_tick(), checkpoint_batch_replaces_one_complete_snapshot_and_applies_tombstones(), checkpoint_store_rejects_orphans_and_corruption_and_cleans_interrupted_temp(), chunk(), durable_lane_age_prioritizes_an_owner_deferred_by_wal_pressure(), first_aggregate_write_preserves_legacy_per_key_checkpoints() (+24 more)
 
-### Community 49 - "EntitySnapshot"
-Cohesion: 0.07
-Nodes (9): CapturedColumn, DropTickPlanner, BinExchange, WatcherTick, Planner, Adapter, Adapter, EntityTickPlan (+1 more)
+### Community 49 - "VoxelView"
+Cohesion: 0.06
+Nodes (18): CapturedColumn, DropTickPlanner, spawn_effects(), AnchorEchoTick, BadTick, CounterInteract, CounterTick, FarReadTick (+10 more)
 
 ### Community 50 - "server/effects.rs"
 Cohesion: 0.17
@@ -877,35 +909,35 @@ Cohesion: 0.14
 Nodes (27): read_server(), action_receipts_round_trip_and_reject_invalid_ids(), admin_grant_wire_round_trips_and_rejects_invalid_counts(), catalog_with_many_states(), client_messages_round_trip(), committed_action_spawn_mappings_roundtrip_and_reject_invalid_ordinals(), committed_fire_cues_round_trip_with_a_strict_cell_bound(), content_parts_and_ready_round_trip_with_bounds() (+19 more)
 
 ### Community 52 - "bench.rs"
-Cohesion: 0.07
-Nodes (18): FireApplyTimings, FireRuntime, ACTIVE_CHUNKS, benchmark_cpu(), BenchSave, cell_index(), CHUNKS_X, CHUNKS_Z (+10 more)
+Cohesion: 0.08
+Nodes (17): FireApplyTimings, ACTIVE_CHUNKS, benchmark_cpu(), BenchSave, cell_index(), CHUNKS_X, CHUNKS_Z, FireCpuPhaseReport (+9 more)
 
 ### Community 53 - "intent/tests.rs"
+Cohesion: 0.12
+Nodes (30): durable_intent_bootstrap_capacity_and_cancellation_do_not_leave_orphans(), durable_intent_bootstrap_combines_producers_and_ordinals_without_duplicate_creation(), durable_intent_bootstrap_destination_conflict_retries_one_atomic_record(), durable_intent_bootstrap_existing_destination_wins_and_opt_in_is_required(), durable_intent_bootstrap_prepared_waves_reserve_capacity_across_systems(), cell(), chunk(), durable_intent_bootstrap_chain_gates_creation_retry_forwarding_and_restart() (+22 more)
+
+### Community 54 - "src/client.rs"
+Cohesion: 0.08
+Nodes (14): action_id(), digit_slot(), edit_for_hit(), edit_for_hit_with_catalog(), FRAME, INCOMING_FRAME_BUDGET, Keys, MAX_CHUNKS (+6 more)
+
+### Community 55 - "PublicEntity"
 Cohesion: 0.11
-Nodes (33): due_reschedule_waits_for_receipt_and_deferral_preserves_eligibility(), durable_intent_bootstrap_capacity_and_cancellation_do_not_leave_orphans(), durable_intent_bootstrap_combines_producers_and_ordinals_without_duplicate_creation(), durable_intent_bootstrap_destination_conflict_retries_one_atomic_record(), durable_intent_bootstrap_existing_destination_wins_and_opt_in_is_required(), durable_intent_bootstrap_prepared_waves_reserve_capacity_across_systems(), cell(), chunk() (+25 more)
+Nodes (13): Assembly, MAX_CHUNK_ENTITY_BYTES, MAX_CLIENT_ENTITY_BYTES, MAX_PENDING_BYTES, MAX_PENDING_COMMITS, MAX_PENDING_SNAPSHOTS, PendingCommit, PendingSnapshot (+5 more)
 
-### Community 54 - "ClientApp"
-Cohesion: 0.05
-Nodes (22): action_id(), ActionTracker, chunk_in_view(), ClientApp, command_action_id(), digit_slot(), edit_for_hit(), edit_for_hit_with_catalog() (+14 more)
-
-### Community 55 - "Replicas"
-Cohesion: 0.13
-Nodes (11): Assembly, MAX_CHUNK_ENTITY_BYTES, MAX_CLIENT_ENTITY_BYTES, MAX_PENDING_BYTES, MAX_PENDING_COMMITS, MAX_PENDING_SNAPSHOTS, PendingCommit, PendingSnapshot (+3 more)
-
-### Community 56 - "Item"
-Cohesion: 0.09
-Nodes (17): Block, BlockState, Components, DropPolicy, .BYTE_LEN, .MAX_PICKUP_RANGE, DropAnimation, .BYTE_LEN (+9 more)
+### Community 56 - "Tag"
+Cohesion: 0.21
+Nodes (13): Block, BlockState, FaceTextures, Geometry, Material, Property, Tag, TagKind (+5 more)
 
 ### Community 57 - "ServerStartup"
 Cohesion: 0.11
-Nodes (5): entity_error(), ServerStartup, ServerStartup, StartupEntityType, StartupOwnerCodec
+Nodes (4): entity_error(), ServerStartup, StartupEntityType, StartupOwnerCodec
 
 ### Community 58 - "script.rs"
 Cohesion: 0.09
 Nodes (11): Invocation, Limits, Output, Program, Request, run(), run_with(), ScriptFailure (+3 more)
 
 ### Community 59 - "Registrar"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (3): CubeBlock, Registrar, RegistrationError
 
 ### Community 60 - "client/entities/tests.rs"
@@ -918,23 +950,23 @@ Nodes (30): active_len(), apply_expired(), assert_store_consistent(), drop_world
 
 ### Community 62 - "parallel.rs"
 Cohesion: 0.11
-Nodes (20): CancellationToken, execute_task(), ExecutorConfigError, JobCompletion, JobOutcome, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY, MAX_PHASE_WORKERS (+12 more)
+Nodes (21): BarrierError, CancellationToken, execute_task(), ExecutorConfigError, JobCompletion, JobOutcome, MAX_PHASE_QUEUE_CAPACITY, MAX_PHASE_RESULT_CAPACITY (+13 more)
 
 ### Community 63 - "perf/fixture.rs"
-Cohesion: 0.06
-Nodes (36): ready(), Reset, teleport(), ACTION_INTERVAL, add_clients_and_seed_drops(), DIRT_ITEM, drain_outbound(), DrainTotals (+28 more)
+Cohesion: 0.09
+Nodes (23): ACTION_INTERVAL, add_clients_and_seed_drops(), DIRT_ITEM, drain_outbound(), DrainTotals, DROP_HEIGHTS, install_chunks(), MAX_STEADY_TICKS (+15 more)
 
 ### Community 64 - "World"
 Cohesion: 0.10
 Nodes (6): ChunkKey, ChunkReadStamp, EditBasis, LoadedChunk, PreparedEdit, World
 
-### Community 65 - "UiFrame<'_>"
-Cohesion: 0.10
-Nodes (9): draw(), join_action_rect(), CharacterPanel, JoinProgress, SettingId, UiDebug, UiFrame<'_>, .BINDING_VIEW_PREFIX (+1 more)
+### Community 65 - "time"
+Cohesion: 0.12
+Nodes (9): animate(), NEXT, check_seeded_fire_restart(), checkpoint_pressure_admits_a_durable_owner_prefix_without_losing_the_remainder(), dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt(), drain_wal(), fire_burn_uses_public_removal_and_support_handlers_in_one_receipt(), temp_save() (+1 more)
 
 ### Community 67 - "actions/entity.rs"
-Cohesion: 0.05
-Nodes (37): capture_dependencies(), capture_entity_view_for_plan(), capture_tick_input(), capture_view_for_plan(), commit_tick_plan(), corrupt(), interaction_sight(), permission() (+29 more)
+Cohesion: 0.18
+Nodes (18): capture_dependencies(), capture_entity_view_for_plan(), capture_tick_input(), capture_view_for_plan(), commit_tick_plan(), corrupt(), interaction_sight(), permission() (+10 more)
 
 ### Community 68 - "PalettedBlocks"
 Cohesion: 0.13
@@ -946,26 +978,30 @@ Nodes (28): decode_checkpoint(), encode_checkpoint(), a_frozen_type_registry_req
 
 ### Community 70 - "conflict_tests.rs"
 Cohesion: 0.12
-Nodes (24): action(), disjoint_updates_admit_before_receipts_including_shared_owner_and_recover_before_apply(), drop_merge_absence_is_fenced_against_same_owner_motion_into_range(), hold(), neighbour_contents_and_empty_membership_pages_fence_pending_writers_in_both_orders(), overlapping_item_transfers_defer_in_the_coordinator_without_partial_ownership(), plan(), PROBE (+16 more)
+Nodes (25): action(), coordinator_admits_two_independent_atomic_pickups_before_applying_either(), disjoint_updates_admit_before_receipts_including_shared_owner_and_recover_before_apply(), drop_merge_absence_is_fenced_against_same_owner_motion_into_range(), hold(), neighbour_contents_and_empty_membership_pages_fence_pending_writers_in_both_orders(), overlapping_item_transfers_defer_in_the_coordinator_without_partial_ownership(), plan() (+17 more)
 
 ### Community 71 - "GenerationError"
-Cohesion: 0.09
-Nodes (13): CHUNK_SIZE, Context, Contributor, GenerationError, in_world_bounds(), MAX_WRITES, mix(), Output (+5 more)
+Cohesion: 0.08
+Nodes (14): CHUNK_SIZE, Context, Contributor, GenerationError, in_world_bounds(), MAX_WRITES, mix(), Output (+6 more)
 
-### Community 72 - "lifecycle-fixture/src/system.rs"
-Cohesion: 0.11
-Nodes (16): handler_random_is_stable_per_seed_cell_and_registration(), moving_spawn_references_are_local_and_never_predict_durable_ids(), private_entity_overlay_does_not_authorize_the_next_decision_owner(), staged_motion_rechecks_owner_coalesces_fields_and_rejects_caught_errors(), Clock, definition(), KEY, NeighborProbe (+8 more)
+### Community 72 - "perf/report.rs"
+Cohesion: 0.39
+Nodes (4): PHASE_NAMES, print_latency(), print_metric(), print_report()
 
 ### Community 73 - "perf/fire.rs"
-Cohesion: 0.10
-Nodes (22): ACTIVE_CHUNKS, CHUNKS_X, CHUNKS_Z, drain_durable(), ensure_resident(), fixture_action(), FOREST_BATCH_CHUNKS, forest_hash() (+14 more)
+Cohesion: 0.15
+Nodes (19): ACTIVE_CHUNKS, CHUNKS_X, CHUNKS_Z, drain_durable(), ensure_resident(), fixture_action(), FOREST_BATCH_CHUNKS, forest_hash() (+11 more)
+
+### Community 74 - "ChunkCache"
+Cohesion: 0.12
+Nodes (3): CacheEntry, ChunkCache, OwnerState
 
 ### Community 75 - "ClientMessage"
-Cohesion: 0.06
-Nodes (6): PackageActionProbe, PackageActionProbe, ClientMessage, fixture(), luau_player_appearance_is_authorized_rollback_safe_peer_replicated_and_saved(), Peer
+Cohesion: 0.08
+Nodes (3): PackageActionProbe, ClientMessage, Peer
 
-### Community 76 - "PublicEntity"
-Cohesion: 0.13
+### Community 76 - "protocol/entities.rs"
+Cohesion: 0.14
 Nodes (26): BlockCellChange, enforce_frame_size(), EntitySnapshotPage, MAX_BLOCK_CHANGES_PER_PART, MAX_ENTITIES_PER_PAGE, MAX_ENTITY_CHANGES_PER_PART, MAX_ENTITY_SNAPSHOT_BYTES, MAX_ENTITY_SNAPSHOT_PAGES (+18 more)
 
 ### Community 77 - "install"
@@ -977,36 +1013,36 @@ Cohesion: 0.28
 Nodes (14): animated_item_bundle_rejects_invalid_and_noncanonical_motion(), canonical_order_dependency_identity_and_count_bounds_are_verified(), decoder_rejects_server_classification_and_oversized_payloads_before_copying(), header(), key(), material_effect_and_ui_assets_coexist_in_canonical_bundle(), metadata_validates_namespace_capability_shape_and_limits_before_compilation(), package() (+6 more)
 
 ### Community 79 - "reactor.rs"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (16): ACCEPT_BUDGET, has_admission_capacity(), has_admission_capacity_with_limit(), INVENTORY_WORKERS, IO_POLL_TIMEOUT, LISTENER_KEY, MAX_PENDING_LEAVES, READ_BUDGET (+8 more)
 
-### Community 80 - "Config"
-Cohesion: 0.07
-Nodes (24): clamp_finite(), Config, CONFIG_VERSION, create_temporary_file(), MAX_FOV, MAX_SCALE, MAX_SENSITIVITY, MIN_FOV (+16 more)
+### Community 80 - "Chunk"
+Cohesion: 0.20
+Nodes (9): build_bounce(), index(), is_opaque(), MAX_LIGHT, PLANE, propagate(), SIDE, VOLUME (+1 more)
 
 ### Community 82 - "src/world.rs"
-Cohesion: 0.09
-Nodes (30): AIR, BEDROCK_Y, BLUE_FLOWER, CHUNK_SIZE, CHUNK_VOLUME, DIRT, FERN, GLOWSTONE (+22 more)
+Cohesion: 0.08
+Nodes (31): AIR, BEDROCK_Y, BLUE_FLOWER, CHUNK_SIZE, CHUNK_VOLUME, DIRT, FERN, GLOWSTONE (+23 more)
 
 ### Community 83 - "InventoryStore"
-Cohesion: 0.15
-Nodes (10): checksum(), HEADER_LEN, invalid(), InventoryStore, MAGIC, MAX_LEN, MIN_LEN, SLOT_FIXED_LEN (+2 more)
+Cohesion: 0.13
+Nodes (11): checksum(), HEADER_LEN, invalid(), InventoryStore, MAGIC, MAX_LEN, MIN_LEN, SLOT_FIXED_LEN (+3 more)
 
 ### Community 84 - "Change"
-Cohesion: 0.05
-Nodes (28): Durability, Change, CLOCK_DOMAIN, clock_key(), CommitReceipt, FILE_HEADER_LEN, FILE_MAGIC, FILE_VERSION (+20 more)
+Cohesion: 0.09
+Nodes (18): Durability, Change, arbitrate_key_sets(), build_owner_writes_parallel(), canonical_key_set(), OwnerCommit, OwnerWaveDurables, OwnerWorldAction (+10 more)
 
 ### Community 85 - "TickSample"
-Cohesion: 0.11
-Nodes (14): duration_nanos(), EVENT_LATENCY_STREAMS, LatencyEvent, LatencyRing, Metric, MetricsRecorder, MotionSample, nearest_rank() (+6 more)
+Cohesion: 0.10
+Nodes (16): duration_nanos(), EVENT_LATENCY_STREAMS, LatencyEvent, LatencyRing, Metric, MetricsRecorder, MotionSample, nearest_rank() (+8 more)
 
 ### Community 86 - "tcp.rs"
-Cohesion: 0.11
-Nodes (15): drive(), exercise(), movement(), open_nuisance_peers(), PROFILE_BASE, run(), SEED, seed_inventories() (+7 more)
+Cohesion: 0.08
+Nodes (20): TransportSnapshot, OutboundSnapshot, drive(), exercise(), movement(), open_nuisance_peers(), PROFILE_BASE, percentile() (+12 more)
 
-### Community 87 - "Pending"
-Cohesion: 0.09
-Nodes (6): declaration_key(), Declarations, invoke(), PackageTexture, Pending, text()
+### Community 87 - "Item"
+Cohesion: 0.07
+Nodes (8): Components, Item, declaration_key(), Declarations, invoke(), PackageTexture, Pending, text()
 
 ### Community 88 - "GameUi"
 Cohesion: 0.09
@@ -1025,8 +1061,8 @@ Cohesion: 0.12
 Nodes (3): Effect, target_sizes(), targets_remain_bounded_at_large_and_tiny_viewports()
 
 ### Community 92 - "JournalWriter"
-Cohesion: 0.10
-Nodes (5): Journal, JournalWriter, Request, RotateError, WriterCommand
+Cohesion: 0.09
+Nodes (7): CommitReceipt, Journal, JournalWriter, Request, RotateError, RotationReceipt, WriterCommand
 
 ### Community 93 - "Authored materials and effects"
 Cohesion: 0.40
@@ -1037,60 +1073,60 @@ Cohesion: 0.10
 Nodes (7): checkpoint_shard(), checkpoint_worker(), CheckpointJob, CheckpointReceipt, CheckpointSubmitError, CheckpointWriter, panic_message()
 
 ### Community 95 - "RegisteredEffectError"
-Cohesion: 0.21
-Nodes (4): ErasedEffectKind, RegisteredEffectBuffer<'a>, RegisteredEffectError, TypedEffectKind<P, M, V, D, C>
+Cohesion: 0.26
+Nodes (4): EffectConsumerOutput, RegisteredEffectBuffer<'a>, RegisteredEffectError, PatchUsage
 
 ### Community 96 - "EntityCheckpointMirror"
 Cohesion: 0.09
-Nodes (11): CheckpointReceipt, CheckpointTicket, CheckpointWork, Command, EntityCheckpointMirror, Event, MAX_MIRROR_ADMISSIONS, MirrorMetrics (+3 more)
+Nodes (12): EntityMotionSnapshot, CheckpointReceipt, CheckpointTicket, CheckpointWork, Command, EntityCheckpointMirror, Event, MAX_MIRROR_ADMISSIONS (+4 more)
 
 ### Community 97 - "Connection"
-Cohesion: 0.12
-Nodes (7): Connection, PendingWrite, PendingWriteKind, Phase, PendingLeave, JoinGuard, SimulationInput
+Cohesion: 0.15
+Nodes (7): JoinResponse, Connection, PendingWrite, PendingWriteKind, Phase, PendingLeave, SimulationInput
 
 ### Community 98 - "ClientHandle"
 Cohesion: 0.14
 Nodes (9): ActionKind, active_slow_peer(), ClientHandle, ClientStats, handshake(), PendingAction, read_until_stop(), Ready (+1 more)
 
 ### Community 99 - "TickId"
-Cohesion: 0.08
-Nodes (26): apply_synced_batch(), Durability, run_delivery(), run_source(), stage_gameplay_burn(), stage_transactions(), stage_wave(), check_seeded_fire_restart() (+18 more)
+Cohesion: 0.10
+Nodes (20): apply_synced_batch(), Durability, run_delivery(), run_source(), stage_gameplay_burn(), stage_transactions(), stage_wave(), ClockError (+12 more)
 
 ### Community 100 - "Value"
 Cohesion: 0.12
 Nodes (19): Value, bytes(), decode(), delay(), component_schema(), drop_policy(), options(), boolean() (+11 more)
 
 ### Community 101 - "CommitAction"
-Cohesion: 0.09
-Nodes (30): CommitAction, batchable_motion(), cancel_prepared_entities(), command_action_id(), defer_action(), durable_request_profile(), fail_if_durability_failed(), fatal_stage_error() (+22 more)
+Cohesion: 0.08
+Nodes (31): CommitAction, batchable_motion(), cancel_prepared_entities(), command_action_id(), defer_action(), durable_request_profile(), fail_if_durability_failed(), fatal_stage_error() (+23 more)
 
 ### Community 102 - "third_person.rs"
 Cohesion: 0.11
 Nodes (11): avatar(), GameplayPose, prepare(), render_first_person_previews(), render_gameplay_animation_previews(), render_third_person_previews(), Shot, DISTANCE (+3 more)
 
 ### Community 103 - "package/client.rs"
-Cohesion: 0.06
-Nodes (31): ANIMATED_MAGIC, APPEARANCE_MAGIC, APPEARANCE_POLICY_MAGIC, BLOCK_OPTIONS_MAGIC, BLOCK_STATES_MAGIC, ClientSide, ClientSource, COMPONENTS_MAGIC (+23 more)
+Cohesion: 0.05
+Nodes (33): ANIMATED_MAGIC, APPEARANCE_MAGIC, APPEARANCE_POLICY_MAGIC, BLOCK_OPTIONS_MAGIC, BLOCK_STATES_MAGIC, ClientBundle, ClientPackage, ClientSide (+25 more)
 
-### Community 104 - "VoxelView"
-Cohesion: 0.06
-Nodes (24): Body, DT, Movement, valid_position(), broadcast(), clear(), resolve(), MAX_REPLANT_CELLS (+16 more)
+### Community 104 - "voxel_view.rs"
+Cohesion: 0.10
+Nodes (14): resolve(), air_chunk(), key(), MissingChunk, MovementError, player_collides(), resolve_player_movement(), resolve_player_movement_with_body() (+6 more)
 
 ### Community 105 - "Attempt"
 Cohesion: 0.12
 Nodes (4): Attempt, Control, Prepared, Progress
 
 ### Community 106 - "durable/state.rs"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (13): Durability, stage(), touches_anchor(), action_changes(), chunk_state_key(), decode_chunk_key(), decode_profile_key(), encode_action_receipt() (+5 more)
 
 ### Community 107 - "VisualAvatar"
-Cohesion: 0.07
-Nodes (13): ActorAnimator, DELAY, Track, Sample, STEP, Track, Motion, AvatarInstance (+5 more)
+Cohesion: 0.05
+Nodes (14): ActorAnimator, DELAY, Track, Sample, STEP, Track, Motion, AvatarInstance (+6 more)
 
-### Community 108 - "streaming.rs"
-Cohesion: 0.06
-Nodes (34): apply(), disconnect(), prepare(), Prepared, publish(), effect(), fire_cue_is_dropped_for_backlogged_client_without_disconnect(), fire_cue_requires_subscription_and_follows_committed_world_frame() (+26 more)
+### Community 108 - "dispatch.rs"
+Cohesion: 0.14
+Nodes (15): apply(), disconnect(), prepare(), Prepared, publish(), effect(), fire_cue_is_dropped_for_backlogged_client_without_disconnect(), fire_cue_requires_subscription_and_follows_committed_world_frame() (+7 more)
 
 ### Community 109 - "menus.rs"
 Cohesion: 0.30
@@ -1101,12 +1137,12 @@ Cohesion: 0.15
 Nodes (45): Blocked, Body, cap_speed(), check_bounds(), Collider, Contact, ContactMemory, ContactPolicy (+37 more)
 
 ### Community 111 - "terrain.rs"
-Cohesion: 0.16
-Nodes (29): supports_plant(), Biome, collapse_surface(), Column, decorate_chunk(), generate_blocks(), generated_block(), generated_block_in_column() (+21 more)
+Cohesion: 0.15
+Nodes (31): Biome, collapse_surface(), Column, decorate_chunk(), generate_blocks(), generated_block(), generated_block_in_column(), generated_block_with_pattern() (+23 more)
 
-### Community 112 - "CharacterPreview"
-Cohesion: 0.06
-Nodes (9): CharacterPreview, Atmosphere, create_sky_pipeline(), sky_camera_data(), SKY_SHADER, sky_basis_tracks_camera_turns_in_world_space(), MAX_STREAKS, Presentation (+1 more)
+### Community 112 - "deviceext"
+Cohesion: 0.09
+Nodes (6): Atmosphere, smooth(), create_sky_pipeline(), sky_camera_data(), SKY_SHADER, sky_basis_tracks_camera_turns_in_world_space()
 
 ### Community 113 - "ComponentMatch"
 Cohesion: 0.15
@@ -1116,61 +1152,65 @@ Nodes (13): ComponentMatch, ComponentOutput, ComponentValue, value_bytes(), deco
 Cohesion: 0.11
 Nodes (9): ChunkLoader, ChunkLoadResult, ChunkLoadTicket, Job, RequestError, RequestStatus, stop_workers(), WORKER_COUNT (+1 more)
 
-### Community 115 - "Journal"
-Cohesion: 0.08
-Nodes (3): Journal, KnownRecord, SubmitError
+### Community 115 - "journal.rs"
+Cohesion: 0.05
+Nodes (21): CLOCK_DOMAIN, clock_key(), frame_len(), FILE_HEADER_LEN, FILE_MAGIC, FILE_VERSION, FRAME_OVERHEAD, Journal (+13 more)
 
 ### Community 116 - "script_startup/system.rs"
 Cohesion: 0.15
 Nodes (21): commit(), Fixture, KEY, luau_burn_owner_uses_host_removal_semantics_and_persists_receipt(), luau_owner_after_dependencies_are_resolved_before_save_creation(), luau_owner_block_info_uses_captured_public_fields_and_restarts(), luau_owner_caught_invalid_entity_change_rejects_whole_wave(), luau_owner_drop_creation_shares_receipt_and_restarts() (+13 more)
 
 ### Community 118 - "world/tests.rs"
-Cohesion: 0.11
-Nodes (25): biomes_cover_distinct_surfaces_across_an_endless_world(), broadleaf_crowns_cross_chunk_seams_and_match_edit_baseline(), chunk_cache_evicts_the_least_recently_used_resident(), collapsed_surface_obeys_constraints_and_matches_region_edges(), composed_generation_is_ordered_and_does_not_change_builtin_baseline(), composed_generation_rejects_unknown_states_and_duplicate_keys(), corrupt_save_is_not_silently_discarded(), edited_chunk_can_be_evicted_and_reloaded_from_its_pending_snapshot() (+17 more)
+Cohesion: 0.12
+Nodes (23): broadleaf_crowns_cross_chunk_seams_and_match_edit_baseline(), chunk_cache_evicts_the_least_recently_used_resident(), composed_generation_is_ordered_and_does_not_change_builtin_baseline(), composed_generation_rejects_unknown_states_and_duplicate_keys(), corrupt_save_is_not_silently_discarded(), edited_chunk_can_be_evicted_and_reloaded_from_its_pending_snapshot(), edits_survive_restart_and_cache_eviction(), FixedGeneration (+15 more)
 
 ### Community 119 - "Clock"
 Cohesion: 0.14
 Nodes (5): advance(), Clock, DOMAIN, publish(), state_key()
 
 ### Community 120 - "PlayerRules"
-Cohesion: 0.05
-Nodes (40): Body, BUILTIN_BODY, BUILTIN_MOTION, BUILTIN_RULES, BUILTIN_SPAWN, InvalidPlayerRules, MotionRates, PlayerRules (+32 more)
+Cohesion: 0.11
+Nodes (9): Body, BUILTIN_BODY, BUILTIN_MOTION, BUILTIN_RULES, BUILTIN_SPAWN, InvalidPlayerRules, MotionRates, PlayerRules (+1 more)
 
 ### Community 121 - "entities/checkpoint.rs"
 Cohesion: 0.13
 Nodes (13): CHECKPOINT_NAME, checkpoint_rejects_bad_magic_version_and_checksum(), checkpoint_write_read_is_atomic_and_bounded(), crash_left_temporary_checkpoint_fails_closed(), DIRECTORY_NAME, entity_invalid_data(), EntityCheckpointStore, invalid_data() (+5 more)
 
 ### Community 122 - "serve"
-Cohesion: 0.06
-Nodes (39): luau_action_block_targets_keep_real_reach_sight_and_identity_checks(), luau_creature_replaces_itself_with_another_authored_type_over_real_listener(), mod_admin_grant_requires_server_identity_and_replays_once_over_listener(), mod_admin_spawn_and_drop_share_one_allocator_and_restart(), luau_clock_action_rolls_back_failures_and_recovers_atomic_edits_and_inventory(), DECLARE, HANDLER, luau_world_entity_inventory_drop_and_schedule_are_one_retryable_receipt() (+31 more)
+Cohesion: 0.05
+Nodes (44): luau_action_block_targets_keep_real_reach_sight_and_identity_checks(), luau_creature_replaces_itself_with_another_authored_type_over_real_listener(), mod_admin_grant_requires_server_identity_and_replays_once_over_listener(), mod_admin_spawn_and_drop_share_one_allocator_and_restart(), connect(), package(), package_cube_flags_are_frozen_and_old_declaration_keeps_defaults(), package_cube_joins_places_and_recovers_with_identical_session_catalog() (+36 more)
 
 ### Community 123 - "burn.rs"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (11): assert_burned(), assert_uncommitted(), Burn, burn_startup(), BurnGrass, definition(), destination(), plant_burn() (+3 more)
+
+### Community 126 - "HarvestSnapshot"
+Cohesion: 0.09
+Nodes (12): only_block_items_are_placeable(), placeable_block(), placeable_block_in(), SAPLING, SEEDS, STICK, valid_item(), valid_item_in() (+4 more)
 
 ### Community 127 - "snapshots/tests.rs"
 Cohesion: 0.15
 Nodes (17): captured_revision_is_rejected_after_confirmed_edit_and_recaptured_in_order(), changed_interest_or_reconnected_session_cannot_receive_pending_capture(), dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs(), differing_epochs_do_not_share_wire_content(), distinct_chunk_capture_is_bounded_and_rotates_to_deferred_clients(), Fixture, live_stream_prepares_once_and_shares_encoded_pages_for_matching_clients(), pressure_reclaim_is_worker_prepared_and_coordinator_announces_then_releases() (+9 more)
 
 ### Community 128 - "authored/tests.rs"
-Cohesion: 0.13
-Nodes (22): action_callback_cannot_supply_target_or_authorization_claims(), change_json(), decode(), egui_input_dispatches_unicode_text_and_preserves_busy_value(), encode(), encode_source(), handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits(), healthy_document_switch_keeps_retained_handler_state() (+14 more)
+Cohesion: 0.17
+Nodes (19): action_callback_cannot_supply_target_or_authorization_claims(), change_json(), egui_input_dispatches_unicode_text_and_preserves_busy_value(), handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits(), healthy_document_switch_keeps_retained_handler_state(), late_authoritative_result_does_not_repaint_a_reset_document(), live_session_uses_taffy_geometry_for_clipped_focus_and_bounded_local_editing(), replica_module_cannot_write_another_packages_document() (+11 more)
 
 ### Community 129 - "ScriptCreature"
 Cohesion: 0.12
 Nodes (4): invalid(), ScriptCreature, State, tick_helpers_keep_order_and_exact_intervals_above_float_precision()
 
 ### Community 130 - "script/runtime.rs"
-Cohesion: 0.11
+Cohesion: 0.13
 Nodes (10): begin(), create(), reseed(), Seed, author_reseeding_keeps_standard_math_random_semantics(), diagnostic_encoding_rejects_nested_fields_without_executing_metamethods(), failed_attempts_keep_diagnostics_and_helper_source_identity(), logging_pressure_does_not_change_random_results_and_retries_repeat_attempts() (+2 more)
 
 ### Community 131 - "net.rs"
-Cohesion: 0.07
-Nodes (23): BUNDLE_TIMEOUT, ContentHandshake, HELLO_TIMEOUT, JOIN_TIMEOUT, JoinCleanup, bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline(), commands_received_after_content_ready_wait_for_join_completion(), connected_streams() (+15 more)
+Cohesion: 0.10
+Nodes (16): BUNDLE_TIMEOUT, ContentHandshake, HELLO_TIMEOUT, JOIN_TIMEOUT, JoinCleanup, bundle_frames_are_shared_and_stalled_transfers_keep_an_absolute_deadline(), commands_received_after_content_ready_wait_for_join_completion(), connected_streams() (+8 more)
 
 ### Community 132 - "ScriptSystem"
 Cohesion: 0.11
-Nodes (6): bytes(), cell(), declarer(), field(), ScriptSystem, table()
+Nodes (7): IntentDelivery, bytes(), cell(), declarer(), field(), ScriptSystem, table()
 
 ### Community 133 - "Plan: built-in/mod capability parity"
 Cohesion: 0.08
@@ -1189,7 +1229,7 @@ Cohesion: 0.13
 Nodes (3): Script, PendingBatch, VisualSession
 
 ### Community 137 - "entity_recovery/tests.rs"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (12): checkpointed_motion_ahead_of_wal_fence_survives_recovery(), fixture(), lagging_checkpoint_replays_later_wal_transfer(), MOBILE_TYPE, NEXT_DIR, one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt(), position(), same_revision_conflicting_checkpoint_motion_fails_closed() (+4 more)
 
 ### Community 138 - "effects/registered.rs"
@@ -1197,16 +1237,16 @@ Cohesion: 0.12
 Nodes (13): MAX_EFFECT_BATCH_PAYLOAD_BYTES, MAX_EFFECT_BUFFER_PAYLOAD_BYTES, MAX_EFFECT_DESTINATIONS, MAX_EFFECT_KIND_ID_BYTES, MAX_EFFECT_KIND_PAYLOAD_BYTES, MAX_REGISTERED_EFFECT_KINDS, RegisteredEffectBuffer, RegisteredEffectIntent (+5 more)
 
 ### Community 139 - "host-api/src/actions.rs"
-Cohesion: 0.18
-Nodes (14): Action, CommandPermission, MAX_ACTIONS, MAX_INTERACTION_PAYLOAD, MAX_REQUEST_ARGUMENTS, MAX_TARGET_ACTIONS, MAX_WIDGETS, Operation (+6 more)
+Cohesion: 0.08
+Nodes (23): Action, Command, CommandArgument, CommandValue, MAX_COMMAND_ARGUMENTS, CommandPermission, key(), MAX_ACTIONS (+15 more)
 
 ### Community 140 - "startup/tests.rs"
 Cohesion: 0.15
 Nodes (19): block_auto_items_cannot_bypass_total_item_capacity(), caught_startup_execution_limit_cannot_publish_and_worker_recovers(), content_capacity_admits_full_block_item_texture_targets(), content_capacity_fixture(), content_capacity_max_plus_one_errors_survive_pcall_with_key_and_usage(), duplicate_keys_and_caught_declaration_errors_reject_all_startup(), Fixture, generator_installation_fixture() (+11 more)
 
-### Community 141 - "Procedural"
-Cohesion: 0.08
-Nodes (10): Rng, SAMPLE_RATE, lightning_hit(), Procedural, bell(), Cell, smooth(), Storm (+2 more)
+### Community 141 - "Rng"
+Cohesion: 0.10
+Nodes (6): Biquad, Mode, Rng, SAMPLE_RATE, DropVoice, Wind
 
 ### Community 142 - "presentation.rs"
 Cohesion: 0.16
@@ -1216,13 +1256,13 @@ Nodes (15): bounded_float(), Command, command_entity(), display_text(), EntityVi
 Cohesion: 0.15
 Nodes (11): LightField, ChunkMesh, emit_plant(), emit_quad(), GpuMesh, GpuSubmesh, mesh_chunk_lit(), mesh_chunk_lit_with_catalog() (+3 more)
 
-### Community 144 - "sync"
-Cohesion: 0.16
+### Community 144 - "Buffer"
+Cohesion: 0.17
 Nodes (4): Buffer, capture(), default_filter_preserves_structured_game_events_and_flushes_final_errors(), scoped_filters_and_invalid_filter_fallback_work_without_global_state()
 
-### Community 146 - "Registered anchored behavior"
-Cohesion: 0.40
-Nodes (5): Authority, scheduling and recovery, Bounds and limits, Public contract, Registered anchored behavior, Verification
+### Community 146 - "server/movement.rs"
+Cohesion: 0.09
+Nodes (13): AckKind, credit_per_tick(), CREDIT_SCALE, FLOAT_ROUNDING_ALLOWANCE_PER_TICK, MAX_COMMANDS_PER_TICK, max_credit(), movement_cost(), MovementAck (+5 more)
 
 ### Community 147 - "drops/entity.rs"
 Cohesion: 0.12
@@ -1234,15 +1274,15 @@ Nodes (6): apply(), Context<'_>, MotionChange, MotionCommand, MovingSpawn, Spawn
 
 ### Community 149 - "world/generation.rs"
 Cohesion: 0.14
-Nodes (13): apply(), Builtin, BUILTIN_SAMPLES, builtin_state_key(), BuiltinSamples, compose(), generate_chunk(), generate_chunk_with_contributors() (+5 more)
+Nodes (12): apply(), Builtin, BUILTIN_SAMPLES, builtin_state_key(), BuiltinSamples, compose(), generate_chunk(), generate_chunk_with_contributors() (+4 more)
 
 ### Community 150 - "publication/commit.rs"
-Cohesion: 0.22
-Nodes (11): PublicEntityChange, add_remove(), add_upsert(), collect(), CommitChanges, CommitPlan, fanout_bound(), for_client() (+3 more)
+Cohesion: 0.24
+Nodes (10): add_remove(), add_upsert(), collect(), CommitChanges, CommitPlan, fanout_bound(), for_client(), KeyChanges (+2 more)
 
-### Community 151 - "owner_durable/tests.rs"
-Cohesion: 0.15
-Nodes (16): open(), byte_bound_is_enforced_at_insert_and_at_prepare_without_truncation(), capacity_defers_while_corruption_stops(), chunk(), commit_after_a_concurrent_wave_rejects_whole_and_applies_nothing(), committed_waves_mark_active_and_update_the_due_index(), counter_store(), dropped_prepared_wave_changes_nothing() (+8 more)
+### Community 151 - "entities/types.rs"
+Cohesion: 0.06
+Nodes (17): AnchorUpdate, CellCoord, EntityId, EntityLocation, EntityOwner, EntityOwnership, EntityPublicView, EntityView (+9 more)
 
 ### Community 152 - "StorageOwner"
 Cohesion: 0.21
@@ -1258,15 +1298,15 @@ Nodes (6): InventoryScreen, MAX_SLOTS, MAX_STATUS_FIELDS, SlotGroup, StatusField
 
 ### Community 155 - "render/drops.rs"
 Cohesion: 0.15
-Nodes (18): LightSample, block_and_sprite_drops_carry_sky_glow_and_bounce_without_fixed_lighting(), DropMeshes, emit_cutout_drop(), flower_pickup_uses_cutout_crosses_instead_of_cube_faces(), grass_side_band_is_at_the_top_on_both_side_axes(), is_sprite_item(), MAX_CUTOUT_INDEX_BYTES (+10 more)
+Nodes (17): block_and_sprite_drops_carry_sky_glow_and_bounce_without_fixed_lighting(), DropMeshes, emit_cutout_drop(), flower_pickup_uses_cutout_crosses_instead_of_cube_faces(), grass_side_band_is_at_the_top_on_both_side_axes(), is_sprite_item(), MAX_CUTOUT_INDEX_BYTES, MAX_CUTOUT_VERTEX_BYTES (+9 more)
 
 ### Community 156 - "Texture"
 Cohesion: 0.20
 Nodes (5): Texture, Catalog, error(), texture_definition(), validate_display()
 
 ### Community 157 - "server.rs"
-Cohesion: 0.05
-Nodes (35): catalog_with_extension(), Client, DEFAULT_CLIENTS, DEFAULT_VIEW, EDIT_REACH, handle_message(), INPUT_CAPACITY, join_client() (+27 more)
+Cohesion: 0.09
+Nodes (28): catalog_with_extension(), DEFAULT_CLIENTS, DEFAULT_VIEW, EDIT_REACH, INPUT_CAPACITY, LOADER_CAPACITY, LocalServer, MAX_CATCH_UP_TICKS (+20 more)
 
 ### Community 158 - "custom/shader.rs"
 Cohesion: 0.08
@@ -1281,12 +1321,12 @@ Cohesion: 0.13
 Nodes (6): Behavior, Decision, Event, EventKind, Registration, State
 
 ### Community 162 - "Receiver"
-Cohesion: 0.08
-Nodes (11): Receiver, CodecWorkers, decode_worker(), DECODE_WORKERS, DecodeRequest, encode_worker(), ENCODE_WORKERS, EncodedFrame (+3 more)
+Cohesion: 0.18
+Nodes (10): Receiver, CodecWorkers, decode_worker(), DECODE_WORKERS, DecodeRequest, encode_worker(), ENCODE_WORKERS, EncodedFrame (+2 more)
 
 ### Community 163 - "script_startup/creature.rs"
-Cohesion: 0.20
-Nodes (12): definition(), luau_creature_interaction_and_animation_negotiate_and_keep_private_state(), luau_creature_negotiates_model_ticks_and_restarts(), luau_creature_neighbour_policy_negotiates_and_reads_bounded_public_views(), luau_creature_options_reject_invalid_bounds_before_save_creation(), luau_creature_rejects_invalid_declaration_before_save_and_caught_route_failure(), luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change(), luau_creature_spawns_another_declared_type_with_its_own_initial_state() (+4 more)
+Cohesion: 0.14
+Nodes (12): Flat, luau_creature_interaction_and_animation_negotiate_and_keep_private_state(), luau_creature_negotiates_model_ticks_and_restarts(), luau_creature_neighbour_policy_negotiates_and_reads_bounded_public_views(), luau_creature_options_reject_invalid_bounds_before_save_creation(), luau_creature_rejects_invalid_declaration_before_save_and_caught_route_failure(), luau_creature_rejects_invalid_lifecycle_before_movement_or_state_change(), luau_creature_spawns_another_declared_type_with_its_own_initial_state() (+4 more)
 
 ### Community 164 - "Growth foundation plan"
 Cohesion: 0.10
@@ -1297,8 +1337,8 @@ Cohesion: 0.16
 Nodes (10): absolute_anchor_feature_is_not_truncated_at_chunk_boundary(), authoritative_generation_edit_baselines_survive_cache_miss_and_restart(), builtin_contributor_preserves_terrain_vegetation_and_negative_chunk_seams(), builtin_contributor_preserves_tree_canopy_across_chunk_seam(), files(), generation_failure_never_installs_air_or_replaces_recovery_snapshot(), generation_identity_mismatch_rejects_before_any_save_mutation(), open() (+2 more)
 
 ### Community 166 - "receive_content_manifest"
-Cohesion: 0.11
-Nodes (15): Blocks, inventories, and processing, event(), external_owner_world_read_survives_real_listener_join_and_restart(), external_processor_manual_and_hopper_transfers_process_restart_and_refund_over_tcp(), external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_listener(), registered_item_components_transfer_and_recover_over_real_listener(), send(), storage_roundtrip() (+7 more)
+Cohesion: 0.16
+Nodes (11): client_commands_are_rejected_until_content_ready_matches(), complete_content_handshake(), join_cleanup_enqueues_one_leave_with_the_next_sequence(), local_server_shutdown_restores_authoritative_position_on_next_start(), nonblocking_listener_streams_and_recovers_a_wal_acked_edit_inner(), production_reactor_joins_and_commits_an_edit_over_real_tcp(), receive_content_manifest(), authored_button_reaches_authoritative_receipt_and_durable_inventory() (+3 more)
 
 ### Community 167 - "entity_checkpoint/tests.rs"
 Cohesion: 0.18
@@ -1308,41 +1348,45 @@ Nodes (13): admitted_event_permit_cannot_be_dropped_silently(), checkpoint_io_fa
 Cohesion: 0.18
 Nodes (10): Descriptor, MAX_DESCRIPTOR_BYTES, MAX_PASSES, MAX_SHADER_BYTES, Pass, prepare(), prepare_inner(), Prepared (+2 more)
 
+### Community 169 - "plan"
+Cohesion: 0.10
+Nodes (6): capacity_error(), Expansion, plan(), removal(), removal_cells(), removal_refunds()
+
 ### Community 170 - "view.rs"
 Cohesion: 0.17
 Nodes (14): SlotFilter, draw(), footer(), GOLD, header(), inventory(), machine(), MUTED (+6 more)
 
 ### Community 171 - "drops/queries.rs"
-Cohesion: 0.23
-Nodes (16): airborne_count(), capture_nearby(), collect_in_aabb(), distance_sq(), extractable(), has_expired(), live_drop(), LiveDrop (+8 more)
+Cohesion: 0.19
+Nodes (18): age_ms_now(), airborne_count(), capture_nearby(), collect_in_aabb(), distance_sq(), extractable(), has_expired(), live_drop() (+10 more)
 
-### Community 172 - "EntityPublicView"
-Cohesion: 0.11
-Nodes (12): MAX_PLAYER_ENTITY_PAYLOAD_BYTES, MAX_SESSION_PLAYER_ENTITIES, PLAYER_ENTITY_TYPE, player_public_payload_codec_is_fixed_size(), player_type_registers_only_against_catalogued_identity(), PlayerEntityPayload, PlayerEntityStore, PlayerPayloadCodec (+4 more)
+### Community 172 - "entities/player.rs"
+Cohesion: 0.09
+Nodes (10): MAX_PLAYER_ENTITY_PAYLOAD_BYTES, MAX_SESSION_PLAYER_ENTITIES, PLAYER_ENTITY_TYPE, player_public_payload_codec_is_fixed_size(), player_type_registers_only_against_catalogued_identity(), PlayerEntityPayload, PlayerEntityStore, PlayerPayloadCodec (+2 more)
 
-### Community 173 - "host-api/src/machine.rs"
-Cohesion: 0.18
-Nodes (11): FACES, Filter, Fuel, Machine, Port, Process, Recipe, StackSelector (+3 more)
+### Community 173 - "Adapter"
+Cohesion: 0.14
+Nodes (4): Adapter, Lookups, MachinePayload, register()
 
 ### Community 174 - "gameplay/decisions.rs"
 Cohesion: 0.12
 Nodes (12): BLOCK_REGISTER, BLOCK_SOURCE, ByteState, ENTITY_REGISTER, ENTITY_SOURCE, entity_target_action_is_discovered_in_verified_session_catalog(), Fixture, luau_decisions_block_events_caught_error_rollback_and_restart() (+4 more)
 
-### Community 175 - "package"
-Cohesion: 0.13
-Nodes (17): connect(), package(), package_cube_flags_are_frozen_and_old_declaration_keeps_defaults(), package_cube_joins_places_and_recovers_with_identical_session_catalog(), package_cube_material_options_negotiate_and_survive_restart(), package_cube_rejections_fail_before_world_open(), package_cutout_plants_and_textures_roundtrip_on_real_listener(), package_explicit_states_negotiate_placement_and_light_identity() (+9 more)
+### Community 175 - "entities/persistence.rs"
+Cohesion: 0.05
+Nodes (47): checked_body(), crc32(), Decoder, ENTITY_ALLOCATOR_MAGIC, ENTITY_ALLOCATOR_VERSION, ENTITY_CELL_VALUE_MAGIC, ENTITY_CELL_VALUE_VERSION, ENTITY_CHUNK_PAGE_MAGIC (+39 more)
 
 ### Community 176 - "handles.rs"
 Cohesion: 0.15
 Nodes (14): entity(), entity_value(), EntityId, identity_methods(), intern(), profile(), profile_value(), ProfileId (+6 more)
 
-### Community 177 - "Engine"
-Cohesion: 0.14
-Nodes (6): Engine, MAX_RESIDENT, NEXT_RUNTIME, Reservation, RESIDENT, RUNTIMES
+### Community 177 - "Execution"
+Cohesion: 0.12
+Nodes (9): Engine, isolated(), MAX_RESIDENT, NEXT_RUNTIME, Reservation, RESIDENT, Retained, RUNTIMES (+1 more)
 
 ### Community 178 - "systems/world.rs"
-Cohesion: 0.23
-Nodes (5): capture(), capture_entities(), EditInputs, plan_edits(), within_radius()
+Cohesion: 0.12
+Nodes (6): capture(), capture_entities(), EditInputs, plan_changes(), plan_edits(), within_radius()
 
 ### Community 180 - "custom.rs"
 Cohesion: 0.17
@@ -1360,24 +1404,24 @@ Nodes (32): module(), Actions, commands and gameplay decisions, Authored materia
 Cohesion: 0.13
 Nodes (9): Catalog, Composition, field(), MAX_MEMBERS, MAX_PACKAGES, MAX_TAGS, Package, tag_kind() (+1 more)
 
-### Community 184 - "public/tests.rs"
+### Community 184 - "inventory"
 Cohesion: 0.12
 Nodes (15): BlockExtension, component_schema_package_and_tag_changes_are_compatibility_failures(), Contribute, Declare, Emitter, external_narrow_plant_uses_registered_selection_in_production_raycast(), fixture(), invalid_composition_and_missing_content_fail_atomically_before_installation() (+7 more)
 
-### Community 185 - "lighting.rs"
-Cohesion: 0.19
-Nodes (8): build_bounce(), index(), is_opaque(), MAX_LIGHT, PLANE, propagate(), SIDE, VOLUME
+### Community 185 - "OwnerEffectPatch"
+Cohesion: 0.10
+Nodes (6): BlockEdit, EditCause, blocked(), EmittedOwnerEffect, OwnerEffectPatch, route_and_consume()
 
 ### Community 188 - "AnchoredBlockEntity"
 Cohesion: 0.13
 Nodes (3): AnchoredBlockEntity, Catalog, Catalog
 
 ### Community 189 - "ContentManifest"
-Cohesion: 0.36
-Nodes (3): checksum(), ContentManifest, invalid()
+Cohesion: 0.18
+Nodes (10): checksum(), ContentEntry, ContentManifest, invalid(), MAGIC, MAX_ENTRIES, MAX_MANIFEST_BYTES, valid_state_key() (+2 more)
 
 ### Community 190 - "EntityDefinition"
-Cohesion: 0.12
+Cohesion: 0.11
 Nodes (3): EntityDefinition, EntityState, Catalog
 
 ### Community 191 - "decode"
@@ -1409,8 +1453,8 @@ Cohesion: 0.11
 Nodes (19): 10. Custom models: required direction, deferred work, 1. A small, powerful set of concepts, 2. Atomic operations are a convenience, not a burden, 3. Specialized APIs are optional conveniences, 4. Built-in gameplay uses the same boundary, 5. Distinguish genuinely different execution contexts, 6. Developer experience is part of the implementation, 7. Server-delivered mod packages (+11 more)
 
 ### Community 198 - "Sender"
-Cohesion: 0.12
-Nodes (8): channel(), Sender, Shared, State, background_backlog_cannot_fill_edit_capacity_and_invalidation_removes_queued_work(), hot_edit_coalesces_and_promotes_without_losing_background_progress(), job(), shutdown_wakes_idle_workers()
+Cohesion: 0.10
+Nodes (10): channel(), Sender, Shared, State, background_backlog_cannot_fill_edit_capacity_and_invalidation_removes_queued_work(), hot_edit_coalesces_and_promotes_without_losing_background_progress(), job(), shutdown_wakes_idle_workers() (+2 more)
 
 ### Community 199 - "render/material.rs"
 Cohesion: 0.19
@@ -1430,7 +1474,7 @@ Nodes (4): count(), number(), own_key(), Runtime
 
 ### Community 203 - "thunder.rs"
 Cohesion: 0.09
-Nodes (16): Reverb, add_bands(), BANDS, Build, build_voice(), Echo, ECHOES, length() (+8 more)
+Nodes (17): Reverb, add_bands(), BANDS, Build, build_voice(), Echo, ECHOES, length() (+9 more)
 
 ### Community 204 - "ProfileCell"
 Cohesion: 0.20
@@ -1449,28 +1493,28 @@ Cohesion: 0.32
 Nodes (9): ascii(), display(), execute(), execute_event(), execute_retained(), identity(), prepare(), run() (+1 more)
 
 ### Community 208 - "VisualFire"
-Cohesion: 0.09
-Nodes (12): EffectBuffer, LIFE, MAX_EMBERS, FireRenderer, FireStyle, FLOATS, MAX_BYTES, MAX_FIRES (+4 more)
+Cohesion: 0.14
+Nodes (9): FireRenderer, FireStyle, FLOATS, MAX_BYTES, MAX_FIRES, triangle(), vertices(), VERTICES_PER_FIRE (+1 more)
 
 ### Community 209 - "render/tests.rs"
 Cohesion: 0.11
 Nodes (8): mesh_chunk(), adjacent_leaves_skip_interior_cutout_faces(), grass_side_is_upright_on_both_wall_axes(), greedy_quads_repeat_material_once_per_voxel(), mapped_builtin(), meshing_uses_shared_chunk_layout_and_world_origin(), plants_have_two_crossed_cutout_quads_and_do_not_hide_ground(), remapped_connection_catalog_drives_foliage_meshes_and_drop_art()
 
-### Community 210 - "machine_component_tests.rs"
-Cohesion: 0.19
-Nodes (9): exact_automation_skips_wrong_variant_fences_both_revisions_and_recovers(), independent_component_recipes_preserve_progress_and_exact_outputs_across_remap_restart(), load_neighbours(), payload(), public_exact_selectors_pull_from_storage_without_leaking_components_or_bypassing_ports(), pulse(), SelectiveMachine, settle() (+1 more)
+### Community 210 - "entity"
+Cohesion: 0.11
+Nodes (14): definition(), KEY, State, definition(), Mossbun, exact_automation_skips_wrong_variant_fences_both_revisions_and_recovers(), independent_component_recipes_preserve_progress_and_exact_outputs_across_remap_restart(), load_neighbours() (+6 more)
 
 ### Community 211 - "character_asset.rs"
 Cohesion: 0.12
 Nodes (16): BODY_PNG, Channel, ChannelPath, CLEAN_FACE_PNG, Clip, EYE_NAMES, EYE_PNGS, HAIR_BOUNDS (+8 more)
 
-### Community 213 - "Writer"
-Cohesion: 0.10
-Nodes (19): anchored_client_artifact_preserves_full_native_contract_and_catalog_identity(), anchored_client_artifact_rejects_storage_and_machine_ownership_collisions(), anchored_client_artifact_rejects_unresolved_refs_truncation_and_nested_wrappers(), artifact(), artifact_on(), base(), declaration(), decode_bytes() (+11 more)
+### Community 213 - "declarations/moving/tests.rs"
+Cohesion: 0.36
+Nodes (6): artifact(), base(), declaration(), decode_bytes(), moving_metadata_preserves_native_catalog_and_has_inert_codec(), moving_metadata_rejects_missing_capability_overflow_and_nesting()
 
 ### Community 214 - "SystemDescriptor"
 Cohesion: 0.05
-Nodes (32): OwnerJob, access(), AccessKind, BudgetKind, depends_on(), ExecutableSystem, IdentifierError, MAX_DEPENDENCIES_PER_SYSTEM (+24 more)
+Nodes (31): access(), AccessKind, BudgetKind, depends_on(), ExecutableSystem, F, IdentifierError, MAX_DEPENDENCIES_PER_SYSTEM (+23 more)
 
 ### Community 215 - "neighborhood.rs"
 Cohesion: 0.16
@@ -1485,24 +1529,28 @@ Cohesion: 0.21
 Nodes (14): durable_actions(), fire_delivery(), fire_source(), input_authorization(), interaction_commit(), player_movement(), publish(), apply_simulation_input() (+6 more)
 
 ### Community 218 - "invoke"
-Cohesion: 0.18
-Nodes (7): Capabilities, captured_entity(), checked(), entity_identity(), invoke(), push_wake(), read_block()
+Cohesion: 0.09
+Nodes (10): Capabilities, captured_entity(), checked(), entity_identity(), invoke(), install(), Output, SpawnRef (+2 more)
 
 ### Community 219 - "MovingEntity"
 Cohesion: 0.10
 Nodes (11): Body, CollisionMask, MAX_ACCELERATION, MAX_LIFETIME_TICKS, MAX_SOURCE_EXCLUSION_TICKS, MAX_SPEED, MovingEntity, Response (+3 more)
 
+### Community 220 - "EffectKindId"
+Cohesion: 0.21
+Nodes (3): EffectKindId, EffectRegistryError, TypedEffectKind
+
 ### Community 221 - "wake.rs"
-Cohesion: 0.14
+Cohesion: 0.15
 Nodes (11): blocked(), canonical_wakes(), EntityWake, interact_producer(), INTERACT_PRODUCER_ID, MAX_WAKES_PER_PLAN, register_wake_kind(), route_wakes() (+3 more)
 
-### Community 222 - "install"
-Cohesion: 0.14
-Nodes (6): install(), present(), install(), latch(), number(), view()
+### Community 222 - "invalid"
+Cohesion: 0.07
+Nodes (15): cell_at(), checked(), entity_id(), invalid(), invoke_fields(), install(), present(), position_at() (+7 more)
 
-### Community 223 - "Bindings"
-Cohesion: 0.23
-Nodes (7): Action, allowed_key(), Bindings, letter(), NamedBindings, parse(), valid_action_key()
+### Community 223 - "authored/bindings.rs"
+Cohesion: 0.25
+Nodes (6): Binding, Declaration, default_key(), resolve(), Scope, Session
 
 ### Community 224 - "snapshots.rs"
 Cohesion: 0.19
@@ -1520,6 +1568,10 @@ Nodes (6): decode_motion_id(), invalid_data(), invalid_entity(), prepare(), Prep
 Cohesion: 0.09
 Nodes (11): CLIENT_MESH_RESULT_BATCH, CLIENT_PENDING_UPLOADS, DropPhase, FORMAT, MESHER_RESULT_CAPACITY, PERF_HEIGHT, PERF_RADIUS, PERF_STEADY_FRAMES (+3 more)
 
+### Community 228 - "stage"
+Cohesion: 0.18
+Nodes (5): due_reschedule_waits_for_receipt_and_deferral_preserves_eligibility(), Ignitions, stage(), stage_with_in_flight(), SYSTEM
+
 ### Community 229 - "position_store.rs"
 Cohesion: 0.19
 Nodes (9): checksum(), invalid(), LEN, MAGIC, PositionStore, TEMP_SEQUENCE, validate_position(), validate_profile() (+1 more)
@@ -1536,12 +1588,12 @@ Nodes (3): character_selection_is_session_scoped_and_bounded_on_wire(), choice()
 Cohesion: 0.29
 Nodes (4): Context<'_>, Entity, EntityChange, EntitySpawn
 
-### Community 233 - "fs"
-Cohesion: 0.17
-Nodes (10): checkpoint_keys_turn(), decode_chunk_checkpoint_key(), decode_inventory_checkpoint_key(), fire_batch_key(), is_fire_checkpoint_key(), process_checkpoint_receipts(), submit_dirty_checkpoints(), submit_fire_checkpoint_batch() (+2 more)
+### Community 233 - "durable/checkpoint.rs"
+Cohesion: 0.24
+Nodes (9): checkpoint_keys_turn(), decode_chunk_checkpoint_key(), decode_inventory_checkpoint_key(), fire_batch_key(), is_fire_checkpoint_key(), process_checkpoint_receipts(), submit_dirty_checkpoints(), submit_fire_checkpoint_batch() (+1 more)
 
 ### Community 234 - "bounded.rs"
-Cohesion: 0.35
+Cohesion: 0.16
 Nodes (6): expiry_due_prefix_is_capped_and_uncommitted_work_remains_eligible(), fill_chunk(), motion_is_scheduled_entity_work_never_coordinator_stepping(), one_moving_drop_costs_its_own_records_never_the_population(), staged_motion_bytes(), test_store()
 
 ### Community 235 - "script_startup/appearance.rs"
@@ -1557,12 +1609,12 @@ Cohesion: 0.17
 Nodes (9): parse(), extreme_weather_clock_does_not_overflow_lightning_time(), Lightning, mix(), regional_strikes_are_stable_world_positions_near_far_and_negative_players(), transitions_are_continuous_and_lightning_is_shared(), WeatherKind, WeatherSnapshot (+1 more)
 
 ### Community 238 - "entity_sleep.rs"
-Cohesion: 0.30
-Nodes (19): process_durable_actions(), queue_interaction_actions(), dispatch(), edit(), empty_action(), live_harvest_receipt_invalidates_sleeping_support_without_notification_delivery(), new_sleepers_cannot_extend_the_current_recheck_pass(), position() (+11 more)
+Cohesion: 0.34
+Nodes (18): queue_interaction_actions(), dispatch(), edit(), empty_action(), live_harvest_receipt_invalidates_sleeping_support_without_notification_delivery(), new_sleepers_cannot_extend_the_current_recheck_pass(), position(), receive() (+10 more)
 
 ### Community 239 - "model.rs"
 Cohesion: 0.04
-Nodes (48): kiln_block_states(), kiln_footprint(), kiln_payload(), kiln_state(), FUEL_SLOT_INDEX, fuel_ticks(), INPUT_SLOT_INDEX, KILN_MAX_COOK_TICKS (+40 more)
+Nodes (47): kiln_block_states(), kiln_footprint(), kiln_state(), FUEL_SLOT_INDEX, fuel_ticks(), INPUT_SLOT_INDEX, KILN_MAX_COOK_TICKS, KILN_MAX_FUEL_TICKS (+39 more)
 
 ### Community 240 - "Execution foundation: next implementation slices"
 Cohesion: 0.12
@@ -1580,17 +1632,17 @@ Nodes (7): CONTENT, Fixture, luau_failed_restart_leaves_existing_save_unchanged_
 Cohesion: 0.24
 Nodes (15): bundle_gate_rejects_mismatches_and_early_play_without_blocking_healthy_join(), bundle_restart_exact_cache_and_changed_source_require_new_bytes(), client_verification_rejects_relay_tamper_truncation_and_reordering(), closed(), fixture(), fragmented(), offer(), package_effect_is_prepared_by_real_client_join_before_welcome() (+7 more)
 
-### Community 244 - "invalid"
-Cohesion: 0.09
-Nodes (14): checked_body(), checksum(), finish(), invalid(), key_bytes(), read_key(), decode_pending_key(), FireIgnition (+6 more)
+### Community 244 - "owner_codec.rs"
+Cohesion: 0.06
+Nodes (21): open(), decode_cursor_value(), decode_owner_cursor_key(), encode_cursor_value(), invalid_data(), MAX_OWNER_VALUE_BYTES, OWNER_CELL_MAGIC, OWNER_CELL_VERSION (+13 more)
 
 ### Community 245 - "script/generation.rs"
 Cohesion: 0.15
 Nodes (7): coordinate(), Declaration, declarer(), invoke(), registration(), runtime(), ScriptContributor
 
-### Community 246 - "request_chunk"
-Cohesion: 0.08
-Nodes (19): block_intersects_player(), plan(), plan(), validate_player_credit(), is_registered(), plan(), plan_event(), capacity_error() (+11 more)
+### Community 246 - "prepared_deltas"
+Cohesion: 0.11
+Nodes (11): block_intersects_player(), plan(), plan(), validate_player_credit(), cached_block_or_request(), cached_block_with_reads(), ensure_no_unhandled_anchor(), plan_block_edit() (+3 more)
 
 ### Community 247 - "authored.rs"
 Cohesion: 0.12
@@ -1600,13 +1652,9 @@ Nodes (7): ATLAS_SIZE, Document, INVALID, json(), MAX_TEXT, Resources, Widget
 Cohesion: 0.10
 Nodes (15): ACTIONS, ANCHORED_ENTITIES, Bundle, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS, ITEM_ICONS (+7 more)
 
-### Community 249 - "Patrol"
-Cohesion: 0.17
-Nodes (4): definition(), KEY, Patrol, State
-
-### Community 250 - "ClientBundle"
-Cohesion: 0.12
-Nodes (5): CacheKey, ClientBundle, ClientPackage, ordered(), Reader<'a>
+### Community 250 - "ScriptError"
+Cohesion: 0.22
+Nodes (3): ordered(), Reader<'a>, ScriptError
 
 ### Community 251 - "client/lifecycle/tests.rs"
 Cohesion: 0.26
@@ -1624,25 +1672,29 @@ Nodes (15): Approved unified gameplay implementation, Audit boundary and live pa
 Cohesion: 0.25
 Nodes (11): cycles_depth_and_shared_execution_budget_are_bounded(), dependency_versions_and_manifest_declarations_are_strict(), discovery_bounds_directory_count_source_bytes_and_total_bytes(), discovery_rejects_symlinks_at_every_path_level_and_special_files(), failed_modules_are_not_reinitialized_when_caught(), Fixture, import_failures_name_package_version_and_module_and_do_not_poison_worker(), imported_source_limits_and_exported_function_errors_keep_source_identity() (+3 more)
 
-### Community 256 - "Adapter"
-Cohesion: 0.16
-Nodes (4): Adapter, component_matches(), Lookups, register()
+### Community 256 - "process_movement_batch"
+Cohesion: 0.31
+Nodes (18): MovementCommand, process_movement_batch(), air_chunk(), close(), command(), command_order_is_stable_and_affects_the_authoritative_position(), crouch_geometry_budget_and_unknown_standing_are_authoritative(), invalid_and_excessive_deltas_consume_sequence_without_changing_position() (+10 more)
 
 ### Community 257 - "crate"
 Cohesion: 0.06
 Nodes (10): draw(), draw(), color_from_swatch(), paint_icon(), show(), SlotStyle, FIRST, PROFILE (+2 more)
 
 ### Community 258 - "State"
-Cohesion: 0.15
-Nodes (6): column_cover(), COVER_PERIOD, COVER_SIDE, flash_at(), State, super::ClientApp
+Cohesion: 0.14
+Nodes (7): column_cover(), COVER_PERIOD, COVER_SIDE, flash_at(), scan_ceiling(), State, super::ClientApp
 
-### Community 259 - "Stack"
-Cohesion: 0.15
-Nodes (6): ComponentPayload, HOTBAR_SLOTS, MAX_COMPONENT_BYTES, SLOTS, Stack, STACK_LIMIT
+### Community 259 - "lifecycle-fixture/src/system.rs"
+Cohesion: 0.13
+Nodes (12): Clock, definition(), KEY, NeighborProbe, Pair, pair_definition(), Probe, WakeLoop (+4 more)
 
 ### Community 260 - "EntityTransferPolicy"
 Cohesion: 0.08
 Nodes (9): Adapter, AutomationStack, EntityItemTransfer, EntityTransferPolicy, movable_count(), move_up_to(), PortRoute, put() (+1 more)
+
+### Community 262 - "Gpu"
+Cohesion: 0.10
+Nodes (4): Data, Gpu, MaterialData, updates_are_owned_typed_atomic_and_coalesced()
 
 ### Community 263 - "PlayerSummary"
 Cohesion: 0.21
@@ -1660,9 +1712,9 @@ Nodes (8): FootprintCell, footprint(), list(), observe(), offset(), parse(), par
 Cohesion: 0.18
 Nodes (12): luau_intent_full_inbox_is_immutable_and_failed_consumer_keeps_every_id(), luau_intent_send_requires_opt_in_and_absence_requires_bootstrap(), CHAIN, id(), inbox(), luau_intent_absent_destinations_run_on_real_listener_and_recover_once(), luau_intent_caught_invalid_and_overbudget_sends_poison_all_output(), luau_intent_declarations_and_session_identity_are_owned_and_bounded() (+4 more)
 
-### Community 267 - "validate_spawn_volume"
-Cohesion: 0.13
-Nodes (4): prepare(), moving_launch_fences_complete_body_and_uses_final_terrain_overlay(), validate_spawn_volume(), WorldSnapshot<'_>
+### Community 267 - "ObserverRegistration"
+Cohesion: 0.12
+Nodes (4): CommittedBlock, CommittedEntity, ObserverRegistration, Catalog
 
 ### Community 268 - "client/world.rs"
 Cohesion: 0.22
@@ -1672,21 +1724,21 @@ Nodes (7): Cursor, MAX_PENDING_GROUPS, MAX_PENDING_SNAPSHOTS, PendingCommit, Pen
 Cohesion: 0.18
 Nodes (19): builtin_phase_plan(), register_builtin_systems(), declarations_match_the_current_execution_shape(), descriptor(), deterministic_plan(), disjoint_and_read_only_accesses_can_share_a_phase(), duplicate_ids_and_invalid_namespaced_ids_are_rejected(), freeze_is_registration_order_independent_and_accepts_transitive_conflict_order() (+11 more)
 
-### Community 270 - "Hit"
-Cohesion: 0.16
+### Community 270 - "world"
+Cohesion: 0.14
 Nodes (17): no_hit(), no_interact(), player_adapter(), PLAYER_ENTITY_TYPE, project_avatar(), Face, Hit, is_plant() (+9 more)
 
 ### Community 271 - "Imports"
 Cohesion: 0.17
 Nodes (3): Imports, MAX_IMPORT_DEPTH, ModuleState
 
-### Community 272 - "OwnerState"
-Cohesion: 0.14
-Nodes (5): spread_over_tcp(), OwnerState, OwnerApplyReceipt, OwnerApplyTask, World
+### Community 272 - "OwnerApplyReceipt"
+Cohesion: 0.16
+Nodes (4): spread_over_tcp(), OwnerApplyReceipt, OwnerApplyTask, World
 
-### Community 273 - "Transaction"
-Cohesion: 0.17
-Nodes (13): crc32(), decode_transaction(), encode_frame(), frame_checksum(), frame_len(), invalid_data_owned(), invalid_input(), Reader (+5 more)
+### Community 273 - "decode_transaction"
+Cohesion: 0.20
+Nodes (10): decode_transaction(), encode_frame(), frame_checksum(), invalid_data_owned(), invalid_input(), Reader, Reader<'a>, transaction_size() (+2 more)
 
 ### Community 274 - "EventRealm"
 Cohesion: 0.17
@@ -1697,24 +1749,28 @@ Cohesion: 0.18
 Nodes (8): asset_path(), bounded_path(), identifier(), Manifest, public_path(), SourceSide, valid_path(), valid_version()
 
 ### Community 276 - "Observations"
-Cohesion: 0.12
-Nodes (17): SpawnReceipt, ActionView, BlockView, ComponentView, InventoryView, key(), Observations, revision() (+9 more)
+Cohesion: 0.17
+Nodes (11): ActionView, BlockView, ComponentView, InventoryView, key(), Observations, revision(), SlotView (+3 more)
 
 ### Community 279 - "System"
-Cohesion: 0.07
-Nodes (19): Behavior, Context, DropSpawn, EntityChange, EntitySpawn, IntentDelivery, IntentId, IntentOutbox (+11 more)
+Cohesion: 0.09
+Nodes (17): Context, DropSpawn, EntityChange, EntitySpawn, IntentId, IntentOutbox, IntentRequest, MAX_INTENT_PAYLOAD_BYTES (+9 more)
 
 ### Community 280 - "Scripting Gap Closure Plan"
 Cohesion: 0.15
 Nodes (13): Coverage and implementation order, Design requirements, Milestone 1 Authoring foundations, Milestone 2 Gameplay control and native parity, Milestone 3 World jobs and structured observations, Milestone 4 Dynamic UI, Milestone 5 Audio, Milestone 6 Models geometry and physics (+5 more)
 
-### Community 282 - "invalid"
-Cohesion: 0.15
-Nodes (15): axes(), decode(), encode(), MAGIC, word(), wrap(), decode(), encode() (+7 more)
+### Community 282 - "CacheKey"
+Cohesion: 0.09
+Nodes (20): CacheKey, anchored_client_artifact_preserves_full_native_contract_and_catalog_identity(), anchored_client_artifact_rejects_storage_and_machine_ownership_collisions(), anchored_client_artifact_rejects_unresolved_refs_truncation_and_nested_wrappers(), artifact(), artifact_on(), base(), declaration() (+12 more)
 
 ### Community 286 - "StorageBlockEntity"
 Cohesion: 0.18
 Nodes (10): MAX_FOOTPRINT, MAX_STORAGE_SLOTS, PlacementContext, PlaceStorage, RemovalContext, RemoveStorage, StorageBlockEntity, storage() (+2 more)
+
+### Community 287 - "Extension"
+Cohesion: 0.11
+Nodes (12): Extension, Fixture, KEY, TallStore, HarvestExtension, MarkerState, NoPickupExtension, PlacementExtension (+4 more)
 
 ### Community 288 - "server/checkpoint/tests.rs"
 Cohesion: 0.27
@@ -1732,17 +1788,21 @@ Nodes (11): route_registered_effects(), chunk(), emitted(), invalid_payload_and_
 Cohesion: 0.16
 Nodes (9): consume(), exercise_player_teleport(), asset_aggregate_bytes_and_declaration_count_are_bounded(), asset_set_count_is_bounded_even_for_empty_files(), assets_use_secure_bounded_regular_file_reads(), classified(), classified_packages_preserve_clientless_startup_and_server_import_authority(), discovery_exports_only_classified_frozen_bytes_in_canonical_order() (+1 more)
 
-### Community 292 - "runtime/memory.rs"
-Cohesion: 0.29
+### Community 292 - "mlua"
+Cohesion: 0.26
 Nodes (8): begin(), exceeded(), install(), memory_error(), memory_text(), observe(), reject(), Rejected
 
 ### Community 293 - "ItemIcon"
-Cohesion: 0.14
+Cohesion: 0.16
 Nodes (3): ItemIcon, definitions(), Catalog
 
 ### Community 294 - "Adapter"
-Cohesion: 0.18
+Cohesion: 0.19
 Nodes (3): Adapter, offset(), register()
+
+### Community 295 - "script_startup/anchored.rs"
+Cohesion: 0.14
+Nodes (12): connect(), counter_total(), edit(), FIRST, luau_anchored_counter_cost_public_interaction_reaction_refund_and_restart_over_real_listener(), open(), packages(), prepare() (+4 more)
 
 ### Community 296 - "Harvest"
 Cohesion: 0.29
@@ -1751,10 +1811,6 @@ Nodes (3): Harvest, Pickup, PlantSupport
 ### Community 297 - "Mixer"
 Cohesion: 0.12
 Nodes (8): FRAMES, Limiter, QUEUE, UNIT, gains(), MAX_VOICES, Mixer, Voice
-
-### Community 298 - "EffectConsumerOutput"
-Cohesion: 0.29
-Nodes (3): EffectConsumerOutput, RegisteredEffectLimits, PatchUsage
 
 ### Community 299 - "position_store/tests.rs"
 Cohesion: 0.21
@@ -1768,12 +1824,16 @@ Nodes (4): declarer(), field(), number(), triple()
 Cohesion: 0.15
 Nodes (3): expand(), Expansion, Inputs
 
+### Community 302 - "bundle/memory.rs"
+Cohesion: 0.36
+Nodes (4): BUDGET, MAX_TRANSIENT_BYTES, Reservation, reserve()
+
 ### Community 303 - "script/capacity.rs"
 Cohesion: 0.10
 Nodes (21): BLOCKS_PER_PACKAGE, CLIENT_PREPARATION_WALL_TIME, GENERATION_SCRIPT_WALL_TIME, GENERATORS_PER_PACKAGE, INSTALLATION_WALL_TIME, ITEMS_PER_PACKAGE, MAX_ASSET_BYTES, MAX_ASSETS (+13 more)
 
 ### Community 304 - "EntityDependencies"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (3): EntityDependencies, EntityStore, PreparedEntityTransaction
 
 ### Community 305 - "Downloads"
@@ -1781,15 +1841,15 @@ Cohesion: 0.10
 Nodes (4): complete_package_handshake(), Downloads, receive_package(), state_with_package()
 
 ### Community 307 - "SignalPost"
-Cohesion: 0.13
-Nodes (8): Reaction, KEY, SignalPost, State, bytes(), invalid(), parse(), Reply
+Cohesion: 0.21
+Nodes (3): KEY, SignalPost, State
 
-### Community 308 - "EntityClientRegistry"
-Cohesion: 0.13
-Nodes (7): Capability matrix, Entities, player behavior, world simulation and generation, Interaction, presentation and durability closure, kiln_adapter(), EntityAdapter, EntityClientRegistry, advance_players()
+### Community 308 - "EntityAdapter"
+Cohesion: 0.09
+Nodes (8): Capability matrix, Definitions, assets, and composition, Entities, player behavior, world simulation and generation, Interaction, presentation and durability closure, kiln_adapter(), EntityAdapter, block(), Catalog
 
-### Community 309 - "itemid"
-Cohesion: 0.13
+### Community 309 - "inventory/container.rs"
+Cohesion: 0.24
 Nodes (5): decode(), encode(), invalid(), max_bytes(), independent_container_codec_roundtrips_more_than_backpack_and_rejects_noncanonical_data()
 
 ### Community 310 - "src/storage.rs"
@@ -1800,17 +1860,17 @@ Nodes (35): Codec, ContainerPayload, register(), Slots, StoragePayload, StorageP
 Cohesion: 0.15
 Nodes (12): _, BYTES_PER_ROW, FORMAT, HEIGHT, MAX_MEASURED_FRAMES, run(), run_character_benchmark(), scene() (+4 more)
 
-### Community 313 - "script_startup/anchored.rs"
-Cohesion: 0.14
-Nodes (12): connect(), counter_total(), edit(), FIRST, luau_anchored_counter_cost_public_interaction_reaction_refund_and_restart_over_real_listener(), open(), packages(), prepare() (+4 more)
-
-### Community 314 - "client_metadata.rs"
-Cohesion: 0.20
-Nodes (4): Catalog, Entity, Identity, Metadata
-
-### Community 315 - "ServerMessage"
+### Community 313 - "script_startup/gameplay/player_inventory.rs"
 Cohesion: 0.21
-Nodes (9): BundleIdentity, CLIENT_RUNTIME_VERSION, MAX_BUNDLE_PART, read_identity(), read_part(), validate_part(), write_identity(), write_part() (+1 more)
+Nodes (12): concurrent_profile_inventory_transfers_retry_without_lost_items(), readonly_inventory_reservations_fence_writers_and_detect_stale_revisions(), corrupt_offline_inventory_rejects_caught_access_without_grant_or_server_failure(), cross_profile_inventory_requires_package_authority_even_for_reads(), fixture(), joined_cross_profile_inventory_and_state_commit_together_once(), offline_profile_tick_loads_asynchronously_and_commits_both_inventories(), oversized_profile_inventory_transaction_is_denied_and_next_wal_action_succeeds() (+4 more)
+
+### Community 314 - "ReplicationProbe"
+Cohesion: 0.15
+Nodes (9): ReplicationProbe, action(), action_result(), chest_collects_hopper_output_while_moving_and_building_over_real_tcp(), observe(), package_downloads_and_cancellations_preserve_live_movement_edits_and_machine_progress(), placement_probe(), running_hopper_feeds_kiln_while_player_moves_and_places_over_real_tcp() (+1 more)
+
+### Community 315 - "Stack"
+Cohesion: 0.15
+Nodes (6): ComponentPayload, HOTBAR_SLOTS, MAX_COMPONENT_BYTES, SLOTS, Stack, STACK_LIMIT
 
 ### Community 316 - "raycast_blocks"
 Cohesion: 0.22
@@ -1818,7 +1878,7 @@ Nodes (7): aiming_past_grass_edges_reaches_ground_but_center_hits_flower(), inte
 
 ### Community 318 - "Catalog"
 Cohesion: 0.05
-Nodes (55): ACTIVE, block_flags(), BlockDef, BlockTextures, BUILTIN_EMISSION, BUILTIN_FLAGS, BUILTIN_REFLECTANCE, Catalog (+47 more)
+Nodes (49): DropSize, ACTIVE, block_flags(), BlockDef, BlockTextures, BUILTIN_EMISSION, BUILTIN_FLAGS, BUILTIN_REFLECTANCE (+41 more)
 
 ### Community 319 - ".spawn"
 Cohesion: 0.15
@@ -1829,40 +1889,48 @@ Cohesion: 0.19
 Nodes (7): Fixture, luau_entity_schema_loopback_spawn_due_callback_and_recovery(), luau_entity_schema_requires_a_targeted_tick_handler_for_scheduling(), prepare(), REGISTER, REGISTER_ENTITY, SOURCE
 
 ### Community 321 - "render.rs"
-Cohesion: 0.08
-Nodes (13): avatar(), codec_normalization_tolerance_cannot_break_quaternion_interpolation(), committed_ticks_interpolate_orientation_without_gait_or_extrapolation(), impact_corrects_immediately_and_stale_motion_cannot_resurrect_flight(), model_replacement_and_removal_drop_retained_motion_history(), DEPTH_FORMAT, MAX_PENDING_MESHES, RenderStats (+5 more)
+Cohesion: 0.09
+Nodes (12): avatar(), codec_normalization_tolerance_cannot_break_quaternion_interpolation(), committed_ticks_interpolate_orientation_without_gait_or_extrapolation(), impact_corrects_immediately_and_stale_motion_cannot_resurrect_flight(), model_replacement_and_removal_drop_retained_motion_history(), DEPTH_FORMAT, MAX_PENDING_MESHES, SKY_COLOR (+4 more)
 
 ### Community 323 - "prepare"
 Cohesion: 0.29
 Nodes (3): accepts(), capture(), prepare()
 
 ### Community 324 - "state_for"
-Cohesion: 0.11
-Nodes (40): profile_appearance_corruption_fails_closed_and_missing_profile_keeps_default(), profile_appearance_save_failure_never_publishes_and_stops_mutation(), recipe_save_failure_never_publishes_and_invalid_selection_never_writes(), recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projection(), failed_startup_queue_does_not_register_a_ghost_profile(), full_outbound_queue_disconnects_only_the_slow_client(), joined_players_spawn_above_solid_terrain_with_headroom(), joins_find_lower_safe_surface_after_origin_support_is_mined() (+32 more)
+Cohesion: 0.09
+Nodes (41): profile_appearance_corruption_fails_closed_and_missing_profile_keeps_default(), profile_appearance_save_failure_never_publishes_and_stops_mutation(), recipe_save_failure_never_publishes_and_invalid_selection_never_writes(), recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projection(), failed_startup_queue_does_not_register_a_ghost_profile(), full_outbound_queue_disconnects_only_the_slow_client(), joined_players_spawn_above_solid_terrain_with_headroom(), joins_find_lower_safe_surface_after_origin_support_is_mined() (+33 more)
 
 ### Community 325 - "complete_barrier"
-Cohesion: 0.18
-Nodes (13): owner_storage_expands_once_preserves_contents_and_recovers_one_wal_record(), owner_storage_rejects_out_of_radius_or_changed_footprint_without_partial_removal(), removed(), seed_storage(), storage_startup(), STORE, unchanged(), advance_receipts() (+5 more)
+Cohesion: 0.35
+Nodes (6): advance_receipts(), CommitProgress, complete_barrier(), drain_staged_receipts(), flush_ready_fire(), poll_journal_receipts()
 
 ### Community 326 - "build_stream"
 Cohesion: 0.15
 Nodes (9): build_stream(), open_device(), write_output(), Frame, audio_output_callback_converts_channels_and_silences_underruns(), audio_output_controls_are_coherent_bounded_and_queue_reset_is_guaranteed(), audio_output_reset_adoption_restores_explicit_post_reset_preview_controls(), audio_output_reset_discards_buffered_old_session_and_shutdown_is_silent() (+1 more)
 
 ### Community 328 - "queries/tests.rs"
-Cohesion: 0.33
-Nodes (7): airborne_count_tracks_schedule_not_records(), expired_drop_is_visible_but_never_pickable(), immutable_mobile_pages_keep_old_capture_and_project_nearest_without_full_output_allocation(), pickup_delay_gates_candidates_but_not_visibility(), single_drop_collection_rechecks_range_delay_and_expiry(), spawn_direct(), test_store()
+Cohesion: 0.35
+Nodes (6): airborne_count_tracks_schedule_not_records(), expired_drop_is_visible_but_never_pickable(), pickup_delay_gates_candidates_but_not_visibility(), single_drop_collection_rechecks_range_delay_and_expiry(), spawn_direct(), test_store()
 
 ### Community 329 - "Player"
 Cohesion: 0.17
 Nodes (4): Context<'_>, Player, capture(), publish_roster()
 
+### Community 330 - ".accept"
+Cohesion: 0.14
+Nodes (4): ActionTracker, ClientApp, ClientApp, ClientApp
+
 ### Community 331 - "2. Player and lifecycle hooks"
 Cohesion: 0.05
 Nodes (40): 1. Basic runtime tools — closed, 2. Player and lifecycle hooks, 3. Dynamic UI and input — closed within agreed scope, 4. General persistent block entities — closed, 5. Flexible entities, motion and presentation, 6. Development iteration and save continuity, 7. Content-pack scale and composition limits, Acceptance and examples (+32 more)
 
-### Community 332 - "invoke"
-Cohesion: 0.36
-Nodes (3): admit(), invoke(), profile_state()
+### Community 332 - "Encoder"
+Cohesion: 0.14
+Nodes (3): Decoder<'a>, Encoder, enforce_size()
+
+### Community 333 - "Input"
+Cohesion: 0.24
+Nodes (7): inside_view(), apply(), disconnect(), Input, prepare(), Prepared, reduce_view_under_pressure()
 
 ### Community 334 - "script_startup/generation.rs"
 Cohesion: 0.23
@@ -1872,9 +1940,9 @@ Nodes (9): Fixture, GENERATION, luau_generation_baseline_edits_and_identity_surv
 Cohesion: 0.37
 Nodes (7): anchored(), nearby(), project(), read(), state(), validate_owner(), validate_state()
 
-### Community 336 - "aggregate.rs"
-Cohesion: 0.20
-Nodes (10): decode_snapshot(), encode_snapshot(), FILE_NAME, MAGIC, MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_KEYS, read_snapshot_file(), TEMP_SEQUENCE (+2 more)
+### Community 336 - "Config"
+Cohesion: 0.14
+Nodes (5): ConfigWriter, clamp_finite(), Config, create_temporary_file(), write_and_replace()
 
 ### Community 337 - "streaming/entities.rs"
 Cohesion: 0.19
@@ -1888,13 +1956,13 @@ Nodes (7): apply_committed_action(), apply_committed_action_inner(), apply_commi
 Cohesion: 0.21
 Nodes (7): action(), command_facets_are_empty_gameplay_only_and_fingerprint_permissions(), composed_controls_resolve_forward_references_without_changing_target_context(), composition_bounds_and_fingerprint_cover_every_control(), discovery_is_bounded_ordered_and_rejects_conflicting_ownership(), empty_console_commands_do_not_consume_generic_action_capacity(), ordered_command_schema_has_canonical_bounded_arguments_and_identity()
 
-### Community 341 - "Execution"
-Cohesion: 0.35
-Nodes (3): isolated(), Retained, Execution
+### Community 341 - "extension_lifecycle.rs"
+Cohesion: 0.25
+Nodes (9): Blocks, inventories, and processing, external_anchored_initialization_use_refund_and_restart_over_real_listener(), external_owner_world_read_survives_real_listener_join_and_restart(), external_processor_manual_and_hopper_transfers_process_restart_and_refund_over_tcp(), external_storage_screen_transfers_reopens_after_restart_and_breaks_over_real_listener(), registered_item_components_transfer_and_recover_over_real_listener(), send(), storage_roundtrip() (+1 more)
 
-### Community 342 - "journal/recovery.rs"
-Cohesion: 0.30
-Nodes (7): Journal, legacy_header(), open_or_create_legacy(), sync_parent(), truncate_tail(), validate_legacy_header(), write_legacy_header()
+### Community 342 - "tick/tests.rs"
+Cohesion: 0.31
+Nodes (10): drop_snapshot(), dropped_column_lands_at_rest_and_suspends(), falling_drop_integrates_exactly_one_fixed_step(), missing_terrain_defers_fail_closed_without_guessing(), neighbourhood_view(), neighbours(), NEXT_TEST_DIR, planner_rejects_anchored_locations_and_foreign_payloads() (+2 more)
 
 ### Community 343 - "player_services/tests.rs"
 Cohesion: 0.23
@@ -1905,16 +1973,20 @@ Cohesion: 0.25
 Nodes (8): Baseline when this plan was written, Bloxgloom interface plan, Delivery order, Goal, Interaction contract, Performance and correctness, UI and game-state design, Validation record
 
 ### Community 345 - "EntityCodecError"
-Cohesion: 0.06
-Nodes (15): BinCodec, CounterCodec, MateCodec, WideCodec, ByteCodec, Codec, decode_stack(), encode_payload() (+7 more)
+Cohesion: 0.10
+Nodes (10): BinCodec, BinExchange, BinPayload, CounterCodec, MateCodec, WideCodec, Codec, Adapter (+2 more)
 
 ### Community 346 - "reaction_removal_tests.rs"
 Cohesion: 0.16
 Nodes (6): drops(), open_soil(), RemovalDecision, SoilPost, SoilRegistration, stage_reaction()
 
-### Community 347 - "nearest_unsent"
-Cohesion: 0.29
-Nodes (4): nearest_unsent(), boundaries_skip_unrepresentable_chunk_keys(), sent_keys_are_skipped_without_expanding_the_budget(), visits_every_interest_key_once_in_distance_order()
+### Community 347 - "navigation.rs"
+Cohesion: 0.13
+Nodes (8): MAX_NODES, RADIUS, Route, nearest_unsent(), boundaries_skip_unrepresentable_chunk_keys(), distance(), sent_keys_are_skipped_without_expanding_the_budget(), visits_every_interest_key_once_in_distance_order()
+
+### Community 348 - ".bind_mobile"
+Cohesion: 0.16
+Nodes (6): CHEST_ENTITY_TYPE, EntityTypeDef, HOPPER_ENTITY_TYPE, KILN_ENTITY_TYPE, Catalog, MOSSBUN_ENTITY_TYPE
 
 ### Community 349 - "commands.rs"
 Cohesion: 0.24
@@ -1929,8 +2001,8 @@ Cohesion: 0.44
 Nodes (9): a_system_wave_cannot_commit_two_patches_for_the_same_owner(), batch(), chunk(), handler_or_budget_failure_aborts_the_entire_wave(), patch(), results(), system(), validated_wave_applies_in_canonical_owner_order_after_aggregate_checks() (+1 more)
 
 ### Community 352 - "Inventory"
-Cohesion: 0.08
-Nodes (10): Inventory, Capture, prepare(), WorldSnapshot<'_>, Cache, CAPACITY, Entry, decode() (+2 more)
+Cohesion: 0.09
+Nodes (9): Inventory, Capture, prepare(), WorldSnapshot<'_>, Cache, Entry, decode(), install() (+1 more)
 
 ### Community 354 - "register"
 Cohesion: 0.33
@@ -1941,28 +2013,20 @@ Cohesion: 0.22
 Nodes (9): Bloxgloom, Client execution and remaining extension work, Current execution architecture, Development and previews, HDR presentation, Publication and checkpoint boundaries, Run locally, Server threads and workers (+1 more)
 
 ### Community 356 - ".window_event"
-Cohesion: 0.08
-Nodes (7): ClientApp, ClientApp, ClientApp, ClientApp, ClientApp, ClientApp, Camera
+Cohesion: 0.16
+Nodes (3): ClientApp, ClientApp, command_action_id()
 
 ### Community 357 - "drop_merge.rs"
 Cohesion: 0.24
 Nodes (4): DropMergeCandidate, DropMergeContext, DropStackFill, filling_and_splitting_conserve_items_at_the_stack_cap()
 
 ### Community 358 - "colliders.rs"
-Cohesion: 0.11
-Nodes (12): capture(), collider(), History, intersects(), MAX_HISTORY_CREATURES, Pose, push(), sample() (+4 more)
-
-### Community 359 - "coordinator/tests.rs"
-Cohesion: 0.40
-Nodes (6): acknowledged_result_stays_retired_across_rotation_and_restart(), grant(), inventory_action(), poll_until_settled(), temp_save_dir(), wal_replay_keeps_result_and_world_effect_before_checkpoint()
+Cohesion: 0.20
+Nodes (8): capture(), collider(), History, intersects(), MAX_HISTORY_CREATURES, Pose, push(), sample()
 
 ### Community 360 - "anchored_tests.rs"
 Cohesion: 0.16
 Nodes (14): anchored_custom_state_cost_use_neighbor_support_and_recovery_are_atomic(), command(), edit(), fire_invalidates_two_cross_chunk_footprints_with_refunds_in_one_wal_record(), KEY, open(), public(), resident() (+6 more)
-
-### Community 362 - "time"
-Cohesion: 0.15
-Nodes (9): animate(), combined_mod_mixed_load_preserves_response_progress_and_restart(), report(), ROUNDS, TARGETS, farming_scale_mixed_load_preserves_response_progress_and_restart(), report(), ROUNDS (+1 more)
 
 ### Community 363 - "test_convert.py"
 Cohesion: 0.09
@@ -2000,25 +2064,25 @@ Nodes (18): append_direct(), all_incomplete_append_prefixes_recover_to_the_last_
 Cohesion: 0.25
 Nodes (7): Commits, Concurrency, Report when done, Scope discipline, Startup, Tests, Verification
 
-### Community 373 - "Behavior"
-Cohesion: 0.20
-Nodes (6): Behavior, Context, DownwardFlow, Plan, Processor, Slot
+### Community 373 - "validate_spawn_volume"
+Cohesion: 0.13
+Nodes (4): prepare(), moving_launch_fences_complete_body_and_uses_final_terrain_overlay(), validate_spawn_volume(), WorldSnapshot<'_>
 
 ### Community 374 - "coder-fast.md"
 Cohesion: 0.25
 Nodes (7): Commits, Concurrency, Report when done, Scope discipline, Startup, Tests, Verification
 
 ### Community 375 - "script_startup/machine.rs"
-Cohesion: 0.22
+Cohesion: 0.24
 Nodes (13): luau_machine_footprint_negotiates_across_seam_and_restarts(), luau_machine_footprint_places_and_breaks_secondary_cell_over_listener(), luau_machine_negotiates_plans_and_restarts(), luau_machine_ports_and_transfer_work_negotiate_and_restart(), luau_machine_recipe_list_negotiates_filters_and_restarts(), luau_machine_recipe_list_rejects_overlapping_inputs_before_save(), luau_machine_rejects_invalid_ports_and_undeclared_transfer_work(), luau_machine_rejects_missing_capability_and_caught_invalid_recipe() (+5 more)
 
-### Community 376 - "install"
-Cohesion: 0.15
-Nodes (3): install(), Output, SpawnRef
+### Community 376 - "kiln/codec.rs"
+Cohesion: 0.29
+Nodes (5): decode_stack(), encode_payload(), encode_stack(), KILN_PAYLOAD_VERSION, KilnPayloadCodec
 
-### Community 377 - "record.rs"
-Cohesion: 0.28
-Nodes (12): ExpiryReason, Impact, Motion, MotionContact, Pending, Projection, put_motion(), put_option_u64() (+4 more)
+### Community 377 - "host-api/src/machine.rs"
+Cohesion: 0.22
+Nodes (10): Context, FACES, Filter, Fuel, Machine, Port, Process, Recipe (+2 more)
 
 ### Community 379 - ".draw_node"
 Cohesion: 0.24
@@ -2028,9 +2092,13 @@ Nodes (4): Intent, rgba(), Session, trim_bytes()
 Cohesion: 0.43
 Nodes (6): aggregate_byte_limit_is_enforced_across_clients(), aggregate_high_water_mark_survives_sub_tick_queue_drain(), frame_admission_includes_the_frame_currently_being_written(), per_client_byte_limit_is_shared_by_queue_clones_and_released_on_drop(), pong(), shared_encoding_keeps_independent_byte_reservations_until_each_client_releases()
 
-### Community 382 - "join_named_client"
-Cohesion: 0.26
-Nodes (6): join_named_client(), collides(), collides_cached(), request_missing(), spawn_position(), spawn_position_cached()
+### Community 382 - "spawn.rs"
+Cohesion: 0.49
+Nodes (5): collides(), collides_cached(), request_missing(), spawn_position(), spawn_position_cached()
+
+### Community 383 - "GpuPass"
+Cohesion: 0.12
+Nodes (3): Data, GpuPass, texture_entry()
 
 ### Community 384 - "client/entities/kiln.rs"
 Cohesion: 0.19
@@ -2044,33 +2112,29 @@ Nodes (3): identifier(), declarer(), Event
 Cohesion: 0.26
 Nodes (10): block(), fields(), fields_with_command(), motion(), motion_contact(), moving_target(), captured_motion_contact_preserves_exact_readonly_target_and_revision(), every_public_removal_cause_preserves_its_exact_luau_context() (+2 more)
 
-### Community 387 - "PlayerDecision"
-Cohesion: 0.13
-Nodes (4): PlayerOperation, PlayerOperationKind, invoke(), PlayerDecision
+### Community 387 - "invoke"
+Cohesion: 0.36
+Nodes (3): admit(), invoke(), profile_state()
 
-### Community 389 - "plan"
-Cohesion: 0.25
-Nodes (6): denied(), Invocation, plan(), read_target(), sight(), verify_reach()
+### Community 389 - "actions/workstation.rs"
+Cohesion: 0.24
+Nodes (4): place(), Placement, Removal, remove()
 
-### Community 390 - "owner_commit/tests.rs"
-Cohesion: 0.21
-Nodes (8): canonical_key_sets_collapse_duplicates_and_sort(), chunk_owner(), key(), overlapping_key_sets_serialize_with_exactly_one_winner(), owner_entity_publication_metadata_does_not_conflict_at_arbitration(), parallel_revision_logs_match_serial_output_at_any_chunk_count(), patches_for(), revision_logs_preserve_read_revisions_for_overlapping_and_disjoint_owners()
+### Community 390 - "io"
+Cohesion: 0.12
+Nodes (4): TURN_ENTRIES, WRITE_BYTES, MAX_FRONTIER_CELLS, Journal
 
 ### Community 392 - "resolve_player_movement"
 Cohesion: 0.42
 Nodes (4): MAX_MOVEMENT_STEPS_PER_AXIS, player_collides(), resolve_player_movement(), ResolveError
 
-### Community 393 - "render_avatars"
-Cohesion: 0.33
+### Community 393 - "avatars/tests.rs"
+Cohesion: 0.30
 Nodes (8): authored_gpu_character_draws_textured_animated_geometry_and_instance_tint(), different_recipes_color_only_selected_irises_and_swap_hair_per_instance(), gpu_registered_player_palettes_preserve_default_and_color_all_three_parts(), HEIGHT, render(), render_avatars(), render_recipe(), WIDTH
 
 ### Community 396 - "plan_observed_request"
 Cohesion: 0.33
 Nodes (5): denied(), encode_command_arguments(), plan(), plan_observed_request(), plan_request()
-
-### Community 397 - "items.rs"
-Cohesion: 0.30
-Nodes (8): only_block_items_are_placeable(), placeable_block(), placeable_block_in(), SAPLING, SEEDS, STICK, valid_item(), valid_item_in()
 
 ### Community 399 - "prepare_recovery"
 Cohesion: 0.33
@@ -2084,13 +2148,17 @@ Nodes (7): Preset, play_file(), play_preview(), render_preview(), validate_secon
 Cohesion: 0.21
 Nodes (7): PerfGpuMesh, PerfGpuSubmesh, PerfPhase, PerfSample, print_percentiles(), run_perf_benchmark_async(), surface_height()
 
-### Community 402 - "declarer"
-Cohesion: 0.21
-Nodes (4): Declaration, declarer(), field(), parse_recipe()
+### Community 402 - "streaming.rs"
+Cohesion: 0.10
+Nodes (19): denied(), Invocation, plan(), read_target(), sight(), verify_reach(), OutboundClientSnapshot, can_stream_snapshot() (+11 more)
 
 ### Community 403 - "render_previews_weather"
 Cohesion: 0.24
 Nodes (8): measure_ui_prepare(), preview_frame(), PreviewOutput, PreviewScene, render_previews_at(), render_previews_weather(), render_previews_with_packages(), sample_inventory()
+
+### Community 404 - "declarer"
+Cohesion: 0.21
+Nodes (4): Declaration, declarer(), field(), parse_recipe()
 
 ### Community 406 - "notifications.rs"
 Cohesion: 0.23
@@ -2108,21 +2176,21 @@ Nodes (7): accepted_work_budget_has_explicit_nonblocking_overflow(), pre_edit_wo
 Cohesion: 0.29
 Nodes (7): Behavior and movement, Bounds and remaining surfaces, External proof: Copperling, Interaction and presentation, Public dynamic-entity surface, Registration and identity, Verification
 
-### Community 411 - ".public_view"
-Cohesion: 0.35
-Nodes (4): AppearanceCodec, encode_stack(), StackPayload, StackPayloadCodec
+### Community 411 - "Bindings"
+Cohesion: 0.23
+Nodes (7): Action, allowed_key(), Bindings, letter(), NamedBindings, parse(), valid_action_key()
 
 ### Community 412 - "coordinates"
 Cohesion: 0.21
 Nodes (3): coordinates(), Event, Event<'a>
 
-### Community 413 - "collections"
-Cohesion: 0.09
-Nodes (7): register(), MAX_NODES, RADIUS, Route, register(), MAX_FRONTIER_CELLS, distance()
+### Community 413 - "Reservation"
+Cohesion: 0.28
+Nodes (6): BUDGET, exhausted(), MAX_ARTIFACTS, MAX_BYTES, Reservation, reserve()
 
-### Community 414 - "client/admin.rs"
-Cohesion: 0.08
-Nodes (11): BINDING_ROWS_PER_PAGE, binding_targets(), BindingTarget, Command, parse(), parse_with_players(), registered(), generic_parser_uses_ordered_negotiated_schema_not_builtin_names() (+3 more)
+### Community 414 - ".activate_control"
+Cohesion: 0.13
+Nodes (8): BINDING_ROWS_PER_PAGE, binding_targets(), BindingTarget, ClientApp, Command, parse(), parse_with_players(), registered()
 
 ### Community 415 - "render"
 Cohesion: 0.45
@@ -2132,25 +2200,29 @@ Nodes (4): read_rgba_png(), render(), render_egui_previews(), render_package_egu
 Cohesion: 0.50
 Nodes (4): Archived plans and audits, Foundation and interface, Modding, Scripting
 
-### Community 417 - "clip.rs"
-Cohesion: 0.16
-Nodes (6): Clip, DECODED_BYTES, MAX_CLIP_FRAMES, MAX_DECODED_BYTES, MAX_FILE_BYTES, Reservation
-
-### Community 418 - ".fail_session"
-Cohesion: 0.16
-Nodes (3): ClientApp, ClientApp, ClientApp
+### Community 418 - "ClientApp"
+Cohesion: 0.10
+Nodes (5): chunk_in_view(), ClientApp, lighting_depends_on(), mesh_priority(), LightSample
 
 ### Community 419 - ".compose_current_package_action_with_args"
 Cohesion: 0.22
 Nodes (8): ActionChoice, compose_named_command(), compose_observed_entity_action(), compose_package_action(), compose_package_action_with_args(), PackageActionInput, authored_entity_action_uses_observed_identity_and_exact_bounded_arguments(), named_shortcut_is_inert_without_matching_session_command()
 
-### Community 422 - "Registered actions and composed controls"
-Cohesion: 0.40
-Nodes (5): Bounded composition, Negotiated commands, Production path and authority, Registered actions and composed controls, Supported targets and effects
+### Community 421 - "UiFrame<'_>"
+Cohesion: 0.11
+Nodes (8): draw(), CharacterPanel, JoinProgress, SettingId, UiDebug, UiFrame<'_>, .BINDING_VIEW_PREFIX, UiSettings
+
+### Community 422 - "config.rs"
+Cohesion: 0.15
+Nodes (10): CONFIG_VERSION, MAX_FOV, MAX_SCALE, MAX_SENSITIVITY, MIN_FOV, MIN_SCALE, MIN_SENSITIVITY, nonempty_env() (+2 more)
+
+### Community 424 - ".advance"
+Cohesion: 0.35
+Nodes (4): Body, DT, Movement, valid_position()
 
 ### Community 425 - "OwnerWorldView"
-Cohesion: 0.14
-Nodes (4): Adapter, internal_owner(), OwnerWorldView, public_owner()
+Cohesion: 0.13
+Nodes (5): Adapter, internal_owner(), OwnerWorldView, public_owner(), ServerStartup
 
 ### Community 428 - "run"
 Cohesion: 0.43
@@ -2164,20 +2236,20 @@ Nodes (4): gpu_custom_tile_shades_only_its_layer_and_keeps_normal_geometry(), gp
 Cohesion: 0.40
 Nodes (5): Callback, Declaration, Example and checks, General anchored block entities, Scheduling, authority and publication
 
-### Community 433 - "authored/bindings.rs"
-Cohesion: 0.25
-Nodes (6): Binding, Declaration, default_key(), resolve(), Scope, Session
+### Community 433 - "cold.rs"
+Cohesion: 0.29
+Nodes (11): ACTION, BEHAVIOR, body(), cold_resume_fixture(), dormant_fixture(), launch_fixture(), moving_real_listener_cold_terrain_and_dormancy_preserve_then_resume_saved_motion(), open_boxed() (+3 more)
 
 ### Community 434 - "script_startup/moving.rs"
-Cohesion: 0.06
-Nodes (37): catalog(), control_only_publications_advance_full_motion_without_advancing_wire_position_revision(), motion_only_replica_commits_allow_envelope_changes_and_preserve_public_state_revision(), moving_projection_validates_redundant_wire_pose_and_exposes_only_authored_public_bytes(), projected(), State, unchanged_motion_revision_cannot_change_pose_or_other_envelope_fields(), ACTION (+29 more)
+Cohesion: 0.18
+Nodes (9): ACTION, BEHAVIOR, moving_failed_impact_remains_durable_and_does_not_grant_partial_reward(), moving_loopback_debits_once_sweeps_reacts_and_recovers_consumed_impact(), package(), prepare(), PROFILE, records() (+1 more)
 
 ### Community 435 - "quad"
 Cohesion: 0.43
 Nodes (3): linear_color(), quad(), Session
 
 ### Community 436 - "write_frame"
-Cohesion: 0.25
+Cohesion: 0.22
 Nodes (3): bounded_turns_preserve_crc_and_stop_at_failure_without_consuming_suffix(), byte_budget_stops_turns_and_file_limit_does_not_write_overshoot(), write_frame()
 
 ### Community 437 - "script_startup/gameplay/inventory.rs"
@@ -2193,8 +2265,8 @@ Cohesion: 0.25
 Nodes (3): Control, control_values_preserve_byte_limits_ranges_and_declared_choices(), SelectOption
 
 ### Community 441 - "DroppedItem"
-Cohesion: 0.31
-Nodes (5): DropAnimator, live_visual(), PickupFlight, POSITION_BLEND, DroppedItem
+Cohesion: 0.17
+Nodes (7): DropAnimation, .BYTE_LEN, DropAnimator, live_visual(), PickupFlight, POSITION_BLEND, DroppedItem
 
 ### Community 442 - "coder-smart.md"
 Cohesion: 0.33
@@ -2220,20 +2292,32 @@ Nodes (4): Agent guidance, Architecture and invariants, graphify, Verify graphic
 Cohesion: 0.15
 Nodes (4): Fixture, moving_decimal_minimum_extent_matches_native_f32_validation(), moving_startup_collects_frozen_body_and_three_handlers(), moving_startup_supports_private_model_free_entities()
 
-### Community 448 - "ScriptError"
-Cohesion: 0.10
-Nodes (12): decode(), encode(), decode(), encode(), float(), BUDGET, exhausted(), MAX_ARTIFACTS (+4 more)
+### Community 448 - "owner_durable/tests.rs"
+Cohesion: 0.36
+Nodes (15): byte_bound_is_enforced_at_insert_and_at_prepare_without_truncation(), capacity_defers_while_corruption_stops(), chunk(), commit_after_a_concurrent_wave_rejects_whole_and_applies_nothing(), committed_waves_mark_active_and_update_the_due_index(), counter_store(), dropped_prepared_wave_changes_nothing(), fed_deadlines_are_not_duplicated_and_replay_clears_stale_readiness() (+7 more)
+
+### Community 449 - "config/tests.rs"
+Cohesion: 0.24
+Nodes (10): parse_clamped_float(), parse_config(), audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset(), binding_conflicts_and_movement_keys_fail_back_to_defaults(), config_round_trips_through_explicit_path(), invalid_values_are_clamped_and_corrupt_files_fall_back(), named_shortcuts_round_trip_but_never_bind_movement_or_builtin_keys(), profile_is_generated_once_and_survives_reload() (+2 more)
+
+### Community 450 - "Startup"
+Cohesion: 0.07
+Nodes (3): ClientBundle, Format, Startup
+
+### Community 451 - "glam"
+Cohesion: 0.20
+Nodes (4): shader(), COMPUTE_FIXTURE, gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows(), weather_fog_compute_fixture_validates_without_a_gpu()
 
 ### Community 452 - "resources.rs"
 Cohesion: 0.19
 Nodes (8): ArrayUsage, MAX_ARRAY_BYTES, MAX_ARRAY_LAYERS, required_limits(), counts_every_mipmap_and_enforces_the_array_byte_boundary(), requests_enough_device_layers_for_package_textures_and_native_materials(), target_package_texture_count_builds_a_valid_gpu_material_array(), validate()
 
-### Community 453 - "ObserverRegistration"
-Cohesion: 0.20
-Nodes (3): CommittedBlock, CommittedEntity, ObserverRegistration
+### Community 453 - "Committed"
+Cohesion: 0.15
+Nodes (6): Committed, Observer, UseObserver, luau_committed_observer_timeout_cannot_block_receipt_or_later_observer_over_listener(), Witness, ScriptObserver
 
 ### Community 454 - "package"
-Cohesion: 0.28
+Cohesion: 0.25
 Nodes (8): luau_anchored_callbacks_accept_full_registered_binary_limits_and_immutable_inputs(), luau_anchored_rejects_failed_validation_oversized_public_and_ambiguous_reaction(), luau_anchored_invalid_interaction_and_excess_refund_preserve_state_over_real_listener(), luau_anchored_registration_requires_capability_and_rejects_caught_invalid_geometry_before_save(), package(), sources(), luau_anchored_registration_rejects_unknown_sources_fields_and_out_of_range_bounds(), luau_anchored_then_storage_or_machine_same_block_rejects_caught_ownership_collision()
 
 ### Community 455 - "public_systems/motion/tests.rs"
@@ -2241,7 +2325,7 @@ Cohesion: 0.18
 Nodes (5): Bytes, catalog(), MotionOwner, owner_moving_spawn_wraps_record_and_rejects_missing_authority_or_capture(), spawn()
 
 ### Community 456 - "recipe_browser.rs"
-Cohesion: 0.21
+Cohesion: 0.29
 Nodes (7): activate(), AIM, change(), open(), PROFILE, recipe_browser_dynamic_controls_real_server_crafting_rollback_replay_and_restart(), settle()
 
 ### Community 457 - "client/appearance.rs"
@@ -2252,13 +2336,9 @@ Nodes (3): apply_environment(), invalid(), parse()
 Cohesion: 0.42
 Nodes (8): avatar(), fast_movement_cannot_accelerate_authored_walk_past_normal_playback(), interpolation_moves_between_samples_and_freezes_without_extrapolation(), landing_animation_follows_delayed_ground_contact_and_is_visual_only(), player_walk_blends_from_replicated_distance_then_stops_without_drift(), predicted_local_player_is_not_delayed_and_faces_the_current_look_heading(), switching_actor_model_cannot_reuse_character_gait_or_old_pose(), teleport_despawn_and_reappearance_reset_history()
 
-### Community 461 - "script_startup/machine/variants.rs"
-Cohesion: 0.60
-Nodes (3): luau_machine_variants_negotiate_place_from_finite_inventory_and_recover(), luau_machine_variants_reject_duplicate_and_foreign_states_before_save(), source()
-
-### Community 462 - "std"
-Cohesion: 0.16
-Nodes (13): external_anchored_initialization_use_refund_and_restart_over_real_listener(), decode_anchor(), invalid(), prepare_recovery(), read(), replay(), save(), Snapshot (+5 more)
+### Community 462 - "prepare_recovery"
+Cohesion: 0.35
+Nodes (7): decode_anchor(), invalid(), prepare_recovery(), read(), replay(), save(), Snapshot
 
 ### Community 465 - "bloxgloom"
 Cohesion: 1.00
@@ -2272,13 +2352,13 @@ Nodes (4): full_palette_reuses_removed_entry_and_preserves_other_cells(), row_co
 Cohesion: 0.28
 Nodes (8): clamp(), commit(), expire(), invalid(), plan(), plan_inner(), reaction(), solver_error()
 
-### Community 506 - "ReplicationProbe"
-Cohesion: 0.15
-Nodes (9): ReplicationProbe, action(), action_result(), chest_collects_hopper_output_while_moving_and_building_over_real_tcp(), observe(), package_downloads_and_cancellations_preserve_live_movement_edits_and_machine_progress(), placement_probe(), running_hopper_feeds_kiln_while_player_moves_and_places_over_real_tcp() (+1 more)
+### Community 506 - "src/client/tests.rs"
+Cohesion: 0.13
+Nodes (9): block_edit_uses_selected_hotbar_block_and_hit_face(), confirmed_fire_visuals_expire_and_are_capped_and_distance_culled(), graphics_controls_apply_save_and_preserve_values_while_disabled(), lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently(), latest_edit_mesh_survives_a_superseded_kiln_relight_backlog(), mapped_server_item_and_replaceable_state_drive_placement_preview(), moving_object_lighting_keeps_completed_field_during_relight_then_accepts_darkness(), moving_objects_sample_current_local_light_across_negative_chunk_seams() (+1 more)
 
-### Community 507 - "version_two"
-Cohesion: 0.32
-Nodes (10): dynamic_children_reorder_preserves_editable_values_and_exact_focus_then_removal_clears_it(), dynamic_mixed_replies_reject_foreign_resources_colliding_ids_and_bad_values_atomically(), guarded_egui_input_and_activation_cannot_target_replacement_or_reset_widgets(), incoming_player_text_updates_follow_current_widget_ids_after_dynamic_replacement(), index(), oversized_dynamic_tree_depth_and_retained_text_fail_without_partial_state(), player_text_update_cannot_overflow_a_near_capacity_dynamic_document(), replica_queue_redacts_another_packages_active_document_values_state_and_texts() (+2 more)
+### Community 507 - "colliders/tests.rs"
+Cohesion: 0.25
+Nodes (4): Bytes, declaration(), moving_capture_uses_committed_creature_crossing_and_fences_target_motion(), record()
 
 ### Community 508 - "src/audio.rs"
 Cohesion: 0.17
@@ -2288,21 +2368,29 @@ Nodes (5): Command, weather(), world_and_preview_sources_change_only_at_fade_bou
 Cohesion: 0.10
 Nodes (11): authored_motion_uses_server_age_and_continues_into_partial_pickup(), item(), moving_drop_blends_between_authoritative_positions(), sized_drop_keeps_its_preset_through_pickup_flight_without_changing_motion(), app(), avatar(), breaking_starts_a_bounded_tool_animation_and_stance_requires_server_confirmation(), held_break_cancels_on_menus_capture_loss_and_session_retirement() (+3 more)
 
-### Community 511 - "invalid"
-Cohesion: 0.08
-Nodes (17): cell_at(), checked(), entity_id(), invalid(), invoke_fields(), field(), install(), optional_vector() (+9 more)
+### Community 510 - "declarer"
+Cohesion: 0.15
+Nodes (4): authored_recipes_replicate_independently_and_survive_server_restart(), Peer, declarer(), dense_array()
 
-### Community 514 - "Biquad"
-Cohesion: 0.18
-Nodes (3): Biquad, Mode, DropVoice
+### Community 511 - "install"
+Cohesion: 0.23
+Nodes (8): field(), install(), optional_vector(), parse_change(), parse_spawn(), SpawnRef, table(), vector()
+
+### Community 514 - "PlayerDecision"
+Cohesion: 0.13
+Nodes (4): PlayerOperation, PlayerOperationKind, invoke(), PlayerDecision
+
+### Community 515 - "admin/tests.rs"
+Cohesion: 0.13
+Nodes (4): generic_parser_uses_ordered_negotiated_schema_not_builtin_names(), player_command_names_completion_and_reconnect_use_exact_sessions(), request(), command_signature()
 
 ### Community 516 - "gameplay/admin.rs"
 Cohesion: 0.18
 Nodes (5): Admin, GIVE, SPAWN, TIME, WEATHER
 
-### Community 517 - "src/client/tests.rs"
-Cohesion: 0.13
-Nodes (9): block_edit_uses_selected_hotbar_block_and_hit_face(), confirmed_fire_visuals_expire_and_are_capped_and_distance_culled(), graphics_controls_apply_save_and_preserve_values_while_disabled(), lamp_edit_rebuilds_both_sides_of_a_chunk_seam_urgently(), latest_edit_mesh_survives_a_superseded_kiln_relight_backlog(), mapped_server_item_and_replaceable_state_drive_placement_preview(), moving_object_lighting_keeps_completed_field_during_relight_then_accepts_darkness(), moving_objects_sample_current_local_light_across_negative_chunk_seams() (+1 more)
+### Community 517 - "EffectBuffer"
+Cohesion: 0.24
+Nodes (3): EffectBuffer, LIFE, MAX_EMBERS
 
 ### Community 518 - "route_effects"
 Cohesion: 0.36
@@ -2311,6 +2399,10 @@ Nodes (8): route_effects(), block_changes_fan_out_to_boundary_face_edge_and_corn
 ### Community 519 - "app"
 Cohesion: 0.47
 Nodes (3): app(), declared_input_real_client_queues_once_opens_and_rebinds_without_gameplay(), declared_input_real_client_respects_screens_focus_modifiers_and_scope()
+
+### Community 520 - "client_metadata.rs"
+Cohesion: 0.24
+Nodes (4): Catalog, Entity, Identity, Metadata
 
 ### Community 521 - "InventoryWorkers"
 Cohesion: 0.18
@@ -2332,49 +2424,57 @@ Nodes (9): Deterministic terrain contributors, Example and acceptance, Final pac
 Cohesion: 0.35
 Nodes (8): app(), inventory_zero_is_known_and_stale_or_duplicate_updates_do_not_replace_it(), only_contiguous_installed_deltas_publish_authoritative_cells(), pending(), receipts_retain_package_ownership_deduplicate_and_retire_with_the_session(), recent_cells_are_bounded_refreshed_by_snapshots_and_removed_on_eviction(), terrain_action_receipts_preserve_the_registered_package_key(), ui_less_callbacks_receive_latest_world_snapshot_as_readonly_data()
 
+### Community 529 - "refund_stacks"
+Cohesion: 0.21
+Nodes (4): place(), refund_removal(), refund_stacks(), remove()
+
 ### Community 531 - "Player lifecycle implementation"
 Cohesion: 0.17
 Nodes (12): Landed: committed observers, Landed: exact identity and action queries, Landed: general package-owned profile state, Landed: lifecycle state and scheduling, Landed: local public state and client lifecycle, Landed: runtime appearance, Landed: runtime teleport, Landed: targeted notices and session kicks (+4 more)
+
+### Community 532 - "TransferSelection"
+Cohesion: 0.18
+Nodes (3): StackSelector, TransferSelection, Adapter
 
 ### Community 533 - "PlayerState"
 Cohesion: 0.42
 Nodes (4): PlayerState, read(), valid_key(), write()
 
-### Community 534 - "bloxgloom_host_api"
-Cohesion: 0.04
-Nodes (3): Catalog, Catalog, Catalog
+### Community 535 - "moving/lifecycle.rs"
+Cohesion: 0.22
+Nodes (10): ACTION, BEHAVIOR, install(), launch(), moving_failed_expiry_keeps_profile_inventory_and_drop_rewards_atomic(), moving_real_listener_admin_cancel_rejects_nonadmin_and_clears_stuck_reaction(), moving_real_listener_dynamic_targets_source_exclusion_and_exact_receipt_replay(), moving_real_listener_expiry_effect_is_once_and_replay_preserves_historical_id() (+2 more)
 
-### Community 535 - "declarations/moving/tests.rs"
-Cohesion: 0.36
-Nodes (6): artifact(), base(), declaration(), decode_bytes(), moving_metadata_preserves_native_catalog_and_has_inert_codec(), moving_metadata_rejects_missing_capability_overflow_and_nesting()
-
-### Community 536 - "materials.rs"
-Cohesion: 0.29
-Nodes (7): bound_texture_asset_must_decode_and_match_owned_canonical_metadata(), bundle(), DESCRIPTOR, material_bundle_verifies_key_ownership_limits_and_catalog_readiness(), SHADER, texture_metadata(), version_two_material_verifies_hooks_parameters_and_negotiated_layers()
+### Community 536 - "Compiled"
+Cohesion: 0.18
+Nodes (3): Compiled, MAX_BYTES, MAX_ENTRIES
 
 ### Community 540 - "presentation/effects/tests.rs"
 Cohesion: 0.38
 Nodes (3): avatar(), colored_sparks_follow_the_same_bounded_session_lifetime(), embers_follow_only_presented_entities_expire_and_stay_bounded()
 
-### Community 541 - "script_startup/machine/components.rs"
-Cohesion: 0.16
-Nodes (7): LifecyclePlan, Machine, luau_component_machine_processes_exact_stack_over_listener_and_recovers(), luau_machine_component_options_reject_invalid_constants_before_save(), luau_machine_component_recipe_negotiates_exact_predicate_and_preservation(), luau_machine_present_input_exact_output_and_component_fuel_roundtrip(), source()
+### Community 542 - "Reaction"
+Cohesion: 0.33
+Nodes (5): Reaction, bytes(), invalid(), parse(), Reply
 
-### Community 543 - "farming.rs"
-Cohesion: 0.12
-Nodes (14): AIM, combined_mod_downloads_acts_grows_and_recovers(), combined_mod_two_profiles_act_independently_and_recover(), GROW, grow_once(), open(), PROFILE, farming_scale_downloads_plants_harvests_and_recovers_three_systems() (+6 more)
+### Community 543 - "entities"
+Cohesion: 0.27
+Nodes (6): live_command(), missing_mossbun_terrain_defers_locally_then_runs_on_residency(), mossbun_authorized_spawn_worker_steps_and_restart_preserve_identity(), mossbun_spawn_limit_rejects_without_allocating_or_consuming_items(), resident_platform(), pickup_and_entity_backlogs_leave_command_room_and_one_actor_cannot_fill_it()
 
 ### Community 544 - "server/drops.rs"
-Cohesion: 0.13
-Nodes (9): age_ms_now(), DROP_RADIUS, GRAVITY, invalid(), is_drop_delta(), LIFETIME, TERMINAL_SPEED, VIEW_RANGE (+1 more)
+Cohesion: 0.14
+Nodes (8): DROP_RADIUS, GRAVITY, invalid(), is_drop_delta(), LIFETIME, TERMINAL_SPEED, VIEW_RANGE, VIEW_RANGE_SQ
+
+### Community 545 - "SpawnReceipt"
+Cohesion: 0.44
+Nodes (6): SpawnReceipt, MAX_ACTION_SPAWNS, read(), read_bytes(), validate(), write()
 
 ### Community 546 - "Modding: start here"
 Cohesion: 0.50
 Nodes (4): Historical design and audit, Modding: start here, Rust extension and host reference, Try authoring now
 
-### Community 547 - "Extension"
-Cohesion: 0.09
-Nodes (13): Extension, Fixture, KEY, TallStore, HarvestExtension, NoPickupExtension, PlacementExtension, SupportExtension (+5 more)
+### Community 547 - "Behavior"
+Cohesion: 0.22
+Nodes (4): Behavior, DownwardFlow, Plan, Processor
 
 ### Community 552 - "visual_contracts.rs"
 Cohesion: 0.33
@@ -2384,73 +2484,81 @@ Nodes (6): copy(), fixture(), installed_authoritative_entity_replica_drives_the_
 Cohesion: 0.50
 Nodes (4): Accepted implementation scope, Typed client replica snapshots, Update and lifecycle semantics, Verification
 
-### Community 556 - "Chunk"
-Cohesion: 0.27
-Nodes (3): predict_player_movement(), predict_player_movement_with_stance(), Chunk
-
-### Community 557 - "receipts/tests.rs"
-Cohesion: 0.39
-Nodes (5): ack_retires_both_outcomes_without_reopening_sequence(), bounded_window_can_run_beyond_old_lifetime_cap(), committed_launch_ids_survive_restart_and_duplicate_action_admission(), reconnect_closes_old_epoch_and_preserves_monotonic_epoch_after_codec(), record()
+### Community 557 - "Presentation"
+Cohesion: 0.20
+Nodes (4): MAX_STREAKS, MAX_VERTEX_BYTES, Presentation, random()
 
 ### Community 558 - "Registered content and composition"
 Cohesion: 0.29
 Nodes (7): Bounds, atomicity and compatibility, Composition and deterministic resolution, Existing capabilities exposed, Integration additions, Luau package capacities, Registered content and composition, Verification and limits
 
-### Community 559 - "bundle_ui.rs"
-Cohesion: 0.10
-Nodes (15): authored_button_reaches_authoritative_receipt_and_durable_inventory(), client_startup_failure_refuses_content_ready_with_package_and_module(), downloaded_client_startup_is_session_scoped_across_reconnect_and_switch(), downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch(), startup_fixture(), startup_worker_discards_partial_registration_and_caught_limit(), startup_worker_imports_exact_direct_dependencies_with_lexical_visibility(), verified_replica_callbacks_are_session_scoped_worker_presentations() (+7 more)
+### Community 559 - "load.rs"
+Cohesion: 0.15
+Nodes (7): ACTION, count(), moving_real_listener_capacity_measurements(), package(), rank(), REGISTER, request()
 
 ### Community 560 - "AppearanceState"
-Cohesion: 0.25
-Nodes (3): AppearanceState, authored_recipes_replicate_independently_and_survive_server_restart(), Peer
+Cohesion: 0.15
+Nodes (6): AppearanceState, CharacterRecipe, EYES, HAIR, MAX_APPEARANCE_BYTES, MOUTHS
 
-### Community 561 - "EffectKindId"
-Cohesion: 0.17
-Nodes (4): EffectKindId, EffectKindRegistry, EffectKindRegistryFrozen, EffectRegistryError
+### Community 561 - "EffectKindRegistryFrozen"
+Cohesion: 0.23
+Nodes (3): EffectKindRegistry, EffectKindRegistryFrozen, ErasedEffectKind
 
 ### Community 562 - "Dynamic authored UI and input"
 Cohesion: 0.40
 Nodes (5): Callback inputs and atomic updates, Declared input actions, Documents and controls, Dynamic authored UI and input, Server authority and remaining scope
 
-### Community 563 - "EffectBuffer"
-Cohesion: 0.42
-Nodes (4): boundary_coordinates(), EffectBuffer, EffectBufferError, EffectEnvelope
+### Community 563 - ".public_view"
+Cohesion: 0.35
+Nodes (4): AppearanceCodec, encode_stack(), StackPayload, StackPayloadCodec
 
 ### Community 564 - "create_target_pipeline"
 Cohesion: 0.20
 Nodes (3): create_target_pipeline(), target_outline_vertices(), TARGET_SHADER
 
-### Community 566 - "decode"
-Cohesion: 0.36
-Nodes (3): decode(), encode(), property_identifier()
+### Community 566 - "invalid"
+Cohesion: 0.15
+Nodes (15): axes(), decode(), encode(), MAGIC, word(), wrap(), decode(), encode() (+7 more)
 
-### Community 567 - "deviceext"
-Cohesion: 0.13
-Nodes (11): JOINTS, MATERIALS, Vertex, AvatarMesh, AvatarVertex, build(), emit_cuboid(), humanoid_mesh_has_bounded_closed_cuboids_and_face_details() (+3 more)
+### Community 567 - "session_ids.rs"
+Cohesion: 0.24
+Nodes (6): FILE, GENERATIONS, LOCK, next_after(), reserve(), TEMP_SEQUENCE
 
 ### Community 569 - "memory/tests.rs"
 Cohesion: 0.48
 Nodes (5): memory_errors_latch_before_handlers_transform_them_and_reset_explicitly(), protected_calls_can_yield_and_resume_without_a_rust_boundary(), protected_calls_preserve_values_and_normal_errors(), real_allocator_error_caught_in_pcall_is_latched(), runtime()
 
-### Community 571 - "Compiled"
-Cohesion: 0.18
-Nodes (3): Compiled, MAX_BYTES, MAX_ENTRIES
+### Community 571 - "coordinator/tests.rs"
+Cohesion: 0.40
+Nodes (6): acknowledged_result_stays_retired_across_rotation_and_restart(), grant(), inventory_action(), poll_until_settled(), temp_save_dir(), wal_replay_keeps_result_and_world_effect_before_checkpoint()
+
+### Community 573 - "decode"
+Cohesion: 0.31
+Nodes (3): decode(), encode(), property_identifier()
+
+### Community 575 - "materials.rs"
+Cohesion: 0.29
+Nodes (7): bound_texture_asset_must_decode_and_match_owned_canonical_metadata(), bundle(), DESCRIPTOR, material_bundle_verifies_key_ownership_limits_and_catalog_readiness(), SHADER, texture_metadata(), version_two_material_verifies_hooks_parameters_and_negotiated_layers()
 
 ### Community 578 - "Authoritative moving entities"
 Cohesion: 0.14
 Nodes (11): Acceptance evidence, Admission limits, Authoritative moving entities, Behavior events, Compatibility and presentation, Declaration, Gameplay services, Integration, reactions and persistence (+3 more)
 
-### Community 579 - "entities/mossbun.rs"
-Cohesion: 0.29
-Nodes (3): Mossbun, BODY, register()
+### Community 579 - "combined/mixed.rs"
+Cohesion: 0.18
+Nodes (8): combined_mod_mixed_load_preserves_response_progress_and_restart(), report(), ROUNDS, TARGETS, farming_scale_mixed_load_preserves_response_progress_and_restart(), report(), ROUNDS, TARGETS
 
-### Community 580 - "loot.rs"
-Cohesion: 0.46
-Nodes (3): flower_harvests_itself_and_grass_and_leaves_have_distinct_loot(), harvest(), harvest_with_catalog()
+### Community 580 - "entities/moving_tests.rs"
+Cohesion: 0.52
+Nodes (6): catalog(), control_only_publications_advance_full_motion_without_advancing_wire_position_revision(), motion_only_replica_commits_allow_envelope_changes_and_preserve_public_state_revision(), moving_projection_validates_redundant_wire_pose_and_exposes_only_authored_public_bytes(), projected(), unchanged_motion_revision_cannot_change_pose_or_other_envelope_fields()
 
-### Community 582 - "extension_system.rs"
-Cohesion: 0.47
-Nodes (3): clock(), external_system_runs_without_entities_and_recovers_across_real_listener_restart(), startup()
+### Community 583 - "CharacterRenderer"
+Cohesion: 0.14
+Nodes (4): CharacterRenderer, JOINTS, MATERIALS, Vertex
+
+### Community 588 - "State"
+Cohesion: 0.07
+Nodes (6): Client, handle_message(), PendingJoin, queue_move(), State, Capture
 
 ### Community 592 - "typed_recipe.rs"
 Cohesion: 0.38
@@ -2464,53 +2572,53 @@ Nodes (20): Additional head-look limitations, Attachment and preservation, Modul
 Cohesion: 0.42
 Nodes (6): apply_command(), declaration(), read(), read_contact(), record(), spawn_record()
 
-### Community 596 - "Client audio foundation"
-Cohesion: 0.33
-Nodes (6): Acceptance measurements, Client audio foundation, Mixer and native playback contract, NoiseMachine adaptation, Try it, Verification and next work
+### Community 596 - "Game weather foundation"
+Cohesion: 0.29
+Nodes (7): Acceptance evidence, Authority, timing and persistence, Depth-fog acceptance, Game weather foundation, Presentation and bounds, Storm presentation follow-up, Try it
 
 ### Community 597 - "seed"
 Cohesion: 0.29
 Nodes (8): entity(), hex_id(), partition(), present(), profile(), seed(), word(), words()
 
+### Community 598 - "ServerMessage"
+Cohesion: 0.21
+Nodes (9): BundleIdentity, CLIENT_RUNTIME_VERSION, MAX_BUNDLE_PART, read_identity(), read_part(), validate_part(), write_identity(), write_part() (+1 more)
+
 ### Community 600 - "presentation/observations/tests.rs"
 Cohesion: 0.60
 Nodes (5): committed_spawn_ordinals_expose_exact_readonly_entity_handles(), known(), observations_distinguish_unknown_from_known_empty_and_filter_action_ownership(), observations_keep_exact_binary_revisions_and_nested_views_readonly(), observations_reject_invalid_dense_inventory_components_world_and_window_bounds()
 
-### Community 601 - "visibility.rs"
-Cohesion: 0.20
-Nodes (5): smooth(), chunk_visible(), chunk_visible_padded(), outside_clip(), view_projection()
+### Community 602 - "DropPolicy"
+Cohesion: 0.22
+Nodes (3): DropPolicy, .BYTE_LEN, .MAX_PICKUP_RANGE
 
 ### Community 604 - "FireAnimator"
 Cohesion: 0.23
 Nodes (4): FireAnimator, LIFE, MAX_DISTANCE_SQUARED, MAX_FIRES
 
-### Community 606 - "content/manifest.rs"
-Cohesion: 0.29
-Nodes (5): ContentEntry, MAGIC, MAX_ENTRIES, MAX_MANIFEST_BYTES, VERSION
-
-### Community 607 - "present"
-Cohesion: 0.48
-Nodes (3): entity(), present(), seed()
-
-### Community 608 - "Startup"
-Cohesion: 0.09
-Nodes (7): Appearance, MAX_ADDITIONS, MODEL, PANTS, SHIRTS, SKINS, Startup
-
-### Community 609 - "key"
+### Community 605 - "version_two"
 Cohesion: 0.32
-Nodes (5): Command, CommandArgument, CommandValue, MAX_COMMAND_ARGUMENTS, key()
+Nodes (10): dynamic_children_reorder_preserves_editable_values_and_exact_focus_then_removal_clears_it(), dynamic_mixed_replies_reject_foreign_resources_colliding_ids_and_bad_values_atomically(), guarded_egui_input_and_activation_cannot_target_replacement_or_reset_widgets(), incoming_player_text_updates_follow_current_widget_ids_after_dynamic_replacement(), index(), oversized_dynamic_tree_depth_and_retained_text_fail_without_partial_state(), player_text_update_cannot_overflow_a_near_capacity_dynamic_document(), replica_queue_redacts_another_packages_active_document_values_state_and_texts() (+2 more)
 
-### Community 610 - "texture"
-Cohesion: 0.36
-Nodes (3): array(), decode(), texture()
+### Community 607 - "script_startup/machine/components.rs"
+Cohesion: 0.25
+Nodes (5): luau_component_machine_processes_exact_stack_over_listener_and_recovers(), luau_machine_component_options_reject_invalid_constants_before_save(), luau_machine_component_recipe_negotiates_exact_predicate_and_preservation(), luau_machine_present_input_exact_output_and_component_fuel_roundtrip(), source()
 
-### Community 611 - "server/weather/tests.rs"
-Cohesion: 0.43
-Nodes (4): durable_apply_does_not_rewind_elapsed_weather_time(), real_listener_synchronizes_admin_weather_and_denies_other_players(), temporary(), weather_restart_preserves_transition_and_wal_recovers_unapplied_override()
+### Community 608 - "Appearance"
+Cohesion: 0.11
+Nodes (8): Appearance, MAX_ADDITIONS, MODEL, PANTS, SHIRTS, SKINS, decode(), encode()
 
-### Community 614 - "io"
-Cohesion: 0.08
-Nodes (14): BUDGET, MAX_TRANSIENT_BYTES, Reservation, reserve(), TURN_ENTRIES, WRITE_BYTES, writer_loop(), AGE_BUCKETS (+6 more)
+### Community 610 - "world_time/tests.rs"
+Cohesion: 0.39
+Nodes (5): clock_command_recovers_past_an_older_checkpoint_and_rotated_wal(), local_listener_delivers_shared_world_time_admin_changes_and_recovers_it(), save(), temporary(), world_time_resumes_saved_phase_and_rejects_corrupt_state()
+
+### Community 611 - "EffectBuffer"
+Cohesion: 0.42
+Nodes (4): boundary_coordinates(), EffectBuffer, EffectBufferError, EffectEnvelope
+
+### Community 614 - "journal/recovery.rs"
+Cohesion: 0.30
+Nodes (7): Journal, legacy_header(), open_or_create_legacy(), sync_parent(), truncate_tail(), validate_legacy_header(), write_legacy_header()
 
 ### Community 615 - "menus/tests.rs"
 Cohesion: 0.40
@@ -2520,69 +2628,81 @@ Nodes (3): label_center(), native_character_menu_keeps_apply_visible_and_blocks_
 Cohesion: 0.53
 Nodes (4): classic_preview_preserves_palettes_and_clean_drafts_follow_server_changes(), draft_cancel_apply_echo_and_duplicate_apply_are_distinct(), state(), unknown_snapshot_and_rejected_draft_cannot_apply_and_disconnect_clears_state()
 
-### Community 618 - "simulation"
-Cohesion: 0.23
-Nodes (7): MAX_APPLY_JOBS_PER_BARRIER, MIN_OWNER_TASKS_PER_WORKER_GROUP, effect_patches_count_emissions_and_expose_their_replacement(), foreign_payloads_have_no_replacement(), plain_patches_carry_no_emissions_and_keep_their_replacement(), test_job(), test_owner()
+### Community 618 - "mpsc"
+Cohesion: 0.14
+Nodes (9): FireRuntime, MAX_APPLY_JOBS_PER_BARRIER, MIN_OWNER_TASKS_PER_WORKER_GROUP, effect_patches_count_emissions_and_expose_their_replacement(), foreign_payloads_have_no_replacement(), plain_patches_carry_no_emissions_and_keep_their_replacement(), test_job(), test_owner() (+1 more)
 
 ### Community 623 - "Luau VM lifetime and module state"
 Cohesion: 0.29
 Nodes (7): Choose the right state, Contexts and coroutines, Failures and teardown, Initialization and random streams, Luau VM lifetime and module state, Runnable example and measurement, Verification
 
 ### Community 624 - "Budget"
-Cohesion: 0.30
-Nodes (5): Budget, cached_shared_artifacts_and_rejected_growth_release_exact_admission(), compact_artifacts_cannot_hide_metadata_from_process_admission(), metadata_admission_preserves_typed_pressure_with_declaration_context(), wrapper_growth_keeps_owned_declarations_accounted()
+Cohesion: 0.15
+Nodes (10): block_bytes(), Budget, MAX_BYTES, MAX_COUNT, package_bytes(), tag_bytes(), cached_shared_artifacts_and_rejected_growth_release_exact_admission(), compact_artifacts_cannot_hide_metadata_from_process_admission() (+2 more)
 
-### Community 625 - "src/appearance.rs"
-Cohesion: 0.33
-Nodes (4): EYES, HAIR, MAX_APPEARANCE_BYTES, MOUTHS
+### Community 625 - "decode"
+Cohesion: 0.36
+Nodes (3): decode(), encode(), encode_source()
 
-### Community 626 - "OwnerEffectPatch"
-Cohesion: 0.09
-Nodes (7): BlockEdit, EditCause, blocked(), EmittedOwnerEffect, OwnerEffectPatch, route_and_consume(), RoutedOwnerWakes
+### Community 626 - "Procedural"
+Cohesion: 0.12
+Nodes (7): lightning_hit(), Procedural, bell(), Cell, smooth(), Storm, Weather
 
-### Community 628 - "content"
-Cohesion: 0.09
-Nodes (20): drop_snapshot(), dropped_column_lands_at_rest_and_suspends(), falling_drop_integrates_exactly_one_fixed_step(), missing_terrain_defers_fail_closed_without_guessing(), neighbourhood_view(), neighbours(), NEXT_TEST_DIR, planner_rejects_anchored_locations_and_foreign_payloads() (+12 more)
+### Community 628 - "stack"
+Cohesion: 0.13
+Nodes (10): advance(), chest_hopper_chest_chain_preserves_last_slot_components_restart_and_refunds(), contents(), resident(), transfer(), hopper(), hopper_feeds_kiln_collects_output_and_survives_restart_then_break(), pulse() (+2 more)
 
-### Community 630 - "crouch.rs"
-Cohesion: 0.52
-Nodes (4): connect(), crouch_loopback_cannot_stand_in_ceiling_and_late_join_observes_posture(), movement(), stance()
+### Community 630 - "tests/anchored.rs"
+Cohesion: 0.36
+Nodes (7): owner_storage_expands_once_preserves_contents_and_recovers_one_wal_record(), owner_storage_rejects_out_of_radius_or_changed_footprint_without_partial_removal(), removed(), seed_storage(), storage_startup(), STORE, unchanged()
 
-### Community 634 - "system/decisions.rs"
-Cohesion: 0.38
-Nodes (5): caught_invalid_burn_removal_decision_rejects_whole_owner_wave(), luau_burn_removal_context_and_drop_commit_with_owner_receipt(), OWNER, package(), REGISTER
+### Community 632 - "std"
+Cohesion: 0.12
+Nodes (7): DECODED_BYTES, MAX_CLIP_FRAMES, MAX_DECODED_BYTES, MAX_FILE_BYTES, wal_reservation_accounts_for_queued_frames_before_the_worker_sees_them(), writer_treats_repeated_ids_idempotently_and_rejects_conflicts(), CAPACITY
+
+### Community 634 - "visibility.rs"
+Cohesion: 0.43
+Nodes (4): chunk_visible(), chunk_visible_padded(), outside_clip(), view_projection()
+
+### Community 636 - "receipts/tests.rs"
+Cohesion: 0.39
+Nodes (5): ack_retires_both_outcomes_without_reopening_sequence(), bounded_window_can_run_beyond_old_lifetime_cap(), committed_launch_ids_survive_restart_and_duplicate_action_admission(), reconnect_closes_old_epoch_and_preserves_monotonic_epoch_after_codec(), record()
 
 ### Community 637 - "Public storage lifecycle boundary"
 Cohesion: 0.33
 Nodes (6): Chest integration, Explicit limits / next work, Lifecycle contract, Package boundary, Public storage lifecycle boundary, Verification
 
-### Community 638 - "vm_latency.rs"
-Cohesion: 0.40
-Nodes (3): CALLBACK, report(), vm_lifetime_mixed_listener_latency()
+### Community 638 - "farming.rs"
+Cohesion: 0.12
+Nodes (14): AIM, combined_mod_downloads_acts_grows_and_recovers(), combined_mod_two_profiles_act_independently_and_recover(), GROW, grow_once(), open(), PROFILE, farming_scale_downloads_plants_harvests_and_recovers_three_systems() (+6 more)
+
+### Community 639 - "transfer"
+Cohesion: 0.33
+Nodes (3): Work, parse(), transfer()
 
 ### Community 640 - "content/moving/tests.rs"
 Cohesion: 0.33
 Nodes (4): Bytes, declaration(), maximum_authored_state_with_long_pending_contact_fits_durable_envelope(), moving_catalog_bindings_follow_saved_identity_remapping()
 
-### Community 642 - "weather/codec.rs"
-Cohesion: 0.33
-Nodes (3): BYTES, decode(), encode()
-
-### Community 643 - "Game weather foundation"
-Cohesion: 0.40
-Nodes (5): Acceptance evidence, Authority, timing and persistence, Game weather foundation, Presentation and bounds, Try it
+### Community 641 - "sync"
+Cohesion: 0.13
+Nodes (3): Identity, SharedParts, JoinGuard
 
 ### Community 644 - "Registered inventory views and screens"
 Cohesion: 0.33
 Nodes (6): Generic client and server paths, Independent persistence and bounds, Public registration, Registered inventory views and screens, Try the external fixture, Verification
 
+### Community 645 - "bundle_ui.rs"
+Cohesion: 0.33
+Nodes (7): client_startup_failure_refuses_content_ready_with_package_and_module(), downloaded_client_startup_is_session_scoped_across_reconnect_and_switch(), downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch(), startup_fixture(), startup_worker_discards_partial_registration_and_caught_limit(), startup_worker_imports_exact_direct_dependencies_with_lexical_visibility(), verified_replica_callbacks_are_session_scoped_worker_presentations()
+
 ### Community 646 - "passes"
 Cohesion: 0.60
 Nodes (3): after_dependencies_use_the_same_cycle_and_missing_checks(), inputs_override_order_and_invalid_graphs_keep_resource_identity(), passes()
 
-### Community 745 - "Registered inventory machines"
-Cohesion: 0.40
-Nodes (5): Contract, Registered inventory machines, Remaining boundaries, Trying the fixture, Verification
+### Community 648 - "join_named_client"
+Cohesion: 0.29
+Nodes (3): join_client(), JoinReply, join_named_client()
 
 ### Community 748 - ".sample_gameplay"
 Cohesion: 0.24
@@ -2592,93 +2712,149 @@ Nodes (5): blend(), CharacterAsset, overlay(), weight(), LocalPose
 Cohesion: 0.31
 Nodes (3): Chest, definition(), register()
 
-### Community 754 - "tcp/report.rs"
-Cohesion: 0.31
-Nodes (5): TransportSnapshot, OutboundSnapshot, percentile(), summarize(), TcpSoakReport
+### Community 752 - "server/movement/teleport.rs"
+Cohesion: 0.32
+Nodes (3): ready(), Reset, teleport()
+
+### Community 753 - "texture"
+Cohesion: 0.36
+Nodes (3): array(), decode(), texture()
 
 ### Community 755 - "entities/motion.rs"
 Cohesion: 0.25
 Nodes (7): DT, MAX_BODIES, MAX_CHUNK_BODIES, MAX_COLLIDERS, MAX_DYNAMIC_COLLIDERS, MAX_SWEEP_CELLS, STEP_TICKS
 
-### Community 758 - "Definitions, assets, and composition"
-Cohesion: 0.25
-Nodes (3): Definitions, assets, and composition, block(), Catalog
+### Community 756 - "plan_event"
+Cohesion: 0.44
+Nodes (3): is_registered(), plan(), plan_event()
+
+### Community 757 - "decode"
+Cohesion: 0.31
+Nodes (3): decode(), encode(), float()
 
 ### Community 760 - "src/motion/tests.rs"
 Cohesion: 0.52
 Nodes (6): contact_query_tracks_captured_motion_revision_and_absence(), expiry_roundtrip(), pending_reaction_roundtrip_and_truncations(), public_projection_keeps_private_state_separate(), record(), reject_noncanonical_pose_and_impact_identity()
 
-### Community 763 - "Committed"
-Cohesion: 0.13
-Nodes (6): Committed, Observer, UseObserver, luau_committed_observer_timeout_cannot_block_receipt_or_later_observer_over_listener(), Witness, ScriptObserver
+### Community 762 - "server/perf.rs"
+Cohesion: 0.50
+Nodes (6): run_fire_cpu_perf(), run_fire_perf(), run_perf_benchmark(), run_scenario(), run_tcp_perf(), validate_tick_count()
 
-### Community 764 - "tests/effects.rs"
-Cohesion: 0.33
-Nodes (4): bundle(), DESCRIPTOR, SHADER, verified_bundle_prepares_effect_and_rejects_ownership_order_and_shader_failures()
+### Community 763 - "server/weather/tests.rs"
+Cohesion: 0.39
+Nodes (5): durable_apply_does_not_rewind_elapsed_weather_time(), real_listener_synchronizes_admin_weather_and_denies_other_players(), severity_transitions_remain_continuous_and_survive_checkpoint(), temporary(), weather_restart_preserves_transition_and_wal_recovers_unapplied_override()
 
-### Community 766 - "avatars/moving_tests.rs"
-Cohesion: 0.31
-Nodes (3): catalog(), gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformation(), State
-
-### Community 768 - "metadata"
-Cohesion: 0.47
-Nodes (3): metadata(), observer_metadata_is_inert_bounded_and_rejects_nested_envelopes(), runtime_metadata_rejects_unknown_shapes_and_unbounded_counts_with_valid_digest()
+### Community 765 - "script/tests.rs"
+Cohesion: 0.54
+Nodes (6): elapsed_deadline_is_reported_with_module_identity(), input(), instruction_and_source_limits_reject_bad_modules_without_poisoning_worker(), memory_limit_and_syntax_error_are_attributable(), module(), sandbox_excludes_native_io_and_attributes_errors()
 
 ### Community 769 - "session_ids/tests.rs"
 Cohesion: 0.53
 Nodes (4): directory(), session_boot_ranges_preserve_first_ids_and_never_reuse_a_durable_player_reference(), session_reservations_are_serialized_and_corrupt_or_exhausted_counters_are_rejected(), session_server_restart_installs_a_new_range_before_player_admission()
 
-### Community 771 - "states"
-Cohesion: 0.50
-Nodes (4): identifier(), properties(), sequence(), states()
+### Community 770 - "system/decisions.rs"
+Cohesion: 0.38
+Nodes (5): caught_invalid_burn_removal_decision_rejects_whole_owner_wave(), luau_burn_removal_context_and_drop_commit_with_owner_receipt(), OWNER, package(), REGISTER
 
-### Community 776 - "declarations/budget.rs"
-Cohesion: 0.25
-Nodes (5): block_bytes(), MAX_BYTES, MAX_COUNT, package_bytes(), tag_bytes()
+### Community 775 - "avatars/mesh.rs"
+Cohesion: 0.52
+Nodes (5): AvatarMesh, AvatarVertex, build(), emit_cuboid(), humanoid_mesh_has_bounded_closed_cuboids_and_face_details()
+
+### Community 778 - "Registered anchored behavior"
+Cohesion: 0.40
+Nodes (5): Authority, scheduling and recovery, Bounds and limits, Public contract, Registered anchored behavior, Verification
 
 ### Community 779 - "validate"
 Cohesion: 0.80
 Nodes (3): dword(), validate(), word()
 
-### Community 780 - "render/camera/tests.rs"
-Cohesion: 0.83
-Nodes (3): eye(), perspectives_orbit_the_eye_and_cycle_without_changing_aim(), swept_camera_stops_before_walls_and_handles_close_or_unknown_cells()
+### Community 780 - ".frame"
+Cohesion: 0.22
+Nodes (5): ClientApp, eye(), perspectives_orbit_the_eye_and_cycle_without_changing_aim(), swept_camera_stops_before_walls_and_handles_close_or_unknown_cells(), Camera
 
-### Community 781 - "script/tests.rs"
-Cohesion: 0.54
-Nodes (6): elapsed_deadline_is_reported_with_module_identity(), input(), instruction_and_source_limits_reject_bad_modules_without_poisoning_worker(), memory_limit_and_syntax_error_are_attributable(), module(), sandbox_excludes_native_io_and_attributes_errors()
+### Community 781 - "Registered actions and composed controls"
+Cohesion: 0.40
+Nodes (5): Bounded composition, Negotiated commands, Production path and authority, Registered actions and composed controls, Supported targets and effects
 
-### Community 793 - "benchmarks.rs"
-Cohesion: 0.38
-Nodes (4): report(), SOURCE, vm_lifetime_latency_baseline(), vm_lifetime_production_runner_latency()
+### Community 782 - "Registered inventory machines"
+Cohesion: 0.40
+Nodes (5): Contract, Registered inventory machines, Remaining boundaries, Trying the fixture, Verification
 
-### Community 796 - "active.rs"
+### Community 793 - "instant"
+Cohesion: 0.12
+Nodes (8): event(), phase4_showcase_creature_machine_and_replica_survive_real_join_and_restart(), PRESS_ANCHOR, send_action(), report(), SOURCE, vm_lifetime_latency_baseline(), vm_lifetime_production_runner_latency()
+
+### Community 795 - "present"
+Cohesion: 0.48
+Nodes (3): entity(), present(), seed()
+
+### Community 797 - "tests/effects.rs"
+Cohesion: 0.33
+Nodes (4): bundle(), DESCRIPTOR, SHADER, verified_bundle_prepares_effect_and_rejects_ownership_order_and_shader_failures()
+
+### Community 799 - "crouch.rs"
+Cohesion: 0.52
+Nodes (4): connect(), crouch_loopback_cannot_stand_in_ceiling_and_late_join_observes_posture(), movement(), stance()
+
+### Community 800 - "Client audio foundation"
+Cohesion: 0.33
+Nodes (6): Acceptance measurements, Client audio foundation, Mixer and native playback contract, NoiseMachine adaptation, Try it, Verification and next work
+
+### Community 802 - "avatars/moving_tests.rs"
+Cohesion: 0.31
+Nodes (3): catalog(), gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformation(), State
+
+### Community 803 - "extension_system.rs"
+Cohesion: 0.47
+Nodes (3): clock(), external_system_runs_without_entities_and_recovers_across_real_listener_restart(), startup()
+
+### Community 804 - "active.rs"
 Cohesion: 0.53
 Nodes (4): luau_machine_active_state_negotiates_and_preserves_save_identity(), luau_machine_active_state_rejects_foreign_and_unpowered_states(), luau_machine_fuel_switches_authored_state_over_listener_and_recovers(), source()
+
+### Community 806 - ".attempt"
+Cohesion: 0.18
+Nodes (4): MAX_REPLANT_CELLS, OWNER_PROBES_PER_TICK, Replanter, stage_error()
+
+### Community 807 - "script_startup/machine/variants.rs"
+Cohesion: 0.60
+Nodes (3): luau_machine_variants_negotiate_place_from_finite_inventory_and_recover(), luau_machine_variants_reject_duplicate_and_foreign_states_before_save(), source()
 
 ### Community 809 - "modding/README.md"
 Cohesion: 0.16
 Nodes (8): Growth foundation: remaining implementation, Luau package composition, Public persistent owner systems, Documentation, Persistent anchored counter, Durable neighborhood relay, Targeted authored UI fixture, Third-party source adaptations
 
+### Community 812 - "vm_latency.rs"
+Cohesion: 0.40
+Nodes (3): CALLBACK, report(), vm_lifetime_mixed_listener_latency()
+
+### Community 813 - "metadata"
+Cohesion: 0.47
+Nodes (3): metadata(), observer_metadata_is_inert_bounded_and_rejects_nested_envelopes(), runtime_metadata_rejects_unknown_shapes_and_unbounded_counts_with_valid_digest()
+
+### Community 814 - "weather/codec.rs"
+Cohesion: 0.33
+Nodes (3): BYTES, decode(), encode()
+
 ## Knowledge Gaps
-- **1093 isolated node(s):** `MAX_ACTIONS`, `MAX_TARGET_ACTIONS`, `MAX_WIDGETS`, `REQUEST_TAG`, `TERRAIN_REQUEST_TAG` (+1088 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4442 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **299 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **1096 isolated node(s):** `MAX_ACTIONS`, `MAX_TARGET_ACTIONS`, `MAX_WIDGETS`, `REQUEST_TAG`, `TERRAIN_REQUEST_TAG` (+1091 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4452 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **294 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Built-in capability parity audit` connect `Cross-cutting integration findings` to `modding/README.md`, `EntityClientRegistry`?**
-  _High betweenness centrality (0.067) - this node is a cross-community bridge._
-- **Why does `Audit boundary and live path` connect `Cross-cutting integration findings` to `ServerStartup`, `temp_save_dir`, `Registration`, `Replicas`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `EntityError` connect `EntityError` to `Adapter`, `EntityStore`, `EntityTypeDescriptor`, `Port<P>`, `EntityTransferPolicy`, `MobilePages`, `view`, `MachinePayload`, `drops/entity.rs`, `collections`, `server.rs`, `EntityIndexes`, `Adapter`, `drops/planning.rs`, `EntityPublicView`, `EntityDependencies`, `EntitySnapshot`, `src/storage.rs`, `ServerStartup`, `actions/entity.rs`, `entities/mossbun.rs`, `server/entities/tests.rs`, `Adapter`, `World`, `CommitAction`, `VoxelView`, `register`, `model.rs`, `request_chunk`, `entities/checkpoint.rs`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `Built-in capability parity audit` connect `Cross-cutting integration findings` to `modding/README.md`, `EntityAdapter`?**
+  _High betweenness centrality (0.058) - this node is a cross-community bridge._
+- **Why does `Audit boundary and live path` connect `Cross-cutting integration findings` to `ServerStartup`, `Registration`, `world_to_chunk`, `PublicEntity`?**
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
+- **Why does `Inventory` connect `Inventory` to `content`, `Port<P>`, `PlayerDecision`, `EntityTransferPolicy`, `invoke`, `add_test_client`, `join_named_client`, `InventoryWorkers`, `server/durable.rs`, `Observations`, `notifications.rs`, `WorldSnapshot`, `server.rs`, `ClientApp`, `.compose_current_package_action_with_args`, `Adapter`, `VoxelView`, `script_startup/gameplay/inventory.rs`, `src/client.rs`, `slots`, `Stack`, `script_startup/gameplay.rs`, `state_for`, `Adapter`, `State`, `InventoryStore`, `Connection`, `CommitAction`, `model.rs`, `prepared_deltas`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **What connects `MAX_ACTIONS`, `MAX_TARGET_ACTIONS`, `MAX_WIDGETS` to the rest of the system?**
-  _1093 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `EntityTypeDescriptor` be split into smaller, more focused modules?**
-  _Cohesion score 0.05277777777777778 - nodes in this community are weakly interconnected._
+  _1096 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `content` be split into smaller, more focused modules?**
+  _Cohesion score 0.04819277108433735 - nodes in this community are weakly interconnected._
 - **Should `EntityStore` be split into smaller, more focused modules?**
-  _Cohesion score 0.06467181467181467 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06638865721434528 - nodes in this community are weakly interconnected._
 - **Should `Port<P>` be split into smaller, more focused modules?**
-  _Cohesion score 0.12692307692307692 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.13225371120107962 - nodes in this community are weakly interconnected._
