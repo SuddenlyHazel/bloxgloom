@@ -14,11 +14,7 @@ impl EntityState for State {
     }
 }
 
-#[test]
-fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformation() {
-    let instance = wgpu::Instance::default();
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+pub(super) fn catalog(half: [f32; 3]) -> crate::content::Catalog {
     let mut catalog = crate::content::Catalog::builtins();
     catalog
         .register_moving(motion::MovingEntity {
@@ -28,7 +24,7 @@ fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformati
             max_state_bytes: 1,
             max_public_bytes: 1,
             body: motion::Body {
-                half_extents: [0.1; 3],
+                half_extents: [half.into_iter().fold(0.0, f32::max); 3],
                 collisions: motion::CollisionMask {
                     terrain: true,
                     players: false,
@@ -46,14 +42,23 @@ fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformati
             handles_impact: false,
             handles_expiry: false,
             model: vec![bloxgloom_host_api::entity::Cuboid {
-                min: [-0.5, -0.1, -0.1],
-                max: [0.5, 0.1, 0.1],
+                min: half.map(|value| -value),
+                max: half,
                 color: [1.0, 0.2, 0.1],
                 motion: bloxgloom_host_api::entity::PartMotion::LeftFoot,
             }],
             state: std::sync::Arc::new(State),
         })
         .unwrap();
+    catalog
+}
+
+#[test]
+fn gpu_rigid_moving_model_rotates_in_three_dimensions_without_creature_deformation() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let catalog = catalog([0.5, 0.1, 0.1]);
     let id = catalog.entity_type_id_by_key("demo:projectile").unwrap();
     let mut avatar = VisualAvatar {
         motion: Some(MovingVisual {

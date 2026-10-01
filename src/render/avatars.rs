@@ -10,6 +10,8 @@ mod mesh;
 #[cfg(test)]
 mod moving_tests;
 #[cfg(test)]
+mod projectile_preview_tests;
+#[cfg(test)]
 mod tests;
 
 use super::DEPTH_FORMAT;
