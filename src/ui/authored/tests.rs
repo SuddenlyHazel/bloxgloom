@@ -250,6 +250,12 @@ fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() 
         session.activate();
         assert!(session.pending.is_none());
         assert_eq!(session.sequence, 1);
+        session.next_document();
+        assert!(
+            session.worker.is_some(),
+            "explicit document recovery starts a fresh worker"
+        );
+        assert!(session.failure.is_none());
     }
 }
 
@@ -458,4 +464,22 @@ fn live_session_uses_taffy_geometry_for_clipped_focus_and_bounded_local_editing(
     let fresh = Session::new(Arc::clone(bundle.ui().unwrap()));
     assert!(fresh.focused_id().is_none());
     assert_eq!(fresh.inputs[4], "Moss & stone");
+}
+
+#[test]
+fn healthy_document_switch_keeps_retained_handler_state() {
+    let mut session = dynamic(
+        "local calls=0; return function() calls+=1; return {{op='state',value=tostring(calls)}} end",
+        1,
+    );
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.state, "1");
+    session.next_document();
+    session.resize(640, 360, 1.0);
+    session.tab(false);
+    session.tab(false);
+    session.activate();
+    session.wait_for_presentation().unwrap();
+    assert_eq!(session.state, "2");
 }

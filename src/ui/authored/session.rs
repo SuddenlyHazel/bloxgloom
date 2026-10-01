@@ -99,6 +99,15 @@ impl Session {
     }
 
     fn reset(&mut self) {
+        // Document selection explicitly recovers a failed presentation family.
+        // Healthy switches keep the connection's retained worker and heaps.
+        let restart_worker = self.failure.is_some()
+            && (self.resources.documents.iter().any(|d| d.script.is_some())
+                || self.startup.replica.is_some());
+        if restart_worker {
+            self.worker = None;
+            self.pending = None;
+        }
         self.active = self.resources.documents[self.document].clone();
         self.tree_generation = self.tree_generation.wrapping_add(1);
         // Invalidate an outstanding result without admitting a second job.
@@ -112,6 +121,18 @@ impl Session {
         self.replica_previous.clear();
         self.anchor_previous.clear();
         self.failure = None;
+        if restart_worker {
+            match crate::client::presentation::Worker::spawn() {
+                Ok(worker) => {
+                    self.worker = Some(worker);
+                    tracing::debug!(
+                        reset_reason = "document_recovery",
+                        "client presentation worker restarted"
+                    );
+                }
+                Err(error) => self.failure = Some(format!("presentation worker: {error}")),
+            }
+        }
         self.action = None;
         self.feedback = None;
         self.state.clear();
