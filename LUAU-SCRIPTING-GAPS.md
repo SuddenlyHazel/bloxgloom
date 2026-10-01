@@ -476,6 +476,216 @@ Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exac
 [creatures](SCRIPTING.md#mobile-creatures) and
 [replica presentation](SCRIPTING.md#public-replica-presentation).
 
+#### Proposed next goal: authoritative moving entities and projectiles
+
+**Status: proposal for review; no motion bindings below are implemented.**
+This closes the simple moving-object/projectile portion of section 5. Audio,
+vehicles, general animation controllers and imported models remain separate
+work. The API names below are proposed, not an addition to `SCRIPTING.md` yet.
+
+**Goal:** let a Luau package declare, launch, steer and render a server-owned
+moving entity, receive reliable terrain/entity impacts, and commit impact effects
+without duplication across retries or restart. Deliver a runnable throwable
+fixture, native and Luau contracts, editor definitions, measured capacity limits,
+and real-client acceptance evidence.
+
+##### Actual problems to solve
+
+- Generic gameplay entities have private/public state and durable identity, but
+  changing bytes does not move their authoritative position or supply a model.
+- Creature declarations combine models with ground locomotion. Horizontal route
+  targets and fixed falling behavior cannot express an arrow, a thrown seed or
+  a freely steered flying object.
+- Existing public entity replicas carry position and motion revisions, but do
+  not offer a general velocity/orientation contract for these objects.
+- There is no script-facing projectile collision/impact lifecycle. Polling a
+  final position misses thin obstacles and does not provide an atomic impact
+  receipt tied to the motion that caused it.
+
+Reuse exact identities, owner transactions, captured terrain, startup model
+validation and replica transport. Keep the new motion solver and impact lifecycle
+separate from creature AI/pathfinding; existing ground creatures retain their
+current behavior.
+
+##### Author surface and ownership
+
+Add a proposed `host.register_moving_entity(declaration)` native/Luau contract.
+Declare an own-package key, schema/revision, private/public state limits, behavior
+module, optional existing colored-cuboid model, and a motion body. The body uses
+an axis-aligned box with an explicit position origin, dimensions, collision mask,
+terrain response (`stop`, `bounce`, or `slide`), restitution and gravity scale.
+Registration also declares maximum speed, acceleration, lifetime and behavior
+cadence. Shape coordinates and units must be documented consistently between
+collision, spawn and rendering; they cannot inherit an ambiguous feet/center
+convention from another entity family.
+
+Proposed gameplay and declared owner-system services:
+
+| Operation | Intended behavior |
+| --- | --- |
+| `c.spawn_moving_entity(key, options)` | Stage an owned entity with position, velocity, orientation, initial state and optional exact launch-source identity; return a transaction-local spawn reference |
+| `c.motion(id)` | Read captured position, velocity, orientation, grounded/contact state and exact motion revision |
+| `c.set_motion(id, expected_revision, options)` | Stage velocity, acceleration or orientation changes for a captured owned entity; no arbitrary position teleport |
+| Existing owned state/removal services | Update state, publish public bytes or remove a compatible moving entity in the same transaction |
+
+A spawn reference is usable only within its originating transaction; committed
+receipts expose the allocated exact ID. Final bindings must specify this behavior
+rather than pretending a durable ID already exists before allocation commits.
+Source identity can suppress immediate self-collision and attribute a hit; it
+confers no authority over another entity, profile or inventory.
+
+Behavior receives typed tick, impact and expiry inputs with captured state and
+motion. A script can guide a flying object through repeated velocity/acceleration
+changes. The host integrates continuously at a fixed logical cadence independent
+of behavior callback cadence. State lives in durable records, not retained Lua
+locals. Cross-package motion mutation requires a separately declared contract;
+ordinary motion services operate on owned entities.
+
+Existing validated inventory, terrain, drop and profile operations remain the
+way to apply gameplay effects. Do not introduce an implicit health/damage model:
+impact exposes exact targets, and damage requires an available explicitly
+registered gameplay contract. Only callback capabilities declared and captured
+by the host may be used.
+
+##### Simulation and collision contract
+
+Use logical ticks and a fixed integration step, with specified integration and
+axis/tie-breaking order. Replay determinism means the same captured inputs yield
+the same proposal within the supported runtime; this does not promise identical
+floating-point results across all architectures.
+
+Sweep the body's volume over its entire displacement against authoritative
+solid voxel shapes. Checking only endpoints or using unchecked coarse substeps
+is insufficient. Support explicit masks for terrain and eligible public player/
+creature colliders. Generic entities without a declared collider are not solid.
+Dynamic targets use captured collider poses/motion and revisions; the design must
+account for relative motion, including two objects crossing during one step.
+Choose the earliest contact; equal-time contacts use a documented stable order
+based on target kind, cell coordinates and exact entity identity.
+
+Impact input includes the exact moving entity ID, motion revision, logical tick,
+contact position, normal, incoming velocity, and either block cell/state or exact
+entity target with its captured revision. Restrict launch-source exclusion to a
+bounded declaration/launch interval. Body overlap at spawn is rejected; a later
+terrain edit embedding the body produces a defined blocked contact rather than
+letting it tunnel out. Expiry and world-boundary removal have distinct reasons.
+
+Host collision response resolves stop/bounce/slide before the script reaction.
+Contact processing has a bounded iteration count; exhausting it stops remaining
+movement safely and reports a reason instead of tunneling or looping. Persistent
+resting contact does not emit an impact every tick. Define re-contact using
+separation/contact state and test corner bounces, sliding and zero-speed bodies.
+
+Collision and movement publish through the existing owner commit boundary.
+Terrain reads, target revisions, destination chunk ownership and motion revisions
+are validated together. A stale target or edited obstacle forces recapture and
+retry; scripts never resolve collision against client fallback terrain.
+
+##### Impact transactions, unload and restart
+
+Store a durable pending-impact record atomically with the motion/contact result.
+Suspend further integration for that object until its reaction is resolved; this
+bounds outstanding records and prevents later motion from overtaking an impact.
+The reaction transaction consumes the record together with owned state/removal
+and authorized terrain/inventory/drop effects. Re-evaluation may repeat callback
+execution and diagnostics; committed effects occur once per consumed record.
+Client observers and sparks remain advisory and cannot grant rewards.
+
+A callback rejection or execution-budget failure leaves the impact pending,
+with bounded retry/backoff and rate-limited diagnostics. Provide an explicit
+admin cancellation/removal path for a permanently failing object; silently
+consuming a failed impact or repeatedly applying only some effects is unacceptable.
+Cancellation removes the object/pending record atomically. Packages can omit an
+impact handler when only the declared host response is needed.
+
+Moving bodies remain owned by their current chunk and transfer atomically across
+chunk seams. Capture a bounded swept neighborhood. If required terrain is not
+available, suspend movement and request bounded normal server terrain preparation;
+do not substitute air or synchronously generate arbitrary chunks in a planner.
+Dormant objects do not keep unlimited chunks active. Resume from the last committed
+pose when their owner/neighborhood becomes eligible again, without simulating an
+unbounded backlog or advancing through unseen terrain.
+
+Persist position, velocity, orientation, contact state, remaining simulated
+lifetime, scheduled behavior and pending impact identity. Lifetime counts active
+simulation ticks; dormancy and server downtime do not age an object or trigger
+catch-up movement. Restart resumes the committed state and pending reactions.
+Tests must cover crashes before and after impact consumption. If record/wire
+schemas change incompatibly, bump the prerelease world target and handshake
+contract as appropriate; preserve catalog identities and add no save converter.
+
+##### Replication and presentation
+
+Extend native/client metadata and entity replicas with validated moving-entity
+models, pose/orientation and velocity where needed. Render the existing cuboid
+model independently of ground-creature stride animation. Interpolate committed
+poses using server tick/motion revision; permit only bounded extrapolation and
+clamp it at an authoritative stop, impact, despawn or correction. A client cannot
+apply collision outcomes or create gameplay effects.
+
+Existing bounded public replica windows and visual effects remain bounded.
+An entity leaving a window is not proof of despawn. Clear retained overrides on
+session replacement and entity removal, reject stale motion updates, and test
+reconnect while objects are moving. Preserve existing creature/player rendering.
+Full mesh imports, arbitrary scene nodes and authored animation graphs are deferred.
+
+##### Capacity, performance and implementation slices
+
+Centralize declaration, per-world/per-chunk active-body, pending-impact, collider,
+sweep-cell and contact-iteration limits. Reject invalid/nonfinite values and
+out-of-range vectors at declaration/service boundaries. Do not silently truncate
+colliders or skip a contact when a capture exceeds its budget. Capacity failure
+must reject the spawn or safely suspend the affected step with a typed diagnostic.
+
+Set final numeric limits from measured solver/capture and real-listener workload
+costs; document them before acceptance. Measure 1, 64 and 256 concurrent bodies
+and a deliberate overload case, including clustered launches and chunk seams.
+Record server step/capture/commit time separately from retry rate, pending impact
+count, memory, replica bytes and client CPU/GPU frame time. Preserve incremental
+builds and commit each completed slice.
+
+1. **Contracts and records:** native host types, validated declarations, Luau
+   adapters/editor definitions, durable motion/contact/impact records and explicit
+   compatibility changes. Add the solver in focused server entity submodules.
+2. **Motion and collision:** fixed-step sweeps, supported responses, dynamic target
+   fencing, source exclusion, capacity accounting and chunk ownership transfer.
+3. **Transactional reactions:** spawn/control services, behavior scheduling,
+   durable impact consumption, expiry, cancellation, suspension and restart.
+4. **Client presentation:** metadata validation, pose replication/interpolation,
+   cuboid rendering, corrections and cleanup on reconnect/despawn.
+5. **Fixture and acceptance:** public author documentation, runnable examples,
+   real-listener/restart tests, visual inspection and measured limits.
+
+##### Acceptance evidence
+
+Deliver a throwable seed fixture with two modes: a gravity-driven bouncing object
+and a guided object whose script updates velocity. A terrain impact can perform a
+conditional planting edit; a declared player/creature contact records the exact
+hit identity without inventing health. Launch consumes one finite inventory item
+atomically; only a committed authored recovery/drop path returns it. Demonstrate
+state/public projection, source exclusion, expiry and an impact-driven spark.
+
+Acceptance requires:
+
+- Solver regressions for thin walls, high speed, grazing/corners, relative-motion
+  crossings, terrain edits, body overlap, repeated resting contacts and bounds.
+- Atomicity/conservation tests for failed launch, retry, stale collision targets,
+  impact rejection/cancellation, duplicate delivery and restart around commit.
+- Real nonblocking-listener loopback clients and isolated saves exercising launch,
+  chunk crossings, missing terrain, cold/cached joins and restart mid-flight or
+  with a pending impact. Assert replicated poses and inventory/world outcomes.
+- Inspection of a release client window, or a production preview supporting the
+  moving-entity renderer, showing launch, arc, bounce, guided motion and impact.
+  Static compilation alone cannot establish animation/interpolation correctness.
+- Relevant workspace tests, formatting and strict all-target/all-feature Clippy;
+  production renderer performance comparison when rendering changes; Graphify
+  update after implementation. Publish measured motion workload results and any
+  remaining limits alongside the completed author contract.
+
+Completion closes the motion/projectile portion only. Audio, vehicle controls/
+rigid-body constraints, per-player physics, imported models and general animation
+controllers remain visible section-5 gaps for separate goals.
+
 ### 6. Development iteration and save continuity
 
 **VM lifetime and retained state are implemented.** Execution lanes now reuse
