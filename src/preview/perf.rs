@@ -2,6 +2,10 @@ pub(crate) mod characters;
 
 use super::*;
 
+// Software adapters can take longer than 30 s to drain a fully queued run.
+// This is outside all measured intervals, matching the character benchmark.
+const GPU_READBACK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 struct PerfGpuMesh {
     opaque: Option<PerfGpuSubmesh>,
     cutout: Option<PerfGpuSubmesh>,
@@ -525,7 +529,7 @@ pub(super) async fn run_perf_benchmark_async(
         let submission = queue.submit(Some(encoder.finish()));
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission.clone()),
-            timeout: Some(std::time::Duration::from_secs(30)),
+            timeout: Some(GPU_READBACK_TIMEOUT),
         })?;
         let (sender, receiver) = mpsc::channel();
         readback.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -533,7 +537,7 @@ pub(super) async fn run_perf_benchmark_async(
         });
         device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission),
-            timeout: Some(std::time::Duration::from_secs(30)),
+            timeout: Some(GPU_READBACK_TIMEOUT),
         })?;
         receiver.recv()??;
         let mapped = readback.get_mapped_range(..)?;
@@ -559,7 +563,7 @@ pub(super) async fn run_perf_benchmark_async(
         if let Some(submission) = last_submission {
             device.poll(wgpu::PollType::Wait {
                 submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(30)),
+                timeout: Some(GPU_READBACK_TIMEOUT),
             })?;
         }
         None
