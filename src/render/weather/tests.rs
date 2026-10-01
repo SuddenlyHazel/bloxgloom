@@ -16,6 +16,18 @@ fn rain_is_bounded_and_roof_clipping_keeps_streaks_above_cover() {
     let covered = weather.vertices(camera());
     assert!(covered.len() < open.len());
     assert!(covered.chunks_exact(9).all(|v| v[1] >= 12.0));
+    let mut edge = [f32::NEG_INFINITY; 256];
+    for z in 0..16 {
+        for x in 8..16 {
+            edge[z * 16 + x] = 12.0;
+        }
+    }
+    weather.set_cover([-8, -8], edge);
+    assert!(weather.vertices(camera()).chunks_exact(9).all(|v| {
+        let x = (v[0].floor() as i32 + 8) as usize;
+        let z = (v[2].floor() as i32 + 8) as usize;
+        v[1] >= edge[z * 16 + x]
+    }));
     weather.set_cover([-8, -8], [f32::INFINITY; 256]);
     assert!(weather.vertices(camera()).is_empty());
 }
