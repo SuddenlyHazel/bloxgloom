@@ -84,6 +84,8 @@ export type BloxStartupHost = {
     -- Requires players/v1; own-package key/module, revision 1..65535, private state cap 1..4096.
     register_player_lifecycle: (key: string, revision: number, max_state_bytes: number, initial_state: string, module: string) -> (),
     register_creature: (declaration: BloxCreatureDeclaration) -> (),
+    --- Requires content/v1 + actions/v1 + moving_entities/v1; at most eight/package.
+    register_moving_entity: (declaration: BloxMovingDeclaration) -> (),
     register_machine: (declaration: BloxMachineDeclaration) -> (),
     --- Requires content + anchored_entities/v1. Pure own-state server behavior; at most eight/package.
     register_anchored: (declaration: BloxAnchoredDeclaration) -> (),
@@ -314,9 +316,49 @@ export type BloxPickupEvent = {
     kind: "PickupRequested", position: BloxTriple,
     drops: {{id: BloxEntityId, count: number, entity_lo: number, entity_hi: number}},
 }
+export type BloxQuaternion = {number} -- dense [x,y,z,w], unit length
+export type BloxMotion = {
+    position: BloxTriple, velocity: BloxTriple, acceleration: BloxTriple,
+    orientation: BloxQuaternion, revision: BloxRevision, grounded: boolean,
+}
+export type BloxMovingTarget = {kind: "Terrain", cell: BloxTriple, state: string}
+    | {kind: "Entity", entity: BloxEntityId, revision: BloxRevision}
+export type BloxMovingTickEvent = {
+    kind: "MovingTick", entity: BloxEntityId, tick: BloxTick, motion: BloxMotion,
+}
+export type BloxMovingImpactEvent = {
+    kind: "MovingImpact", entity: BloxEntityId, motion_revision: BloxRevision, tick: BloxTick,
+    position: BloxTriple, normal: BloxTriple, incoming_velocity: BloxTriple,
+    target: BloxMovingTarget, blocked: boolean,
+}
+export type BloxMovingExpiryEvent = {
+    kind: "MovingExpiry", entity: BloxEntityId, motion_revision: BloxRevision, tick: BloxTick,
+    reason: "Lifetime" | "WorldBoundary",
+}
+export type BloxSpawnReference = {__brand: "BloxSpawnReference"}
+export type BloxMovingSpawn = {
+    position: BloxTriple, velocity: BloxTriple?, orientation: BloxQuaternion?, state: string,
+    source: BloxEntityId?,
+}
+export type BloxMotionChange = {
+    velocity: BloxTriple?, acceleration: BloxTriple?, orientation: BloxQuaternion?,
+}
+export type BloxMovingDeclaration = {
+    key: string, module: string, schema: number, revision: number,
+    max_state_bytes: number, max_public_bytes: number, interval: number, lifetime_ticks: number,
+    source_exclusion_ticks: number?, handles_impact: boolean?, handles_expiry: boolean?,
+    body: {
+        origin: "center"?, half_extents: BloxTriple,
+        collisions: {terrain: boolean?, players: boolean?, creatures: boolean?}?,
+        response: ("stop" | "bounce" | "slide")?, restitution: number?, gravity_scale: number?,
+        max_speed: number, max_acceleration: number,
+    },
+    model: {{min: BloxTriple, max: BloxTriple, color: BloxTriple, motion: "body"?}}?,
+}
 --- Match kind before accessing event-specific fields.
 export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedEvent
     | BloxNeighbourEvent | BloxEntityTickEvent | BloxPickupEvent
+    | BloxMovingTickEvent | BloxMovingImpactEvent | BloxMovingExpiryEvent
 
 --- Server transaction services. Proposed mutations commit together; an error rejects the transaction.
 export type BloxProfileCell = {
@@ -361,6 +403,12 @@ export type BloxGameplayContext = {
     transfer: (from_slot: number, to_slot: number, count: number) -> boolean,
     spawn_drop: (x: number, y: number, z: number, item: string, count: number, delay_ms: number) -> (),
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
+    --- Opaque attempt-local allocation reference; this is not an entity ID.
+    spawn_moving_entity: (key: string, options: BloxMovingSpawn) -> BloxSpawnReference,
+    --- Captured owned motion; nil when unavailable. Nested values are readonly.
+    motion: (id: BloxEntityId) -> BloxMotion?,
+    --- Revision-fenced steering, without a position/teleport operation.
+    set_motion: (id: BloxEntityId, expected_revision: BloxRevision, options: BloxMotionChange) -> boolean,
     spawn_stack: (x: number, y: number, z: number, stack: BloxStack, delay_ms: number) -> (),
     --- Read private state only where host ownership permits. Pass an entity ID handle; nil means unavailable.
     entity_state: (id: BloxEntityId) -> string?,

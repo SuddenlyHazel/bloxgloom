@@ -243,10 +243,10 @@ pub(super) fn registration(
     (action, handler)
 }
 
-struct ScriptHandler {
-    snapshot: Arc<PackageSnapshot>,
-    module: String,
-    command: Option<Command>,
+pub(in crate::server::script) struct ScriptHandler {
+    pub(in crate::server::script) snapshot: Arc<PackageSnapshot>,
+    pub(in crate::server::script) module: String,
+    pub(in crate::server::script) command: Option<Command>,
 }
 
 impl Handler for ScriptHandler {
@@ -280,6 +280,9 @@ impl Handler for ScriptHandler {
                     Event::NeighborChanged { .. } => "NeighborChanged",
                     Event::EntityTick { .. } => "EntityTick",
                     Event::PickupRequested { .. } => "PickupRequested",
+                    Event::MovingTick { .. } => "MovingTick",
+                    Event::MovingImpact { .. } => "MovingImpact",
+                    Event::MovingExpiry { .. } => "MovingExpiry",
                 },
                 seed,
                 correlation,

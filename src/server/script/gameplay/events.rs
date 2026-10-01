@@ -19,6 +19,26 @@ fn triple<T: mlua::IntoLua>(lua: &Lua, values: [T; 3]) -> mlua::Result<Table> {
     Ok(value)
 }
 
+pub(super) fn motion(
+    lua: &Lua,
+    motion: &bloxgloom_host_api::motion::Motion,
+) -> mlua::Result<Table> {
+    let value = lua.create_table()?;
+    value.set("position", triple(lua, motion.position)?)?;
+    value.set("velocity", triple(lua, motion.velocity)?)?;
+    value.set("acceleration", triple(lua, motion.acceleration)?)?;
+    let orientation = lua.create_sequence_from(motion.orientation)?;
+    orientation.set_readonly(true);
+    value.set("orientation", orientation)?;
+    value.set(
+        "revision",
+        crate::server::script::handles::revision(lua, motion.revision)?,
+    )?;
+    value.set("grounded", motion.grounded)?;
+    value.set_readonly(true);
+    Ok(value)
+}
+
 #[cfg(test)]
 pub(super) fn fields(lua: &Lua, event: &Event) -> mlua::Result<Table> {
     fields_with_command(lua, event, None)
@@ -30,6 +50,80 @@ pub(super) fn fields_with_command(
 ) -> mlua::Result<Table> {
     let fields = lua.create_table()?;
     match event {
+        Event::MovingTick {
+            entity,
+            tick,
+            motion: pose,
+        } => {
+            fields.set("kind", "MovingTick")?;
+            fields.set(
+                "entity",
+                crate::server::script::handles::entity(lua, *entity)?,
+            )?;
+            fields.set("tick", crate::server::script::handles::tick(lua, *tick)?)?;
+            fields.set("motion", motion(lua, pose)?)?;
+        }
+        Event::MovingImpact { impact } => {
+            fields.set("kind", "MovingImpact")?;
+            fields.set(
+                "entity",
+                crate::server::script::handles::entity(lua, impact.entity)?,
+            )?;
+            fields.set(
+                "motion_revision",
+                crate::server::script::handles::revision(lua, impact.motion_revision)?,
+            )?;
+            fields.set(
+                "tick",
+                crate::server::script::handles::tick(lua, impact.tick)?,
+            )?;
+            fields.set("position", triple(lua, impact.position)?)?;
+            fields.set("normal", triple(lua, impact.normal)?)?;
+            fields.set("incoming_velocity", triple(lua, impact.incoming_velocity)?)?;
+            fields.set("blocked", impact.blocked)?;
+            let target = lua.create_table()?;
+            match &impact.target {
+                bloxgloom_host_api::motion::Target::Terrain { cell, state } => {
+                    target.set("kind", "Terrain")?;
+                    target.set("cell", triple(lua, *cell)?)?;
+                    target.set("state", state.as_str())?;
+                }
+                bloxgloom_host_api::motion::Target::Entity { id, revision } => {
+                    target.set("kind", "Entity")?;
+                    target.set("entity", crate::server::script::handles::entity(lua, *id)?)?;
+                    target.set(
+                        "revision",
+                        crate::server::script::handles::revision(lua, *revision)?,
+                    )?;
+                }
+            }
+            target.set_readonly(true);
+            fields.set("target", target)?;
+        }
+        Event::MovingExpiry {
+            entity,
+            tick,
+            motion_revision,
+            reason,
+        } => {
+            fields.set("kind", "MovingExpiry")?;
+            fields.set(
+                "entity",
+                crate::server::script::handles::entity(lua, *entity)?,
+            )?;
+            fields.set("tick", crate::server::script::handles::tick(lua, *tick)?)?;
+            fields.set(
+                "motion_revision",
+                crate::server::script::handles::revision(lua, *motion_revision)?,
+            )?;
+            fields.set(
+                "reason",
+                match reason {
+                    bloxgloom_host_api::motion::ExpiryReason::Lifetime => "Lifetime",
+                    bloxgloom_host_api::motion::ExpiryReason::WorldBoundary => "WorldBoundary",
+                },
+            )?;
+        }
         Event::ActionRequested {
             action,
             position,
