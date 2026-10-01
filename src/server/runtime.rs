@@ -499,8 +499,6 @@ pub(super) fn tick_with_inputs(
     state.last_rejections = outbound.rejections;
     let entity_mirror = state.durability.entity_mirror.metrics();
     let sample = TickSample {
-        #[cfg(test)]
-        motion: std::mem::take(&mut state.motion_metrics),
         tick_id: tick.get(),
         tick_total: tick_started.elapsed(),
         phases: phase_times,
@@ -530,6 +528,13 @@ pub(super) fn tick_with_inputs(
         replication_queue_rejections: queue_rejections,
     };
     state.metrics.record(sample);
+    #[cfg(test)]
+    {
+        let motion = std::mem::take(&mut state.motion_metrics);
+        if let Some(observer) = &state.motion_observer {
+            let _ = observer.try_send(motion);
+        }
+    }
     if let Some(observer) = &state.tick_observer {
         observer
             .try_send(sample)

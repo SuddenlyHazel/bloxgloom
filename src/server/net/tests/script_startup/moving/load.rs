@@ -123,6 +123,8 @@ fn moving_real_listener_capacity_measurements() {
         let mut updates = 0usize;
         let (sample_tx, sample_rx) = mpsc::sync_channel(1024);
         state.tick_observer = Some(sample_tx);
+        let (motion_tx, motion_rx) = mpsc::sync_channel(1024);
+        state.motion_observer = Some(motion_tx);
         gameplay::serve(state, |address| {
             let mut peer = gameplay::Peer::connect(address, Arc::clone(&catalog));
             for base in (0..bodies).step_by(32) {
@@ -141,6 +143,7 @@ fn moving_real_listener_capacity_measurements() {
             }
             // Separate admission/loading from the steady population window.
             while sample_rx.try_recv().is_ok() {}
+            while motion_rx.try_recv().is_ok() {}
             let start = Instant::now();
             let deadline = start + Duration::from_secs(15);
             let mut seam = false;
@@ -190,11 +193,13 @@ fn moving_real_listener_capacity_measurements() {
         let ticks: Vec<_> = samples.iter().map(|sample| sample.tick_total).collect();
         let durable: Vec<_> = samples.iter().map(|sample| sample.phases[1]).collect();
         let commits: Vec<_> = samples.iter().map(|sample| sample.phases[3]).collect();
-        let capture: Vec<_> = samples.iter().map(|s| s.motion.capture).collect();
-        let solve: Vec<_> = samples.iter().map(|s| s.motion.solve).collect();
-        let attempts: u64 = samples.iter().map(|s| s.motion.attempts).sum();
-        let deferred: u64 = samples.iter().map(|s| s.motion.deferred).sum();
-        let failed: u64 = samples.iter().map(|s| s.motion.failed).sum();
+        let motion: Vec<_> = motion_rx.try_iter().collect();
+        assert!(!motion.is_empty());
+        let capture: Vec<_> = motion.iter().map(|s| s.capture).collect();
+        let solve: Vec<_> = motion.iter().map(|s| s.solve).collect();
+        let attempts: u64 = motion.iter().map(|s| s.attempts).sum();
+        let deferred: u64 = motion.iter().map(|s| s.deferred).sum();
+        let failed: u64 = motion.iter().map(|s| s.failed).sum();
         let pending = samples
             .iter()
             .map(|sample| sample.pending_durable_actions)
