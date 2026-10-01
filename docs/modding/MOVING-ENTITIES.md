@@ -66,14 +66,28 @@ assert(c.set_motion(e.entity, pose.revision, {velocity = {8, 0, 0}}))
 
 The spawn result is an opaque transaction-local allocation reference. It is not
 a durable entity ID. The host allocates an exact ID at commit; later callbacks
-and replicas expose it. Do not retain a spawn reference as an entity identity.
+and replicas expose it. The readonly `reference.ordinal` is zero-based; client
+action results expose `result.spawned` entries containing `ordinal` and exact
+`entity` handles. Duplicate delivery within the same action epoch repeats the
+committed mapping even after the object has despawned. Durable receipt storage
+retains the mapping through crash recovery. Reconnecting grants a new action
+epoch and rejects requests from the former session.
+
+Autonomous owner jobs have no client `ActionResult`. Native prepared transactions
+expose allocated exact IDs at their commit boundary; owner scripts learn exact
+IDs through captured owned entities and moving callbacks. Store a correlation
+tag in authored state when connecting a later callback to an owner launch.
+Do not retain a spawn reference as an entity identity.
 `c.configure_spawn(reference, key, options)` replaces that staged launch before
 commit. Supply the complete launch options and the same key. A reference from
 another invocation is rejected; failed replacement preserves no partial launch.
 
 `c.motion(id)` returns an owned captured pose or nil: position, velocity,
 acceleration, quaternion orientation, exact revision and grounded status. All
-nested tables are readonly. `c.set_motion(id, revision, options)` accepts velocity,
+nested tables are readonly. `c.motion_contact(id)` separately returns nil or a
+readonly `{motion_revision, tick, target, normal}` captured from the same owned
+record. Contact is historical host input; capture current target state before
+applying a conditional effect. `c.set_motion(id, revision, options)` accepts velocity,
 acceleration and orientation. Revision is a `BloxRevision` token, not a numeric
 counter. It cannot change position. Other packages' motion cannot be mutated
 through ordinary owned services.
@@ -84,9 +98,11 @@ terrain and drop operations. Spawn overlap, invalid state, ownership errors,
 stale captures and capacity failures reject the affected transaction. Catching a
 host error with `pcall` does not permit earlier staged effects to commit.
 
-An optional exact `source` attributes launch ownership and suppresses collision
-with that entity for the declared `source_exclusion_ticks` interval. Exclusion
-does not grant inventory, movement or state authority over the source.
+An optional exact `source` identifies the launch entity and suppresses collision
+with it for the declared `source_exclusion_ticks` interval. Exclusion does not
+grant inventory, movement or state authority over the source. Keep a stable
+profile token or other attribution tag in authored state when a later callback
+needs to award credit after the source despawns or reconnects.
 
 ## Behavior events
 
@@ -100,6 +116,15 @@ other callbacks. Their generated registrations count toward the package's normal
 | `MovingTick` | `entity`, `tick`, captured `motion` |
 | `MovingImpact` | `entity`, `motion_revision`, `tick`, contact `position`, `normal`, `incoming_velocity`, `target`, `blocked` |
 | `MovingExpiry` | `entity`, `motion_revision`, `tick`, `reason` (`Lifetime` or `WorldBoundary`) |
+
+Moving callbacks have no implicit acting player and no admin permission.
+`c.players()` supplies a captured directory, and `c.world_time()` supplies the
+captured logical clock. A package with `players/v1` may use existing authorized
+profile inventory operations and registered package-owned profile state. Their
+finite inventory limits, exact revisions and ownership checks still apply;
+profile rewards commit atomically with the moving reaction and its other effects.
+Select an explicit profile handle rather than using the actor shorthand
+`"player"`. Admin-only operations require a separate authorized action.
 
 Terrain targets contain `{kind="Terrain",cell,state}`. Entity targets contain
 `{kind="Entity",entity,revision}` with exact handles. Contact position is the
@@ -129,12 +154,31 @@ continue to apply.
 ## Integration, reactions and persistence
 
 Integration uses a fixed 0.04-second step (two logical ticks), independently of
-behavior cadence. Semi-implicit Euler adds acceleration before computing the
+behavior cadence. A live body can take at most two separate fixed steps in one
+transaction to recover a short commit delay. The solver captures the complete
+bounded horizon and splits each dynamic collider's committed displacement across
+the steps. First activation, restart, dormancy and unavailable-terrain recovery
+start with one step; they do not catch up elapsed inactive time. Saturation can
+still slow simulation rather than creating an unbounded backlog.
+
+Semi-implicit Euler adds acceleration before computing the
 swept displacement. Gravity subtracts `20 * gravity_scale` from vertical
 acceleration. Integrated speed is capped at the declaration's maximum. Terrain
 collision sweeps the complete box displacement rather than checking endpoints.
 Stop removes velocity; bounce reflects its normal component with restitution;
-slide removes the inward normal component.
+slide removes the inward normal component. Responses use the target's moving
+frame and remain capped by the declared maximum speed. Bounce and slide capture
+a conservative envelope covering reflected paths, rather than reusing only the
+initial straight sweep. At most four contacts resolve in one step.
+
+A new contact with an impact handler pauses at its contact pose after applying
+the host response; the remaining displacement is discarded. Once its reaction
+commits, integration resumes on the next step. Without an impact handler, the
+host continues the remaining displacement through bounded contact iterations.
+Resting target and normal suppress repeat reactions while preserving tangent
+slide motion under gravity. Contact clears once the body separates. Persisted
+resting centers round away from the touched face so floating-point conversion
+cannot turn a resting body into an embedded body.
 
 Earliest contact wins. Equal-time targets sort terrain, players, then creatures;
 terrain sorts by X/Y/Z cell and targets by exact identity. Axis ties resolve X,
@@ -161,6 +205,12 @@ advance lifetime or produce unbounded catch-up motion. Missing captured terrain
 pauses integration; it is never replaced by client fallback terrain or air.
 Owner transfer across chunk seams remains part of the entity commit.
 
+Player collision/source handles identify an exact session, rather than a stable
+profile. Each server boot reserves a distinct session-ID range durably in
+`session-generation.bin`. Keep that file with the world save: a pending historical
+hit or launch source must never resolve to a different player after restart.
+Existing stable profile identities continue to own player inventory.
+
 ## Admission limits
 
 | Resource | Bound |
@@ -180,11 +230,54 @@ Owner transfer across chunk seams remains part of the entity commit.
 | Live moving bodies | 256 total; 64 per owner chunk |
 | Swept voxel capture | 4096 cells per step |
 | Dynamic collider capture | 64 per step |
+| Committed ground-creature pose history | 1024 creatures, five tick frames |
 | Contact iterations | 4 per integration |
 
 Limits reject or suspend work rather than silently removing colliders. Native
 declarations share host validation; native authored-state bounds can exceed the
 Luau startup adapter's 4096-byte limit within the durable record envelope.
 
+## Compatibility and presentation
+
+Moving metadata uses client artifact V45, client runtime 9 and wire version 20.
+Durable action receipts use schema V2. The default prerelease world directory is
+`world-v21`; incompatible earlier saves are not converted.
+
+Clients interpolate committed position and quaternion orientation. There is no
+position extrapolation. Stops, impacts, corrections and removal clamp or clear
+retained visual poses. The public motion revision is separate from the generic
+entity position revision: a velocity/orientation change can occur without a
+position change. Clients clear retained motion and action mappings on session
+replacement. Models use rigid orientation without creature walking animations.
+
 Ground creatures keep their existing locomotion and animation contracts. General
 vehicles, imported meshes, animation controllers and audio are separate work.
+
+## Acceptance evidence
+
+The [measured capacity and renderer comparison](moving-entities/PERFORMANCE.md)
+include reproducible commands and their limits. The hard 256-body cap bounds
+work safely; it does not guarantee the server's 20 ms tick budget. On the measured
+Apple M1 Pro, 64 bodies with every-tick Lua callbacks stayed within that budget at
+p99; 256 exceeded it even with ten-tick callbacks.
+
+Real nonblocking TCP tests cover finite launch inventory, exact launch receipts,
+terrain/player/creature impacts, atomic profile/inventory/drop reactions, failed
+reaction recovery and admin cancellation, source-session identity, chunk seam
+transfer, dormant bodies, cold terrain loading and restart. Capacity probes also
+verify rejected launches preserve inventory and persisted bodies.
+
+![Production-renderer projectile filmstrip](moving-entities/projectile-flight.png)
+
+The production GPU filmstrip shows launch, bounce, guided orientation and
+impact/removal across successive frames (rows from top to bottom). Rigid rotation
+and existing creature animations have separate regression checks. This preview
+checks rendering behavior; the live-listener tests check server authority.
+
+Verification commands: `cargo test --workspace --all-features -- --test-threads=2`,
+`cargo fmt --all -- --check`, and
+`cargo clippy --all-targets --all-features -- -D warnings`. The workspace run
+passed 1347 application tests and 45 host-API tests, with five opt-in tests ignored.
+After lint cleanup and correcting an owner-test module path, host-API and focused
+motion regressions were rerun. The opt-in motion capacity probe was exercised
+separately in release mode as described in the measurements.

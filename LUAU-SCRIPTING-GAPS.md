@@ -453,8 +453,9 @@ Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs),
 ### 5. Flexible entities, motion and presentation
 
 Script creatures support terrain-aware ground movement toward horizontal
-targets and models built from colored cuboids. Generic gameplay entities do not
-provide arbitrary motion or a creature model. There are no bound sound APIs,
+targets and models built from colored cuboids. Moving entities now add free
+velocity/acceleration controls, swept collision and rigid cuboid presentation;
+the approved scope is implemented. There are no bound sound APIs,
 imported models or custom player geometry. Client presentation offers bounded
 replica windows, pose/tint overrides, sparks and embers rather than a general
 scene/entity renderer.
@@ -464,9 +465,9 @@ body rendering, walking and tool animations, and server-owned crouch stance.
 These improve the builtin player experience; they do not expose general Luau
 model imports, animation controllers, arbitrary motion or per-player physics.
 
-**Impact:** projectiles, vehicles, flying creatures, rich animation and audio
-need additional engine services. A mod cannot build those features solely by
-changing an entity's private state bytes.
+**Remaining impact:** vehicles, per-player physics, rich animation and audio
+need additional engine services. Simple projectiles and guided flying objects
+use the moving-entity contract rather than private-state position emulation.
 
 **Closure direction:** introduce public motion/physics contracts for specific
 supported behaviors, richer public projections and audio. Imported model
@@ -476,12 +477,22 @@ Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exac
 [creatures](SCRIPTING.md#mobile-creatures) and
 [replica presentation](SCRIPTING.md#public-replica-presentation).
 
-#### Proposed next goal: authoritative moving entities and projectiles
+#### Accepted goal: authoritative moving entities and projectiles
 
-**Status: proposal for review; no motion bindings below are implemented.**
+**Status: implemented and verified (2026-10-01).**
 This closes the simple moving-object/projectile portion of section 5. Audio,
 vehicles, general animation controllers and imported models remain separate
-work. The API names below are proposed, not an addition to `SCRIPTING.md` yet.
+work. The author contract is in [Moving entities](docs/modding/MOVING-ENTITIES.md)
+and the runnable example is [moving-projectiles](fixtures/moving-projectiles/README.md).
+
+Acceptance includes swept-collision regressions, real nonblocking TCP gameplay,
+atomic profile/inventory/drop rewards, failed-reaction cancellation, cold terrain
+loading, dormancy, chunk seams and restart. Production GPU previews verify cuboid
+motion; the renderer comparison preserves geometry with no observed regression.
+See [measurements](docs/modding/moving-entities/PERFORMANCE.md) for the 1/64/256-body
+workloads: the hard 256-body bound is safe but exceeds a 20 ms tick budget on the
+measured machine, including at ten-tick callback cadence. It is not a 50 Hz guarantee.
+
 
 **Goal:** let a Luau package declare, launch, steer and render a server-owned
 moving entity, receive reliable terrain/entity impacts, and commit impact effects
@@ -509,7 +520,7 @@ current behavior.
 
 ##### Author surface and ownership
 
-Add a proposed `host.register_moving_entity(declaration)` native/Luau contract.
+Use `host.register_moving_entity(declaration)` through native/Luau contracts.
 Declare an own-package key, schema/revision, private/public state limits, behavior
 module, optional existing colored-cuboid model, and a motion body. The body uses
 an axis-aligned box with an explicit position origin, dimensions, collision mask,
@@ -519,18 +530,24 @@ cadence. Shape coordinates and units must be documented consistently between
 collision, spawn and rendering; they cannot inherit an ambiguous feet/center
 convention from another entity family.
 
-Proposed gameplay and declared owner-system services:
+Gameplay and declared owner-system services:
 
 | Operation | Intended behavior |
 | --- | --- |
 | `c.spawn_moving_entity(key, options)` | Stage an owned entity with position, velocity, orientation, initial state and optional exact launch-source identity; return a transaction-local spawn reference |
-| `c.motion(id)` | Read captured position, velocity, orientation, grounded/contact state and exact motion revision |
+| `c.motion(id)` | Read captured position, velocity, orientation, grounded state and exact motion revision |
+| `c.motion_contact(id)` | Read the owned captured contact target and normal at that motion revision |
 | `c.set_motion(id, expected_revision, options)` | Stage velocity, acceleration or orientation changes for a captured owned entity; no arbitrary position teleport |
 | Existing owned state/removal services | Update state, publish public bytes or remove a compatible moving entity in the same transaction |
 
-A spawn reference is usable only within its originating transaction; committed
-receipts expose the allocated exact ID. Final bindings must specify this behavior
-rather than pretending a durable ID already exists before allocation commits.
+A spawn reference is usable only within its originating transaction. Client
+action receipts expose `{ordinal, entity}` mappings for exact allocated IDs;
+duplicate delivery in the same action epoch repeats those mappings. Receipt
+storage survives crash recovery, while reconnecting starts a new epoch and
+rejects stale requests. Autonomous owners have no client action result: native
+prepared transactions expose allocations at commit, and owner scripts observe
+exact IDs through captured owned entities and callbacks, using durable authored
+correlation tags when needed.
 Source identity can suppress immediate self-collision and attribute a hit; it
 confers no authority over another entity, profile or inventory.
 
@@ -545,7 +562,11 @@ Existing validated inventory, terrain, drop and profile operations remain the
 way to apply gameplay effects. Do not introduce an implicit health/damage model:
 impact exposes exact targets, and damage requires an available explicitly
 registered gameplay contract. Only callback capabilities declared and captured
-by the host may be used.
+by the host may be used. Moving callbacks have no implicit actor or admin
+permission. They capture the player directory and logical clock; packages with
+`players/v1` may target explicit profiles through existing finite inventory and
+registered profile-state services. Profile rewards join the same atomic reaction
+commit, and an errored callback publishes none of its staged effects.
 
 ##### Simulation and collision contract
 
@@ -914,8 +935,9 @@ projects. Save conversion remains excluded during this prerelease.
 - Tags can be declared, but there is no general Luau runtime tag-query service.
 - Command schemas support player targets, item keys, entity keys and counts,
   without general text/numeric arguments or aliases.
-- Daylight reads and admin clock control are available only in gameplay action
-  callbacks; scheduled planners and other callbacks use logical ticks.
+- Daylight reads are available in gameplay actions and moving callbacks. Admin
+  clock control remains an authorized action; other scheduled planners and
+  callbacks use logical ticks.
 - Typed local inventory/block/world/action observations are implemented with
   readonly bounded snapshots, real-listener acceptance and production UI previews;
   see the

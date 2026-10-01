@@ -78,3 +78,25 @@ BLOXGLOOM_MOTION_LOAD_COUNT=256 BLOXGLOOM_MOTION_LOAD_INTERVAL=10 cargo test --r
 `BLOXGLOOM_MOTION_LOAD_INTERVAL` accepts 1–1000 logical ticks and defaults to 1.
 Debug builds passed the same ownership/conservation checks but are excluded
 from production latency conclusions.
+
+## Renderer comparison
+
+A serial run of `cargo run --release -- perf 300 6` compared the proposal commit
+`a47b2fe` with the implemented renderer on the same machine. Each run used a
+1280×720 offscreen target, an upload ramp and 300 steady frames.
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Scene setup | 2337.2 ms | 2354.7 ms |
+| Mesh/upload bytes | 18,573,688 | 18,573,688 |
+| Visible triangles | 88,026 | 88,026 |
+| CPU steady p50 / p95 | 0.313 / 0.542 ms | 0.304 / 0.425 ms |
+| GPU steady p50 / p95 | 0.251 / 0.473 ms | 0.241 / 0.338 ms |
+
+Geometry was identical: 320,236 vertices, 480,354 indices, 324 meshes and 175
+visible meshes. Setup increased by 0.75%; no frame-time regression was observed
+in these single runs. This is not evidence of a statistically established
+speedup. CPU submit time excludes GPU completion and presentation; GPU timestamps
+cover world/HUD passes. The benchmark excludes live gameplay and the moving-body
+workload. Moving cuboid rendering was checked separately through the production
+GPU preview linked in the [author guide](../MOVING-ENTITIES.md#acceptance-evidence).
