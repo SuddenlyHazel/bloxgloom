@@ -81,7 +81,7 @@ impl Config {
                 .map(PathBuf::from)
                 .or_else(|| user_home().map(|home| home.join("AppData/Roaming")))
                 .unwrap_or_else(|| PathBuf::from("."));
-            return base.join("Bloxgloom/config");
+            base.join("Bloxgloom/config")
         }
 
         #[cfg(target_os = "linux")]
@@ -90,7 +90,7 @@ impl Config {
                 .map(PathBuf::from)
                 .or_else(|| user_home().map(|home| home.join(".config")))
                 .unwrap_or_else(|| PathBuf::from("."));
-            return base.join("bloxgloom/config");
+            base.join("bloxgloom/config")
         }
 
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
