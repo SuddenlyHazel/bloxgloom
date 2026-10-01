@@ -208,8 +208,14 @@ fn content_capacity_fixture(extra: &str) -> Fixture {
     )
     .unwrap();
     fs::create_dir_all(directory.join("assets/textures")).unwrap();
-    image::RgbaImage::from_pixel(16, 16, image::Rgba([120, 180, 60, 255]))
-        .save(directory.join("assets/textures/pixel.png"))
+    let file = fs::File::create(directory.join("assets/textures/pixel.png")).unwrap();
+    let mut encoder = png::Encoder::new(file, 16, 16);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&[120, 180, 60, 255].repeat(256))
         .unwrap();
     fixture
 }
