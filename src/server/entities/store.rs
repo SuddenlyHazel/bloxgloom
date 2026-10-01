@@ -440,6 +440,13 @@ impl EntityStore {
     ) -> Result<Vec<EntityId>, EntityError> {
         self.indexes.mobile_query(min, max)
     }
+    pub(in crate::server) fn mobile_ids_of_types(
+        &self,
+        types: impl IntoIterator<Item = EntityTypeId>,
+        maximum: usize,
+    ) -> Result<Vec<EntityId>, EntityError> {
+        self.indexes.mobile_ids_of_types(types, maximum)
+    }
 
     #[cfg(test)]
     pub fn owner(&self, id: EntityId) -> Option<EntityOwner> {

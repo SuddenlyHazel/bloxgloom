@@ -3,6 +3,7 @@
 //! empty terrain and missing profile cells, while a receipt is outstanding.
 use super::*;
 use crate::world::{ChunkReadStamp, World};
+type PlayerPoses = BTreeMap<u64, ([f32; 3], u64, bool)>;
 #[derive(Clone, Debug, Default)]
 pub(in crate::server) struct TerrainReads {
     pub clock: Option<crate::server::world_time::ReadStamp>,
@@ -10,8 +11,56 @@ pub(in crate::server) struct TerrainReads {
     inventories: BTreeMap<u128, u64>,
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
     entities: super::super::entities::EntityDependencies,
+    /// Transient collider poses are rechecked before WAL admission. After
+    /// admission the historical collision decision is fixed; later player
+    /// movement does not invalidate an already accepted durable decision.
+    players: Option<PlayerPoses>,
 }
 impl TerrainReads {
+    pub fn players(&mut self, state: &crate::server::State) -> io::Result<()> {
+        if state.clients.len() > 256 {
+            return Err(io::Error::new(
+                ErrorKind::QuotaExceeded,
+                "moving player capture capacity",
+            ));
+        }
+        let poses = state
+            .clients
+            .iter()
+            .map(|(&session, client)| {
+                (
+                    session,
+                    (
+                        client.position(),
+                        client.movement.last_seq(),
+                        client.movement.crouching(),
+                    ),
+                )
+            })
+            .collect();
+        if self.players.as_ref().is_some_and(|old| old != &poses) {
+            return Err(io::Error::new(
+                ErrorKind::WouldBlock,
+                "moving player capture changed",
+            ));
+        }
+        self.players = Some(poses);
+        Ok(())
+    }
+    pub fn players_current(&self, state: &crate::server::State) -> bool {
+        self.players.as_ref().is_none_or(|poses| {
+            poses.len() == state.clients.len()
+                && poses.iter().all(|(session, expected)| {
+                    state.clients.get(session).is_some_and(|client| {
+                        (
+                            client.position(),
+                            client.movement.last_seq(),
+                            client.movement.crouching(),
+                        ) == *expected
+                    })
+                })
+        })
+    }
     pub fn inventory(&mut self, profile: u128, revision: u64) -> io::Result<()> {
         if let Some(old) = self.inventories.get(&profile) {
             if *old != revision {
@@ -135,6 +184,15 @@ impl TerrainReads {
             return Err(io::Error::new(ErrorKind::WouldBlock, "stale terrain read"));
         }
         self.entities(other.entities)?;
+        if let Some(players) = other.players {
+            if self.players.as_ref().is_some_and(|old| old != &players) {
+                return Err(io::Error::new(
+                    ErrorKind::WouldBlock,
+                    "moving player capture changed",
+                ));
+            }
+            self.players = Some(players);
+        }
         for (profile, revision) in other.inventories {
             self.inventory(profile, revision)?;
         }
@@ -168,6 +226,7 @@ impl TerrainReads {
             && self.clock.is_none()
             && self.profiles.is_empty()
             && self.inventories.is_empty()
+            && self.players.is_none()
     }
     pub fn keys(&self) -> impl Iterator<Item = StateKey> + '_ {
         self.terrain

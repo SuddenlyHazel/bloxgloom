@@ -310,7 +310,9 @@ fn process_queue(
                     cancel_prepared_entities(state, &action);
                     return Err(io::Error::new(ErrorKind::InvalidData, error));
                 }
-                if !action.terrain_reads.entities_current(&state.entities) {
+                if !action.terrain_reads.entities_current(&state.entities)
+                    || !action.terrain_reads.players_current(state)
+                {
                     cancel_prepared_entities(state, &action);
                     if let Some(profile) = request_profile {
                         blocked_profiles.insert(profile);

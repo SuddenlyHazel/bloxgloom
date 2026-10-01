@@ -158,6 +158,7 @@ pub struct EntityIndexes {
     suspended_ticks: BTreeSet<EntityId>,
     tick_types: BTreeSet<EntityTypeId>,
     mobile: MobileSpatialIndex,
+    mobile_types: BTreeMap<EntityTypeId, BTreeSet<EntityId>>,
 }
 
 impl EntityIndexes {
@@ -309,6 +310,10 @@ impl EntityIndexes {
             }
         } else if let EntityLocation::Mobile { position } = &record.location {
             self.mobile.insert(record.id, *position)?;
+            self.mobile_types
+                .entry(record.entity_type)
+                .or_default()
+                .insert(record.id);
         }
         if let Some(next_tick) = record.next_tick {
             self.schedule
@@ -351,7 +356,15 @@ impl EntityIndexes {
                     }
                 }
             }
-            EntityLocation::Mobile { .. } => self.mobile.remove(record.id),
+            EntityLocation::Mobile { .. } => {
+                self.mobile.remove(record.id);
+                if let Some(ids) = self.mobile_types.get_mut(&record.entity_type) {
+                    ids.remove(&record.id);
+                    if ids.is_empty() {
+                        self.mobile_types.remove(&record.entity_type);
+                    }
+                }
+            }
         }
         if let Some(next_tick) = record.next_tick
             && let Some(ids) = self.schedule.get_mut(&next_tick)
@@ -452,6 +465,23 @@ impl EntityIndexes {
     pub fn mobile_query(&self, min: [f32; 3], max: [f32; 3]) -> Result<Vec<EntityId>, EntityError> {
         self.mobile.query(min, max)
     }
+    pub fn mobile_ids_of_types(
+        &self,
+        types: impl IntoIterator<Item = EntityTypeId>,
+        maximum: usize,
+    ) -> Result<Vec<EntityId>, EntityError> {
+        let mut result = Vec::new();
+        for entity_type in types {
+            if let Some(ids) = self.mobile_types.get(&entity_type) {
+                if result.len().saturating_add(ids.len()) > maximum {
+                    return Err(EntityError::SpatialQueryTooBroad);
+                }
+                result.extend(ids.iter().copied());
+            }
+        }
+        result.sort_unstable();
+        Ok(result)
+    }
 
     pub fn validate_against_records(
         &self,
@@ -469,6 +499,7 @@ impl EntityIndexes {
             || rebuilt.suspended_ticks != self.suspended_ticks
             || rebuilt.tick_types != self.tick_types
             || rebuilt.mobile != self.mobile
+            || rebuilt.mobile_types != self.mobile_types
         {
             return Err(EntityError::InvalidTransaction);
         }
