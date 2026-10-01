@@ -142,3 +142,29 @@ fn manual_thunder_is_audible_without_weather_and_reset_clears_it() {
     mixer.render(&mut frames);
     assert!(frames.iter().flatten().all(|v| *v == 0.0));
 }
+
+#[test]
+fn procedural_weather_mixer_is_partition_independent() {
+    let controls = Controls {
+        preset: Preset::Rain,
+        ..Controls::default()
+    };
+    let mut a = Mixer::new(8);
+    let mut b = Mixer::new(8);
+    a.set_controls(controls);
+    b.set_controls(controls);
+    let mut whole = vec![[0.0; 2]; 22_050];
+    let mut split = vec![[0.0; 2]; 22_050];
+    a.render(&mut whole);
+    for block in split.chunks_mut(317) {
+        b.render(block);
+    }
+    assert_eq!(whole, split);
+    assert!(whole.iter().flatten().any(|x| x.abs() > 0.001));
+    assert!(
+        whole
+            .iter()
+            .flatten()
+            .all(|x| x.is_finite() && x.abs() <= 0.98)
+    );
+}

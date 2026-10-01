@@ -124,7 +124,7 @@ impl Storm {
             }
             if distance < nearest {
                 nearest = distance;
-                w.distance = distance.clamp(200.0, 15_000.0);
+                w.distance = distance.max(200.0);
                 w.angle = c.position[0].atan2(c.position[1]);
                 w.lightning = stage * stage * (0.5 + 11.5 * c.severity * c.severity);
             }

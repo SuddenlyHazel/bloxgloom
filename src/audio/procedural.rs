@@ -22,6 +22,7 @@ pub(super) struct Procedural {
     reverb: Reverb,
     weather: Weather,
     lightning: Rng,
+    lightning_started: bool,
     frame: u32,
     seed: u32,
 }
@@ -34,7 +35,8 @@ impl Procedural {
             thunder: Thunder::new(seed),
             reverb: Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16),
             weather: Weather::default(),
-            lightning: Rng::new(seed, 0x6a09_e667),
+            lightning: Rng::new(seed, 0xa54f_f53a),
+            lightning_started: false,
             frame: 0,
             seed,
         }
@@ -58,6 +60,7 @@ impl Procedural {
         self.storm = Storm::new(self.seed);
         self.reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
         self.frame = 0;
+        self.lightning_started = self.thunder.active_voices() != 0;
     }
     fn follow(&mut self, preset: Preset) {
         self.weather = match preset {
@@ -88,7 +91,9 @@ impl Procedural {
         self.wind.follow(w.wind, w.bearing);
     }
     pub fn trigger_thunder(&mut self, distance: f32, angle: f32) -> bool {
-        self.thunder.trigger(distance, angle)
+        let accepted = self.thunder.trigger(distance, angle);
+        self.lightning_started |= accepted;
+        accepted
     }
     pub fn next(&mut self, preset: Preset) -> ([f32; 2], [f32; 2]) {
         // Manual thunder remains available with ambient preview disabled.
@@ -100,11 +105,20 @@ impl Procedural {
             self.follow(preset);
         }
         self.frame = (self.frame + 1) % 441;
-        if preset == Preset::Storm
-            && self.lightning.unit() < self.weather.lightning / (60.0 * 44_100.0)
-        {
-            self.thunder
-                .trigger(self.weather.distance, self.weather.angle);
+        if preset == Preset::Storm && self.weather.lightning > 0.0 {
+            let strike = !self.lightning_started
+                || lightning_hit(self.lightning.next_u32(), self.weather.lightning);
+            self.lightning_started = true;
+            if strike {
+                let x = self.weather.distance * self.weather.angle.sin()
+                    + 4000.0 * self.lightning.gaussian();
+                let y = self.weather.distance * self.weather.angle.cos()
+                    + 4000.0 * self.lightning.gaussian();
+                let distance = x.hypot(y).max(200.0);
+                if distance <= 15_000.0 {
+                    self.thunder.trigger(distance, x.atan2(y));
+                }
+            }
         }
         let (rain, send) = self.rain.next(Listener::default());
         let wind = self.wind.next();
@@ -115,3 +129,11 @@ impl Procedural {
         )
     }
 }
+
+fn lightning_hit(draw: u32, rate_per_min: f32) -> bool {
+    let threshold = (f64::from(rate_per_min) / (60.0 * 44_100.0) * 4_294_967_296.0) as u32;
+    draw < threshold
+}
+#[cfg(test)]
+#[path = "procedural/tests.rs"]
+mod tests;
