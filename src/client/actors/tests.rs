@@ -1,6 +1,8 @@
 use super::*;
 fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
+        character_pose: [0.0; 3],
+        character_recipe: None,
         animation: Default::default(),
         model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
         pose: [0.0; 4],
@@ -64,4 +66,57 @@ fn landing_animation_follows_delayed_ground_contact_and_is_visual_only() {
     assert!(shown.pose[3] > 0.0);
     assert_eq!(shown.position.y, 80.0);
     assert_eq!(landed.pose, [0.0; 4]);
+}
+
+#[test]
+fn player_walk_blends_from_replicated_distance_then_stops_without_drift() {
+    let now = Instant::now();
+    let player = |x| VisualAvatar {
+        model: AvatarModel::Player,
+        ..avatar(x)
+    };
+    let mut track = Track::new(player(0.0), now);
+    for i in 1..15 {
+        track.update(player(i as f32 * 0.05), now + STEP * i);
+    }
+    let walking = track.update(player(0.7), now + STEP * 15);
+    assert!(walking.character_pose[0] > 0.0 && walking.character_pose[2] > 0.5);
+    for i in 16..80 {
+        track.update(player(0.7), now + STEP * i);
+    }
+    let stopped = track.update(player(0.7), now + STEP * 80);
+    assert_eq!(stopped.position, player(0.7).position);
+    assert!(stopped.character_pose[2] < 0.001);
+    assert!(
+        (stopped.pose[0] - std::f32::consts::FRAC_PI_2).abs() < 0.01,
+        "idle player must retain movement heading"
+    );
+    assert!(stopped.character_pose[1] > walking.character_pose[1]);
+    let phase = stopped.character_pose[0];
+    assert_eq!(
+        track.update(player(0.7), now + STEP * 81).character_pose[0],
+        phase
+    );
+    let reset = track.update(player(100.0), now + STEP * 82);
+    assert_eq!(reset.character_pose[0], 0.0);
+    assert_eq!(reset.character_pose[2], 0.0);
+}
+
+#[test]
+fn switching_actor_model_cannot_reuse_character_gait_or_old_pose() {
+    let now = Instant::now();
+    let player = |x| VisualAvatar {
+        model: AvatarModel::Player,
+        ..avatar(x)
+    };
+    let mut track = Track::new(player(0.0), now);
+    for i in 1..10 {
+        track.update(player(i as f32 * 0.1), now + STEP * i);
+    }
+    assert!(track.gait > 0.0);
+    let creature = track.update(avatar(0.9), now + STEP * 10);
+    assert_eq!(creature.character_pose, [0.0; 3]);
+    let replaced = track.update(player(0.9), now + STEP * 11);
+    assert_eq!(replaced.character_pose[0], 0.0);
+    assert_eq!(replaced.character_pose[2], 0.0);
 }

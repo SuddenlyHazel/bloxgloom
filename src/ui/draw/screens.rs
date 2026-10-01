@@ -297,6 +297,16 @@ impl UiBuilder<'_> {
                 "BLOOM STRENGTH",
                 format!("{:.0}%", frame.settings.bloom_strength * 100.0),
             ),
+            (
+                SettingId::Characters,
+                "CHARACTERS",
+                if frame.settings.authored_characters {
+                    "AUTHORED"
+                } else {
+                    "CLASSIC"
+                }
+                .to_string(),
+            ),
         ];
         let rows: &[_] = if frame.screen == UiScreen::Graphics {
             &graphics_rows

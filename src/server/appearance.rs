@@ -2,13 +2,14 @@
 //! an atomic per-profile file is the commit point, before transient entity publish.
 //! This does not enter the inventory/world WAL: no items or world edits are coupled.
 use super::State;
+use crate::appearance::{AppearanceState, CharacterRecipe, MAX_APPEARANCE_BYTES};
 use crate::content::Catalog;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const LEN: usize = 4 + 16 + 4 + 4;
+const MAX_LEN: usize = 4 + 16 + 1 + MAX_APPEARANCE_BYTES + 4;
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct Store {
@@ -24,38 +25,46 @@ impl Store {
         self.root.join(format!("{profile:032x}.appearance"))
     }
 
-    pub(super) fn load(&self, profile: u128, catalog: &Catalog) -> io::Result<[u8; 4]> {
+    pub(super) fn load(&self, profile: u128, catalog: &Catalog) -> io::Result<AppearanceState> {
         let file = match File::open(self.path(profile)) {
             Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok([0; 4]),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(AppearanceState::default());
+            }
             Err(error) => return Err(error),
         };
-        let mut bytes = Vec::with_capacity(LEN + 1);
-        file.take((LEN + 1) as u64).read_to_end(&mut bytes)?;
-        if bytes.len() != LEN
-            || &bytes[..4] != b"BGA1"
+        let mut bytes = Vec::with_capacity(MAX_LEN + 1);
+        file.take((MAX_LEN + 1) as u64).read_to_end(&mut bytes)?;
+        let invalid = || {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid or unsupported profile appearance",
+            )
+        };
+        if !(29..=MAX_LEN).contains(&bytes.len())
+            || &bytes[..4] != b"BGA2"
             || u128::from_le_bytes(bytes[4..20].try_into().unwrap()) != profile
-            || u32::from_le_bytes(bytes[24..28].try_into().unwrap()) != checksum(&bytes[..24])
+            || usize::from(bytes[20]) + 25 != bytes.len()
         {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid profile appearance",
-            ));
+            return Err(invalid());
         }
-        let appearance = bytes[20..24].try_into().unwrap();
-        if !catalog.valid_appearance(appearance) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unregistered saved appearance",
-            ));
+        let end = bytes.len() - 4;
+        if u32::from_le_bytes(bytes[end..].try_into().unwrap()) != checksum(&bytes[..end]) {
+            return Err(invalid());
+        }
+        let appearance = AppearanceState::decode(&bytes[21..end]).ok_or_else(invalid)?;
+        if !catalog.valid_appearance_state(appearance) {
+            return Err(invalid());
         }
         Ok(appearance)
     }
 
-    fn save(&self, profile: u128, appearance: [u8; 4]) -> io::Result<()> {
-        let mut bytes = b"BGA1".to_vec();
+    fn save(&self, profile: u128, appearance: AppearanceState) -> io::Result<()> {
+        let payload = appearance.encode();
+        let mut bytes = b"BGA2".to_vec();
         bytes.extend(profile.to_le_bytes());
-        bytes.extend(appearance);
+        bytes.push(payload.len() as u8);
+        bytes.extend(payload);
         bytes.extend(checksum(&bytes).to_le_bytes());
         let temporary = self.root.join(format!(
             ".{profile:032x}.appearance.{}.{}.tmp",
@@ -87,14 +96,35 @@ fn checksum(bytes: &[u8]) -> u32 {
 }
 
 pub(super) fn select(state: &mut State, session: u64, palettes: [u8; 3]) -> io::Result<()> {
+    let mut appearance = state
+        .player_entities
+        .appearance_state_for_session(session)
+        .unwrap_or_default();
+    appearance.palettes = palettes;
+    replace(state, session, appearance)
+}
+
+pub(super) fn select_character(
+    state: &mut State,
+    session: u64,
+    recipe: Option<CharacterRecipe>,
+) -> io::Result<()> {
+    let mut appearance = state
+        .player_entities
+        .appearance_state_for_session(session)
+        .unwrap_or_default();
+    appearance.character = recipe;
+    replace(state, session, appearance)
+}
+
+fn replace(state: &mut State, session: u64, appearance: AppearanceState) -> io::Result<()> {
     if state.durability.failed {
         return Err(io::Error::other("server durability failed"));
     }
-    let appearance = [palettes[0], palettes[1], palettes[2], 0];
-    if !state.world.catalog().valid_appearance(appearance) {
+    if !state.world.catalog().valid_appearance_state(appearance) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "unregistered appearance palette",
+            "unregistered appearance selection",
         ));
     }
     let Some(client) = state.clients.get(&session) else {
