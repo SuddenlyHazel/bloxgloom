@@ -607,7 +607,13 @@ async fn render_previews_at(
         })
         .await?;
     let (device, queue) = adapter
-        .request_device(&wgpu::DeviceDescriptor::default())
+        .request_device(&wgpu::DeviceDescriptor {
+            required_limits: render::material_device_limits(
+                adapter.limits(),
+                crate::content::catalog().textures().len(),
+            )?,
+            ..Default::default()
+        })
         .await?;
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);

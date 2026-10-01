@@ -75,6 +75,7 @@ impl ServerStartup {
         if self.client_bundle.is_some() {
             return Err(io::Error::other("local package set already installed"));
         }
+        let deadline = std::time::Instant::now() + super::script_capacity::INSTALLATION_WALL_TIME;
         let declarations = super::script::startup::Declarations::discover(root)?;
         let mut startup = self.with_extension(&declarations)?;
         if let Some(appearance) = &declarations.appearance {
@@ -92,6 +93,11 @@ impl ServerStartup {
             catalog.validate().map_err(|error| {
                 io::Error::other(format!("invalid selected catalog: {error:?}"))
             })?;
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::other(
+                "installation initialization deadline exceeded during catalog preparation (maximum 10s)",
+            ));
         }
         startup.client_bundle = Some(Arc::clone(&declarations.client_bundle));
         Ok(startup)
@@ -116,15 +122,26 @@ impl ServerStartup {
         self.storage = storage;
         self.generation.extend(registration.generation);
         self.generation.sort_by(|a, b| a.key.cmp(&b.key));
-        if self.generation.len() > 256
-            || self
-                .generation
-                .windows(2)
-                .any(|pair| pair[0].key == pair[1].key)
+        if self.generation.len() > 256 {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "generators/installation: attempted {}; maximum 256",
+                    self.generation.len()
+                ),
+            ));
+        }
+        if let Some(pair) = self
+            .generation
+            .windows(2)
+            .find(|pair| pair[0].key == pair[1].key)
         {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                "duplicate generation contributor or capacity exceeded",
+                format!(
+                    "{}: duplicate generation contributor across installed extensions",
+                    pair[0].key
+                ),
             ));
         }
         self.install_public_systems();

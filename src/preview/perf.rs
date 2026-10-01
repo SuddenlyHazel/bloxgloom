@@ -73,6 +73,10 @@ pub(super) async fn run_perf_benchmark_async(
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             required_features: requested_features,
+            required_limits: render::material_device_limits(
+                adapter.limits(),
+                crate::content::catalog().textures().len(),
+            )?,
             ..Default::default()
         })
         .await?;
