@@ -18,6 +18,8 @@ pub(super) struct State {
     cover: [f32; COVER_SIDE * COVER_SIDE],
     exposure: f32,
     target_exposure: f32,
+    audio_exposure: f32,
+    target_audio_exposure: f32,
     updated: Instant,
 }
 
@@ -36,6 +38,8 @@ impl Default for State {
             cover: [f32::INFINITY; COVER_SIDE * COVER_SIDE],
             exposure: 0.0,
             target_exposure: 0.0,
+            audio_exposure: 0.0,
+            target_audio_exposure: 0.0,
             updated: now,
         }
     }
@@ -178,6 +182,21 @@ impl super::ClientApp {
                 },
             );
             self.weather.target_exposure = if roof <= eye.y { 1.0 } else { 0.0 };
+            // Porous cutout cover (including modded leaves) catches raindrops,
+            // but does not enclose the listener like a building roof.
+            let audio_roof = column_cover(
+                eye.x.floor() as i32,
+                eye.y.floor() as i32,
+                eye.z.floor() as i32,
+                scan_ceiling(self.position.y, eye.y.floor() as i32),
+                |x, y, z| {
+                    self.block_at(x, y, z).map(|id| {
+                        let flags = self.catalog.block_flags(id);
+                        flags & crate::content::SOLID != 0 && flags & crate::content::CUTOUT == 0
+                    })
+                },
+            );
+            self.weather.target_audio_exposure = if audio_roof <= eye.y { 1.0 } else { 0.0 };
         }
         let dt = now
             .saturating_duration_since(self.weather.updated)
@@ -186,6 +205,9 @@ impl super::ClientApp {
         self.weather.updated = now;
         self.weather.exposure +=
             (self.weather.target_exposure - self.weather.exposure) * (1.0 - (-dt / 0.5).exp());
+        self.weather.audio_exposure += (self.weather.target_audio_exposure
+            - self.weather.audio_exposure)
+            * (1.0 - (-dt / 0.5).exp());
         let elapsed = self.weather.elapsed(now);
         let sample = self.weather.sample(now);
         self.weather.track_strike(elapsed, self.camera().position);
@@ -203,7 +225,7 @@ impl super::ClientApp {
                     self.audio.thunder(
                         distance.max(200.0),
                         delta.z.atan2(delta.x) - self.yaw,
-                        self.weather.exposure,
+                        self.weather.audio_exposure,
                     );
                 }
                 self.weather.pending_thunder.swap_remove(index);
@@ -217,7 +239,7 @@ impl super::ClientApp {
                 sample.rain * 30.0,
                 sample.wind,
                 0.35 - self.yaw,
-                self.weather.exposure,
+                self.weather.audio_exposure,
             );
         }
         let flash = self.weather.flash.map_or(0.0, |strike| {

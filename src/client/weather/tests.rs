@@ -41,9 +41,34 @@ fn grounded_and_hovering_weather_stays_exposed_at_vertical_chunk_edges() {
             let camera = app.camera();
             app.present_weather(camera, now + Duration::from_secs(step as u64));
             assert_eq!(app.weather.target_exposure, 1.0, "feet at {feet_y}");
+            assert_eq!(app.weather.target_audio_exposure, 1.0, "feet at {feet_y}");
             assert!(
                 app.weather.cover.iter().all(|roof| *roof == ground_y),
                 "feet at {feet_y}"
+            );
+        }
+        let eye = app.camera().position;
+        let roof_y = eye.y.floor() as i32 + 3;
+        let key = ChunkKey {
+            x: 0,
+            y: roof_y.div_euclid(CHUNK_SIZE as i32),
+            z: 0,
+        };
+        let index = Chunk::index([8, roof_y.rem_euclid(CHUNK_SIZE as i32) as usize, 8]).unwrap();
+        for (step, block, expected_audio) in [(2, crate::world::LEAVES, 1.0), (3, STONE, 0.0)] {
+            let mut blocks = vec![AIR; CHUNK_VOLUME];
+            blocks[index] = block;
+            app.chunks
+                .insert(key, Arc::new(Chunk::from_blocks(key, 2, blocks)));
+            let camera = app.camera();
+            app.present_weather(camera, now + Duration::from_secs(step));
+            assert_eq!(
+                app.weather.target_exposure, 0.0,
+                "both roofs shelter visible rain"
+            );
+            assert_eq!(
+                app.weather.target_audio_exposure, expected_audio,
+                "roof {block:?}"
             );
         }
     }
