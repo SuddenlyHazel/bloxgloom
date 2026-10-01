@@ -202,3 +202,25 @@ under bounded interleaved script work; it is not a saturation, multi-client or
 before/after release performance study. Run the ignored test alone to avoid
 concurrent builds/tests distorting its tails. Timing values remain evidence,
 with behavior assertions rather than machine-dependent timing thresholds.
+
+## Verification
+
+The implementation passed `cargo test --workspace -- --test-threads=2`:
+1,247 game tests and 37 host API tests. The three opt-in lifetime/listener
+benchmarks passed separately. Formatting and
+`cargo clippy --all-targets --all-features -- -D warnings` passed, and the
+modified Luau examples passed installed Luau LSP analysis with the shipped
+editor definitions.
+
+Coverage includes warm/cold retry randomness, parallel generation, dependency
+isolation and initialization failures, bytecode invalidation/eviction, cached
+logging helpers, manually resumed coroutines, expired contexts, caught memory
+failures, callback and semantic-output resets, healthy document switches,
+reconnect/server switching, finite inventories and durable receipts through the
+real nonblocking listener. The welcome profile panel was rendered through the
+production GPU UI preview and inspected at compact size.
+
+An eight-thread workspace run exposed timing sensitivity in the unchanged native
+withheld-drop-motion fixture; that test passed alone and in the complete
+lower-concurrency run. The listener latency numbers above are isolated
+measurements, not measurements taken alongside the workspace tests.
