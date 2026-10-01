@@ -48,9 +48,11 @@ impl Presentation {
     }
     pub(crate) fn atmosphere(self, mut a: Atmosphere) -> Atmosphere {
         a.cloud = self.cloud;
-        a.drift = self
-            .wind
-            .map(|v| v * self.seconds.rem_euclid(3600.0) * 0.02);
+        // A slow, closed cloud-advection path avoids displacement jumps when
+        // wind changes, and is continuous across the client's one-hour clock wrap.
+        // Rain streak slant still follows the authoritative instantaneous wind.
+        let phase = self.seconds.rem_euclid(3600.0) * (std::f32::consts::TAU / 3600.0);
+        a.drift = [24.0 * phase.sin(), 12.0 * (phase.cos() - 1.0)];
         let gray = Vec3::new(0.19, 0.23, 0.28) * (0.12 + a.strength * 0.88);
         a.horizon = a.horizon.lerp(gray, self.cloud * 0.72);
         a.zenith = a.zenith.lerp(gray * 0.72, self.cloud * 0.85);

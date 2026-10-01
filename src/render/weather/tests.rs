@@ -41,3 +41,18 @@ fn clear_and_sheltered_rain_are_empty_and_flash_preserves_sun_direction() {
     assert_eq!(flash.sun, night.sun);
     assert!(flash.strength > night.strength);
 }
+
+#[test]
+fn cloud_advection_is_continuous_across_wind_changes_and_clock_wrap() {
+    let base = Atmosphere::at(crate::daylight::INITIAL_MS);
+    let clouds = |seconds, wind| {
+        Presentation::new(1.0, 1.0, [wind, 0.0], 1.0, seconds, 0.0)
+            .atmosphere(base)
+            .drift
+    };
+    assert_eq!(clouds(600.0, 2.0), clouds(600.0, 18.0));
+    let before = clouds(3599.99, 18.0);
+    let after = clouds(0.01, 2.0);
+    assert!((before[0] - after[0]).abs() < 0.001);
+    assert!((before[1] - after[1]).abs() < 0.001);
+}
