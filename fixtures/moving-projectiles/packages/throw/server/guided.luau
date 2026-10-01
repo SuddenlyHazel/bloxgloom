@@ -8,7 +8,10 @@ return function(c: BloxGameplayContext, e: BloxGameplayEvent): ()
         assert(state ~= nil)
         local phase = (state:byte(1) + 1) % 40
         local angle = phase * math.pi / 20
-        assert(c.set_motion(e.entity, pose.revision, {velocity = {8 * math.cos(angle), 0, 8 * math.sin(angle)}}))
+        assert(c.set_motion(e.entity, pose.revision, {
+            velocity = {8 * math.cos(angle), 0, 8 * math.sin(angle)},
+            orientation = {0, -math.sin(angle / 2), 0, math.cos(angle / 2)},
+        }))
         assert(c.update_entity(e.entity, string.char(phase)))
     elseif e.kind == "MovingExpiry" then
         local pose = c.motion(e.entity)
