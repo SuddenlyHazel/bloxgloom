@@ -44,6 +44,7 @@ struct Voice {
     echoes: [Echo; ECHOES],
     span_log: f32,
     echo_span_log: f32,
+    gain: f32,
 }
 impl Default for Voice {
     fn default() -> Self {
@@ -61,6 +62,7 @@ impl Default for Voice {
             echoes: [Echo::default(); ECHOES],
             span_log: 0.0,
             echo_span_log: 0.0,
+            gain: 1.0,
         }
     }
 }
@@ -114,7 +116,14 @@ impl Thunder {
     /// an overall lightning-to-thunder delay if needed; the channel itself retains
     /// all relative acoustic travel times and distance-dependent spectral losses.
     pub fn trigger(&mut self, distance: f32, angle: f32) -> bool {
-        if !(200.0..=15_000.0).contains(&distance) || !angle.is_finite() {
+        self.trigger_gain(distance, angle, 1.0)
+    }
+    pub fn trigger_gain(&mut self, distance: f32, angle: f32, gain: f32) -> bool {
+        if !(200.0..=15_000.0).contains(&distance)
+            || !angle.is_finite()
+            || !gain.is_finite()
+            || !(0.0..=1.0).contains(&gain)
+        {
             self.rejected = self.rejected.saturating_add(1);
             return false;
         }
@@ -124,6 +133,7 @@ impl Thunder {
         };
         *voice = Voice::default();
         build_voice(voice, &mut self.rng, &self.reflectors, distance, angle);
+        voice.gain = gain;
         true
     }
     pub fn next(&mut self) -> [f32; 2] {
@@ -134,7 +144,7 @@ impl Thunder {
             }
             let out = voice.next(&mut self.rng, &mut self.echo_rng);
             for channel in 0..2 {
-                sum[channel] += 1.93 * out[channel];
+                sum[channel] += 1.93 * out[channel] * voice.gain;
             }
         }
         self.reverb_input += sum[0] + sum[1];

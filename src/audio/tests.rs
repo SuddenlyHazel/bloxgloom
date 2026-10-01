@@ -168,3 +168,36 @@ fn procedural_weather_mixer_is_partition_independent() {
             .all(|x| x.is_finite() && x.abs() <= 0.98)
     );
 }
+
+#[test]
+fn world_weather_mixer_is_partition_independent_and_reset_silences_it() {
+    let mut a = Mixer::new(12);
+    let mut b = Mixer::new(12);
+    for mixer in [&mut a, &mut b] {
+        assert!(mixer.command(Command::Weather(Some(WeatherSound {
+            rain_mm_h: 20.0,
+            wind_m_s: 8.0,
+            bearing: 0.7,
+            exposure: 1.0,
+        }))));
+    }
+    let mut whole = vec![[0.0; 2]; 22_050];
+    let mut split = vec![[0.0; 2]; 22_050];
+    a.render(&mut whole);
+    for block in split.chunks_mut(317) {
+        b.render(block);
+    }
+    assert_eq!(whole, split);
+    assert!(whole.iter().flatten().any(|x| x.abs() > 0.001));
+    assert_eq!(a.diagnostics().3, 0);
+    assert!(a.command(Command::WorldThunder {
+        distance: 400.0,
+        angle: 0.5,
+        exposure: 0.0
+    }));
+    a.render(&mut whole);
+    assert!(whole.iter().flatten().any(|x| x.abs() > 0.001));
+    a.command(Command::Reset);
+    a.render(&mut whole);
+    assert!(whole.iter().flatten().all(|x| *x == 0.0));
+}

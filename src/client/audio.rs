@@ -1,6 +1,6 @@
-//! Local listening state. The preview never infers authoritative world weather.
+//! Native listening state, with explicit authoritative weather inputs and local previews.
 use crate::{
-    audio::{Command, Controls, Preset, output::AudioOutput},
+    audio::{Command, Controls, Preset, WeatherSound, output::AudioOutput},
     config::Config,
 };
 use std::time::{Duration, Instant};
@@ -9,6 +9,8 @@ pub(super) struct State {
     output: Option<AudioOutput>,
     preset: Preset,
     next_voice: u64,
+    world: Option<WeatherSound>,
+    sent_world: Option<Option<WeatherSound>>,
     last_poll: Option<Instant>,
     last_listener: Option<([f32; 3], f32)>,
 }
@@ -25,6 +27,8 @@ impl State {
             output,
             preset: Preset::Off,
             next_voice: 1,
+            world: None,
+            sent_world: None,
             last_poll: None,
             last_listener: None,
         }
@@ -40,6 +44,52 @@ impl State {
     pub(super) fn change_preview(&mut self, increase: bool, config: &Config) {
         self.preset = Preset::from_index(((self.preset as u8) + if increase { 1 } else { 3 }) % 4);
         self.set_volumes(config);
+        self.sent_world = None;
+        self.send_weather();
+    }
+    fn send_weather(&mut self) {
+        let desired = if self.preset == Preset::Off {
+            self.world
+        } else {
+            None
+        };
+        if self.sent_world != Some(desired)
+            && let Some(output) = &self.output
+            && output.try_send(Command::Weather(desired))
+        {
+            self.sent_world = Some(desired);
+        }
+    }
+    /// Call from the client presentation clock (at most 20 Hz). Inputs are
+    /// rain in mm/hour, wind in metres/second, clockwise bearing in radians,
+    /// and outdoor exposure in 0..=1. Preview overrides ambient world sound.
+    pub(super) fn update_weather(
+        &mut self,
+        rain_mm_h: f32,
+        wind_m_s: f32,
+        bearing: f32,
+        exposure: f32,
+    ) {
+        let sample = WeatherSound {
+            rain_mm_h,
+            wind_m_s,
+            bearing,
+            exposure,
+        }
+        .sanitized();
+        self.world = Some(sample);
+        self.send_weather();
+    }
+    /// Caller schedules propagation delay from the synchronized strike and
+    /// provides a clockwise angle relative to the listener's current heading.
+    pub(super) fn thunder(&self, distance: f32, angle: f32, exposure: f32) {
+        if let Some(output) = &self.output {
+            output.try_send(Command::WorldThunder {
+                distance: distance.clamp(200.0, 15_000.0),
+                angle,
+                exposure,
+            });
+        }
     }
     pub(super) fn test_sound(&mut self) {
         let Some(next) = self.next_voice.checked_add(1) else {
@@ -76,6 +126,8 @@ impl State {
     }
     pub(super) fn retire_session(&mut self, config: &Config) {
         self.preset = Preset::Off;
+        self.world = None;
+        self.sent_world = None;
         self.last_poll = None;
         self.last_listener = None;
         if let Some(output) = &self.output {

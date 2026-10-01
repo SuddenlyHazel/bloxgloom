@@ -134,6 +134,15 @@ impl Mixer {
                 }
             }
             Command::Thunder { distance, angle } => self.synth.trigger_thunder(distance, angle),
+            Command::Weather(weather) => {
+                self.synth.set_world(weather);
+                true
+            }
+            Command::WorldThunder {
+                distance,
+                angle,
+                exposure,
+            } => self.synth.trigger_world_thunder(distance, angle, exposure),
             Command::Reset => {
                 self.voices.clear();
                 self.synth = Procedural::new(self.seed);
@@ -160,11 +169,12 @@ impl Mixer {
                 *level += (target - *level) / (0.02 * SAMPLE_RATE as f32);
             }
             let changing = self.preset != self.controls.preset;
-            let fade_target = if changing || self.preset == Preset::Off {
-                0.0
-            } else {
-                1.0
-            };
+            let fade_target =
+                if changing || (self.preset == Preset::Off && !self.synth.world_active()) {
+                    0.0
+                } else {
+                    1.0
+                };
             self.fade += (fade_target - self.fade) / (0.02 * SAMPLE_RATE as f32);
             if changing && self.fade < 0.0001 {
                 self.preset = self.controls.preset;

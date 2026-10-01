@@ -24,3 +24,18 @@ fn local_audio_preview_is_ephemeral_and_listener_poll_is_bounded() {
     );
     assert_eq!(config.audio_master, 0.8);
 }
+
+#[test]
+fn world_sound_is_remembered_during_preview_and_retired_with_session() {
+    let config = Config::default();
+    let mut state = State::new(&config);
+    state.update_weather(10.0, 4.0, 0.5, 1.0);
+    let sample = state.world;
+    assert_eq!(sample.unwrap().rain_mm_h, 10.0);
+    state.change_preview(true, &config);
+    assert_eq!(state.world, sample);
+    state.thunder(400.0, 0.0, 1.0);
+    state.retire_session(&config);
+    assert_eq!(state.world, None);
+    assert_eq!(state.sent_world, None);
+}

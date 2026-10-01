@@ -6,7 +6,7 @@ mod spatial;
 mod thunder;
 mod weather;
 mod wind;
-use crate::audio::Preset;
+use crate::audio::{Preset, WeatherSound};
 use dsp::Rng;
 use rain::{Rain, RainWeather};
 use reverb::Reverb;
@@ -25,6 +25,10 @@ pub(super) struct Procedural {
     lightning_started: bool,
     frame: u32,
     seed: u32,
+    world: Option<WeatherSound>,
+    world_current: WeatherSound,
+    indoor_filter: [f32; 2],
+    exposure: f32,
 }
 impl Procedural {
     pub fn new(seed: u32) -> Self {
@@ -39,6 +43,10 @@ impl Procedural {
             lightning_started: false,
             frame: 0,
             seed,
+            world: None,
+            world_current: WeatherSound::default(),
+            indoor_filter: [0.0; 2],
+            exposure: 1.0,
         }
     }
     pub fn stats(&self) -> (u64, u64, usize, usize, u64) {
@@ -62,6 +70,12 @@ impl Procedural {
         self.frame = 0;
         self.lightning_started = self.thunder.active_voices() != 0;
     }
+    pub fn set_world(&mut self, weather: Option<WeatherSound>) {
+        self.world = weather.map(WeatherSound::sanitized);
+    }
+    pub fn world_active(&self) -> bool {
+        self.world.is_some()
+    }
     fn follow(&mut self, preset: Preset) {
         self.weather = match preset {
             Preset::Storm => self.storm.tick(),
@@ -78,6 +92,23 @@ impl Procedural {
             },
             Preset::Off => Weather::default(),
         };
+        if let Some(target) = self.world {
+            // 100 Hz control clock: half-second convergence, independent of blocks.
+            self.world_current.rain_mm_h +=
+                (target.rain_mm_h - self.world_current.rain_mm_h) * 0.02;
+            self.world_current.wind_m_s += (target.wind_m_s - self.world_current.wind_m_s) * 0.02;
+            let delta = (target.bearing - self.world_current.bearing + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            self.world_current.bearing += delta * 0.02;
+            self.weather = Weather {
+                rain: self.world_current.rain_mm_h,
+                wind: self.world_current.wind_m_s,
+                mean_wind: self.world_current.wind_m_s,
+                bearing: self.world_current.bearing,
+                ..Weather::default()
+            };
+        }
         let w = self.weather;
         // Values come from bounded native presets, not unvalidated author input.
         self.rain
@@ -95,17 +126,24 @@ impl Procedural {
         self.lightning_started |= accepted;
         accepted
     }
+    pub fn trigger_world_thunder(&mut self, distance: f32, angle: f32, exposure: f32) -> bool {
+        if !exposure.is_finite() {
+            return false;
+        }
+        self.thunder
+            .trigger_gain(distance, angle, 0.35 + 0.65 * exposure.clamp(0.0, 1.0))
+    }
     pub fn next(&mut self, preset: Preset) -> ([f32; 2], [f32; 2]) {
         // Manual thunder remains available with ambient preview disabled.
         let thunder = self.thunder.next();
-        if preset == Preset::Off {
+        if preset == Preset::Off && self.world.is_none() {
             return ([0.0; 2], thunder);
         }
         if self.frame == 0 {
             self.follow(preset);
         }
         self.frame = (self.frame + 1) % 441;
-        if preset == Preset::Storm && self.weather.lightning > 0.0 {
+        if self.world.is_none() && preset == Preset::Storm && self.weather.lightning > 0.0 {
             let strike = !self.lightning_started
                 || lightning_hit(self.lightning.next_u32(), self.weather.lightning);
             self.lightning_started = true;
@@ -123,10 +161,17 @@ impl Procedural {
         let (rain, send) = self.rain.next(Listener::default());
         let wind = self.wind.next();
         let wet = self.reverb.next(send);
-        (
-            std::array::from_fn(|i| rain[i] + wind[i] + 0.12 * wet[i]),
-            thunder,
-        )
+        let target_exposure = self.world.map_or(1.0, |w| w.exposure);
+        self.exposure += (target_exposure - self.exposure) / (0.3 * 44_100.0);
+        let ambient = std::array::from_fn(|i| {
+            let sample = rain[i] + wind[i] + 0.12 * wet[i];
+            // Sheltered listeners still hear muted outdoor weather; this is a
+            // presentation approximation rather than voxel acoustic tracing.
+            self.indoor_filter[i] += 0.06 * (sample - self.indoor_filter[i]);
+            (self.exposure * sample + (1.0 - self.exposure) * self.indoor_filter[i])
+                * (0.15 + 0.85 * self.exposure)
+        });
+        (ambient, thunder)
     }
 }
 

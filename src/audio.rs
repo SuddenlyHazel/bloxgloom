@@ -82,6 +82,35 @@ impl Controls {
         }
     }
 }
+/// Continuous presentation inputs sampled from authoritative game weather.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct WeatherSound {
+    pub rain_mm_h: f32,
+    pub wind_m_s: f32,
+    pub bearing: f32,
+    pub exposure: f32,
+}
+impl WeatherSound {
+    pub fn sanitized(self) -> Self {
+        fn bounded(value: f32, maximum: f32) -> f32 {
+            if value.is_finite() {
+                value.clamp(0.0, maximum)
+            } else {
+                0.0
+            }
+        }
+        Self {
+            rain_mm_h: bounded(self.rain_mm_h, 200.0),
+            wind_m_s: bounded(self.wind_m_s, 40.0),
+            bearing: if self.bearing.is_finite() {
+                self.bearing.rem_euclid(std::f32::consts::TAU)
+            } else {
+                0.0
+            },
+            exposure: bounded(self.exposure, 1.0),
+        }
+    }
+}
 pub(crate) enum Command {
     Play {
         clip: Arc<Clip>,
@@ -99,6 +128,12 @@ pub(crate) enum Command {
     Thunder {
         distance: f32,
         angle: f32,
+    },
+    Weather(Option<WeatherSound>),
+    WorldThunder {
+        distance: f32,
+        angle: f32,
+        exposure: f32,
     },
     Reset,
 }
