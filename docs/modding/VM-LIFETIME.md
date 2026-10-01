@@ -171,3 +171,33 @@ Reuse amortizes that additional setup instead of paying it on each invocation.
 The alternating workload tests one execution lane with unrelated script work;
 it does not simulate network queues, movement latency, WAL transactions or
 cross-worker contention. No performance threshold is asserted by either test.
+
+The real listener measurement includes movement, a retry-isolated Luau action,
+world editing and durable action receipts:
+
+```sh
+cargo test vm_lifetime_mixed_listener_latency -- --ignored --nocapture --test-threads=1
+```
+
+It starts the production nonblocking loopback listener with a unique temporary
+save, sends 120 movement-only requests, then 120 paired movement/action requests
+on the same admitted connection. The action initializes a lookup table, performs
+1,000 calculations and toggles a block through the ordinary server transaction.
+Each invocation asserts fresh authoritative module locals. All actions must be
+accepted; reopening the save verifies the final block and conserved held item.
+Client and server use TCP_NODELAY, as the production client does.
+
+| End-to-end path | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| Movement without action load, 120 samples | 19.596 ms | 27.970 ms | 28.891 ms |
+| Movement paired with a Luau action, 120 samples | 20.172 ms | 30.317 ms | 32.633 ms |
+| Warm durable Lua action receipt, 119 samples | 20.496 ms | 32.173 ms | 36.184 ms |
+
+The first action receipt took 41.984 ms, including initial script execution,
+network transport, coordinator scheduling and WAL durability. These are host
+round trips, not isolated VM timings. The single-client paired workload increased
+movement p99 by 3.742 ms in this run. This verifies live movement/action behavior
+under bounded interleaved script work; it is not a saturation, multi-client or
+before/after release performance study. Run the ignored test alone to avoid
+concurrent builds/tests distorting its tails. Timing values remain evidence,
+with behavior assertions rather than machine-dependent timing thresholds.

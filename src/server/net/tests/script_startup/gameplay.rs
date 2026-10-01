@@ -32,6 +32,8 @@ mod players;
 mod profile_state;
 #[path = "gameplay/runtime_tools.rs"]
 mod runtime_tools;
+#[path = "gameplay/vm_latency.rs"]
+mod vm_latency;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";
