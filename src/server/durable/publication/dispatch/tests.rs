@@ -55,6 +55,7 @@ impl Fixture {
 
 fn effect() -> PublishEffects {
     PublishEffects {
+        spawned: Default::default(),
         client_id: None,
         profile: None,
         action_id: None,

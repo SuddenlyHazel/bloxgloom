@@ -248,6 +248,9 @@ fn apply_committed_action_inner(
         action.inventory.as_ref(),
     );
     state.durability.publish_queue.push(PublishEffects {
+        spawned: result
+            .as_ref()
+            .map_or_else(Vec::new, |record| record.spawned.clone()),
         client_id: action.client_id,
         profile: action.profile,
         action_id: action.action_id,
@@ -310,6 +313,7 @@ pub(super) fn publish_committed_fire_after_world(
             .pending_block_changes
             .extend(changed_cells.iter().copied());
         state.durability.publish_queue.push(PublishEffects {
+            spawned: vec![],
             client_id: None,
             profile: None,
             action_id: None,

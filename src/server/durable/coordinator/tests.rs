@@ -69,6 +69,7 @@ fn inventory_action(state: &State, profile: u128, action_id: u128) -> CommitActi
     let payload = durable::encode_action_receipt(&message).unwrap();
     let before_ledger = state.durability.receipt_ledger(profile);
     let result = ResultRecord {
+        spawned: vec![],
         payload: payload.clone(),
         accepted: true,
         reason: String::new(),

@@ -149,15 +149,36 @@ fn process_queue(
             {
                 Admission::New => Some((profile, action_id, payload)),
                 Admission::Replay(record) => {
-                    queue_action_result(state, *id, action_id, record.accepted, &record.reason);
+                    queue_action_result(
+                        state,
+                        *id,
+                        action_id,
+                        record.accepted,
+                        &record.reason,
+                        record.spawned,
+                    );
                     continue;
                 }
                 Admission::Retired => {
-                    queue_action_result(state, *id, action_id, false, "action already retired");
+                    queue_action_result(
+                        state,
+                        *id,
+                        action_id,
+                        false,
+                        "action already retired",
+                        vec![],
+                    );
                     continue;
                 }
                 Admission::WrongEpoch => {
-                    queue_action_result(state, *id, action_id, false, "stale action session");
+                    queue_action_result(
+                        state,
+                        *id,
+                        action_id,
+                        false,
+                        "stale action session",
+                        vec![],
+                    );
                     continue;
                 }
                 Admission::Gap | Admission::Full => {
@@ -925,8 +946,16 @@ fn command_action_id(message: &ClientMessage) -> Option<u128> {
     }
 }
 
-fn queue_action_result(state: &mut State, id: u64, action_id: u128, accepted: bool, reason: &str) {
+fn queue_action_result(
+    state: &mut State,
+    id: u64,
+    action_id: u128,
+    accepted: bool,
+    reason: &str,
+    spawned: Vec<crate::protocol::SpawnReceipt>,
+) {
     state.durability.publish_queue.push(PublishEffects {
+        spawned,
         client_id: Some(id),
         profile: None,
         action_id: Some(action_id),
@@ -966,12 +995,14 @@ fn rejected_action(
                 .durability
                 .receipt_ledger(profile)
                 .append_result(ResultRecord {
+                    spawned: vec![],
                     payload: payload.clone(),
                     accepted: false,
                     reason: short_action_reason(reason),
                 })
                 .expect("admitted result"),
             ReceiptEvent::Result(ResultRecord {
+                spawned: vec![],
                 payload,
                 accepted: false,
                 reason: short_action_reason(reason),
@@ -993,7 +1024,21 @@ fn set_action_result(
     reason: String,
 ) -> io::Result<()> {
     let before = state.durability.receipt_ledger(profile);
+    let spawned = action
+        .entities
+        .as_ref()
+        .map(|transaction| transaction.spawned_entities())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, kind)| state.world.catalog().moving_entity(*kind).is_some())
+        .enumerate()
+        .map(|(ordinal, (entity, _))| crate::protocol::SpawnReceipt {
+            ordinal: ordinal as u8,
+            entity: entity.get(),
+        })
+        .collect();
     let record = ResultRecord {
+        spawned,
         payload,
         accepted,
         reason: short_action_reason(&reason),

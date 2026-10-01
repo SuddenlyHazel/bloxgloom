@@ -129,12 +129,14 @@ fn typed_observations_coalesce_and_remain_available_to_ui_less_entity_callbacks(
             }),
             actions: vec![
                 super::super::ActionView {
+            spawned: Default::default(),
                     id: (1u128 << 64) | 1,
                     key: Some("demo:use".into()),
                     accepted: true,
                     reason: String::new(),
                 },
                 super::super::ActionView {
+            spawned: Default::default(),
                     id: (1u128 << 64) | 2,
                     key: Some("other:use".into()),
                     accepted: true,

@@ -108,12 +108,14 @@ fn typed_recipe_browser_uses_exact_inventory_components_clock_and_own_receipts()
 
     let own_id = (3u128 << 64) | 1;
     observations.actions.push(ActionView {
+        spawned: Default::default(),
         id: own_id,
         key: Some("recipe:craft".into()),
         accepted: false,
         reason: "No room".into(),
     });
     observations.actions.push(ActionView {
+        spawned: Default::default(),
         id: (3u128 << 64) | 2,
         key: Some("other:private".into()),
         accepted: true,

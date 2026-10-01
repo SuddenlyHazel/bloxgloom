@@ -1215,6 +1215,9 @@ impl ClientApp {
             ServerMessage::EditRejected { reason } => {
                 self.show_status(format!("Edit rejected: {reason}"));
             }
+            ServerMessage::ActionSpawned { action_id, spawned } => {
+                self.observe_action_spawns(action_id, spawned);
+            }
             ServerMessage::ActionResult {
                 action_id,
                 accepted,

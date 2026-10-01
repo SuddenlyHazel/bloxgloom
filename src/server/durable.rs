@@ -268,6 +268,7 @@ pub(super) struct BlockDelta {
 }
 
 pub(super) struct PublishEffects {
+    pub(super) spawned: Vec<crate::protocol::SpawnReceipt>,
     pub(super) client_id: Option<u64>,
     pub(super) profile: Option<u128>,
     pub(super) action_id: Option<u128>,

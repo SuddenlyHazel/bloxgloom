@@ -119,6 +119,12 @@ fn prepare(
             .is_none_or(|profile| profile == capture.profile)
     {
         if let Some(action_id) = effect.action_id {
+            if !effect.spawned.is_empty() {
+                frames.push(SharedMessage::new(ServerMessage::ActionSpawned {
+                    action_id,
+                    spawned: effect.spawned.clone(),
+                }));
+            }
             frames.push(SharedMessage::new(ServerMessage::ActionResult {
                 action_id,
                 accepted: effect.accepted,

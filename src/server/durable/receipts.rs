@@ -12,15 +12,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const MAGIC: &[u8; 4] = b"BGAR";
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 pub(super) const WINDOW: usize = 128;
 const MAX_PAYLOAD: usize = 16 + crate::server::entities::MAX_ENTITY_INTERACTION_REQUEST_BYTES;
 const MAX_REASON: usize = 32;
-const MAX_SNAPSHOT: usize = 64 + WINDOW * (8 + 1 + 1 + MAX_REASON + 1 + MAX_PAYLOAD);
+const MAX_SNAPSHOT: usize = 64 + WINDOW * (8 + 1 + 1 + MAX_REASON + 1 + MAX_PAYLOAD + 1 + 32 * 9);
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ResultRecord {
+    pub(super) spawned: Vec<crate::protocol::SpawnReceipt>,
     pub(super) payload: Vec<u8>,
     pub(super) accepted: bool,
     pub(super) reason: String,
@@ -190,6 +191,7 @@ impl ReceiptLedger {
             bytes.extend(record.reason.as_bytes());
             bytes.push(record.payload.len() as u8);
             bytes.extend(&record.payload);
+            crate::protocol::action_spawns::write(&mut bytes, &record.spawned)?;
         }
         bytes.extend(checksum(&bytes).to_le_bytes());
         Ok(bytes)
@@ -247,7 +249,11 @@ impl ReceiptLedger {
             }
             let payload = bytes[offset..offset + payload_len].to_vec();
             offset += payload_len;
+            let (spawned, consumed) =
+                crate::protocol::action_spawns::read_bytes(&bytes[offset..check_at])?;
+            offset += consumed;
             let record = ResultRecord {
+                spawned,
                 payload,
                 accepted,
                 reason,
@@ -285,10 +291,12 @@ impl ReceiptLedger {
 }
 
 fn validate_record(record: &ResultRecord) -> io::Result<()> {
+    crate::protocol::action_spawns::validate(&record.spawned)?;
     if record.payload.is_empty()
         || record.payload.len() > MAX_PAYLOAD
         || record.reason.len() > MAX_REASON
         || (record.accepted && !record.reason.is_empty())
+        || (!record.accepted && !record.spawned.is_empty())
     {
         return Err(invalid("invalid action result record"));
     }

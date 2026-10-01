@@ -222,6 +222,28 @@ impl PreparedEntityTransaction {
         operation_entity_ids(&self.operation)
     }
 
+    /// Allocations visible only after this transaction's receipt. Sorting exact
+    /// IDs preserves allocation order even when the enclosing batch is merged.
+    pub(in crate::server) fn spawned_entities(&self) -> Vec<(EntityId, EntityTypeId)> {
+        fn collect(operation: &Operation, out: &mut Vec<(EntityId, EntityTypeId)>) {
+            match operation {
+                Operation::SpawnBatch { after, .. } => {
+                    out.extend(after.iter().map(|record| (record.id, record.entity_type)))
+                }
+                Operation::Batch { operations } => {
+                    for operation in operations {
+                        collect(operation, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        collect(&self.operation, &mut out);
+        out.sort_by_key(|value| value.0);
+        out
+    }
+
     /// Add another subsystem's exact before/after key to the same atomic WAL
     /// transaction, for example the two block cells occupied by an anchored
     /// machine. Duplicate keys are rejected so conflict checks stay complete.
@@ -1454,7 +1476,6 @@ impl EntityStore {
         }
     }
 
-    #[cfg(test)]
     pub fn ids_for_chunk(&self, chunk: ChunkKey) -> Vec<EntityId> {
         self.indexes
             .chunks

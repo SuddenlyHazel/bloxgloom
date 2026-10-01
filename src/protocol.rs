@@ -5,7 +5,9 @@ use crate::items::ItemId;
 use crate::world::{CHUNK_SIZE, Chunk, ChunkKey, PaletteView, PalettedBlocks};
 use std::io::{self, Read, Write};
 
+pub(crate) mod action_spawns;
 mod bundle;
+pub use bloxgloom_host_api::motion::SpawnReceipt;
 mod entities;
 pub use bundle::{BundleIdentity, CLIENT_RUNTIME_VERSION, MAX_BUNDLE_PART};
 pub(crate) mod workstation;
@@ -19,7 +21,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 19;
+const WIRE_VERSION: u8 = 20;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -208,6 +210,10 @@ pub enum ServerMessage {
     EditRejected {
         reason: String,
     },
+    ActionSpawned {
+        action_id: u128,
+        spawned: Vec<SpawnReceipt>,
+    },
     ActionResult {
         action_id: u128,
         accepted: bool,
@@ -290,6 +296,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             }
             ServerMessage::Delta { .. } => 12 + 8 + 3 + 4,
             ServerMessage::EditRejected { reason } => 1 + reason.len(),
+            ServerMessage::ActionSpawned { spawned, .. } => 16 + 1 + spawned.len() * 9,
             ServerMessage::ActionResult { reason, .. } => 16 + 1 + 1 + reason.len(),
             ServerMessage::ActionSession { .. } => 8 + 8 + 8,
             ServerMessage::ActionDeferred { .. } => 16,
@@ -707,6 +714,14 @@ pub fn write_server_with_catalog(
         ServerMessage::EditRejected { reason } => {
             out.push(5);
             short_string(&mut out, reason)?;
+        }
+        ServerMessage::ActionSpawned { action_id, spawned } => {
+            if !valid_action_id(*action_id) || spawned.is_empty() {
+                return Err(invalid("invalid action spawn receipt"));
+            }
+            out.push(28);
+            out.extend(action_id.to_le_bytes());
+            action_spawns::write(&mut out, spawned)?;
         }
         ServerMessage::ActionResult {
             action_id,
@@ -1345,6 +1360,14 @@ pub fn read_server_with_catalog(
                 items.push(item);
             }
             ServerMessage::Pickups { items }
+        }
+        28 => {
+            let action_id = c.u128()?;
+            let spawned = action_spawns::read(&mut c)?;
+            if !valid_action_id(action_id) || spawned.is_empty() {
+                return Err(invalid("invalid action spawn receipt"));
+            }
+            ServerMessage::ActionSpawned { action_id, spawned }
         }
         11 => {
             let action_id = c.u128()?;

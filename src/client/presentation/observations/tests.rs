@@ -12,6 +12,7 @@ fn known() -> Observations {
         }),
     });
     Observations {
+        pending_spawns: Default::default(),
         inventory: Some(InventoryView {
             revision: u64::MAX,
             slots,
@@ -27,6 +28,7 @@ fn known() -> Observations {
             cycle_ms: crate::daylight::CYCLE_MS,
         }),
         actions: vec![ActionView {
+            spawned: Default::default(),
             id: (1u128 << 64) | 2,
             key: Some("demo:use".into()),
             accepted: true,
@@ -68,12 +70,14 @@ fn observations_distinguish_unknown_from_known_empty_and_filter_action_ownership
         slot.stack = None;
     }
     known.actions.push(ActionView {
+        spawned: Default::default(),
         id: (1u128 << 64) | 3,
         key: None,
         accepted: false,
         reason: "Denied".into(),
     });
     known.actions.push(ActionView {
+        spawned: Default::default(),
         id: (1u128 << 64) | 4,
         key: Some("other:use".into()),
         accepted: true,
@@ -127,4 +131,20 @@ fn observations_reject_invalid_dense_inventory_components_world_and_window_bound
     bad.actions[0].reason = "x".repeat(33);
     bad.actions[0].accepted = false;
     assert!(bad.validate().is_err());
+}
+
+#[test]
+fn committed_spawn_ordinals_expose_exact_readonly_entity_handles() {
+    let lua = Lua::new();
+    let mut observations = known();
+    observations.actions[0].accepted = true;
+    observations.actions[0].reason.clear();
+    observations.actions[0].spawned = vec![crate::protocol::SpawnReceipt {
+        ordinal: 0,
+        entity: 9_007_199_254_740_993,
+    }];
+    lua.globals()
+        .set("replica", observations.lua(&lua).unwrap())
+        .unwrap();
+    lua.load("local launch=replica.actions[1].spawned[1]; assert(launch.ordinal==0); assert(tostring(launch.entity)=='entity:0020000000000001'); assert(not pcall(function() launch.ordinal=1 end)); assert(not pcall(function() replica.actions[1].spawned[1]=nil end))").exec().unwrap();
 }

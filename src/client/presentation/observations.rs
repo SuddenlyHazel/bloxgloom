@@ -8,6 +8,7 @@ pub(crate) struct Observations {
     pub(crate) blocks_truncated: bool,
     pub(crate) world: Option<WorldView>,
     pub(crate) actions: Vec<ActionView>,
+    pub(crate) pending_spawns: std::collections::BTreeMap<u128, Vec<crate::protocol::SpawnReceipt>>,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct InventoryView {
@@ -43,6 +44,7 @@ pub(crate) struct WorldView {
 }
 #[derive(Clone, Debug)]
 pub(crate) struct ActionView {
+    pub(crate) spawned: Vec<crate::protocol::SpawnReceipt>,
     pub(crate) id: u128,
     pub(crate) key: Option<String>,
     pub(crate) accepted: bool,
@@ -52,7 +54,7 @@ pub(crate) struct ActionView {
 impl Observations {
     pub(crate) fn validate(&self) -> mlua::Result<()> {
         let bad = super::invalid;
-        if self.blocks.len() > 64 || self.actions.len() > 16 {
+        if self.blocks.len() > 64 || self.actions.len() > 16 || self.pending_spawns.len() > 64 {
             return Err(bad());
         }
         if let Some(inventory) = &self.inventory {
@@ -87,11 +89,13 @@ impl Observations {
         }
         let mut actions = std::collections::BTreeSet::new();
         for action in &self.actions {
+            crate::protocol::action_spawns::validate(&action.spawned).map_err(|_| bad())?;
             if (action.id >> 64) == 0
                 || action.id as u64 == 0
                 || !actions.insert(action.id)
                 || action.key.as_ref().is_some_and(|value| !key(value))
                 || action.reason.len() > 32
+                || (!action.accepted && !action.spawned.is_empty())
             {
                 return Err(bad());
             }
@@ -171,6 +175,19 @@ impl Observations {
             view.raw_set("key", action.key.as_deref())?;
             view.raw_set("accepted", action.accepted)?;
             view.raw_set("reason", action.reason.as_str())?;
+            let spawned = lua.create_table()?;
+            for (index, receipt) in action.spawned.iter().enumerate() {
+                let entry = lua.create_table()?;
+                entry.raw_set("ordinal", receipt.ordinal)?;
+                entry.raw_set(
+                    "entity",
+                    crate::server::script_handles::entity(lua, receipt.entity)?,
+                )?;
+                entry.set_readonly(true);
+                spawned.raw_set(index + 1, entry)?;
+            }
+            spawned.set_readonly(true);
+            view.raw_set("spawned", spawned)?;
             view.set_readonly(true);
             actions.raw_set(index + 1, view)?;
         }

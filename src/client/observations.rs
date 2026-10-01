@@ -51,6 +51,43 @@ impl ClientApp {
         self.publish_extra_observations("replica:world", "clock=updated".into());
     }
 
+    pub(super) fn observe_action_spawns(
+        &mut self,
+        id: u128,
+        spawned: Vec<crate::protocol::SpawnReceipt>,
+    ) {
+        if crate::protocol::action_spawns::validate(&spawned).is_err() {
+            self.fail_session("invalid action spawn mapping");
+            return;
+        }
+        if let Some(action) = self
+            .observations
+            .actions
+            .iter()
+            .find(|action| action.id == id)
+        {
+            if action.spawned != spawned {
+                self.fail_session("replayed spawn mapping differs");
+            }
+            return;
+        }
+        if !self.pending_actions.contains_key(&id) {
+            return;
+        }
+        let observations = Arc::make_mut(&mut self.observations);
+        if let Some(old) = observations.pending_spawns.get(&id) {
+            if old != &spawned {
+                self.fail_session("duplicate spawn mapping differs");
+            }
+            return;
+        }
+        if observations.pending_spawns.len() >= 64 {
+            self.fail_session("action spawn mapping capacity");
+            return;
+        }
+        observations.pending_spawns.insert(id, spawned);
+    }
+
     pub(super) fn observe_action(&mut self, id: u128, accepted: bool, reason: &str) {
         if self
             .observations
@@ -78,7 +115,13 @@ impl ClientApp {
         if snapshot.actions.len() == 16 {
             snapshot.actions.remove(0);
         }
+        let spawned = snapshot.pending_spawns.remove(&id).unwrap_or_default();
+        if !accepted && !spawned.is_empty() {
+            self.fail_session("rejected action carried committed spawns");
+            return;
+        }
         snapshot.actions.push(ActionView {
+            spawned,
             id,
             key,
             accepted,

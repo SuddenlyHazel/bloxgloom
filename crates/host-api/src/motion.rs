@@ -147,3 +147,10 @@ impl MovingEntity {
         bytes
     }
 }
+
+/// Allocated durable identity after the complete launch transaction commits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnReceipt {
+    pub ordinal: u8,
+    pub entity: u64,
+}

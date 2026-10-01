@@ -1176,3 +1176,73 @@ fn teleport_and_ready_frames_preserve_full_width_identities_and_strict_bounds() 
 
 #[path = "tests/character.rs"]
 mod character;
+
+#[test]
+fn committed_action_spawn_mappings_roundtrip_and_reject_invalid_ordinals() {
+    let action_id = (1u128 << 64) | 1;
+    let spawned = vec![
+        SpawnReceipt {
+            ordinal: 0,
+            entity: u64::MAX >> 1,
+        },
+        SpawnReceipt {
+            ordinal: 1,
+            entity: 17,
+        },
+    ];
+    let response = ServerMessage::ActionSpawned {
+        action_id,
+        spawned: spawned.clone(),
+    };
+    let mut bytes = vec![];
+    write_server(&mut bytes, &response).unwrap();
+    let ServerMessage::ActionSpawned {
+        action_id: actual,
+        spawned: values,
+    } = read_server(bytes.as_slice()).unwrap()
+    else {
+        panic!("wrong reply")
+    };
+    assert_eq!(actual, action_id);
+    assert_eq!(values, spawned);
+    assert_eq!(bytes.len(), server_wire_len(&response));
+    for values in [
+        vec![],
+        vec![SpawnReceipt {
+            ordinal: 1,
+            entity: 1,
+        }],
+        vec![SpawnReceipt {
+            ordinal: 0,
+            entity: 0,
+        }],
+        vec![SpawnReceipt {
+            ordinal: 0,
+            entity: 1 << 63,
+        }],
+        vec![
+            SpawnReceipt {
+                ordinal: 0,
+                entity: 1,
+            },
+            SpawnReceipt {
+                ordinal: 1,
+                entity: 1,
+            },
+        ],
+    ] {
+        assert!(
+            write_server(
+                Vec::new(),
+                &ServerMessage::ActionSpawned {
+                    action_id,
+                    spawned: values
+                }
+            )
+            .is_err()
+        );
+    }
+    for length in 0..bytes.len() {
+        assert!(read_server(&bytes[..length]).is_err());
+    }
+}

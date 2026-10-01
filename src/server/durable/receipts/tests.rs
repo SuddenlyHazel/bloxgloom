@@ -2,6 +2,7 @@ use super::*;
 
 fn record(sequence: u64, accepted: bool) -> ResultRecord {
     ResultRecord {
+        spawned: Default::default(),
         payload: vec![2, 1, 0, 1, sequence as u8, 0],
         accepted,
         reason: if accepted {
@@ -112,4 +113,39 @@ fn malformed_ack_and_tampered_snapshot_fail_closed() {
     let mut bytes = ledger.encode().unwrap();
     bytes[22] ^= 1;
     assert!(ReceiptLedger::decode(&bytes).is_err());
+}
+
+#[test]
+fn committed_launch_ids_survive_restart_and_duplicate_action_admission() {
+    let mut result = record(1, true);
+    result.spawned = vec![
+        crate::protocol::SpawnReceipt {
+            ordinal: 0,
+            entity: 5,
+        },
+        crate::protocol::SpawnReceipt {
+            ordinal: 1,
+            entity: 9,
+        },
+    ];
+    let ledger = ReceiptLedger::default()
+        .grant_next_epoch()
+        .unwrap()
+        .append_result(result.clone())
+        .unwrap();
+    let recovered = ReceiptLedger::decode(&ledger.encode().unwrap()).unwrap();
+    let Admission::Replay(actual) = recovered.admission(id(1, 1), &result.payload) else {
+        panic!("expected durable replay")
+    };
+    assert_eq!(actual.spawned, result.spawned);
+    let mut rejected = result;
+    rejected.accepted = false;
+    rejected.reason = "rejected".into();
+    assert!(
+        ReceiptLedger::default()
+            .grant_next_epoch()
+            .unwrap()
+            .append_result(rejected)
+            .is_err()
+    );
 }
