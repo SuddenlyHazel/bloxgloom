@@ -1,9 +1,0 @@
-# Content foundation
-
-`src/content.rs` owns startup registration of blocks, items, and PNG texture layers; `src/content/builtins.rs` contains the bundled definitions. A loader can extend `Catalog::builtins()` before `content::install()`; no registry mutation occurs after the world, network workers, or renderer start. Dense ID lookups keep behavior and material selection cheap. Builtin block flags have a compact constant table for generation, lighting, and meshing hot paths.
-
-Definitions have namespaced keys and explicit numeric IDs. The game deliberately rejects duplicate IDs or keys, missing texture/block references, malformed supplied PNGs, and catalogs with more than 256 layers. Item IDs need not equal the block IDs they place. The world, inventory, renderer, drop system, and UI consume registered definitions rather than separate ID/name/material switches.
-
-New worlds write a checksummed `content.map` of block/item ID-to-key assignments. Adding definitions is compatible with an existing mapped world; reassigning an ID or removing required content is rejected before edits load. Existing v4 worlds without a map remain unchanged and open only with the original builtin catalog. Multiplayer Hello carries a catalog fingerprint so mismatched content cannot silently reinterpret wire IDs.
-
-Not implemented yet: a mod package/file format, dependency resolution, script hooks, data-driven loot or worldgen, asset distribution to clients, save remapping when mods are removed, and widening the current `u8` block/item IDs. The one-byte ID bound is intentional to preserve current saves and wire compatibility in this foundation slice; widen it with explicit format migrations before shipping public mod support. Texture array layer limits will also need paging or atlas management for large mod sets.
