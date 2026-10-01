@@ -116,7 +116,6 @@ impl ContactMemory {
 
 #[derive(Clone, Copy)]
 enum Pause {
-    #[cfg(test)]
     Never,
     #[cfg(test)]
     First,
@@ -372,7 +371,6 @@ fn integrate_inner(
         }
         cap_speed(&mut result.velocity, policy.max_speed);
         let pause = match policy.pause {
-            #[cfg(test)]
             Pause::Never => false,
             #[cfg(test)]
             Pause::First => true,
@@ -392,7 +390,6 @@ fn integrate_inner(
     } else {
         let previous = match policy.pause {
             Pause::New(previous) => previous,
-            #[cfg(test)]
             _ => None,
         };
         result.resting = result
