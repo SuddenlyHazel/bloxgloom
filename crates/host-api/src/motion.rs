@@ -90,7 +90,6 @@ impl MovingEntity {
         self.body.validate()?;
         if self.max_state_bytes > 65000
             || self.max_public_bytes > 4000
-            || self.max_public_bytes == 0
             || !(1..=MAX_LIFETIME_TICKS).contains(&self.lifetime_ticks)
             || self.source_exclusion_ticks > MAX_SOURCE_EXCLUSION_TICKS
             || self.model.len() > 64

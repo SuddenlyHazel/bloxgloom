@@ -10,6 +10,7 @@ mod appearance;
 mod components;
 mod creature;
 mod machine;
+pub(super) mod moving;
 mod runtime;
 mod states;
 mod storage;
@@ -57,6 +58,7 @@ pub(super) struct Startup {
     blocks: Vec<content::Block>,
     storage: Vec<crate::server::script::startup::StorageDeclaration>,
     creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    moving: Vec<bloxgloom_host_api::motion::MovingEntity>,
     machines: Vec<crate::server::script::startup::MachineDeclaration>,
     anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     runtime: runtime::Runtime,
@@ -555,7 +557,8 @@ impl ClientBundle {
         }
         let result = super::players::wrap(result, declarations)?;
         let result = super::observers::wrap(result, declarations)?;
-        anchored::wrap(result, declarations)
+        let result = anchored::wrap(result, declarations)?;
+        moving::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -592,6 +595,9 @@ impl ClientBundle {
                             catalog.register_mobile(creature.clone())?;
                         }
                         startup.runtime.install(&mut catalog)?;
+                        for moving in &startup.moving {
+                            catalog.register_moving(moving.clone())?;
+                        }
                         for declaration in &startup.storage {
                             catalog.extension_storage(&declaration.storage)?;
                             catalog.register_inventory_screen(declaration.screen.clone())?;
@@ -749,6 +755,7 @@ impl Startup {
             blocks: Vec::new(),
             storage: Vec::new(),
             creatures: Vec::new(),
+            moving: Vec::new(),
             machines: Vec::new(),
             anchored: Vec::new(),
             runtime: runtime::Runtime::default(),
@@ -758,7 +765,7 @@ impl Startup {
                 return Err(invalid());
             }
             let mut requires = Vec::new();
-            for _ in 0..reader.count(10)? {
+            for _ in 0..reader.count(11)? {
                 let requirement = reader.text(64)?;
                 if ![
                     composition::CONTENT,
@@ -769,6 +776,7 @@ impl Startup {
                     composition::STORAGE,
                     composition::INVENTORY_SCREENS,
                     composition::MOBILE_ENTITIES,
+                    composition::MOVING_ENTITIES,
                     composition::MACHINES,
                     composition::ANCHORED_ENTITIES,
                 ]

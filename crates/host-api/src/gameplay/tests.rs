@@ -60,6 +60,36 @@ struct World {
     reads: usize,
 }
 impl Snapshot for World {
+    fn motion(&mut self, id: u64, owner: &str) -> Result<Option<crate::motion::Motion>, Error> {
+        if owner != "test" {
+            return Err(Error::Invalid("foreign motion".into()));
+        }
+        Ok((id == 1).then_some(crate::motion::Motion {
+            position: [0.0; 3],
+            velocity: [0.0; 3],
+            acceleration: [0.0; 3],
+            orientation: [0.0, 0.0, 0.0, 1.0],
+            revision: 17,
+            grounded: false,
+        }))
+    }
+    fn validate_moving_spawn(&mut self, owner: &str, spawn: &MovingSpawn) -> Result<(), Error> {
+        if owner != "test" || spawn.key != "test:bolt" {
+            return Err(Error::Invalid("foreign spawn".into()));
+        }
+        Ok(())
+    }
+    fn validate_motion_change(
+        &self,
+        _id: u64,
+        owner: &str,
+        _motion: &crate::motion::Motion,
+    ) -> Result<(), Error> {
+        if owner != "test" {
+            return Err(Error::Invalid("foreign control".into()));
+        }
+        Ok(())
+    }
     fn seed(&self) -> u64 {
         23
     }
@@ -415,4 +445,109 @@ fn cached_profile_inventory_rechecks_each_handler_authority_and_latches_denial()
         context.finish().is_err(),
         "caught cached-owner access kept a partial grant"
     );
+}
+
+#[test]
+fn staged_motion_rechecks_owner_coalesces_fields_and_rejects_caught_errors() {
+    struct Probe(u8);
+    impl Handler for Probe {
+        fn handle(&self, ctx: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            if self.0 == 0 {
+                assert!(ctx.set_motion(
+                    1,
+                    17,
+                    MotionChange {
+                        velocity: Some([1.0, 0.0, 0.0]),
+                        ..Default::default()
+                    }
+                )?);
+                assert!(ctx.set_motion(
+                    1,
+                    17,
+                    MotionChange {
+                        acceleration: Some([0.0, 1.0, 0.0]),
+                        ..Default::default()
+                    }
+                )?);
+                let motion = ctx.motion(1)?.unwrap();
+                assert_eq!(motion.velocity, [1.0, 0.0, 0.0]);
+                assert_eq!(motion.acceleration, [0.0, 1.0, 0.0]);
+            } else if self.0 == 1 {
+                assert!(ctx.motion(1).is_err());
+            } else {
+                assert!(ctx.set_motion(1, 16, MotionChange::default()).is_err());
+            }
+            Ok(())
+        }
+    }
+    let event = Event::EntityTick {
+        entity: 1,
+        position: [0.0; 3],
+        tick: 0,
+    };
+    let registration = |owner: &str, probe: u8| HandlerRegistration {
+        key: format!("{owner}:control"),
+        version: 1,
+        event: EventKind::EntityTick,
+        target: None,
+        handler: std::sync::Arc::new(Probe(probe)),
+    };
+    let mut world = World { reads: 0 };
+    let mut ctx = Context::new(&mut world, 16);
+    ctx.dispatch(&registration("test", 0), &event).unwrap();
+    let plan = ctx.finish().unwrap();
+    assert_eq!(plan.motion_commands.len(), 1);
+    for (owner, probe) in [("other", 1), ("test", 2)] {
+        let mut world = World { reads: 0 };
+        let mut ctx = Context::new(&mut world, 16);
+        ctx.dispatch(&registration("test", 0), &event).unwrap();
+        ctx.dispatch(&registration(owner, probe), &event).unwrap();
+        assert!(ctx.finish().is_err());
+    }
+}
+#[test]
+fn moving_spawn_references_are_local_and_never_predict_durable_ids() {
+    struct Probe(std::sync::Arc<std::sync::Mutex<Option<SpawnReference>>>);
+    impl Handler for Probe {
+        fn handle(&self, ctx: &mut Context<'_>, _: &Event) -> Result<(), Error> {
+            let old = self.0.lock().unwrap().take();
+            if let Some(old) = old {
+                assert!(!ctx.owns_spawn_reference(&old));
+            }
+            let reference = ctx.spawn_moving_entity(MovingSpawn {
+                key: "test:bolt".into(),
+                position: [0.0; 3],
+                velocity: [0.0; 3],
+                orientation: [0.0, 0.0, 0.0, 1.0],
+                state: vec![1],
+                source: None,
+            })?;
+            assert_eq!(reference.index(), 0);
+            assert!(ctx.owns_spawn_reference(&reference));
+            *self.0.lock().unwrap() = Some(reference);
+            Ok(())
+        }
+    }
+    let references = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let registration = HandlerRegistration {
+        key: "test:launch".into(),
+        version: 1,
+        event: EventKind::EntityTick,
+        target: None,
+        handler: std::sync::Arc::new(Probe(references)),
+    };
+    for _ in 0..2 {
+        let mut world = World { reads: 0 };
+        let mut ctx = Context::new(&mut world, 4);
+        ctx.dispatch(
+            &registration,
+            &Event::EntityTick {
+                entity: 1,
+                position: [0.0; 3],
+                tick: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(ctx.finish().unwrap().moving_spawns.len(), 1);
+    }
 }

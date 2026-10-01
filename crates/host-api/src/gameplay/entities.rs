@@ -125,7 +125,7 @@ impl Context<'_> {
         state: &[u8],
     ) -> Result<(), Error> {
         self.charge()?;
-        if self.plan.entity_spawns.len() >= 32 {
+        if self.plan.entity_spawns.len() + self.plan.moving_spawns.len() >= 32 {
             return self.fail(Error::BudgetExceeded);
         }
         if !position.iter().all(|n| n.is_finite()) {
