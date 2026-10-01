@@ -18,11 +18,11 @@ const ACTION: &str = r#"return function(c,e)
     for offset=0,n-1 do
         local index=base+offset
         local tile=math.floor(index/64)
-        local x=(tile%2)*16+1+(index%8)*1.8
-        local z=math.floor(tile/2)*16+1+(math.floor(index/8)%8)*1.8
+        local x=8.2+(tile%2)*8+(index%8)*0.9
+        local z=8.2+math.floor(tile/2)*8+(math.floor(index/8)%8)*0.9
         local speed=0.25
-        if index == total-1 then x=(tile%2)*16+15.8; speed=8 end
-        if cluster == 1 then x=1;z=17;speed=0 end
+        if index == total-1 then x=15.8+(tile%2)*8; speed=8 end
+        if cluster == 1 then x=8.2;z=16.2;speed=0 end
         c.spawn_moving_entity('demo:projectile',{position={x,83.5,z},velocity={speed,0,0},state=string.char(index%256,math.floor(index/256))})
     end
 end"#;
@@ -99,7 +99,8 @@ fn moving_real_listener_capacity_measurements() {
         let started = Instant::now();
         let mut state = Box::new(fixture.open().unwrap());
         let discovery = started.elapsed();
-        // Four 16-block owner tiles fit within the authoritative launch reach.
+        // Launch points occupy four chunks around their common corner, all
+        // within the authoritative eight-cell interaction reach.
         state.spawn_anchor = [16.0, 80.0, 16.0];
         for x in -1..=34 {
             for z in -1..=34 {
