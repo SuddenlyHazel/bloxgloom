@@ -127,7 +127,8 @@ cargo test vm_lifetime_latency_baseline -- --ignored --nocapture --test-threads=
 ```
 
 It reports p50/p95/p99 latency, initializer evaluations and post-collection Lua
-memory for 2,000 calls. A development-build baseline on this machine measured:
+memory for 2,000 calls. A development-build baseline before the lifetime and
+protected-memory-error changes on this machine measured:
 
 | Execution strategy | p50 | p95 | p99 | Initializer evaluations |
 | --- | ---: | ---: | ---: | ---: |
@@ -141,3 +142,32 @@ module-lifetime costs; it excludes real adapters, queue contention, transactions
 and per-call budget rebinding. It is not a gameplay latency or allocation-count
 benchmark. Production-path measurements and correctness tests are the acceptance
 evidence for the implemented runtime, rather than these timing ratios alone.
+
+The production-runner comparison is also opt-in:
+
+```sh
+cargo test vm_lifetime_production_runner_latency -- --ignored --nocapture --test-threads=1
+```
+
+After implementation, the same development build measured:
+
+| Production runner path | Warm p50 | Warm p95 | Warm p99 |
+| --- | ---: | ---: | ---: |
+| Isolated authoritative attempt | 57.08 µs | 60.54 µs | 78.75 µs |
+| Retained client callback | 19.25 µs | 22.04 µs | 28.25 µs |
+| Two alternating isolated attempts, including heavier unrelated work | 186.67 µs | 204.04 µs | 244.17 µs |
+
+These include instruction/deadline setup, native RNG and diagnostic rebinding,
+immutable compilation caching and worker-side cleanup/collection. The first cold
+isolated initialization took 2.32 ms and retained initialization 0.83 ms in that
+run; those are individual observations, separate from the 1,999 warm samples.
+The paired workload has 2,000 samples and 4,000 module evaluations. Both single
+paths sampled a maximum of 536,424 bytes immediately after the callback, before
+cleanup; this is a sampled heap maximum, not an allocator high-water counter.
+
+Fresh VM setup under the new protected-memory-error instrumentation measured
+483.46 µs p50 / 579.33 µs p95 / 734.42 µs p99, and 452,576 bytes after collection.
+Reuse amortizes that additional setup instead of paying it on each invocation.
+The alternating workload tests one execution lane with unrelated script work;
+it does not simulate network queues, movement latency, WAL transactions or
+cross-worker contention. No performance threshold is asserted by either test.

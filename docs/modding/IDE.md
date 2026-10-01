@@ -13,6 +13,9 @@ end
 The definition file uses `---` documentation comments directly above types,
 fields and methods. Hover a typed field such as `entity.id` or a method such
 as `context.inventory` to see its meaning, units and indexing conventions.
+Host types also document invocation lifetime: retaining a method does not retain
+its authority. The editor cannot enforce context revocation or realm boundaries;
+see [VM lifetime](VM-LIFETIME.md) before caching a controller or coroutine.
 These comments are supported by [luau-lsp](https://github.com/JohnnyMorganz/luau-lsp#supported-features)
 and were checked through actual hover requests with the installed language server.
 Use **Luau: Reload Language Server** after changing global definitions.

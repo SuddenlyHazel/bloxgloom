@@ -1,4 +1,6 @@
 use super::*;
+#[path = "benchmarks.rs"]
+mod benchmarks;
 #[test]
 fn ordinary_libraries_and_seeded_random_work_in_fresh_sandboxes() {
     let execute = |seed| {
@@ -143,13 +145,14 @@ fn diagnostic_encoding_rejects_nested_fields_without_executing_metamethods() {
 #[test]
 fn common_runner_flushes_failed_invocations_and_cannot_hide_coroutine_budget_failure() {
     let (_, events) = capture(|| {
-        let result = super::super::run_presentation(
-            super::super::SourceModule {
+        let result = super::super::run_with(
+            &super::super::Program::Source(super::super::SourceModule {
                 id: "demo:failed".into(),
                 source: "return function() log.error('before failure'); error('expected') end"
                     .into(),
-            },
-            7,
+            }),
+            super::super::Limits::default(),
+            Execution::new("presentation", 7, "sequence:7").client(),
             |_, entry| entry.call::<()>(()),
         );
         assert!(result.is_err());

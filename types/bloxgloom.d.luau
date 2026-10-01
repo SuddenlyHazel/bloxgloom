@@ -60,6 +60,7 @@ declare extern type BloxTick with
 end
 
 --- Startup registration services. Definitions are frozen before gameplay; methods use dot calls.
+--- Registration methods expire when startup returns; never retain this host.
 export type BloxStartupHost = {
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
     register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
@@ -316,6 +317,8 @@ export type BloxGameplayEvent = BloxActionEvent | BloxRemovedEvent | BloxPlacedE
 export type BloxProfileCell = {
     revision: BloxRevision, initialized: boolean, state: string, public_state: string, next_tick: BloxTick?,
 }
+--- Invocation-bound authority. Saved methods expire after this attempt.
+--- Authoritative module state is fresh on retries; persist decisions through host state.
 export type BloxGameplayContext = {
     --- Explicit canonical-token decoding; a profile handle grants no authority.
     profile_id: (canonical_token: string) -> BloxProfileId,
@@ -482,6 +485,8 @@ export type BloxClientStartupHost = {
 }
 
 --- Callback host: presentation only. Registrations are startup-only.
+--- Methods expire when this callback returns. Retained controllers must receive a fresh host.
+--- Module locals/coroutines survive in this handler's connection realm, separate from UI.
 export type BloxClientPlayerHost = {
     set_text: (owned_document_node: string, text: string) -> (),
     set_state: (owned_document: string, state: string) -> (),
@@ -531,6 +536,8 @@ export type BloxReplicaBlock = {
 --- Recent own-session receipts. id is the exact canonical 32-hex-digit action ID.
 export type BloxReplicaAction = {id: string, key: string?, accepted: boolean, reason: string}
 
+--- Captured readonly data for this callback, not a live world view.
+--- Module locals may survive events in this entry's connection presentation realm.
 export type BloxUiInput = {
     --- Client event sequence used to match asynchronous presentation results. Not a server tick or entity revision.
     sequence: number,
@@ -695,6 +702,7 @@ export type BloxCommittedEntity = {
     anchor: {number}?,
     data: string?,
 }
+--- Advisory historical data. Observer locals are ephemeral, not durable commit receipts.
 export type BloxCommittedEvent = {
     kind: "Committed",
     blocks: {{cell: {number}, state: string}},
