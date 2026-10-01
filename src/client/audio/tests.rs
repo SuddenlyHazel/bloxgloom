@@ -192,3 +192,28 @@ fn ordered_sound_batches_suppress_old_delivery_for_the_entire_session() {
     state.sounds(true, Some(1), vec![event("old", None, false)], now);
     assert_eq!(state.sent.borrow().len(), 1);
 }
+
+#[test]
+fn latest_rain_geometry_retries_queue_pressure_and_retires_with_session() {
+    use crate::audio::rain_scene::{RainMaterial, RainScene};
+    let config = Config::default();
+    let mut state = State::new(&config);
+    state.blocked.set(true);
+    state.update_rain_scene((*RainScene::patch(RainMaterial::Leaf)).clone());
+    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    assert!(state.scene_dirty);
+    state.update_rain_scene((*RainScene::patch(RainMaterial::Wood)).clone());
+    state.blocked.set(false);
+    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    assert!(!state.scene_dirty);
+    assert!(
+        matches!(&state.sent.borrow()[0], Command::RainScene(scene) if scene.tiles.iter().all(|t| t.material == RainMaterial::Wood))
+    );
+    let count = state.sent.borrow().len();
+    state.update_rain_scene((*RainScene::patch(RainMaterial::Wood)).clone());
+    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    assert_eq!(state.sent.borrow().len(), count);
+    state.retire_session(&config);
+    assert!(state.rain_scene.is_none());
+    assert!(!state.scene_dirty);
+}

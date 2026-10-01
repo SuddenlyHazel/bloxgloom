@@ -499,7 +499,7 @@ The [audio contract](docs/audio/SCRIPTING.md) records bounds and exact API field
 The [audio timer machine](fixtures/audio-machine/README.md) demonstrates a running
 loop reconstructed from current public state, transactional start/completion clips
 and cleanup on removal. Dedicated process-machine/creature callback signatures,
-weather scripting, occlusion/reverb, buses, streamed music and device recovery are
+weather scripting, geometry-aware occlusion/reverb, buses, streamed music and device recovery are
 separate remaining work. No save conversion or imported models are introduced.
 
 #### Accepted goal: authoritative moving entities and projectiles

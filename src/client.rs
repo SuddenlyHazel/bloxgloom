@@ -1803,7 +1803,7 @@ impl ClientApp {
         self.validate_kiln_screen();
         self.move_player(dt);
         self.audio
-            .poll_listener(self.position.to_array(), self.yaw, now);
+            .poll_listener(self.camera().position.to_array(), self.yaw, now);
         self.audio
             .follow_sounds(now, |id| self.replicas.sound_position(id));
         self.repeat_held_break(now);

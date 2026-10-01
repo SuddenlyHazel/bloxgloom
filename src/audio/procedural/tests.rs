@@ -24,6 +24,9 @@ fn automatic_lightning_skips_distant_cells_without_admitting_a_voice() {
 #[test]
 fn world_weather_uses_continuous_inputs_without_autonomous_lightning() {
     let mut engine = Procedural::new(7);
+    engine.set_scene(crate::audio::rain_scene::RainScene::patch(
+        crate::audio::rain_scene::RainMaterial::Dirt,
+    ));
     engine.set_world(Some(WeatherSound {
         rain_mm_h: 30.0,
         wind_m_s: 12.0,
@@ -53,6 +56,12 @@ fn sheltered_world_weather_is_quieter_and_inputs_are_bounded() {
         bearing: 0.0,
         exposure: 1.0,
     };
+    outdoor.set_scene(crate::audio::rain_scene::RainScene::patch(
+        crate::audio::rain_scene::RainMaterial::Dirt,
+    ));
+    indoor.set_scene(crate::audio::rain_scene::RainScene::patch(
+        crate::audio::rain_scene::RainMaterial::Dirt,
+    ));
     outdoor.set_world(Some(target));
     indoor.set_world(Some(WeatherSound {
         exposure: 0.0,
@@ -76,4 +85,53 @@ fn sheltered_world_weather_is_quieter_and_inputs_are_bounded() {
         exposure: f32::NAN,
     }));
     assert_eq!(indoor.world, Some(WeatherSound::default()));
+}
+
+#[test]
+fn material_scenes_produce_distinct_spectra_and_empty_geometry_has_no_fake_rain() {
+    use crate::audio::rain_scene::{RainMaterial, RainScene};
+    let render = |material| {
+        let mut engine = Procedural::new(13);
+        engine.set_listener([0.0, 1.6, 0.0], 0.0);
+        if let Some(material) = material {
+            engine.set_scene(RainScene::patch(material));
+        }
+        engine.set_world(Some(WeatherSound {
+            rain_mm_h: 30.0,
+            exposure: 1.0,
+            ..WeatherSound::default()
+        }));
+        let mut energy = 0.0_f64;
+        let mut difference = 0.0_f64;
+        let mut previous = [0.0; 2];
+        for i in 0..44_100 {
+            let (sample, _) = engine.next(Preset::Off);
+            assert!(sample.into_iter().all(f32::is_finite));
+            if i >= 22_050 {
+                for ear in 0..2 {
+                    energy += f64::from(sample[ear]).powi(2);
+                    difference += f64::from(sample[ear] - previous[ear]).powi(2);
+                }
+            }
+            previous = sample;
+        }
+        (
+            energy,
+            difference / energy.max(1e-20),
+            engine.rain.stats().generated,
+        )
+    };
+    let wood = render(Some(RainMaterial::Wood));
+    let leaf = render(Some(RainMaterial::Leaf));
+    let water = render(Some(RainMaterial::Water));
+    assert!(wood.0 > 0.001 && leaf.0 > 0.001 && water.0 > 0.001);
+    assert!(
+        wood.1 < leaf.1,
+        "wood should have less high-frequency energy: {wood:?} {leaf:?}"
+    );
+    assert!(
+        (water.1 - leaf.1).abs() > 0.01,
+        "bubble and leaf spectra should differ"
+    );
+    assert_eq!(render(None), (0.0, 0.0, 0));
 }

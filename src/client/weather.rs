@@ -3,6 +3,8 @@ use crate::weather::{Lightning, WeatherSnapshot, WeatherValues};
 use glam::Vec3;
 use std::time::{Duration, Instant};
 
+mod rain_scene;
+
 const COVER_SIDE: usize = 16;
 const COVER_PERIOD: Duration = Duration::from_millis(200);
 
@@ -171,6 +173,13 @@ impl super::ClientApp {
             self.weather.cover = cover;
             // Listener shelter uses the player's eye, including third-person mode.
             let eye = self.camera().position;
+            let acoustic_scene = rain_scene::sample(
+                eye,
+                scan_ceiling(self.position.y, eye.y.floor() as i32),
+                &self.catalog,
+                |x, y, z| self.block_at(x, y, z),
+            );
+            self.audio.update_rain_scene(acoustic_scene);
             let roof = column_cover(
                 eye.x.floor() as i32,
                 eye.y.floor() as i32,

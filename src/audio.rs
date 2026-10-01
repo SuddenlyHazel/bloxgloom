@@ -5,11 +5,12 @@ mod mixer;
 pub(crate) mod output;
 mod preview;
 mod procedural;
+pub(crate) mod rain_scene;
 #[cfg(test)]
 mod tests;
 pub(crate) use clip::Clip;
 pub(crate) use mixer::Mixer;
-pub(crate) use preview::{play_file, play_preview, render_preview};
+pub(crate) use preview::{play_file, play_preview, render_material_preview, render_preview};
 use std::sync::Arc;
 pub(crate) const SAMPLE_RATE: u32 = 44_100;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -137,6 +138,7 @@ pub(crate) enum Command {
         angle: f32,
     },
     Weather(Option<WeatherSound>),
+    RainScene(Arc<rain_scene::RainScene>),
     WorldThunder {
         distance: f32,
         angle: f32,

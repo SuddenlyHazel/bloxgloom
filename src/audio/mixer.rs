@@ -168,12 +168,14 @@ impl Mixer {
                 {
                     self.listener = position;
                     self.yaw = yaw;
+                    self.synth.set_listener(position, yaw);
                     true
                 } else {
                     false
                 }
             }
             Command::Thunder { distance, angle } => self.synth.trigger_thunder(distance, angle),
+            Command::RainScene(scene) => self.synth.set_scene(scene),
             Command::Weather(weather) => {
                 self.desired_world = weather.map(WeatherSound::sanitized);
                 // Continuous inputs may change immediately within the active

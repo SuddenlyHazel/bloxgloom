@@ -14,14 +14,67 @@ fn validate_seconds(seconds: f32) -> io::Result<()> {
     }
     Ok(())
 }
+pub(crate) fn render_material_preview(
+    profile: &str,
+    seconds: f32,
+    path: &Path,
+    seed: u32,
+) -> io::Result<()> {
+    use super::rain_scene::{RainMaterial, RainScene};
+    let material = if profile == "split" {
+        RainMaterial::Wood
+    } else {
+        RainMaterial::parse(profile)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown rain material"))?
+    };
+    let mut scene = RainScene::patch(material);
+    if profile == "split" {
+        for tile in &mut std::sync::Arc::make_mut(&mut scene).tiles {
+            if tile.centre[2] > 0.0 {
+                tile.material = RainMaterial::Metal;
+            }
+        }
+    }
+    render(
+        Preset::Off,
+        seconds,
+        path,
+        seed,
+        Some(scene),
+        profile == "split",
+    )
+}
 pub(crate) fn render_preview(
     preset: Preset,
     seconds: f32,
     path: &Path,
     seed: u32,
 ) -> io::Result<()> {
+    render(preset, seconds, path, seed, None, false)
+}
+fn render(
+    preset: Preset,
+    seconds: f32,
+    path: &Path,
+    seed: u32,
+    scene: Option<std::sync::Arc<super::rain_scene::RainScene>>,
+    turn: bool,
+) -> io::Result<()> {
     validate_seconds(seconds)?;
     let mut mixer = Mixer::new(seed);
+    if let Some(scene) = scene {
+        mixer.command(Command::RainScene(scene));
+        mixer.command(Command::Listener {
+            position: [0.0, 1.6, 0.0],
+            yaw: 0.0,
+        });
+        mixer.command(Command::Weather(Some(super::WeatherSound {
+            rain_mm_h: 30.0,
+            wind_m_s: 0.0,
+            bearing: 0.35,
+            exposure: 1.0,
+        })));
+    }
     mixer.set_controls(Controls {
         preset,
         ..Controls::default()
@@ -47,6 +100,12 @@ pub(crate) fn render_preview(
     let mut frames = 0usize;
     while remaining > 0 {
         let count = remaining.min(buffer.len());
+        if turn {
+            mixer.command(Command::Listener {
+                position: [0.0, 1.6, 0.0],
+                yaw: std::f32::consts::TAU * frames as f32 / (seconds * SAMPLE_RATE as f32),
+            });
+        }
         mixer.render(&mut buffer[..count]);
         for frame in &buffer[..count] {
             for sample in frame {

@@ -1,8 +1,10 @@
 //! Native listening state, with explicit authoritative weather inputs and local previews.
+use crate::audio::rain_scene::RainScene;
 use crate::{
     audio::{Command, Controls, Preset, WeatherSound, output::AudioOutput},
     config::Config,
 };
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 mod voices;
@@ -16,6 +18,8 @@ pub(super) struct State {
     preset: Preset,
     next_voice: u64,
     world: Option<WeatherSound>,
+    rain_scene: Option<Arc<RainScene>>,
+    scene_dirty: bool,
     sent_world: Option<Option<WeatherSound>>,
     last_poll: Option<Instant>,
     last_listener: Option<([f32; 3], f32)>,
@@ -39,9 +43,27 @@ impl State {
             preset: Preset::Off,
             next_voice: 1,
             world: None,
+            rain_scene: None,
+            scene_dirty: false,
             sent_world: None,
             last_poll: None,
             last_listener: None,
+        }
+    }
+    fn send_command(&self, command: Command) -> bool {
+        #[cfg(test)]
+        {
+            if self.blocked.get() {
+                return false;
+            }
+            self.sent.borrow_mut().push(command);
+            true
+        }
+        #[cfg(not(test))]
+        {
+            self.output
+                .as_ref()
+                .is_some_and(|output| output.try_send(command))
         }
     }
     pub(super) fn preset(&self) -> Preset {
@@ -58,16 +80,25 @@ impl State {
         self.sent_world = None;
         self.send_weather();
     }
+    pub(super) fn update_rain_scene(&mut self, scene: RainScene) {
+        if self.rain_scene.as_deref() != Some(&scene) {
+            self.rain_scene = Some(Arc::new(scene));
+            self.scene_dirty = true;
+        }
+    }
     fn send_weather(&mut self) {
+        if self.scene_dirty
+            && let Some(scene) = &self.rain_scene
+            && self.send_command(Command::RainScene(scene.clone()))
+        {
+            self.scene_dirty = false;
+        }
         let desired = if self.preset == Preset::Off {
             self.world
         } else {
             None
         };
-        if self.sent_world != Some(desired)
-            && let Some(output) = &self.output
-            && output.try_send(Command::Weather(desired))
-        {
+        if self.sent_world != Some(desired) && self.send_command(Command::Weather(desired)) {
             self.sent_world = Some(desired);
         }
     }
@@ -139,6 +170,8 @@ impl State {
         self.voices = Default::default();
         self.preset = Preset::Off;
         self.world = None;
+        self.rain_scene = None;
+        self.scene_dirty = false;
         self.sent_world = None;
         self.last_poll = None;
         self.last_listener = None;

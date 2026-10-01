@@ -6,11 +6,12 @@ mod spatial;
 mod thunder;
 mod weather;
 mod wind;
-use crate::audio::{Preset, WeatherSound};
+use crate::audio::{Preset, WeatherSound, rain_scene::RainScene};
 use dsp::Rng;
 use rain::{Rain, RainWeather};
 use reverb::Reverb;
 use spatial::Listener;
+use std::sync::Arc;
 use thunder::Thunder;
 use weather::{Storm, Weather};
 use wind::Wind;
@@ -26,6 +27,9 @@ pub(super) struct Procedural {
     frame: u32,
     seed: u32,
     world: Option<WeatherSound>,
+    scene: Arc<RainScene>,
+    listener_position: [f32; 3],
+    listener_yaw: f32,
     world_current: WeatherSound,
     indoor_filter: [f32; 2],
     exposure: f32,
@@ -44,6 +48,9 @@ impl Procedural {
             frame: 0,
             seed,
             world: None,
+            scene: Arc::new(RainScene::default()),
+            listener_position: [0.0; 3],
+            listener_yaw: 0.0,
             world_current: WeatherSound::default(),
             indoor_filter: [0.0; 2],
             exposure: 1.0,
@@ -64,6 +71,9 @@ impl Procedural {
         self.rain
             .configure(rain::RainConfig::default())
             .expect("valid native rain profile");
+        self.rain
+            .set_listener(self.listener_position, self.listener_yaw);
+        self.rain.set_scene(self.world.map(|_| self.scene.clone()));
         self.wind = Wind::new(self.seed);
         self.storm = Storm::new(self.seed);
         self.reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
@@ -72,6 +82,22 @@ impl Procedural {
     }
     pub fn set_world(&mut self, weather: Option<WeatherSound>) {
         self.world = weather.map(WeatherSound::sanitized);
+        self.rain.set_scene(self.world.map(|_| self.scene.clone()));
+    }
+    pub fn set_scene(&mut self, scene: Arc<RainScene>) -> bool {
+        if !scene.valid() {
+            return false;
+        }
+        self.scene = scene;
+        if self.world.is_some() {
+            self.rain.set_scene(Some(self.scene.clone()));
+        }
+        true
+    }
+    pub fn set_listener(&mut self, position: [f32; 3], yaw: f32) {
+        self.listener_position = position;
+        self.listener_yaw = yaw;
+        self.rain.set_listener(position, yaw);
     }
     pub fn world_active(&self) -> bool {
         self.world.is_some()
@@ -109,6 +135,8 @@ impl Procedural {
                 ..Weather::default()
             };
         }
+        self.rain
+            .set_listener(self.listener_position, self.listener_yaw);
         let w = self.weather;
         // Values come from bounded native presets, not unvalidated author input.
         self.rain

@@ -3,7 +3,11 @@
 //! Fixed 44,100 Hz; Marshall–Palmer arrivals, click/resonance/bubble voices,
 //! wind-driven wall impacts, advected gust sheets and spectrum-matched far rain.
 
+use crate::audio::rain_scene::{RAIN_MATERIALS, RainScene};
 use std::f32::consts::{PI, TAU};
+use std::sync::Arc;
+mod scene;
+use scene::SceneSampler;
 const MAX_DROPS: usize = 128;
 const SIZE_BINS: usize = 50;
 const BED_BANDS: usize = 15;
@@ -81,7 +85,7 @@ pub(super) struct RainConfig {
     pub sheet_depth: f32,
     pub min_distance_m: f32,
     pub max_distance_m: f32,
-    pub surfaces: [Surface; 9],
+    pub surfaces: [Surface; RAIN_MATERIALS],
 }
 impl Default for RainConfig {
     fn default() -> Self {
@@ -171,6 +175,16 @@ impl Default for RainConfig {
                     [300.0, 700.0],
                     0.4,
                     900.0,
+                ),
+                // Native wooden blocks need a less metallic, damped body.
+                Surface::solid(
+                    "Wood",
+                    0.0,
+                    0.65,
+                    [320.0, 850.0],
+                    [220.0, 480.0],
+                    0.7,
+                    4200.0,
                 ),
             ],
         }
@@ -296,10 +310,11 @@ fn band_next(filters: &mut [Biquad; 2], mut sample: f32) -> f32 {
 
 pub(super) struct Rain {
     config: RainConfig,
+    scene: SceneSampler,
     weather: RainWeather,
     arrival_rng: Rng,
     drop_rng: Rng,
-    surface_cdf: [f32; 9],
+    surface_cdf: [f32; RAIN_MATERIALS],
     rain_mm_h: f32,
     flux: f32,
     concentration: f32,
@@ -322,10 +337,11 @@ impl Rain {
     pub(super) fn new(seed: u32) -> Self {
         Self {
             config: RainConfig::default(),
+            scene: SceneSampler::default(),
             weather: RainWeather::default(),
             arrival_rng: Rng::new(seed, 0x3c6ef372),
             drop_rng: Rng::new(seed, 0xdaa66d2b),
-            surface_cdf: [0.0; 9],
+            surface_cdf: [0.0; RAIN_MATERIALS],
             rain_mm_h: -1.0,
             flux: 0.0,
             concentration: 0.0,
@@ -350,6 +366,14 @@ impl Rain {
         self.config = config;
         self.follow_rates();
         Ok(())
+    }
+    pub(super) fn set_scene(&mut self, scene: Option<Arc<RainScene>>) {
+        self.scene.scene = scene;
+        self.follow_rates();
+    }
+    pub(super) fn set_listener(&mut self, position: [f32; 3], yaw: f32) {
+        self.scene.position = position;
+        self.scene.yaw = yaw;
     }
     pub(super) fn stats(&self) -> RainStats {
         self.stats
@@ -408,7 +432,14 @@ impl Rain {
                 *value /= weight;
             }
         }
-        let hits = self.flux * weight / coverage;
+        self.scene.rebuild(self.weather, wall_rate);
+        let hits = if self.scene.scene.is_some() {
+            self.flux * self.scene.area
+                / (PI * (self.config.max_distance_m.powi(2) - self.config.min_distance_m.powi(2)))
+                    .max(1.0)
+        } else {
+            self.flux * weight / coverage
+        };
         let near = self.config.min_distance_m;
         let far = self.config.max_distance_m;
         let arrivals = hits * PI * (far * far - near * near);
@@ -490,7 +521,7 @@ impl Rain {
         drop: Droplet,
         listener: Listener,
     ) -> Result<(), &'static str> {
-        if drop.surface >= 9
+        if drop.surface >= RAIN_MATERIALS
             || !range(drop.radius_m, 0.0004, 0.0029)
             || !range(drop.velocity_m_s, 0.0, 40.0)
             || !range(drop.distance_m, 0.25, 100.0)
@@ -571,13 +602,28 @@ impl Rain {
         let choice = self.drop_rng.unit();
         let offset = self.drop_rng.unit();
         let surface_choice = self.drop_rng.unit();
-        let surface_index = self
-            .surface_cdf
-            .partition_point(|&cdf| cdf <= surface_choice)
-            .min(8);
+        let tile = if self.scene.scene.is_some() {
+            let Some(tile) = self.scene.choose(surface_choice) else {
+                return;
+            };
+            Some(tile)
+        } else {
+            None
+        };
+        let surface_index = tile.map_or_else(
+            || {
+                self.surface_cdf
+                    .partition_point(|&cdf| cdf <= surface_choice)
+                    .min(RAIN_MATERIALS - 1)
+            },
+            |tile| tile.material as usize,
+        );
+        let vertical = tile.map_or(self.config.surfaces[surface_index].vertical, |t| {
+            t.normal != [0.0; 2]
+        });
         let surface = self.config.surfaces[surface_index];
         let d = diameter(
-            if surface.vertical {
+            if vertical {
                 &self.wall_size_cdf
             } else {
                 &self.size_cdf
@@ -598,9 +644,16 @@ impl Rain {
             0.0
         };
         let near = self.config.min_distance_m;
-        let distance =
-            (near * near + self.drop_rng.unit() * (self.near_m * self.near_m - near * near)).sqrt();
-        let angle = TAU * self.drop_rng.unit();
+        let (distance, angle) = if let Some(tile) = tile {
+            self.scene
+                .polar(tile, self.drop_rng.unit(), self.drop_rng.unit())
+        } else {
+            (
+                (near * near + self.drop_rng.unit() * (self.near_m * self.near_m - near * near))
+                    .sqrt(),
+                TAU * self.drop_rng.unit(),
+            )
+        };
         if self.config.sheet_depth > 0.0 {
             let upwind = distance * (angle - self.weather.wind_bearing_rad).cos();
             if self.drop_rng.unit() * self.sheet_peak
@@ -613,7 +666,7 @@ impl Rain {
             Droplet {
                 surface: surface_index,
                 radius_m: d * 0.0005,
-                velocity_m_s: if surface.vertical {
+                velocity_m_s: if vertical {
                     self.weather.wind_m_s
                 } else {
                     terminal_speed(d)
@@ -916,7 +969,7 @@ mod tests {
             .is_err()
         );
         let mut invalid = drop(0);
-        invalid.surface = 9;
+        invalid.surface = RAIN_MATERIALS;
         assert!(rain.start_drop(invalid, Listener::default()).is_err());
         assert_eq!(rain.stats().generated, 0);
         for (index, expected) in [

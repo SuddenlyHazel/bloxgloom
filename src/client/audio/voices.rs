@@ -23,22 +23,6 @@ impl State {
     pub(in crate::client) fn install_sounds(&mut self, clips: Arc<crate::audio::sounds::Clips>) {
         self.voices.clips = clips;
     }
-    fn send_voice(&self, command: Command) -> bool {
-        #[cfg(test)]
-        {
-            if self.blocked.get() {
-                return false;
-            }
-            self.sent.borrow_mut().push(command);
-            true
-        }
-        #[cfg(not(test))]
-        {
-            self.output
-                .as_ref()
-                .is_some_and(|output| output.try_send(command))
-        }
-    }
     pub(in crate::client) fn sounds(
         &mut self,
         server: bool,
@@ -76,7 +60,7 @@ impl State {
                 } => {
                     if let Some(v) = self.voices.active.get(&key) {
                         let at = position.unwrap_or(v.position);
-                        if self.send_voice(Command::Update {
+                        if self.send_command(Command::Update {
                             id: v.id,
                             position: Some(at),
                             gain,
@@ -128,7 +112,7 @@ impl State {
                     let expires = (!looping).then(|| {
                         now + Duration::from_secs_f32(clip.duration_seconds() / pitch + 0.1)
                     });
-                    if self.send_voice(Command::Play {
+                    if self.send_command(Command::Play {
                         id,
                         clip,
                         position: Some(position),
@@ -156,7 +140,7 @@ impl State {
     fn flush_stops(&mut self) {
         let mut done = Vec::new();
         for &id in &self.voices.stopping {
-            if self.send_voice(Command::Stop(id)) {
+            if self.send_command(Command::Stop(id)) {
                 done.push(id);
             }
         }
@@ -202,7 +186,7 @@ impl State {
             }
         }
         for (key, at, id, gain, pitch) in moves {
-            if self.send_voice(Command::Update {
+            if self.send_command(Command::Update {
                 id,
                 position: Some(at),
                 gain,

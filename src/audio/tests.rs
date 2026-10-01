@@ -181,6 +181,9 @@ fn world_weather_mixer_is_partition_independent_and_reset_silences_it() {
     let mut a = Mixer::new(12);
     let mut b = Mixer::new(12);
     for mixer in [&mut a, &mut b] {
+        mixer.command(Command::RainScene(rain_scene::RainScene::patch(
+            rain_scene::RainMaterial::Dirt,
+        )));
         assert!(mixer.command(Command::Weather(Some(WeatherSound {
             rain_mm_h: 20.0,
             wind_m_s: 8.0,
