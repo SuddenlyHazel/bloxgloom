@@ -343,7 +343,7 @@ pub(crate) fn character_mouth_names() -> &'static [&'static str; 6] {
 }
 
 pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
-    super::fog::shader(
+    super::daylight::shader(
         &include_str!("avatars/character.wgsl")
             .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog)),
     )

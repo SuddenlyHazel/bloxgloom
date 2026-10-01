@@ -1940,6 +1940,24 @@ impl ClientApp {
         if let Some(visual) = &self.visual_session {
             visual_fire.extend(visual.effects(now, &visual_avatars));
         }
+        let contact_shadows = crate::render::contact_shadow::patches(
+            &visual_avatars,
+            camera.position,
+            &self.catalog,
+            |x, y, z| {
+                let (key, local) = crate::world::world_to_chunk(x, y, z);
+                let block = self.chunks.get(&key)?.block(local)?;
+                if block != crate::world::AIR
+                    && !self
+                        .renderer
+                        .as_ref()?
+                        .has_current_chunk_mesh(key, *self.lighting_revisions.get(&key)?)
+                {
+                    return None;
+                }
+                Some(block)
+            },
+        );
         let first_person_eye_height = self.camera().position.y - self.position.y;
         if let Some(renderer) = &mut self.renderer {
             renderer.set_world_time(self.world_time.now());
@@ -1956,6 +1974,7 @@ impl ClientApp {
                     }),
             );
             renderer.set_avatars(&visual_avatars);
+            renderer.set_contact_shadows(&contact_shadows);
             renderer.configure_post(
                 self.config.post_processing,
                 self.config.exposure,

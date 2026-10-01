@@ -18,7 +18,7 @@ fn weather_fog_shaders_validate_without_a_gpu() {
         include_str!("../pipeline.wgsl")
     );
     let character = crate::render::avatars::character_shader(crate::content::catalog());
-    let terrain = crate::render::fog::shader(&terrain);
+    let terrain = crate::render::daylight::shader(&terrain);
     for source in [&terrain, &character] {
         let module = wgpu::naga::front::wgsl::parse_str(source).expect("valid weather fog WGSL");
         wgpu::naga::valid::Validator::new(

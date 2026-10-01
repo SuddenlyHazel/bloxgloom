@@ -4,7 +4,9 @@ mod third_person;
 pub use third_person::{
     render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,
 };
+mod calibration;
 mod daylight;
+pub use calibration::render_calibration_previews;
 mod weather;
 pub use daylight::render_daylight_previews;
 pub use weather::render_weather_previews;
@@ -541,6 +543,7 @@ enum PreviewScene {
     Characters(&'static str, f32, u8),
     CharacterStyles,
     ThirdPerson(third_person::Shot),
+    Calibration(calibration::Scene),
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
@@ -656,6 +659,7 @@ async fn render_previews_weather(
         &camera_buffer,
         crate::content::catalog(),
     );
+    let mut contact_shadows = render::contact_shadow::Renderer::new(&device, &camera_buffer);
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new_with_catalog(
@@ -746,6 +750,7 @@ async fn render_previews_weather(
         | PreviewScene::Kilns
         | PreviewScene::Hoppers
         | PreviewScene::Chests
+        | PreviewScene::Calibration(_)
         | PreviewScene::ThirdPerson(_)
         | PreviewScene::Avatars
         | PreviewScene::Characters(..)
@@ -854,6 +859,13 @@ async fn render_previews_weather(
             }
         }
     }
+    let mut shadow_avatars = Vec::new();
+    if let PreviewScene::Calibration(calibration) = scene {
+        camera_template = calibration::prepare(calibration, &mut chunks);
+        avatar_renderer.preview_character_clip("idle", 0.35);
+        shadow_avatars = calibration::avatars(&chunks);
+        avatar_renderer.set(&queue, &shadow_avatars);
+    }
     if let PreviewScene::ThirdPerson(shot) = scene {
         camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
         if shot.perspective == render::camera::Perspective::FirstPerson {
@@ -863,10 +875,8 @@ async fn render_previews_weather(
                 pitch: camera_template.pitch,
             }));
         }
-        avatar_renderer.set(
-            &queue,
-            &[third_person::avatar(shot, target_xz, target_height)],
-        );
+        shadow_avatars.push(third_person::avatar(shot, target_xz, target_height));
+        avatar_renderer.set(&queue, &shadow_avatars);
     }
     if matches!(scene, PreviewScene::Fire) {
         // The cell has already burned to AIR; do not imply nearby flammable cells are lit.
@@ -1366,7 +1376,18 @@ async fn render_previews_weather(
             }
         }
         avatar_renderer.set(&queue, &visuals);
+        shadow_avatars.extend(visuals);
     }
+    let shadow_patches = render::contact_shadow::patches(
+        &shadow_avatars,
+        camera_template.position,
+        crate::content::catalog(),
+        |x, y, z| {
+            let (key, local) = world::world_to_chunk(x, y, z);
+            chunks.get(&key).and_then(|chunk| chunk.block(local))
+        },
+    );
+    contact_shadows.set(&queue, &shadow_patches);
 
     for (frame, output) in outputs.into_iter().enumerate() {
         if let (PreviewScene::Characters(clip, time, _), Some(visuals)) =
@@ -1406,7 +1427,11 @@ async fn render_previews_weather(
         let color_view = color.create_view(&Default::default());
         let depth_view = depth.create_view(&Default::default());
         let mut camera = Camera {
-            fov_y_radians: 70.0f32.to_radians(),
+            fov_y_radians: if matches!(scene, PreviewScene::Calibration(_)) {
+                camera_template.fov_y_radians
+            } else {
+                70.0f32.to_radians()
+            },
             ..camera_template
         };
         if let Some((yaw, pitch)) = output.orientation {
@@ -1523,7 +1548,10 @@ async fn render_previews_weather(
             }
             ui_frame.package_ui = Some(session);
         }
-        if !matches!(scene, PreviewScene::SurfaceBare) {
+        if !matches!(
+            scene,
+            PreviewScene::SurfaceBare | PreviewScene::Calibration(_)
+        ) {
             ui_renderer.prepare(&queue, output.width, output.height, &ui_frame);
         }
         let bytes_per_row = output.width * 4;
@@ -1536,6 +1564,9 @@ async fn render_previews_weather(
             mapped_at_creation: false,
         });
         let mut post = render::post::PostProcess::new(&device, output.width, output.height, FORMAT);
+        if matches!(scene, PreviewScene::Calibration(_)) {
+            post.configure(&queue, true, 1.0, 0.12);
+        }
         if let Some(resources) = &mut visual_resources {
             if let Some(effect) = &resources.effect {
                 post.install_effect(&device, effect)?;
@@ -1594,6 +1625,13 @@ async fn render_previews_weather(
                 pass.draw_indexed(0..*count, 0, 0..1);
             }
             avatar_renderer.draw(&mut pass);
+            if visual_resources
+                .as_ref()
+                .and_then(|resources| resources.material.as_ref())
+                .is_none()
+            {
+                contact_shadows.draw(&mut pass);
+            }
             pass.set_pipeline(&cutout_pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
             pass.set_bind_group(1, &texture_group, &[]);
@@ -1647,7 +1685,10 @@ async fn render_previews_weather(
             pass.set_vertex_buffer(0, target_vertices.slice(..));
             pass.draw(0..24, 0..1);
         }
-        if !matches!(scene, PreviewScene::SurfaceBare) {
+        if !matches!(
+            scene,
+            PreviewScene::SurfaceBare | PreviewScene::Calibration(_)
+        ) {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("preview UI"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {

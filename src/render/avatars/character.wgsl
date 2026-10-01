@@ -42,11 +42,12 @@ struct Output {
     let world = vec3f(local.x*c+local.z*s, local.y, local.z*c-local.x*s) + input.origin;
     let normal = vec3f(n.x*c+n.z*s, n.y, n.z*c-n.x*s);
     output.clip = camera.view_projection * vec4f(world, 1.0);
+    let surface = input.surface & 255u;
     let head = input.joint == 5u || (input.joint >= 15u && input.joint <= 17u) || input.joint >= 27u;
     if input.recipe.w != 0u && head { output.clip = vec4f(2.0, 2.0, 2.0, 1.0); }
     // Styled eye artwork uses the articulated white box as its canvas. Hide the
     // native iris, pupil and glint geometry only when that canvas is selected.
-    if input.recipe.x != 0u && (input.surface == 4u || input.surface == 5u || input.surface == 6u || (input.surface == 2u && head)) {
+    if input.recipe.x != 0u && (surface == 4u || surface == 5u || surface == 6u || (surface == 2u && head)) {
         output.clip = vec4f(2.0, 2.0, 2.0, 1.0);
     }
     output.local_height = local.y;
@@ -56,16 +57,13 @@ struct Output {
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3f(input.bounce.xyz) / 255.0;
     let glow_bounce = vec3f(input.glow_bounce.xyz) / 255.0;
-    let sun = max(dot(normal, normalize(camera.sun.xyz)), 0.0);
-    output.light = input.tint * (vec3f(0.012,0.015,0.022)
-        + sky * camera.sun.w * (vec3f(0.31,0.40,0.53) + sun * vec3f(0.77,0.66,0.47))
-        + glow * glow * vec3f(1.0,0.57,0.23)
-        + mix(glow_bounce,bounce,camera.sun.w)*1.35);
+    let visibility = f32((input.surface >> 8u) & 255u) / 255.0;
+    output.light = input.tint * bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, visibility);
     output.world_position = world;
     output.sky = sky;
     output.uv = input.uv; output.material = input.material;
     output.recipe = vec3u(min(input.recipe.x,7u),min(input.recipe.y,5u),input.recipe.z);
-    output.iris = input.iris; output.surface = input.surface; output.local = input.local;
+    output.iris = input.iris; output.surface = surface; output.local = input.local;
     output.front = input.normal.z;
     output.hair_color_body = input.hair_color_body; output.cosmetics = input.cosmetics.xyz;
     return output;
