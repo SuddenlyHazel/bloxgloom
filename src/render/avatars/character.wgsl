@@ -24,6 +24,9 @@ struct Output {
     @location(6) @interpolate(flat) iris: vec4u,
     @location(7) @interpolate(flat) face: u32,
     @location(8) face_uv: vec2f,
+    @location(9) local_height: f32,
+    @location(10) @interpolate(flat) eye_height: f32,
+    @location(11) @interpolate(flat) joint: u32,
 };
 @vertex fn vs_main(input: Input) -> Output {
     var output: Output;
@@ -34,6 +37,13 @@ struct Output {
     let world = vec3f(local.x*c+local.z*s, local.y, local.z*c-local.x*s) + input.origin;
     let normal = vec3f(n.x*c+n.z*s, n.y, n.z*c-n.x*s);
     output.clip = camera.view_projection * vec4f(world, 1.0);
+    if input.recipe.w != 0u && input.joint == 1u {
+        // Head and all attached hair are omitted only for the first-person owner.
+        output.clip = vec4f(2.0, 2.0, 2.0, 1.0);
+    }
+    output.local_height = local.y;
+    output.eye_height = select(0.0, input.pose.w, input.recipe.w != 0u);
+    output.joint = input.joint;
     let sky = f32(input.light_levels.x) / 15.0;
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3f(input.bounce.xyz) / 255.0;
@@ -60,6 +70,7 @@ fn tint_iris(base: vec3f, shade: f32) -> vec3f {
     return srgb_to_linear(floor(tinted+vec3f(0.5))/255.0);
 }
 @fragment fn fs_main(input: Output) -> @location(0) vec4f {
+    if input.eye_height > 0.0 && input.joint == 2u && input.local_height > input.eye_height - 0.12 { discard; }
     if input.material != 0u && input.material != input.recipe.z { discard; }
     var albedo = textureSampleLevel(body,pixels,input.uv,0.0);
     if input.material == 1u { albedo = textureSampleLevel(hair,pixels,input.uv,0.0); }

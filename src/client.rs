@@ -1879,11 +1879,22 @@ impl ClientApp {
         if let Some(visual) = &self.visual_session {
             visual_fire.extend(visual.effects(now, &visual_avatars));
         }
+        let first_person_eye_height = self.camera().position.y - self.position.y;
         if let Some(renderer) = &mut self.renderer {
             renderer.set_world_time(self.world_time.now());
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
             renderer.set_authored_characters(self.config.authored_characters);
+            renderer.set_first_person_character(
+                (self.perspective == crate::render::camera::Perspective::FirstPerson)
+                    .then_some(self.owned_entity_id)
+                    .flatten()
+                    .map(|id| crate::render::FirstPersonView {
+                        id,
+                        eye_height: first_person_eye_height,
+                        pitch: self.pitch,
+                    }),
+            );
             renderer.set_avatars(&visual_avatars);
             renderer.configure_post(
                 self.config.post_processing,

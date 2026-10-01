@@ -40,5 +40,5 @@ fn perspective_changes_preserve_eye_reach_and_only_use_installed_terrain() {
     assert_eq!(app.camera().position, eye);
     app.cycle_perspective();
     assert_eq!(app.perspective, Perspective::FirstPerson);
-    assert!(!app.show_local_avatar(app.view_camera()));
+    assert!(app.show_local_avatar(app.view_camera()));
 }

@@ -3,6 +3,7 @@
 
 mod appearance;
 mod character;
+pub(crate) use character::first_person::View as FirstPersonView;
 mod character_asset;
 pub(crate) use character_asset::tool_duration as character_tool_duration;
 mod mesh;
@@ -243,6 +244,10 @@ impl AvatarRenderer {
         self.characters.preview_clip(clip, time);
     }
 
+    pub(crate) fn set_first_person(&mut self, view: Option<FirstPersonView>) {
+        self.characters.first_person = view;
+    }
+
     pub(crate) fn set_authored(&mut self, enabled: bool) {
         self.authored = enabled;
     }
@@ -260,6 +265,10 @@ impl AvatarRenderer {
                     .take(MAX_AVATARS)
                     .filter(|a| {
                         a.model == *model
+                            && self
+                                .characters
+                                .first_person
+                                .is_none_or(|view| a.id != view.id)
                             && !(self.authored
                                 && *model == AvatarModel::Player
                                 && a.character_recipe.is_some())

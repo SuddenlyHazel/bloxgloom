@@ -426,6 +426,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_third_person_previews(std::path::Path::new(&directory))?;
         }
+        Some("first-person-preview") => {
+            let path = args.next().unwrap_or_else(|| "first-person-preview".into());
+            if args.next().is_some() {
+                return Err("usage: first-person-preview [directory]".into());
+            }
+            preview::render_first_person_previews(std::path::Path::new(&path))?;
+        }
         Some("character-gameplay-preview") => {
             let directory = args
                 .next()

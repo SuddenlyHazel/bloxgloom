@@ -85,7 +85,7 @@ formats are rejected rather than silently migrated or discarded. Existing world
 folders are not modified by using the new default.
 
 This is a bounded builtin kit, not generic runtime glTF loading, uploaded atlases,
-clothing, physics hair, or a networked tool animation. Crouch stance is replicated by the server. First person hides the local body; F5 cycles rear and front third-person views, and the native portrait remains available in the editor.
+clothing, physics hair, or a networked tool animation. Crouch stance is replicated by the server. First person shows the authored local body and animated arms, omitting its head and hair to keep the eye clear; F5 cycles rear and front third-person views, and the native portrait remains available in the editor.
 
 For a repeatable headless native render (same production GPU pipeline):
 
@@ -93,6 +93,7 @@ For a repeatable headless native render (same production GPU pipeline):
     cargo run -- character-preview character-walk.png walk 0.20
     cargo run -- character-preview character-crouch.png crouch 1.0
     cargo run --release -- character-gameplay-preview /tmp/character-gameplay
+    cargo run --release -- first-person-preview /tmp/first-person
     cargo run -- character-preview character-left-tool.png tool_use_left 0.3
     cargo run -- character-preview character-right-tool.png tool_use_right 0.3
 

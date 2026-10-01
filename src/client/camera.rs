@@ -14,8 +14,8 @@ impl ClientApp {
     }
 
     pub(super) fn show_local_avatar(&self, view: Camera) -> bool {
-        self.perspective != Perspective::FirstPerson
-            && view.position.distance_squared(self.camera().position) >= 0.6 * 0.6
+        self.perspective == Perspective::FirstPerson
+            || view.position.distance_squared(self.camera().position) >= 0.6 * 0.6
     }
 
     pub(super) fn prepare_local_avatar(&self, avatars: &mut [crate::render::VisualAvatar]) {

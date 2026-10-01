@@ -7,6 +7,7 @@ pub(super) struct Shot {
     pub(super) perspective: Perspective,
     pub(super) wall: bool,
     pub(super) animation: GameplayPose,
+    pub(super) pitch: Option<f32>,
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +41,7 @@ pub fn render_third_person_previews(directory: &Path) -> Result<(), Box<dyn Erro
                 perspective,
                 wall,
                 animation: GameplayPose::Idle,
+                pitch: None,
             }),
         ))?;
     }
@@ -70,10 +72,55 @@ pub fn render_gameplay_animation_previews(directory: &Path) -> Result<(), Box<dy
                 perspective: Perspective::Front,
                 wall: false,
                 animation,
+                pitch: None,
             }),
         ))?;
     }
     Ok(())
+}
+
+pub fn render_first_person_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    for (name, animation, pitch) in [
+        ("forward.png", GameplayPose::Idle, 0.0),
+        ("look-down.png", GameplayPose::Idle, -1.48),
+        ("walk-down.png", GameplayPose::Walk, -1.48),
+        ("crouch-down.png", GameplayPose::Crouch, -1.48),
+        ("tool.png", GameplayPose::Tool(true), 0.0),
+        ("tool-down.png", GameplayPose::Tool(true), -0.7),
+        ("crouch-tool.png", GameplayPose::CrouchWalkTool, 0.0),
+    ] {
+        pollster::block_on(render_previews(
+            vec![PreviewOutput {
+                path: directory.join(name),
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: None,
+            }],
+            (0, 0),
+            PreviewScene::ThirdPerson(Shot {
+                perspective: Perspective::FirstPerson,
+                wall: false,
+                animation,
+                pitch: Some(pitch),
+            }),
+        ))?;
+    }
+    Ok(())
+}
+
+impl Shot {
+    pub(super) fn eye_height(self) -> f32 {
+        let crouching = matches!(
+            self.animation,
+            GameplayPose::Crouch | GameplayPose::CrouchWalk | GameplayPose::CrouchWalkTool
+        );
+        bloxgloom_host_api::player::BUILTIN_RULES
+            .for_stance(crouching)
+            .eye_height()
+    }
 }
 
 pub(super) fn prepare(
@@ -106,11 +153,11 @@ pub(super) fn prepare(
     let eye = Camera {
         position: Vec3::new(
             target.0 as f32 + 0.5,
-            height as f32 + 2.62,
+            height as f32 + 1.0 + shot.eye_height(),
             target.1 as f32 + 0.5,
         ),
         yaw: -std::f32::consts::FRAC_PI_2,
-        pitch: -0.12,
+        pitch: shot.pitch.unwrap_or(-0.12),
         fov_y_radians: 70f32.to_radians(),
     };
     let camera = shot.perspective.view(eye, |position| {
@@ -126,7 +173,7 @@ pub(super) fn prepare(
             distance > 0.5 && distance < 1.5,
             "camera did not retract before wall: {distance}"
         );
-    } else {
+    } else if shot.perspective != Perspective::FirstPerson {
         assert!(
             (distance - 4.0).abs() < 0.05,
             "clear camera did not extend: {distance}"

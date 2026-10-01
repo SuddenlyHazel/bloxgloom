@@ -40,7 +40,7 @@ use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
 pub(crate) use avatars::{
-    AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar, character_eye_names,
+    AvatarModel, AvatarRenderer, FirstPersonView, MAX_AVATARS, VisualAvatar, character_eye_names,
     character_mouth_names, character_tool_duration,
 };
 pub(crate) use drops::VisualDrop;
@@ -386,6 +386,10 @@ impl Renderer {
 
     pub(crate) fn set_authored_characters(&mut self, enabled: bool) {
         self.avatars.set_authored(enabled);
+    }
+
+    pub(crate) fn set_first_person_character(&mut self, view: Option<avatars::FirstPersonView>) {
+        self.avatars.set_first_person(view);
     }
 
     pub(crate) fn set_avatars(&mut self, avatars: &[VisualAvatar]) {

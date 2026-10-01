@@ -1,7 +1,9 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
 mod third_person;
-pub use third_person::{render_gameplay_animation_previews, render_third_person_previews};
+pub use third_person::{
+    render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,
+};
 mod daylight;
 pub use daylight::render_daylight_previews;
 mod block;
@@ -811,6 +813,13 @@ async fn render_previews_at(
     if let PreviewScene::ThirdPerson(shot) = scene {
         camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
         avatar_renderer.set_authored(true);
+        if shot.perspective == render::camera::Perspective::FirstPerson {
+            avatar_renderer.set_first_person(Some(render::FirstPersonView {
+                id: 1,
+                eye_height: shot.eye_height(),
+                pitch: camera_template.pitch,
+            }));
+        }
         avatar_renderer.set(
             &queue,
             &[third_person::avatar(shot, target_xz, target_height)],

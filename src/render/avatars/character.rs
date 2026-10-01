@@ -5,6 +5,7 @@ use super::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
+pub(crate) mod first_person;
 mod material;
 use material::texture;
 
@@ -37,6 +38,7 @@ pub(super) struct CharacterRenderer {
     instances: wgpu::Buffer,
     joints: wgpu::Buffer,
     count: u32,
+    pub(super) first_person: Option<first_person::View>,
     preview_clip: Option<(&'static str, f32)>,
 }
 
@@ -270,6 +272,7 @@ impl CharacterRenderer {
             instances,
             joints,
             count: 0,
+            first_person: None,
             preview_clip: None,
         }
     }
@@ -294,12 +297,22 @@ impl CharacterRenderer {
             let iris = recipe
                 .iris
                 .map_or([0; 4], |rgb| [rgb[0], rgb[1], rgb[2], 1]);
+            let first_person = self.first_person.filter(|view| view.id == avatar.id);
+            let mut actor = AvatarInstance::from(avatar);
+            if let Some(view) = first_person {
+                actor.pose[3] = view.eye_height;
+            }
             instances.push(CharacterInstance {
-                actor: AvatarInstance::from(avatar),
-                recipe: [recipe.eyes, recipe.mouth, recipe.hair, 0],
+                actor,
+                recipe: [
+                    recipe.eyes,
+                    recipe.mouth,
+                    recipe.hair,
+                    u8::from(first_person.is_some()),
+                ],
                 iris,
             });
-            let pose = match self.preview_clip {
+            let mut pose = match self.preview_clip {
                 Some((clip, time)) => self.asset.sample(clip, time),
                 None => self.asset.sample_gameplay(
                     avatar.character_pose[1],
@@ -309,6 +322,9 @@ impl CharacterRenderer {
                     avatar.character_tool,
                 ),
             };
+            if let Some(view) = first_person {
+                view.prepare_pose(&mut pose);
+            }
             joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));
         }
         self.count = instances.len() as u32;
