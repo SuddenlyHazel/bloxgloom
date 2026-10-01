@@ -170,7 +170,7 @@ impl PackageSnapshot {
     ) -> Result<Vec<bloxgloom_host_api::composition::Package>, ScriptError> {
         use bloxgloom_host_api::composition::{
             ACTIONS, ANCHORED_ENTITIES, CONTENT, Dependency, GENERATION, INVENTORY_SCREENS,
-            MACHINES, MOBILE_ENTITIES, OWNER_SYSTEMS, Package, STORAGE,
+            MACHINES, MOBILE_ENTITIES, MOVING_ENTITIES, OWNER_SYSTEMS, Package, STORAGE,
         };
         self.packages
             .iter()
@@ -185,6 +185,7 @@ impl PackageSnapshot {
                             && c != STORAGE
                             && c != INVENTORY_SCREENS
                             && c != MOBILE_ENTITIES
+                            && c != MOVING_ENTITIES
                             && c != ANCHORED_ENTITIES
                             && c != MACHINES
                     })
@@ -225,6 +226,18 @@ impl PackageSnapshot {
             p.manifest
                 .requires
                 .contains(bloxgloom_host_api::composition::CONTENT)
+        })
+    }
+
+    pub(super) fn permits_moving(&self, package: &str) -> bool {
+        self.packages.get(package).is_some_and(|p| {
+            [
+                bloxgloom_host_api::composition::CONTENT,
+                bloxgloom_host_api::composition::ACTIONS,
+                bloxgloom_host_api::composition::MOVING_ENTITIES,
+            ]
+            .into_iter()
+            .all(|capability| p.manifest.requires.contains(capability))
         })
     }
 
