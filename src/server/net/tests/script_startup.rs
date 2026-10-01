@@ -242,8 +242,8 @@ fn luau_startup_rejections_publish_nothing_and_never_open_world() {
         ),
         (
             CONTENT,
-            "return function(h) for i = 1, 33 do pcall(function() h.register_item('bad:item' .. i, 'Item', 'bloxgloom:stone') end) end end",
-            "limit exceeded",
+            "return function(h) for i = 1, 513 do pcall(function() h.register_item('bad:item' .. i, 'Item', 'bloxgloom:stone') end) end end",
+            "items/package: attempted 513; maximum 512",
         ),
         (
             CONTENT,

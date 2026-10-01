@@ -188,7 +188,7 @@ fn luau_generation_rejects_bad_registration_and_caught_output_errors() {
         REGISTER.replace(", 1,", ", 0,"),
         REGISTER.replace("'demo:terrain')", "'demo:missing')"),
         "return function(h) pcall(function() h.register_generator('demo:terrain', 0, 'demo:terrain') end) end".into(),
-        "return function(h) h.register_generator('demo:terrain', 1, 'demo:terrain'); h.register_generator('demo:other', 1, 'demo:terrain') end".into(),
+        "return function(h) h.register_generator('demo:terrain', 1, 'demo:terrain'); h.register_generator('demo:terrain', 1, 'demo:terrain') end".into(),
     ] {
         fixture.generator(&register, MARKER);
         assert!(fixture.startup(Arc::new(Catalog::builtins())).is_err());

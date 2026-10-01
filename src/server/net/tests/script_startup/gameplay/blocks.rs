@@ -544,8 +544,8 @@ fn package_cube_rejections_fail_before_world_open() {
             "boolean",
         ),
         (
-            "for i=1,33 do h.register_block('demo:jade'..i,'Jade','demo:tile') end",
-            "limit exceeded",
+            "for i=1,257 do h.register_block('demo:jade'..i,'Jade','demo:tile') end",
+            "blocks/package: attempted 257; maximum 256",
         ),
     ] {
         let fixture = Fixture::new();

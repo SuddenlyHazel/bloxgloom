@@ -107,8 +107,11 @@ fn compose(
             catalog,
             &mut remaining,
         )
-        .map_err(|error| {
-            GenerationError::Contributor(format!("{}: {error:?}", registration.key))
+        .map_err(|error| match error {
+            GenerationError::Contributor(message) => {
+                GenerationError::Contributor(format!("{}: {message}", registration.key))
+            }
+            error => error,
         })?;
     }
     Ok(Chunk::from_blocks(key, 0, blocks))

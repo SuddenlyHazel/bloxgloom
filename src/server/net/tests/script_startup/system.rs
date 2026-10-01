@@ -24,7 +24,7 @@ mod partitions;
 fn luau_owner_after_dependencies_are_resolved_before_save_creation() {
     let fixture = Fixture::new();
     fixture.system(REGISTER, SOURCE);
-    fixture.package("later", "requires bloxgloom:owner_systems/v1\nmodule clock clock.luau", "return function(h) h.register_system{key='later:clock',schema=1,revision=1,module='later:clock',max_state_bytes=8,max_jobs_per_tick=1,after={'demo:clock'},seeds={{x=0,y=5,z=0,data='x'}}} end");
+    fixture.package("later", "requires bloxgloom:owner_systems/v1\ndependency demo 1.0.0\nmodule clock clock.luau", "return function(h) h.register_system{key='later:clock',schema=1,revision=1,module='later:clock',max_state_bytes=8,max_jobs_per_tick=1,after={'demo:clock'},seeds={{x=0,y=5,z=0,data='x'}}} end");
     std::fs::write(
         fixture.0.join("packages/later/clock.luau"),
         "return function(c) return c.data, 100000 end",
