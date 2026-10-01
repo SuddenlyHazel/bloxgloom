@@ -11,6 +11,7 @@ pub(crate) mod fire;
 pub(crate) mod game_ui;
 mod hooks;
 mod material;
+pub(crate) use material::resources::required_limits as material_device_limits;
 mod mesh;
 pub(crate) mod parameters;
 mod preparation;
@@ -95,6 +96,7 @@ pub enum RendererError {
     Surface(wgpu::CreateSurfaceError),
     Adapter(wgpu::RequestAdapterError),
     Device(wgpu::RequestDeviceError),
+    Materials(String),
 }
 
 impl std::fmt::Display for RendererError {
@@ -103,6 +105,7 @@ impl std::fmt::Display for RendererError {
             Self::Surface(error) => write!(formatter, "surface creation failed: {error}"),
             Self::Adapter(error) => write!(formatter, "GPU adapter unavailable: {error}"),
             Self::Device(error) => write!(formatter, "GPU device creation failed: {error}"),
+            Self::Materials(error) => write!(formatter, "material GPU admission failed: {error}"),
         }
     }
 }
@@ -212,8 +215,13 @@ impl Renderer {
             })
             .await
             .map_err(RendererError::Adapter)?;
+        let required_limits = material_device_limits(adapter.limits(), catalog.textures().len())
+            .map_err(RendererError::Materials)?;
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                required_limits,
+                ..Default::default()
+            })
             .await
             .map_err(RendererError::Device)?;
         let capabilities = surface.get_capabilities(&adapter);
@@ -247,7 +255,8 @@ impl Renderer {
         let post = post::PostProcess::new(&device, config.width, config.height, format);
         let (sky_pipeline, sky_buffer, sky_group) = create_sky_pipeline(&device, post::HDR_FORMAT);
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
-            create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog);
+            create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
+                .map_err(RendererError::Materials)?;
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let avatars = avatars::AvatarRenderer::new(
             &device,

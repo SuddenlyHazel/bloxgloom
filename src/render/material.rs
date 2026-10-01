@@ -1,5 +1,7 @@
 use std::io::Cursor;
 
+pub(super) mod resources;
+
 use crate::content;
 use crate::items::ItemId;
 use crate::world::BlockId;
@@ -71,8 +73,10 @@ pub(super) fn material_tiles() -> Vec<u8> {
 }
 
 pub(super) fn material_tiles_for(catalog: &content::Catalog) -> Vec<u8> {
+    let usage = resources::validate(catalog.textures().len(), resources::MAX_ARRAY_LAYERS)
+        .expect("material resources must pass admission before pixel preparation");
     let mut pixels = Vec::with_capacity(
-        (TEXTURE_SIZE * TEXTURE_SIZE * catalog.textures().len() as u32 * 4) as usize,
+        (u64::from(TEXTURE_SIZE) * u64::from(TEXTURE_SIZE) * u64::from(usage.layers) * 4) as usize,
     );
     for definition in catalog.textures() {
         let layer_start = pixels.len();

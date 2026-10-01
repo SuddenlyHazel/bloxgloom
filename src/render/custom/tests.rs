@@ -140,7 +140,8 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         &queue,
         wgpu::TextureFormat::Rgba8Unorm,
         &catalog,
-    );
+    )
+    .unwrap();
     queue.write_buffer(
         &camera,
         0,

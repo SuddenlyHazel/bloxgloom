@@ -26,6 +26,7 @@ pub(crate) fn create_voxel_pipeline(
     wgpu::BindGroup,
 ) {
     create_voxel_pipeline_with_catalog(device, queue, format, crate::content::catalog())
+        .expect("builtin material resources fit the requested device limits")
 }
 
 pub(crate) fn create_voxel_pipeline_with_catalog(
@@ -33,18 +34,24 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat,
     catalog: &Catalog,
-) -> (
-    wgpu::RenderPipeline,
-    wgpu::RenderPipeline,
-    wgpu::Buffer,
-    wgpu::BindGroup,
-    wgpu::BindGroup,
-) {
+) -> Result<VoxelPipelines, String> {
+    let usage = material::resources::validate(
+        catalog.textures().len(),
+        device.limits().max_texture_array_layers,
+    )?;
+    tracing::debug!(
+        layers = usage.layers,
+        mip_bytes = usage.mip_bytes,
+        maximum_bytes = material::resources::MAX_ARRAY_BYTES,
+        "material texture array admitted"
+    );
     let source = format!(
         "{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
         custom::TYPES
     );
-    create_voxel_pipeline_source(device, queue, format, catalog, &source, None)
+    Ok(create_voxel_pipeline_source(
+        device, queue, format, catalog, &source, None,
+    ))
 }
 
 /// Prepared on a worker; the renderer still owns vertex geometry, projection,
@@ -56,6 +63,16 @@ pub(crate) fn create_custom_voxel_pipeline(
     catalog: &Catalog,
     prepared: &custom::Prepared,
 ) -> Result<(VoxelPipelines, custom::Gpu), String> {
+    let usage = material::resources::validate(
+        catalog.textures().len(),
+        device.limits().max_texture_array_layers,
+    )?;
+    tracing::debug!(
+        layers = usage.layers,
+        mip_bytes = usage.mip_bytes,
+        maximum_bytes = material::resources::MAX_ARRAY_BYTES,
+        "material texture array admitted"
+    );
     let source = format!("{}\n{}\n{SHADER}", custom::TYPES, custom::compose(prepared));
     let owners = prepared
         .materials
