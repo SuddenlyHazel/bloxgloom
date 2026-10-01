@@ -11,6 +11,7 @@ fn farming_pressure_maximum_counts_cross_old_bytes_and_join_over_real_tcp() {
             .expect("set BLOXGLOOM_PRESSURE_PACKAGES to generate-pressure.py output"),
     );
     let started = Instant::now();
+    let packages = std::fs::canonicalize(packages).unwrap();
     let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
         .with_local_packages(&packages)
         .unwrap();

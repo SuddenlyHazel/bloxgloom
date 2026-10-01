@@ -28,7 +28,7 @@ for number in range(args.packages):
     root = args.output/name
     (root/'server').mkdir(parents=True)
     (root/'client').mkdir()
-    (root/'assets').mkdir()
+    (root/'assets'/'textures').mkdir(parents=True)
     manifest = [f'format 2\npackage {name}\nversion 1.0.0\nentry main', 'module server main server/main.luau']
     (root/'server/main.luau').write_text('return function(_) end\n')
     for index in range(args.modules-1):
@@ -37,8 +37,8 @@ for number in range(args.packages):
         manifest.append(f'module client {key} client/{key}.luau')
     for index in range(args.assets):
         key = f'tile{index:03}'
-        (root/'assets'/f'{key}.png').write_bytes(png)
-        manifest.append(f'asset texture {key} assets/{key}.png')
+        (root/'assets'/'textures'/f'{key}.png').write_bytes(png)
+        manifest.append(f'asset texture {key} assets/textures/{key}.png')
     (root/'package.txt').write_text('\n'.join(manifest)+'\n')
 files = list(args.output.rglob('*'))
 print(f'{args.packages*args.modules} modules, {args.packages*args.assets} valid RGBA assets; {sum(p.stat().st_size for p in files if p.is_file()):,} file bytes')

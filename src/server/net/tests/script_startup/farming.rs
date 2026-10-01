@@ -18,8 +18,10 @@ const HARVEST: [i32; 3] = [3, 81, 0];
 
 fn open(fixture: &Fixture) -> State {
     let started = Instant::now();
-    let packages =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/farming-scale/packages");
+    let packages = std::env::var_os("BLOXGLOOM_FARMING_PRESSURE_PACKAGES")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/farming-scale/packages"));
+    let packages = std::fs::canonicalize(packages).unwrap();
     let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
         .with_local_packages(&packages)
         .unwrap();
