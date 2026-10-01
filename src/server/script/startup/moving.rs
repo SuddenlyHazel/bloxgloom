@@ -307,3 +307,6 @@ fn triple(value: Value, min: f32, max: f32) -> Result<[f32; 3], &'static str> {
         )?,
     ])
 }
+
+#[cfg(test)]
+mod tests;
