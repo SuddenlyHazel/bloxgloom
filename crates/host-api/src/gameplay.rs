@@ -10,6 +10,7 @@ mod definition;
 mod entities;
 mod handlers;
 mod inventory;
+mod motion;
 mod observations;
 mod player_operations;
 mod players;
@@ -19,6 +20,7 @@ pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
 pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause};
 pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
+pub use motion::{MotionChange, MotionCommand, MovingSpawn, SpawnReference};
 pub use observations::{
     Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
 };
@@ -65,6 +67,26 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn motion(&mut self, _id: u64, _owner: &str) -> Result<Option<crate::motion::Motion>, Error> {
+        Err(Error::Invalid(
+            "moving entities unavailable in this context".into(),
+        ))
+    }
+    fn validate_moving_spawn(&mut self, _owner: &str, _spawn: &MovingSpawn) -> Result<(), Error> {
+        Err(Error::Invalid(
+            "moving entity spawn unavailable in this context".into(),
+        ))
+    }
+    fn validate_motion_change(
+        &self,
+        _id: u64,
+        _owner: &str,
+        _motion: &crate::motion::Motion,
+    ) -> Result<(), Error> {
+        Err(Error::Invalid(
+            "motion change unavailable in this context".into(),
+        ))
+    }
     fn authorize_inventory(
         &self,
         _owner: InventoryId,
@@ -159,6 +181,8 @@ pub struct DropSpawn {
 /// Constructing a plan does not publish anything or bypass host validation.
 #[derive(Debug, Default)]
 pub struct Plan {
+    pub moving_spawns: Vec<MovingSpawn>,
+    pub motion_commands: BTreeMap<u64, MotionCommand>,
     pub profile_states: BTreeMap<(String, u128), ProfileCell>,
     pub player_operations: Vec<PlayerOperation>,
     pub world_time: Option<u64>,
@@ -172,6 +196,7 @@ pub struct Plan {
 }
 
 pub struct Context<'a> {
+    motion_reference_scope: std::sync::Arc<()>,
     snapshot: &'a mut dyn Snapshot,
     blocks: BTreeMap<Cell, Block>,
     block_preimages: BTreeMap<Cell, Block>,
@@ -235,6 +260,7 @@ impl<'a> Context<'a> {
     pub fn new(snapshot: &'a mut dyn Snapshot, operation_budget: usize) -> Self {
         Self {
             snapshot,
+            motion_reference_scope: std::sync::Arc::new(()),
             blocks: BTreeMap::new(),
             block_preimages: BTreeMap::new(),
             inventories: BTreeMap::new(),

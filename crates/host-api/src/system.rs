@@ -38,6 +38,10 @@ pub struct Context<'a> {
 /// Authoritative, bounded world input captured before the owner job starts.
 /// An out-of-scope or unloaded cell is unavailable, never procedural air.
 pub trait WorldRead {
+    /// Captured owned motion; requires reads_entities. Absence is fenced too.
+    fn motion(&self, _id: u64) -> Result<Option<crate::motion::Motion>, Error> {
+        Err(Error::Invalid("motion reads not declared".into()))
+    }
     fn block(&self, cell: Cell) -> Result<Block, Error>;
 
     /// Bounded, immutable snapshots of package-owned mobile entities in the
@@ -48,6 +52,11 @@ pub trait WorldRead {
 }
 
 impl Context<'_> {
+    pub fn motion(&self, id: u64) -> Result<Option<crate::motion::Motion>, Error> {
+        self.world
+            .ok_or_else(|| Error::Invalid("world reads not declared".into()))?
+            .motion(id)
+    }
     pub fn block(&self, cell: Cell) -> Result<Block, Error> {
         self.world.ok_or(Error::Unavailable(cell))?.block(cell)
     }
@@ -68,6 +77,8 @@ pub struct OwnedEntity {
 }
 
 pub struct Plan {
+    pub moving_spawns: Vec<crate::gameplay::MovingSpawn>,
+    pub motion_commands: Vec<crate::gameplay::MotionCommand>,
     pub data: Vec<u8>,
     /// Absolute deadline, strictly later than the input tick.
     pub next_tick: u64,
@@ -182,6 +193,14 @@ pub trait Behavior: Send + Sync + 'static {
 
     /// Explicit item-creation authority for bounded chunk-owner drop spawns.
     fn creates_drops(&self) -> bool {
+        false
+    }
+
+    fn creates_moving_entities(&self) -> bool {
+        false
+    }
+
+    fn mutates_motion(&self) -> bool {
         false
     }
 
@@ -360,6 +379,8 @@ impl System {
             || (self.behavior.accepts_intents() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_drops() && self.read_radius_chunks.is_none())
             || (self.behavior.creates_entities() && self.read_radius_chunks.is_none())
+            || (self.behavior.creates_moving_entities() && self.read_radius_chunks.is_none())
+            || (self.behavior.mutates_motion() && !self.behavior.reads_entities())
             || (self.behavior.reads_entities() && self.read_radius_chunks.is_none())
             || (self.behavior.mutates_entities() && !self.behavior.reads_entities())
             || (self.behavior.edit_cause() == EditCause::Burn && self.read_radius_chunks.is_none())
@@ -461,6 +482,12 @@ impl System {
         }
         if self.behavior.creates_drops() {
             out.extend(b"owner-drop-spawns-v1");
+        }
+        if self.behavior.creates_moving_entities() {
+            out.extend(b"owner-moving-spawns-v1");
+        }
+        if self.behavior.mutates_motion() {
+            out.extend(b"owner-motion-mutations-v1");
         }
         if self.behavior.creates_entities() {
             out.extend(b"owner-entity-spawns-v1");

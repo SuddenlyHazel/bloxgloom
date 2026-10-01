@@ -10,6 +10,9 @@ pub enum EventKind {
     EntityTick,
     NeighborChanged,
     PickupRequested,
+    MovingTick,
+    MovingImpact,
+    MovingExpiry,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +33,20 @@ pub enum RemovalCause {
 
 #[derive(Clone, Debug)]
 pub enum Event {
+    MovingTick {
+        entity: u64,
+        tick: u64,
+        motion: crate::motion::Motion,
+    },
+    MovingImpact {
+        impact: crate::motion::Impact,
+    },
+    MovingExpiry {
+        entity: u64,
+        tick: u64,
+        motion_revision: u64,
+        reason: crate::motion::ExpiryReason,
+    },
     BlockRemoved {
         cell: Cell,
         previous: Block,
@@ -122,6 +139,9 @@ impl HandlerRegistration {
             EventKind::EntityTick => 3,
             EventKind::NeighborChanged => 4,
             EventKind::PickupRequested => 5,
+            EventKind::MovingTick => 6,
+            EventKind::MovingImpact => 7,
+            EventKind::MovingExpiry => 8,
         });
         bytes.push(u8::from(self.target.is_some()));
         if let Some(target) = &self.target {

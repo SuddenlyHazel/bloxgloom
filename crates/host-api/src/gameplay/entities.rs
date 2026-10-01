@@ -177,6 +177,7 @@ impl Context<'_> {
         }
         self.entity_overlay.get_mut(&id).expect("captured entity").1 = None;
         self.plan.entity_schedules.remove(&id);
+        self.plan.motion_commands.remove(&id);
         self.plan
             .entity_changes
             .insert(id, EntityChange::Remove { id });

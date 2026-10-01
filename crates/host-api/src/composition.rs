@@ -5,6 +5,7 @@ pub const CONTENT: &str = "bloxgloom:content/v1";
 pub const PLAYERS: &str = "bloxgloom:players/v1";
 pub const STORAGE: &str = "bloxgloom:storage/v1";
 pub const MACHINES: &str = "bloxgloom:machines/v1";
+pub const MOVING_ENTITIES: &str = "bloxgloom:moving_entities/v1";
 pub const MOBILE_ENTITIES: &str = "bloxgloom:mobile_entities/v1";
 pub const INVENTORY_SCREENS: &str = "bloxgloom:inventory_screens/v1";
 pub const ANCHORED_ENTITIES: &str = "bloxgloom:anchored_entities/v1";
