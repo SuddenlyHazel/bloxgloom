@@ -121,6 +121,36 @@ pub(in crate::server) fn join_named_client(
             ));
         }
     }
+    // Runtime posture snapshots follow the fixed handshake; never mutate the
+    // saved avatar appearance to convey collision authority.
+    let mut stances = state
+        .clients
+        .iter()
+        .filter(|(_, client)| client.movement.crouching())
+        .map(|(&session, _)| ServerMessage::PlayerStance {
+            entity_id: crate::server::entities::EntityId::for_player_session(session)
+                .unwrap()
+                .get(),
+            crouching: true,
+        })
+        .collect::<Vec<_>>();
+    stances.sort_unstable_by_key(|message| match message {
+        ServerMessage::PlayerStance { entity_id, .. } => *entity_id,
+        _ => unreachable!(),
+    });
+    stances.push(ServerMessage::PlayerStance {
+        entity_id: owned_entity_id.get(),
+        crouching: false,
+    });
+    for message in stances {
+        if sender.try_send(message).is_err() {
+            state.player_entities.discard_session(id);
+            return Err(io::Error::new(
+                ErrorKind::BrokenPipe,
+                "stance startup queue closed",
+            ));
+        }
+    }
     state.next_id = next_id;
     state.clients.insert(
         id,

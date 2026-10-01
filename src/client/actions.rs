@@ -126,6 +126,8 @@ impl ClientApp {
         let visible = |action: &&Arc<Action>| {
             action.key != crate::gameplay::admin::GIVE
                 && action.key != crate::gameplay::admin::SPAWN
+                && action.key != crate::gameplay::admin::TIME
+                && action.command.is_none()
                 && action.key != crate::gameplay::drop_stack::KEY
                 && action.key != crate::gameplay::slot_move::KEY
         };

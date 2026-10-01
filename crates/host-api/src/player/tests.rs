@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn crouch_stance_derives_body_eye_and_rates_without_changing_frozen_contract() {
+    let crouched = BUILTIN_RULES.for_stance(true);
+    crouched.validate().unwrap();
+    assert_eq!(BUILTIN_RULES.for_stance(false), BUILTIN_RULES);
+    assert_eq!(crouched.body().half_width, BUILTIN_BODY.half_width);
+    assert_eq!(crouched.body().foot_inset, BUILTIN_BODY.foot_inset);
+    assert!(crouched.body().head_height < BUILTIN_BODY.head_height);
+    assert!(crouched.eye_height() < BUILTIN_RULES.eye_height());
+    assert_eq!(crouched.motion().budget_blocks_per_second, 4.0);
+    assert_eq!(BUILTIN_RULES.motion().budget_blocks_per_second, 10.0);
+}
+
+#[test]
 fn immutable_rules_preserve_builtin_contract() {
     let rules = PlayerRules::new(BUILTIN_BODY, BUILTIN_MOTION, BUILTIN_SPAWN, 1.6).unwrap();
     assert_eq!(rules, BUILTIN_RULES);

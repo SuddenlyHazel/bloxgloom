@@ -50,7 +50,7 @@ atlas must not pass through the terrain's 128 × 128 resampler.
 The clips are `idle`, `walk`, `crouch`, `tool_use_left`, and `tool_use_right`.
 Idle/walk loop; crouch clamps at its held final frame; tool clips finish at their
 authored returned-to-rest pose. All are visual-only, with no gameplay root
-motion. The crouch clip does not change collision or create a crouch mechanic.
+motion. The clip supplies the visual crouch pose. Gameplay separately uses server-owned stance to lower collision height, eye height, and movement speed; it cannot stand into solid or unavailable terrain.
 
 ## Native character editor and multiplayer
 
@@ -85,21 +85,19 @@ formats are rejected rather than silently migrated or discarded. Existing world
 folders are not modified by using the new default.
 
 This is a bounded builtin kit, not generic runtime glTF loading, uploaded atlases,
-clothing, physics hair, or a networked crouch/tool mechanic. First-person self-body
-rendering remains unchanged; use the native portrait to inspect your own model.
+clothing, physics hair, or a networked tool animation. Crouch stance is replicated by the server. First person hides the local body; F5 cycles rear and front third-person views, and the native portrait remains available in the editor.
 
 For a repeatable headless native render (same production GPU pipeline):
 
     cargo run -- character-preview character-idle.png idle 0.35
     cargo run -- character-preview character-walk.png walk 0.20
     cargo run -- character-preview character-crouch.png crouch 1.0
+    cargo run --release -- character-gameplay-preview /tmp/character-gameplay
     cargo run -- character-preview character-left-tool.png tool_use_left 0.3
     cargo run -- character-preview character-right-tool.png tool_use_right 0.3
 
 Each image shows the kit from three angles in the lit world. Crouch and tool-use
-are inspectable authored clips here; gameplay does not yet replicate crouch or
-hand-action animation states, so the live path uses idle/walk only. Server
-movement, collisions, inventory and block interactions are unchanged.
+are layered into gameplay: crouch preserves walking leg motion, and local block break/place requests start a right-hand tool swing. Tool cues are presentation feedback and do not authorize edits; other clients receive crouch stance but not tool cues. The server remains authoritative for stance, movement, inventories, and block interactions.
 
 A repeatable two-second, 30 Hz walk sequence can be captured without rebuilding
 the world per frame:

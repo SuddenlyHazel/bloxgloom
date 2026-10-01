@@ -1,7 +1,7 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
 mod third_person;
-pub use third_person::render_third_person_previews;
+pub use third_person::{render_gameplay_animation_previews, render_third_person_previews};
 mod daylight;
 pub use daylight::render_daylight_previews;
 mod block;
@@ -811,7 +811,10 @@ async fn render_previews_at(
     if let PreviewScene::ThirdPerson(shot) = scene {
         camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
         avatar_renderer.set_authored(true);
-        avatar_renderer.set(&queue, &[third_person::avatar(target_xz, target_height)]);
+        avatar_renderer.set(
+            &queue,
+            &[third_person::avatar(shot, target_xz, target_height)],
+        );
     }
     if matches!(scene, PreviewScene::Fire) {
         // The cell has already burned to AIR; do not imply nearby flammable cells are lit.
@@ -1167,6 +1170,8 @@ async fn render_previews_at(
         let mut visuals = [
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_crouch: 0.0,
+                character_tool: None,
                 character_recipe: None,
                 animation: Default::default(),
                 id: 1,
@@ -1197,6 +1202,8 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_crouch: 0.0,
+                character_tool: None,
                 character_recipe: None,
                 animation: Default::default(),
                 id: 2,
@@ -1238,6 +1245,8 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_crouch: 0.0,
+                character_tool: None,
                 character_recipe: None,
                 animation: Default::default(),
                 id: 3,

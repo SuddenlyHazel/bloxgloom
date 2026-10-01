@@ -4,6 +4,7 @@
 mod appearance;
 mod character;
 mod character_asset;
+pub(crate) use character_asset::tool_duration as character_tool_duration;
 mod mesh;
 #[cfg(test)]
 mod tests;
@@ -29,6 +30,8 @@ pub(crate) struct VisualAvatar {
     pub pose: [f32; 4],
     /// Separate from package pose offsets: walk seconds, idle seconds, walk blend.
     pub character_pose: [f32; 3],
+    pub character_crouch: f32,
+    pub character_tool: Option<(bool, f32)>,
     pub character_recipe: Option<crate::appearance::CharacterRecipe>,
     pub airborne: bool,
     pub id: u64,

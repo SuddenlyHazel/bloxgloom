@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn fast_movement_cannot_accelerate_authored_walk_past_normal_playback() {
+    let now = Instant::now();
+    let mut animator = ActorAnimator::default();
+    let mut player = avatar(0.0);
+    player.model = AvatarModel::Player;
+    animator.present_with_local(&mut [player], now, Some(player.id));
+    let mut frame = [player];
+    for step in 1..=25 {
+        player.position.x = step as f32 * 0.32;
+        frame = [player];
+        animator.present_with_local(&mut frame, now + STEP * step, Some(player.id));
+    }
+    assert!(
+        (frame[0].character_pose[0] - 1.25).abs() < 0.01,
+        "one second at eight blocks/sec plays at most 1.25 seconds of animation"
+    );
+}
+
+#[test]
 fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
     let now = Instant::now();
     let mut animator = ActorAnimator::default();
@@ -26,6 +45,8 @@ fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
 fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
         character_pose: [0.0; 3],
+        character_crouch: 0.0,
+        character_tool: None,
         character_recipe: None,
         animation: Default::default(),
         model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),

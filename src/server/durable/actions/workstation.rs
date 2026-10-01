@@ -98,7 +98,10 @@ pub(super) fn place(
         if catalog.block_flags(*block) & SOLID != 0
             && context.clients().values().any(|client| {
                 block_intersects_player(
-                    catalog.player_rules().body(),
+                    catalog
+                        .player_rules()
+                        .for_stance(client.movement.crouching())
+                        .body(),
                     [cell.x, cell.y, cell.z],
                     client.position(),
                 )
@@ -160,7 +163,10 @@ pub(super) fn place(
             || (catalog.block_flags(block) & SOLID != 0
                 && context.clients().values().any(|client| {
                     block_intersects_player(
-                        catalog.player_rules().body(),
+                        catalog
+                            .player_rules()
+                            .for_stance(client.movement.crouching())
+                            .body(),
                         [x, y, z],
                         client.position(),
                     )
@@ -318,7 +324,10 @@ pub(super) fn remove(
                 || (catalog.block_flags(block) & crate::content::SOLID != 0
                     && context.clients().values().any(|client| {
                         block_intersects_player(
-                            catalog.player_rules().body(),
+                            catalog
+                                .player_rules()
+                                .for_stance(client.movement.crouching())
+                                .body(),
                             [x, y, z],
                             client.position(),
                         )

@@ -282,6 +282,9 @@ impl State {
     fn remove_client(&mut self, id: u64) -> Option<Client> {
         players::leaving(self, id);
         let client = self.clients.remove(&id)?;
+        if client.movement.crouching() {
+            movement::clear_stance(self, id);
+        }
         if let Err(error) = self.position_store.save(client.profile, client.position()) {
             self.durability.failed = true;
             tracing::error!(%error, player_id = id, "player position save failed");
@@ -667,6 +670,12 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             ErrorKind::InvalidInput,
             "time command requires durable dispatch",
         )),
+        ClientMessage::SetCrouching { crouching } => {
+            if let Some(client) = state.clients.get_mut(&id) {
+                client.movement.request_crouch(crouching);
+            }
+            Ok(())
+        }
         ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
         ClientMessage::SelectCharacter { recipe } => {
             appearance::select_character(state, id, recipe)

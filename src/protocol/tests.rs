@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn crouch_wire_round_trips_and_rejects_invalid_boolean_or_avatar_identity() {
+    for crouching in [false, true] {
+        let request = ClientMessage::SetCrouching { crouching };
+        let mut bytes = Vec::new();
+        write_client(&mut bytes, &request).unwrap();
+        assert_eq!(read_client(bytes.as_slice()).unwrap(), request);
+        *bytes.last_mut().unwrap() = 2;
+        assert!(read_client(bytes.as_slice()).is_err());
+        let mut bytes = Vec::new();
+        let response = ServerMessage::PlayerStance {
+            entity_id: (1 << 63) | 5,
+            crouching,
+        };
+        write_server(&mut bytes, &response).unwrap();
+        assert!(
+            matches!(read_server(bytes.as_slice()).unwrap(), ServerMessage::PlayerStance { entity_id, crouching: actual } if entity_id == (1 << 63) | 5 && actual == crouching)
+        );
+        assert_eq!(bytes.len(), server_wire_len(&response));
+        *bytes.last_mut().unwrap() = 2;
+        assert!(read_server(bytes.as_slice()).is_err());
+    }
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::PlayerStance {
+                entity_id: 5,
+                crouching: true
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn mossbun_spawn_wire_has_only_an_authenticated_action_identity() {
     let message = ClientMessage::AdminSpawnEntity {
         entity_type: crate::content::MOSSBUN_ENTITY_TYPE,

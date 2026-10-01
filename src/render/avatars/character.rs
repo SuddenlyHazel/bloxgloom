@@ -301,10 +301,12 @@ impl CharacterRenderer {
             });
             let pose = match self.preview_clip {
                 Some((clip, time)) => self.asset.sample(clip, time),
-                None => self.asset.sample_blended(
+                None => self.asset.sample_gameplay(
                     avatar.character_pose[1],
                     avatar.character_pose[0],
                     avatar.character_pose[2],
+                    avatar.character_crouch,
+                    avatar.character_tool,
                 ),
             };
             joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));

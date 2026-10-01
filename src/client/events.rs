@@ -141,6 +141,7 @@ impl ClientApp {
         }
         if matches!(event, WindowEvent::Focused(false)) {
             self.input_modifiers = winit::keyboard::ModifiersState::empty();
+            self.shift_down = false;
         }
         if let WindowEvent::KeyboardInput { event, .. } = &event
             && event.state == ElementState::Pressed
@@ -298,6 +299,7 @@ impl ClientApp {
             }
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();
+                self.request_crouch(self.shift_down);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
@@ -511,7 +513,7 @@ impl ClientApp {
                         KeyCode::KeyA => self.keys.left = pressed,
                         KeyCode::KeyD => self.keys.right = pressed,
                         KeyCode::Space => self.keys.up = pressed,
-                        KeyCode::ShiftLeft | KeyCode::ShiftRight => self.keys.down = pressed,
+                        KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.down = pressed,
                         _ => {}
                     }
                 }
@@ -566,13 +568,8 @@ impl ClientApp {
                     self.set_grab(true);
                 } else if button == MouseButton::Left {
                     self.edit_aimed_block(false);
-                } else if button == MouseButton::Right
-                    && (self.shift_down
-                        || (!self.interact_aimed_mobile()
-                            && !self.open_aimed_kiln()
-                            && !self.open_item_actions()))
-                {
-                    self.edit_aimed_block(true);
+                } else if button == MouseButton::Right {
+                    self.place_or_interact();
                 }
             }
             WindowEvent::MouseWheel { delta, .. } if self.screen == UiScreen::Playing => {

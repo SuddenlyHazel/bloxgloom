@@ -124,6 +124,8 @@ fn render_recipe(
     );
     let avatars = [(-0.65, [0; 4]), (0.65, selection)].map(|(x, cosmetics)| VisualAvatar {
         character_pose: [0.0; 3],
+        character_crouch: 0.0,
+        character_tool: None,
         character_recipe: if x > 0.0 {
             recipe.or_else(|| clip.map(|_| Default::default()))
         } else {

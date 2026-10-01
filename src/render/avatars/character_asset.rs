@@ -2,6 +2,8 @@
 //! Rigid vertices are stored in joint-local space, including inverse binds.
 use glam::{Mat4, Quat, Vec3};
 use serde::Deserialize;
+mod gameplay;
+pub(crate) use gameplay::tool_duration;
 
 pub(super) const JOINT_COUNT: usize = 7;
 pub(super) const BODY_PNG: &[u8] = include_bytes!("../../../assets/models/player/body.png");
@@ -307,6 +309,7 @@ impl CharacterAsset {
     }
 
     /// Blend local transforms before hierarchy evaluation, avoiding matrix lerp.
+    #[cfg(test)]
     pub fn sample_blended(
         &self,
         idle_time: f32,

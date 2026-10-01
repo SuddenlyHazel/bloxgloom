@@ -426,6 +426,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_third_person_previews(std::path::Path::new(&directory))?;
         }
+        Some("character-gameplay-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "character-gameplay-preview".into());
+            if args.next().is_some() {
+                return Err("usage: character-gameplay-preview [directory]".into());
+            }
+            preview::render_gameplay_animation_previews(std::path::Path::new(&directory))?;
+        }
         Some("character-style-preview") => {
             let path = args.next().unwrap_or_else(|| "character-styles.png".into());
             if args.next().is_some() {

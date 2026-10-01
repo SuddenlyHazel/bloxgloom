@@ -201,17 +201,24 @@ pub enum MovementError {
 /// Resolves movement in short axis-aligned steps, preserving the server's
 /// player hitbox and X/Z/Y axis order. Any unavailable collision sample rejects
 /// the whole movement result, so a caller cannot commit a partial position.
+#[cfg(test)]
 pub fn resolve_player_movement(
     view: &VoxelView,
     position: [f32; 3],
     delta: [f32; 3],
 ) -> Result<[f32; 3], MovementError> {
-    crate::physics::resolve_player_movement(
-        view.player_rules().body(),
-        position,
-        delta,
-        |x, y, z| Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0),
-    )
+    resolve_player_movement_with_body(view, view.player_rules().body(), position, delta)
+}
+
+pub(super) fn resolve_player_movement_with_body(
+    view: &VoxelView,
+    body: bloxgloom_host_api::player::Body,
+    position: [f32; 3],
+    delta: [f32; 3],
+) -> Result<[f32; 3], MovementError> {
+    crate::physics::resolve_player_movement(body, position, delta, |x, y, z| {
+        Ok(view.catalog.block_flags(view.block(x, y, z)?) & crate::content::SOLID != 0)
+    })
     .map_err(|error| match error {
         crate::physics::ResolveError::Missing(chunk) => MovementError::MissingChunk(chunk),
         crate::physics::ResolveError::InvalidCoordinates => MovementError::InvalidCoordinates,

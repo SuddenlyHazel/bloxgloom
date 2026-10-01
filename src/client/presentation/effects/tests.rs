@@ -4,6 +4,8 @@ use crate::render::AvatarModel;
 fn avatar(id: u64) -> VisualAvatar {
     VisualAvatar {
         character_pose: [0.0; 3],
+        character_crouch: 0.0,
+        character_tool: None,
         character_recipe: None,
         animation: Default::default(),
         model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),

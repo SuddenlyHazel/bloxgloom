@@ -275,7 +275,14 @@ pub(in crate::server) fn plan(
         }
         if catalog.block_flags(block) & crate::content::SOLID != 0
             && state.clients.values().any(|client| {
-                block_intersects_player(catalog.player_rules().body(), [x, y, z], client.position())
+                block_intersects_player(
+                    catalog
+                        .player_rules()
+                        .for_stance(client.movement.crouching())
+                        .body(),
+                    [x, y, z],
+                    client.position(),
+                )
             })
         {
             return Err(io::Error::new(

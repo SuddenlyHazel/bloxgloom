@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 18;
+const WIRE_VERSION: u8 = 19;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -39,6 +39,9 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    SetCrouching {
+        crouching: bool,
+    },
     MovementReady {
         session: u64,
         reset: u64,
@@ -146,6 +149,10 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    PlayerStance {
+        entity_id: u64,
+        crouching: bool,
+    },
     PlayerTeleport {
         profile: u128,
         session: u64,
@@ -257,6 +264,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
+            ServerMessage::PlayerStance { .. } => 8 + 1,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
             ServerMessage::BundleOffer { .. } => 4 + 32 + 4,
@@ -362,6 +370,10 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::SetCrouching { crouching } => {
+            out.push(20);
+            out.push(u8::from(*crouching));
+        }
         ClientMessage::MovementReady {
             session,
             reset,
@@ -571,6 +583,17 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::PlayerStance {
+            entity_id,
+            crouching,
+        } => {
+            if *entity_id <= 1 << 63 {
+                return Err(invalid("invalid stance entity"));
+            }
+            out.push(27);
+            out.extend(entity_id.to_le_bytes());
+            out.push(u8::from(*crouching));
+        }
         ServerMessage::PlayerTeleport {
             profile,
             session,
@@ -1152,6 +1175,13 @@ pub fn read_client_with_catalog(
                 next_seq,
             }
         }
+        20 => ClientMessage::SetCrouching {
+            crouching: match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid crouch state")),
+            },
+        },
         19 => {
             let recipe = match c.u8()? {
                 0 => None,
@@ -1405,6 +1435,21 @@ pub fn read_server_with_catalog(
                 cells.push([c.i32()?, c.i32()?, c.i32()?]);
             }
             ServerMessage::FireBursts { cells }
+        }
+        27 => {
+            let entity_id = c.u64()?;
+            if entity_id <= 1 << 63 {
+                return Err(invalid("invalid stance entity"));
+            }
+            let crouching = match c.u8()? {
+                0 => false,
+                1 => true,
+                _ => return Err(invalid("invalid crouch state")),
+            };
+            ServerMessage::PlayerStance {
+                entity_id,
+                crouching,
+            }
         }
         26 => {
             let profile = c.u128()?;

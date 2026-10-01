@@ -31,8 +31,10 @@ const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
 mod camera;
 mod character;
+mod character_motion;
 pub(crate) mod drops;
 mod fire;
+mod interactions;
 use drops::DropAnimator;
 use fire::FireAnimator;
 mod movement;
@@ -43,7 +45,7 @@ pub(crate) use mobile_tests::MobileProbe;
 #[cfg(test)]
 pub(crate) use tests::ReplicationProbe;
 pub(crate) mod trace;
-use movement::predict_player_movement;
+use movement::predict_player_movement_with_stance;
 
 #[cfg(test)]
 fn edit_for_hit(
@@ -309,6 +311,7 @@ struct ClientApp {
     fire_animator: FireAnimator,
     actor_animator: actors::ActorAnimator,
     character_editor: character::CharacterEditor,
+    character_motion: character_motion::Motion,
     kiln_target: Option<([i32; 3], u64)>,
     kiln_source: Option<u8>,
     action_choices: Vec<actions::ActionChoice>,
@@ -335,6 +338,8 @@ struct ClientApp {
     world_seed: Option<u64>,
     world_time: world_time::Clock,
     owned_entity_id: Option<u64>,
+    player_stances: BTreeMap<u64, bool>,
+    crouch_requested: bool,
     player_roster: Vec<crate::protocol::PlayerSummary>,
     roster_revision: u64,
     player_state_snapshot: u64,
@@ -396,6 +401,7 @@ impl ClientApp {
             fire_animator: FireAnimator::new(),
             actor_animator: actors::ActorAnimator::default(),
             character_editor: character::CharacterEditor::default(),
+            character_motion: Default::default(),
             kiln_target: None,
             kiln_source: None,
             action_choices: Vec::new(),
@@ -422,6 +428,8 @@ impl ClientApp {
             world_seed: None,
             world_time: world_time::Clock::default(),
             owned_entity_id: None,
+            player_stances: BTreeMap::new(),
+            crouch_requested: false,
             player_roster: vec![],
             roster_revision: 0,
             player_state_snapshot: 0,
@@ -467,7 +475,13 @@ impl ClientApp {
 
     fn camera(&self) -> Camera {
         Camera {
-            position: self.position + Vec3::Y * self.catalog.player_rules().eye_height(),
+            position: self.position
+                + Vec3::Y
+                    * self
+                        .catalog
+                        .player_rules()
+                        .for_stance(self.crouching())
+                        .eye_height(),
             yaw: self.yaw,
             pitch: self.pitch,
             fov_y_radians: self.config.fov_degrees.to_radians(),
@@ -503,6 +517,9 @@ impl ClientApp {
             self.active_action = None;
         }
         self.set_grab(screen == UiScreen::Playing);
+        if screen == UiScreen::Playing {
+            self.request_crouch(self.shift_down);
+        }
         self.refresh_layout();
         if screen == UiScreen::Playing && !self.grabbed {
             self.show_status("Click to capture mouse");
@@ -846,6 +863,9 @@ impl ClientApp {
     }
 
     fn set_grab(&mut self, grab: bool) {
+        if !grab {
+            self.request_crouch(false);
+        }
         if let Some(window) = &self.window {
             if grab {
                 let success = window
@@ -1034,6 +1054,22 @@ impl ClientApp {
                     self.owned_entity_id = Some(id);
                 }
             }
+            ServerMessage::PlayerStance {
+                entity_id,
+                crouching,
+            } => {
+                if crouching {
+                    if self.player_stances.len() < 256
+                        || self.player_stances.contains_key(&entity_id)
+                    {
+                        self.player_stances.insert(entity_id, true);
+                    } else {
+                        self.fail_session("Player stance list exceeds admission bound");
+                    }
+                } else {
+                    self.player_stances.remove(&entity_id);
+                }
+            }
             ServerMessage::ActionSession {
                 epoch,
                 next_seq,
@@ -1052,8 +1088,13 @@ impl ClientApp {
                 }
                 let mut predicted = Vec3::new(x, y, z);
                 for (_, delta) in &self.unacked {
-                    predicted =
-                        predict_player_movement(&self.chunks, &self.catalog, predicted, *delta);
+                    predicted = predict_player_movement_with_stance(
+                        &self.chunks,
+                        &self.catalog,
+                        predicted,
+                        *delta,
+                        self.crouching(),
+                    );
                 }
                 self.position = predicted;
             }
@@ -1464,6 +1505,7 @@ impl ClientApp {
             * self
                 .catalog
                 .player_rules()
+                .for_stance(self.crouching())
                 .motion()
                 .intent_blocks_per_second
             * dt.min(0.05);
@@ -1482,8 +1524,13 @@ impl ClientApp {
             dy: delta.y,
             dz: delta.z,
         }) {
-            self.position =
-                predict_player_movement(&self.chunks, &self.catalog, self.position, delta);
+            self.position = predict_player_movement_with_stance(
+                &self.chunks,
+                &self.catalog,
+                self.position,
+                delta,
+                self.crouching(),
+            );
             self.unacked.push_back((seq, delta));
         }
     }
@@ -1597,6 +1644,7 @@ impl ClientApp {
                     *id = action_id;
                 }
                 self.queue_command(command);
+                self.character_motion.swing(true, Instant::now());
             } else {
                 self.show_status(if item.is_some() {
                     "Selected item cannot be placed"
@@ -1771,6 +1819,14 @@ impl ClientApp {
         self.actor_animator
             .present_with_local(&mut visual_avatars, now, self.owned_entity_id);
         for avatar in &mut visual_avatars {
+            avatar.character_crouch = if self.player_stances.contains_key(&avatar.id) {
+                1.0
+            } else {
+                0.0
+            };
+            if Some(avatar.id) == self.owned_entity_id {
+                self.character_motion.apply(avatar, now);
+            }
             if let Some(pose) = self
                 .package_ui
                 .as_ref()

@@ -21,6 +21,42 @@ fn view() -> VoxelView {
     VoxelView::from_chunks([air_chunk(key(0, 0, 0))]).unwrap()
 }
 
+#[test]
+fn crouch_geometry_budget_and_unknown_standing_are_authoritative() {
+    let mut chunk = air_chunk(key(0, 0, 0));
+    chunk
+        .blocks
+        .set(Chunk::index([1, 3, 1]).unwrap(), crate::world::STONE);
+    let view = VoxelView::from_chunks([chunk]).unwrap();
+    let mut state = MovementState::new([1.5, 1.5, 1.5], 0);
+    state.request_crouch(true);
+    let batch = process_movement_batch(&view, state, &[]);
+    assert!(batch.state.crouching());
+    let mut state = batch.state;
+    state.request_crouch(false);
+    let blocked = process_movement_batch(&view, state, &[]);
+    assert!(blocked.state.crouching(), "standing head intersects roof");
+    let unknown = VoxelView::from_chunks(Vec::<Chunk>::new()).unwrap();
+    let deferred = process_movement_batch(&unknown, blocked.state, &[command(1, [0.1, 0.0, 0.0])]);
+    assert!(deferred.state.crouching());
+    assert_eq!(deferred.consumed, 0);
+    assert!(matches!(deferred.stop_reason, StopReason::MissingChunk(_)));
+
+    let mut state = MovementState::new([1.5, 1.0, 1.5], 0);
+    for _ in 0..20 {
+        state.advance_idle_tick(view.player_rules());
+    }
+    state.request_crouch(true);
+    let limited = process_movement_batch(&view, state, &[command(1, [0.1, 0.0, 0.0])]);
+    assert_eq!(
+        limited.consumed, 0,
+        "standing credit cannot finance a crouched burst"
+    );
+    assert_eq!(limited.stop_reason, StopReason::MovementBudget);
+    let next = process_movement_batch(&view, limited.state, &[command(1, [0.1, 0.0, 0.0])]);
+    assert_eq!(next.consumed, 1);
+}
+
 fn command(seq: u64, delta: [f32; 3]) -> MovementCommand {
     MovementCommand { seq, delta }
 }

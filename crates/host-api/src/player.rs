@@ -132,6 +132,21 @@ impl PlayerRules {
         Ok(())
     }
 
+    /// Runtime stance derived from the frozen player contract. The standing
+    /// contract and save identity stay unchanged; crouching lowers the body and
+    /// eye while retaining feet/width and reduces both intent and server budget.
+    pub fn for_stance(mut self, crouching: bool) -> Self {
+        if crouching {
+            let base = self.body.foot_inset;
+            self.body.middle_height = base + (self.body.middle_height - base) * 0.65;
+            self.body.head_height = base + (self.body.head_height - base) * 0.65;
+            self.eye_height = base + (self.eye_height - base) * 0.65;
+            self.motion.intent_blocks_per_second *= 0.4;
+            self.motion.budget_blocks_per_second *= 0.4;
+        }
+        self
+    }
+
     pub const fn body(self) -> Body {
         self.body
     }

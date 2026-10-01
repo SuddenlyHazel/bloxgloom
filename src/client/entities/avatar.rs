@@ -31,6 +31,8 @@ fn project_avatar(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     let cosmetics = appearance.legacy();
     Ok(Some(VisualAvatar {
         character_pose: [0.0; 3],
+        character_crouch: 0.0,
+        character_tool: None,
         character_recipe: appearance.character,
         animation: Default::default(),
         model: crate::render::AvatarModel::Player,

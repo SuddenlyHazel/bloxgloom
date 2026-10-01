@@ -203,10 +203,13 @@ pub(in crate::server) fn plan_interact(
         .get(&client_id)
         .ok_or_else(|| io::Error::new(ErrorKind::NotConnected, "entity client disconnected"))?;
     let position = client.position();
+    let actor_rules = state
+        .world
+        .catalog()
+        .player_rules()
+        .for_stance(client.movement.crouching());
     let distance_sq = (target[0] as f32 + 0.5 - position[0]).powi(2)
-        + (target[1] as f32 + 0.5
-            - (position[1] + state.world.catalog().player_rules().eye_height()))
-        .powi(2)
+        + (target[1] as f32 + 0.5 - (position[1] + actor_rules.eye_height())).powi(2)
         + (target[2] as f32 + 0.5 - position[2]).powi(2);
     if distance_sq > crate::server::EDIT_REACH * crate::server::EDIT_REACH
         || !client.interested(target_cell.chunk())
@@ -243,7 +246,14 @@ pub(in crate::server) fn plan_interact(
     let read_radius = descriptor.interaction_read_radius();
     let reads_neighbours = descriptor.interaction_reads_neighbours();
     let catalog = state.world.catalog_arc();
-    let sight_reads = interaction_sight(state, position, target, &snapshot, &catalog)?;
+    let sight_reads = interaction_sight(
+        state,
+        position,
+        target,
+        &snapshot,
+        &catalog,
+        actor_rules.eye_height(),
+    )?;
     let view = capture_view_for_plan(state, &snapshot.location, read_radius)?;
     let neighbours = if reads_neighbours {
         capture_entity_view_for_plan(state, &snapshot.location, read_radius, snapshot.id)?
@@ -352,8 +362,9 @@ fn interaction_sight(
     target: [i32; 3],
     snapshot: &EntitySnapshot,
     catalog: &crate::content::Catalog,
+    eye_height: f32,
 ) -> io::Result<BTreeSet<ChunkKey>> {
-    let eye = glam::Vec3::from_array(actor) + glam::Vec3::Y * catalog.player_rules().eye_height();
+    let eye = glam::Vec3::from_array(actor) + glam::Vec3::Y * eye_height;
     let center = match snapshot.location {
         EntityLocation::Mobile { position } => {
             let body = catalog
@@ -842,7 +853,10 @@ fn plan_reaction_removal(
             || (catalog.block_flags(block) & crate::content::SOLID != 0
                 && state.clients.values().any(|client| {
                     crate::server::block_intersects_player(
-                        catalog.player_rules().body(),
+                        catalog
+                            .player_rules()
+                            .for_stance(client.movement.crouching())
+                            .body(),
                         [x, y, z],
                         client.position(),
                     )

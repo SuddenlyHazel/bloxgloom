@@ -7,14 +7,25 @@ use std::collections::HashMap;
 use std::sync::Arc;
 mod teleport;
 
+#[cfg(test)]
 pub(super) fn predict_player_movement(
     chunks: &HashMap<ChunkKey, Arc<Chunk>>,
     catalog: &Catalog,
     position: Vec3,
     delta: Vec3,
 ) -> Vec3 {
+    predict_player_movement_with_stance(chunks, catalog, position, delta, false)
+}
+
+pub(super) fn predict_player_movement_with_stance(
+    chunks: &HashMap<ChunkKey, Arc<Chunk>>,
+    catalog: &Catalog,
+    position: Vec3,
+    delta: Vec3,
+    crouching: bool,
+) -> Vec3 {
     crate::physics::resolve_player_movement(
-        catalog.player_rules().body(),
+        catalog.player_rules().for_stance(crouching).body(),
         position.to_array(),
         delta.to_array(),
         |x, y, z| {

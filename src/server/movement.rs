@@ -5,11 +5,13 @@
 //! command and every later command unresolved so the coordinator can load the
 //! missing authoritative data before retrying.
 
-use super::voxel_view::{MissingChunk, MovementError, VoxelView, resolve_player_movement};
+use super::voxel_view::{MissingChunk, MovementError, VoxelView};
 use bloxgloom_host_api::player::PlayerRules;
 use std::time::Duration;
 
 mod coordinator;
+mod stance;
+pub(super) use stance::clear as clear_stance;
 mod teleport;
 pub(super) use coordinator::advance_players;
 pub(super) use teleport::{Reset, ready as movement_ready, teleport};
@@ -48,6 +50,8 @@ pub struct MovementState {
     position: [f32; 3],
     last_seq: u64,
     credit_nanoblocks: u32,
+    crouching: bool,
+    requested_crouch: bool,
 }
 
 impl MovementState {
@@ -56,12 +60,24 @@ impl MovementState {
             position,
             last_seq,
             credit_nanoblocks: 0,
+            crouching: false,
+            requested_crouch: false,
         }
     }
 
     #[inline]
     pub fn position(self) -> [f32; 3] {
         self.position
+    }
+
+    pub fn crouching(self) -> bool {
+        self.crouching
+    }
+    pub(super) fn stance_pending(self) -> bool {
+        self.crouching != self.requested_crouch
+    }
+    pub(super) fn request_crouch(&mut self, crouching: bool) {
+        self.requested_crouch = crouching;
     }
 
     #[inline]
@@ -80,6 +96,7 @@ impl MovementState {
     /// job. The coordinator calls exactly one of this or
     /// `process_movement_batch` for each player on each tick.
     pub fn advance_idle_tick(&mut self, rules: PlayerRules) {
+        let rules = rules.for_stance(self.crouching);
         self.credit_nanoblocks = self
             .credit_nanoblocks
             .saturating_add(credit_per_tick(rules))
@@ -140,8 +157,17 @@ pub fn process_movement_batch(
     mut state: MovementState,
     commands: &[MovementCommand],
 ) -> MovementBatch {
-    let rules = view.player_rules();
-    state.advance_idle_tick(rules);
+    if let Err(missing) = stance::resolve(view, &mut state) {
+        return MovementBatch {
+            state,
+            acknowledgments: vec![],
+            consumed: 0,
+            first_missing_chunk: Some(missing),
+            stop_reason: StopReason::MissingChunk(missing),
+        };
+    }
+    state.advance_idle_tick(view.player_rules());
+    let rules = view.player_rules().for_stance(state.crouching);
 
     let work_count = commands.len().min(MAX_COMMANDS_PER_TICK);
     let mut acknowledgments = Vec::with_capacity(work_count);
@@ -175,7 +201,12 @@ pub fn process_movement_batch(
             };
         }
 
-        let next_position = match resolve_player_movement(view, position, command.delta) {
+        let next_position = match super::voxel_view::resolve_player_movement_with_body(
+            view,
+            rules.body(),
+            position,
+            command.delta,
+        ) {
             Ok(position) => position,
             Err(MovementError::MissingChunk(missing)) => {
                 return MovementBatch {

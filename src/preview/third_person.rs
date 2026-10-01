@@ -6,6 +6,17 @@ use crate::render::camera::Perspective;
 pub(super) struct Shot {
     pub(super) perspective: Perspective,
     pub(super) wall: bool,
+    pub(super) animation: GameplayPose,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum GameplayPose {
+    Idle,
+    Walk,
+    Crouch,
+    CrouchWalk,
+    Tool(bool),
+    CrouchWalkTool,
 }
 
 pub fn render_third_person_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
@@ -25,7 +36,41 @@ pub fn render_third_person_previews(directory: &Path) -> Result<(), Box<dyn Erro
                 orientation: None,
             }],
             (0, 0),
-            PreviewScene::ThirdPerson(Shot { perspective, wall }),
+            PreviewScene::ThirdPerson(Shot {
+                perspective,
+                wall,
+                animation: GameplayPose::Idle,
+            }),
+        ))?;
+    }
+    Ok(())
+}
+
+pub fn render_gameplay_animation_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    for (name, animation) in [
+        ("walk.png", GameplayPose::Walk),
+        ("crouch.png", GameplayPose::Crouch),
+        ("crouch-walk.png", GameplayPose::CrouchWalk),
+        ("tool-left.png", GameplayPose::Tool(false)),
+        ("tool-right.png", GameplayPose::Tool(true)),
+        ("crouch-walk-tool.png", GameplayPose::CrouchWalkTool),
+    ] {
+        pollster::block_on(render_previews(
+            vec![PreviewOutput {
+                path: directory.join(name),
+                width: 1280,
+                height: 720,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: None,
+            }],
+            (0, 0),
+            PreviewScene::ThirdPerson(Shot {
+                perspective: Perspective::Front,
+                wall: false,
+                animation,
+            }),
         ))?;
     }
     Ok(())
@@ -94,7 +139,7 @@ pub(super) fn prepare(
     camera
 }
 
-pub(super) fn avatar(target: (i32, i32), height: i32) -> render::VisualAvatar {
+pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::VisualAvatar {
     // Go through the canonical public appearance codec instead of supplying an
     // unvalidated recipe directly to the renderer.
     let appearance = crate::appearance::AppearanceState {
@@ -112,7 +157,31 @@ pub(super) fn avatar(target: (i32, i32), height: i32) -> render::VisualAvatar {
         model: render::AvatarModel::Player,
         animation: Default::default(),
         pose: [std::f32::consts::PI, 0.0, 0.0, 0.0],
-        character_pose: [0.0, 0.35, 0.0],
+        character_pose: [
+            0.2,
+            0.35,
+            if matches!(
+                shot.animation,
+                GameplayPose::Walk | GameplayPose::CrouchWalk | GameplayPose::CrouchWalkTool
+            ) {
+                1.0
+            } else {
+                0.0
+            },
+        ],
+        character_crouch: if matches!(
+            shot.animation,
+            GameplayPose::Crouch | GameplayPose::CrouchWalk | GameplayPose::CrouchWalkTool
+        ) {
+            1.0
+        } else {
+            0.0
+        },
+        character_tool: match shot.animation {
+            GameplayPose::Tool(right) => Some((right, 0.4)),
+            GameplayPose::CrouchWalkTool => Some((true, 0.4)),
+            _ => None,
+        },
         character_recipe: appearance.character,
         airborne: false,
         position: Vec3::new(

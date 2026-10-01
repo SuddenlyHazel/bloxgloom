@@ -125,7 +125,10 @@ impl Track {
                 0.0
             };
             self.gait += (moving - self.gait) * (1.0 - (-18.0 * dt).exp());
-            self.stride = (self.stride + distance / 1.08).rem_euclid(3600.0);
+            // The authored walk cycle is 0.8 seconds. Cap playback at 1.25x
+            // so fast/flying movement cannot turn it into a nine-cycle/sec blur.
+            let phase_step = (distance / 4.0).min(dt * 1.25);
+            self.stride = (self.stride + phase_step).rem_euclid(3600.0);
             visual.character_pose[0] = self.stride;
             visual.character_pose[1] = self.age;
             visual.character_pose[2] = self.gait;

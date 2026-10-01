@@ -7,6 +7,9 @@ impl ClientApp {
     pub(super) fn retire_session(&mut self) {
         self.disconnected = true;
         self.character_editor = Default::default();
+        self.character_motion = Default::default();
+        self.player_stances.clear();
+        self.crouch_requested = false;
         if let Some(lane) = self.player_services.take() {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }

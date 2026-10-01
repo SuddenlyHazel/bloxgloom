@@ -217,3 +217,70 @@ fn authored_material_ids_and_face_layers_stay_bounded() {
     let reader = decoder.read_info().unwrap();
     assert_eq!((reader.info().width, reader.info().height), (32, 32));
 }
+
+#[test]
+fn gameplay_tools_overlay_crouch_and_walk_without_replacing_the_legs() {
+    let asset = CharacterAsset::builtin();
+    let crouched_walk = asset.sample_gameplay(0.35, 0.2, 1.0, 1.0, None);
+    let standing_walk = asset.sample_gameplay(0.35, 0.2, 1.0, 0.0, None);
+    assert!(!crouched_walk[0].abs_diff_eq(standing_walk[0], 0.001));
+    assert!(!crouched_walk[5].abs_diff_eq(standing_walk[5], 0.001));
+    let still_crouch = asset.sample_gameplay(0.35, 0.2, 0.0, 1.0, None);
+    assert!(!crouched_walk[5].abs_diff_eq(still_crouch[5], 0.001));
+    for right in [false, true] {
+        let active = asset.sample_gameplay(0.35, 0.2, 1.0, 1.0, Some((right, 0.4)));
+        for index in [0, 5, 6] {
+            assert!(active[index].abs_diff_eq(crouched_walk[index], 0.00001));
+        }
+        let arm = if right { 4 } else { 3 };
+        assert!(!active[arm].abs_diff_eq(crouched_walk[arm], 0.001));
+        assert!(!active[1].abs_diff_eq(crouched_walk[1], 0.001));
+        let clip = asset
+            .clips
+            .iter()
+            .find(|clip| {
+                clip.name
+                    == if right {
+                        "tool_use_right"
+                    } else {
+                        "tool_use_left"
+                    }
+            })
+            .unwrap();
+        assert!((clip.duration - tool_duration(right)).abs() < 0.00001);
+        let completed =
+            asset.sample_gameplay(0.35, 0.2, 1.0, 1.0, Some((right, tool_duration(right))));
+        let held = asset.sample_gameplay(0.35, 0.2, 1.0, 1.0, Some((right, 600.0)));
+        for (index, matrix) in completed.iter().enumerate() {
+            assert!(matrix.abs_diff_eq(crouched_walk[index], 0.00001));
+            assert!(matrix.abs_diff_eq(held[index], 0.00001));
+        }
+    }
+}
+
+#[test]
+fn gameplay_blends_remain_finite_and_no_layers_preserve_locomotion() {
+    let asset = CharacterAsset::builtin();
+    for step in 0..=100 {
+        let weight = step as f32 / 100.0;
+        let locomotion = asset.sample_blended(0.35, 0.2, weight);
+        let no_layers = asset.sample_gameplay(0.35, 0.2, weight, 0.0, None);
+        for (actual, expected) in no_layers.iter().zip(locomotion) {
+            assert!(actual.abs_diff_eq(expected, 0.00001));
+        }
+        let layered = asset.sample_gameplay(0.35, 0.2, weight, weight, Some((true, weight * 0.8)));
+        assert!(
+            layered
+                .iter()
+                .all(|matrix| matrix.is_finite() && matrix.determinant() > 0.0)
+        );
+    }
+    let invalid = asset.sample_gameplay(
+        f32::NAN,
+        f32::INFINITY,
+        f32::NAN,
+        f32::NAN,
+        Some((false, f32::NAN)),
+    );
+    assert!(invalid.iter().all(|matrix| matrix.is_finite()));
+}

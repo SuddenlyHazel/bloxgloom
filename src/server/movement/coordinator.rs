@@ -16,7 +16,7 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
     let rules = state.world.catalog().player_rules();
     let mut active = Vec::new();
     for (&id, client) in &mut state.clients {
-        if client.pending_moves.is_empty() {
+        if client.pending_moves.is_empty() && !client.movement.stance_pending() {
             client.movement.advance_idle_tick(rules);
         } else {
             active.push(id);
@@ -119,7 +119,9 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
 
     let mut missing = HashSet::new();
     let mut disconnected = Vec::new();
+    let mut position_messages = Vec::new();
     let mut player_positions = Vec::with_capacity(active.len());
+    let mut stance_changes = Vec::new();
     for owner in results.owners {
         for job in owner.jobs {
             let id = job.key.job_id;
@@ -136,6 +138,9 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             for _ in 0..batch.consumed {
                 client.pending_moves.pop_front();
             }
+            if client.movement.crouching() != batch.state.crouching() {
+                stance_changes.push((id, batch.state.crouching()));
+            }
             client.movement = batch.state;
             let [x, y, z] = client.position();
             client.center = world_to_chunk(x.floor() as i32, y.floor() as i32, z.floor() as i32).0;
@@ -146,18 +151,29 @@ pub(crate) fn advance_players(state: &mut State, tick: TickId) -> io::Result<Wor
             // reliable outbound queue when a client is rendering chunks.
             if let Some(acknowledgment) = batch.acknowledgments.last() {
                 let [x, y, z] = acknowledgment.position;
-                if !client.enqueue(ServerMessage::Position {
-                    ack_seq: acknowledgment.seq,
-                    x,
-                    y,
-                    z,
-                }) {
-                    disconnected.push(id);
-                }
+                position_messages.push((
+                    id,
+                    ServerMessage::Position {
+                        ack_seq: acknowledgment.seq,
+                        x,
+                        y,
+                        z,
+                    },
+                ));
             }
             if let Some(chunk) = batch.first_missing_chunk {
                 missing.insert(chunk.key);
             }
+        }
+    }
+    // Clients must know the collision stance before replaying outstanding
+    // predicted motion over an authoritative position acknowledgement.
+    super::stance::broadcast(state, &stance_changes);
+    for (id, message) in position_messages {
+        if let Some(client) = state.clients.get(&id)
+            && !client.enqueue(message)
+        {
+            disconnected.push(id);
         }
     }
     for id in disconnected {

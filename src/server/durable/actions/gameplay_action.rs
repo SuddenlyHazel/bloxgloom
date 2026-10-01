@@ -42,6 +42,10 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         .get(&client_id)
         .ok_or_else(|| denied("actor disconnected"))?;
     let position = client.position();
+    let eye_height = catalog
+        .player_rules()
+        .for_stance(client.movement.crouching())
+        .eye_height();
     let before = client.inventory.clone();
     let mut reads = TerrainReads::default();
     let mut cell = None;
@@ -87,7 +91,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             {
                 return Err(denied("block action target changed"));
             }
-            sight(state, &mut reads, position, target, false)?;
+            sight(state, &mut reads, position, target, false, eye_height)?;
             cell = Some(target);
         }
         Target::Entity(key) => {
@@ -138,6 +142,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
                     snapshot.location,
                     crate::server::entities::EntityLocation::Mobile { .. }
                 ),
+                eye_height,
             )?;
             cell = Some(target);
             entity = Some(id.get());
@@ -224,7 +229,14 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         }
         if catalog.block_flags(block) & crate::content::SOLID != 0
             && state.clients.values().any(|client| {
-                block_intersects_player(catalog.player_rules().body(), [x, y, z], client.position())
+                block_intersects_player(
+                    catalog
+                        .player_rules()
+                        .for_stance(client.movement.crouching())
+                        .body(),
+                    [x, y, z],
+                    client.position(),
+                )
             })
         {
             return Err(denied("gameplay block overlaps a player"));
@@ -296,7 +308,8 @@ fn verify_reach(
     {
         return Err(denied("target outside world or interest"));
     }
-    let eye = Vec3::from_array(client.position()) + Vec3::Y * rules.eye_height();
+    let eye = Vec3::from_array(client.position())
+        + Vec3::Y * rules.for_stance(client.movement.crouching()).eye_height();
     let center = Vec3::from_array(target.map(|n| n as f32 + 0.5));
     if !eye.is_finite() || (center - eye).length() > EDIT_REACH {
         return Err(denied("action target out of reach"));
@@ -328,9 +341,9 @@ fn sight(
     position: [f32; 3],
     target: [i32; 3],
     mobile: bool,
+    eye_height: f32,
 ) -> io::Result<()> {
-    let eye =
-        Vec3::from_array(position) + Vec3::Y * state.world.catalog().player_rules().eye_height();
+    let eye = Vec3::from_array(position) + Vec3::Y * eye_height;
     let center = Vec3::from_array(target.map(|n| n as f32 + 0.5));
     let delta = center - eye;
     let mut missing = BTreeSet::new();

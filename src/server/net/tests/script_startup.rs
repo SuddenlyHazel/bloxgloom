@@ -22,6 +22,8 @@ mod bundle_ui;
 mod combined;
 #[path = "script_startup/creature.rs"]
 mod creature;
+#[path = "script_startup/crouch.rs"]
+mod crouch;
 #[path = "script_startup/drop_policy.rs"]
 mod drop_policy;
 #[path = "script_startup/gameplay.rs"]

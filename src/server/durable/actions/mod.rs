@@ -324,7 +324,13 @@ fn plan_block_edit(
         ));
     }
     let distance_sq = (x as f32 + 0.5 - position[0]).powi(2)
-        + (y as f32 + 0.5 - (position[1] + catalog.player_rules().eye_height())).powi(2)
+        + (y as f32 + 0.5
+            - (position[1]
+                + catalog
+                    .player_rules()
+                    .for_stance(client.movement.crouching())
+                    .eye_height()))
+        .powi(2)
         + (z as f32 + 0.5 - position[2]).powi(2);
     if distance_sq > EDIT_REACH * EDIT_REACH || !client.interested(world_to_chunk(x, y, z).0) {
         return Err(io::Error::new(
@@ -393,7 +399,14 @@ fn plan_block_edit(
         }
         if has(block, crate::content::SOLID)
             && state.clients.values().any(|other| {
-                block_intersects_player(catalog.player_rules().body(), [x, y, z], other.position())
+                block_intersects_player(
+                    catalog
+                        .player_rules()
+                        .for_stance(other.movement.crouching())
+                        .body(),
+                    [x, y, z],
+                    other.position(),
+                )
             })
         {
             return Err(io::Error::new(
@@ -591,7 +604,14 @@ fn plan_gameplay_removals(
     for &(x, y, z, block) in &plan.edits {
         if catalog.block_flags(block) & crate::content::SOLID != 0
             && state.clients.values().any(|client| {
-                block_intersects_player(catalog.player_rules().body(), [x, y, z], client.position())
+                block_intersects_player(
+                    catalog
+                        .player_rules()
+                        .for_stance(client.movement.crouching())
+                        .body(),
+                    [x, y, z],
+                    client.position(),
+                )
             })
         {
             return Err(io::Error::new(
