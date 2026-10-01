@@ -1,4 +1,5 @@
 mod appearance;
+mod audio;
 mod client;
 mod config;
 mod content;
@@ -70,6 +71,53 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "world-v21"
     };
     match args.next().as_deref() {
+        Some("audio-preview") => {
+            let usage = "usage: audio-preview <rain|storm|wind|off> <seconds> <output.wav> [seed]";
+            let preset = args
+                .next()
+                .and_then(|s| audio::Preset::parse(&s))
+                .ok_or(usage)?;
+            let seconds: f32 = args.next().ok_or(usage)?.parse()?;
+            let path = args.next().ok_or(usage)?;
+            let seed = args
+                .next()
+                .map(|s| s.parse::<u32>())
+                .transpose()?
+                .unwrap_or(1);
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            audio::render_preview(preset, seconds, std::path::Path::new(&path), seed)?;
+        }
+        Some("audio-file") => {
+            let usage = "usage: audio-file <input.wav> [seconds]";
+            let path = args.next().ok_or(usage)?;
+            let seconds = args
+                .next()
+                .map(|s| s.parse::<f32>())
+                .transpose()?
+                .unwrap_or(10.0);
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            audio::play_file(std::path::Path::new(&path), seconds)?;
+        }
+        Some("audio-play") => {
+            let usage = "usage: audio-play <rain|storm|wind|off> [seconds]";
+            let preset = args
+                .next()
+                .and_then(|s| audio::Preset::parse(&s))
+                .ok_or(usage)?;
+            let seconds = args
+                .next()
+                .map(|s| s.parse::<f32>())
+                .transpose()?
+                .unwrap_or(10.0);
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            audio::play_preview(preset, seconds)?;
+        }
         None | Some("local") => {
             let save_dir = args.next().unwrap_or_else(|| default_world.to_owned());
             if args.next().is_some() {

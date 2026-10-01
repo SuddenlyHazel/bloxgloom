@@ -158,10 +158,10 @@ impl AudioOutput {
 impl Drop for AudioOutput {
     fn drop(&mut self) {
         self.shared.shutdown.store(true, Ordering::Release);
-        if self.done.recv_timeout(SHUTDOWN_WAIT).is_ok() {
-            if let Some(worker) = self.worker.take() {
-                let _ = worker.join();
-            }
+        if self.done.recv_timeout(SHUTDOWN_WAIT).is_ok()
+            && let Some(worker) = self.worker.take()
+        {
+            let _ = worker.join();
         }
         // Dropping an unfinished handle detaches it. A blocked host driver must
         // never block window destruction; the worker still owns all its resources.

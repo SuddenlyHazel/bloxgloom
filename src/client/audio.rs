@@ -49,6 +49,12 @@ impl State {
         self.next_voice = next;
         if let Some(output) = &self.output {
             output.try_send(Command::Click(id));
+            if self.preset == Preset::Storm {
+                output.try_send(Command::Thunder {
+                    distance: 1200.0,
+                    angle: 0.7,
+                });
+            }
         }
     }
     pub(super) fn poll_listener(&mut self, position: [f32; 3], yaw: f32, now: Instant) {
