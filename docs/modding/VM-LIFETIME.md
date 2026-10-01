@@ -97,8 +97,9 @@ full allowance rather than only its current use. Client worker families admit
 at most **8 entry realms**, and an observer lane at most **32**. Admission failure
 is reported rather than evicting another module's retained state. Each engine's
 immutable source/bytecode cache has independent limits of **128 entries and
-4 MiB**; cache eviction only causes recompilation. These reservations bound Lua
-heaps, not total Rust/network/graphics process memory.
+4 MiB**; cache eviction only causes recompilation. Client syntax readiness temporarily reserves its separate **16 MiB** compiler
+VM against the same process budget. These reservations bound Lua heaps, not
+total Rust/network/graphics process memory.
 
 An error retires retained state rather than pretending partial Lua mutations
 were rolled back. A subsequent admitted callback initializes fresh state; the shared retained

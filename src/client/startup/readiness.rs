@@ -4,6 +4,8 @@ use super::{ClientBundle, Duration, Instant, Lua, identity};
 /// Compile every delivered source without executing it. Dormant view/replica
 /// callbacks must not postpone a syntax failure until after ContentReady.
 pub(super) fn validate_sources(bundle: &ClientBundle) -> Result<(), String> {
+    let _reservation = crate::server::script_runtime::Reservation::acquire(16 * 1024 * 1024)
+        .map_err(|error| format!("client module validation: {error}"))?;
     let lua = Lua::new();
     lua.set_memory_limit(16 * 1024 * 1024)
         .map_err(|error| error.to_string())?;
