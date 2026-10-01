@@ -19,6 +19,22 @@ pub(super) fn install<'scope>(
     rejected: &'scope RefCell<Option<Error>>,
 ) -> mlua::Result<()> {
     host.set(
+        "configure_spawn",
+        scope.create_function(|_, (reference, key, options): (Value, Value, Value)| {
+            checked(rejected, || {
+                let Value::UserData(reference) = reference else {
+                    return Err(invalid("expected transaction-local spawn reference"));
+                };
+                let reference = reference
+                    .borrow::<SpawnRef>()
+                    .map_err(|_| invalid("expected transaction-local spawn reference"))?;
+                context
+                    .borrow_mut()
+                    .configure_spawn(&reference.0, parse_spawn(key, options)?)
+            })
+        })?,
+    )?;
+    host.set(
         "spawn_moving_entity",
         scope.create_function(|lua, (key, options): (Value, Value)| {
             let reference = checked(rejected, || {

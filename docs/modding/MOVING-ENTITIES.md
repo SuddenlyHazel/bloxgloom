@@ -67,6 +67,9 @@ assert(c.set_motion(e.entity, pose.revision, {velocity = {8, 0, 0}}))
 The spawn result is an opaque transaction-local allocation reference. It is not
 a durable entity ID. The host allocates an exact ID at commit; later callbacks
 and replicas expose it. Do not retain a spawn reference as an entity identity.
+`c.configure_spawn(reference, key, options)` replaces that staged launch before
+commit. Supply the complete launch options and the same key. A reference from
+another invocation is rejected; failed replacement preserves no partial launch.
 
 `c.motion(id)` returns an owned captured pose or nil: position, velocity,
 acceleration, quaternion orientation, exact revision and grounded status. All

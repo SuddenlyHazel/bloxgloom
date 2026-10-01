@@ -252,6 +252,8 @@ export type BloxSystemDeclaration = {
     partition: ("chunk" | "entity" | "profile")?,
     creates_drops: boolean?,
     creates_entities: boolean?,
+    creates_moving_entities: boolean?, -- requires read_world and moving_entities/v1
+    mutates_motion: boolean?, -- requires reads_entities and moving_entities/v1
     reads_entities: boolean?,
     mutates_entities: boolean?,
     seeds: { BloxSystemSeed },
@@ -405,6 +407,8 @@ export type BloxGameplayContext = {
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
     --- Opaque attempt-local allocation reference; this is not an entity ID.
     spawn_moving_entity: (key: string, options: BloxMovingSpawn) -> BloxSpawnReference,
+    --- Replace a staged launch in its originating transaction; key must be unchanged.
+    configure_spawn: (reference: BloxSpawnReference, key: string, options: BloxMovingSpawn) -> (),
     --- Captured owned motion; nil when unavailable. Nested values are readonly.
     motion: (id: BloxEntityId) -> BloxMotion?,
     --- Revision-fenced steering, without a position/teleport operation.
@@ -480,6 +484,9 @@ export type BloxOwnerContext = {
     block_info: (x: number, y: number, z: number) -> BloxBlock,
     spawn_drop: (x: number, y: number, z: number, item: string, count: number, delay_ms: number) -> (),
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
+    spawn_moving_entity: (key: string, options: BloxMovingSpawn) -> BloxSpawnReference,
+    motion: (id: BloxEntityId) -> BloxMotion?,
+    set_motion: (id: BloxEntityId, expected_revision: BloxRevision, options: BloxMotionChange) -> boolean,
     --- Stage an owned entity update against its captured revision. A wrong/stale revision rejects the plan.
     update_entity: (id: BloxEntityId, revision: BloxRevision, state: string) -> (),
     remove_entity: (id: BloxEntityId, revision: BloxRevision) -> (),

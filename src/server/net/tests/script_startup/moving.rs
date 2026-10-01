@@ -23,7 +23,11 @@ const BEHAVIOR: &str = r#"return function(c,e)
     if e.kind == 'MovingTick' then return end
     assert(e.kind == 'MovingImpact')
     local state=c.entity_state(e.entity)
-    if state == 'F' then error('deliberately unresolved impact') end
+    if state == 'F' then
+        assert(c.update_entity(e.entity,'I'))
+        c.spawn_drop(6.5,80.5,0.5,'bloxgloom:stick',1,4294967295)
+        error('deliberately unresolved impact after staging effects')
+    end
     assert(state == 'N', 'impact effects repeated')
     assert(e.target.kind == 'Terrain' and e.normal[2] == 1)
     assert(c.update_entity(e.entity,'I'))
@@ -221,4 +225,33 @@ fn moving_failed_impact_remains_durable_and_does_not_grant_partial_reward() {
             .count,
         3
     );
+}
+
+#[test]
+fn moving_seed_fixture_negotiates_models_and_client_sources_over_real_listener() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    let packages = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures/moving-projectiles/packages");
+    let startup = ServerStartup::new(Arc::new(Catalog::builtins()))
+        .with_local_packages(&packages)
+        .unwrap();
+    let state = Box::new(
+        crate::server::server_state_with_startup(7, fixture.0.join("save"), 2, startup).unwrap(),
+    );
+    let catalog = state.world.catalog_arc();
+    let fingerprint = catalog.fingerprint();
+    for key in ["throw:seed_body", "throw:guided_body"] {
+        let id = catalog.entity_type_id_by_key(key).unwrap();
+        assert_eq!(catalog.moving_entity(id).unwrap().model.len(), 1);
+    }
+    assert!(state.client_bundle.as_ref().unwrap().bytes().len() > 1024);
+    gameplay::serve(state, |address| {
+        let client = crate::client::connect_catalog_probe(&address.to_string(), 0x540).unwrap();
+        assert_eq!(client.fingerprint(), fingerprint);
+        let id = client.entity_type_id_by_key("throw:guided_body").unwrap();
+        let declaration = client.moving_entity(id).unwrap();
+        assert_eq!(declaration.body.gravity_scale, 0.0);
+        assert_eq!(declaration.model[0].color, [0.2, 0.5, 1.0]);
+    });
 }
