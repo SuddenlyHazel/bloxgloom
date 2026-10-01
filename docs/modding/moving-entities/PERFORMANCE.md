@@ -35,8 +35,8 @@ statistical latency study.
 | 256 / 1 | 0.169 | 0.015 | 0.043 | 96 / 7168 | 24064 |
 | 256 / 10 | 0.185 | 0.016 | 0.039 | 2 / 6974 | 24064 |
 
-Capture and solver timings are sums of successful native substeps in a tick,
-recorded through a bounded test-only observer. Deferred counts include transient
+Capture timings sum completed native captures per tick; solver timings sum
+successful fixed substeps. A bounded test-only observer records both. Deferred counts include transient
 terrain availability; these runs produced zero failed motion plans. Commit
 phase timing covers the whole server phase, not exclusively motion. Private
 record bytes are the sum of encoded recovered records; they exclude entity
