@@ -26,6 +26,8 @@ mod creature;
 mod crouch;
 #[path = "script_startup/drop_policy.rs"]
 mod drop_policy;
+#[path = "script_startup/farming.rs"]
+mod farming;
 #[path = "script_startup/gameplay.rs"]
 mod gameplay;
 #[path = "script_startup/generation.rs"]
