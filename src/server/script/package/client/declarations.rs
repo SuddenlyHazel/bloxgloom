@@ -715,6 +715,7 @@ impl Startup {
             }
             return Ok(None);
         }
+        let mut content_budget = crate::content::declarations::budget::Budget::default();
         let mut texture_payload = 0usize;
         let mut has_nondefault_size = false;
         let mut has_nondefault_animation = false;
@@ -778,6 +779,13 @@ impl Startup {
                 }
                 requires.push(requirement);
             }
+            content_budget
+                .reserve(
+                    1,
+                    256 + (package.dependencies.len() + requires.len()) * 256,
+                    name,
+                )
+                .map_err(|error| super::error(name, error.0))?;
             let count = reader.count(MAX_ITEMS)?;
             if count > 0 && !requires.iter().any(|r| r == composition::CONTENT) {
                 return Err(invalid());
@@ -843,6 +851,9 @@ impl Startup {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
+                content_budget
+                    .reserve(1, 2048, &key)
+                    .map_err(|error| super::error(name, error.0))?;
                 startup.items.push(content::Item {
                     key,
                     name: display,
@@ -898,6 +909,9 @@ impl Startup {
                         ),
                     ));
                 }
+                content_budget
+                    .reserve(1, png.len() + 256, &key)
+                    .map_err(|error| super::error(name, error.0))?;
                 residency.add_payload(png.len())?;
                 startup.textures.push(content::Texture {
                     key,
@@ -1063,6 +1077,13 @@ impl Startup {
                     has_states |= crate::server::script::startup::stateful_block(&block);
                     has_state_textures |= block.states.iter().any(|state| state.textures.is_some());
                 }
+                content_budget
+                    .reserve(
+                        1,
+                        crate::content::declarations::budget::block_bytes(&block),
+                        &block.key,
+                    )
+                    .map_err(|error| super::error(name, error.0))?;
                 item.placeable = Some(crate::server::script::startup::placement_state(&block));
                 startup.blocks.push(block);
             }
@@ -1114,6 +1135,9 @@ impl Startup {
                     {
                         return Err(invalid());
                     }
+                    content_budget
+                        .reserve(1, 256 + members.len() * 256, &key)
+                        .map_err(|error| super::error(name, error.0))?;
                     startup.tags.push(content::Tag { key, kind, members });
                 }
             }

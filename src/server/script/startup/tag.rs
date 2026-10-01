@@ -76,6 +76,7 @@ pub(super) fn declarer(
             {
                 return Err("duplicate tag member");
             }
+            pending.reserve_content(1, 256 + parsed.len() * 256, &key)?;
             pending.tags.push(Tag {
                 key,
                 kind,

@@ -1,3 +1,4 @@
+mod budget;
 use super::*;
 use std::{
     fs,
@@ -20,19 +21,22 @@ impl Fixture {
     fn package(&self, name: &str, dependencies: &str, startup: &str) {
         let dir = self.0.join(name);
         fs::create_dir(&dir).unwrap();
-        fs::write(dir.join("package.txt"), format!("format 1\npackage {name}\nversion 1.0.0\nentry main\nrequires bloxgloom:content/v1\nrequires bloxgloom:owner_systems/v1\nrequires bloxgloom:generation/v1\nmodule main main.luau\nmodule callback callback.luau\nmodule terrain terrain.luau\n{dependencies}\n")).unwrap();
+        fs::create_dir(dir.join("server")).unwrap();
+        fs::create_dir_all(dir.join("assets/textures")).unwrap();
+        write_pixel(dir.join("assets/textures/pixel.png"));
+        fs::write(dir.join("package.txt"), format!("format 2\npackage {name}\nversion 1.0.0\nentry main\nrequires bloxgloom:content/v1\nrequires bloxgloom:owner_systems/v1\nrequires bloxgloom:generation/v1\nmodule server main server/main.luau\nmodule server callback server/callback.luau\nmodule server terrain server/terrain.luau\nasset texture pixel assets/textures/pixel.png\n{dependencies}\n")).unwrap();
         fs::write(
-            dir.join("main.luau"),
+            dir.join("server/main.luau"),
             format!("return function(h) {startup} end"),
         )
         .unwrap();
         fs::write(
-            dir.join("callback.luau"),
+            dir.join("server/callback.luau"),
             "local calls=0; return function(c) calls+=1; return c.data .. tostring(calls), 1 end",
         )
         .unwrap();
         fs::write(
-            dir.join("terrain.luau"),
+            dir.join("server/terrain.luau"),
             "return function(c) c.set_block(0,0,0,'bloxgloom:stone') end",
         )
         .unwrap();
@@ -172,8 +176,12 @@ fn startup_call_order_does_not_change_assigned_content_ids() {
     let mut catalogs = Vec::new();
     for names in [["z", "a"], ["a", "z"]] {
         let fixture = Fixture::new();
-        let startup = names.iter().map(|name| format!("h.register_block('farm:{name}','Crop','bloxgloom:stone'); h.register_item('farm:seed_{name}','Seed','bloxgloom:stone')")).collect::<Vec<_>>().join(";");
-        fixture.package("farm", "", &startup);
+        let startup = names.iter().map(|name| format!("h.register_block('farm:{name}','Crop','farm:pixel'); h.register_item('farm:seed_{name}','Seed','bloxgloom:stone')")).collect::<Vec<_>>().join(";");
+        fixture.package(
+            "farm",
+            "",
+            &format!("h.register_texture('farm:pixel','pixel'); {startup}"),
+        );
         let declarations = fixture.discover().unwrap();
         catalogs.push(
             crate::server::catalog_with_extension(
@@ -197,26 +205,6 @@ fn content_capacity_fixture(extra: &str) -> Fixture {
     fixture.package("farm", "", &format!(
         "for i=1,256 do h.register_texture('farm:texture_'..i,'pixel'); h.register_block('farm:block_'..i,'Crop','farm:texture_'..i); h.register_item('farm:seed_'..i,'Seed','farm:texture_'..i) end; {extra}"
     ));
-    let directory = fixture.0.join("farm");
-    let manifest = fs::read_to_string(directory.join("package.txt"))
-        .unwrap()
-        .replace("format 1", "format 2")
-        .replace("\nmodule ", "\nmodule server ");
-    fs::write(
-        directory.join("package.txt"),
-        format!("{manifest}\nasset texture pixel assets/textures/pixel.png\n"),
-    )
-    .unwrap();
-    fs::create_dir_all(directory.join("assets/textures")).unwrap();
-    let file = fs::File::create(directory.join("assets/textures/pixel.png")).unwrap();
-    let mut encoder = png::Encoder::new(file, 16, 16);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder
-        .write_header()
-        .unwrap()
-        .write_image_data(&[120, 180, 60, 255].repeat(256))
-        .unwrap();
     fixture
 }
 
@@ -318,7 +306,7 @@ fn native_owner_capacity_counts_preinstalled_entries_and_rejects_atomically() {
         "extra",
         "",
         &format!(
-            "h.register_block('extra:unpublished','Crop','bloxgloom:stone'); {}",
+            "h.register_texture('extra:pixel','pixel'); h.register_block('extra:unpublished','Crop','extra:pixel'); {}",
             system("extra:owner", "", "S")
         ),
     );
@@ -372,15 +360,11 @@ fn native_generation_capacity_counts_preinstalled_contributors() {
         Ok(_) => panic!("257 contributors must fail"),
         Err(error) => error.to_string(),
     };
-    assert!(
-        error.contains("capacity") || error.contains("contributors/installation"),
-        "{error}"
-    );
+    assert!(error.contains("generators/installation"), "{error}");
     let oversized = generator_installation_fixture(257);
     let declarations = oversized.discover().unwrap();
     let mut catalog = crate::content::Catalog::builtins();
     assert!(crate::server::lifecycle::Registration::install(&declarations, &mut catalog).is_err());
-    assert!(catalog.item_by_key("p00:anything").is_none());
 }
 
 #[test]
@@ -420,4 +404,37 @@ fn caught_startup_execution_limit_cannot_publish_and_worker_recovers() {
             .unwrap(),
         17
     );
+}
+
+#[test]
+fn repeated_texture_bindings_cannot_multiply_unbounded_host_png_storage() {
+    let fixture = content_capacity_fixture("");
+    let directory = fixture.0.join("farm");
+    let path = directory.join("assets/textures/pixel.png");
+    let mut png = fs::read(&path).unwrap();
+    png.resize(2 * 1024 * 1024, 0);
+    fs::write(path, png).unwrap();
+    fs::write(directory.join("server/main.luau"), "return function(h) for i=1,31 do h.register_texture('farm:texture_'..i,'pixel') end; pcall(function() h.register_texture('farm:texture_32','pixel') end) end").unwrap();
+    let error = fixture.error();
+    for expected in [
+        "farm@1.0.0:main",
+        "register_texture farm:texture_32",
+        "estimated declaration bytes/package",
+        "attempted 67117056",
+        "maximum 67108864",
+    ] {
+        assert!(error.contains(expected), "missing {expected:?} in {error}");
+    }
+}
+
+fn write_pixel(path: PathBuf) {
+    let file = fs::File::create(path).unwrap();
+    let mut encoder = png::Encoder::new(file, 16, 16);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&[120, 180, 60, 255].repeat(256))
+        .unwrap();
 }

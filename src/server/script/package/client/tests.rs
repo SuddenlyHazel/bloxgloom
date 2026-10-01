@@ -33,7 +33,9 @@ fn repeated_texture_bindings_cannot_multiply_one_asset_past_decoded_admission() 
     }
     let error = ClientBundle::decode_verify(&writer.0, key(&writer.0)).unwrap_err();
     assert!(
-        error.to_string().contains("texture PNG bytes/installation"),
+        error
+            .to_string()
+            .contains("estimated declaration bytes/installation"),
         "{error}"
     );
     // A failed verification releases its artifact admission and leaves the

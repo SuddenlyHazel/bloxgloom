@@ -92,9 +92,9 @@ pub(in crate::server) struct Declarations {
 
 impl Declarations {
     pub(in crate::server) fn discover(root: &Path) -> std::io::Result<Self> {
+        let deadline = std::time::Instant::now() + super::capacity::INSTALLATION_WALL_TIME;
         let snapshot = Arc::new(PackageSnapshot::discover(root).map_err(std::io::Error::other)?);
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
-        let deadline = std::time::Instant::now() + super::capacity::INSTALLATION_WALL_TIME;
         let worker = ScriptWorker::spawn(super::Limits::startup())?;
         let mut items = Vec::new();
         let mut tags = Vec::new();
@@ -113,6 +113,16 @@ impl Declarations {
         let mut anchored = Vec::new();
         let mut player_rules = None;
         let mut appearance = None;
+        let mut content_budget = crate::content::declarations::budget::Budget::default();
+        for package in &packages {
+            content_budget
+                .reserve(
+                    1,
+                    crate::content::declarations::budget::package_bytes(package),
+                    &package.key,
+                )
+                .map_err(std::io::Error::other)?;
+        }
         // Packages run in lexical order with isolated mutable attempts and reusable
         // physical VMs. Final declarations are canonicalized before ID assignment.
         for package in &packages {
@@ -138,6 +148,9 @@ impl Declarations {
             let Output::Declarations(declarations) = output else {
                 unreachable!("startup execution")
             };
+            content_budget
+                .reserve_budget(&declarations.content_budget, &package.key)
+                .map_err(std::io::Error::other)?;
             if let Some(selection) = declarations.player_rules
                 && player_rules.replace(selection).is_some()
             {
@@ -155,6 +168,17 @@ impl Declarations {
                 ));
             }
             blocks.extend(declarations.blocks);
+            let attempted_texture_bytes = textures
+                .iter()
+                .chain(&declarations.textures)
+                .map(|texture: &PackageTexture| texture.definition.png.len())
+                .sum::<usize>();
+            if attempted_texture_bytes > 64 * 1024 * 1024 {
+                return Err(std::io::Error::other(format!(
+                    "{} texture PNG bytes/installation: attempted {attempted_texture_bytes}; maximum 67108864",
+                    package.key
+                )));
+            }
             textures.extend(declarations.textures);
             handlers.extend(declarations.handlers);
             player_lifecycles.extend(declarations.player_lifecycles);
@@ -300,6 +324,8 @@ pub(super) struct Pending {
     tags: Vec<bloxgloom_host_api::content::Tag>,
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
+    texture_bytes: usize,
+    content_budget: crate::content::declarations::budget::Budget,
     pub(super) generation: Vec<super::generation::Declaration>,
     pub(super) actions: Vec<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
@@ -314,8 +340,25 @@ pub(super) struct Pending {
 }
 
 impl Pending {
+    fn reserve_content(
+        &mut self,
+        count: usize,
+        bytes: usize,
+        key: &str,
+    ) -> Result<(), &'static str> {
+        self.content_budget
+            .reserve(count, bytes, key)
+            .map_err(|error| {
+                self.diagnostic = Some(error.0.replace("/installation", "/package"));
+                "content declaration admission limit exceeded"
+            })
+    }
+
     pub(super) fn reject(&mut self, error: &'static str, declaration: &str) -> mlua::Error {
         let message = match error {
+            "content declaration admission limit exceeded" => {
+                self.diagnostic.clone().unwrap_or_else(|| error.into())
+            }
             "items/package limit exceeded" => format!(
                 "items/package: attempted {}; maximum {}",
                 self.items.len() + 1,
@@ -330,6 +373,10 @@ impl Pending {
                 "textures/package: attempted {}; maximum {}",
                 self.textures.len() + 1,
                 MAX_TEXTURES_PER_PACKAGE
+            ),
+            "texture PNG bytes/package limit exceeded" => format!(
+                "texture PNG bytes/package: attempted {}; maximum 67108864",
+                self.texture_bytes
             ),
             "systems/package limit exceeded" => format!(
                 "systems/package: attempted {}; maximum {}",
@@ -437,6 +484,7 @@ pub(super) fn invoke(
                 {
                     return Err("duplicate startup item");
                 }
+                pending.reserve_content(1, 2048, &key)?;
                 pending.items.push(Item {
                     key,
                     name,
@@ -513,6 +561,11 @@ pub(super) fn invoke(
                 {
                     return Err("duplicate startup texture");
                 }
+                pending.texture_bytes = pending.texture_bytes.saturating_add(bytes.len());
+                if pending.texture_bytes > 64 * 1024 * 1024 {
+                    return Err("texture PNG bytes/package limit exceeded");
+                }
+                pending.reserve_content(1, bytes.len() + 256, &key)?;
                 pending.textures.push(PackageTexture {
                     definition: Texture {
                         key,
@@ -617,6 +670,11 @@ pub(super) fn invoke(
                         }
                     }
                 }
+                pending.reserve_content(
+                    2,
+                    crate::content::declarations::budget::block_bytes(&block) + 2048,
+                    &key,
+                )?;
                 let placeable = block::placement_state(&block);
                 pending.blocks.push(block);
                 pending.items.push(Item {

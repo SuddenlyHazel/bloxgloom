@@ -1,5 +1,6 @@
 //! Bounded startup collection, separate from lifecycle ownership and dispatch.
 use super::Catalog;
+pub(crate) mod budget;
 use bloxgloom_host_api::{RegistrationError as Error, composition::Package, content::*};
 
 #[derive(Default)]
@@ -9,7 +10,7 @@ pub(crate) struct Declarations {
     items: Vec<Item>,
     tags: Vec<Tag>,
     packages: Vec<Package>,
-    bytes: usize,
+    budget: budget::Budget,
 }
 impl Declarations {
     pub(crate) fn len(&self) -> usize {
@@ -19,18 +20,15 @@ impl Declarations {
             + self.tags.len()
             + self.packages.len()
     }
-    fn reserve(&mut self, bytes: usize) -> Result<(), Error> {
-        if self.len() >= 4096 || self.bytes.saturating_add(bytes) > 64 * 1024 * 1024 {
-            return Err(Error("content declaration budget exceeded".into()));
-        }
-        self.bytes += bytes;
-        Ok(())
+
+    fn reserve(&mut self, bytes: usize, key: &str) -> Result<(), Error> {
+        self.budget.reserve(1, bytes, key)
     }
     pub(crate) fn texture(&mut self, t: Texture) -> Result<(), Error> {
         if t.png.len() > 4 * 1024 * 1024 || t.key.len() > 255 {
             return Err(Error("texture declaration too large".into()));
         }
-        self.reserve(t.png.len() + 256)?;
+        self.reserve(t.png.len() + 256, &t.key)?;
         self.textures.push(t);
         Ok(())
     }
@@ -55,16 +53,7 @@ impl Declarations {
         {
             return Err(Error("block declaration too large".into()));
         }
-        let bytes = 2048
-            + b.properties
-                .iter()
-                .map(|p| 256 + p.values.len() * 256)
-                .sum::<usize>()
-            + b.states
-                .iter()
-                .map(|s| 1024 + s.properties.len() * 512)
-                .sum::<usize>();
-        self.reserve(bytes)?;
+        self.reserve(budget::block_bytes(&b), &b.key)?;
         self.blocks.push(b);
         Ok(())
     }
@@ -76,7 +65,7 @@ impl Declarations {
         {
             return Err(Error("item declaration too large".into()));
         }
-        self.reserve(2048)?;
+        self.reserve(2048, &i.key)?;
         self.items.push(i);
         Ok(())
     }
@@ -89,7 +78,7 @@ impl Declarations {
         {
             return Err(Error("tag declaration too large".into()));
         }
-        self.reserve(256 + t.members.len() * 256)?;
+        self.reserve(budget::tag_bytes(&t), &t.key)?;
         self.tags.push(t);
         Ok(())
     }
@@ -102,7 +91,7 @@ impl Declarations {
         {
             return Err(Error("package declaration too large".into()));
         }
-        self.reserve(256 + (p.dependencies.len() + p.requires.len()) * 256)?;
+        self.reserve(budget::package_bytes(&p), &p.key)?;
         self.packages.push(p);
         Ok(())
     }
