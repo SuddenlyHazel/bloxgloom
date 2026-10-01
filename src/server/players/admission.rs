@@ -65,10 +65,7 @@ pub(in crate::server) fn join_named_client(
         appearance.legacy(),
     )?;
     let id = state.next_id;
-    let next_id = state
-        .next_id
-        .checked_add(1)
-        .ok_or_else(|| io::Error::other("player ID exhausted"))?;
+    let next_id = crate::server::session_ids::next_after(id)?;
     let socket = socket.try_clone()?;
     let (owned_entity_id, spawn_delta) = state
         .player_entities

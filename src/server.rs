@@ -11,6 +11,7 @@ mod drops;
 mod durable;
 mod effects;
 mod entities;
+mod session_ids;
 mod entity_checkpoint;
 mod fire;
 mod gameplay;
@@ -615,6 +616,7 @@ fn server_state_with_startup(
     let client_bundle = startup.client_bundle.clone();
     startup.install_owners(&mut system_runtime, &mut durability)?;
     let entity_public_revision = entities.revision();
+    let first_session_id = session_ids::reserve(&save_dir)?;
     Ok(State {
         client_bundle,
         notifications,
@@ -636,7 +638,7 @@ fn server_state_with_startup(
         lifecycles,
         seed,
         clients: HashMap::new(),
-        next_id: 1,
+        next_id: first_session_id,
         drop_revision: 0,
         last_expiry_scan: Instant::now(),
         pending_block_changes: Vec::new(),
