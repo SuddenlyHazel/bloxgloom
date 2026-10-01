@@ -4,6 +4,7 @@ use crate::{inventory::Stack, server::entities::EntityId};
 use bloxgloom_host_api::motion::{Pending, Record};
 
 const PROFILE: u128 = 0x5c71;
+#[path = "moving/load.rs"]
 mod load;
 const REGISTER: &str = r#"return function(h)
     h.register_moving_entity{key='demo:projectile',module='demo:behavior',schema=1,revision=1,

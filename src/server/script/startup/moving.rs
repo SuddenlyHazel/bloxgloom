@@ -257,10 +257,13 @@ fn number(value: Value, min: f32, max: f32) -> Result<f32, &'static str> {
         Value::Number(value) => value,
         _ => return Err("moving number required"),
     };
-    if !value.is_finite() || value < f64::from(min) || value > f64::from(max) {
+    // Bounds are native f32 values. Compare after the documented conversion so
+    // a decimal boundary such as 0.025 does not fall below its rounded f32 bound.
+    let converted = value as f32;
+    if !value.is_finite() || !converted.is_finite() || converted < min || converted > max {
         return Err("moving number out of bounds");
     }
-    Ok(value as f32)
+    Ok(converted)
 }
 fn optional_number(value: Value, min: f32, max: f32, default: f32) -> Result<f32, &'static str> {
     if value.is_nil() {

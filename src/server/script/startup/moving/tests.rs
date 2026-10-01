@@ -127,5 +127,23 @@ fn moving_startup_supports_private_model_free_entities() {
     let declarations = fixture.discover().unwrap();
     assert_eq!(declarations.handlers.len(), 1);
     assert!(declarations.moving[0].model.is_empty());
-    assert!(declarations.moving[0].state.public(&[0; 8]).unwrap().is_empty());
+    assert!(
+        declarations.moving[0]
+            .state
+            .public(&[0; 8])
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn moving_decimal_minimum_extent_matches_native_f32_validation() {
+    let lua = Lua::new();
+    assert_eq!(number(Value::Number(0.025), 0.025, 1.5).unwrap(), 0.025);
+    assert!(number(Value::Number(0.024), 0.025, 1.5).is_err());
+    let vector = lua
+        .load("return {0.025,0.025,0.025}")
+        .eval::<Value>()
+        .unwrap();
+    assert_eq!(triple(vector, 0.025, 1.5).unwrap(), [0.025; 3]);
 }
