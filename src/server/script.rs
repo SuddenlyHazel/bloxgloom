@@ -18,19 +18,18 @@ pub(super) mod startup;
 mod system;
 mod values;
 
-use mlua::{Function, Lua, VmState};
+use mlua::{Function, Lua};
 use runtime::{Execution, Seed};
-use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::io;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{self, SyncSender};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// An already-loaded local source module. Discovery and file reads belong to
 /// the host, not the VM. A chunk must return a function accepting one input.
+#[derive(Clone)]
 pub struct SourceModule {
     pub id: String,
     pub source: String,
@@ -129,8 +128,8 @@ impl Program {
 }
 
 /// Dedicated worker; calls block awaiting their reply and must be submitted
-/// off the window thread. The bounded queue has one pending request. Each run
-/// creates a fresh sandboxed VM so previous runs cannot influence new inputs.
+/// off the window thread. The bounded queue has one pending request. Runs reuse lane-owned VMs and bytecode,
+/// with fresh mutable environments so previous runs cannot influence new inputs.
 pub struct ScriptWorker {
     requests: Option<SyncSender<Request>>,
     thread: Option<JoinHandle<()>>,
@@ -282,7 +281,7 @@ fn run(program: Program, input: ScriptInput, limits: Limits) -> Result<Output, S
     })
 }
 
-/// The VM never escapes this call. Gameplay invokes this on the authoritative
+/// The VM belongs to this execution lane. Gameplay invokes this on the authoritative
 /// coordinator; owner systems invoke it on existing owner workers. Both borrow
 /// their public Context via mlua::scope rather than a shared VM or extra queue.
 fn run_with<T>(
@@ -291,133 +290,7 @@ fn run_with<T>(
     execution: Execution,
     invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
 ) -> Result<T, ScriptError> {
-    let id = program.identity();
-    let fail = |failure| ScriptError {
-        module: id.clone(),
-        failure,
-    };
-    if matches!(&program, Program::Source(module) if module.source.len() > limits.max_source_bytes)
-    {
-        return Err(fail(ScriptFailure::SourceTooLarge));
-    }
-
-    let (lua, diagnostics) = runtime::create(&id, execution)
-        .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
-    lua.set_memory_limit(limits.max_memory_bytes)
-        .map_err(|error| fail(ScriptFailure::Lua(error.to_string())))?;
-
-    let deadline = Instant::now() + limits.max_wall_time;
-    let imports = match &program {
-        Program::Package { snapshot, .. } => Some(imports::Imports::new(
-            Arc::clone(snapshot),
-            limits.max_source_bytes,
-        )),
-        Program::Source(_) => None,
-    };
-    let active_imports = imports.clone();
-    let entry_id = id.clone();
-    let remaining = Rc::new(Cell::new(limits.max_interrupts));
-    let exceeded = Rc::new(RefCell::new(None::<(LimitExceeded, String)>));
-    let status = Rc::clone(&exceeded);
-    lua.set_interrupt(move |_| {
-        let reason = if Instant::now() >= deadline {
-            Some(LimitExceeded::Time)
-        } else if remaining.get() == 0 {
-            Some(LimitExceeded::Instructions)
-        } else {
-            remaining.set(remaining.get() - 1);
-            None
-        };
-        if let Some(reason) = reason {
-            let mut status = status.borrow_mut();
-            if status.is_none() {
-                *status = Some((
-                    reason,
-                    active_imports
-                        .as_ref()
-                        .and_then(|imports| imports.active())
-                        .unwrap_or_else(|| entry_id.clone()),
-                ));
-            }
-            return Err(mlua::Error::RuntimeError(
-                "script execution limit exceeded".into(),
-            ));
-        }
-        Ok(VmState::Continue)
-    });
-
-    let result = (|| -> mlua::Result<T> {
-        let entry: Function = match &program {
-            Program::Source(module) => lua
-                .load(&module.source)
-                .set_name(&id)
-                .set_mode(mlua::chunk::ChunkMode::Text)
-                .eval()?,
-            Program::Package { entry, .. } => {
-                let value = imports
-                    .as_ref()
-                    .expect("package imports")
-                    .load(&lua, entry)?;
-                lua.unpack(value)?
-            }
-        };
-        invoke(&lua, entry)
-    })();
-    if let Some((reason, module)) = exceeded.take() {
-        diagnostics.finish(match reason {
-            LimitExceeded::Time => "time_limit",
-            LimitExceeded::Instructions => "instruction_limit",
-        });
-        return Err(ScriptError {
-            module,
-            failure: match reason {
-                LimitExceeded::Time => ScriptFailure::TimeLimit,
-                LimitExceeded::Instructions => ScriptFailure::InstructionLimit,
-            },
-        });
-    }
-    if Instant::now() >= deadline {
-        diagnostics.finish("time_limit");
-        return Err(fail(ScriptFailure::TimeLimit));
-    }
-    let result = result.map_err(|error| {
-        error
-            .downcast_ref::<ScriptError>()
-            .cloned()
-            .unwrap_or_else(|| fail(ScriptFailure::Lua(error.to_string())))
-    });
-    diagnostics.finish(if result.is_ok() {
-        "evaluated"
-    } else {
-        "script_error"
-    });
-    result
-}
-
-/// Client presentation uses the same isolated, instruction/memory/time-bounded
-/// source sandbox, with its own closed input/output adapter and worker.
-pub(crate) fn run_presentation<T>(
-    module: SourceModule,
-    sequence: u32,
-    invoke: impl FnOnce(&Lua, Function) -> mlua::Result<T>,
-) -> Result<T, ScriptError> {
-    run_with(
-        &Program::Source(module),
-        Limits::default(),
-        Execution::new(
-            "presentation",
-            u64::from(sequence),
-            format!("sequence:{sequence}"),
-        )
-        .client(),
-        invoke,
-    )
-}
-
-#[derive(Clone, Copy)]
-enum LimitExceeded {
-    Instructions,
-    Time,
+    runtime::isolated(program, limits, execution, invoke)
 }
 
 #[cfg(test)]

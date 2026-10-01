@@ -46,3 +46,48 @@ fn committed_observer_copies_exact_readonly_public_handles_without_writer() {
     )
     .unwrap();
 }
+
+#[test]
+fn observer_entries_retain_imports_and_reset_after_failure_or_world_retirement() {
+    use std::{
+        fs,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let root = std::env::temp_dir().join(format!(
+        "bloxgloom-observer-realm-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(root.join("demo")).unwrap();
+    let root = fs::canonicalize(root).unwrap();
+    fs::write(root.join("demo/package.txt"), "format 1\npackage demo\nversion 1.0.0\nentry main\nmodule main main.luau\nmodule cache cache.luau\n").unwrap();
+    fs::write(root.join("demo/cache.luau"), "return {count=0}").unwrap();
+    fs::write(root.join("demo/main.luau"), "local cache=import('demo:cache'); return function(e) cache.count+=1; assert(e.blocks[1].cell[1]==cache.count) end").unwrap();
+    let snapshot = Arc::new(PackageSnapshot::discover(&root).unwrap());
+    let observer = || ScriptObserver {
+        snapshot: Arc::clone(&snapshot),
+        module: "demo:main".into(),
+        lifetime: Arc::new(()),
+        realm: NEXT_REALM.fetch_add(1, Ordering::Relaxed),
+    };
+    let event = |n| Committed {
+        blocks: vec![CommittedBlock {
+            cell: [n, 0, 0],
+            state: "bloxgloom:stone".into(),
+        }],
+        entities: vec![],
+        inventory: None,
+    };
+    let first = observer();
+    first.invoke(&event(1)).unwrap();
+    first.invoke(&event(2)).unwrap();
+    let second = observer();
+    second.invoke(&event(1)).unwrap();
+    assert!(first.invoke(&event(0)).is_err());
+    first.invoke(&event(1)).unwrap();
+    drop(first);
+    drop(second);
+    observer().invoke(&event(1)).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}

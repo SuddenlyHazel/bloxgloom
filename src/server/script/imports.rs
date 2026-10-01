@@ -23,16 +23,26 @@ pub(super) struct Imports {
     modules: RefCell<BTreeMap<String, ModuleState>>,
     stack: RefCell<Vec<String>>,
     max_source_bytes: usize,
+    compiled: Rc<RefCell<super::runtime::compiled::Compiled>>,
 }
 
 impl Imports {
-    pub fn new(snapshot: Arc<PackageSnapshot>, max_source_bytes: usize) -> Rc<Self> {
+    pub fn new(
+        snapshot: Arc<PackageSnapshot>,
+        max_source_bytes: usize,
+        compiled: Rc<RefCell<super::runtime::compiled::Compiled>>,
+    ) -> Rc<Self> {
         Rc::new(Self {
             snapshot,
             modules: RefCell::new(BTreeMap::new()),
             stack: RefCell::new(Vec::new()),
             max_source_bytes,
+            compiled,
         })
+    }
+
+    pub fn clear(&self) {
+        self.modules.borrow_mut().clear();
     }
 
     pub fn active(&self) -> Option<String> {
@@ -99,10 +109,11 @@ impl Imports {
                     imports.load(lua, &resolved)
                 })?,
             )?;
+            let code = super::runtime::compiled::Compiled::get(&self.compiled, &id, source)?;
             let value: Value = lua
-                .load(source)
+                .load(code.as_slice())
                 .set_name(&id)
-                .set_mode(mlua::chunk::ChunkMode::Text)
+                .set_mode(mlua::chunk::ChunkMode::Binary)
                 .set_environment(environment)
                 .eval()?;
             if value.is_nil() {

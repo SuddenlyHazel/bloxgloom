@@ -2,7 +2,15 @@
 use super::{Invocation, Limits, Program, package::PackageSnapshot, startup::Pending};
 use bloxgloom_host_api::gameplay::{Committed, Observer, ObserverRegistration};
 use mlua::{Function, Lua, Value};
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    rc::Rc,
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 mod events;
 
 pub(super) fn declarer(
@@ -48,6 +56,8 @@ pub(super) fn declarer(
                 observer: Arc::new(ScriptObserver {
                     snapshot: Arc::clone(&snapshot),
                     module,
+                    lifetime: Arc::new(()),
+                    realm: NEXT_REALM.fetch_add(1, Ordering::Relaxed),
                 }),
             };
             registration
@@ -66,6 +76,12 @@ pub(super) fn declarer(
 struct ScriptObserver {
     snapshot: Arc<PackageSnapshot>,
     module: String,
+    lifetime: Arc<()>,
+    realm: u64,
+}
+static NEXT_REALM: AtomicU64 = AtomicU64::new(1);
+thread_local! {
+    static REALMS: RefCell<BTreeMap<u64, (Weak<()>, super::runtime::Retained)>> = const { RefCell::new(BTreeMap::new()) };
 }
 impl Observer for ScriptObserver {
     fn on_commit(&self, event: &Committed) {
@@ -76,19 +92,37 @@ impl Observer for ScriptObserver {
 }
 impl ScriptObserver {
     fn invoke(&self, event: &Committed) -> Result<(), super::ScriptError> {
-        // An observer has no action authority or random host input. Identical
-        // committed data produces the same fresh-VM random stream on each call.
+        // The world-owned advisory lane serializes these realms. Lifetime tokens
+        // prevent a new installation from inheriting the departed world's exports.
         let seed = events::seed(event);
-        super::run_with(
-            &Program::Package {
-                snapshot: Arc::clone(&self.snapshot),
-                entry: self.module.clone(),
-                invocation: Invocation::Integer,
-            },
-            Limits::default(),
-            super::runtime::Execution::new("Committed", seed, "advisory"),
-            |lua, entry| entry.call::<()>(events::present(lua, event)?),
-        )
+        REALMS.with(|realms| {
+            let mut realms = realms.borrow_mut();
+            realms.retain(|_, (owner, _)| owner.strong_count() > 0);
+            if !realms.contains_key(&self.realm) && realms.len() >= 32 {
+                return Err(super::ScriptError {
+                    module: self.module.clone(),
+                    failure: super::ScriptFailure::Package(
+                        "observer realm admission limit exceeded".into(),
+                    ),
+                });
+            }
+            let (_, runtime) = realms.entry(self.realm).or_insert_with(|| {
+                (
+                    Arc::downgrade(&self.lifetime),
+                    super::runtime::Retained::default(),
+                )
+            });
+            runtime.run(
+                &Program::Package {
+                    snapshot: Arc::clone(&self.snapshot),
+                    entry: self.module.clone(),
+                    invocation: Invocation::Integer,
+                },
+                Limits::default(),
+                super::runtime::Execution::new("Committed", seed, "advisory"),
+                |lua, entry| entry.call::<()>(events::present(lua, event)?),
+            )
+        })
     }
 }
 

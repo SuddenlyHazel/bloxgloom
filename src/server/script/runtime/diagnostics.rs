@@ -22,16 +22,16 @@ struct Buffer {
 }
 pub(crate) struct Diagnostics {
     buffer: Rc<RefCell<Buffer>>,
-    entry: String,
-    execution: Execution,
+    context: Rc<RefCell<(String, Execution)>>,
 }
 impl Diagnostics {
     pub fn install(lua: &Lua, id: &str, execution: Execution) -> mlua::Result<Self> {
         let buffer = Rc::new(RefCell::new(Buffer::default()));
+        let context = Rc::new(RefCell::new((id.to_owned(), execution)));
         let log = lua.create_table()?;
         for level in ["trace", "debug", "info", "warn", "error"] {
             let output = Rc::clone(&buffer);
-            let entry = id.to_owned();
+            let context = Rc::clone(&context);
             log.set(
                 level,
                 lua.create_function(
@@ -45,6 +45,7 @@ impl Diagnostics {
                             .map(encode_fields)
                             .transpose()?
                             .unwrap_or_else(|| "{}".into());
+                        let entry = context.borrow().0.clone();
                         push(lua, &output, &entry, level, message, fields);
                         Ok(())
                     },
@@ -53,7 +54,7 @@ impl Diagnostics {
         }
         lua.globals().set("log", log)?;
         let output = Rc::clone(&buffer);
-        let entry = id.to_owned();
+        let current = Rc::clone(&context);
         lua.globals().set(
             "print",
             lua.create_function(move |lua, values: Variadic<Value>| {
@@ -74,31 +75,35 @@ impl Diagnostics {
                     message.truncate(end);
                     message.push_str("[truncated]");
                 }
+                let entry = current.borrow().0.clone();
                 push(lua, &output, &entry, "info", message, "{}".into());
                 Ok(())
             })?,
         )?;
-        Ok(Self {
-            buffer,
-            entry: id.into(),
-            execution,
-        })
+        Ok(Self { buffer, context })
     }
+    /// Cached logging functions use the new invocation rather than the
+    /// initializer that first installed them. No Lua handles are retained here.
+    pub fn begin(&self, id: &str, execution: Execution) {
+        self.finish("aborted");
+        *self.buffer.borrow_mut() = Buffer::default();
+        *self.context.borrow_mut() = (id.to_owned(), execution);
+    }
+
     pub fn finish(&self, outcome: &str) {
         let mut buffer = self.buffer.borrow_mut();
         if buffer.finished {
             return;
         }
         buffer.finished = true;
+        let context = self.context.borrow();
+        let (entry, execution) = &*context;
         for record in buffer.records.drain(..) {
-            let package = self
-                .entry
-                .split_once(':')
-                .map_or(self.entry.as_str(), |v| v.0);
+            let package = entry.split_once(':').map_or(entry.as_str(), |v| v.0);
             macro_rules! emit { ($level:ident) => {
                 tracing::$level!(target: "bloxgloom::script", package, module = %record.module,
-                    entry = %self.entry, side = self.execution.side, callback = self.execution.kind,
-                    invocation = %self.execution.correlation, outcome, fields = %record.fields,
+                    entry = %entry, side = execution.side, callback = execution.kind,
+                    invocation = %execution.correlation, outcome, fields = %record.fields,
                     "{}", record.message)
             }; }
             match record.level {
@@ -110,9 +115,9 @@ impl Diagnostics {
             }
         }
         if buffer.suppressed > 0 {
-            tracing::warn!(target: "bloxgloom::script", entry = %self.entry,
-                side = self.execution.side, callback = self.execution.kind,
-                invocation = %self.execution.correlation, outcome, suppressed = buffer.suppressed,
+            tracing::warn!(target: "bloxgloom::script", entry = %entry,
+                side = execution.side, callback = execution.kind,
+                invocation = %execution.correlation, outcome, suppressed = buffer.suppressed,
                 "script diagnostics suppressed by invocation budget");
         }
     }
@@ -124,6 +129,9 @@ impl Drop for Diagnostics {
 }
 fn full(output: &RefCell<Buffer>) -> bool {
     let mut output = output.borrow_mut();
+    if output.finished {
+        return true;
+    }
     if output.records.len() >= MAX_RECORDS || output.bytes >= MAX_BYTES {
         output.suppressed = output.suppressed.saturating_add(1);
         true
@@ -222,3 +230,6 @@ fn encode_fields(fields: mlua::Table) -> mlua::Result<String> {
     }
     Ok(serde_json::Value::Object(result).to_string())
 }
+
+#[cfg(test)]
+mod tests;

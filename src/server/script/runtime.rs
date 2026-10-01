@@ -1,7 +1,15 @@
 //! Shared standard libraries and attempt-local tools; no VM lifetime policy.
 use mlua::{Lua, LuaOptions, StdLib, Value};
+pub(super) mod compiled;
 mod diagnostics;
+mod engine;
+mod memory;
+pub(crate) use super::Limits;
+use compiled::Compiled;
 pub(crate) use diagnostics::Diagnostics;
+pub(super) use engine::isolated;
+pub(crate) use engine::{Reservation, Retained};
+pub(crate) use memory::{begin as memory_begin, exceeded as memory_exceeded};
 
 #[derive(Clone)]
 pub(crate) struct Execution {
@@ -68,17 +76,38 @@ pub(crate) fn create(id: &str, execution: Execution) -> mlua::Result<(Lua, Diagn
         os.set(name, Value::Nil)?;
     }
     let math: mlua::Table = lua.globals().get("math")?;
-    let seed = Seed::new()
-        .word(execution.seed)
-        .bytes(id.as_bytes())
-        .finish();
     let randomseed: mlua::Function = math.get("randomseed")?;
-    // The bundled Luau seed API takes a signed 32-bit integer. Fold all host
-    // bits before conversion; authors retain the standard randomseed API.
-    randomseed.call::<()>((seed ^ (seed >> 32)) as u32 as i32)?;
+    lua.set_app_data(TrustedSeed(lua.create_registry_value(randomseed)?));
+    memory::install(&lua)?;
+    reseed(&lua, id, execution.seed)?;
     let diagnostics = Diagnostics::install(&lua, id, execution)?;
     lua.sandbox(true)?;
     Ok((lua, diagnostics))
+}
+
+pub(crate) fn begin(
+    lua: &Lua,
+    diagnostics: &Diagnostics,
+    id: &str,
+    execution: Execution,
+) -> mlua::Result<()> {
+    reseed(lua, id, execution.seed)?;
+    diagnostics.begin(id, execution);
+    Ok(())
+}
+
+struct TrustedSeed(mlua::RegistryKey);
+fn reseed(lua: &Lua, id: &str, seed: u64) -> mlua::Result<()> {
+    let seed = Seed::new().word(seed).bytes(id.as_bytes()).finish();
+    let randomseed: mlua::Function = lua.registry_value(
+        &lua.app_data_ref::<TrustedSeed>()
+            .expect("trusted RNG installed")
+            .0,
+    )?;
+    // The bundled Luau seed API takes a signed 32-bit integer. Fold all host
+    // bits before conversion; authors retain the standard randomseed API.
+    randomseed.call::<()>((seed ^ (seed >> 32)) as u32 as i32)?;
+    Ok(())
 }
 
 #[cfg(test)]

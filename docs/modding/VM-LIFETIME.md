@@ -17,8 +17,8 @@ callbacks retain them until their realm ends or resets.
 | Client player-service callbacks | Retained state for each handler entry on the connection player-service worker, separate from presentation |
 
 Module locals, tables, exported closures and manually resumed coroutines can
-retain state in the supported retained realms. Globals and library tables remain
-readonly. A dependency's exports belong to its consuming realm; they are not a
+retain state in the supported retained realms. Writes to globals stay within that realm or module environment; base globals
+and library tables remain readonly. A dependency's exports belong to its consuming realm; they are not a
 process-wide or package-wide singleton. Different entry modules and workers/callback families have
 independent copies even when they import the same source.
 
@@ -92,7 +92,7 @@ and threads; retaining a large cache consumes the realm's memory allowance.
 Collection and execution stay on workers rather than the window draw path.
 
 The default realm reserves **8 MiB** of Lua heap. The process admits at most
-**256 MiB** of aggregate heap reservations; admission accounts for each realm's
+**64 runtimes** and **256 MiB** of aggregate heap reservations; admission accounts for each realm's
 full allowance rather than only its current use. Client worker families admit
 at most **8 entry realms**, and an observer lane at most **32**. Admission failure
 is reported rather than evicting another module's retained state. Each engine's
