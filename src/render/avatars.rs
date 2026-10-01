@@ -35,8 +35,10 @@ pub(crate) struct VisualAvatar {
     pub model: AvatarModel,
     /// Yaw, stride, body bob, squash. Never used for authoritative movement.
     pub pose: [f32; 4],
-    /// Separate from package pose offsets: walk seconds, idle seconds, walk blend.
-    pub character_pose: [f32; 3],
+    /// Presentation-only walk seconds, idle seconds, walk blend and run blend.
+    pub character_pose: [f32; 4],
+    /// Local head yaw/pitch in radians, clamped to the hair-tested envelope.
+    pub character_look: [f32; 2],
     pub character_crouch: f32,
     pub character_tool: Option<(bool, f32)>,
     pub character_recipe: Option<crate::appearance::CharacterRecipe>,
@@ -95,7 +97,6 @@ impl From<&VisualAvatar> for AvatarInstance {
 
 pub(crate) struct AvatarRenderer {
     characters: character::CharacterRenderer,
-    authored: bool,
     pipeline: wgpu::RenderPipeline,
     camera_group: wgpu::BindGroup,
     vertices: wgpu::Buffer,
@@ -205,8 +206,11 @@ impl AvatarRenderer {
             multiview_mask: None,
             cache: None,
         });
-        let mut mesh = mesh::build();
-        let mut models = vec![(AvatarModel::Player, 0..mesh.indices.len() as u32)];
+        let mut mesh = mesh::AvatarMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        let mut models = Vec::new();
         for (id, definition) in catalog.mobile_entities() {
             let start = mesh.indices.len() as u32;
             for part in &definition.model {
@@ -258,10 +262,10 @@ impl AvatarRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let characters = character::CharacterRenderer::new(device, queue, format, &camera_layout);
+        let characters =
+            character::CharacterRenderer::new(device, queue, format, &camera_layout, catalog);
         Self {
             characters,
-            authored: false,
             pipeline,
             camera_group,
             vertices,
@@ -273,7 +277,6 @@ impl AvatarRenderer {
     }
 
     pub(crate) fn preview_character_clip(&mut self, clip: &'static str, time: f32) {
-        self.authored = true;
         self.characters.preview_clip(clip, time);
     }
 
@@ -281,14 +284,10 @@ impl AvatarRenderer {
         self.characters.first_person = view;
     }
 
-    pub(crate) fn set_authored(&mut self, enabled: bool) {
-        self.authored = enabled;
-    }
-
     /// Caller supplies nearest first. The bounded instance buffer never grows
     /// with world/entity population or modded entity count.
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
-        self.characters.set(queue, avatars, self.authored);
+        self.characters.set(queue, avatars);
         let mut instances = Vec::with_capacity(avatars.len().min(MAX_AVATARS));
         for (index, (model, _)) in self.models.iter().enumerate() {
             let start = instances.len();
@@ -302,9 +301,7 @@ impl AvatarRenderer {
                                 .characters
                                 .first_person
                                 .is_none_or(|view| a.id != view.id)
-                            && !(self.authored
-                                && *model == AvatarModel::Player
-                                && a.character_recipe.is_some_and(|recipe| recipe.valid()))
+                            && *model != AvatarModel::Player
                     })
                     .map(AvatarInstance::from),
             );
@@ -343,4 +340,11 @@ pub(crate) fn character_eye_names() -> &'static [&'static str; 8] {
 }
 pub(crate) fn character_mouth_names() -> &'static [&'static str; 6] {
     &character_asset::MOUTH_NAMES
+}
+
+pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {
+    super::fog::shader(
+        &include_str!("avatars/character.wgsl")
+            .replace("// REGISTERED_PALETTES", &appearance::palettes(catalog)),
+    )
 }

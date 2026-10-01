@@ -3,7 +3,7 @@
 use crate::content::Catalog;
 use std::fmt::Write;
 
-pub(super) fn shader(catalog: &Catalog) -> String {
+pub(super) fn palettes(catalog: &Catalog) -> String {
     let mut palettes = String::new();
     for (part, name) in ["SKINS", "SHIRTS", "PANTS"].iter().enumerate() {
         writeln!(palettes, "const {name} = array<vec3<f32>, 32>(").unwrap();
@@ -20,7 +20,11 @@ pub(super) fn shader(catalog: &Catalog) -> String {
         }
         palettes.push_str(");\n");
     }
+    palettes
+}
+
+pub(super) fn shader(catalog: &Catalog) -> String {
     super::super::fog::shader(
-        &include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes),
+        &include_str!("shader.wgsl").replace("// REGISTERED_PALETTES", &palettes(catalog)),
     )
 }

@@ -154,7 +154,11 @@ impl ContentManifest {
         for mut entry in candidates {
             if let Some(&(id, fingerprint)) = saved_by_key.get(&(entry.kind, entry.key.clone())) {
                 if fingerprint != entry.schema_fingerprint {
-                    return Err(invalid("content schema changed without migration"));
+                    return Err(invalid(if entry.key == "bloxgloom:player" {
+                        "incompatible player character catalog; use a new world directory (existing save left unchanged)"
+                    } else {
+                        "content schema changed without migration"
+                    }));
                 }
                 entry.id = id;
             } else {

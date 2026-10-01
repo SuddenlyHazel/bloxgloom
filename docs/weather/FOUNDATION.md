@@ -90,7 +90,7 @@ clock progress since the last checkpoint (normally about five seconds); durable
 admin overrides still recover. Live application of an override
 preserves clock progress during the durable write wait.
 
-The wire version is 22; client and server must run the same build.
+The wire version is 23; client and server must run the same build.
 Existing world data remains compatible: weather adds a checkpoint file rather
 than changing chunk, inventory or entity formats.
 
@@ -197,3 +197,23 @@ ignored. Strict Clippy, formatting and the release build passed. Production
 weather previews and `perf 300 6` were attempted, but both stopped because Metal
 exposed no GPU adapter in this sandbox; visual acceptance and performance
 measurement remain pending outside that restriction.
+
+### Integration with articulated characters
+
+The synchronized main build uses wire version 23, combining storm severity with
+the articulated character recipe changes. The production articulated shader
+composes registered palettes and the same distance fog used by terrain and other
+actors. Client and server must both use this build.
+
+With unrestricted local access, the combined workspace passed 1,417 application
+and 46 host-API tests, with six opt-in tests ignored. The fog GPU regression then
+passed separately. Strict Clippy and formatting passed. Production weather
+previews rendered successfully; clear, severe surface/sky and sheltered images
+were inspected. Severe fog obscures distant terrain, sky texture stays above the
+horizon, and the sheltered interior remains clear.
+
+The release `perf 300 6` run on the Apple M1 Pro retained 320,236 vertices,
+480,354 indices and 18,573,688 mesh/upload bytes. Setup took 2,321.9 ms. Steady
+CPU p50/p95/p99 were 0.313/0.464/0.606 ms, and GPU values were
+0.256/0.347/0.781 ms. As above, this is a clear-weather headless measurement;
+it excludes active rain, live audio and presentation.

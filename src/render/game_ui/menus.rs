@@ -180,16 +180,6 @@ fn settings_rows(
                 "Bloom strength",
                 format!("{:.0}%", settings.bloom_strength * 100.0),
             ),
-            (
-                SettingId::Characters,
-                "Characters",
-                if settings.authored_characters {
-                    "Authored"
-                } else {
-                    "Classic"
-                }
-                .into(),
-            ),
         ]
     } else {
         vec![

@@ -115,7 +115,8 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 assert_eq!(session.text_at(1), "uidemo:creature");
                 let avatar = crate::render::VisualAvatar {
                     motion: None,
-                    character_pose: [0.0; 3],
+                    character_pose: [0.0; 4],
+                    character_look: [0.0; 2],
                     character_crouch: 0.0,
                     character_tool: None,
                     character_recipe: None,

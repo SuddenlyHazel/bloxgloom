@@ -226,11 +226,6 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
         Config::default(),
         path.clone(),
     );
-    let authored = app.config.authored_characters;
-    app.change_setting(SettingId::Characters, true);
-    assert_eq!(app.config.authored_characters, !authored);
-    app.change_setting(SettingId::Characters, false);
-    assert_eq!(app.config.authored_characters, authored);
     app.change_setting(SettingId::Exposure, true);
     app.change_setting(SettingId::BloomStrength, true);
     let exposure = app.config.exposure;
@@ -253,6 +248,64 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
         app.pending_mesh.is_empty(),
         "post controls must not remesh terrain"
     );
+}
+
+#[test]
+fn audio_controls_survive_character_settings_reconciliation() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-audio-controls-{}-{unique}",
+        std::process::id()
+    ));
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        path.clone(),
+    );
+    app.activate_control(None, UiControl::OpenSettings);
+    app.activate_control(None, UiControl::OpenAudio);
+    assert_eq!(app.screen, UiScreen::Audio);
+    for setting in [
+        SettingId::AudioMaster,
+        SettingId::AudioAmbient,
+        SettingId::AudioEffects,
+    ] {
+        assert!(app.focus_order().contains(&UiControl::Increase(setting)));
+        app.activate_control(None, UiControl::Increase(setting));
+    }
+    assert!((app.config.audio_master - 0.85).abs() < 0.0001);
+    assert!((app.config.audio_ambient - 0.65).abs() < 0.0001);
+    assert!((app.config.audio_effects - 0.85).abs() < 0.0001);
+    let saved = app.config.clone();
+    for preset in [
+        crate::audio::Preset::Rain,
+        crate::audio::Preset::Storm,
+        crate::audio::Preset::Wind,
+        crate::audio::Preset::Off,
+    ] {
+        app.activate_control(None, UiControl::Increase(SettingId::AudioPreview));
+        assert_eq!(app.audio.preset(), preset);
+        assert_eq!(app.config, saved, "preview selection must remain ephemeral");
+    }
+    app.activate_control(None, UiControl::Decrease(SettingId::AudioPreview));
+    assert_eq!(app.audio.preset(), crate::audio::Preset::Wind);
+    app.activate_control(None, UiControl::Back);
+    assert_eq!(app.screen, UiScreen::Settings);
+    app.activate_control(None, UiControl::ToggleSettingsPage);
+    assert_eq!(app.screen, UiScreen::Graphics);
+    app.activate_control(None, UiControl::Back);
+    assert_eq!(app.screen, UiScreen::Settings);
+    app.activate_control(None, UiControl::Back);
+    assert_eq!(app.screen, UiScreen::Pause);
+    app.config_writer.finish();
+    assert_eq!(Config::load(&path), saved);
+    let serialized = std::fs::read_to_string(&path).unwrap();
+    assert!(!serialized.contains("audio_preset"));
+    assert!(!serialized.contains("authored_characters"));
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]

@@ -621,9 +621,6 @@ impl ClientApp {
                     (self.config.audio_effects + sign * 0.05).clamp(0.0, 1.0)
             }
             SettingId::AudioPreview => unreachable!(),
-            SettingId::Characters => {
-                self.config.authored_characters = !self.config.authored_characters
-            }
             SettingId::PostProcessing => self.config.post_processing = !self.config.post_processing,
             SettingId::Bloom => self.config.bloom_enabled = !self.config.bloom_enabled,
             SettingId::Exposure => {
@@ -700,10 +697,6 @@ impl ClientApp {
                     self.character_editor
                         .observe(self.replicas.owned_appearance(self.owned_entity_id));
                     if let Some(recipe) = self.character_editor.apply() {
-                        if recipe.is_some() {
-                            self.config.authored_characters = true;
-                            self.config_writer.request_save(&self.config);
-                        }
                         self.queue_command(ClientMessage::SelectCharacter { recipe });
                     }
                 }
@@ -883,8 +876,6 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
-                UiControl::Decrease(SettingId::Characters),
-                UiControl::Increase(SettingId::Characters),
                 UiControl::Back,
             ],
         }
@@ -1853,7 +1844,6 @@ impl ClientApp {
                 audio_effects: self.config.audio_effects,
                 audio_preset: self.audio.preset() as u8,
                 post_processing: self.config.post_processing,
-                authored_characters: self.config.authored_characters,
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
                 bloom_strength: self.config.bloom_strength,
@@ -1879,14 +1869,19 @@ impl ClientApp {
             },
         );
         self.prepare_local_avatar(&mut visual_avatars);
-        self.actor_animator
-            .present_with_local(&mut visual_avatars, now, self.owned_entity_id);
         for avatar in &mut visual_avatars {
             avatar.character_crouch = if self.player_stances.contains_key(&avatar.id) {
                 1.0
             } else {
                 0.0
             };
+            if Some(avatar.id) == self.owned_entity_id {
+                avatar.character_look[1] = self.pitch;
+            }
+        }
+        self.actor_animator
+            .present_with_local(&mut visual_avatars, now, self.owned_entity_id);
+        for avatar in &mut visual_avatars {
             if Some(avatar.id) == self.owned_entity_id {
                 self.character_motion.apply(avatar, now);
             }
@@ -1950,7 +1945,6 @@ impl ClientApp {
             renderer.set_world_time(self.world_time.now());
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
-            renderer.set_authored_characters(self.config.authored_characters);
             renderer.set_first_person_character(
                 (self.perspective == crate::render::camera::Perspective::FirstPerson)
                     .then_some(self.owned_entity_id)

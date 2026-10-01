@@ -35,6 +35,12 @@ impl Store {
         };
         let mut bytes = Vec::with_capacity(MAX_LEN + 1);
         file.take((MAX_LEN + 1) as u64).read_to_end(&mut bytes)?;
+        if bytes.starts_with(b"BGA2") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "profile appearance is from an incompatible older world; use a new world directory (old save left unchanged)",
+            ));
+        }
         let invalid = || {
             io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -42,7 +48,7 @@ impl Store {
             )
         };
         if !(29..=MAX_LEN).contains(&bytes.len())
-            || &bytes[..4] != b"BGA2"
+            || &bytes[..4] != b"BGA3"
             || u128::from_le_bytes(bytes[4..20].try_into().unwrap()) != profile
             || usize::from(bytes[20]) + 25 != bytes.len()
         {
@@ -61,7 +67,7 @@ impl Store {
 
     fn save(&self, profile: u128, appearance: AppearanceState) -> io::Result<()> {
         let payload = appearance.encode();
-        let mut bytes = b"BGA2".to_vec();
+        let mut bytes = b"BGA3".to_vec();
         bytes.extend(profile.to_le_bytes());
         bytes.push(payload.len() as u8);
         bytes.extend(payload);

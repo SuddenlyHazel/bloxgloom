@@ -495,7 +495,7 @@ impl Catalog {
                 MOSSBUN_SCHEMA_FINGERPRINT,
             ),
             (1, "bloxgloom:drop", 1, 0x4247_454e_0000_0001),
-            (2, "bloxgloom:player", 2, 0x4247_454e_0000_0002),
+            (2, "bloxgloom:player", 3, 0x4247_454e_0000_0003),
             (
                 KILN_ENTITY_TYPE.0,
                 "bloxgloom:kiln",

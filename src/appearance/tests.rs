@@ -7,6 +7,8 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
             for mouth in 0..MOUTHS.len() as u8 {
                 for iris in [None, Some([0, 0, 0]), Some([255, 128, 1])] {
                     let recipe = CharacterRecipe {
+                        body: hair % BODIES.len() as u8,
+                        hair_color: [0, 128, 255],
                         hair,
                         eyes,
                         mouth,
@@ -28,8 +30,10 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
     assert_eq!(
         CharacterRecipe::default(),
         CharacterRecipe {
+            body: 0,
+            hair_color: DEFAULT_HAIR_COLOR,
             hair: 1,
-            eyes: 1,
+            eyes: 0,
             mouth: 1,
             iris: None
         }
@@ -45,12 +49,13 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
 fn malformed_recipe_or_public_payload_fails_closed() {
     let original = CharacterRecipe::default().encode();
     for (index, value) in [
-        (0, 2),
-        (1, HAIR.len() as u8),
-        (2, 8),
-        (3, 6),
-        (4, 2),
-        (5, 1),
+        (0, 1),
+        (1, BODIES.len() as u8),
+        (2, HAIR.len() as u8),
+        (3, EYES.len() as u8),
+        (4, MOUTHS.len() as u8),
+        (5, 2),
+        (6, 1),
     ] {
         let mut bytes = original;
         bytes[index] = value;
@@ -80,17 +85,53 @@ fn builtin_identity_is_stable_and_covers_exact_assets() {
             .entity_type(crate::content::EntityTypeId(2))
             .unwrap()
             .schema_version,
-        2
+        3
     );
     assert!(!catalog.valid_appearance_state(AppearanceState {
         palettes: [255, 0, 0],
         ..Default::default()
     }));
-    assert!(!catalog.valid_appearance_state(AppearanceState {
-        character: Some(CharacterRecipe {
+    for recipe in [
+        CharacterRecipe {
+            body: BODIES.len() as u8,
+            ..Default::default()
+        },
+        CharacterRecipe {
             hair: 255,
             ..Default::default()
-        }),
-        ..Default::default()
-    }));
+        },
+    ] {
+        assert!(!catalog.valid_appearance_state(AppearanceState {
+            character: Some(recipe),
+            ..Default::default()
+        }));
+    }
+}
+
+#[test]
+fn legacy_character_recipes_are_rejected_without_becoming_default() {
+    let old_recipe = [1, 13, 7, 5, 1, 66, 136, 206];
+    assert!(CharacterRecipe::decode(&old_recipe).is_none());
+    let mut old_appearance = vec![1, 2, 3, 0];
+    old_appearance.extend(old_recipe);
+    assert!(AppearanceState::decode(&old_appearance).is_none());
+    // A palette-only payload is still an intentional default, never a model ID.
+    assert_eq!(
+        AppearanceState::decode(&[1, 2, 3, 0]).unwrap().character,
+        None
+    );
+}
+
+#[test]
+fn bodies_and_rgb_boundaries_round_trip_without_palette_quantization() {
+    for body in 0..BODIES.len() as u8 {
+        for hair_color in [[0; 3], [255; 3], [1, 128, 254], DEFAULT_HAIR_COLOR] {
+            let recipe = CharacterRecipe {
+                body,
+                hair_color,
+                ..Default::default()
+            };
+            assert_eq!(CharacterRecipe::decode(&recipe.encode()), Some(recipe));
+        }
+    }
 }

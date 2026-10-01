@@ -9,7 +9,7 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
     let functions =
         &source[source.find("fn srgb_to_linear").unwrap()..source.find("@fragment").unwrap()];
     let source = format!(
-        "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(tint_iris(vec3f(1.0,127.0,255.0),f32(id.x)),1.0); }}"
+        "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(tint_iris(vec3f(1.0,127.0,255.0),f32(id.x)),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}"
     );
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
@@ -25,12 +25,12 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
     });
     let output = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: &[0; 256 * 16],
+        contents: &[0; 768 * 16],
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
     });
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 256 * 16,
+        size: 768 * 16,
         usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -49,7 +49,7 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
         pass.set_bind_group(0, &group, &[]);
         pass.dispatch_workgroups(256, 1, 1);
     }
-    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 256 * 16);
+    encoder.copy_buffer_to_buffer(&output, 0, &readback, 0, 768 * 16);
     queue.submit(Some(encoder.finish()));
     let (tx, rx) = std::sync::mpsc::channel();
     readback
@@ -64,6 +64,23 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
     rx.recv().unwrap().unwrap();
     let mapped = readback.slice(..).get_mapped_range().unwrap();
     let floats: &[f32] = bytemuck::cast_slice(&mapped);
+    for byte in 0..256 {
+        let rgb = byte as f32 / 255.0;
+        let linear = if rgb <= 0.04045 {
+            rgb / 12.92
+        } else {
+            ((rgb + 0.055) / 1.055).powf(2.4)
+        };
+        for (channel, neutral) in [0.1, 0.3, 0.7].into_iter().enumerate() {
+            assert!((floats[(byte + 256) * 4 + channel] - neutral * linear).abs() < 0.00001);
+            assert!(
+                (floats[(byte + 512) * 4 + channel] - neutral).abs() < 0.00001,
+                "fixed accessory was recolored"
+            );
+        }
+        assert!((floats[(byte + 256) * 4 + 3] - 0.45).abs() < 0.00001);
+        assert!((floats[(byte + 512) * 4 + 3] - 0.45).abs() < 0.00001);
+    }
     for shade in 0..256 {
         for (channel, base) in [1.0f32, 127.0, 255.0].into_iter().enumerate() {
             let v = if shade <= 128 {

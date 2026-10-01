@@ -17,9 +17,9 @@ Placing glowstone ignites adjacent wood and leaves after one second of simulatio
 
 Voxel skylight travels down open columns and diffuses into caves; placeable glowstone emits warm local light. This is the default lighting mode. In Settings, `LIGHTING: BOUNCED` enables a more expensive single diffuse RGB bounce from block surfaces, including color bleed. It is a voxel approximation, not path tracing or multi-bounce GI. Lighting is derived from nearby chunk snapshots on meshing workers and refreshed after edits or quality changes, including across chunk seams. Mesh corners average nearby light for soft transitions, and unlit cave fog stays dark. An unstreamed neighboring chunk uses its procedural baseline until the server snapshot arrives.
 
-The native character editor is available under **Pause → Character**. It supports the authored animated kit, thirteen hairstyles plus no hair, eight eye styles, six mouths, and optional iris color. Applied choices are validated and saved by the server and replicated to peers. See the [character kit guide](assets/models/player/README.md) for animation previews, compatibility, and rendering limits.
+The native character editor is available under **Pause → Character**. The articulated animated kit is the only character model, with flat-chest and defined-chest sports-bra bodies, thirteen hairstyles plus no hair, RGB hair color, eight eye styles, six mouths, and optional iris color. Existing skin, shirt, and pants palettes still apply. Applied choices are validated and saved by the server and replicated to peers. See the [character kit guide](assets/models/player/README.md) for animation previews, compatibility, and rendering limits.
 
-The current default save directory is `world-v21/`. Incompatible older worlds are rejected explicitly; this pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
+The current default save directory is `world-v22/`. The articulated character format changes the player catalog and profile format. Saves from the previous `world-v21/` release remain untouched and are rejected with an incompatibility error; use a fresh directory rather than copying old appearance files. This pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and server-delivered client content are implemented; see the [current scripting reference](SCRIPTING.md).
 
@@ -39,12 +39,12 @@ With a recent Rust toolchain, run a local game with one command:
 cargo run
 ```
 
-This starts a local server and client in the same process and saves edits in `world-v21/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
+This starts a local server and client in the same process and saves edits in `world-v22/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
 
 For a dedicated multiplayer server, start the server in one terminal:
 
 ```sh
-cargo run -- server 127.0.0.1:4000 world-v21
+cargo run -- server 127.0.0.1:4000 world-v22
 ```
 
 Start one or more clients in other terminals:
@@ -53,7 +53,7 @@ Start one or more clients in other terminals:
 cargo run -- client 127.0.0.1:4000
 ```
 
-The server defaults to `127.0.0.1:4000` and saves edits in `world-v21/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines and a representative two-player combined gameplay/download workload have passed. The latter does not establish 128-player combined-load performance; see the [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md).
+The server defaults to `127.0.0.1:4000` and saves edits in `world-v22/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines and a representative two-player combined gameplay/download workload have passed. The latter does not establish 128-player combined-load performance; see the [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md).
 
 Client and server diagnostics use `tracing`, with timestamps, levels, module targets,
 thread names, and structured fields. Local play shares one process-wide subscriber.
@@ -77,7 +77,7 @@ continues to enable edit-response timestamps, now through the same logger.
 
 Click the window to capture the mouse. Use WASD to fly horizontally, Space and Ctrl to ascend and descend. Hold Shift to crouch: movement slows, the camera lowers, and the server uses a shorter collision body. Releasing Shift stands up when there is sufficient headroom. The crosshair marks the targeted block: left click harvests it (hold to repeat once per arm swing), and right click places a block from the selected hotbar stack against it. Flowers drop themselves; tall grass can drop seeds, and leaves can drop leaves, sticks, and saplings. Seeds, sticks, and saplings are inventory items, not placeable blocks. Walk near a drop to pick it up. Use 1–9 or the mouse wheel to select a hotbar slot. Press Q to drop one selected item, or Shift+Q to drop its full stack.
 
-E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select a source slot, then left-click a destination to move its whole stack; right-click the destination to move half. Matching stacks merge up to 128 blocks; moving a full stack onto a different block swaps them. Escape opens the pause menu, where you can resume, change settings, or exit. F3 toggles the debug HUD. F5 cycles first person, rear third person, and front third person so you can inspect your character. First person shows your authored body when looking down and animated arms when using blocks. Third-person cameras retract near solid terrain; front view hides the aiming crosshair, and gameplay interactions still use the player’s eye and look direction. The local game also has an admin menu on F4 or the pause menu: click a catalog item to grant a stack of 128, or type `give namespace:item [count]` and press Enter. `help` lists available commands. These grants are authorized and persisted by the local server; dedicated multiplayer servers do not grant admin access by default.
+E opens the 36-slot inventory (27 backpack slots and nine hotbar slots). Select a source slot, then left-click a destination to move its whole stack; right-click the destination to move half. Matching stacks merge up to 128 blocks; moving a full stack onto a different block swaps them. Escape opens the pause menu, where you can resume, change settings, or exit. F3 toggles the debug HUD. F5 cycles first person, rear third person, and front third person so you can inspect your character. First person shows your articulated body when looking down and animated arms when using blocks. Third-person cameras retract near solid terrain; front view hides the aiming crosshair, and gameplay interactions still use the player’s eye and look direction. The local game also has an admin menu on F4 or the pause menu: click a catalog item to grant a stack of 128, or type `give namespace:item [count]` and press Enter. `help` lists available commands. These grants are authorized and persisted by the local server; dedicated multiplayer servers do not grant admin access by default.
 
 The inventory, Kiln input/fuel, and drop keys can be rebound in the local config
 with `bind_inventory=E`, `bind_kiln_input=R`, `bind_kiln_fuel=F`, and `bind_drop=Q`.
@@ -277,7 +277,7 @@ Run `cargo run --release -- chest-preview chest-previews` for Chest/Hopper block
 
 Inventory screens are now registered content shared by Chest, Hopper, Kiln, and extensions. Run `cargo run --release -- inventory-preview bloxgloom:kiln inventory-previews` to preview a registered screen.
 
-To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v21-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
+To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v22-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
 
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 

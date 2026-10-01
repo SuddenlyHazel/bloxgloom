@@ -1,23 +1,10 @@
 use super::*;
 
 #[test]
-fn production_egui_graphics_exposes_and_labels_authored_character_control() {
-    for authored in [false, true] {
-        let settings = crate::ui::UiSettings {
-            audio_master: 0.8,
-            audio_ambient: 0.6,
-            audio_effects: 0.8,
-            audio_preset: 0,
-            authored_characters: authored,
-            ..Default::default()
-        };
-        let row = settings_rows(settings, true)
-            .into_iter()
-            .find(|row| row.0 == SettingId::Characters)
-            .expect("live egui needs the character toggle, not only the legacy preview UI");
-        assert_eq!(row.1, "Characters");
-        assert_eq!(row.2, if authored { "Authored" } else { "Classic" });
-    }
+fn graphics_settings_do_not_offer_a_model_override() {
+    let rows = settings_rows(crate::ui::UiSettings::default(), true);
+    assert_eq!(rows.len(), 4);
+    assert!(rows.iter().all(|row| row.1 != "Characters"));
 }
 
 fn label_center(shapes: &[egui::epaint::ClippedShape], label: &str) -> egui::Pos2 {
@@ -45,7 +32,10 @@ fn native_character_menu_keeps_apply_visible_and_blocks_repeat_while_pending() {
             screen: UiScreen::Character,
             character: Some(crate::ui::CharacterPanel {
                 cosmetics: [0; 4],
-                recipe: Some(Default::default()),
+                recipe: Some(crate::appearance::CharacterRecipe {
+                    iris: Some([12, 170, 255]),
+                    ..Default::default()
+                }),
                 can_apply: true,
                 pending: false,
                 status: "Unapplied changes",
@@ -70,6 +60,8 @@ fn native_character_menu_keeps_apply_visible_and_blocks_repeat_while_pending() {
         };
         draw(&frame, vec![]);
         let (output, _) = draw(&frame, vec![]);
+        label_center(&output.shapes, "Body");
+        label_center(&output.shapes, "Hair color");
         let apply = label_center(&output.shapes, "Apply");
         let close = label_center(&output.shapes, "Close");
         assert!(

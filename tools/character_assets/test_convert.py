@@ -1,169 +1,69 @@
-"""Structural checks on actual source assets and their checked-in conversion."""
-import copy
-import hashlib
-import json
+"""Regression tests for the checked-in articulated conversion contract."""
+import hashlib,json,math,shutil,struct,tempfile,unittest
 from pathlib import Path
-import shutil
-import tempfile
-import struct
-import unittest
+from articulated import BODIES,DEST,STYLES,convert,geometry,node_matrix,source_path
+from glb import Glb
 
-from convert import DEST, HAIR_CATALOG, Glb, convert, load_native, geometry_animation_sha256, transform, validate_geometry
-
-
-class AssetTests(unittest.TestCase):
-    def setUp(self):
-        self.asset = load_native()
-
-    def test_counts_and_rigid_weights(self):
-        self.assertEqual(len(self.asset["joints"]), 7)
-        self.assertEqual(len(self.asset["vertices"]), 22680)
-        self.assertEqual(len(self.asset["indices"]), 22680)
-        body = Glb(DEST / "source/player.glb")
-        for mesh in body.doc["meshes"]:
-            for primitive in mesh["primitives"]:
-                weights = body.accessor(primitive["attributes"]["WEIGHTS_0"])
-                self.assertTrue(all(weight == [1, 0, 0, 0] for weight in weights))
-
-    def test_inverse_bind_cancels_rest_translation(self):
-        body = Glb(DEST / "source/player.glb")
-        skin = body.doc["skins"][0]
-        inverse = body.accessor(skin["inverseBindMatrices"])
-        for joint, matrix in zip(self.asset["joints"], inverse):
-            self.assertEqual(transform(matrix, joint["translation"], 1), [0, 0, 0])
-        vertices = [v for v in self.asset["vertices"] if v["material"] == 0]
-        heights = [v["position"][1] + self.asset["joints"][v["joint"]]["translation"][1] for v in vertices]
-        self.assertAlmostEqual(min(heights), 0)
-        self.assertAlmostEqual(max(heights) * 0.9, 1.8)
-
-    def test_every_body_vertex_reconstructs_source_bind_and_uv(self):
-        source = Glb(DEST / "source/player.glb")
-        converted = iter(v for v in self.asset["vertices"] if v["material"] == 0)
-        for mesh in source.doc["meshes"]:
-            for primitive in mesh["primitives"]:
-                attrs = primitive["attributes"]
-                for position, normal, uv in zip(*(source.accessor(attrs[name]) for name in ["POSITION", "NORMAL", "TEXCOORD_0"])):
-                    vertex = next(converted)
-                    rest = self.asset["joints"][vertex["joint"]]["translation"]
-                    for actual, expected in zip([a + b for a, b in zip(vertex["position"], rest)], position):
-                        self.assertAlmostEqual(actual, expected, places=6)
-                    self.assertEqual(vertex["normal"], normal)
-                    self.assertEqual(vertex["uv"], uv)
-        self.assertIsNone(next(converted, None))
-
-    def test_tool_clip_anatomical_mapping_preserves_legacy_names(self):
-        clips = {clip["name"]: clip for clip in self.asset["clips"]}
-        for clip_name, moving, stationary in [("tool_use_left", "right_arm", "left_arm"), ("tool_use_right", "left_arm", "right_arm")]:
-            movement = {}
-            for channel in clips[clip_name]["channels"]:
-                if channel["path"] == "rotation":
-                    movement[self.asset["joints"][channel["joint"]]["name"]] = max(sum(v * v for v in value[:3]) for value in channel["values"])
-            self.assertGreater(movement[moving], 0.5)
-            self.assertEqual(movement[stationary], 0)
-
-    def test_textures_are_byte_exact_and_keep_aspect(self):
-        for name, source, size in [("body", "player", (512, 256))] + [(entry[2], entry[2], (32, 32)) for entry in HAIR_CATALOG]:
-            png = (DEST / f"{name}.png").read_bytes()
-            self.assertEqual(png, Glb(DEST / f"source/{source}.glb").png())
-            self.assertEqual(struct.unpack_from(">II", png, 16), size)
-
-    def test_clip_semantics_and_hair_attachment(self):
-        clips = {clip["name"]: clip for clip in self.asset["clips"]}
-        self.assertEqual(set(clips), {"walk", "idle", "crouch", "tool_use_left", "tool_use_right"})
-        self.assertTrue(clips["walk"]["looping"])
-        self.assertTrue(clips["idle"]["looping"])
-        self.assertFalse(clips["crouch"]["looping"])
-        self.assertAlmostEqual(clips["crouch"]["duration"], 0.6)
-        hair = [v for v in self.asset["vertices"] if v["material"] > 0]
-        self.assertTrue(hair)
-        self.assertTrue(all(v["joint"] == 1 for v in hair))
-        self.assertEqual(self.asset["joints"][1]["name"], "head")
-
-
-    def test_all_hair_vertices_preserve_source_head_local_normals_and_uvs(self):
-        for (material, _, name, _, lo, hi), count in zip(HAIR_CATALOG, [360, 504, 792, 2664, 1764, 360, 432, 2772, 1980, 2412, 4248, 3168, 1008]):
-            source = Glb(DEST / f"source/{name}.glb")
-            converted = [v for v in self.asset["vertices"] if v["material"] == material]
-            self.assertEqual(len(converted), count)
-            expected = []
-            for mesh in source.doc["meshes"]:
-                for primitive in mesh["primitives"]:
-                    attrs = primitive["attributes"]
-                    expected.extend(zip(*(source.accessor(attrs[key]) for key in ["POSITION", "NORMAL", "TEXCOORD_0"])))
-            for vertex, (position, normal, uv) in zip(converted, expected):
-                self.assertEqual(vertex["position"], position)
-                self.assertEqual(vertex["normal"], normal)
-                self.assertEqual(vertex["uv"], uv)
-                self.assertEqual(vertex["joint"], 1)
-                self.assertTrue(all(lo[axis] <= position[axis] <= hi[axis] for axis in range(3)))
-            self.assertEqual(len(expected), len(converted))
-
-    def test_conversion_is_deterministic_and_texture_exact(self):
-        with tempfile.TemporaryDirectory() as directory:
-            dest = Path(directory)
-            shutil.copytree(DEST / "source", dest / "source")
-            convert(dest)
-            for name in ["character.json", "body.png", "hair_sockets.json"] + [f"clip_{name}.json" for name in ["walk", "idle", "crouch", "tool_use_left", "tool_use_right"]] + [entry[2] + ext for entry in HAIR_CATALOG for ext in [".png", ".mesh"]]:
-                self.assertEqual((dest / name).read_bytes(), (DEST / name).read_bytes())
-
-    def test_rejects_interpolated_sampler_and_unsupported_material(self):
-        for name in ["player"] + [entry[2] for entry in HAIR_CATALOG]:
-            glb = Glb(DEST / f"source/{name}.glb")
-            glb.validate_material()
-            glb.doc["samplers"][0]["magFilter"] = 9729
-            with self.assertRaisesRegex(ValueError, "nearest clamp"):
-                glb.validate_material()
-            glb = Glb(DEST / f"source/{name}.glb")
-            glb.doc["materials"][0]["alphaMode"] = "BLEND"
-            with self.assertRaisesRegex(ValueError, "opaque"):
-                glb.validate_material()
-
-    def test_face_catalog_names_ids_and_approved_bytes(self):
-        face = DEST / "face"
-        mapping = json.loads((face / "mapping.json").read_text())
-        expected = {
-            "eyes": ["classic", "cute_glint", "kawaii_star", "playful_wink", "happy_crescent", "neon_focus", "neon_curious", "soft_sleepy"],
-            "mouths": ["classic", "soft_smile", "cat_smile", "tiny_open", "playful", "smirk"],
-        }
-        for group, names in expected.items():
-            self.assertEqual([entry["id"] for entry in mapping[group]], list(range(len(names))))
-            self.assertEqual([entry["name"] for entry in mapping[group]], names)
-        self.assertEqual(len(mapping["sha256"]), 23)
-        for name, expected_hash in mapping["sha256"].items():
-            data = (face / name).read_bytes()
-            self.assertEqual(hashlib.sha256(data).hexdigest(), expected_hash)
-            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
-            self.assertEqual(struct.unpack_from(">II", data, 16), (32, 32))
-            self.assertEqual(data[24:26], bytes([8, 6]), "8-bit RGBA required")
-
-    def test_contiguous_single_material_ranges_and_socket_budgets(self):
-        validate_geometry(self.asset["vertices"], self.asset["indices"])
-        mixed = self.asset["indices"].copy()
-        mixed[0] = 216
-        with self.assertRaisesRegex(ValueError, "crosses materials"):
-            validate_geometry(self.asset["vertices"], mixed)
-        disjoint = self.asset["indices"] + self.asset["indices"][:3]
-        with self.assertRaisesRegex(ValueError, "contiguous and ordered"):
-            validate_geometry(self.asset["vertices"], disjoint)
-        outside = copy.deepcopy(self.asset["vertices"])
-        next(v for v in outside if v["material"] == 3)["position"][1] = 0.82
-        with self.assertRaisesRegex(ValueError, "socket envelope"):
-            validate_geometry(outside, self.asset["indices"])
-
-    def test_clearance_evidence_matches_exact_source_geometry_and_animations(self):
-        evidence = json.loads((DEST / "hair_compatibility.json").read_text())
-        self.assertEqual(evidence["geometry_animation_sha256"], geometry_animation_sha256(Glb(DEST / "source/player.glb")))
-        sockets = json.loads((DEST / "hair_sockets.json").read_text())
-        self.assertEqual([s["id"] for s in sockets["styles"]], list(range(1, 14)))
-        self.assertEqual([s["key"] for s in sockets["styles"]], [e[1] for e in HAIR_CATALOG])
-        for style in sockets["styles"]:
-            self.assertEqual(hashlib.sha256((DEST / style["source"]).read_bytes()).hexdigest(), style["source_sha256"])
-            self.assertEqual(hashlib.sha256((DEST / style["mesh"]).read_bytes()).hexdigest(), style["mesh_sha256"])
-            lo, hi = style["index_range"]
-            self.assertTrue(all(self.asset["vertices"][i]["material"] == style["id"] for i in self.asset["indices"][lo:hi]))
-            self.assertIn(style["key"], evidence["styles"])
-            self.assertEqual(style["source_sha256"], evidence["styles"][style["key"]]["source_sha256"])
-            self.assertEqual(len(evidence["styles"][style["key"]]["clips"]), 5)
-
-if __name__ == "__main__":
-    unittest.main()
+class ConversionTests(unittest.TestCase):
+    def test_rebuild_is_byte_identical(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output=Path(folder);shutil.copytree(DEST/'source',output/'source');convert(output)
+            for file in DEST.iterdir():
+                if file.suffix in ['.mesh','.png'] or file.suffix=='.json':
+                    self.assertEqual(file.read_bytes(),(output/file.name).read_bytes(),file.name)
+    def test_lossless_body_source_containers_are_deterministic_and_hash_original_bytes(self):
+        import gzip
+        manifest=json.loads((DEST/'manifest.json').read_text())
+        for key in BODIES:
+            path=source_path(DEST,key);self.assertEqual(path.suffix,'.gz')
+            raw=Glb(path).raw_bytes
+            self.assertEqual(gzip.compress(raw,compresslevel=9,mtime=0),path.read_bytes())
+            record=next(r for r in manifest['records'] if r['key']==key)
+            self.assertEqual(hashlib.sha256(raw).hexdigest(),record['source_sha256'])
+    def test_bodies_share_rig_but_have_distinct_geometry(self):
+        a=Glb(source_path(DEST,BODIES[0]));b=Glb(source_path(DEST,BODIES[1]))
+        for aa,bb in zip(a.doc['nodes'][:30],b.doc['nodes'][:30]):
+            self.assertEqual({k:v for k,v in aa.items() if k!='children'},{k:v for k,v in bb.items() if k!='children'})
+            self.assertEqual([c for c in aa.get('children',[]) if c<30],[c for c in bb.get('children',[]) if c<30])
+        self.assertEqual([len(a.doc['meshes']),len(b.doc['meshes'])],[51,62])
+        self.assertNotEqual(geometry(a,0)[0],geometry(b,14)[0])
+    def test_all_hair_has_head_joint_and_neutral_fixed_material_contract(self):
+        for i,key in enumerate(STYLES,1):
+            g=Glb(DEST/'source'/f'{key}.glb');packed,vertices,indices,parts=geometry(g,i)
+            self.assertTrue(all(v['joint']==5 and v['material']==i and v['surface'] in [7,8] for v in vertices))
+            self.assertEqual(packed,(DEST/f'{key}.mesh').read_bytes())
+            for material in g.doc['materials']:
+                pbr=material['pbrMetallicRoughness']
+                if material['extras']['tintable']:
+                    srgb=material['extras']['hairColor'];linear=[x/12.92 if x<=.04045 else ((x+.055)/1.055)**2.4 for x in srgb]
+                    self.assertEqual(linear,pbr['baseColorFactor'][:3])
+                else:self.assertNotIn('baseColorFactor',pbr)
+            self.assertEqual(sum(p['count'] for p in parts),len(vertices))
+    def test_native_header_sizes_and_hashes(self):
+        records=json.loads((DEST/'manifest.json').read_text())['records'];self.assertEqual(len(records),15)
+        for record in records:
+            data=(DEST/f"{record['key']}.mesh").read_bytes();magic,n,ni=struct.unpack_from('<4sII',data)
+            self.assertEqual(magic,b'BGC2');self.assertEqual(len(data),12+n*44+ni*2)
+            self.assertEqual(hashlib.sha256(data).hexdigest(),record['mesh_sha256'])
+            self.assertEqual(ni//3,record['triangles'])
+    def test_source_clips_remain_exact_and_gameplay_is_not_old_rig_animation(self):
+        rig=json.loads((DEST/'rig.json').read_text());source=Glb(source_path(DEST,'flat_chest'));rig['clips']=[json.loads((DEST/f"clip_{a['name']}.json").read_text()) for a in source.doc['animations']]
+        self.assertEqual(len(rig['joints']),30);self.assertEqual(len(rig['clips']),4)
+        self.assertEqual([c['name'] for c in rig['clips']],[a['name'] for a in source.doc['animations']])
+        for clip,animation in zip(rig['clips'],source.doc['animations']):
+            for track,ch in zip(clip['channels'],animation['channels']):
+                sampler=animation['samplers'][ch['sampler']]
+                times=[x[0] for x in source.accessor(sampler['input'])];values=source.accessor(sampler['output'])
+                if all(x==values[0] for x in values):times=[times[0],times[-1]];values=[values[0],values[-1]]
+                self.assertEqual(track['times'],times)
+                self.assertEqual(track['values'],[x+[0] if len(x)==3 else x for x in values])
+    def test_rigid_skin_and_node_bounds_reject_unsupported_inputs(self):
+        for node in [{'matrix':[0]*16},{'scale':[-1,1,1]},{'translation':[math.nan,0,0]},{'rotation':[1,1,1,1]}]:
+            with self.assertRaises(ValueError):node_matrix(node)
+        g=Glb(source_path(DEST,'flat_chest'));g.doc['nodes'][30]['skin']=1
+        with self.assertRaises(ValueError):geometry(g,0)
+    def test_primitive_material_assignment_separates_overlapping_tie_uvs(self):
+        _,v,_,_=geometry(Glb(DEST/'source'/'twin_braids.glb'),12)
+        tint={tuple(x['uv']) for x in v if x['surface']==7};fixed={tuple(x['uv']) for x in v if x['surface']==8}
+        self.assertTrue(tint and fixed and tint&fixed,'UV overlap needs per-primitive role, never UV-based tint classification')
+if __name__=='__main__':unittest.main()

@@ -6,46 +6,40 @@ mod gameplay;
 pub(crate) use gameplay::tool_duration;
 mod mesh;
 
-pub(super) const JOINT_COUNT: usize = 7;
-pub(super) const BODY_PNG: &[u8] = include_bytes!("../../../assets/models/player/body.png");
-pub(super) const HAIR_PNG: &[u8] = include_bytes!("../../../assets/models/player/hair.png");
-
-// Numeric order is the persisted appearance ID order; never reorder these tables.
-pub(super) const HAIR_UNDERCUT_PNG: &[u8] =
-    include_bytes!("../../../assets/models/player/hair_undercut.png");
-// Appearance ID 0 has no attachment; material/appearance ID n uses slot n - 1.
-pub(super) const HAIR_PNGS: [&[u8]; 13] = [
-    HAIR_PNG,
-    HAIR_UNDERCUT_PNG,
-    include_bytes!("../../../assets/models/player/hair_space_buns.png"),
-    include_bytes!("../../../assets/models/player/hair_curly_bob.png"),
-    include_bytes!("../../../assets/models/player/hair_curly_pigtails.png"),
-    include_bytes!("../../../assets/models/player/hair_sidepart_bob.png"),
-    include_bytes!("../../../assets/models/player/hair_compact_braid.png"),
-    include_bytes!("../../../assets/models/player/hair_long_loose_curls.png"),
-    include_bytes!("../../../assets/models/player/hair_long_curly_ponytail.png"),
-    include_bytes!("../../../assets/models/player/hair_half_up_curly_cascade.png"),
-    include_bytes!("../../../assets/models/player/hair_rounded_afro.png"),
-    include_bytes!("../../../assets/models/player/hair_twin_braids.png"),
-    include_bytes!("../../../assets/models/player/hair_curly_mohawk.png"),
-];
-const MATERIAL_VERTEX_LIMITS: [usize; 14] = [
-    256, 512, 768, 1024, 3072, 2048, 512, 512, 2816, 2048, 2560, 4352, 3328, 1024,
-];
-const HAIR_BOUNDS: [([f32; 3], [f32; 3]); 13] = [
-    ([-0.30, 0.18, -0.31], [0.30, 0.61, 0.30]),
-    ([-0.35, 0.15, -0.33], [0.29, 0.64, 0.30]),
-    ([-0.42, 0.20, -0.31], [0.42, 0.81, 0.31]),
-    ([-0.40, 0.11, -0.37], [0.40, 0.64, 0.40]),
-    ([-0.50, 0.11, -0.33], [0.50, 0.56, 0.38]),
-    ([-0.3, 0.08, -0.3], [0.3, 0.56, 0.3]),
-    ([-0.28, 0.08, -0.29], [0.28, 0.54, 0.4]),
-    ([-0.36, -0.47, -0.32], [0.36, 0.61, 0.65]),
-    ([-0.34, -0.49, -0.32], [0.34, 0.61, 0.82]),
-    ([-0.31, -0.41, -0.32], [0.31, 0.65, 0.67]),
-    ([-0.51, 0.21, -0.39], [0.5, 0.91, 0.47]),
-    ([-0.4, -0.54, -0.26], [0.4, 0.57, 0.41]),
-    ([-0.26, 0.34, -0.31], [0.26, 0.78, 0.34]),
+pub(super) const JOINT_COUNT: usize = 30;
+pub(super) mod rig;
+pub(super) const MATERIAL_COUNT: usize = 15;
+pub(super) const BODY_PNG: &[u8] =
+    include_bytes!("../../../assets/models/player/articulated/flat_chest.png");
+pub(super) const BODY_DEFINED_PNG: &[u8] =
+    include_bytes!("../../../assets/models/player/articulated/defined_chest_sports_bra.png");
+pub(super) const HAIR_PNGS: [&[u8]; 26] = [
+    include_bytes!("../../../assets/models/player/articulated/tousled_crop_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/tousled_crop_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/side_swept_undercut_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/side_swept_undercut_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/space_buns_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/space_buns_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_bob_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_bob_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_pigtails_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_pigtails_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/sidepart_bob_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/sidepart_bob_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/compact_braid_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/compact_braid_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/long_loose_curls_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/long_loose_curls_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/long_curly_ponytail_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/long_curly_ponytail_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/half_up_curly_cascade_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/half_up_curly_cascade_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/rounded_afro_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/rounded_afro_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/twin_braids_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/twin_braids_accessory.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_mohawk_neutral.png"),
+    include_bytes!("../../../assets/models/player/articulated/curly_mohawk_accessory.png"),
 ];
 pub(super) const CLEAN_FACE_PNG: &[u8] =
     include_bytes!("../../../assets/models/player/face/clean.png");
@@ -104,6 +98,7 @@ pub(super) struct CharacterVertex {
     pub uv: [f32; 2],
     pub joint: usize,
     pub material: u32,
+    pub surface: u32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -177,14 +172,14 @@ impl CharacterAsset {
         let rotation = |values: [f32; 4]| {
             finite(&values) && (Quat::from_array(values).length_squared() - 1.0).abs() < 0.001
         };
-        if self.version != 1
+        if self.version != 2
             || self.joints.len() != JOINT_COUNT
             || self.vertices.is_empty()
-            || self.vertices.len() > 32768
+            || self.vertices.len() > 65536
             || self.indices.is_empty()
-            || self.indices.len() > 98304
+            || self.indices.len() > 196608
             || !self.indices.len().is_multiple_of(3)
-            || self.clips.len() != 5
+            || self.clips.len() != 4
         {
             return Err("invalid character shape or version".into());
         }
@@ -205,8 +200,9 @@ impl CharacterAsset {
         }
         for vertex in &self.vertices {
             if vertex.joint >= JOINT_COUNT
-                || vertex.material as usize >= crate::appearance::HAIR.len()
-                || (vertex.material > 0 && vertex.joint != 1)
+                || vertex.material as usize >= MATERIAL_COUNT
+                || vertex.surface > 9
+                || ((1..14).contains(&vertex.material) && vertex.joint != 5)
                 || !finite(&vertex.position)
                 || !finite(&vertex.normal)
                 || !finite(&vertex.uv)
@@ -224,53 +220,32 @@ impl CharacterAsset {
         {
             return Err("character triangle index out of bounds".into());
         }
-        let mut vertex_counts = [0; 14];
-        for vertex in &self.vertices {
-            let material = vertex.material as usize;
-            vertex_counts[material] += 1;
-            if material > 0 {
-                let (min, max) = HAIR_BOUNDS[material - 1];
-                if (0..3).any(|axis| !(min[axis]..=max[axis]).contains(&vertex.position[axis])) {
-                    return Err("hair outside authored socket envelope".into());
-                }
-            }
-        }
-        if vertex_counts
-            .iter()
-            .zip(MATERIAL_VERTEX_LIMITS)
-            .any(|(&count, limit)| count == 0 || count > limit)
-        {
-            return Err("character material vertex budget exceeded".into());
-        }
-        let mut index_counts = [0; 14];
+        let mut counts = [0; MATERIAL_COUNT];
         let mut material = 0;
         for triangle in self.indices.chunks_exact(3) {
             let next = self.vertices[triangle[0] as usize].material as usize;
             if triangle
                 .iter()
                 .any(|&i| self.vertices[i as usize].material as usize != next)
+                || next < material
+                || next > material + 1
             {
-                return Err("character triangle crosses materials".into());
+                return Err("character material ranges must be contiguous and ordered".into());
             }
-            if next != material {
-                if next != material + 1 || index_counts[material] == 0 {
-                    return Err("character material ranges must be contiguous and ordered".into());
-                }
-                material = next;
-            }
-            index_counts[material] += 3;
+            material = next;
+            counts[next] += 3;
         }
-        if index_counts
-            .iter()
-            .zip(MATERIAL_VERTEX_LIMITS)
-            .any(|(&count, limit)| count == 0 || count > limit * 3)
-        {
+        if counts.iter().any(|&count| count == 0 || count > 49152) {
             return Err("character material index budget exceeded".into());
         }
-        let expected = ["walk", "idle", "crouch", "tool_use_left", "tool_use_right"];
-        for name in expected {
+        for name in [
+            "crouch_test",
+            "grip_test",
+            "weight_shift",
+            "wrist_ankle_test",
+        ] {
             if self.clips.iter().filter(|clip| clip.name == name).count() != 1 {
-                return Err("missing or duplicate authored clip".into());
+                return Err("missing or duplicate source clip".into());
             }
         }
         for clip in &self.clips {
@@ -320,6 +295,9 @@ impl CharacterAsset {
             translation: Vec3::from_array(self.joints[index].translation),
             rotation: Quat::from_array(self.joints[index].rotation),
         });
+        if gameplay::animate(name, seconds, &mut pose) {
+            return pose;
+        }
         let Some(clip) = self.clips.iter().find(|clip| clip.name == name) else {
             return pose;
         };
@@ -363,10 +341,10 @@ impl CharacterAsset {
     }
 
     fn matrices(&self, pose: [LocalPose; JOINT_COUNT]) -> [Mat4; JOINT_COUNT] {
-        // Source: 2 m tall, feet-origin, Y up, -Z forward. Engine: 1.8 blocks,
+        // Source: 1.8 m tall, feet-origin, Y up, -Z forward. Engine: 1.8 blocks,
         // feet-origin, Y up, +Z forward. The proper rotation preserves winding.
         let basis = Mat4::from_scale_rotation_translation(
-            Vec3::splat(0.9),
+            Vec3::ONE,
             Quat::from_rotation_y(std::f32::consts::PI),
             Vec3::ZERO,
         );
@@ -383,7 +361,14 @@ impl CharacterAsset {
 
     /// Unknown clip names return the bind/rest pose. One-shots clamp, never wrap.
     pub fn sample(&self, clip: &str, seconds: f32) -> [Mat4; JOINT_COUNT] {
-        self.matrices(self.local_pose(clip, seconds))
+        let mut matrices = self.matrices(self.local_pose(clip, seconds));
+        if matches!(
+            clip,
+            "idle" | "walk" | "run" | "crouch" | "tool_use_left" | "tool_use_right"
+        ) {
+            gameplay::ground(&mut matrices);
+        }
+        matrices
     }
 
     /// Blend local transforms before hierarchy evaluation, avoiding matrix lerp.
@@ -401,7 +386,7 @@ impl CharacterAsset {
         } else {
             0.0
         };
-        self.matrices(std::array::from_fn(|index| LocalPose {
+        let mut matrices = self.matrices(std::array::from_fn(|index| LocalPose {
             translation: idle[index]
                 .translation
                 .lerp(walk[index].translation, weight),
@@ -409,7 +394,9 @@ impl CharacterAsset {
                 .rotation
                 .slerp(walk[index].rotation, weight)
                 .normalize(),
-        }))
+        }));
+        gameplay::ground(&mut matrices);
+        matrices
     }
 }
 

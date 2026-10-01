@@ -1,0 +1,4131 @@
+{
+  "version": 2,
+  "joints": 30,
+  "source_height": 1.8,
+  "head_joint": 5,
+  "source_forward": "-Z",
+  "runtime_forward": "+Z",
+  "runtime_scale": 1,
+  "records": [
+    {
+      "id": 0,
+      "key": "flat_chest",
+      "vertices": 4896,
+      "triangles": 2244,
+      "source_sha256": "6cabc407510559c773da849462f67c217885a797fb62c1704422b4df4c7ab625",
+      "mesh_sha256": "953fa5203c3997c09a1c358f0c48837c3c56385847b42b7c77996407a4295dc2",
+      "parts": [
+        {
+          "name": "head_shell",
+          "first": 0,
+          "count": 96
+        },
+        {
+          "name": "neck_core",
+          "first": 96,
+          "count": 96
+        },
+        {
+          "name": "chest_shell",
+          "first": 192,
+          "count": 96
+        },
+        {
+          "name": "abdomen_shell",
+          "first": 288,
+          "count": 96
+        },
+        {
+          "name": "waist_joint",
+          "first": 384,
+          "count": 96
+        },
+        {
+          "name": "shorts_hip_yoke",
+          "first": 480,
+          "count": 96
+        },
+        {
+          "name": "shorts_waistband",
+          "first": 576,
+          "count": 96
+        },
+        {
+          "name": "ear_R",
+          "first": 672,
+          "count": 96
+        },
+        {
+          "name": "ear_inset_R",
+          "first": 768,
+          "count": 96
+        },
+        {
+          "name": "eye_socket_R",
+          "first": 864,
+          "count": 96
+        },
+        {
+          "name": "eye_white_R",
+          "first": 960,
+          "count": 96
+        },
+        {
+          "name": "iris_R",
+          "first": 1056,
+          "count": 96
+        },
+        {
+          "name": "pupil_R",
+          "first": 1152,
+          "count": 96
+        },
+        {
+          "name": "eye_glint_R",
+          "first": 1248,
+          "count": 96
+        },
+        {
+          "name": "brow_block_R",
+          "first": 1344,
+          "count": 96
+        },
+        {
+          "name": "upper_arm_shell_R",
+          "first": 1440,
+          "count": 96
+        },
+        {
+          "name": "elbow_core_R",
+          "first": 1536,
+          "count": 96
+        },
+        {
+          "name": "forearm_shell_R",
+          "first": 1632,
+          "count": 96
+        },
+        {
+          "name": "wrist_core_R",
+          "first": 1728,
+          "count": 96
+        },
+        {
+          "name": "hand_block_R",
+          "first": 1824,
+          "count": 96
+        },
+        {
+          "name": "thumb_R",
+          "first": 1920,
+          "count": 96
+        },
+        {
+          "name": "thigh_skin_R",
+          "first": 2016,
+          "count": 96
+        },
+        {
+          "name": "shorts_leg_R",
+          "first": 2112,
+          "count": 96
+        },
+        {
+          "name": "shorts_hem_R",
+          "first": 2208,
+          "count": 96
+        },
+        {
+          "name": "knee_core_R",
+          "first": 2304,
+          "count": 96
+        },
+        {
+          "name": "shin_shell_R",
+          "first": 2400,
+          "count": 96
+        },
+        {
+          "name": "ankle_core_R",
+          "first": 2496,
+          "count": 96
+        },
+        {
+          "name": "foot_heel_R",
+          "first": 2592,
+          "count": 96
+        },
+        {
+          "name": "toe_block_R",
+          "first": 2688,
+          "count": 96
+        },
+        {
+          "name": "ear_L",
+          "first": 2784,
+          "count": 96
+        },
+        {
+          "name": "ear_inset_L",
+          "first": 2880,
+          "count": 96
+        },
+        {
+          "name": "eye_socket_L",
+          "first": 2976,
+          "count": 96
+        },
+        {
+          "name": "eye_white_L",
+          "first": 3072,
+          "count": 96
+        },
+        {
+          "name": "iris_L",
+          "first": 3168,
+          "count": 96
+        },
+        {
+          "name": "pupil_L",
+          "first": 3264,
+          "count": 96
+        },
+        {
+          "name": "eye_glint_L",
+          "first": 3360,
+          "count": 96
+        },
+        {
+          "name": "brow_block_L",
+          "first": 3456,
+          "count": 96
+        },
+        {
+          "name": "upper_arm_shell_L",
+          "first": 3552,
+          "count": 96
+        },
+        {
+          "name": "elbow_core_L",
+          "first": 3648,
+          "count": 96
+        },
+        {
+          "name": "forearm_shell_L",
+          "first": 3744,
+          "count": 96
+        },
+        {
+          "name": "wrist_core_L",
+          "first": 3840,
+          "count": 96
+        },
+        {
+          "name": "hand_block_L",
+          "first": 3936,
+          "count": 96
+        },
+        {
+          "name": "thumb_L",
+          "first": 4032,
+          "count": 96
+        },
+        {
+          "name": "thigh_skin_L",
+          "first": 4128,
+          "count": 96
+        },
+        {
+          "name": "shorts_leg_L",
+          "first": 4224,
+          "count": 96
+        },
+        {
+          "name": "shorts_hem_L",
+          "first": 4320,
+          "count": 96
+        },
+        {
+          "name": "knee_core_L",
+          "first": 4416,
+          "count": 96
+        },
+        {
+          "name": "shin_shell_L",
+          "first": 4512,
+          "count": 96
+        },
+        {
+          "name": "ankle_core_L",
+          "first": 4608,
+          "count": 96
+        },
+        {
+          "name": "foot_heel_L",
+          "first": 4704,
+          "count": 96
+        },
+        {
+          "name": "toe_block_L",
+          "first": 4800,
+          "count": 96
+        }
+      ],
+      "bounds": [
+        [
+          -0.3160000145435333,
+          -0.32399997115135193,
+          -0.20600000023841858
+        ],
+        [
+          0.3160000145435333,
+          0.47200000286102295,
+          0.19750000536441803
+        ]
+      ]
+    },
+    {
+      "id": 1,
+      "key": "tousled_crop",
+      "vertices": 240,
+      "triangles": 120,
+      "source_sha256": "5faa0fcc733c4179d5d7687326753d3ec128796d24a5a7ffc0973aa82b736951",
+      "mesh_sha256": "2da7f5e145d5a8378c62feb17b5df05801f98fbeea91ad280d9bc9e18fe5fe1e",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/left_side",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/right_side",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_left",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_mid",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_right",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/tuft_left",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/tuft_mid",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/tuft_right",
+          "first": 216,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.29109373688697815,
+          0.1889999955892563,
+          -0.23395311832427979
+        ],
+        [
+          0.29109373688697815,
+          0.5581406354904175,
+          0.2264062464237213
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "key": "side_swept_undercut",
+      "vertices": 384,
+      "triangles": 192,
+      "source_sha256": "23942ccae463c69fbd2428e443092d188bee550feb669e81d1ccd9ab78408669",
+      "mesh_sha256": "2a2b799714c51897a7372e95bf2cc56b03b001233c539a76365f9a0ec3ff5d0d",
+      "parts": [
+        {
+          "name": "hair/short_crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/cropped_back",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/cropped_right_side",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_top_0",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_top_1",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_top_2",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_top_3",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/long_left_panel_earclear_0",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/long_left_panel_earclear_1",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/long_left_panel_earclear_2",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/left_side_step",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/left_taper_earclear_0",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_front_panel_0",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_front_panel_1",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_front_panel_2",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_front_panel_3",
+          "first": 360,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.33637499809265137,
+          0.15946875512599945,
+          -0.2440156191587448
+        ],
+        [
+          0.2768625020980835,
+          0.5788124799728394,
+          0.22036874294281006
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "key": "space_buns",
+      "vertices": 528,
+      "triangles": 264,
+      "source_sha256": "3acd84efc8c0e3f2cff47a100f5d9192b3e3ae0cbfd7f2fc145d9a9f3c081b71",
+      "mesh_sha256": "910cd16518bba34d70a7ee2ac7bce125e6c3de78a99c1cc9702c6f8523b54e8d",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_-1_stem",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_-1_core",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_-1_rim",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_-1_top",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_-1_frontcoil",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/temple_wisp_-1_0",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/temple_wisp_-1_1",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_1_stem",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_1_core",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_1_rim",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_1_top",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/bun_1_frontcoil",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/temple_wisp_1_0",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/temple_wisp_1_1",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/parted_fringe_0",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/parted_fringe_1",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/parted_fringe_2",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/parted_fringe_3",
+          "first": 504,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.4075312614440918,
+          0.21262499690055847,
+          -0.23017968237400055
+        ],
+        [
+          0.4075312614440918,
+          0.7368046641349792,
+          0.23143750429153442
+        ]
+      ]
+    },
+    {
+      "id": 4,
+      "key": "curly_bob",
+      "vertices": 1896,
+      "triangles": 948,
+      "source_sha256": "eb0ea4d7c4ae98b5b7619182132d2aea9106d84b63415ebfbd75c0e32ab78dae",
+      "mesh_sha256": "4be4107d241c77361ff8056f71b13ce05100855df6cebae7d4eb27ac8915de90",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_1",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_2",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_3",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_4",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_0_5",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_0",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_1",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_2",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_3",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_4",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_1_5",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_0",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_1",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_2",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_3",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_4",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_2_5",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_0",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_1",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_2",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_3",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_4",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_3_5",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_0",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_1",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_2",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_3",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_4",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_back_4_5",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_0_0",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_0_1",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_0_2",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_0_3",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_0_4",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_0",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_1",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_2",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_3_earclear_0",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_3_earclear_1",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_1_4_earclear_0",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_0",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_1",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_2",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_3",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_4_earclear_0",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_-1_2_4_earclear_1",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_0_0",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_0_1",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_0_2",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_0_3",
+          "first": 1296,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_0_4",
+          "first": 1320,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_0",
+          "first": 1344,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_1",
+          "first": 1368,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_2",
+          "first": 1392,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_3_earclear_0",
+          "first": 1416,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_3_earclear_1",
+          "first": 1440,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_1_4_earclear_0",
+          "first": 1464,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_0",
+          "first": 1488,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_1",
+          "first": 1512,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_2",
+          "first": 1536,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_3_earclear_0",
+          "first": 1560,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_3_earclear_1",
+          "first": 1584,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_3_earclear_2",
+          "first": 1608,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_side_1_2_4",
+          "first": 1632,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_crown_0",
+          "first": 1656,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_fringe_0_0",
+          "first": 1680,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_crown_1",
+          "first": 1704,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_fringe_1_0",
+          "first": 1728,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_crown_2",
+          "first": 1752,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_fringe_2_0",
+          "first": 1776,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_crown_3",
+          "first": 1800,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_fringe_3_0",
+          "first": 1824,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_crown_4",
+          "first": 1848,
+          "count": 24
+        },
+        {
+          "name": "hair/bob_fringe_4_0",
+          "first": 1872,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.3807506263256073,
+          0.12403125315904617,
+          -0.2790834307670593
+        ],
+        [
+          0.38197967410087585,
+          0.5832421779632568,
+          0.30288124084472656
+        ]
+      ]
+    },
+    {
+      "id": 5,
+      "key": "curly_pigtails",
+      "vertices": 1176,
+      "triangles": 588,
+      "source_sha256": "f5ec195a1c22c0f46e9c9f935d1f7934c51610875f16a81b0e477bb47b4a2b18",
+      "mesh_sha256": "6885269b54e12190f097abc5cb5885c0c56a99551ca4b379d9812d6ed31ba286",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_gather",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_0_0",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_0_1",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_0_2",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_0_3",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_0_4",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_1_0",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_1_1",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_1_2",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_1_3",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_1_4",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_2_0",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_2_1",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_2_2",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_2_3",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_curl_2_4",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_outer_0",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_outer_1",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_outer_2",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_-1_outer_3",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_gather",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_0_0",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_0_1",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_0_2",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_0_3",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_0_4",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_1_0",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_1_1",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_1_2",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_1_3",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_1_4",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_2_0",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_2_1",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_2_2",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_2_3",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_curl_2_4",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_outer_0",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_outer_1",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_outer_2",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/pigtail_1_outer_3",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_0",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_1",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_2",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_3",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_4",
+          "first": 1152,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.49395376443862915,
+          0.12993749976158142,
+          -0.24275781214237213
+        ],
+        [
+          0.49395376443862915,
+          0.5049843788146973,
+          0.2828065752983093
+        ]
+      ]
+    },
+    {
+      "id": 6,
+      "key": "sidepart_bob",
+      "vertices": 240,
+      "triangles": 120,
+      "source_sha256": "43603c23f554a5f829ae6656b3aa9c26e6eb950b0505992b777f77dca5a87604",
+      "mesh_sha256": "f428e673d678214dd1496ad35171792b10bf6db9062e76fdfe5d52b28496ebff",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/left_upper",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/right_upper",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/left_rear_earclear_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/right_rear_earclear_0",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/swept_fringe",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_step",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/part_right",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_part",
+          "first": 216,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.30079686641693115,
+          0.07973437756299973,
+          -0.23646874725818634
+        ],
+        [
+          0.30079686641693115,
+          0.5197499990463257,
+          0.23395311832427979
+        ]
+      ]
+    },
+    {
+      "id": 7,
+      "key": "compact_braid",
+      "vertices": 288,
+      "triangles": 144,
+      "source_sha256": "10c70ada19ec16f29274e618509fc3b46ebd8dd730cca28a445084d0f274cc7b",
+      "mesh_sha256": "88bb8090927c176a505fccb64568ad4f104e71ee722294edaa3b168f651ea2d8",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/left_side",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/right_side",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/bang_left",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/bang_right",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_start",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_left",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_right",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_low",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_tie",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_tip",
+          "first": 264,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.28785938024520874,
+          0.08268749713897705,
+          -0.2264062464237213
+        ],
+        [
+          0.28785938024520874,
+          0.5049843788146973,
+          0.314453125
+        ]
+      ]
+    },
+    {
+      "id": 8,
+      "key": "long_loose_curls",
+      "vertices": 1848,
+      "triangles": 924,
+      "source_sha256": "272d8be7d6cfaf2da7ece761345015b28ecd1b80997a9c0c8fbeeca3c6294398",
+      "mesh_sha256": "3d067c6a42fd9d9286ae29ceca0ecada3cc8e262b9aad1eb9619ebc1a9042d87",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_0",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_1",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_1",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_2",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_2",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_3",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_3",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_4",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_4",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_00",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_01",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_02",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_03",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_04",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_05",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_06",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_07",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_08",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_0_09",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_00",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_01",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_02",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_03",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_04",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_05",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_06",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_07",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_08",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_09",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_1_10",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_00",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_01",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_02",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_03",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_04",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_05",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_06",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_07",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_08",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_09",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_2_10",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_00",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_01",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_02",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_03",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_04",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_05",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_06",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_07",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_08",
+          "first": 1296,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_09",
+          "first": 1320,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_3_10",
+          "first": 1344,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_00",
+          "first": 1368,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_01",
+          "first": 1392,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_02",
+          "first": 1416,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_03",
+          "first": 1440,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_04",
+          "first": 1464,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_05",
+          "first": 1488,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_06",
+          "first": 1512,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_07",
+          "first": 1536,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_08",
+          "first": 1560,
+          "count": 24
+        },
+        {
+          "name": "hair/back_ringlet_4_09",
+          "first": 1584,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_-1_00",
+          "first": 1608,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_-1_01",
+          "first": 1632,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_-1_02",
+          "first": 1656,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_-1_03",
+          "first": 1680,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_-1_04",
+          "first": 1704,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_1_00",
+          "first": 1728,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_1_01",
+          "first": 1752,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_1_02",
+          "first": 1776,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_1_03",
+          "first": 1800,
+          "count": 24
+        },
+        {
+          "name": "hair/outer_ringlet_1_04",
+          "first": 1824,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.36516093860268595,
+          -0.4429687559604645,
+          -0.2515625059604645
+        ],
+        [
+          0.36516093860268595,
+          0.5669999718666077,
+          0.5211871919727326
+        ]
+      ]
+    },
+    {
+      "id": 9,
+      "key": "long_curly_ponytail",
+      "vertices": 1320,
+      "triangles": 660,
+      "source_sha256": "59fc8332d9ab9368ec00a0d9217a4892d2663c7e5426f22cf98c0c8575f75ba8",
+      "mesh_sha256": "fc653287af12671691bbc774060749d32862db90abbf5e06b08e3c77c6838a98",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_0",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_1",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_1",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_2",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_2",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_3",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_3",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_4",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_4",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/high_gather",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/hair_tie",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_00",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_01",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_02",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_03",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_04",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_05",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_06",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_07",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_08",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_09",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_0_10",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_00",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_01",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_02",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_03",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_04",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_05",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_06",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_07",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_08",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_09",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_1_10",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_00",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_01",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_02",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_03",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_04",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_05",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_06",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_07",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_08",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_09",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/ponytail_ringlet_2_10",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_-1_00",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_-1_01",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_-1_02",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_1_00",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_1_01",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/face_tendril_1_02",
+          "first": 1296,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.3457546887218952,
+          -0.4606874883174896,
+          -0.2515625059604645
+        ],
+        [
+          0.3457546887218952,
+          0.5669999718666077,
+          0.6532071897029876
+        ]
+      ]
+    },
+    {
+      "id": 10,
+      "key": "half_up_curly_cascade",
+      "vertices": 1608,
+      "triangles": 804,
+      "source_sha256": "09cb4e7aeb72d7ac990318912464ba8d3b654ffd3d237a19f9395cd9db41082f",
+      "mesh_sha256": "cad3310a3cb3edf9625b49874c597060996f2d6838c9608c809978444d93e0da",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_0",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_1",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_1",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_2",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_2",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_3",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_3",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/crown_curl_4",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/fringe_curl_4",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/half_up_knot_base",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/half_up_knot_left",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/half_up_knot_right",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_00",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_01",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_02",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_03",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_04",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_05",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_06",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_07",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_08",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_0_09",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_00",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_01",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_02",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_03",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_04",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_05",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_06",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_07",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_08",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_1_09",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_00",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_01",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_02",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_03",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_04",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_05",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_06",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_07",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_08",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_2_09",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_00",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_01",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_02",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_03",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_04",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_05",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_06",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_07",
+          "first": 1296,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_08",
+          "first": 1320,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_3_09",
+          "first": 1344,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_00",
+          "first": 1368,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_01",
+          "first": 1392,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_02",
+          "first": 1416,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_03",
+          "first": 1440,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_04",
+          "first": 1464,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_05",
+          "first": 1488,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_06",
+          "first": 1512,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_07",
+          "first": 1536,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_08",
+          "first": 1560,
+          "count": 24
+        },
+        {
+          "name": "hair/halfup_ringlet_4_09",
+          "first": 1584,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.31535157561302185,
+          -0.3809531331062317,
+          -0.2515625059604645
+        ],
+        [
+          0.31535157561302185,
+          0.6112968921661377,
+          0.5370859326982498
+        ]
+      ]
+    },
+    {
+      "id": 11,
+      "key": "rounded_afro",
+      "vertices": 3168,
+      "triangles": 1584,
+      "source_sha256": "70b713579d229076d8af0d1574e61c06f524beace0b8aff1f07eebbd279eb32b",
+      "mesh_sha256": "c69277ba6c0fed21e3730a9fa78a1ead438cdcd03599626dc10a7dbfe0475abf",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_1",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_2",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_3",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_4_earclear_0",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_4_earclear_1",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_4_earclear_2",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_5_earclear_0",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_5_earclear_1",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_5_earclear_2",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_6_earclear_0",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_6_earclear_1",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_6_earclear_2",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_6_earclear_3",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_7",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_11",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_12_earclear_0",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_12_earclear_1",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_12_earclear_2",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_12_earclear_3",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_13_earclear_0",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_13_earclear_1",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_13_earclear_2",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_14_earclear_0",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_14_earclear_1",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_14_earclear_2",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_15",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_16",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_0_17",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_0",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_1",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_2",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_3",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_4",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_5",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_6",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_7",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_14",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_15",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_16",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_17",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_18",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_19",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_20",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_1_21",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_0",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_1",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_2",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_3",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_4",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_5",
+          "first": 1296,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_6",
+          "first": 1320,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_7",
+          "first": 1344,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_8",
+          "first": 1368,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_9",
+          "first": 1392,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_10",
+          "first": 1416,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_11",
+          "first": 1440,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_12",
+          "first": 1464,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_13",
+          "first": 1488,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_14",
+          "first": 1512,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_15",
+          "first": 1536,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_16",
+          "first": 1560,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_17",
+          "first": 1584,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_18",
+          "first": 1608,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_19",
+          "first": 1632,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_20",
+          "first": 1656,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_21",
+          "first": 1680,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_2_22",
+          "first": 1704,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_0",
+          "first": 1728,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_1",
+          "first": 1752,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_2",
+          "first": 1776,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_3",
+          "first": 1800,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_4",
+          "first": 1824,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_5",
+          "first": 1848,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_6",
+          "first": 1872,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_7",
+          "first": 1896,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_8",
+          "first": 1920,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_9",
+          "first": 1944,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_10",
+          "first": 1968,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_11",
+          "first": 1992,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_12",
+          "first": 2016,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_13",
+          "first": 2040,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_14",
+          "first": 2064,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_15",
+          "first": 2088,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_16",
+          "first": 2112,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_17",
+          "first": 2136,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_18",
+          "first": 2160,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_19",
+          "first": 2184,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_3_20",
+          "first": 2208,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_0",
+          "first": 2232,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_1",
+          "first": 2256,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_2",
+          "first": 2280,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_3",
+          "first": 2304,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_4",
+          "first": 2328,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_5",
+          "first": 2352,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_6",
+          "first": 2376,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_7",
+          "first": 2400,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_8",
+          "first": 2424,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_9",
+          "first": 2448,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_10",
+          "first": 2472,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_11",
+          "first": 2496,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_12",
+          "first": 2520,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_13",
+          "first": 2544,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_14",
+          "first": 2568,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_15",
+          "first": 2592,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_16",
+          "first": 2616,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_4_17",
+          "first": 2640,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_0",
+          "first": 2664,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_1",
+          "first": 2688,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_2",
+          "first": 2712,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_3",
+          "first": 2736,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_4",
+          "first": 2760,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_5",
+          "first": 2784,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_6",
+          "first": 2808,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_7",
+          "first": 2832,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_8",
+          "first": 2856,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_9",
+          "first": 2880,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_10",
+          "first": 2904,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_5_11",
+          "first": 2928,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_0",
+          "first": 2952,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_1",
+          "first": 2976,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_2",
+          "first": 3000,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_3",
+          "first": 3024,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_4",
+          "first": 3048,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_5",
+          "first": 3072,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_cluster_6_6",
+          "first": 3096,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_volume_top",
+          "first": 3120,
+          "count": 24
+        },
+        {
+          "name": "hair/afro_crown_peak",
+          "first": 3144,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.5184056162834167,
+          0.20228905975818634,
+          -0.3087174892425537
+        ],
+        [
+          0.5101903080940247,
+          0.8567015528678894,
+          0.3708031177520752
+        ]
+      ]
+    },
+    {
+      "id": 12,
+      "key": "twin_braids",
+      "vertices": 2112,
+      "triangles": 1056,
+      "source_sha256": "10f31eb9a2faaf381f74fbb5241787db35a80c57ce2228d6246c30c81adc7f55",
+      "mesh_sha256": "824db59a110c09fb18d24d24fc3edcdfaab3ceec9aa9750dd67b062d5e635e97",
+      "parts": [
+        {
+          "name": "hair/crown",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/back_cap",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_-1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/sleek_side_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_-1_0",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_-1_1",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_-1_2",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_root_-1",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_0",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_0_-1",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_0_1",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_1",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_1_-1",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_1_1",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_2",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_2_-1",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_2_1",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_3",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_3_-1",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_3_1",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_4",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_4_-1",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_4_1",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_5",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_5_-1",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_5_1",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_6",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_6_-1",
+          "first": 648,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_6_1",
+          "first": 672,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_7",
+          "first": 696,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_7_-1",
+          "first": 720,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_7_1",
+          "first": 744,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_8",
+          "first": 768,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_8_-1",
+          "first": 792,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_8_1",
+          "first": 816,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_9",
+          "first": 840,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_9_-1",
+          "first": 864,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_9_1",
+          "first": 888,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_10",
+          "first": 912,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_10_-1",
+          "first": 936,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_10_1",
+          "first": 960,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_core_11",
+          "first": 984,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_11_-1",
+          "first": 1008,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_plait_11_1",
+          "first": 1032,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_tie",
+          "first": 1056,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_-1_tail",
+          "first": 1080,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_1_0",
+          "first": 1104,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_1_1",
+          "first": 1128,
+          "count": 24
+        },
+        {
+          "name": "hair/part_sweep_1_2",
+          "first": 1152,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_root_1",
+          "first": 1176,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_0",
+          "first": 1200,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_0_-1",
+          "first": 1224,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_0_1",
+          "first": 1248,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_1",
+          "first": 1272,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_1_-1",
+          "first": 1296,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_1_1",
+          "first": 1320,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_2",
+          "first": 1344,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_2_-1",
+          "first": 1368,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_2_1",
+          "first": 1392,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_3",
+          "first": 1416,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_3_-1",
+          "first": 1440,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_3_1",
+          "first": 1464,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_4",
+          "first": 1488,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_4_-1",
+          "first": 1512,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_4_1",
+          "first": 1536,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_5",
+          "first": 1560,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_5_-1",
+          "first": 1584,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_5_1",
+          "first": 1608,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_6",
+          "first": 1632,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_6_-1",
+          "first": 1656,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_6_1",
+          "first": 1680,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_7",
+          "first": 1704,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_7_-1",
+          "first": 1728,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_7_1",
+          "first": 1752,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_8",
+          "first": 1776,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_8_-1",
+          "first": 1800,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_8_1",
+          "first": 1824,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_9",
+          "first": 1848,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_9_-1",
+          "first": 1872,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_9_1",
+          "first": 1896,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_10",
+          "first": 1920,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_10_-1",
+          "first": 1944,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_10_1",
+          "first": 1968,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_core_11",
+          "first": 1992,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_11_-1",
+          "first": 2016,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_plait_11_1",
+          "first": 2040,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_tie",
+          "first": 2064,
+          "count": 24
+        },
+        {
+          "name": "hair/braid_1_tail",
+          "first": 2088,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.40714312297105787,
+          -0.5020312368869781,
+          -0.2092999964952469
+        ],
+        [
+          0.40714312297105787,
+          0.5315625071525574,
+          0.38302968879938126
+        ]
+      ]
+    },
+    {
+      "id": 13,
+      "key": "curly_mohawk",
+      "vertices": 672,
+      "triangles": 336,
+      "source_sha256": "221514d5a099c5e9bea5b14e496fa65f3014130d8f5d06003c8f6ee0231b2a56",
+      "mesh_sha256": "5e6ad96c7220e34802928cf52c5069e88485afe5349bee343743ba1f6206e5cc",
+      "parts": [
+        {
+          "name": "hair/shaved_side_-1",
+          "first": 0,
+          "count": 24
+        },
+        {
+          "name": "hair/shaved_side_step_-1",
+          "first": 24,
+          "count": 24
+        },
+        {
+          "name": "hair/shaved_side_1",
+          "first": 48,
+          "count": 24
+        },
+        {
+          "name": "hair/shaved_side_step_1",
+          "first": 72,
+          "count": 24
+        },
+        {
+          "name": "hair/shaved_back",
+          "first": 96,
+          "count": 24
+        },
+        {
+          "name": "hair/ridge_base",
+          "first": 120,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_0_core",
+          "first": 144,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_0_crest",
+          "first": 168,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_0_side",
+          "first": 192,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_1_core",
+          "first": 216,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_1_crest",
+          "first": 240,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_1_side",
+          "first": 264,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_2_core",
+          "first": 288,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_2_crest",
+          "first": 312,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_2_side",
+          "first": 336,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_3_core",
+          "first": 360,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_3_crest",
+          "first": 384,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_3_side",
+          "first": 408,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_4_core",
+          "first": 432,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_4_crest",
+          "first": 456,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_4_side",
+          "first": 480,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_5_core",
+          "first": 504,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_5_crest",
+          "first": 528,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_5_side",
+          "first": 552,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_6_core",
+          "first": 576,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_6_crest",
+          "first": 600,
+          "count": 24
+        },
+        {
+          "name": "hair/mohawk_curl_6_side",
+          "first": 624,
+          "count": 24
+        },
+        {
+          "name": "hair/rear_curl_taper",
+          "first": 648,
+          "count": 24
+        }
+      ],
+      "bounds": [
+        [
+          -0.26910001039505005,
+          0.3307499885559082,
+          -0.24275781214237213
+        ],
+        [
+          0.26910001039505005,
+          0.7367455959320068,
+          0.26892030239105225
+        ]
+      ]
+    },
+    {
+      "id": 14,
+      "key": "defined_chest_sports_bra",
+      "vertices": 7792,
+      "triangles": 3664,
+      "source_sha256": "ae16563d62d0036808b3e6b546decaeb219612afdbd57ed2b8ac9cea3fdec703",
+      "mesh_sha256": "a3f4e606b6f114c6cca8a0fffd74ece81917de134eab7a277727b55567086adb",
+      "parts": [
+        {
+          "name": "head_shell",
+          "first": 0,
+          "count": 96
+        },
+        {
+          "name": "neck_core",
+          "first": 96,
+          "count": 96
+        },
+        {
+          "name": "chest_shell",
+          "first": 192,
+          "count": 96
+        },
+        {
+          "name": "abdomen_shell",
+          "first": 288,
+          "count": 96
+        },
+        {
+          "name": "waist_joint",
+          "first": 384,
+          "count": 96
+        },
+        {
+          "name": "shorts_hip_yoke",
+          "first": 480,
+          "count": 96
+        },
+        {
+          "name": "shorts_waistband",
+          "first": 576,
+          "count": 96
+        },
+        {
+          "name": "ear_R",
+          "first": 672,
+          "count": 96
+        },
+        {
+          "name": "ear_inset_R",
+          "first": 768,
+          "count": 96
+        },
+        {
+          "name": "eye_socket_R",
+          "first": 864,
+          "count": 96
+        },
+        {
+          "name": "eye_white_R",
+          "first": 960,
+          "count": 96
+        },
+        {
+          "name": "iris_R",
+          "first": 1056,
+          "count": 96
+        },
+        {
+          "name": "pupil_R",
+          "first": 1152,
+          "count": 96
+        },
+        {
+          "name": "eye_glint_R",
+          "first": 1248,
+          "count": 96
+        },
+        {
+          "name": "brow_block_R",
+          "first": 1344,
+          "count": 96
+        },
+        {
+          "name": "upper_arm_shell_R",
+          "first": 1440,
+          "count": 96
+        },
+        {
+          "name": "elbow_core_R",
+          "first": 1536,
+          "count": 96
+        },
+        {
+          "name": "forearm_shell_R",
+          "first": 1632,
+          "count": 96
+        },
+        {
+          "name": "wrist_core_R",
+          "first": 1728,
+          "count": 96
+        },
+        {
+          "name": "hand_block_R",
+          "first": 1824,
+          "count": 96
+        },
+        {
+          "name": "thumb_R",
+          "first": 1920,
+          "count": 96
+        },
+        {
+          "name": "thigh_skin_R",
+          "first": 2016,
+          "count": 96
+        },
+        {
+          "name": "shorts_leg_R",
+          "first": 2112,
+          "count": 96
+        },
+        {
+          "name": "shorts_hem_R",
+          "first": 2208,
+          "count": 96
+        },
+        {
+          "name": "knee_core_R",
+          "first": 2304,
+          "count": 96
+        },
+        {
+          "name": "shin_shell_R",
+          "first": 2400,
+          "count": 96
+        },
+        {
+          "name": "ankle_core_R",
+          "first": 2496,
+          "count": 96
+        },
+        {
+          "name": "foot_heel_R",
+          "first": 2592,
+          "count": 96
+        },
+        {
+          "name": "toe_block_R",
+          "first": 2688,
+          "count": 96
+        },
+        {
+          "name": "ear_L",
+          "first": 2784,
+          "count": 96
+        },
+        {
+          "name": "ear_inset_L",
+          "first": 2880,
+          "count": 96
+        },
+        {
+          "name": "eye_socket_L",
+          "first": 2976,
+          "count": 96
+        },
+        {
+          "name": "eye_white_L",
+          "first": 3072,
+          "count": 96
+        },
+        {
+          "name": "iris_L",
+          "first": 3168,
+          "count": 96
+        },
+        {
+          "name": "pupil_L",
+          "first": 3264,
+          "count": 96
+        },
+        {
+          "name": "eye_glint_L",
+          "first": 3360,
+          "count": 96
+        },
+        {
+          "name": "brow_block_L",
+          "first": 3456,
+          "count": 96
+        },
+        {
+          "name": "upper_arm_shell_L",
+          "first": 3552,
+          "count": 96
+        },
+        {
+          "name": "elbow_core_L",
+          "first": 3648,
+          "count": 96
+        },
+        {
+          "name": "forearm_shell_L",
+          "first": 3744,
+          "count": 96
+        },
+        {
+          "name": "wrist_core_L",
+          "first": 3840,
+          "count": 96
+        },
+        {
+          "name": "hand_block_L",
+          "first": 3936,
+          "count": 96
+        },
+        {
+          "name": "thumb_L",
+          "first": 4032,
+          "count": 96
+        },
+        {
+          "name": "thigh_skin_L",
+          "first": 4128,
+          "count": 96
+        },
+        {
+          "name": "shorts_leg_L",
+          "first": 4224,
+          "count": 96
+        },
+        {
+          "name": "shorts_hem_L",
+          "first": 4320,
+          "count": 96
+        },
+        {
+          "name": "knee_core_L",
+          "first": 4416,
+          "count": 96
+        },
+        {
+          "name": "shin_shell_L",
+          "first": 4512,
+          "count": 96
+        },
+        {
+          "name": "ankle_core_L",
+          "first": 4608,
+          "count": 96
+        },
+        {
+          "name": "foot_heel_L",
+          "first": 4704,
+          "count": 96
+        },
+        {
+          "name": "toe_block_L",
+          "first": 4800,
+          "count": 96
+        },
+        {
+          "name": "defined_chest_contour",
+          "first": 4896,
+          "count": 712
+        },
+        {
+          "name": "sports_bra_front",
+          "first": 5608,
+          "count": 1240
+        },
+        {
+          "name": "sports_bra_back",
+          "first": 6848,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_side_R",
+          "first": 6944,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_front_strap_R",
+          "first": 7040,
+          "count": 136
+        },
+        {
+          "name": "sports_bra_shoulder_strap_R",
+          "first": 7176,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_back_strap_R",
+          "first": 7272,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_side_L",
+          "first": 7368,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_front_strap_L",
+          "first": 7464,
+          "count": 136
+        },
+        {
+          "name": "sports_bra_shoulder_strap_L",
+          "first": 7600,
+          "count": 96
+        },
+        {
+          "name": "sports_bra_back_strap_L",
+          "first": 7696,
+          "count": 96
+        }
+      ],
+      "bounds": [
+        [
+          -0.3160000145435333,
+          -0.32399997115135193,
+          -0.20600000023841858
+        ],
+        [
+          0.3160000145435333,
+          0.47200000286102295,
+          0.19750000536441803
+        ]
+      ]
+    }
+  ]
+}

@@ -18,9 +18,9 @@ pub(super) struct CharacterEditor {
 impl Default for CharacterEditor {
     fn default() -> Self {
         Self {
-            draft: None,
+            draft: Some(CharacterRecipe::default()),
             cosmetics: [0; 4],
-            accepted: None,
+            accepted: Some(CharacterRecipe::default()),
             loaded: false,
             pending: None,
             status: "Waiting for your player snapshot…",
@@ -42,7 +42,7 @@ impl CharacterEditor {
             return;
         };
         self.cosmetics = state.legacy();
-        let confirmed = state.character;
+        let confirmed = Some(state.character.unwrap_or_default());
         if !self.loaded {
             self.loaded = true;
             self.draft = confirmed;
@@ -65,12 +65,12 @@ impl CharacterEditor {
     }
     pub(super) fn edit(&mut self, recipe: Option<CharacterRecipe>) {
         if self.loaded && self.pending.is_none() && recipe.is_none_or(CharacterRecipe::valid) {
-            self.draft = recipe;
+            self.draft = Some(recipe.unwrap_or_default());
             self.status = "Unapplied changes";
         }
     }
     pub(super) fn clip(&mut self, clip: u8) {
-        if clip < 5 && self.clip != clip {
+        if clip < 6 && self.clip != clip {
             self.clip = clip;
             self.started = Instant::now();
         }

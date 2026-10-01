@@ -20,35 +20,6 @@ pub(super) fn decode(png: &[u8]) -> (u32, u32, Vec<u8>) {
     (info.width, info.height, rgba)
 }
 
-pub(super) fn texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    png: &[u8],
-    label: &str,
-) -> wgpu::TextureView {
-    let (width, height, rgba) = decode(png);
-    let texture = device.create_texture_with_data(
-        queue,
-        &wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        },
-        wgpu::util::TextureDataOrder::LayerMajor,
-        &rgba,
-    );
-    texture.create_view(&Default::default())
-}
-
 pub(super) fn array(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -56,13 +27,15 @@ pub(super) fn array(
     format: wgpu::TextureFormat,
     label: &str,
 ) -> wgpu::TextureView {
-    assert!(!layers.is_empty() && layers.len() <= 16);
-    let mut pixels = Vec::with_capacity(32 * 32 * 4 * layers.len());
+    assert!(!layers.is_empty() && layers.len() <= 64);
+    let (width, height, _) = decode(layers[0]);
+    assert!(width <= 512 && height <= 512);
+    let mut pixels = Vec::with_capacity((width * height * 4) as usize * layers.len());
     for layer in layers {
-        let (width, height, rgba) = decode(layer);
+        let (layer_width, layer_height, rgba) = decode(layer);
         assert_eq!(
+            (layer_width, layer_height),
             (width, height),
-            (32, 32),
             "face features must retain 32-pixel UVs"
         );
         pixels.extend(rgba);
@@ -72,8 +45,8 @@ pub(super) fn array(
         &wgpu::TextureDescriptor {
             label: Some(label),
             size: wgpu::Extent3d {
-                width: 32,
-                height: 32,
+                width,
+                height,
                 depth_or_array_layers: layers.len() as u32,
             },
             mip_level_count: 1,
