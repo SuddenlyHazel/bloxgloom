@@ -69,16 +69,19 @@ impl CharacterRenderer {
             }
             range.end = (index * 3 + 3) as u32;
         }
+        let visibility =
+            super::character_asset::occlusion::builtin_visibility(asset.vertices.len());
         let vertices: Vec<_> = asset
             .vertices
             .iter()
-            .map(|v| Vertex {
+            .zip(visibility)
+            .map(|(v, visibility)| Vertex {
                 position: v.position,
                 normal: v.normal,
                 joint: v.joint as u32,
                 uv: v.uv,
                 material: v.material,
-                surface: v.surface,
+                surface: super::character_asset::occlusion::pack_surface(v.surface, visibility),
             })
             .collect();
         let buffer = |label, contents, usage| {

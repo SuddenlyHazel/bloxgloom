@@ -120,7 +120,7 @@ fn create_voxel_pipeline_source(
 ) {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("opaque voxel shader"),
-        source: wgpu::ShaderSource::Wgsl(super::fog::shader(source).into()),
+        source: wgpu::ShaderSource::Wgsl(super::daylight::shader(source).into()),
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),

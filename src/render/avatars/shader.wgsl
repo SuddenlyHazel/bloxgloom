@@ -60,11 +60,7 @@ struct VertexOutput {
     let glow = f32(input.light_levels.y) / 15.0;
     let bounce = vec3<f32>(f32(input.bounce.x), f32(input.bounce.y), f32(input.bounce.z)) / 255.0;
     let glow_bounce = vec3<f32>(f32(input.glow_bounce.x), f32(input.glow_bounce.y), f32(input.glow_bounce.z)) / 255.0;
-    let sun = max(dot(normal, normalize(camera.sun.xyz)), 0.0);
-    let light = vec3<f32>(0.012, 0.015, 0.022)
-        + sky * camera.sun.w * (vec3<f32>(0.31, 0.40, 0.53) + sun * vec3<f32>(0.77, 0.66, 0.47))
-        + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
-        + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
+    let light = bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, 1.0);
     output.color = albedo * input.tint * light;
     output.world_position = world;
     output.sky = sky;

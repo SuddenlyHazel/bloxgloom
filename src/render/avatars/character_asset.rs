@@ -5,6 +5,7 @@ use serde::Deserialize;
 mod gameplay;
 pub(crate) use gameplay::tool_duration;
 mod mesh;
+pub(super) mod occlusion;
 
 pub(super) const JOINT_COUNT: usize = 30;
 pub(super) mod rig;

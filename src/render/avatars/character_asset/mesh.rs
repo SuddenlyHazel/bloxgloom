@@ -1,6 +1,6 @@
 //! Bounded native rigid meshes; conversion and asset validation happen offline.
 use super::{CharacterAsset, CharacterVertex};
-const MESHES: [&[u8]; 15] = [
+pub(super) const MESHES: [&[u8]; 15] = [
     include_bytes!("../../../../assets/models/player/articulated/flat_chest.mesh"),
     include_bytes!("../../../../assets/models/player/articulated/tousled_crop.mesh"),
     include_bytes!("../../../../assets/models/player/articulated/side_swept_undercut.mesh"),
