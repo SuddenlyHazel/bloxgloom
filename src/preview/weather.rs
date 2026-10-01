@@ -36,7 +36,13 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             // The cave camera is (40.5, 12, 16.5), with solid roof cells at y=16.
             // Exercise the live cover-grid path: rain above the roof remains
             // generated and depth-tested, while no streak enters the room.
-            weather.set_cover([32, 8], [17.0; 256]);
+            let mut cover = [17.0; 256];
+            // x=47 lies outside the constructed roof (x=27..=46); this
+            // fixture leaves that exterior column unknown rather than clear.
+            for z in 0..16 {
+                cover[z * 16 + 15] = f32::INFINITY;
+            }
+            weather.set_cover([32, 8], cover);
         }
         let outputs = vec![PreviewOutput {
             path: directory.join(format!("{name}.png")),
