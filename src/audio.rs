@@ -10,7 +10,9 @@ pub(crate) mod rain_scene;
 mod tests;
 pub(crate) use clip::Clip;
 pub(crate) use mixer::Mixer;
-pub(crate) use preview::{play_file, play_preview, render_material_preview, render_preview};
+pub(crate) use preview::{
+    play_file, play_preview, render_insect_preview, render_material_preview, render_preview,
+};
 use std::sync::Arc;
 pub(crate) const SAMPLE_RATE: u32 = 44_100;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -90,6 +92,7 @@ pub(crate) struct WeatherSound {
     pub wind_m_s: f32,
     pub bearing: f32,
     pub exposure: f32,
+    pub daylight: f32,
 }
 impl WeatherSound {
     pub fn sanitized(self) -> Self {
@@ -109,6 +112,7 @@ impl WeatherSound {
                 0.0
             },
             exposure: bounded(self.exposure, 1.0),
+            daylight: bounded(self.daylight, 1.0),
         }
     }
 }

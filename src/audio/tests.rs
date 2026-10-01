@@ -189,6 +189,7 @@ fn world_weather_mixer_is_partition_independent_and_reset_silences_it() {
             wind_m_s: 8.0,
             bearing: 0.7,
             exposure: 1.0,
+            daylight: 0.0,
         }))));
     }
     let mut whole = vec![[0.0; 2]; 22_050];

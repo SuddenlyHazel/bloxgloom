@@ -1,5 +1,6 @@
 //! Rust weather-synthesis subset of NoiseMachine. No C runtime dependency.
 mod dsp;
+mod insects;
 mod rain;
 mod reverb;
 mod spatial;
@@ -17,6 +18,7 @@ use weather::{Storm, Weather};
 use wind::Wind;
 pub(super) struct Procedural {
     rain: Rain,
+    insects: insects::Insects,
     wind: Wind,
     storm: Storm,
     thunder: Thunder,
@@ -38,6 +40,7 @@ impl Procedural {
     pub fn new(seed: u32) -> Self {
         Self {
             rain: Rain::new(seed),
+            insects: insects::Insects::new(seed),
             wind: Wind::new(seed),
             storm: Storm::new(seed),
             thunder: Thunder::new(seed),
@@ -88,6 +91,7 @@ impl Procedural {
         if !scene.valid() {
             return false;
         }
+        self.insects.set_scene(&scene);
         self.scene = scene;
         if self.world.is_some() {
             self.rain.set_scene(Some(self.scene.clone()));
@@ -137,6 +141,8 @@ impl Procedural {
         }
         self.rain
             .set_listener(self.listener_position, self.listener_yaw);
+        self.insects
+            .follow(self.world, self.listener_position, self.listener_yaw);
         let w = self.weather;
         // Values come from bounded native presets, not unvalidated author input.
         self.rain
@@ -188,11 +194,12 @@ impl Procedural {
         }
         let (rain, send) = self.rain.next(Listener::default());
         let wind = self.wind.next();
-        let wet = self.reverb.next(send);
+        let (bugs, insect_send) = self.insects.next();
+        let wet = self.reverb.next(send + insect_send);
         let target_exposure = self.world.map_or(1.0, |w| w.exposure);
         self.exposure += (target_exposure - self.exposure) / (0.3 * 44_100.0);
         let ambient = std::array::from_fn(|i| {
-            let sample = rain[i] + wind[i] + 0.12 * wet[i];
+            let sample = rain[i] + wind[i] + bugs[i] + 0.12 * wet[i];
             // Sheltered listeners still hear muted outdoor weather; this is a
             // presentation approximation rather than voxel acoustic tracing.
             self.indoor_filter[i] += 0.06 * (sample - self.indoor_filter[i]);

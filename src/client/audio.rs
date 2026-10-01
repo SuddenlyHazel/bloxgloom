@@ -104,19 +104,22 @@ impl State {
     }
     /// Call from the client presentation clock (at most 20 Hz). Inputs are
     /// rain in mm/hour, wind in metres/second, clockwise bearing in radians,
-    /// and outdoor exposure in 0..=1. Preview overrides ambient world sound.
+    /// outdoor exposure and daylight activity in 0..=1. Preview overrides
+    /// ambient world sound.
     pub(super) fn update_weather(
         &mut self,
         rain_mm_h: f32,
         wind_m_s: f32,
         bearing: f32,
         exposure: f32,
+        daylight: f32,
     ) {
         let sample = WeatherSound {
             rain_mm_h,
             wind_m_s,
             bearing,
             exposure,
+            daylight,
         }
         .sanitized();
         self.world = Some(sample);

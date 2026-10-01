@@ -40,8 +40,48 @@ pub(crate) fn render_material_preview(
         seconds,
         path,
         seed,
-        Some(scene),
+        Some((
+            scene,
+            super::WeatherSound {
+                rain_mm_h: 30.0,
+                exposure: 1.0,
+                ..super::WeatherSound::default()
+            },
+        )),
         profile == "split",
+    )
+}
+pub(crate) fn render_insect_preview(
+    kind: &str,
+    seconds: f32,
+    path: &Path,
+    seed: u32,
+) -> io::Result<()> {
+    use super::rain_scene::{RainMaterial, RainScene};
+    let (material, daylight) = match kind {
+        "crickets" => (RainMaterial::Dirt, 0.0),
+        "cicadas" => (RainMaterial::Leaf, 1.0),
+        _ => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "expected crickets or cicadas",
+            ));
+        }
+    };
+    render(
+        Preset::Off,
+        seconds,
+        path,
+        seed,
+        Some((
+            RainScene::patch(material),
+            super::WeatherSound {
+                daylight,
+                exposure: 1.0,
+                ..super::WeatherSound::default()
+            },
+        )),
+        true,
     )
 }
 pub(crate) fn render_preview(
@@ -57,23 +97,21 @@ fn render(
     seconds: f32,
     path: &Path,
     seed: u32,
-    scene: Option<std::sync::Arc<super::rain_scene::RainScene>>,
+    scene: Option<(
+        std::sync::Arc<super::rain_scene::RainScene>,
+        super::WeatherSound,
+    )>,
     turn: bool,
 ) -> io::Result<()> {
     validate_seconds(seconds)?;
     let mut mixer = Mixer::new(seed);
-    if let Some(scene) = scene {
+    if let Some((scene, weather)) = scene {
         mixer.command(Command::RainScene(scene));
         mixer.command(Command::Listener {
             position: [0.0, 1.6, 0.0],
             yaw: 0.0,
         });
-        mixer.command(Command::Weather(Some(super::WeatherSound {
-            rain_mm_h: 30.0,
-            wind_m_s: 0.0,
-            bearing: 0.35,
-            exposure: 1.0,
-        })));
+        mixer.command(Command::Weather(Some(weather)));
     }
     mixer.set_controls(Controls {
         preset,

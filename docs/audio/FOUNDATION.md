@@ -1,7 +1,7 @@
 # Client audio foundation
 
 Bloxgloom now has native client audio output, a bounded mixer, prepared WAV clips
-and procedural rain, wind and thunder. The audio worker owns device discovery,
+and procedural rain, wind, thunder, crickets and dog-day cicadas. The audio worker owns device discovery,
 synthesis, mixing and resampling. The device callback consumes prepared stereo
 frames from a lock-free ring, converts the device sample format and counts errors.
 It does not run Luau, decode files, allocate, log or acquire application locks.
@@ -78,6 +78,7 @@ removes voices and clears procedural/reverb/limiter state.
 | Prepared device ring | 4,096 stereo frames; normal fill target roughly 1,024 |
 | Worker mix block | 256 frames |
 | Rain impacts | 128 active voices, four modes per impact |
+| Insect individuals | Four crickets and four dog-day cicadas, separate from clip/rain pools |
 | Configured base rain rate | Up to 2,000/s; default 900/s; gusts modulate arrivals |
 | Thunder | Two strikes, 256 segments each, six echo reflectors |
 | Sound-only storm cells | Four |
@@ -113,7 +114,7 @@ Ported models include:
 The storm driver adapts the upstream **default** squall shape: passing rain cells,
 a trailing rain band, gust fronts and lightning scattered around each cell. Strikes
 outside the 15 km audible range are skipped, rather than moved nearer. It uses a 60× preview clock and
-omits temperature/cooling controls because insect synthesis is not in this slice.
+does not drive the live insect layers or model world temperature/cooling.
 Local previews retain the upstream default material mix; live world rain uses
 the voxel surface integration below. Outdoor shelter and synchronized weather
 are supplied by the client presentation path.
@@ -124,8 +125,9 @@ strike distance divided by sound speed before playback. Echo reflectors are seed
 synthetic scenery, without voxel-world acoustic tracing. Rain's head model is
 analytic, without measured HRTFs, elevation or live head tracking.
 
-Not ported in this foundation: white/pink noise layers, hum generators, crickets,
-cicadas, the source desktop GUI/Arduino host and every configurable storm control.
+Not ported: standalone white/pink noise layers, hum generators, the other nine
+cicada species, the source desktop GUI/Arduino host and every configurable storm
+control. Cricket and dog-day cicada integration is described below.
 The port is a documented weather-synthesis subset, rather than full API parity.
 
 ## Verification and next work
@@ -247,3 +249,83 @@ Initial integration checks passed 39 audio-selected and 32 weather-selected test
 includes canopy exposure, missing chunks, wood states, spatial turns, windward
 walls, queue retry, session cleanup, distinct material spectra and empty-scene
 silence. Subjective quality is for the listening pass; these checks verify behavior.
+
+
+## Spatial insect ambience
+
+The native world ambience now includes four persistent cricket individuals and
+four dog-day cicadas adapted from the same pinned upstream revision. Crickets
+retain three-to-five-pulse chirps, pitch differences, a falling carrier per pulse,
+slightly different/jittered call periods and exponentially distributed singing
+and silent bouts. Dog-day cicadas retain their resonant tymbal clicks, jittered
+click intervals, 10–18-second held calls, 2–4 Hz throbbing, swells, falling pitch
+and click rate during wind-down, random rests and a diffuse stereo chorus. Both
+send to the shared rain reverb and use the same ear-delay/head/rear-filter path.
+The other nine upstream cicada species remain a separate extension.
+
+Known exposed grass/moss tops supply cricket habitat; leaf canopy tops supply
+cicada habitat. Snow, sand, hard roofs and unknown chunks do not invent insects.
+A seeded world-coordinate ordering chooses at most four locations per layer and
+keeps them stable while the sampled patch is unchanged, independent of vector
+ordering. Individuals are presentation sources, without creature entities, damage,
+save files or server-side populations. Updating geometry does not reset call
+phases or consume the rain/thunder random streams. Sources retire when habitat
+leaves the resident patch, and session reset clears all voices, filters and tails.
+
+The server's existing world clock supplies day/night activity: crickets at night,
+cicadas in daylight, with twilight blending and a half-second volume convergence.
+Rain above 0.5 mm/hour suppresses new calls in both layers; wind above 8 m/s also
+suppresses cricket chirps. A presentation temperature profile of 18–27 °C controls
+cricket rate and cicada admission; this is explicitly an audio policy, not a new
+authoritative climate or biome-temperature system. The 15% sheltered audio floor
+and indoor filtering also apply to insects. Distance and bearing update at the
+100 Hz audio control clock from the player-eye listener; ongoing calls retain
+filter state while spatial coefficients are retargeted, so turning during a long
+cicada call changes its ear delay, attenuation, head shadow and rear coloration.
+
+Listen with Local preview Off. Use `weather set clear 0`, then `time set midnight`
+on grass/moss for crickets. Use `time set noon` beside trees for cicadas. Switching
+to rain should fade the insects, and a sealed cave without nearby habitat should
+have no fabricated chorus. Ambient/Master volume controls govern both layers.
+
+Reproducible isolated previews use the live mixer and rotate through one revolution:
+
+```sh
+cargo run --release -- audio-insect-preview crickets 12 /tmp/crickets.wav 1
+cargo run --release -- audio-insect-preview cicadas 12 /tmp/cicadas.wav 1
+```
+
+The scenes use grass-like ground at night and canopy habitat during daylight,
+respectively, with no rain/wind. They demonstrate synthesis/spatial behavior;
+actual world locations come from resident voxel snapshots. Tests cover habitat
+admission/retirement, day/night/rain suppression, deterministic independent
+synthesis, source stability and movement/turning during active calls.
+
+
+### World-audio integration acceptance — October 1, 2026
+
+The final audio selection passed 41 tests and the weather selection passed 32
+(the selections overlap). Strict all-target/all-feature Clippy and formatting
+passed. The release build succeeded. Seven offline probes rendered through the
+production mixer with zero rejected impacts/commands and no clipping.
+
+| Probe | Duration | Render elapsed | Peak | RMS |
+| --- | --- | --- | --- | --- |
+| Wood rain | 8 s | 241 ms | 0.0531 | 0.00948 |
+| Leaf rain | 8 s | 152 ms | 0.0238 | 0.00459 |
+| Stone rain | 8 s | 138 ms | 0.0202 | 0.00351 |
+| Water rain | 8 s | 364 ms | 0.0877 | 0.01307 |
+| Rotating wood/metal rain | 8 s | 304 ms | 0.0600 | 0.00975 |
+| Rotating crickets | 12 s | 73 ms | 0.0573 | 0.00324 |
+| Rotating dog-day cicadas | 12 s | 80 ms | 0.0586 | 0.00516 |
+
+These are single-run Apple M1 Pro measurements, including PCM encoding and file
+writes, excluding compilation and mixer construction. They measure synthesis
+and delivery behavior, not subjective listening quality or client voxel-sampling
+frame time. The WAVs are local disposable artifacts in `target/audio-integration/`;
+the CLI commands above reproduce them. No renderer/mesh implementation changed.
+
+The native device path also accepted the generated split-material WAV and
+completed its two-second playback probe without reporting device errors. This
+checks playback availability/delivery; it is not a subjective listening review.
+The code graph was refreshed with AST extraction.

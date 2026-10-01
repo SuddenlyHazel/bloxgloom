@@ -72,6 +72,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "world-v22"
     };
     match args.next().as_deref() {
+        Some("audio-insect-preview") => {
+            let usage =
+                "usage: audio-insect-preview <crickets|cicadas> <seconds> <output.wav> [seed]";
+            let kind = args.next().ok_or(usage)?;
+            let seconds: f32 = args.next().ok_or(usage)?.parse()?;
+            let path = args.next().ok_or(usage)?;
+            let seed = args
+                .next()
+                .map(|s| s.parse::<u32>())
+                .transpose()?
+                .unwrap_or(1);
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            audio::render_insect_preview(&kind, seconds, std::path::Path::new(&path), seed)?;
+        }
         Some("audio-material-preview") => {
             let usage = "usage: audio-material-preview <water|dirt|leaf|stone|glass|metal|plastic|asphalt|roof|wood|split> <seconds> <output.wav> [seed]";
             let profile = args.next().ok_or(usage)?;

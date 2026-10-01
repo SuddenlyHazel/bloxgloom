@@ -29,7 +29,7 @@ fn local_audio_preview_is_ephemeral_and_listener_poll_is_bounded() {
 fn world_sound_is_remembered_during_preview_and_retired_with_session() {
     let config = Config::default();
     let mut state = State::new(&config);
-    state.update_weather(10.0, 4.0, 0.5, 1.0);
+    state.update_weather(10.0, 4.0, 0.5, 1.0, 0.0);
     let sample = state.world;
     assert_eq!(sample.unwrap().rain_mm_h, 10.0);
     state.change_preview(true, &config);
@@ -200,18 +200,18 @@ fn latest_rain_geometry_retries_queue_pressure_and_retires_with_session() {
     let mut state = State::new(&config);
     state.blocked.set(true);
     state.update_rain_scene((*RainScene::patch(RainMaterial::Leaf)).clone());
-    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    state.update_weather(30.0, 4.0, 0.35, 1.0, 0.0);
     assert!(state.scene_dirty);
     state.update_rain_scene((*RainScene::patch(RainMaterial::Wood)).clone());
     state.blocked.set(false);
-    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    state.update_weather(30.0, 4.0, 0.35, 1.0, 0.0);
     assert!(!state.scene_dirty);
     assert!(
         matches!(&state.sent.borrow()[0], Command::RainScene(scene) if scene.tiles.iter().all(|t| t.material == RainMaterial::Wood))
     );
     let count = state.sent.borrow().len();
     state.update_rain_scene((*RainScene::patch(RainMaterial::Wood)).clone());
-    state.update_weather(30.0, 4.0, 0.35, 1.0);
+    state.update_weather(30.0, 4.0, 0.35, 1.0, 0.0);
     assert_eq!(state.sent.borrow().len(), count);
     state.retire_session(&config);
     assert!(state.rain_scene.is_none());

@@ -6,6 +6,7 @@ fn weather(rain_mm_h: f32) -> WeatherSound {
         wind_m_s: 5.0,
         bearing: 0.0,
         exposure: 1.0,
+        daylight: 0.0,
     }
 }
 

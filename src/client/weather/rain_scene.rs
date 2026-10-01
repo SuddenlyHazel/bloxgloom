@@ -1,6 +1,6 @@
 //! Rain hits only the first known, exposed voxel face in each nearby column.
 use crate::{
-    audio::rain_scene::{RainMaterial, RainScene, RainTile},
+    audio::rain_scene::{Habitat, RainMaterial, RainScene, RainTile},
     content::{BlockStateId, Catalog},
     world,
 };
@@ -50,9 +50,17 @@ pub(super) fn sample(
                 let Some(material) = material(catalog, id) else {
                     continue;
                 };
+                let habitat = if id == world::GRASS || id == world::MOSS {
+                    Habitat::Ground
+                } else if material == RainMaterial::Leaf {
+                    Habitat::Canopy
+                } else {
+                    Habitat::None
+                };
                 scene.tiles.push(RainTile {
                     centre: [x as f32 + 0.5, y as f32 + 1.0, z as f32 + 0.5],
                     material,
+                    habitat,
                     normal: [0.0; 2],
                 });
                 // Current weather travels toward +X/+Z. These windward faces
@@ -68,6 +76,7 @@ pub(super) fn sample(
                                 z as f32 + 0.5 + dz as f32 * 0.5,
                             ],
                             material,
+                            habitat: Habitat::None,
                             normal,
                         });
                     }

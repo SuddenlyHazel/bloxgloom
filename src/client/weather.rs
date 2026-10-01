@@ -249,6 +249,10 @@ impl super::ClientApp {
                 sample.wind,
                 0.35 - self.yaw,
                 self.weather.audio_exposure,
+                ((crate::daylight::phase(self.world_time.now()) * std::f32::consts::TAU).sin()
+                    * 5.0
+                    + 0.5)
+                    .clamp(0.0, 1.0),
             );
         }
         let flash = self.weather.flash.map_or(0.0, |strike| {

@@ -456,7 +456,8 @@ Script creatures support terrain-aware ground movement toward horizontal
 targets and models built from colored cuboids. Moving entities now add free
 velocity/acceleration controls, swept collision and rigid cuboid presentation;
 the approved scope is implemented. A [native audio foundation](docs/audio/FOUNDATION.md)
-now provides device output, mixing and procedural weather synthesis.
+now provides device output, mixing, procedural weather synthesis, voxel-material
+rain impacts and habitat-anchored cricket/cicada ambience.
 [Packaged scripted audio](docs/audio/SCRIPTING.md) adds namespaced WAV delivery,
 transactional positional one-shots, entity-linked loops, gain/pitch updates,
 explicit stops and session/entity cleanup. Native gameplay cues publish after

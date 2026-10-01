@@ -34,11 +34,19 @@ impl RainMaterial {
         })
     }
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Habitat {
+    #[default]
+    None,
+    Ground,
+    Canopy,
+}
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RainTile {
     /// World-space face centre. A tile represents one square metre.
     pub centre: [f32; 3],
     pub material: RainMaterial,
+    pub habitat: Habitat,
     /// Outward horizontal normal for a wall; [0, 0] means a horizontal top.
     pub normal: [f32; 2],
 }
@@ -67,6 +75,11 @@ impl RainScene {
                     (-8..8).map(move |x| RainTile {
                         centre: [x as f32 + 0.5, 0.0, z as f32 + 0.5],
                         material,
+                        habitat: match material {
+                            RainMaterial::Dirt => Habitat::Ground,
+                            RainMaterial::Leaf => Habitat::Canopy,
+                            _ => Habitat::None,
+                        },
                         normal: [0.0; 2],
                     })
                 })

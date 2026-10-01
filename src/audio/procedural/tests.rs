@@ -32,6 +32,7 @@ fn world_weather_uses_continuous_inputs_without_autonomous_lightning() {
         wind_m_s: 12.0,
         bearing: 0.7,
         exposure: 1.0,
+        daylight: 0.0,
     }));
     // Even a preview Storm preset cannot schedule strikes in explicit world mode.
     for _ in 0..44_100 {
@@ -55,6 +56,7 @@ fn sheltered_world_weather_is_quieter_and_inputs_are_bounded() {
         wind_m_s: 8.0,
         bearing: 0.0,
         exposure: 1.0,
+        daylight: 0.0,
     };
     outdoor.set_scene(crate::audio::rain_scene::RainScene::patch(
         crate::audio::rain_scene::RainMaterial::Dirt,
@@ -83,6 +85,7 @@ fn sheltered_world_weather_is_quieter_and_inputs_are_bounded() {
         wind_m_s: f32::INFINITY,
         bearing: f32::NEG_INFINITY,
         exposure: f32::NAN,
+        daylight: 0.0,
     }));
     assert_eq!(indoor.world, Some(WeatherSound::default()));
 }
@@ -99,6 +102,7 @@ fn material_scenes_produce_distinct_spectra_and_empty_geometry_has_no_fake_rain(
         engine.set_world(Some(WeatherSound {
             rain_mm_h: 30.0,
             exposure: 1.0,
+            daylight: 0.0,
             ..WeatherSound::default()
         }));
         let mut energy = 0.0_f64;

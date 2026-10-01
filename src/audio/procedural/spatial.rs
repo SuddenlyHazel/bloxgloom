@@ -44,6 +44,11 @@ impl Default for Bus {
     }
 }
 impl Bus {
+    pub fn add(&mut self, frame: [f32; 2]) {
+        for (ear, sample) in frame.into_iter().enumerate() {
+            self.direct[ear][self.position] += sample;
+        }
+    }
     pub fn next(&mut self) -> [f32; 2] {
         let out = [self.direct[0][self.position], self.direct[1][self.position]];
         self.direct[0][self.position] = 0.0;
@@ -102,6 +107,14 @@ impl Spatial {
         let cutoff = 18_000.0 - 15_000.0 * rear;
         value.alpha = -(-2.0 * PI * cutoff / SAMPLE_RATE).exp_m1();
         value
+    }
+    pub fn retarget(&mut self, distance: f32, angle: f32, listener: Listener) {
+        *self = Self {
+            state: self.state,
+            previous: self.previous,
+            lowpass: self.lowpass,
+            ..Self::new(distance, angle, listener)
+        };
     }
     pub fn emit(&mut self, listener: Listener, bus: &mut Bus, source: f32) -> f32 {
         self.lowpass += self.alpha * (source - self.lowpass);

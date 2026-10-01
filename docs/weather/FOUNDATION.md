@@ -217,3 +217,13 @@ The release `perf 300 6` run on the Apple M1 Pro retained 320,236 vertices,
 CPU p50/p95/p99 were 0.313/0.464/0.606 ms, and GPU values were
 0.256/0.347/0.781 ms. As above, this is a clear-weather headless measurement;
 it excludes active rain, live audio and presentation.
+
+
+## Material and insect sound integration
+
+World rain now uses exposed resident voxel surfaces rather than the default
+material mix. Wood, leaves, soft terrain and hard surfaces feed material-specific
+impacts at their actual distance/bearing. Nearby grass/moss and canopy habitat
+also supply spatial cricket and dog-day cicada ambience, gated by the shared
+world clock and weather. Leaf cover keeps surrounding weather audible, while
+solid roofs soften it. See the [audio integration and listening probes](../audio/FOUNDATION.md#world-space-rain-surfaces).
