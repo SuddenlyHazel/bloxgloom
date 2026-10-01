@@ -506,7 +506,7 @@ separate remaining work. No save conversion or imported models are introduced.
 
 **Status: implemented and verified (2026-10-01).**
 This closes the simple moving-object/projectile portion of section 5. The
-subsequent audio scope is documented below; vehicles, general animation
+subsequent audio scope is documented above; vehicles, general animation
 controllers and imported models remain separate work. The author contract is in [Moving entities](docs/modding/MOVING-ENTITIES.md)
 and the runnable example is [moving-projectiles](fixtures/moving-projectiles/README.md).
 
@@ -728,7 +728,7 @@ Acceptance requires:
   update after implementation. Publish measured motion workload results and any
   remaining limits alongside the completed author contract.
 
-Completion closes the motion/projectile portion only. The audio extension below
+Completion closes the motion/projectile portion only. The audio extension above
 closes basic packaged/scripted playback; advanced audio, vehicle controls/
 rigid-body constraints, per-player physics, imported models and general animation
 controllers remain visible section-5 gaps for separate goals.

@@ -140443,7 +140443,7 @@
       "file_type": "code",
       "norm_label": "audio_timer_fixture_places_completes_and_reconstructs_its_replica_loop()",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L144"
+      "source_location": "L145"
     },
     {
       "id": "src_server_net_tests_script_startup_gameplay_sounds_invalid_packaged_wav_never_installs_a_partial_catalog",
@@ -140454,7 +140454,7 @@
       "file_type": "code",
       "norm_label": "invalid_packaged_wav_never_installs_a_partial_catalog()",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L111"
+      "source_location": "L112"
     },
     {
       "id": "src_server_net_tests_script_startup_gameplay_sounds_packaged_audio_commits_once_and_caught_invalid_audio_rolls_back",
@@ -212431,7 +212431,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L249",
+      "source_location": "L251",
       "weight": 1.0
     },
     {
@@ -212443,7 +212443,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L91",
+      "source_location": "L92",
       "weight": 1.0
     },
     {
@@ -503466,7 +503466,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L111",
+      "source_location": "L112",
       "weight": 1.0
     },
     {
@@ -503477,7 +503477,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L144",
+      "source_location": "L145",
       "weight": 1.0
     },
     {
@@ -578342,7 +578342,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L226",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -578354,7 +578354,7 @@
       "confidence_score": 0.85,
       "context": "call",
       "source_file": "src/server/net/tests/script_startup/gameplay/sounds.rs",
-      "source_location": "L73",
+      "source_location": "L74",
       "weight": 1.0
     },
     {
@@ -588498,5 +588498,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "7af3ce80de50c89793093ee7355f1ad3cf26995e"
+  "built_at_commit": "03d31eae283110e91360f91bdf3f7ff1b6736943"
 }

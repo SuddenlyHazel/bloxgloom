@@ -25,6 +25,7 @@ fn receive_result(
 }
 #[test]
 fn packaged_audio_commits_once_and_caught_invalid_audio_rolls_back() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
     fixture.action(REGISTER,r#"return function(c,e)
         c.sound{kind='play',voice='ping',clip='demo:beep',position={0.5,80,0.5}}
@@ -142,6 +143,7 @@ fn invalid_packaged_wav_never_installs_a_partial_catalog() {
 
 #[test]
 fn audio_timer_fixture_places_completes_and_reconstructs_its_replica_loop() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
     let fixture = Fixture::new();
     let root =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/audio-machine/packages");
@@ -252,14 +254,11 @@ fn audio_timer_fixture_places_completes_and_reconstructs_its_replica_loop() {
         let deadline = Instant::now() + Duration::from_secs(20);
         let mut completed = 0;
         loop {
-            match peer.read(deadline) {
-                ServerMessage::Sounds { events, .. } => {
-                    completed+=events.iter().filter(|e|matches!(&e.kind,bloxgloom_host_api::sound::Kind::Play{clip,..} if clip=="audio:complete")).count();
-                    if completed != 0 {
-                        break;
-                    }
+            if let ServerMessage::Sounds { events, .. } = peer.read(deadline) {
+                completed += events.iter().filter(|event| matches!(&event.kind, bloxgloom_host_api::sound::Kind::Play { clip, .. } if clip == "audio:complete")).count();
+                if completed != 0 {
+                    break;
                 }
-                _ => {}
             }
         }
         assert_eq!(completed, 1);

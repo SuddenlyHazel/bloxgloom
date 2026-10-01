@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1790891998.1839352,
-    "seen": 1790892017.913787,
-    "ast_hash": "ca0e5c36e1af7d7695176abe7eb468f2",
+    "mtime": 1790892227.986389,
+    "seen": 1790897322.020315,
+    "ast_hash": "1fa202b218751dd6a76ce5b026dd9c42",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -7554,9 +7554,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/sounds.rs": {
-    "mtime": 1790891861.126119,
-    "seen": 1790892017.9135182,
-    "ast_hash": "aeeb842b94ce0454de75a17866ae81b7",
+    "mtime": 1790897212.234775,
+    "seen": 1790897322.020043,
+    "ast_hash": "93a7e0e21fd64463533209a39b3fee5d",
     "semantic_hash": ""
   },
   "docs/audio/SCRIPTING.md": {

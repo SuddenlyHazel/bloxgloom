@@ -1,7 +1,7 @@
 # Graph Report - bloxgloom  (2026-10-01)
 
 ## Corpus Check
-- 1129 files · ~1,791,123 words
+- 1129 files · ~1,791,137 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .mesh 15, .glb 13, .wgsl 12)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7af3ce80`
+- Built from commit: `03d31eae`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -2767,7 +2767,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `ClientApp` connect `ClientApp` to `EntityClientRegistry`, `.aimed_block`, `PlayerSummary`, `VisualSession`, `render/mesh.rs`, `Observations`, `CharacterEditor`, `PlayerState`, `Network`, `.compose_current_package_action_with_args`, `.frame`, `UiLayout`, `src/client.rs`, `Chunk`, `Inventory`, `DroppedItem`, `Sender`, `.accept`, `ClientMessage`, `Update`, `VisualAvatar`, `.begin_window_install`, `Config`, `FireAnimator`, `.window_event`, `third_person.rs`?**
   _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **Why does `Audit boundary and live path` connect `Cross-cutting integration findings` to `ServerStartup`, `Registration`, `world_to_chunk`, `Chunk`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
 - **What connects `version`, `joints`, `source_height` to the rest of the system?**
   _1113 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `EntitySnapshot` be split into smaller, more focused modules?**

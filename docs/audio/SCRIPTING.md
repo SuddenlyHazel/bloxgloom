@@ -100,3 +100,28 @@ Weather continues to use its native procedural path; no weather Luau API is adde
 See [the playable audio timer](../../fixtures/audio-machine/README.md),
 [editor definitions](../../types/bloxgloom.d.luau) and
 [native audio foundation](FOUNDATION.md).
+
+## Verification — October 1, 2026
+
+The workspace all-feature suite passed 1,473 tests (1,427 game + 46 host API);
+six existing opt-in tests were skipped. Strict all-target/all-feature Clippy and
+format checking passed. Eight focused sound tests passed again after test cleanup.
+The native device path accepted the fixture motor WAV and completed its two-second
+probe without device errors. This verifies device playback, not subjective mixing
+quality. No renderer or mesh implementation changed, so a graphics benchmark was
+not part of this audio extension. The code graph was refreshed with AST extraction.
+
+```sh
+cargo test --workspace --all-features -- --test-threads=2
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+cargo test --all-features sound -- --test-threads=2
+cargo run --all-features -- audio-file fixtures/audio-machine/packages/audio/assets/sounds/motor.wav 2
+```
+
+Real nonblocking-listener tests cover verified package delivery, committed sound,
+receipt replay suppression, caught-invalid rollback, and the timer machine's full
+start/completion cycle. Client/mixer tests cover live controls, entity following,
+voice limits, cleanup, stop retries under queue pressure and whole-session batch
+deduplication. Decoder/protocol tests reject malformed/truncated data and validate
+wire lengths and exact entity IDs.
