@@ -1,4 +1,4 @@
-//! Explicit local `bloxgloom:owner_systems/v1` binding. One system/package:
+//! Explicit local `bloxgloom:owner_systems/v1` binding. Up to eight independently keyed systems/package:
 //! `h.register_system { key='demo:clock', schema=1, revision=1,
 //! module='demo:clock', max_state_bytes=64, max_jobs_per_tick=2,
 //! read_world=true, read_radius_chunks=1, seeds={{x=0,y=5,z=0,data=''}} }`.
@@ -65,6 +65,15 @@ pub(super) fn declarer(
     let namespace = namespace.to_owned();
     lua.create_function(move |_, declaration: Value| {
         let mut pending = pending.borrow_mut();
+        let label = match &declaration {
+            Value::Table(table) => table
+                .raw_get::<Value>("key")
+                .ok()
+                .map(|key| super::startup::declaration_key(&key)),
+            _ => None,
+        }
+        .unwrap_or_else(|| "<invalid-key>".into());
+        let label = format!("register_system {label}");
         let result = (|| {
             if let Some(error) = pending.error {
                 return Err(error);
@@ -72,8 +81,8 @@ pub(super) fn declarer(
             if !snapshot.permits_systems(&namespace) {
                 return Err("register_system requires bloxgloom:owner_systems/v1");
             }
-            if pending.system.is_some() {
-                return Err("only one system per package is allowed");
+            if pending.systems.len() >= super::capacity::SYSTEMS_PER_PACKAGE {
+                return Err("systems/package limit exceeded");
             }
             let table = table(declaration)?;
             let key = text(field(&table, "key")?)?;
@@ -82,6 +91,9 @@ pub(super) fn declarer(
             };
             if owner != namespace || !super::package::manifest::identifier(local) {
                 return Err("system key must belong to the startup package");
+            }
+            if pending.systems.iter().any(|system| system.key == key) {
+                return Err("duplicate system key in startup package");
             }
             let module = text(field(&table, "module")?)?;
             if module.split_once(':').map(|v| v.0) != Some(namespace.as_str())
@@ -250,13 +262,10 @@ pub(super) fn declarer(
             system
                 .validate()
                 .map_err(|_| "invalid system declaration or seed")?;
-            pending.system = Some(system);
+            pending.systems.push(system);
             Ok(())
         })();
-        result.map_err(|error| {
-            pending.error.get_or_insert(error);
-            mlua::Error::RuntimeError(error.into())
-        })
+        result.map_err(|error| pending.reject(error, &label))
     })
 }
 

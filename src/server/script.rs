@@ -3,6 +3,7 @@
 //! bounded public declarations. Gameplay borrows only a staged public Context.
 
 pub(in crate::server::script) mod anchored;
+pub(crate) mod capacity;
 pub(in crate::server::script) mod creature;
 mod entities;
 mod gameplay;
@@ -53,10 +54,21 @@ pub struct Limits {
     pub max_memory_bytes: usize,
 }
 
+impl Limits {
+    pub(super) fn startup() -> Self {
+        Self {
+            max_source_bytes: capacity::MAX_SOURCE_BYTES,
+            max_interrupts: capacity::STARTUP_INTERRUPTS,
+            max_wall_time: capacity::STARTUP_WALL_TIME,
+            max_memory_bytes: capacity::STARTUP_MEMORY_BYTES,
+        }
+    }
+}
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_source_bytes: 64 * 1024,
+            max_source_bytes: capacity::MAX_SOURCE_BYTES,
             max_interrupts: 10_000,
             max_wall_time: Duration::from_millis(50),
             max_memory_bytes: 8 * 1024 * 1024,

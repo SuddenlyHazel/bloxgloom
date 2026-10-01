@@ -1,5 +1,6 @@
 //! One invocation per chunk, on the loader's own thread. Only immutable source
-//! and registration data are shared; each call owns a fresh, bounded sandbox VM.
+//! and registration data are shared; each call gets isolated, bounded Lua state
+//! while its execution worker reuses the physical VM and compiled code.
 //!
 //! Entry: `host.register_generator("demo:terrain", 1, "demo:terrain")`, with
 //! `requires bloxgloom:generation/v1` and a declared own-package terrain module.
@@ -14,7 +15,7 @@
 //! hash. Authors must bump revision for any algorithm/dependency/config change
 //! and obey Contributor purity (including not using object identity or table
 //! iteration order for decisions). Restart rediscovers sources; retries reuse
-//! frozen sources and fresh VMs. Persistent failure does not fall back to air.
+//! frozen sources and isolated attempts. Persistent failure does not fall back to air.
 use super::values::{integer, text};
 use super::{Invocation, Limits, Program, ScriptInput, package::PackageSnapshot, startup::Pending};
 use bloxgloom_host_api::generation::{Context, Contributor, GenerationError, Output, Registration};
@@ -36,6 +37,10 @@ pub(super) fn declarer(
     let namespace = namespace.to_owned();
     lua.create_function(move |_, (key, revision, module): (Value, Value, Value)| {
         let mut pending = pending.borrow_mut();
+        let declaration = format!(
+            "register_generator {}",
+            super::startup::declaration_key(&key)
+        );
         let result = (|| {
             if let Some(error) = pending.error {
                 return Err(error);
@@ -43,8 +48,8 @@ pub(super) fn declarer(
             if !snapshot.permits_generation(&namespace) {
                 return Err("register_generator requires bloxgloom:generation/v1");
             }
-            if pending.generation.is_some() {
-                return Err("only one generator per package is allowed");
+            if pending.generation.len() >= super::capacity::GENERATORS_PER_PACKAGE {
+                return Err("generators/package limit exceeded");
             }
             let key = text(key)?;
             let module = text(module)?;
@@ -54,6 +59,13 @@ pub(super) fn declarer(
             if owner != namespace || !super::package::manifest::identifier(local) {
                 return Err("generator key must belong to the startup package");
             }
+            if pending
+                .generation
+                .iter()
+                .any(|generator| generator.key == key)
+            {
+                return Err("duplicate generator key in startup package");
+            }
             // Require an own-package module; dependencies remain available via import.
             if module.split_once(':').map(|v| v.0) != Some(namespace.as_str())
                 || snapshot.source(&module).is_none()
@@ -61,17 +73,14 @@ pub(super) fn declarer(
                 return Err("generator must name a declared module in its package");
             }
             let revision = integer(revision, 1, i64::from(u32::MAX))? as u32;
-            pending.generation = Some(Declaration {
+            pending.generation.push(Declaration {
                 key,
                 revision,
                 module,
             });
             Ok(())
         })();
-        result.map_err(|error| {
-            pending.error.get_or_insert(error);
-            mlua::Error::RuntimeError(error.into())
-        })
+        result.map_err(|error| pending.reject(error, &declaration))
     })
 }
 

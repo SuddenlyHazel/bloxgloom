@@ -20,11 +20,11 @@
 //! Imported helpers retain only the entry package's declaration authority.
 //! Public metadata is negotiated; server callbacks, owner seeds and codecs
 //! stay server-only. Dependency entries run too and may import declared helpers.
-//! Fresh bounded VMs retain source identity and run callbacks on host workers.
+//! Reused worker-owned VMs evaluate isolated, bounded startup attempts.
 //!
 //! The bundle records identity:package with public contract version 1. Source
 //! semver is checked exactly during discovery, not persisted or converted to
-//! the public u32 version. Retry/restart rediscovers sources and uses fresh VMs;
+//! the public u32 version. Retry/restart rediscovers sources with isolated state;
 //! failed declaration collection publishes nothing and never opens the world.
 //! Generator execution failures are reported later by chunk loading. Existing catalog
 //! identity/reconciliation and client compatibility checks remain authoritative.
@@ -39,10 +39,14 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-const MAX_ITEMS_PER_PACKAGE: usize = 32;
-const MAX_TEXTURES_PER_PACKAGE: usize = 32;
-const MAX_BLOCKS_PER_PACKAGE: usize = 32;
+use super::capacity::{
+    BLOCKS_PER_PACKAGE as MAX_BLOCKS_PER_PACKAGE, ITEMS_PER_PACKAGE as MAX_ITEMS_PER_PACKAGE,
+    TEXTURES_PER_PACKAGE as MAX_TEXTURES_PER_PACKAGE,
+};
 mod block;
+mod composition;
+#[cfg(test)]
+mod tests;
 pub(in crate::server::script) use block::cube;
 pub(in crate::server::script) use block::extended as extended_block;
 pub(in crate::server::script) use block::visual as visual_block;
@@ -90,7 +94,8 @@ impl Declarations {
     pub(in crate::server) fn discover(root: &Path) -> std::io::Result<Self> {
         let snapshot = Arc::new(PackageSnapshot::discover(root).map_err(std::io::Error::other)?);
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
-        let worker = ScriptWorker::spawn(super::Limits::default())?;
+        let deadline = std::time::Instant::now() + super::capacity::INSTALLATION_WALL_TIME;
+        let worker = ScriptWorker::spawn(super::Limits::startup())?;
         let mut items = Vec::new();
         let mut tags = Vec::new();
         let mut blocks = Vec::new();
@@ -108,9 +113,16 @@ impl Declarations {
         let mut anchored = Vec::new();
         let mut player_rules = None;
         let mut appearance = None;
-        // At most 64 packages * 32 items, in lexical package order. Each entry
-        // gets a fresh VM; completion timing cannot affect assignment order.
+        // Packages run in lexical order with isolated mutable attempts and reusable
+        // physical VMs. Final declarations are canonicalized before ID assignment.
         for package in &packages {
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::Error::other(format!(
+                    "{}: installation initialization deadline exceeded (maximum {:?})",
+                    package.key,
+                    super::capacity::INSTALLATION_WALL_TIME
+                )));
+            }
             let name = package.key.split_once(':').expect("package key").0;
             let entry = snapshot.entry(name).map_err(std::io::Error::other)?;
             let output = worker
@@ -152,16 +164,14 @@ impl Declarations {
             creatures.extend(declarations.creatures);
             machines.extend(declarations.machines);
             anchored.extend(declarations.anchored);
-            if let Some(system) = declarations.system {
-                systems.push(system);
-            }
+            systems.extend(declarations.systems);
             for declaration in declarations.actions {
                 actions.push(super::gameplay::registration(
                     Arc::clone(&snapshot),
                     declaration,
                 ));
             }
-            if let Some(declaration) = declarations.generation {
+            for declaration in declarations.generation {
                 generation.push(super::generation::registration(
                     Arc::clone(&snapshot),
                     declaration,
@@ -189,6 +199,20 @@ impl Declarations {
             machines,
             anchored,
         };
+        result.items.sort_by(|a, b| a.key.cmp(&b.key));
+        result.blocks.sort_by(|a, b| a.key.cmp(&b.key));
+        result
+            .textures
+            .sort_by(|a, b| a.definition.key.cmp(&b.definition.key));
+        result.systems.sort_by(|a, b| a.key.cmp(&b.key));
+        result.generation.sort_by(|a, b| a.key.cmp(&b.key));
+        composition::validate(&result.packages, &result.systems)?;
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::other(format!(
+                "installation initialization deadline exceeded (maximum {:?})",
+                super::capacity::INSTALLATION_WALL_TIME
+            )));
+        }
         result.anchored.sort_by(|a, b| a.entity.cmp(&b.entity));
         snapshot
             .install_creature_initials(&result.creatures)
@@ -199,6 +223,12 @@ impl Declarations {
                 .with_startup(&result)
                 .map_err(std::io::Error::other)?,
         );
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::other(format!(
+                "installation initialization deadline exceeded during bundle preparation (maximum {:?})",
+                super::capacity::INSTALLATION_WALL_TIME
+            )));
+        }
         Ok(result)
     }
 }
@@ -270,7 +300,7 @@ pub(super) struct Pending {
     tags: Vec<bloxgloom_host_api::content::Tag>,
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
-    pub(super) generation: Option<super::generation::Declaration>,
+    pub(super) generation: Vec<super::generation::Declaration>,
     pub(super) actions: Vec<super::gameplay::Declaration>,
     pub(super) handlers: Vec<bloxgloom_host_api::gameplay::HandlerRegistration>,
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
@@ -278,8 +308,52 @@ pub(super) struct Pending {
     pub(super) creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
     pub(super) machines: Vec<machine::Declaration>,
     pub(super) anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
-    pub(super) system: Option<bloxgloom_host_api::system::System>,
+    pub(super) systems: Vec<bloxgloom_host_api::system::System>,
     pub(super) error: Option<&'static str>,
+    diagnostic: Option<String>,
+}
+
+impl Pending {
+    pub(super) fn reject(&mut self, error: &'static str, declaration: &str) -> mlua::Error {
+        let message = match error {
+            "items/package limit exceeded" => format!(
+                "items/package: attempted {}; maximum {}",
+                self.items.len() + 1,
+                MAX_ITEMS_PER_PACKAGE
+            ),
+            "blocks/package limit exceeded" => format!(
+                "blocks/package: attempted {}; maximum {}",
+                self.blocks.len() + 1,
+                MAX_BLOCKS_PER_PACKAGE
+            ),
+            "textures/package limit exceeded" => format!(
+                "textures/package: attempted {}; maximum {}",
+                self.textures.len() + 1,
+                MAX_TEXTURES_PER_PACKAGE
+            ),
+            "systems/package limit exceeded" => format!(
+                "systems/package: attempted {}; maximum {}",
+                self.systems.len() + 1,
+                super::capacity::SYSTEMS_PER_PACKAGE
+            ),
+            "generators/package limit exceeded" => format!(
+                "generators/package: attempted {}; maximum {}",
+                self.generation.len() + 1,
+                super::capacity::GENERATORS_PER_PACKAGE
+            ),
+            _ => error.into(),
+        };
+        let diagnostic = format!("{declaration} rejected: {message}");
+        if self.error.is_none() {
+            self.diagnostic = Some(diagnostic.clone());
+        }
+        self.error.get_or_insert(error);
+        mlua::Error::RuntimeError(diagnostic)
+    }
+}
+
+pub(super) fn declaration_key(value: &Value) -> String {
+    text(value.clone()).unwrap_or_else(|_| "<invalid-key>".into())
 }
 
 pub(super) fn invoke(
@@ -325,6 +399,7 @@ pub(super) fn invoke(
     let register = lua.create_function(
         move |_, (key, name, texture, options): (Value, Value, Value, Value)| {
             let mut pending = capture.borrow_mut();
+            let declaration = format!("register_item {}", declaration_key(&key));
             let result = (|| {
                 if let Some(error) = pending.error {
                     return Err(error);
@@ -333,7 +408,7 @@ pub(super) fn invoke(
                     return Err("register_item requires bloxgloom:content/v1");
                 }
                 if pending.items.len() >= MAX_ITEMS_PER_PACKAGE {
-                    return Err("startup item limit exceeded (32 per package)");
+                    return Err("items/package limit exceeded");
                 }
                 // Validate lengths before copying VM strings into host allocations.
                 // Only the bounded item option parser traverses a table; do not
@@ -378,14 +453,14 @@ pub(super) fn invoke(
             })();
             result.map_err(|error| {
                 // pcall cannot turn a rejected host declaration into partial success.
-                pending.error.get_or_insert(error);
-                mlua::Error::RuntimeError(error.into())
+                pending.reject(error, &declaration)
             })
         },
     )?;
     let register_texture =
         lua.create_function(move |_, (key, asset, options): (Value, Value, Value)| {
             let mut pending = texture_capture.borrow_mut();
+            let declaration = format!("register_texture {}", declaration_key(&key));
             let result = (|| {
                 if let Some(error) = pending.error {
                     return Err(error);
@@ -394,7 +469,7 @@ pub(super) fn invoke(
                     return Err("register_texture requires bloxgloom:content/v1");
                 }
                 if pending.textures.len() >= MAX_TEXTURES_PER_PACKAGE {
-                    return Err("startup texture limit exceeded (32 per package)");
+                    return Err("textures/package limit exceeded");
                 }
                 let key = text(key)?;
                 let asset = text(asset)?;
@@ -451,14 +526,12 @@ pub(super) fn invoke(
                 });
                 Ok(())
             })();
-            result.map_err(|error| {
-                pending.error.get_or_insert(error);
-                mlua::Error::RuntimeError(error.into())
-            })
+            result.map_err(|error| pending.reject(error, &declaration))
         })?;
     let register_block = lua.create_function(
         move |_, (key, name, texture, options): (Value, Value, Value, Value)| {
             let mut pending = block_capture.borrow_mut();
+            let declaration = format!("register_block {}", declaration_key(&key));
             let result = (|| {
                 if let Some(error) = pending.error {
                     return Err(error);
@@ -467,10 +540,10 @@ pub(super) fn invoke(
                     return Err("register_block requires bloxgloom:content/v1");
                 }
                 if pending.blocks.len() >= MAX_BLOCKS_PER_PACKAGE {
-                    return Err("startup block limit exceeded (32 per package)");
+                    return Err("blocks/package limit exceeded");
                 }
                 if pending.items.len() >= MAX_ITEMS_PER_PACKAGE {
-                    return Err("startup item limit exceeded (32 per package)");
+                    return Err("items/package limit exceeded");
                 }
                 let key = text(key)?;
                 let name = text(name)?;
@@ -560,10 +633,7 @@ pub(super) fn invoke(
                 });
                 Ok(())
             })();
-            result.map_err(|error| {
-                pending.error.get_or_insert(error);
-                mlua::Error::RuntimeError(error.into())
-            })
+            result.map_err(|error| pending.reject(error, &declaration))
         },
     )?;
     let host = lua.create_table()?;
@@ -588,7 +658,9 @@ pub(super) fn invoke(
     entry.call::<()>(host)?;
     let mut pending = pending.borrow_mut();
     if let Some(error) = pending.error {
-        return Err(mlua::Error::RuntimeError(error.into()));
+        return Err(mlua::Error::RuntimeError(
+            pending.diagnostic.clone().unwrap_or_else(|| error.into()),
+        ));
     }
     Ok(std::mem::take(&mut *pending))
 }
