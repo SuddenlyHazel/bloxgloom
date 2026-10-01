@@ -3,6 +3,7 @@ use bloxgloom_host_api::gameplay::{Context, Error, Event, Handler};
 
 pub(crate) const GIVE: &str = "bloxgloom:admin_give";
 pub(crate) const SPAWN: &str = "bloxgloom:admin_spawn";
+pub(crate) const WEATHER: &str = "bloxgloom:admin_weather";
 pub(crate) const TIME: &str = "bloxgloom:admin_time";
 
 pub(crate) struct Admin;
@@ -15,6 +16,12 @@ impl Handler for Admin {
             return Err(Error::Invalid("expected admin action".into()));
         };
         match action.as_str() {
+            WEATHER => {
+                let [kind, a, b, c, d] = arguments.as_slice() else {
+                    return Err(Error::Invalid("invalid weather request".into()));
+                };
+                context.admin_set_weather(*kind, u32::from_le_bytes([*a, *b, *c, *d]))
+            }
             TIME => {
                 let bytes: [u8; 8] = arguments
                     .as_slice()

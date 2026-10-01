@@ -65,7 +65,8 @@ pub(in crate::server) fn invoke(
     let mut plan = context.finish().map_err(error)?;
     // Lifecycle state/rewards are one transaction. World/entity mutation remains
     // in ordinary gameplay callbacks until its complete expansion is supported.
-    if plan.world_time.is_some()
+    if plan.weather.is_some()
+        || plan.world_time.is_some()
         || !plan.blocks.is_empty()
         || !plan.drops.is_empty()
         || !plan.entity_spawns.is_empty()

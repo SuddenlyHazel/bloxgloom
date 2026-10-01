@@ -287,6 +287,7 @@ fn oversized_profile_inventory_transaction_is_denied_and_next_wal_action_succeed
         pickups: vec![],
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: None,
         entity_wakes: vec![],
         player_publication: None,

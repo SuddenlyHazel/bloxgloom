@@ -1246,3 +1246,16 @@ fn committed_action_spawn_mappings_roundtrip_and_reject_invalid_ordinals() {
         assert!(read_server(&bytes[..length]).is_err());
     }
 }
+
+#[test]
+fn weather_wire_round_trip_rejects_invalid_physical_values() {
+    let mut snapshot = crate::weather::WeatherSnapshot::initial(123);
+    snapshot.to = crate::weather::WeatherKind::Storm;
+    snapshot.transition_duration_ms = 30_000;
+    let message = ServerMessage::Weather { snapshot };
+    let mut bytes = Vec::new();
+    write_server(&mut bytes, &message).unwrap();
+    assert_eq!(read_server(&mut bytes.as_slice()).unwrap(), message);
+    snapshot.from.rain = f32::NAN;
+    assert!(write_server(&mut Vec::new(), &ServerMessage::Weather { snapshot }).is_err());
+}

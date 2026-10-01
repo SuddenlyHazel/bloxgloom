@@ -88,6 +88,7 @@ fn action(entities: PreparedEntityTransaction) -> CommitAction {
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: Some(entities),
         entity_wakes: Vec::new(),
         owner_changes: vec![],

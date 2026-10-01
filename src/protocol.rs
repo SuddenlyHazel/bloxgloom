@@ -21,7 +21,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 20;
+const WIRE_VERSION: u8 = 21;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -151,6 +151,9 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    Weather {
+        snapshot: crate::weather::WeatherSnapshot,
+    },
     PlayerStance {
         entity_id: u64,
         crouching: bool,
@@ -287,6 +290,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             ServerMessage::PlayerRoster { players, .. } => {
                 8 + 2 + players.iter().map(|p| 24 + 1 + p.name.len()).sum::<usize>()
             }
+            ServerMessage::Weather { .. } => crate::weather::codec::BYTES,
             ServerMessage::WorldTime { .. } => 8,
             ServerMessage::Welcome { .. } => 8 + 8,
             ServerMessage::Position { .. } => 8 + 12,
@@ -657,6 +661,13 @@ pub fn write_server_with_catalog(
             out.push(23);
             out.extend(revision.to_le_bytes());
             players::write(&mut out, players)?;
+        }
+        ServerMessage::Weather { snapshot } => {
+            if !snapshot.valid() {
+                return Err(invalid("invalid weather"));
+            }
+            out.push(37);
+            out.extend(crate::weather::codec::encode(*snapshot));
         }
         ServerMessage::WorldTime { elapsed_ms } => {
             if *elapsed_ms >= crate::daylight::CYCLE_MS {
@@ -1530,6 +1541,13 @@ pub fn read_server_with_catalog(
                 return Err(invalid("invalid world time"));
             }
             ServerMessage::WorldTime { elapsed_ms }
+        }
+        37 => {
+            let bytes = c.take(crate::weather::codec::BYTES)?;
+            ServerMessage::Weather {
+                snapshot: crate::weather::codec::decode(bytes)
+                    .ok_or_else(|| invalid("invalid weather"))?,
+            }
         }
         _ => return Err(invalid("unknown server message")),
     };

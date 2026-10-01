@@ -165,6 +165,7 @@ fn empty_action() -> CommitAction {
         pickups: vec![],
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entity_wakes: vec![],
         owner_changes: vec![],
         player_publication: None,

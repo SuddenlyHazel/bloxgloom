@@ -44,6 +44,7 @@ fn probe_place(
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
         player_publication: None,

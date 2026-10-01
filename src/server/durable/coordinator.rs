@@ -283,6 +283,7 @@ fn process_queue(
                         || !action.world_edits.is_empty()
                         || action.entities.is_some()
                         || action.clock_change.is_some()
+                        || action.weather_change.is_some()
                         || !action.owner_changes.is_empty()
                         || action.player_publication.is_some();
                     let reason = if accepted {
@@ -456,6 +457,7 @@ fn batchable_motion(action: &CommitAction) -> bool {
         && action.action_id.is_none()
         && action.fire_seed.is_none()
         && action.clock_change.is_none()
+        && action.weather_change.is_none()
         && action.owner_changes.is_empty()
         && action.player_publication.is_none()
 }
@@ -628,6 +630,7 @@ fn stage_motion_batch(
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities,
         entity_wakes: wakes,
         owner_changes: vec![],

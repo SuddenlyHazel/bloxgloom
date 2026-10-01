@@ -95,6 +95,7 @@ fn empty_action() -> CommitAction {
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],

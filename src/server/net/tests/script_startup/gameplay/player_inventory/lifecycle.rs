@@ -56,6 +56,7 @@ fn offline_profile_tick_loads_asynchronously_and_commits_both_inventories() {
         pickups: vec![],
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: None,
         entity_wakes: vec![],
         player_publication: None,

@@ -41,6 +41,7 @@ pub(super) fn open(
 ) -> io::Result<RecoveredDurability> {
     let journal = Journal::open(root.join("server.wal"))?;
     let latest = journal.latest_values();
+    let weather_replay = crate::server::weather::prepare_recovery(root, &journal, &latest)?;
     let clock_replay = crate::server::world_time::prepare_recovery(root, &journal, &latest)?;
     let recovered_entities =
         super::entity_recovery::prepare(root, &journal, &latest, Arc::clone(&entity_types))?;
@@ -63,7 +64,7 @@ pub(super) fn open(
     // files partially overwritten before startup rejects the world.
     for (key, value) in &latest {
         match key.domain.as_str() {
-            crate::server::world_time::DOMAIN => {}
+            crate::server::world_time::DOMAIN | crate::server::weather::DOMAIN => {}
             "bloxgloom:chunk_snapshot" => {
                 let chunk = decode_chunk_key(&key.bytes)?;
                 let current_opt = world.read_chunk_snapshot(chunk)?;
@@ -195,6 +196,9 @@ pub(super) fn open(
         }
     }
 
+    if let Some(snapshot) = weather_replay {
+        crate::server::weather::replay(root, &snapshot)?;
+    }
     if let Some(snapshot) = clock_replay {
         crate::server::world_time::replay(root, &snapshot)?;
     }

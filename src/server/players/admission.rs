@@ -109,6 +109,9 @@ pub(in crate::server) fn join_named_client(
         ServerMessage::WorldTime {
             elapsed_ms: state.world_time.now(),
         },
+        ServerMessage::Weather {
+            snapshot: state.weather.snapshot(),
+        },
     ] {
         if sender.try_send(message).is_err() {
             state.player_entities.discard_session(id);

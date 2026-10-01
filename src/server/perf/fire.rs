@@ -346,6 +346,7 @@ fn fixture_action(
         pickups: Vec::new(),
         fire_seed,
         clock_change: None,
+        weather_change: None,
         entities: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],

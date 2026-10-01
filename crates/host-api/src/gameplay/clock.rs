@@ -8,6 +8,19 @@ pub struct WorldTime {
 }
 
 impl Context<'_> {
+    /// Native admin weather control; deliberately not exposed to script bindings.
+    pub fn admin_set_weather(&mut self, kind: u8, transition_ms: u32) -> Result<(), Error> {
+        self.charge()?;
+        if !self.snapshot.admin() {
+            return self.fail(Error::Invalid("admin access denied".into()));
+        }
+        if kind > 2 || transition_ms > 60_000 {
+            return self.fail(Error::Invalid("invalid weather request".into()));
+        }
+        self.plan.weather = Some((kind, transition_ms));
+        Ok(())
+    }
+
     pub fn world_time(&mut self) -> Result<WorldTime, Error> {
         self.charge()?;
         let mut time = match self.snapshot.world_time() {

@@ -560,6 +560,7 @@ fn commit(
         pickups: vec![],
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: Some(entities),
         entity_wakes: vec![],
         owner_changes: vec![],

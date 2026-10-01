@@ -287,6 +287,10 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             .collect(),
         pickups: vec![],
         fire_seed: None,
+        weather_change: plan
+            .weather
+            .map(|(kind, ms)| state.weather.prepare(kind, ms))
+            .transpose()?,
         clock_change: plan
             .world_time
             .map(|time| state.world_time.prepare(time))

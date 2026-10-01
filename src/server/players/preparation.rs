@@ -174,6 +174,7 @@ pub(super) fn prepare(
         pickups: vec![],
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: None,
         entity_wakes: vec![],
         owner_changes: changes,

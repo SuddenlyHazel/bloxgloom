@@ -70,6 +70,11 @@ pub(super) fn run_simulation_ticks(
                     .try_send(ServerMessage::WorldTime { elapsed_ms });
             }
         }
+        if let Some(snapshot) = state.weather.poll() {
+            for client in state.clients.values() {
+                let _ = client.sender.try_send(ServerMessage::Weather { snapshot });
+            }
+        }
         let elapsed = now.duration_since(last_clock);
         last_clock = now;
         let batch = clock
@@ -142,6 +147,7 @@ pub(super) fn run_simulation_ticks(
             if disconnected {
                 state.save_connected_positions()?;
                 state.world_time.finish()?;
+                state.weather.finish()?;
                 return Ok(());
             }
         }

@@ -89,6 +89,9 @@ fn apply_committed_action_inner(
             .validate_committed(entities)
             .map_err(io::Error::other)?;
     }
+    if let Some(change) = &action.weather_change {
+        state.weather.validate(change)?;
+    }
     if let Some(change) = &action.clock_change {
         state.world_time.validate(change)?;
     }
@@ -127,6 +130,10 @@ fn apply_committed_action_inner(
         .map(|edit| (edit.key, edit.after_snapshot.clone()))
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
+    if let Some(change) = action.weather_change.take() {
+        state.weather.apply(change)?;
+        crate::server::weather::publish(state);
+    }
     if let Some(change) = action.clock_change.take() {
         state.world_time.apply(change)?;
         crate::server::world_time::publish(state);

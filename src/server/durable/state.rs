@@ -13,6 +13,9 @@ pub(in crate::server) fn action_changes(
     catalog: &crate::content::Catalog,
 ) -> io::Result<Vec<Change>> {
     let mut changes = action.owner_changes.clone();
+    if let Some(change) = &action.weather_change {
+        changes.push(change.clone());
+    }
     if let Some(change) = &action.clock_change {
         changes.push(change.clone());
     }

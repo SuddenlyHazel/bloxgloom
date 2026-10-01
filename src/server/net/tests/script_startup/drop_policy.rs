@@ -25,6 +25,7 @@ fn commit(state: &mut State, batch: entities::PreparedEntityBatch) {
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entities: Some(batch),
         entity_wakes: Vec::new(),
         owner_changes: vec![],

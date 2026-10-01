@@ -358,6 +358,7 @@ fn add_clients_and_seed_drops(
         pickups: Vec::new(),
         fire_seed: None,
         clock_change: None,
+        weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
         player_publication: None,

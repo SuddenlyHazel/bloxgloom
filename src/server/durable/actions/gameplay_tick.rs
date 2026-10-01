@@ -167,6 +167,10 @@ pub(in crate::server) fn plan_event(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
+        weather_change: plan
+            .weather
+            .map(|(kind, ms)| state.weather.prepare(kind, ms))
+            .transpose()?,
         clock_change: plan
             .world_time
             .map(|time| state.world_time.prepare(time))

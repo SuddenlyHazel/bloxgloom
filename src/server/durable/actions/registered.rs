@@ -264,6 +264,7 @@ fn plan_observed_request(
                 pickups: vec![],
                 fire_seed: None,
                 clock_change: None,
+                weather_change: None,
                 entities: None,
                 entity_wakes: vec![],
                 owner_changes: vec![],

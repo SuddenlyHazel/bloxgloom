@@ -253,6 +253,7 @@ fn profile_state_reads_reserve_existing_cells_and_absence_until_receipt() {
             pickups: vec![],
             fire_seed: None,
             clock_change: None,
+            weather_change: None,
             entities: None,
             entity_wakes: vec![],
             player_publication: None,

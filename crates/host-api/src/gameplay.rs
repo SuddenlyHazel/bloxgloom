@@ -196,6 +196,7 @@ pub struct Plan {
     pub profile_states: BTreeMap<(String, u128), ProfileCell>,
     pub player_operations: Vec<PlayerOperation>,
     pub world_time: Option<u64>,
+    pub weather: Option<(u8, u32)>,
     pub blocks: BTreeMap<Cell, String>,
     pub drops: Vec<DropSpawn>,
     pub inventories: BTreeMap<InventoryId, Vec<Option<Stack>>>,
