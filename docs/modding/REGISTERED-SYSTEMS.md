@@ -105,3 +105,16 @@ support removal uses the shared neighbor decision path for existing edit
 producers rather than an owner-system callback.
 An entity/profile owner key is an identity, not a grant to mutate that entity or
 player. Callbacks are trusted deterministic Rust functions, not sandboxed plugins.
+
+## Luau package composition
+
+A package can declare eight distinct systems through the existing
+`host.register_system(table)` API. Keys are canonicalized before installation;
+`after` names same-package or declared direct-dependency systems. Missing or
+forbidden targets, duplicates, self-edges and cycles reject installation.
+State, deadlines, cursors, receipts and intents remain keyed by system and owner,
+even when declarations share a callback module. Wakes cross registered systems;
+durable payloads remain same-system messages. Aggregate native phase limits and
+the installation ceiling of 128 systems, including builtins, still apply.
+The [farming fixture](../../fixtures/farming-scale/README.md) demonstrates an
+irrigation wake advancing growth ahead of its deadline and independent seasons.

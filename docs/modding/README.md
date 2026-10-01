@@ -12,6 +12,10 @@ impact on larger mods.
 
 ## Try authoring now
 
+- [Package composition](PACKAGE-COMPOSITION.md): larger content budgets, multiple
+  owner systems and contributors, with the runnable
+  [farming-scale package](../../fixtures/farming-scale/README.md).
+
 - [Combined Jade garden package](../../fixtures/combined-mod/README.md): one
   runnable Luau package with a placeable textured cube, authorized action,
   scheduled growth, authored UI, downloaded startup text and WGSL material.

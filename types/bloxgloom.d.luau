@@ -62,12 +62,16 @@ end
 --- Startup registration services. Definitions are frozen before gameplay; methods use dot calls.
 --- Registration methods expire when startup returns; never retain this host.
 export type BloxStartupHost = {
+    --- At most 256/package; encoded and decoded asset limits remain independent.
     register_texture: (key: string, declared_asset: string, options: BloxTextureOptions?) -> (),
+    --- At most 256/package; each block also consumes one of 512 total item slots.
     register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
+    --- At most 512 total/package, including all block-created items.
     register_item: (key: string, name: string, texture: string, options: BloxItemOptions?) -> (),
     -- A member is a namespaced definition key or "#namespace:tag".
     -- At most 32 tags per package and 32 members per tag; cycles fail startup.
     register_tag: (key: string, kind: "block" | "item", members: {string}) -> (),
+    --- Eight distinct owned keys/package; lexical key order determines overlap precedence.
     register_generator: (key: string, revision: number, module: string) -> (),
     -- Optional command facet: empty-target only; action key is its name.
     register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block" | "entity", target_key: string?, module: string, command: BloxCommand?) -> (),
@@ -75,6 +79,7 @@ export type BloxStartupHost = {
     register_committed_observer: (key: string, revision: number, module: string) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
+    --- Eight distinct owned keys/package; state and deadlines remain independent by system.
     register_system: (declaration: BloxSystemDeclaration) -> (),
     -- Requires players/v1; own-package key/module, revision 1..65535, private state cap 1..4096.
     register_player_lifecycle: (key: string, revision: number, max_state_bytes: number, initial_state: string, module: string) -> (),

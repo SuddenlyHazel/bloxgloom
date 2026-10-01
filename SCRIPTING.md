@@ -128,18 +128,18 @@ them. The currently accepted manifest capabilities are the names below.
 
 | Registration | Required `bloxgloom:` capability suffixes | Limit per package |
 | --- | --- | --- |
-| `register_texture`, `register_block`, `register_item`, `register_tag` | `content/v1` | 32 textures, 32 blocks, 32 items, 32 tags |
+| `register_texture`, `register_block`, `register_item`, `register_tag` | `content/v1` | 256 textures, 256 blocks, 512 total items, 32 tags |
 | `register_player_rules`, `register_player_appearance` | `content/v1` | One rules selection and one appearance declaration across the entire package set |
-| `register_generator` | `generation/v1` | One |
+| `register_generator` | `generation/v1` | Eight |
 | `register_action`, `register_handler`, `register_entity` | `actions/v1` | 32 actions, 32 handlers, 32 entity definitions |
-| `register_system` | `owner_systems/v1` | One |
+| `register_system` | `owner_systems/v1` | Eight |
 | `register_player_lifecycle` | `players/v1` | Eight; 128 in the installation |
 | `register_storage` | `content/v1`, `storage/v1`, `inventory_screens/v1` | Eight |
 | `register_creature` | `content/v1`, `mobile_entities/v1` | Eight |
 | `register_machine` | `content/v1`, `machines/v1`, `inventory_screens/v1` | Eight |
 
 Each registered block also creates a same-key placeable item and consumes one
-of the 32 item declarations. Register referenced textures and blocks before
+of the 512 total item declarations. Register referenced textures and blocks before
 their consumers. Invalid declarations abort the candidate installation;
 catching a rejected registration with `pcall` cannot publish partial content.
 
@@ -268,6 +268,9 @@ not custom player geometry or physics. See [player rules](docs/modding/PLAYER-RU
 `host.register_generator(key, revision, module)` selects an own-package module
 returning `function(c)`. Revision is 1–4294967295. Contributors run in lexical
 key order after built-in terrain; later writes to a cell replace earlier writes.
+Up to eight distinct owned contributor keys are allowed per package. Scripted
+contributors share 100 ms per candidate chunk, retaining each call's 50 ms ceiling;
+a failure discards the entire candidate, including earlier contributions.
 
 | Generation input/service | Meaning |
 | --- | --- |
@@ -462,7 +465,7 @@ may contain zero bytes and are distinct from presentation text.
 
 ## Durable owner systems
 
-`host.register_system(declaration)` defines one persistent system per package.
+`host.register_system(declaration)` defines up to eight independently keyed persistent systems per package.
 Its module returns `function(c)` returning `(binary_state, delay_ticks)`.
 The host persists state and deadlines with world effects and wakes through the
 owner write-ahead log. No VM state is retained.
@@ -485,7 +488,7 @@ and `seeds` (at most 32). Returned delay is 1–4294967295 ticks.
 | `partition` | `chunk` (default), `entity`, or `profile` |
 | `read_world` | Enables captured terrain reads and conditional edits |
 | `read_radius_chunks` | 0: owner chunk; 1: its 3×3×3 neighborhood; requires world reads |
-| `after` | Up to 16 existing system keys defining phase ordering; cycles fail startup |
+| `after` | Up to 16 same-package or direct-dependency system keys; missing/forbidden/cyclic edges fail startup |
 | `edit_cause` | `world_edit` (default) or `burn`; burn requires world reads and only removes cells to air |
 | `accepts_intents` | Enables bounded same-system durable messages; requires world reads |
 | `intent_bootstrap` | Constant validated initial bytes for absent message destinations |
@@ -921,26 +924,31 @@ sharing a VM are not mutually untrusted security compartments.
 | Resource | Current limit |
 | --- | --- |
 | Packages | 64 |
-| Dependencies/modules/assets per package | 32 / 64 / 64 |
-| Modules/assets across snapshot | 256 / 256 |
-| Manifest/source/asset file bytes | 16 KiB / 64 KiB / 256 KiB |
-| Aggregate discovered file bytes | 4 MiB |
+| Dependencies/modules/assets per package | 32 / 256 / 256 |
+| Modules/assets across snapshot | 1,024 / 1,024 |
+| Manifest/source/asset file bytes | 64 KiB / 64 KiB / 2 MiB |
+| Aggregate discovered file bytes | 32 MiB |
+| Encoded client bundle | 40 MiB including metadata |
+| Startup per package | 250 ms, 50,000 interrupt checks, 16 MiB VM |
+| Installation startup | 10 seconds |
+| Scripted contributors per candidate chunk | 100 ms shared wall-time allowance |
 | Default invocation memory | 8 MiB |
 | Default invocation wall time | 50 ms, checked at VM interrupt safe points |
 | Default interrupt budget | 10000 periodic checks, not an exact bytecode instruction count |
-| Client pre-readiness syntax validation | 16 MiB VM budget, two-second preparation budget |
+| Client pre-readiness syntax validation | 16 MiB VM budget, ten-second preparation budget |
 
 Individual schemas can impose smaller limits. Whole-snapshot limits apply
-across dependencies too. Discovery freezes bytes, and callbacks run in fresh
-bounded VMs on startup/simulation/generation/presentation workers, rather than
-exposing live engine objects to scripts. Budget violations cannot be suppressed
+across dependencies too. Discovery freezes bytes. Execution workers reuse bounded
+physical VMs and compiled code while authoritative callbacks retain fresh mutable
+attempts; supported client/readonly realms retain their own module state. Host
+objects remain scoped to each invocation. Budget violations cannot be suppressed
 by catching the VM error. Errors retain package/version/module attribution.
 
 Clients receive a verified canonical bundle containing client/shared sources,
 declared assets and inert startup metadata; server modules are excluded.
 Downloaded source is compiled before content readiness, including dormant
 modules. SHA-256 verifies exact bundle bytes but does not authenticate the
-publisher. The negotiated client host contract is version 7 (wire version 17).
+publisher. The negotiated client host contract is version 8 (wire version 19).
 Clients also have to match catalog identities; matching bundle bytes alone is
 insufficient. A verified in-memory cache supports reconnect reuse. There is no
 persistent disk bundle cache or script networking/filesystem service.
@@ -988,6 +996,7 @@ cargo run -- ui-preview ./ui-images fixtures/packages
 
 | Example | Demonstrates |
 | --- | --- |
+| [Farming scale](fixtures/farming-scale/README.md) | 128 blocks, 192 items, three systems, two generators and finite farming actions |
 | [Combined garden](fixtures/combined-mod/README.md) | Content, authorized action, scheduled growth, downloaded startup/UI and material |
 | [UI demo](fixtures/packages/uidemo/) | Manifest, five widget kinds, text input and finite inventory action |
 | [Block action](fixtures/ui-target-actions/README.md) | Current ray-hit targeting and server receipt |
@@ -1019,3 +1028,5 @@ public delivery follows receipt. `c.profile_id(canonical_token)` explicitly
 restores an exact profile handle without granting authority. See
 [the full profile-state contract](docs/modding/PLAYER-LIFECYCLE.md#landed-general-package-owned-profile-state)
 and the welcome fixture's package roles and admission bans.
+
+Package composition, separate execution/delivery budgets and measured acceptance are described in [PACKAGE-COMPOSITION.md](docs/modding/PACKAGE-COMPOSITION.md).

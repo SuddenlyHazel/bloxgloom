@@ -130,7 +130,7 @@ module('view', '''return function(input: BloxUiInput): {BloxUiCommand}
     return {}
 end''', 'client')
 module('client_startup', '''return function(h: BloxClientStartupHost): ()
-    h.set_text("farm:controls/title", "Farming: 32 crops, independent growth and seasons")
+    h.set_text("farm:controls/title", "Farming: 32 crops, growth and seasons")
 end''', 'client')
 for family, color in enumerate([(86,140,58,255),(127,168,64,255),(186,156,60,255),(90,133,116,255)],1):
     asset('texture', f'leaf_{family}', f'assets/textures/leaf_{family}.png', png(color))

@@ -78,3 +78,12 @@ The host's `import("package:module")` resolves **manifest module identities** an
 3. Run Bloxgloom's actual package startup/client UI paths to check runtime behavior; editor types do not validate the package manifest, source identity or gameplay authority.
 
 Setting names and the `definitionFiles` object shape were checked against the extension's [current source manifest](https://github.com/JohnnyMorganz/luau-lsp/blob/main/editors/code/package.json); `.luaurc`'s [`globals` and `aliases` schema](https://github.com/JohnnyMorganz/luau-lsp/blob/main/editors/code/schemas/luaurc.json) does not provide typed host callback parameters or Bloxgloom module resolution, so no `.luaurc` is added here. Luau definition-file syntax is marked unstable by the extension.
+
+The [farming-scale fixture](../../fixtures/farming-scale/README.md) demonstrates
+96 manifest modules and multiple separately typed owner callbacks. Startup host
+hover comments describe the expanded package capacities; `BloxSystemDeclaration`
+retains the same signature for repeated registration. Editor types cannot prove
+local/installation count budgets, phase-edge permissions or decoded memory fit;
+those remain startup/client admission checks. Analyzing the complete fixture may
+report the existing custom `import` limitation above. Runtime discovery resolves
+those imports by package identity; do not replace them with filesystem `require`.

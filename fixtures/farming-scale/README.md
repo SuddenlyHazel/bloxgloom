@@ -53,3 +53,18 @@ they are not ordinary farming gameplay. Options isolate boundary cases:
 `--modules 257`, `--assets 257`, `--packages 5`, or larger `--image-size`.
 Decoded texture/preparation budgets remain independent; discovery alone does
 not prove an installation can prepare or render within every downstream budget.
+
+Run the explicit maximum-count real-listener acceptance probe after generation:
+
+```sh
+BLOXGLOOM_PRESSURE_PACKAGES=/tmp/farming-pressure-packages cargo test farming_pressure_maximum_counts -- --ignored --nocapture --test-threads=1
+```
+
+It verifies client-visible counts, download, source preparation and catalog
+agreement before `Welcome`. Textures are valid synthetic unregistered assets;
+it reports their source pixel bytes without claiming GPU allocation. For the
+mixed finite-action/download workload, generate three pressure packages, copy
+`packages/farm` alongside them, then set `BLOXGLOOM_FARMING_PRESSURE_PACKAGES` to
+that combined root while running `cargo test farming_scale_mixed_load --
+--nocapture --test-threads=1`. This crosses the old installation ceilings while
+leaving room for the gameplay fixture within the new 1,024-module cap.

@@ -225,3 +225,16 @@ The capability is `bloxgloom:item_icons/v1`. Anchored entities, actions, and
 owner-local systems also have explicit versioned package capability identifiers.
 Recipe/fuel constants are checked against registered component schemas; dynamic
 component-preserving output is validated before input or fuel is consumed.
+
+## Luau package capacities
+
+The sandboxed startup adapter admits 256 blocks, 512 total items (including one
+item for every block) and 256 textures per package. These are local declaration
+limits; installation-wide native catalog ceilings, builtin consumption and GPU
+preparation limits remain independent. The 2 MiB general package asset ceiling
+may be smaller than a native asset-kind bound. Server discovery and client
+metadata decoding consume the same shared capacity policy. Invalid or caught
+startup declarations reject the complete candidate before world/save mutation.
+See [package composition](PACKAGE-COMPOSITION.md) for execution, delivery and
+resource admission, and [farming scale](../../fixtures/farming-scale/README.md)
+for a 128-block/192-item package with independent simulation features.

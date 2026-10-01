@@ -32,3 +32,18 @@ writes to one cell) cannot exceed 4096 per contributor invocation. Resolve
 overlapping features in a stable absolute anchor order so every destination
 chunk makes the same decision. Built-in trees use this same intersection rule;
 sampling the base block does not include their decoration or later contributors.
+
+## Luau contributor composition
+
+A package can call `host.register_generator(key, revision, module)` eight times
+with distinct owned keys. The installation still permits at most 256 contributors.
+Builtin terrain runs first, then contributors in lexical namespaced-key order;
+later overlapping writes win. Registration call order has no effect. Contributors
+sample builtin terrain rather than earlier contributor output. All scripted calls
+share a 100 ms execution allowance per candidate chunk, with each call receiving
+the smaller of its remaining allowance and the existing 50 ms per-call limit,
+with existing instruction/output limits. Failure discards
+the complete candidate; it does not publish earlier contributors or fallback air.
+Physical VM/compiled-code reuse preserves fresh mutable authoritative attempts.
+See [farming scale](../../fixtures/farming-scale/README.md) for two named terrain
+contributors and [package composition](PACKAGE-COMPOSITION.md) for capacity.

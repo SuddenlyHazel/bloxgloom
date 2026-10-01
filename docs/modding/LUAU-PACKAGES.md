@@ -117,7 +117,7 @@ presentation. `drop_size="small"` or `"large"` selects a bounded client-only
 world-drop size; `"normal"` is the default. This affects cube/sprite drops and
 pickup-flight meshes, not inventory, pickup eligibility, server age, or world
 ownership. Unknown or mistyped item options fail startup, even under `pcall`.
-Each package may declare at most 32 textures, 32 blocks and 32 items total.
+Each package may declare at most 256 textures, 256 blocks and 512 items total (including block items).
 Keys must use their package's namespace; script and registrar errors abort startup before
 opening the save. For `register_block`, the optional fourth argument also accepts
 documented geometry, material, support/collision flags, emission/reflectance,
@@ -373,7 +373,7 @@ of `{id,key,position,public}` records; private neighbour state is never
 included. `wakes_on_terrain_change=false` disables automatic terrain wakes.
 Both declaration options participate in save and client catalog identity.
 
-A package with the owner-systems capability can register one persistent system
+A package with the owner-systems capability can register up to eight independently keyed persistent systems
 with `host.register_system { key, schema, revision, module, partition,
 max_state_bytes, max_jobs_per_tick, read_world, read_radius_chunks, seeds }`.
 The default `partition='chunk'` retains `{x,y,z,data}` seeds. Entity and profile
@@ -418,16 +418,16 @@ never server modules or original paths. Its SHA-256 cache key verifies exact
 canonical bytes; it does not authenticate who supplied that key. Registered catalog PNGs are decoded and
 bounded during preparation. Local package
 servers now offer the verified bundle before catalog matching and gameplay
-admission. The offer includes client host contract version **7** (wire version
-**17**): opaque identity handles, authored UI, bounded session replica callbacks,
+admission. The offer includes client host contract version **8** (wire version
+**19**): opaque identity handles, authored UI, bounded session replica callbacks,
 declared visual resources and [basic runtime tools](RUNTIME-TOOLS.md), including
 seeded native randomness and structured logging. An unsupported contract is rejected before bytes
 are requested or a cached artifact is acknowledged. This versions the public
 host API, not a Luau compiler patch release. Before `ContentReady`, every delivered
 client/shared module is compiled, without executing dormant modules; syntax
 errors name the package version and module. Validation has a 16 MiB VM budget,
-a two-second preparation budget, and the existing 64 KiB per-module/256-module
-bundle limits. The client verifies and caches one artifact across reconnects;
+a ten-second preparation budget, and 64 KiB per-module/1,024-module
+installation limits. The client verifies and caches one artifact across reconnects;
 matching bundle bytes alone do not grant client catalog compatibility.
 Canonical bundle metadata builds a fresh session catalog for the current Luau
 startup texture/block/item/action/entity/handler/system identities, including saved numeric
@@ -492,3 +492,13 @@ Player lifecycle services require `bloxgloom:players/v1`. Their public compatibi
 identities use a bounded V42 envelope around the canonical client artifact.
 Server callback registrations and private initial profile state are not projected
 into this envelope. See [PLAYER-LIFECYCLE.md](PLAYER-LIFECYCLE.md).
+
+## Larger packages
+
+Repeated `register_system` and `register_generator` calls with distinct owned keys
+are supported, up to eight of each per package. System `after` edges may name
+same-package or declared direct-dependency systems. Missing targets and cycles
+fail installation before world open. Calls are canonicalized by key; declaration
+order does not assign identities or generator precedence. See
+[package composition](PACKAGE-COMPOSITION.md) for admission budgets and the
+[runnable farming example](../../fixtures/farming-scale/README.md).
