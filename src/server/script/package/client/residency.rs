@@ -1,6 +1,7 @@
-//! Process admission for canonical bytes and copied source/asset payloads.
-//! Decoded declarations and prepared resources have independent bounds; limiting
-//! live artifacts also bounds repeated copies of those resources across sessions.
+//! Process admission for canonical/source/asset bytes and conservative owned
+//! content-declaration estimates (including copied texture PNGs). Prepared UI and
+//! render resources retain independent bounds; the artifact count also bounds
+//! their repeated preparation across sessions.
 use super::{ScriptError, error};
 use std::sync::Mutex;
 
@@ -32,7 +33,7 @@ impl Budget {
             return Err(error(
                 "<client-bundle>",
                 format!(
-                    "canonical/source/asset bytes/process: attempted {}; maximum {MAX_BYTES}; artifacts/process: attempted {}; maximum {MAX_ARTIFACTS}",
+                    "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}; artifacts/process: attempted {}; maximum {MAX_ARTIFACTS}",
                     used.0.saturating_add(bytes),
                     used.1 + 1
                 ),
@@ -49,6 +50,21 @@ impl Budget {
 }
 
 impl Reservation<'_> {
+    // The estimate includes copied PNGs; do not charge those separately.
+    pub(super) fn reserve_declaration(
+        &mut self,
+        budget: &mut crate::content::declarations::budget::Budget,
+        bytes: usize,
+        key: &str,
+        owner: &str,
+    ) -> Result<(), ScriptError> {
+        budget
+            .reserve(1, bytes, key)
+            .map_err(|error| super::error(owner, error.0))?;
+        self.add_payload(bytes)
+            .map_err(|error| super::error(owner, format!("declaration {key}: {error}")))
+    }
+
     pub(super) fn add_payload(&mut self, bytes: usize) -> Result<(), ScriptError> {
         let mut used = self.budget.0.lock().unwrap();
         let next = used.0.saturating_add(bytes);
@@ -56,7 +72,7 @@ impl Reservation<'_> {
             return Err(error(
                 "<client-bundle>",
                 format!(
-                    "canonical/source/asset/texture bytes/process: attempted {next}; maximum {MAX_BYTES}"
+                    "canonical/source/asset/declaration bytes/process: attempted {next}; maximum {MAX_BYTES}"
                 ),
             ));
         }
@@ -76,7 +92,7 @@ impl Reservation<'_> {
             return Err(error(
                 "<client-bundle>",
                 format!(
-                    "canonical/source/asset bytes/process: attempted {}; maximum {MAX_BYTES}",
+                    "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}",
                     next.saturating_add(bytes)
                 ),
             ));

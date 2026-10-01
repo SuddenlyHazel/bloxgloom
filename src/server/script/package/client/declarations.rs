@@ -779,13 +779,12 @@ impl Startup {
                 }
                 requires.push(requirement);
             }
-            content_budget
-                .reserve(
-                    1,
-                    256 + (package.dependencies.len() + requires.len()) * 256,
-                    name,
-                )
-                .map_err(|error| super::error(name, error.0))?;
+            residency.reserve_declaration(
+                &mut content_budget,
+                256 + (package.dependencies.len() + requires.len()) * 256,
+                name,
+                name,
+            )?;
             let count = reader.count(MAX_ITEMS)?;
             if count > 0 && !requires.iter().any(|r| r == composition::CONTENT) {
                 return Err(invalid());
@@ -851,9 +850,7 @@ impl Startup {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
-                content_budget
-                    .reserve(1, 2048, &key)
-                    .map_err(|error| super::error(name, error.0))?;
+                residency.reserve_declaration(&mut content_budget, 2048, &key, name)?;
                 startup.items.push(content::Item {
                     key,
                     name: display,
@@ -909,10 +906,7 @@ impl Startup {
                         ),
                     ));
                 }
-                content_budget
-                    .reserve(1, png.len() + 256, &key)
-                    .map_err(|error| super::error(name, error.0))?;
-                residency.add_payload(png.len())?;
+                residency.reserve_declaration(&mut content_budget, png.len() + 256, &key, name)?;
                 startup.textures.push(content::Texture {
                     key,
                     png: std::borrow::Cow::Owned(png.clone()),
@@ -1077,13 +1071,12 @@ impl Startup {
                     has_states |= crate::server::script::startup::stateful_block(&block);
                     has_state_textures |= block.states.iter().any(|state| state.textures.is_some());
                 }
-                content_budget
-                    .reserve(
-                        1,
-                        crate::content::declarations::budget::block_bytes(&block),
-                        &block.key,
-                    )
-                    .map_err(|error| super::error(name, error.0))?;
+                residency.reserve_declaration(
+                    &mut content_budget,
+                    crate::content::declarations::budget::block_bytes(&block),
+                    &block.key,
+                    name,
+                )?;
                 item.placeable = Some(crate::server::script::startup::placement_state(&block));
                 startup.blocks.push(block);
             }
@@ -1135,9 +1128,12 @@ impl Startup {
                     {
                         return Err(invalid());
                     }
-                    content_budget
-                        .reserve(1, 256 + members.len() * 256, &key)
-                        .map_err(|error| super::error(name, error.0))?;
+                    residency.reserve_declaration(
+                        &mut content_budget,
+                        256 + members.len() * 256,
+                        &key,
+                        name,
+                    )?;
                     startup.tags.push(content::Tag { key, kind, members });
                 }
             }

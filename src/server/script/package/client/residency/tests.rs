@@ -28,7 +28,7 @@ fn cached_shared_artifacts_and_rejected_growth_release_exact_admission() {
 }
 
 #[test]
-fn wrapper_growth_keeps_texture_payload_accounted() {
+fn wrapper_growth_keeps_owned_declarations_accounted() {
     let budget = Budget(Mutex::new((0, 0)));
     let mut artifact = budget.reserve(1024).unwrap();
     artifact.add_payload(4096).unwrap();
@@ -38,4 +38,28 @@ fn wrapper_growth_keeps_texture_payload_accounted() {
     assert_eq!(*budget.0.lock().unwrap(), (8192, 1));
     drop(artifact);
     assert_eq!(*budget.0.lock().unwrap(), (0, 0));
+}
+
+#[test]
+fn compact_artifacts_cannot_hide_metadata_from_process_admission() {
+    let budget = Budget(Mutex::new((0, 0)));
+    let mut retained = Vec::new();
+    for _ in 0..3 {
+        let mut artifact = budget.reserve(1024 * 1024).unwrap();
+        artifact
+            .add_payload(crate::content::declarations::budget::MAX_BYTES)
+            .unwrap();
+        retained.push(artifact);
+    }
+    let mut fourth = budget.reserve(1024 * 1024).unwrap();
+    let error = fourth
+        .add_payload(crate::content::declarations::budget::MAX_BYTES)
+        .unwrap_err();
+    assert!(error.to_string().contains("declaration bytes/process"));
+    drop(fourth);
+    drop(retained);
+    let mut healthy = budget.reserve(1024 * 1024).unwrap();
+    healthy
+        .add_payload(crate::content::declarations::budget::MAX_BYTES)
+        .unwrap();
 }
