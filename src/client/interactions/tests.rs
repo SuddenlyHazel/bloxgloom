@@ -38,7 +38,7 @@ fn right_click_places_selected_block_instead_of_opening_generic_actions() {
     );
     assert!(
         !app.open_item_actions(),
-        "admin clock command is not an argument-less item action"
+        "admin clock and weather commands are not argument-less item actions"
     );
 }
 
