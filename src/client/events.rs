@@ -136,6 +136,17 @@ impl ClientApp {
         if self.window.as_ref().is_none_or(|window| window.id() != id) {
             return;
         }
+        // Release must clear held gameplay input even if a menu consumes the event.
+        if matches!(
+            event,
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            }
+        ) {
+            self.break_button(false, Instant::now());
+        }
         if let WindowEvent::ModifiersChanged(modifiers) = &event {
             self.input_modifiers = modifiers.state();
         }
@@ -567,7 +578,7 @@ impl ClientApp {
                 } else if !self.grabbed {
                     self.set_grab(true);
                 } else if button == MouseButton::Left {
-                    self.edit_aimed_block(false);
+                    self.break_button(true, Instant::now());
                 } else if button == MouseButton::Right {
                     self.place_or_interact();
                 }

@@ -312,6 +312,7 @@ struct ClientApp {
     actor_animator: actors::ActorAnimator,
     character_editor: character::CharacterEditor,
     character_motion: character_motion::Motion,
+    next_break: Option<Instant>,
     kiln_target: Option<([i32; 3], u64)>,
     kiln_source: Option<u8>,
     action_choices: Vec<actions::ActionChoice>,
@@ -402,6 +403,7 @@ impl ClientApp {
             actor_animator: actors::ActorAnimator::default(),
             character_editor: character::CharacterEditor::default(),
             character_motion: Default::default(),
+            next_break: None,
             kiln_target: None,
             kiln_source: None,
             action_choices: Vec::new(),
@@ -506,6 +508,7 @@ impl ClientApp {
             self.admin_binding_selected = None;
         }
         self.keys = Keys::default();
+        self.next_break = None;
         self.focused_control = None;
         self.inventory_source = None;
         self.kiln_source = None;
@@ -864,6 +867,7 @@ impl ClientApp {
 
     fn set_grab(&mut self, grab: bool) {
         if !grab {
+            self.next_break = None;
             self.request_crouch(false);
         }
         if let Some(window) = &self.window {
@@ -1620,6 +1624,10 @@ impl ClientApp {
     }
 
     fn edit_aimed_block(&mut self, place: bool) {
+        self.edit_aimed_block_at(place, Instant::now());
+    }
+
+    fn edit_aimed_block_at(&mut self, place: bool, now: Instant) {
         if self.screen != UiScreen::Playing || !self.grabbed {
             return;
         }
@@ -1644,7 +1652,7 @@ impl ClientApp {
                     *id = action_id;
                 }
                 self.queue_command(command);
-                self.character_motion.swing(true, Instant::now());
+                self.character_motion.swing(true, now);
             } else {
                 self.show_status(if item.is_some() {
                     "Selected item cannot be placed"
@@ -1721,6 +1729,7 @@ impl ClientApp {
         }
         self.validate_kiln_screen();
         self.move_player(dt);
+        self.repeat_held_break(now);
         let mut parameter_updates = self
             .package_ui
             .as_mut()

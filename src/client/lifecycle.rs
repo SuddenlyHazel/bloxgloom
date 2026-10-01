@@ -8,6 +8,7 @@ impl ClientApp {
         self.disconnected = true;
         self.character_editor = Default::default();
         self.character_motion = Default::default();
+        self.next_break = None;
         self.player_stances.clear();
         self.crouch_requested = false;
         if let Some(lane) = self.player_services.take() {
