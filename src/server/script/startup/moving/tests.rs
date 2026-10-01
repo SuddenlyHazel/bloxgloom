@@ -31,7 +31,7 @@ impl Fixture {
             "return function(c,e) end",
         )
         .unwrap();
-        Self(root)
+        Self(fs::canonicalize(root).unwrap())
     }
     fn discover(&self) -> std::io::Result<Declarations> {
         Declarations::discover(&self.0)
