@@ -12,6 +12,10 @@ mod durable;
 mod effects;
 mod entities;
 mod session_ids;
+#[cfg(test)]
+pub(crate) mod motion_preview_solver {
+    pub(crate) use super::entities::motion::solver::*;
+}
 mod entity_checkpoint;
 mod fire;
 mod gameplay;
@@ -228,6 +232,12 @@ struct State {
     entity_tick_executor:
         PhaseExecutor<durable::actions::entity::TickWorkerResult, entities::EntityError>,
     entity_tick_dispatch_batch: Option<(simulation::TickId, u16)>,
+    motion_history: entities::motion::colliders::History,
+    motion_cadence: entities::motion::cadence::Cadence,
+    #[cfg(test)]
+    motion_metrics: metrics::MotionSample,
+    #[cfg(test)]
+    motion_observer: Option<SyncSender<metrics::MotionSample>>,
     snapshot_workers: streaming::snapshots::Workers,
     publication_workers: streaming::workers::Workers,
     metrics: MetricsRecorder,
@@ -261,6 +271,7 @@ impl State {
         }
         let registry_revision = self.advance_entity_public_revision()?;
         self.durability.publish_queue.push(durable::PublishEffects {
+            spawned: Default::default(),
             client_id: None,
             profile: None,
             action_id: None,
@@ -652,6 +663,12 @@ fn server_state_with_startup(
         movement_executor,
         entity_tick_executor,
         entity_tick_dispatch_batch: None,
+        motion_history: Default::default(),
+        motion_cadence: Default::default(),
+        #[cfg(test)]
+        motion_metrics: Default::default(),
+        #[cfg(test)]
+        motion_observer: None,
         snapshot_workers: streaming::snapshots::Workers::new(worker_count)?,
         publication_workers: streaming::workers::Workers::new(worker_count)?,
         metrics: MetricsRecorder::new(),

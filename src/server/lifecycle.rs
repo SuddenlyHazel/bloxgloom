@@ -20,6 +20,7 @@ pub(crate) struct Registration {
     pub definitions: Vec<StorageBlockEntity>,
     screens: Vec<bloxgloom_host_api::InventoryScreen>,
     mobiles: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    moving: Vec<bloxgloom_host_api::motion::MovingEntity>,
     machines: Vec<bloxgloom_host_api::machine::Machine>,
     actions: Vec<bloxgloom_host_api::actions::Action>,
     systems: Vec<bloxgloom_host_api::system::System>,
@@ -175,6 +176,20 @@ impl Registrar for Registration {
         self.machines.push(m);
         Ok(())
     }
+    fn moving_entity(
+        &mut self,
+        entity: bloxgloom_host_api::motion::MovingEntity,
+    ) -> Result<(), RegistrationError> {
+        self.room()?;
+        entity.validate()?;
+        if self.moving.iter().any(|old| old.key == entity.key) {
+            return Err(RegistrationError(
+                "duplicate moving entity declaration".into(),
+            ));
+        }
+        self.moving.push(entity);
+        Ok(())
+    }
     fn mobile_entity(
         &mut self,
         entity: bloxgloom_host_api::entity::MobileEntity,
@@ -238,6 +253,7 @@ impl Registration {
             + self.definitions.len()
             + self.screens.len()
             + self.mobiles.len()
+            + self.moving.len()
             + self.machines.len()
             + self.anchored.len()
             + self.systems.len()
@@ -281,6 +297,10 @@ impl Registration {
             .sort_by(|a, b| a.entity.cmp(&b.entity));
         for mobile in &registration.mobiles {
             candidate.register_mobile(mobile.clone())?;
+        }
+        registration.moving.sort_by(|a, b| a.key.cmp(&b.key));
+        for moving in &registration.moving {
+            candidate.register_moving(moving.clone())?;
         }
         for entity in &registration.gameplay_entities {
             candidate.register_gameplay_entity(entity.clone())?;
@@ -333,6 +353,25 @@ impl Registration {
         for observer in &registration.gameplay_observers {
             candidate.register_gameplay_observer(observer.clone())?;
         }
+        for (_, moving) in candidate.moving_entities() {
+            for (enabled, kind) in [
+                (
+                    moving.handles_impact,
+                    bloxgloom_host_api::gameplay::EventKind::MovingImpact,
+                ),
+                (
+                    moving.handles_expiry,
+                    bloxgloom_host_api::gameplay::EventKind::MovingExpiry,
+                ),
+            ] {
+                if enabled && candidate.gameplay_handler(kind, &moving.key).is_none() {
+                    return Err(RegistrationError(format!(
+                        "{}: moving reaction handler missing",
+                        moving.key
+                    )));
+                }
+            }
+        }
         for action in candidate.registered_actions() {
             if action.operation == bloxgloom_host_api::actions::Operation::Gameplay
                 && candidate
@@ -350,6 +389,10 @@ impl Registration {
         }
         for entity in candidate.gameplay_entities() {
             if entity.initial_delay_ticks.is_some()
+                && candidate
+                    .entity_type_id_by_key(&entity.key)
+                    .and_then(|id| candidate.moving_entity(id))
+                    .is_none()
                 && candidate
                     .gameplay_handler(
                         bloxgloom_host_api::gameplay::EventKind::EntityTick,

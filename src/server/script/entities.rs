@@ -88,9 +88,9 @@ pub(super) fn declarer(
     )
 }
 
-struct FixedBytes {
-    state_bytes: u16,
-    public_bytes: u16,
+pub(in crate::server::script) struct FixedBytes {
+    pub(in crate::server::script) state_bytes: u16,
+    pub(in crate::server::script) public_bytes: u16,
 }
 
 impl EntityState for FixedBytes {

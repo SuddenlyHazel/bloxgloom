@@ -96,6 +96,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
                         cycle_ms: crate::daylight::CYCLE_MS,
                     }),
                     actions: vec![crate::client::presentation::ActionView {
+                        spawned: Default::default(),
                         id: (1u128 << 64) | 1,
                         key: Some("recipe:craft".into()),
                         accepted: true,

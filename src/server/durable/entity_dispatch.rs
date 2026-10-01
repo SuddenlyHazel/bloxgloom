@@ -43,6 +43,14 @@ pub(super) fn plan_motion(
             DurableRequest::EntityWake { id } => (*id, true),
             _ => unreachable!("only entity ticks enter motion dispatch"),
         };
+        if state
+            .entities
+            .snapshot(id)
+            .is_some_and(|s| state.world.catalog().moving_entity(s.entity_type).is_some())
+        {
+            results[index] = Some(crate::server::entities::motion::plan(state, id, tick.get()));
+            continue;
+        }
         if super::actions::gameplay_tick::is_registered(state, id) {
             results[index] = Some(super::actions::gameplay_tick::plan(
                 state,

@@ -22,6 +22,17 @@ pub(super) fn state(
         .key
         .as_ref();
     validate_owner(catalog, key, owner)?;
+    if catalog.moving_entity(snapshot.entity_type).is_some() {
+        let bytes = snapshot
+            .private_payload
+            .downcast_ref::<Vec<u8>>()
+            .ok_or_else(|| Error::Host("invalid moving payload".into()))?;
+        return Ok(Some(
+            bloxgloom_host_api::motion::Record::decode(bytes)
+                .map_err(|e| Error::Host(e.0))?
+                .state,
+        ));
+    }
     snapshot
         .private_payload
         .downcast_ref::<Vec<u8>>()
@@ -56,6 +67,29 @@ pub(super) fn validate_state(
     state: &[u8],
 ) -> Result<(), Error> {
     let definition = validate_owner(catalog, key, owner)?;
+    if let Some(moving) = catalog
+        .entity_type_id_by_key(key)
+        .and_then(|id| catalog.moving_entity(id))
+    {
+        if state.len() > usize::from(moving.max_state_bytes) {
+            return Err(Error::BudgetExceeded);
+        }
+        moving
+            .state
+            .validate(state)
+            .map_err(|e| Error::Invalid(e.0))?;
+        if moving
+            .state
+            .public(state)
+            .map_err(|e| Error::Invalid(e.0))?
+            .len()
+            > usize::from(moving.max_public_bytes)
+        {
+            return Err(Error::BudgetExceeded);
+        }
+        return Ok(());
+    }
+
     if state.len() > usize::from(definition.max_state_bytes) {
         return Err(Error::Invalid(format!(
             "{key}: entity state exceeds declared bound"
@@ -75,7 +109,12 @@ pub(super) fn validate_state(
     Ok(())
 }
 
-pub(super) fn project(store: &EntityStore, id: u64, state: &[u8]) -> Result<Vec<u8>, Error> {
+pub(super) fn project(
+    catalog: &crate::content::Catalog,
+    store: &EntityStore,
+    id: u64,
+    state: &[u8],
+) -> Result<Vec<u8>, Error> {
     let id = EntityId::new(id).ok_or_else(|| Error::Invalid("invalid entity ID".into()))?;
     let snapshot = store
         .snapshot(id)
@@ -84,9 +123,28 @@ pub(super) fn project(store: &EntityStore, id: u64, state: &[u8]) -> Result<Vec<
         .types()
         .descriptor(snapshot.entity_type)
         .map_err(|e| Error::Host(e.to_string()))?;
-    descriptor
-        .public_view(&super::super::entities::EntityPayload::new(state.to_vec()))
-        .map_err(|e| Error::Invalid(e.to_string()))
+    let state = if catalog.moving_entity(snapshot.entity_type).is_some() {
+        let before = snapshot
+            .private_payload
+            .downcast_ref::<Vec<u8>>()
+            .ok_or_else(|| Error::Host("invalid moving payload".into()))?;
+        let mut record =
+            bloxgloom_host_api::motion::Record::decode(before).map_err(|e| Error::Host(e.0))?;
+        record.state = state.to_vec();
+        record.encode().map_err(|e| Error::Invalid(e.0))?
+    } else {
+        state.to_vec()
+    };
+    let public = descriptor
+        .public_view(&super::super::entities::EntityPayload::new(state))
+        .map_err(|e| Error::Invalid(e.to_string()))?;
+    if catalog.moving_entity(snapshot.entity_type).is_some() {
+        Ok(bloxgloom_host_api::motion::Projection::decode(&public)
+            .map_err(|e| Error::Invalid(e.0))?
+            .data)
+    } else {
+        Ok(public)
+    }
 }
 
 pub(super) fn read(
@@ -117,7 +175,13 @@ pub(super) fn read(
         entity_type: definition.key.to_string(),
         position,
         anchor,
-        data: view.payload,
+        data: if catalog.moving_entity(view.entity_type).is_some() {
+            bloxgloom_host_api::motion::Projection::decode(&view.payload)
+                .map_err(|e| Error::Host(e.0))?
+                .data
+        } else {
+            view.payload
+        },
     }))
 }
 

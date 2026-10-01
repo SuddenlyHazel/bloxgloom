@@ -20,6 +20,7 @@ pub(in crate::server) mod mobile;
 mod mobile_pages;
 #[cfg(test)]
 pub(in crate::server) mod mossbun;
+pub(in crate::server) mod motion;
 mod navigation;
 mod persistence;
 mod player;

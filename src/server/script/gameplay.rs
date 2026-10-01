@@ -32,7 +32,7 @@
 //! `_lo`/`_hi` u32 halves. See `bindings` and `inventory` for staged operations.
 pub(in crate::server::script) mod bindings;
 mod declarations;
-mod events;
+pub(in crate::server::script) mod events;
 mod inventory;
 
 pub(super) use declarations::handler_declarer;

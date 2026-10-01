@@ -20,6 +20,7 @@ pub(in crate::server) fn input_authorization(
 }
 
 pub(in crate::server) fn durable_actions(context: &mut CoordinatorContext<'_>) -> io::Result<()> {
+    crate::server::entities::motion::colliders::sample(context.state, context.tick.get());
     process_durable_actions(context.state, context.tick, context.now)
 }
 

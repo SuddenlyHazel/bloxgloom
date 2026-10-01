@@ -24,6 +24,7 @@ mod inventories;
 pub(crate) mod machines;
 mod manifest;
 mod mobile;
+pub(crate) mod moving;
 mod observers;
 mod owner_systems;
 pub(crate) mod player;
@@ -248,6 +249,7 @@ pub struct Catalog {
     pub(crate) composition: composition::Composition,
     machines: Vec<Option<std::sync::Arc<bloxgloom_host_api::machine::Machine>>>,
     mobile_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::entity::MobileEntity>>>,
+    moving_entities: Vec<Option<std::sync::Arc<bloxgloom_host_api::motion::MovingEntity>>>,
     pub(crate) storage_lifecycles: Vec<bloxgloom_host_api::StorageBlockEntity>,
     inventory_screens: Vec<Option<std::sync::Arc<bloxgloom_host_api::InventoryScreen>>>,
     actions: bloxgloom_host_api::actions::Registry,
@@ -298,6 +300,7 @@ impl Catalog {
             composition: composition::Composition::default(),
             machines: Vec::new(),
             mobile_entities: Vec::new(),
+            moving_entities: Vec::new(),
             storage_lifecycles: Vec::new(),
             inventory_screens: Vec::new(),
             actions: Default::default(),
@@ -963,6 +966,9 @@ impl Catalog {
                 }
                 if let Some(machine) = self.machine(entity.id) {
                     add(&machine.fingerprint_bytes());
+                }
+                if let Some(moving) = self.moving_entity(entity.id) {
+                    add(&moving.fingerprint_bytes());
                 }
                 if let Some(mobile) = self.mobile_entity(entity.id) {
                     add(&mobile.fingerprint_bytes());

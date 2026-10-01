@@ -127,6 +127,7 @@ impl Composition {
                     api::STORAGE,
                     api::MACHINES,
                     api::MOBILE_ENTITIES,
+                    api::MOVING_ENTITIES,
                     api::INVENTORY_SCREENS,
                     api::ANCHORED_ENTITIES,
                     api::ACTIONS,

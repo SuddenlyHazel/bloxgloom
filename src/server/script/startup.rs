@@ -59,6 +59,7 @@ mod storage;
 pub(in crate::server::script) use storage::Declaration as StorageDeclaration;
 mod creature;
 mod machine;
+mod moving;
 pub(in crate::server::script) use machine::Declaration as MachineDeclaration;
 mod tag;
 pub(in crate::server::script) use tag::member_key as tag_member_key;
@@ -86,6 +87,7 @@ pub(in crate::server) struct Declarations {
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
     pub(super) storage: Vec<StorageDeclaration>,
     pub(super) creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    pub(super) moving: Vec<bloxgloom_host_api::motion::MovingEntity>,
     pub(super) machines: Vec<MachineDeclaration>,
     pub(super) anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
 }
@@ -109,6 +111,7 @@ impl Declarations {
         let mut observers = Vec::new();
         let mut storage = Vec::new();
         let mut creatures = Vec::new();
+        let mut moving = Vec::new();
         let mut machines = Vec::new();
         let mut anchored = Vec::new();
         let mut player_rules = None;
@@ -186,6 +189,7 @@ impl Declarations {
             entities.extend(declarations.entities);
             storage.extend(declarations.storage);
             creatures.extend(declarations.creatures);
+            moving.extend(declarations.moving);
             machines.extend(declarations.machines);
             anchored.extend(declarations.anchored);
             systems.extend(declarations.systems);
@@ -220,6 +224,7 @@ impl Declarations {
             observers,
             storage,
             creatures,
+            moving,
             machines,
             anchored,
         };
@@ -296,6 +301,9 @@ impl Extension for Declarations {
         for entity in &self.entities {
             registrar.gameplay_entity(entity.clone())?;
         }
+        for entity in &self.moving {
+            registrar.moving_entity(entity.clone())?;
+        }
         for creature in &self.creatures {
             registrar.mobile_entity(creature.clone())?;
         }
@@ -332,6 +340,7 @@ pub(super) struct Pending {
     pub(super) entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
     pub(super) storage: Vec<storage::Declaration>,
     pub(super) creatures: Vec<bloxgloom_host_api::entity::MobileEntity>,
+    pub(super) moving: Vec<bloxgloom_host_api::motion::MovingEntity>,
     pub(super) machines: Vec<machine::Declaration>,
     pub(super) anchored: Vec<bloxgloom_host_api::anchored::AnchoredBlockEntity>,
     pub(super) systems: Vec<bloxgloom_host_api::system::System>,
@@ -441,6 +450,7 @@ pub(super) fn invoke(
     let observer =
         super::observers::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let namespace = namespace.to_owned();
+    let moving_namespace = namespace.clone();
     let texture_namespace = namespace.clone();
     let block_namespace = namespace.clone();
     let register = lua.create_function(
@@ -702,6 +712,15 @@ pub(super) fn invoke(
     host.set("register_anchored", anchored)?;
     host.set("register_storage", storage)?;
     host.set("register_creature", creature)?;
+    host.set(
+        "register_moving_entity",
+        moving::declarer(
+            lua,
+            Rc::clone(&pending),
+            &moving_namespace,
+            Arc::clone(&snapshot),
+        )?,
+    )?;
     host.set("register_machine", machine)?;
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;

@@ -47,8 +47,35 @@ pub(in crate::server) fn plan(
             "general scheduled entity is not mobile",
         ));
     };
+    plan_event(
+        state,
+        id,
+        tick,
+        Event::EntityTick {
+            entity: id.get(),
+            position,
+            tick,
+        },
+    )
+}
+pub(in crate::server) fn plan_event(
+    state: &mut State,
+    id: EntityId,
+    tick: u64,
+    event: Event,
+) -> io::Result<Option<CommitAction>> {
     let mut reads = TerrainReads::default();
     reads.entities(state.entities.capture_entity_dependency(id))?;
+    let moving = matches!(
+        &event,
+        Event::MovingTick { .. } | Event::MovingImpact { .. } | Event::MovingExpiry { .. }
+    );
+    let players = if moving {
+        reads.players(state)?;
+        crate::server::players::capture(state)
+    } else {
+        Vec::new()
+    };
     let mut requested = Vec::new();
     let plan = crate::server::gameplay::plan_with_lifecycles(
         &mut state.world,
@@ -59,19 +86,20 @@ pub(in crate::server) fn plan(
             removals: &[],
             seed: state.seed,
             tick,
-            action: Some(Event::EntityTick {
-                entity: id.get(),
-                position,
-                tick,
-            }),
+            action: Some(event),
         },
         crate::server::gameplay::Participants {
             actor_inventory_revision: None,
-            profile_inventories: None,
-            profile_services: None,
-            players: &[],
+            profile_inventories: moving.then(|| crate::server::gameplay::InventoryCapture {
+                clients: &state.clients,
+                overlay: &state.durability.inventory_overlay,
+                revisions: &state.durability.inventory_revisions,
+                cache: &mut state.profile_inventory_cache,
+            }),
+            profile_services: moving.then_some(&state.system_runtime),
+            players: &players,
             action_id: None,
-            clock: None,
+            clock: moving.then(|| state.world_time.capture()),
             actor: None,
             actor_position: None,
             admin: false,
@@ -113,6 +141,13 @@ pub(in crate::server) fn plan(
     )?;
     let entities =
         crate::server::gameplay::combine_entities(&state.entities, entities, plan.entity_updates)?;
+    let mut profile_changes = crate::server::players::state::prepare_writes(
+        &state.system_runtime,
+        &catalog,
+        state.durability.pending_profile_inserts(),
+        plan.profile_states,
+    )?;
+    profile_changes.extend(plan.profile_inventory_changes);
     let deltas = prepared_deltas(&plan.edits, &plan.prepared);
     Ok(Some(CommitAction {
         client_id: None,
@@ -132,10 +167,13 @@ pub(in crate::server) fn plan(
             .collect(),
         pickups: Vec::new(),
         fire_seed: None,
-        clock_change: None,
+        clock_change: plan
+            .world_time
+            .map(|time| state.world_time.prepare(time))
+            .transpose()?,
         entities,
         entity_wakes: Vec::new(),
-        owner_changes: vec![],
-        player_publication: None,
+        owner_changes: profile_changes,
+        player_publication: crate::server::players::Published::operations(plan.player_operations),
     }))
 }

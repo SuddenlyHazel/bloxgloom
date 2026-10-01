@@ -371,6 +371,14 @@ impl ContentManifest {
                 .bind_mobile(id, mobile.clone())
                 .map_err(|_| invalid("invalid mobile binding"))?;
         }
+        for (_, moving) in local.moving_entities() {
+            let id = resolved
+                .entity_type_id_by_key(&moving.key)
+                .ok_or_else(|| invalid("missing moving identity"))?;
+            resolved
+                .bind_moving(id, moving.clone())
+                .map_err(|_| invalid("invalid moving binding"))?;
+        }
         for (_, definition) in local.anchored_entities() {
             let id = resolved
                 .entity_type_id_by_key(&definition.entity)

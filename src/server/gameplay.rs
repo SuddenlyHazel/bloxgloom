@@ -7,6 +7,7 @@ use std::io;
 mod entities;
 mod entity_inventory;
 pub(in crate::server) mod inventory;
+mod motion;
 mod player_inventory;
 mod players;
 mod profile_state;
@@ -62,6 +63,7 @@ struct WorldSnapshot<'a> {
     profile_inventory_before: std::collections::BTreeMap<u128, crate::inventory::Inventory>,
     profile_services: Option<&'a super::runtime::systems::SystemRuntime>,
     player_operations_enabled: bool,
+    motion_reaction: Option<u64>,
     players: &'a [bloxgloom_host_api::gameplay::Player],
     action_id: Option<u128>,
     clock: Option<super::world_time::Capture>,
@@ -185,7 +187,7 @@ impl Snapshot for WorldSnapshot<'_> {
         let store = self
             .entities
             .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
-        entities::project(store, id, state)
+        entities::project(self.world.catalog(), store, id, state)
     }
     fn nearby_entities(
         &mut self,
@@ -202,6 +204,59 @@ impl Snapshot for WorldSnapshot<'_> {
             .entities
             .ok_or_else(|| Error::Invalid("entity capture unavailable".into()))?;
         entities::state(self.world.catalog(), self.reads, store, id, owner)
+    }
+    fn motion_contact(
+        &mut self,
+        id: u64,
+        owner: &str,
+    ) -> Result<Option<bloxgloom_host_api::motion::MotionContact>, Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("motion capture unavailable".into()))?;
+        super::entities::motion::services::read_contact(
+            self.world.catalog(),
+            self.reads,
+            store,
+            id,
+            owner,
+        )
+    }
+    fn motion(
+        &mut self,
+        id: u64,
+        owner: &str,
+    ) -> Result<Option<bloxgloom_host_api::motion::Motion>, Error> {
+        self.capture_motion(id, owner)
+    }
+    fn validate_moving_spawn(
+        &mut self,
+        owner: &str,
+        spawn: &bloxgloom_host_api::gameplay::MovingSpawn,
+    ) -> Result<(), Error> {
+        self.validate_motion_spawn(owner, spawn)
+    }
+    fn validate_motion_change(
+        &self,
+        id: u64,
+        owner: &str,
+        value: &bloxgloom_host_api::motion::Motion,
+    ) -> Result<(), Error> {
+        let store = self
+            .entities
+            .ok_or_else(|| Error::Invalid("motion capture unavailable".into()))?;
+        let Some((record, key)) =
+            super::entities::motion::services::record(self.world.catalog(), store, id, owner)?
+        else {
+            return Err(Error::Invalid("moving entity gone".into()));
+        };
+        if record.pending.is_some() && self.motion_reaction != Some(id) {
+            return Err(Error::Invalid(
+                "motion is paused for a pending reaction".into(),
+            ));
+        }
+        let declaration =
+            super::entities::motion::services::declaration(self.world.catalog(), &key, owner)?;
+        crate::content::moving::validate_motion(declaration, value).map_err(|e| Error::Invalid(e.0))
     }
     fn validate_entity_state(&self, key: &str, owner: &str, state: &[u8]) -> Result<(), Error> {
         entities::validate_state(self.world.catalog(), key, owner, state)
@@ -403,6 +458,22 @@ pub(super) fn plan_with_lifecycles(
                 })?;
                 origins.push([cell.x, cell.y, cell.z]);
             }
+            Event::MovingTick { motion, .. } => {
+                let cell = motion.position.map(|x| x.floor() as i32);
+                origins.push(cell);
+            }
+            Event::MovingImpact { impact } => {
+                origins.push(impact.position.map(|x| x.floor() as i32));
+            }
+            Event::MovingExpiry { entity, .. } => {
+                if let Some(s) = super::entities::EntityId::new(*entity)
+                    .and_then(|id| participants.entities.snapshot(id))
+                {
+                    if let super::entities::EntityLocation::Mobile { position } = s.location {
+                        origins.push(position.map(|x| x.floor() as i32));
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -415,7 +486,22 @@ pub(super) fn plan_with_lifecycles(
         profile_inventories: participants.profile_inventories,
         profile_inventory_before: Default::default(),
         profile_services: participants.profile_services,
-        player_operations_enabled: matches!(&action, Some(Event::ActionRequested { .. })),
+        player_operations_enabled: matches!(
+            &action,
+            Some(
+                Event::ActionRequested { .. }
+                    | Event::MovingTick { .. }
+                    | Event::MovingImpact { .. }
+                    | Event::MovingExpiry { .. }
+            )
+        ),
+        motion_reaction: match &action {
+            Some(Event::MovingTick { entity, .. } | Event::MovingExpiry { entity, .. }) => {
+                Some(*entity)
+            }
+            Some(Event::MovingImpact { impact }) => Some(impact.entity),
+            _ => None,
+        },
         players: participants.players,
         action_id: participants.action_id,
         clock: participants.clock,
@@ -493,7 +579,12 @@ pub(super) fn plan_with_lifecycles(
     if let Some(event) = &action {
         let (kind, target) = match event {
             Event::ActionRequested { action, .. } => (EventKind::ActionRequested, action.as_str()),
-            Event::EntityTick { entity, .. } => {
+            Event::EntityTick { entity, .. }
+            | Event::MovingTick { entity, .. }
+            | Event::MovingExpiry { entity, .. }
+            | Event::MovingImpact {
+                impact: bloxgloom_host_api::motion::Impact { entity, .. },
+            } => {
                 let id = super::entities::EntityId::new(*entity).ok_or_else(|| {
                     io::Error::new(io::ErrorKind::InvalidInput, "invalid scheduled entity")
                 })?;
@@ -506,7 +597,15 @@ pub(super) fn plan_with_lifecycles(
                         io::Error::new(io::ErrorKind::InvalidData, "scheduled type gone")
                     })?
                     .key;
-                (EventKind::EntityTick, key.as_ref())
+                (
+                    match event {
+                        Event::MovingTick { .. } => EventKind::MovingTick,
+                        Event::MovingImpact { .. } => EventKind::MovingImpact,
+                        Event::MovingExpiry { .. } => EventKind::MovingExpiry,
+                        _ => EventKind::EntityTick,
+                    },
+                    key.as_ref(),
+                )
             }
             Event::PickupRequested { .. } => (EventKind::PickupRequested, "bloxgloom:drop"),
             _ => {
@@ -562,6 +661,13 @@ pub(super) fn plan_with_lifecycles(
     } else {
         None
     };
+    motion::prepare(
+        &catalog,
+        participants.entities,
+        &mut plan,
+        tick,
+        action.as_ref(),
+    )?;
     let mut entity_updates = Vec::new();
     let mut drop_takes = Vec::new();
     for (owner, slots) in plan.inventories {
@@ -699,6 +805,23 @@ pub(super) fn plan_with_lifecycles(
                 })?;
                 [at.x, at.y, at.z]
             }
+            Event::MovingTick { motion, .. } => motion.position.map(|x| x.floor() as i32),
+            Event::MovingImpact { impact } => impact.position.map(|x| x.floor() as i32),
+            Event::MovingExpiry { entity, .. } => {
+                let id = super::entities::EntityId::new(*entity).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "invalid expiry entity")
+                })?;
+                let snapshot = participants.entities.snapshot(id).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::WouldBlock, "expiry entity disappeared")
+                })?;
+                let super::entities::EntityLocation::Mobile { position } = snapshot.location else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "expiry entity is anchored",
+                    ));
+                };
+                position.map(|x| x.floor() as i32)
+            }
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -776,6 +899,17 @@ pub(super) fn plan_with_lifecycles(
                 io::ErrorKind::PermissionDenied,
                 "entity spawn is obstructed",
             ));
+        }
+        if let Some(moving) = catalog.moving_entity(id) {
+            motion::validate_spawn_volume(
+                world,
+                reads,
+                requested,
+                &catalog,
+                &final_edits,
+                moving.body.half_extents,
+                spawn.position,
+            )?;
         }
         entity_spawns.push(super::entities::EntitySpawn::Mobile {
             entity_type: id,

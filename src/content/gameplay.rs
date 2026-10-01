@@ -22,13 +22,20 @@ impl Catalog {
                     action.operation != bloxgloom_host_api::actions::Operation::Gameplay
                 }),
                 EventKind::EntityTick => self.gameplay_entity(target).is_none(),
+                EventKind::MovingTick | EventKind::MovingImpact | EventKind::MovingExpiry => self
+                    .entity_type_id_by_key(target)
+                    .is_none_or(|id| self.moving_entity(id).is_none()),
                 // Automatic pickup currently selects the stock world-drop
                 // inventory, not an arbitrary nearby entity type.
                 EventKind::PickupRequested => target != "bloxgloom:drop",
             })
             || (matches!(
                 handler.event,
-                EventKind::ActionRequested | EventKind::EntityTick
+                EventKind::ActionRequested
+                    | EventKind::EntityTick
+                    | EventKind::MovingTick
+                    | EventKind::MovingImpact
+                    | EventKind::MovingExpiry
             ) && handler.target.is_none())
         {
             return Err(RegistrationError(format!(

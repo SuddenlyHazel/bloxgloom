@@ -85,7 +85,7 @@ pub(in crate::server) fn publish(state: &mut State, inventories: Vec<(u128, Inve
             Some(&inventory),
         );
         state.durability.publish_queue.push(PublishEffects {
-        spawned: vec![],
+            spawned: vec![],
             client_id,
             profile: Some(profile),
             action_id: None,

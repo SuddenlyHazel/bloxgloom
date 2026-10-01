@@ -441,13 +441,14 @@ impl<'a> EntityTypeRegistryBuilder<'a> {
             interaction_policy: None,
             interaction_read_radius: 0,
             tick_planner: None,
-            gameplay_tick_dispatch: self
-                .catalog
-                .gameplay_handler(
-                    bloxgloom_host_api::gameplay::EventKind::EntityTick,
-                    &content_type.key,
-                )
-                .is_some(),
+            gameplay_tick_dispatch: self.catalog.moving_entity(registration.id).is_some()
+                || self
+                    .catalog
+                    .gameplay_handler(
+                        bloxgloom_host_api::gameplay::EventKind::EntityTick,
+                        &content_type.key,
+                    )
+                    .is_some(),
             tick_read_radius: 0,
             interaction_reads_neighbours: false,
             tick_reads_neighbours: false,

@@ -28,6 +28,7 @@ pub(in crate::server) fn invoke(
     let actor = participants.actor;
     let catalog = world.catalog_arc();
     let mut snapshot = WorldSnapshot {
+        motion_reaction: None,
         actor_inventory_revision: participants.actor_inventory_revision,
         profile_inventories: participants.profile_inventories,
         profile_inventory_before: Default::default(),
