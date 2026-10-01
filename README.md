@@ -292,3 +292,7 @@ Append `bounced` to benchmark the optional lighting mode, for example `cargo run
 Client audio output and procedural weather previews are available through
 **Settings → Audio**. See [Audio foundation](docs/audio/FOUNDATION.md) for native
 playback, offline WAV previews and the NoiseMachine port scope.
+
+Server-owned clear, rain and storm weather now drives clouds, rain, lightning and
+audio. Use `weather set <clear|rain|storm> [transition-seconds]` in the admin console;
+see [Game weather](docs/weather/FOUNDATION.md) for timing, shelter and testing.

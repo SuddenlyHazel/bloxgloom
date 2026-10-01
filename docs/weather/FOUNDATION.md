@@ -1,0 +1,103 @@
+# Game weather foundation
+
+The server now owns clear, rainy and stormy weather. Clients interpolate its
+weather snapshots and present clouds, rain, lightning and procedural sound.
+Weather changes presentation; it does not damage players, grow crops, extinguish
+fires or change blocks in this first pass. Luau weather bindings are follow-up work.
+
+## Try it
+
+Start a local game and use the existing admin console:
+
+```text
+weather set rain
+weather set storm 0
+weather set clear 10
+```
+
+The optional number is the transition duration in whole seconds, from 0 to 60;
+the default is 10. Only the server's authorized admin can change weather. Overrides
+last five minutes before natural weather resumes. Use `time set midnight` to see
+nighttime lightning, then `time set noon` to return to daylight.
+
+Leave **Settings → Audio → Local preview** at **Off** to hear game weather.
+Rain, Storm and Wind previews temporarily replace the world ambience; switching
+back to Off restores it. Master, Ambient and Effects settings still apply.
+
+For a manual acceptance pass:
+
+1. Set rain and watch the clouds, rain density and sound change gradually.
+2. Enter a building or cave. Rain should stay above the roof; outdoor rain can
+   still be seen through openings. Ambient sound becomes softer and muffled.
+3. Set storm with a zero-second transition. After the next strike, the flash
+   should precede thunder by its travel time. Sealed caves should stay dark.
+4. Join with a second client. Both should see the same weather and transition;
+   players in the same lightning region share strike position and timing.
+5. Restart the server during a transition. Weather should resume, with no replay
+   of old lightning or retained sounds from a previous client session.
+
+Production offscreen comparisons are also available:
+
+```sh
+cargo run --release -- weather-preview /tmp/bloxgloom-weather-previews
+```
+
+This writes clear, rain, storm, lightning, sheltered and sealed-cave lightning PNGs.
+
+## Authority, timing and persistence
+
+New worlds begin clear. The first natural choice is after three minutes; subsequent
+choices last three to six minutes. Seeded choices have clear/rain/storm weights
+of 50/30/20 percent and may keep the current state. Natural transitions blend over
+30 seconds. Cloud cover and rainfall are normalized; wind speed is metres/second.
+
+A monotonic weather clock is separate from the day/night clock. Setting the time
+of day does not move a storm backwards. Weather pauses while the server is stopped.
+The server sends a full weather sample at join, after an admin change and roughly
+once per second. Dropped advisory samples are repaired by the next sample.
+
+Admin changes use the existing registered action, permission and durable receipt
+path. The weather anchor enters the server WAL; normal clock progress is saved by
+a bounded background worker every five seconds and at graceful shutdown in
+`world.weather`. Startup recovery repairs committed overrides whose checkpoint
+was not written, including after WAL rotation. An abrupt crash can lose ordinary
+clock progress since the last checkpoint (normally about five seconds); durable
+admin overrides still recover. Live application of an override
+preserves clock progress during the durable write wait.
+
+The wire version increases to 21; client and server must run the same build.
+Existing world data remains compatible: weather adds a checkpoint file rather
+than changing chunk, inventory or entity formats.
+
+## Presentation and bounds
+
+The server seed and weather clock define one lightning opportunity per 15-second
+slot once a storm has fully blended in. Each fixed 512×512-metre region has a
+deterministic world-space strike at height 120. Timing and slot identity are shared;
+positions differ by region. Crossing a region boundary does not replay the same
+slot. Strikes are cosmetic, with no block/entity collision or damage.
+
+Clients suppress strikes already past when joining, deduplicate live strikes and
+discard stale events after a stall. Up to eight pending thunder arrivals are
+retained. Thunder starts after distance/343 metres per second, uses relative
+horizontal direction, and respects the audio engine's two-strike pool. Sheltered
+thunder is quieter; it is not a voxel acoustic simulation.
+
+Rain uses at most 512 depth-tested streak triangles in a 16×16-metre area around
+the view camera. A 16×16 cover grid samples resident authoritative chunks every
+200 ms, scanning 16 metres below and 64 above the camera. Solid blocks, including
+transparent solid roofs, clip rain; unknown columns suppress it until streamed.
+Streaks also check adjacent roof columns when wind slants them. This is bounded
+nearby shelter sampling, not a global height map: roofs beyond the sampled horizon
+and overhangs beyond the streamed area are outside this first pass.
+
+The player's eye determines audio shelter independently of third-person camera
+position. Exposure fades over half a second, and weather audio updates at most
+20 times per second. The audio worker smooths physical rainfall and wind inputs;
+it generates no independent world lightning. Existing local previews retain their
+own sound-only storm simulation. See [Audio foundation](../audio/FOUNDATION.md).
+
+Clouds darken the sky and outdoor skylight, with slow continuous advection.
+Lightning changes sky illumination without creating light inside sealed caves.
+There is no particle collision simulation, wetness, snow, biome climate, regional
+rainfall, gameplay weather effect or script weather API yet.
