@@ -45,7 +45,18 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
             .color(MUTED),
     );
     ui.add_space(8.0);
-    button(ui, "Test sound", UiControl::AudioTest, intents);
-    ui.add_space(6.0);
-    button(ui, "Back", UiControl::Back, intents);
+    let width = (ui.available_width() - ui.spacing().item_spacing.x) * 0.5;
+    ui.horizontal(|ui| {
+        for (label, control) in [
+            ("Test sound", UiControl::AudioTest),
+            ("Back", UiControl::Back),
+        ] {
+            if ui
+                .add_sized([width, 34.0], egui::Button::new(label))
+                .clicked()
+            {
+                intents.push(Intent::Control(control));
+            }
+        }
+    });
 }
