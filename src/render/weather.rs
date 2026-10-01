@@ -74,7 +74,7 @@ impl Presentation {
         let mut out = Vec::with_capacity(count * 27);
         let right = Vec3::new(-camera.yaw.sin(), 0.0, camera.yaw.cos()) * 0.012;
         let time = self.seconds.rem_euclid(1024.0);
-        for i in 0..count.min(MAX_STREAKS) {
+        'streak: for i in 0..count.min(MAX_STREAKS) {
             let seed = i as u32;
             let x = random(seed.wrapping_mul(3)) * 16.0 - 8.0;
             let z = random(seed.wrapping_mul(3).wrapping_add(1)) * 16.0 - 8.0;
@@ -84,16 +84,20 @@ impl Presentation {
             let top = camera.position + Vec3::new(x, y, z);
             let mut bottom = top + Vec3::new(self.wind[0] * 0.014, -0.55, self.wind[1] * 0.014);
             if let Some((origin, heights)) = &self.cover {
-                let cx = top.x.floor() as i32 - origin[0];
-                let cz = top.z.floor() as i32 - origin[1];
-                if !(0..16).contains(&cx) || !(0..16).contains(&cz) {
-                    continue;
+                // Wind slants a streak across columns. Include both sheet edges and
+                // its endpoint so a drop cannot pass through a neighboring roof.
+                for point in [top - right, top + right, bottom] {
+                    let cx = point.x.floor() as i32 - origin[0];
+                    let cz = point.z.floor() as i32 - origin[1];
+                    if !(0..16).contains(&cx) || !(0..16).contains(&cz) {
+                        continue 'streak;
+                    }
+                    let roof = heights[cz as usize * 16 + cx as usize];
+                    if roof.is_nan() || top.y <= roof {
+                        continue 'streak;
+                    }
+                    bottom.y = bottom.y.max(roof);
                 }
-                let roof = heights[cz as usize * 16 + cx as usize];
-                if roof.is_nan() || top.y <= roof {
-                    continue;
-                }
-                bottom.y = bottom.y.max(roof);
             }
             let alpha = 0.34 * (1.0 - (x * x + z * z).sqrt() / 12.0).clamp(0.0, 1.0);
             for (point, v) in [(top - right, 0.0), (bottom, 0.8), (top + right, 0.0)] {
