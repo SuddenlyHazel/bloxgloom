@@ -193,14 +193,9 @@ fn integrate_inner(
         body.half_extents,
         limits.sweep_cells,
     )?;
-    if (0..3).any(|a| {
-        state.position[a].min(state.position[a] + displacement[a]) - body.half_extents[a]
-            < limits.world_min[a]
-            || state.position[a].max(state.position[a] + displacement[a]) + body.half_extents[a]
-                > limits.world_max[a]
-    }) {
-        return Err(Error::WorldBoundary);
-    }
+    // An obstacle before the boundary can stop the body inside the world even
+    // if its unobstructed endpoint lies outside. Check committed segments.
+    check_bounds(state.position, body, limits)?;
     let mut result = Step {
         position: state.position,
         velocity,

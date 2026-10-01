@@ -247,3 +247,19 @@ fn acceleration_and_capture_are_deterministic_across_chunk_seams() {
     let (min, max) = swept_cells(launch.position, [0.404, -0.008, 0.0], [0.25; 3], 8192).unwrap();
     assert_eq!((min[0], max[0]), (15, 16));
 }
+
+#[test]
+fn earlier_wall_contact_prevents_false_world_boundary_removal() {
+    let mut bounds = limits();
+    bounds.world_max[0] = 10.0;
+    let step = integrate_until_contact(
+        state([0.0, 0.5, 0.5], [1000.0, 0.0, 0.0]),
+        body(Response::Stop),
+        0.02,
+        &[voxel([5, 0, 0])],
+        bounds,
+    )
+    .unwrap();
+    assert_eq!(step.position, [4.75, 0.5, 0.5]);
+    assert_eq!(step.blocked, None);
+}
