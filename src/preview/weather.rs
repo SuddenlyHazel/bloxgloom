@@ -30,8 +30,14 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             },
         ),
     ] {
-        let weather =
+        let mut weather =
             render::weather::Presentation::new(cloud, rain, [3.0, 1.0], exposure, 17.0, flash);
+        if matches!(scene, PreviewScene::Cave { .. }) {
+            // The cave camera is (40.5, 12, 16.5), with solid roof cells at y=16.
+            // Exercise the live cover-grid path: rain above the roof remains
+            // generated and depth-tested, while no streak enters the room.
+            weather.set_cover([32, 8], [17.0; 256]);
+        }
         let outputs = vec![PreviewOutput {
             path: directory.join(format!("{name}.png")),
             width: 1000,
