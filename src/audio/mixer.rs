@@ -1,6 +1,7 @@
 //! Sample-clock mixer with bounded native voices and smoothed playback controls.
 use super::{
-    Clip, Command, Controls, Preset, SAMPLE_RATE, limiter::Limiter, procedural::Procedural,
+    Clip, Command, Controls, Preset, SAMPLE_RATE, WeatherSound, limiter::Limiter,
+    procedural::Procedural,
 };
 use std::sync::Arc;
 const MAX_VOICES: usize = 32;
@@ -22,6 +23,7 @@ pub(crate) struct Mixer {
     controls: Controls,
     levels: [f32; 3],
     synth: Procedural,
+    desired_world: Option<WeatherSound>,
     preset: Preset,
     fade: f32,
     limiter: Limiter,
@@ -51,6 +53,7 @@ impl Mixer {
             controls: Controls::default(),
             levels: [0.0; 3],
             synth: Procedural::new(seed),
+            desired_world: None,
             preset: Preset::Off,
             fade: 0.0,
             limiter: Limiter::default(),
@@ -135,7 +138,12 @@ impl Mixer {
             }
             Command::Thunder { distance, angle } => self.synth.trigger_thunder(distance, angle),
             Command::Weather(weather) => {
-                self.synth.set_world(weather);
+                self.desired_world = weather.map(WeatherSound::sanitized);
+                // Continuous inputs may change immediately within the active
+                // world source. Switching source itself waits for fade-out.
+                if self.synth.world_active() && self.desired_world.is_some() {
+                    self.synth.set_world(self.desired_world);
+                }
                 true
             }
             Command::WorldThunder {
@@ -146,6 +154,7 @@ impl Mixer {
             Command::Reset => {
                 self.voices.clear();
                 self.synth = Procedural::new(self.seed);
+                self.desired_world = None;
                 self.preset = Preset::Off;
                 self.fade = 0.0;
                 self.controls.preset = Preset::Off;
@@ -168,7 +177,9 @@ impl Mixer {
             for (level, target) in self.levels.iter_mut().zip(target) {
                 *level += (target - *level) / (0.02 * SAMPLE_RATE as f32);
             }
-            let changing = self.preset != self.controls.preset;
+            let changing_preset = self.preset != self.controls.preset;
+            let changing_world = self.desired_world.is_some() != self.synth.world_active();
+            let changing = changing_preset || changing_world;
             let fade_target =
                 if changing || (self.preset == Preset::Off && !self.synth.world_active()) {
                     0.0
@@ -177,8 +188,11 @@ impl Mixer {
                 };
             self.fade += (fade_target - self.fade) / (0.02 * SAMPLE_RATE as f32);
             if changing && self.fade < 0.0001 {
-                self.preset = self.controls.preset;
-                self.synth.set_preset(self.preset);
+                self.synth.set_world(self.desired_world);
+                if changing_preset {
+                    self.preset = self.controls.preset;
+                    self.synth.set_preset(self.preset);
+                }
             }
             let (ambient, thunder) = self.synth.next(self.preset);
             let mut mix = std::array::from_fn::<_, 2, _>(|i| {
@@ -236,3 +250,7 @@ impl Mixer {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "mixer/tests.rs"]
+mod tests;
