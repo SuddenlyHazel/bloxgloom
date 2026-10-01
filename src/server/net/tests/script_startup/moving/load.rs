@@ -119,6 +119,8 @@ fn moving_real_listener_capacity_measurements() {
         let mut latencies = Vec::new();
         let mut entity_bytes = 0usize;
         let mut updates = 0usize;
+        let (sample_tx, sample_rx) = mpsc::sync_channel(1024);
+        state.tick_observer = Some(sample_tx);
         gameplay::serve(state, |address| {
             let mut peer = gameplay::Peer::connect(address, Arc::clone(&catalog));
             for base in (0..bodies).step_by(32) {
@@ -135,6 +137,8 @@ fn moving_real_listener_capacity_measurements() {
                     assert!(!accepted, "overload accepted: {reason}");
                 }
             }
+            // Separate admission/loading from the steady population window.
+            while sample_rx.try_recv().is_ok() {}
             let start = Instant::now();
             let deadline = start + Duration::from_secs(15);
             let mut seam = false;
@@ -176,6 +180,24 @@ fn moving_real_listener_capacity_measurements() {
                 }
             }
         });
+        let samples: Vec<_> = sample_rx.try_iter().collect();
+        assert!(
+            !samples.is_empty(),
+            "real listener produced no tick observations"
+        );
+        let ticks: Vec<_> = samples.iter().map(|sample| sample.tick_total).collect();
+        let durable: Vec<_> = samples.iter().map(|sample| sample.phases[1]).collect();
+        let commits: Vec<_> = samples.iter().map(|sample| sample.phases[3]).collect();
+        let pending = samples
+            .iter()
+            .map(|sample| sample.pending_durable_actions)
+            .max()
+            .unwrap();
+        let resident = samples
+            .iter()
+            .map(|sample| sample.resident_chunks)
+            .max()
+            .unwrap();
         let state = fixture.open().unwrap();
         let saved = count(&state);
         assert_eq!(saved.len(), bodies, "committed bodies/restart");
@@ -204,6 +226,17 @@ fn moving_real_listener_capacity_measurements() {
             rank(&latencies, 50).as_secs_f64() * 1000.0,
             rank(&latencies, 95).as_secs_f64() * 1000.0,
             rank(&latencies, 99).as_secs_f64() * 1000.0
+        );
+        eprintln!(
+            "motion-load-server bodies={bodies} tick_samples={} tick_p50_ms={:.3} tick_p95_ms={:.3} tick_p99_ms={:.3} durable_phase_p50_ms={:.3} durable_phase_p95_ms={:.3} commit_phase_p50_ms={:.3} commit_phase_p95_ms={:.3} pending_actions_max={pending} resident_chunks_max={resident}",
+            samples.len(),
+            rank(&ticks, 50).as_secs_f64() * 1000.0,
+            rank(&ticks, 95).as_secs_f64() * 1000.0,
+            rank(&ticks, 99).as_secs_f64() * 1000.0,
+            rank(&durable, 50).as_secs_f64() * 1000.0,
+            rank(&durable, 95).as_secs_f64() * 1000.0,
+            rank(&commits, 50).as_secs_f64() * 1000.0,
+            rank(&commits, 95).as_secs_f64() * 1000.0
         );
     }
 }
