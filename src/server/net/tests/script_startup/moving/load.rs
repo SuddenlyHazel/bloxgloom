@@ -99,7 +99,8 @@ fn moving_real_listener_capacity_measurements() {
         let started = Instant::now();
         let mut state = Box::new(fixture.open().unwrap());
         let discovery = started.elapsed();
-        state.spawn_anchor = [0.5, 80.0, 0.5];
+        // Four 16-block owner tiles fit within the authoritative launch reach.
+        state.spawn_anchor = [16.0, 80.0, 16.0];
         for x in -1..=34 {
             for z in -1..=34 {
                 state.world.edit(x, 79, z, crate::world::STONE).unwrap();
