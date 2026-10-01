@@ -7,9 +7,10 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 pub(crate) mod first_person;
 mod material;
-use material::texture;
 
-const MATERIALS: usize = crate::appearance::HAIR.len();
+const MATERIALS: usize = super::character_asset::MATERIAL_COUNT;
+const STYLES: usize = crate::appearance::HAIR.len();
+const GROUPS: usize = STYLES * 2;
 
 const JOINTS: usize = super::character_asset::JOINT_COUNT;
 
@@ -21,6 +22,7 @@ struct Vertex {
     joint: u32,
     uv: [f32; 2],
     material: u32,
+    surface: u32,
 }
 
 #[repr(C)]
@@ -29,6 +31,7 @@ struct CharacterInstance {
     actor: AvatarInstance,
     recipe: [u8; 4],
     iris: [u8; 4],
+    hair_color_body: [u8; 4],
 }
 
 pub(super) struct CharacterRenderer {
@@ -42,7 +45,7 @@ pub(super) struct CharacterRenderer {
     count: u32,
     pub(super) first_person: Option<first_person::View>,
     material_ranges: [std::ops::Range<u32>; MATERIALS],
-    style_counts: [u32; MATERIALS],
+    style_counts: [u32; GROUPS],
     preview_clip: Option<(&'static str, f32)>,
 }
 
@@ -52,10 +55,11 @@ impl CharacterRenderer {
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         camera_layout: &wgpu::BindGroupLayout,
+        catalog: &crate::content::Catalog,
     ) -> Self {
         let asset = CharacterAsset::builtin();
         assert_eq!(asset.joints.len(), JOINTS);
-        assert_eq!(super::character_asset::HAIR_PNGS.len() + 1, MATERIALS);
+        assert_eq!(super::character_asset::HAIR_PNGS.len() / 2 + 1, STYLES);
         let mut material_ranges: [std::ops::Range<u32>; MATERIALS] = std::array::from_fn(|_| 0..0);
         for (index, triangle) in asset.indices.chunks_exact(3).enumerate() {
             let material = asset.vertices[triangle[0] as usize].material as usize;
@@ -74,6 +78,7 @@ impl CharacterRenderer {
                 joint: v.joint as u32,
                 uv: v.uv,
                 material: v.material,
+                surface: v.surface,
             })
             .collect();
         let buffer = |label, contents, usage| {
@@ -134,7 +139,7 @@ impl CharacterRenderer {
                     },
                     count: None,
                 },
-                texture_entry(1, wgpu::TextureViewDimension::D2),
+                texture_entry(1, wgpu::TextureViewDimension::D2Array),
                 texture_entry(4, wgpu::TextureViewDimension::D2Array),
                 texture_entry(5, wgpu::TextureViewDimension::D2Array),
                 texture_entry(6, wgpu::TextureViewDimension::D2Array),
@@ -146,11 +151,15 @@ impl CharacterRenderer {
                 },
             ],
         });
-        let body = texture(
+        let body = material::array(
             device,
             queue,
-            super::character_asset::BODY_PNG,
-            "character body atlas",
+            &[
+                super::character_asset::BODY_PNG,
+                super::character_asset::BODY_DEFINED_PNG,
+            ],
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            "articulated body atlases",
         );
         let hair = material::array(
             device,
@@ -213,19 +222,28 @@ impl CharacterRenderer {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("authored character shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("character.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("character.wgsl")
+                    .replace(
+                        "// REGISTERED_PALETTES",
+                        &super::appearance::palettes(catalog),
+                    )
+                    .into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("authored character pipeline"),
             bind_group_layouts: &[Some(camera_layout), Some(&layout)],
             immediate_size: 0,
         });
-        let vertex_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32, 8 => Float32x2, 11 => Uint32];
-        let mut instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4];
+        let vertex_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32, 8 => Float32x2, 11 => Uint32, 15 => Uint32];
+        let mut instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4, 14 => Uint8x4];
         // Actor instances also carry a rigid-object quaternion, which this
         // character shader ignores. Recipe bytes follow the entire actor.
         instance_attributes[7].offset = std::mem::offset_of!(CharacterInstance, recipe) as u64;
         instance_attributes[8].offset = std::mem::offset_of!(CharacterInstance, iris) as u64;
+        instance_attributes[9].offset =
+            std::mem::offset_of!(CharacterInstance, hair_color_body) as u64;
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced authored characters"),
             layout: Some(&pipeline_layout),
@@ -282,7 +300,7 @@ impl CharacterRenderer {
             count: 0,
             first_person: None,
             material_ranges,
-            style_counts: [0; MATERIALS],
+            style_counts: [0; GROUPS],
             preview_clip: None,
         }
     }
@@ -291,24 +309,26 @@ impl CharacterRenderer {
         self.preview_clip = Some((clip, time));
     }
 
-    pub(super) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar], enabled: bool) {
+    pub(super) fn set(&mut self, queue: &wgpu::Queue, avatars: &[VisualAvatar]) {
         self.count = 0;
         self.style_counts.fill(0);
-        if !enabled {
-            return;
-        }
         let mut instances = Vec::new();
         let mut joints = Vec::new();
         // Admission stays nearest-first; grouping only reorders already-admitted
         // actors. The GPU processes the body and the selected hair, never the kit.
-        for style in 0..MATERIALS {
+        for group in 0..GROUPS {
+            let style = group % STYLES;
+            let body = group / STYLES;
             let start = instances.len();
             for avatar in avatars.iter().take(MAX_AVATARS).filter(|a| {
-                a.model == AvatarModel::Player
-                    && a.character_recipe
-                        .is_some_and(|recipe| recipe.valid() && usize::from(recipe.hair) == style)
+                a.model == AvatarModel::Player && {
+                    let recipe = a.character_recipe.unwrap_or_default();
+                    recipe.valid()
+                        && usize::from(recipe.hair) == style
+                        && usize::from(recipe.body) == body
+                }
             }) {
-                let recipe = avatar.character_recipe.expect("filtered character recipe");
+                let recipe = avatar.character_recipe.unwrap_or_default();
                 let iris = recipe
                     .iris
                     .map_or([0; 4], |rgb| [rgb[0], rgb[1], rgb[2], 1]);
@@ -326,23 +346,31 @@ impl CharacterRenderer {
                         u8::from(first_person.is_some()),
                     ],
                     iris,
+                    hair_color_body: [
+                        recipe.hair_color[0],
+                        recipe.hair_color[1],
+                        recipe.hair_color[2],
+                        recipe.body,
+                    ],
                 });
                 let mut pose = match self.preview_clip {
                     Some((clip, time)) => self.asset.sample(clip, time),
-                    None => self.asset.sample_gameplay(
+                    None => self.asset.sample_gameplay_look(
                         avatar.character_pose[1],
                         avatar.character_pose[0],
                         avatar.character_pose[2],
+                        avatar.character_pose[3],
                         avatar.character_crouch,
                         avatar.character_tool,
+                        avatar.character_look,
                     ),
                 };
                 if let Some(view) = first_person {
-                    view.prepare_pose(&mut pose);
+                    view.prepare_pose(&mut pose, avatar.character_tool);
                 }
                 joints.extend(pose.iter().map(|matrix| matrix.to_cols_array()));
             }
-            self.style_counts[style] = (instances.len() - start) as u32;
+            self.style_counts[group] = (instances.len() - start) as u32;
         }
         self.count = instances.len() as u32;
         if self.count != 0 {
@@ -352,12 +380,19 @@ impl CharacterRenderer {
     }
 
     fn triangles(&self) -> usize {
-        self.material_ranges[0].len() * self.count as usize / 3
-            + (1..MATERIALS)
-                .map(|style| {
-                    self.material_ranges[style].len() * self.style_counts[style] as usize / 3
-                })
-                .sum::<usize>()
+        (0..GROUPS)
+            .map(|group| {
+                let body = if group / STYLES == 0 { 0 } else { 14 };
+                let style = group % STYLES;
+                let indices = self.material_ranges[body].len()
+                    + if style == 0 {
+                        0
+                    } else {
+                        self.material_ranges[style].len()
+                    };
+                indices * self.style_counts[group] as usize / 3
+            })
+            .sum()
     }
 
     pub(super) fn draw<'a>(
@@ -374,12 +409,16 @@ impl CharacterRenderer {
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(self.material_ranges[0].clone(), 0, 0..self.count);
-        let mut start = self.style_counts[0];
-        for style in 1..MATERIALS {
-            let count = self.style_counts[style];
+        let mut start = 0;
+        for group in 0..GROUPS {
+            let count = self.style_counts[group];
+            let body = if group / STYLES == 0 { 0 } else { 14 };
+            let style = group % STYLES;
             if count > 0 {
-                pass.draw_indexed(self.material_ranges[style].clone(), 0, start..start + count);
+                pass.draw_indexed(self.material_ranges[body].clone(), 0, start..start + count);
+                if style > 0 {
+                    pass.draw_indexed(self.material_ranges[style].clone(), 0, start..start + count);
+                }
             }
             start += count;
         }

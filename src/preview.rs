@@ -290,6 +290,7 @@ pub fn render_character_preview(
     let clip = match clip {
         "idle" => "idle",
         "walk" => "walk",
+        "run" => "run",
         "crouch" => "crouch",
         "tool_use_left" => "tool_use_left",
         "tool_use_right" => "tool_use_right",
@@ -829,7 +830,6 @@ async fn render_previews_at(
     }
     if let PreviewScene::ThirdPerson(shot) = scene {
         camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
-        avatar_renderer.set_authored(true);
         if shot.perspective == render::camera::Perspective::FirstPerson {
             avatar_renderer.set_first_person(Some(render::FirstPersonView {
                 id: 1,
@@ -1196,7 +1196,8 @@ async fn render_previews_at(
         let mut visuals = [
             render::VisualAvatar {
                 motion: None,
-                character_pose: [0.0; 3],
+                character_pose: [0.0; 4],
+                character_look: [0.0; 2],
                 character_crouch: 0.0,
                 character_tool: None,
                 character_recipe: None,
@@ -1229,7 +1230,8 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 motion: None,
-                character_pose: [0.0; 3],
+                character_pose: [0.0; 4],
+                character_look: [0.0; 2],
                 character_crouch: 0.0,
                 character_tool: None,
                 character_recipe: None,
@@ -1273,7 +1275,8 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 motion: None,
-                character_pose: [0.0; 3],
+                character_pose: [0.0; 4],
+                character_look: [0.0; 2],
                 character_crouch: 0.0,
                 character_tool: None,
                 character_recipe: None,
@@ -1299,9 +1302,10 @@ async fn render_previews_at(
         }
         if let PreviewScene::Characters(clip, time, hair) = scene {
             avatar_renderer.preview_character_clip(clip, time);
-            for visual in &mut visuals {
+            for (index, visual) in visuals.iter_mut().enumerate() {
                 visual.character_recipe = Some(crate::appearance::CharacterRecipe {
                     hair,
+                    body: u8::from(index == 1),
                     ..Default::default()
                 });
             }
@@ -1320,12 +1324,15 @@ async fn render_previews_at(
                     eyes: 5,
                     mouth: 5,
                     iris: Some([36, 220, 95]),
+                    body: 1,
+                    hair_color: [125, 85, 180],
                 },
                 crate::appearance::CharacterRecipe {
                     hair: 0,
                     eyes: 2,
                     mouth: 2,
                     iris: Some([235, 80, 155]),
+                    ..Default::default()
                 },
             ]) {
                 visual.character_recipe = Some(recipe);

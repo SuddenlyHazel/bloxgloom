@@ -37,6 +37,10 @@ fn deterministic_grid_keeps_all_actor_centers_visible_at_extremes() {
             }
         }
     }
-    let (classic, _) = scene(512, None);
-    assert!(classic.iter().all(|actor| actor.character_recipe.is_none()));
+    let (default_characters, _) = scene(512, None);
+    assert!(
+        default_characters
+            .iter()
+            .all(|actor| actor.character_recipe.is_none())
+    );
 }

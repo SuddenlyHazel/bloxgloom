@@ -22,6 +22,9 @@ struct Track {
     yaw: f32,
     stride: f32,
     gait: f32,
+    run: f32,
+    crouch: f32,
+    look: [f32; 2],
     age: f32,
     airborne: bool,
     landing: f32,
@@ -36,6 +39,9 @@ impl Track {
             yaw: avatar.pose[0],
             stride: 0.0,
             gait: 0.0,
+            run: 0.0,
+            crouch: avatar.character_crouch.clamp(0.0, 1.0),
+            look: [0.0; 2],
             age: (avatar.id % 100) as f32,
             airborne: avatar.airborne,
             landing: 0.0,
@@ -134,6 +140,27 @@ impl Track {
             visual.character_pose[0] = self.stride;
             visual.character_pose[1] = self.age;
             visual.character_pose[2] = self.gait;
+            // No sprint intent is replicated: derive the gait from actual
+            // presented ground speed. Custom movement rates remain supported.
+            let speed = if dt > 0.0 { distance / dt } else { 0.0 };
+            let running = ((speed - 3.5) / 3.5).clamp(0.0, 1.0) * moving;
+            self.run += (running - self.run) * (1.0 - (-10.0 * dt).exp());
+            visual.character_pose[3] = self.run;
+            self.crouch += (avatar.character_crouch - self.crouch) * (1.0 - (-16.0 * dt).exp());
+            visual.character_crouch = self.crouch;
+            let heading = (desired_yaw - self.yaw + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            for (axis, target) in [heading, avatar.character_look[1]].into_iter().enumerate() {
+                let limit = [20.0_f32, 5.0][axis].to_radians();
+                let target = if target.is_finite() {
+                    target.clamp(-limit, limit)
+                } else {
+                    0.0
+                };
+                self.look[axis] += (target - self.look[axis]) * (1.0 - (-14.0 * dt).exp());
+            }
+            visual.character_look = self.look;
         }
         if matches!(visual.model, AvatarModel::Registered(_)) {
             let animation = visual.animation;

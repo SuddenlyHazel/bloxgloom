@@ -372,7 +372,6 @@ impl UiLayout {
                 SettingId::Exposure,
                 SettingId::Bloom,
                 SettingId::BloomStrength,
-                SettingId::Characters,
             ]
         } else {
             &[

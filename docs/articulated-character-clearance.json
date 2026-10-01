@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "method": "Native BGC2 rigid vertex bytes, Rust gameplay matrices, convex separating-axis theorem, face+ears protected; scalp head-shell contact excluded. Finite sampled grid, not continuous guarantee.",
+  "poses_sha256": "8b09a85ed63ad65dd2b9b5430d82464a23114ab2596b501e07e43b9a818536bc",
+  "samples": 3671,
+  "combinations": 95446,
+  "collisions": [],
+  "sources": {
+    "flat_chest": "953fa5203c3997c09a1c358f0c48837c3c56385847b42b7c77996407a4295dc2",
+    "tousled_crop": "2da7f5e145d5a8378c62feb17b5df05801f98fbeea91ad280d9bc9e18fe5fe1e",
+    "side_swept_undercut": "2a2b799714c51897a7372e95bf2cc56b03b001233c539a76365f9a0ec3ff5d0d",
+    "space_buns": "910cd16518bba34d70a7ee2ac7bce125e6c3de78a99c1cc9702c6f8523b54e8d",
+    "curly_bob": "4be4107d241c77361ff8056f71b13ce05100855df6cebae7d4eb27ac8915de90",
+    "curly_pigtails": "6885269b54e12190f097abc5cb5885c0c56a99551ca4b379d9812d6ed31ba286",
+    "sidepart_bob": "f428e673d678214dd1496ad35171792b10bf6db9062e76fdfe5d52b28496ebff",
+    "compact_braid": "88bb8090927c176a505fccb64568ad4f104e71ee722294edaa3b168f651ea2d8",
+    "long_loose_curls": "3d067c6a42fd9d9286ae29ceca0ecada3cc8e262b9aad1eb9619ebc1a9042d87",
+    "long_curly_ponytail": "fc653287af12671691bbc774060749d32862db90abbf5e06b08e3c77c6838a98",
+    "half_up_curly_cascade": "cad3310a3cb3edf9625b49874c597060996f2d6838c9608c809978444d93e0da",
+    "rounded_afro": "c69277ba6c0fed21e3730a9fa78a1ead438cdcd03599626dc10a7dbfe0475abf",
+    "twin_braids": "824db59a110c09fb18d24d24fc3edcdfaab3ceec9aa9750dd67b062d5e635e97",
+    "curly_mohawk": "5e6ad96c7220e34802928cf52c5069e88485afe5349bee343743ba1f6206e5cc",
+    "defined_chest_sports_bra": "a3f4e606b6f114c6cca8a0fffd74ece81917de134eab7a277727b55567086adb"
+  },
+  "passed": true
+}

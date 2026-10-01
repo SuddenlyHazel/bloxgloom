@@ -196,7 +196,8 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
     }
     Ok(Some(crate::render::VisualAvatar {
         motion: None,
-        character_pose: [0.0; 3],
+        character_pose: [0.0; 4],
+        character_look: [0.0; 2],
         character_crouch: 0.0,
         character_tool: None,
         character_recipe: None,
@@ -842,6 +843,8 @@ fn cross_chunk_player_transfer_changes_avatar_only_after_full_group() {
 fn player_projection_preserves_recipe_and_rejects_noncanonical_flags() {
     let registry = EntityClientRegistry::builtins(&Catalog::builtins());
     let recipe = crate::appearance::CharacterRecipe {
+        body: 1,
+        hair_color: [66, 136, 206],
         hair: 2,
         eyes: 6,
         mouth: 3,

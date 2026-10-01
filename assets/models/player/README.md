@@ -1,189 +1,90 @@
-# Authored player vertical slice
+# Articulated characters
 
-This directory contains a reproducible native representation of the project's
-authored character kit. The original game-facing GLBs are kept under `source/`:
+The articulated family is the game's only player renderer. There is no Classic/Authored switch or legacy fallback. A palette-only player snapshot resolves to the default articulated recipe.
 
-- `player.glb`: refined-crouch six-cuboid player, seven-joint rigid skin, with the
-  existing styled **cute_glint / soft_smile** face baked into its 512 × 256 atlas
-- `hair.glb`: **tousled_crop** rigid head attachment, independent 32 × 32 texture
-- `hair_undercut.glb`: **side_swept_undercut**, another short head-local attachment
-- The remaining named `hair_*.glb` files: all approved short, curly, variety and bold rigid styles (IDs below)
+## Appearance
 
-These are the supplied project assets, not downloaded third-party models. The
-body geometry, UVs, five clips, and painted texture pixels are retained. No
-generated concept art or browser/Three.js runtime is needed by the game.
+Pause → Character previews the same native WGPU renderer used in play. Apply remains a server-authoritative, acknowledged operation; closing discards an unapplied draft.
 
-## Rebuild
+- Two bodies: **Flat chest** and **Defined chest + sports bra**
+- Thirteen hairstyles plus no hair, with the existing stable hairstyle IDs
+- Arbitrary 8-bit RGB hair color (normalized sRGB at the shader boundary)
+- Eight eye choices, six mouths and optional iris RGB
+- Existing registered skin palettes; pants palettes tint the shorts and shirt palettes tint the sports bra. Flat chest is intentionally bare and has no upper garment to recolor
+- Default: flat chest, tousled crop, hair `#BE7940`, original articulated 3D eyes, soft smile, original iris color
 
-From the repository root:
+Eye ID 0 uses the base's modeled white/iris/pupil/glint/brow geometry. Other eye IDs adapt the existing pixel features onto the articulated eye surfaces; source eye details are hidden only for those styles. Mouth pixels use the head's new dimensions rather than the old atlas rectangle.
 
-    python3 tools/character_assets/convert.py
-    python3 -m unittest discover -s tools/character_assets -p 'test_*.py'
+## Geometry and movement
 
-The converter uses Python's standard library only. It copies embedded PNG bytes
-exactly and writes deterministic body/rig `character.json`, per-clip `clip_*.json`,
-and per-hairstyle `hair*.mesh` buffers. Unsupported glTF extensions,
-mesh transforms, weighted skins, morph targets, and non-linear samplers are
-rejected rather than approximated. This is an intentionally narrow importer for
-the authored kit, not general glTF support.
+Sources are in `articulated/source/`. The two larger body GLBs use deterministic
+lossless `.glb.gz` containers; `gunzip -c flat_chest.glb.gz > flat_chest.glb`
+restores the original bytes for Blender or other glTF tools. The converter reads
+these containers directly. Manifest source hashes refer to the original GLB bytes. The two bodies share the exact 30-node skin hierarchy, including pelvis, spine, chest, neck/head, clavicles, upper arms, forearms, wrists/hands, grips, thighs, shins, feet, toes, eyes/pupils and brows. Source models are already 1.8 metres high. The native basis rotates −Z-forward to +Z-forward without the old 0.9 scale.
 
-Each `.mesh` begins with `BGH1`, little-endian u32 vertex and index counts,
-then eight little-endian f32 values per vertex (position, normal, UV), followed
-by local u16 triangle indices. The material ID comes from the append-only table;
-all attachment vertices use the head joint. Bounded decoding validates byte
-lengths/counts before allocation and validates geometry before GPU upload.
-No float quantization or runtime GLB importer is involved. The largest mesh is
-144,444 bytes; source GLBs remain checked in for reproducible conversion.
+Flat chest is 2,244 triangles; the defined body is 3,664. Only the selected body and selected hair are submitted for each actor. Admission remains nearest-first and capped at 512; grouping by body/hair does not admit distant actors around that cap. Static assets upload once. Only instance data and 30 joint matrices per actor change each frame.
 
-## Runtime contract
+Gameplay motion is authored for this hierarchy in `src/render/avatars/character_asset/gameplay.rs`:
 
-`character_asset.rs` validates the normalized data once at initialization. A
-vertex is joint-local: its inverse-bind transform has already been applied.
-Rigid hair vertices use the head-local identity socket. Runtime sampling returns
-seven global joint transforms, including a uniform 0.9 scale and a 180-degree Y
-rotation: source is 2 m tall, Y-up, -Z-forward; engine is feet-origin, 1.8 blocks
-tall, Y-up, +Z-forward. Do not apply inverse binds or this basis a second time.
+- Breathing idle, walking, speed-blended running, and smoothly blended crouch
+- Bent knees/ankles and articulated toes; separate clavicle, elbow and wrist motion
+- Mirrored left/right 0.8-second tool one-shots layered over locomotion, returning to rest rather than looping
+- Bounded head look: ±20° yaw and ±5° pitch; no unvalidated hair-handle simulation
+- First-person framing applies one rigid delta to every joint in each complete arm subtree, including the grip, instead of disconnecting elbows/wrists
+- `grip_R` and `grip_L` supply native attachment transforms. The game currently has no held-item mesh renderer; the anchors are ready for that renderer rather than inventing a separate tool model
 
-The source has both a joint and a mesh named `head`; the attachment is joint 1.
-Preserve legacy arm names: `right_arm` lies at negative source X, `left_arm` at
-positive source X. The names are reversed relative to the textured -Z face:
-`tool_use_left` animates legacy `right_arm` (source -X, anatomical left);
-`tool_use_right` animates legacy `left_arm` (source +X, anatomical right).
-These mappings were checked against the source clip channels. Do not rename
-channels by guessing from legacy bone labels.
+The original four source validation clips remain unchanged and are separately sampled. They are not mislabeled as gameplay walk/mining clips. Body collision, eye height, movement authority and world edits remain server-owned.
 
-Material 0 uses `body.png`; material 1 uses `hair.png`; material 2 uses
-`hair_undercut.png`; materials 3–13 use their matching named PNGs. Only the selected
-hair material is drawn. Keep body and hair at their native sizes, nearest-filtered
-and sRGB-decoded. None uses emission. The character
-atlas must not pass through the terrain's 128 × 128 resampler.
+## Color contract
 
-The clips are `idle`, `walk`, `crouch`, `tool_use_left`, and `tool_use_right`.
-Idle/walk loop; crouch clamps at its held final frame; tool clips finish at their
-authored returned-to-rest pose. All are visual-only, with no gameplay root
-motion. The clip supplies the visual crouch pose. Gameplay separately uses server-owned stance to lower collision height, eye height, and movement speed; it cannot stand into solid or unavailable terrain.
+Hair neutral textures use sRGB sampling. The player's RGB is decoded once, multiplied with the already-linear sampled neutral shade, and encoded by the render target once. Alpha stays unchanged. Fixed-color ties are separate primitive roles and sample their original texture; overlapping source UVs cannot cause ties to be recolored.
 
-## Native character editor and multiplayer
+Exact black necessarily removes the painted shade contrast; a lifted charcoal preserves it. Color selection does not alter skin, eye or clothing materials. Body and face images remain independent texture layers.
 
-Open **Pause → Character**. Choose Classic or Authored; authored selections expose
-fourteen hair choices (none plus the thirteen styles listed below), eight eye styles,
-six mouths, and an optional RGB iris color. Untinted irises retain the original
-per-style artwork. Closed eyes are unaffected by tint; temple accents and all
-body pixels remain unchanged. Neon-looking details are painted, never emissive.
+## Rebuild and verify
 
-The animated portrait uses the production skinning/material path. Its animation
-selector previews idle, walk, held crouch and both anatomical tool actions.
-Changing controls edits a local draft. **Apply** sends only a bounded recipe for
-the admitted session's player; “Saved” appears only after the authoritative own
-replica echoes it. Closing discards unapplied edits. Pending Apply is disabled
-and survives closing/reopening; disconnect clears the local pending state.
+The runtime has no glTF parser and cannot receive asset paths or arbitrary geometry over the wire. The offline converter validates embedded GLBs, rigid weights, hierarchy and mesh limits, bakes hair adjustment handles at neutral, and writes bounded BGC2 mesh files. Its standard-library-only rebuild is deterministic:
 
-The server validates IDs, atomically persists the profile's full appearance, and
-replicates it to peers and late joiners. Reconnect and server restart restore the
-recipe. Identical retries are no-ops. Existing palette selection/Luau operations
-retain their three-color projection and preserve the authored recipe; choosing
-Classic makes those palettes visible again. No client chooses a target profile.
+```sh
+python tools/character_assets/convert.py
+python -m unittest discover -s tools/character_assets -v
+cargo test
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+```
 
-**Settings → Graphics → Characters** remains a local rendering fallback. Authored
-rendering is enabled by default; a player whose recipe is Classic still uses the
-classic mesh. Existing explicit Classic config choices remain respected. Applying
-an authored selection also enables the local authored renderer.
+Additional native-pose collision validation requires NumPy and SciPy. It tests actual converted vertex bytes with matrices exported by the Rust gameplay code, including source clips, run/crouch/tool blends and head-look limits:
 
-Wire version 18, player schema 2, exact asset/catalog fingerprinting and BGA2
-appearance saves keep IDs and pixels consistent. This prerelease deliberately
-starts default saves in **world-v20** (and world-v20-fixture); old appearance/save
-formats are rejected rather than silently migrated or discarded. Existing world
-folders are not modified by using the new default.
+```sh
+BLOXGLOOM_POSE_DUMP=/tmp/articulated-poses.json cargo test native_articulated_pose_dump
+python tools/character_assets/check_articulated_clearance.py /tmp/articulated-poses.json /tmp/articulated-clearance.json
+```
 
-This is a bounded builtin kit, not generic runtime glTF loading, uploaded atlases,
-clothing, physics hair, or a networked tool animation. Crouch stance is replicated by the server. First person shows the authored local body and animated arms, omitting its head and hair to keep the eye clear; F5 cycles rear and front third-person views, and the native portrait remains available in the editor.
+This is a sampled convex SAT check, not a continuous collision guarantee. Nonconvex body pieces use conservative outer hulls. Scalp contact is intentional; ears, eyes/brows, body and the frontal face region are protected. Re-run validation after changing movement, the head envelope, mesh geometry or hair handles.
 
-For a repeatable headless native render (same production GPU pipeline):
+Native render commands:
 
-    cargo run -- character-preview character-idle.png idle 0.35
-    cargo run -- character-preview character-walk.png walk 0.20
-    cargo run -- character-preview character-crouch.png crouch 1.0
-    cargo run --release -- character-gameplay-preview /tmp/character-gameplay
-    cargo run --release -- first-person-preview /tmp/first-person
-    cargo run -- character-preview character-left-tool.png tool_use_left 0.3
-    cargo run -- character-preview character-right-tool.png tool_use_right 0.3
-    cargo run -- character-preview character-curly-bob.png tool_use_right 0.3 4
+```sh
+cargo run -- character-preview character.png idle 0.35 8
+cargo run -- character-preview crouch.png crouch 0.6 12
+cargo run -- character-preview tool.png tool_use_right 0.24 9
+cargo run -- character-style-preview styles.png
+cargo run -- character-motion-preview motion-frames
+cargo run -- third-person-preview third-person-frames
+cargo run --release -- character-perf 300 128 8
+cargo run --release -- perf 300 6
+```
 
-Each image shows the kit from three angles in the lit world. Crouch and tool-use
-are layered into gameplay: crouch preserves walking leg motion, and local block break/place requests start a right-hand tool swing. Tool cues are presentation feedback and do not authorize edits; other clients receive crouch stance but not tool cues. The server remains authoritative for stance, movement, inventories, and block interactions.
+The standard character preview shows both bodies, from front/three-quarter/back, on the game's terrain with its lighting and HUD. The style preview also demonstrates independently colored hair and face choices.
 
-A repeatable two-second, 30 Hz walk sequence can be captured without rebuilding
-the world per frame:
+## Save and wire boundary
 
-    cargo run -- character-motion-preview character-motion
-    ffmpeg -framerate 30 -i character-motion/%03d.png -pix_fmt yuv420p character-walk.mp4
+Per repository prerelease policy, this change starts new default worlds at **world-v22**. It does not convert or delete old worlds. Explicitly opening an incompatible catalog fails with a diagnostic before profile creation; old directories and file bytes stay untouched.
 
+- Protocol 21; player payload schema 3
+- Appearance recipe v2: body, hair, eyes, mouth, optional iris RGB and hair RGB
+- Public appearance payload maximum: 16 bytes; palette-only 4-byte payload still means the new default
+- Profile store `BGA3`; old `BGA2` files are explicitly rejected, never reset or rewritten
+- Full catalog identity hashes the new assets, stable choice names, default recipe and presentation version
 
-## Expanded hair catalog and draw cost
-
-Hair IDs are append-only. The existing IDs are retained:
-
-| ID | Style | Hair triangles | Body + selected hair triangles |
-|---:|---|---:|---:|
-| 0 | none | 0 | 72 |
-| 1 | tousled crop | 120 | 192 |
-| 2 | side-swept undercut | 168 | 240 |
-| 3 | space buns | 264 | 336 |
-| 4 | curly bob | 888 | 960 |
-| 5 | curly pigtails | 588 | 660 |
-| 6 | sidepart bob | 120 | 192 |
-| 7 | compact braid | 144 | 216 |
-| 8 | long loose curls | 924 | 996 |
-| 9 | long curly ponytail | 660 | 732 |
-| 10 | half-up curly cascade | 804 | 876 |
-| 11 | rounded afro | 1,416 | 1,488 |
-| 12 | twin braids | 1,056 | 1,128 |
-| 13 | curly mohawk | 336 | 408 |
-
-The shared kit has 22,680 vertices and 7,560 triangles. Asset validation is bounded
-at 32,768 vertices / 98,304 indices, with separate per-style budgets and socket
-bounds. All thirteen hair textures retain their native 32 × 32 sRGB pixels.
-Instances are grouped after nearest-first admission. Only the body and selected
-hair mesh are drawn; catalog expansion does not submit every style per avatar.
-
-`hair_sockets.json` records source hashes, the identity head socket, exact bounds,
-and draw ranges. `hair_compatibility.json` and `.md` describe source-backed sampled
-clearance evidence and native regressions. The original body, face, rig and all
-five clips are unchanged. These are rigid attachments without secondary motion.
-
-The long loose curls and half-up cascade support only limited extra head-look
-(±20° yaw / ±5° pitch tested at neutral and held crouch). Twin braids require extra
-head-look disabled. The current runtime adds no extra head-look. Original-clip
-and sampled idle/walk-blend tests do not imply continuous-motion or arbitrary
-clip/layer compatibility. See the compatibility report for precise coverage.
-
-An earlier draft iteration used world-v19. This expanded exact asset catalog is
-incompatible with that saved identity, so the current default is world-v20;
-older folders remain untouched. Wire 18 and the recipe byte layout are unchanged.
-
-## Character-only performance check
-
-The terrain `perf` benchmark does not include avatars. Use the separate bounded
-character pass to compare selected meshes at the same resolution and population:
-
-    cargo run --release -- character-perf 300 128 classic
-    cargo run --release -- character-perf 300 128 0
-    cargo run --release -- character-perf 300 128 1
-    cargo run --release -- character-perf 300 128 4
-
-It renders a deterministic nonoverlapping grid at 1280 × 720, with 30 warmup
-frames followed by the requested 1–2000 samples and 1–512 actors. The report
-separates setup, CPU joint/instance update and queue writes, total CPU submission,
-and GPU pass time where timestamp queries are supported. GPU time includes color
-and depth clear; it excludes terrain, post-processing, UI, networking and present.
-There is no explicit per-frame GPU wait. Submission time may include driver
-backpressure, so it is not end-to-end frame latency. A final pixel checksum keeps
-the render observable. Compare hardware, actor count and sample count consistently.
-
-Submitted triangles per actor are 72 without hair, 192 tousled, 240 undercut,
-336 space buns, 960 curly bob and 660 curly pigtails. The full catalog is retained
-once in the shared mesh; its 7,560 triangles are never all submitted per actor.
-
-See [measured software-GPU samples](PERFORMANCE.md) for the 128-actor comparison,
-the 512-actor cap check, and the separate terrain baseline. Dense curly bob has
-a meaningful draw cost; the local Classic setting remains available.
+New clients and servers must match. Real nonblocking-listener tests cover both bodies, hair color, independent peers and restart persistence; rejection tests verify old profile/catalog bytes are preserved.

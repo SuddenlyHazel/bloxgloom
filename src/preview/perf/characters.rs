@@ -24,7 +24,7 @@ const _: () = {
     assert!(BYTES_PER_ROW.is_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT));
 };
 
-/// None selects classic; Some(0..=13) selects an authored hairstyle (0 is bald).
+/// None selects the default recipe; Some(0..=13) chooses a hairstyle (0 is bald).
 pub(crate) fn run_character_benchmark(
     measured_frames: usize,
     actor_count: usize,
@@ -44,7 +44,7 @@ fn validate(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dyn
         return Err(format!("character benchmark actors must be in 1..={MAX_AVATARS}").into());
     }
     if hair.is_some_and(|id| usize::from(id) >= HAIR.len()) {
-        return Err("character benchmark hair must be classic or a registered ID in 0..=13".into());
+        return Err("character benchmark hair must be default or a registered ID in 0..=13".into());
     }
     Ok(())
 }
@@ -74,7 +74,8 @@ fn scene(count: usize, hair: Option<u8>) -> (Vec<VisualAvatar>, Mat4) {
             model: AvatarModel::Player,
             pose: [0.0; 4],
             motion: None,
-            character_pose: [0.0; 3],
+            character_pose: [0.0; 4],
+            character_look: [0.0; 2],
             character_crouch: 0.0,
             character_tool: None,
             character_recipe: hair.map(|hair| CharacterRecipe {
@@ -82,6 +83,8 @@ fn scene(count: usize, hair: Option<u8>) -> (Vec<VisualAvatar>, Mat4) {
                 eyes: (index % 8) as u8,
                 mouth: (index % 6) as u8,
                 iris: index.is_multiple_of(2).then_some([80, 160, 220]),
+                body: (index % 2) as u8,
+                ..Default::default()
             }),
             airborne: false,
             id: index as u64 + 1,
@@ -144,7 +147,6 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
     });
     let catalog = Catalog::builtins();
     let mut renderer = AvatarRenderer::new(&device, &queue, FORMAT, &camera, &catalog);
-    renderer.set_authored(hair.is_some());
     let size = wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,
@@ -180,7 +182,7 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
         let start = Instant::now();
         for (index, avatar) in actors.iter_mut().enumerate() {
             let phase = frame as f32 / 60.0 + index as f32 * 0.037;
-            avatar.character_pose = [phase, phase, 1.0];
+            avatar.character_pose = [phase, phase, 1.0, 0.0];
         }
         let update_start = Instant::now();
         renderer.set(&queue, &actors);
@@ -317,8 +319,8 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
         readback.unmap();
     }
     let mode = hair.map_or_else(
-        || "classic".to_owned(),
-        |id| format!("authored hair={id} ({})", HAIR[usize::from(id)]),
+        || "articulated default".to_owned(),
+        |id| format!("articulated hair={id} ({})", HAIR[usize::from(id)]),
     );
     eprintln!(
         "character benchmark: {mode}, actors={count}, {WIDTH}x{HEIGHT} RGBA16Float, warmup={WARMUP_FRAMES}, measured={frames}, triangles/frame={triangles}, triangles/actor={}",

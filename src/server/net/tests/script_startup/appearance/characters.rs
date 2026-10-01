@@ -16,16 +16,20 @@ impl Peer {
 }
 
 #[test]
-fn authored_recipes_replicate_independently_and_survive_server_restart() {
+fn articulated_recipes_replicate_independently_and_survive_server_restart() {
     let fixture = Fixture::new();
     fixture.package("demo", CONTENT, &source(""));
     let first_recipe = CharacterRecipe {
+        body: 1,
+        hair_color: [66, 136, 206],
         eyes: 6,
         mouth: 4,
         hair: 13,
         iris: Some([12, 170, 255]),
     };
     let second_recipe = CharacterRecipe {
+        body: 0,
+        hair_color: [219, 184, 233],
         eyes: 2,
         mouth: 2,
         hair: 0,
@@ -89,12 +93,12 @@ fn authored_recipes_replicate_independently_and_survive_server_restart() {
             );
             if restarted {
                 first.send(ClientMessage::SelectCharacter { recipe: None });
-                let legacy = AppearanceState {
+                let default_character = AppearanceState {
                     palettes: first_saved.palettes,
                     character: None,
                 };
-                first.character_state(a, legacy);
-                second.character_state(a, legacy);
+                first.character_state(a, default_character);
+                second.character_state(a, default_character);
                 assert_eq!(
                     AppearanceState::decode(&second.views[&b].payload),
                     Some(second_saved)
