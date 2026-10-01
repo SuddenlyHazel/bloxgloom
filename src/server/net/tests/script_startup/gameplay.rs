@@ -78,15 +78,15 @@ impl Fixture {
     }
 }
 
-struct Peer {
+pub(super) struct Peer {
     stream: TcpStream,
     catalog: Arc<Catalog>,
     epoch: u64,
     sequence: u64,
-    inventory: Inventory,
+    pub(super) inventory: Inventory,
 }
 impl Peer {
-    fn connect(address: std::net::SocketAddr, catalog: Arc<Catalog>) -> Self {
+    pub(super) fn connect(address: std::net::SocketAddr, catalog: Arc<Catalog>) -> Self {
         Self::connect_profile(address, catalog, PROFILE)
     }
     fn connect_profile(
@@ -136,7 +136,7 @@ impl Peer {
         peer
     }
 
-    fn read(&mut self, deadline: Instant) -> ServerMessage {
+    pub(super) fn read(&mut self, deadline: Instant) -> ServerMessage {
         assert!(
             Instant::now() < deadline,
             "action response deadline exceeded"
@@ -149,7 +149,7 @@ impl Peer {
         message
     }
 
-    fn request(&mut self, mode: u8) -> ClientMessage {
+    pub(super) fn request(&mut self, mode: u8) -> ClientMessage {
         let action_id = (u128::from(self.epoch) << 64) | u128::from(self.sequence);
         self.sequence += 1;
         ClientMessage::EntityInteract {
@@ -169,7 +169,7 @@ impl Peer {
         }
     }
 
-    fn send(&mut self, request: &ClientMessage) -> (bool, String) {
+    pub(super) fn send(&mut self, request: &ClientMessage) -> (bool, String) {
         let expected = match request {
             ClientMessage::EntityInteract { action_id, .. }
             | ClientMessage::Edit { action_id, .. }

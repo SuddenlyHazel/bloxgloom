@@ -36,6 +36,8 @@ mod generation;
 mod join_lifecycle;
 #[path = "script_startup/machine.rs"]
 mod machine;
+#[path = "script_startup/moving.rs"]
+mod moving;
 #[path = "script_startup/player.rs"]
 mod player;
 #[path = "script_startup/recipe_browser.rs"]
