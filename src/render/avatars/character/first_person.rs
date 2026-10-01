@@ -21,7 +21,9 @@ impl View {
         let pitch = Quat::from_rotation_x(-self.pitch.clamp(-1.55, 1.55));
         for (index, side) in [(3, 1.0), (4, -1.0)] {
             let (scale, rotation, translation) = pose[index].to_scale_rotation_translation();
-            let shoulder = Vec3::Y * self.eye_height + pitch * Vec3::new(side * 0.27, -0.24, 0.28);
+            // Keep the shoulder caps below the viewport; the authored swing
+            // brings the hand into view without a resting pair of shoulders.
+            let shoulder = Vec3::Y * self.eye_height + pitch * Vec3::new(side * 0.27, -0.65, 0.28);
             let framed = pitch * Quat::from_rotation_x(-0.7) * rotation;
             pose[index] = Mat4::from_scale_rotation_translation(
                 scale,
