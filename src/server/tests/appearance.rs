@@ -20,7 +20,7 @@ fn recipe_save_failure_never_publishes_and_invalid_selection_never_writes() {
             session.id,
             ClientMessage::SelectCharacter {
                 recipe: Some(CharacterRecipe {
-                    hair: 3,
+                    hair: crate::appearance::HAIR.len() as u8,
                     ..Default::default()
                 })
             }
@@ -58,7 +58,7 @@ fn recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projectio
     let recipe = CharacterRecipe {
         eyes: 7,
         mouth: 5,
-        hair: 2,
+        hair: 13,
         iris: Some([0, 255, 81]),
     };
     handle_message(

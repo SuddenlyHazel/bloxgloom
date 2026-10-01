@@ -22,7 +22,7 @@ fn authored_recipes_replicate_independently_and_survive_server_restart() {
     let first_recipe = CharacterRecipe {
         eyes: 6,
         mouth: 4,
-        hair: 2,
+        hair: 13,
         iris: Some([12, 170, 255]),
     };
     let second_recipe = CharacterRecipe {

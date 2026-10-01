@@ -44,7 +44,14 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
 #[test]
 fn malformed_recipe_or_public_payload_fails_closed() {
     let original = CharacterRecipe::default().encode();
-    for (index, value) in [(0, 2), (1, 3), (2, 8), (3, 6), (4, 2), (5, 1)] {
+    for (index, value) in [
+        (0, 2),
+        (1, HAIR.len() as u8),
+        (2, 8),
+        (3, 6),
+        (4, 2),
+        (5, 1),
+    ] {
         let mut bytes = original;
         bytes[index] = value;
         assert!(CharacterRecipe::decode(&bytes).is_none());

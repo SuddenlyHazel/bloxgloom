@@ -344,6 +344,23 @@ fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
         original,
         render(crate::appearance::CharacterRecipe { hair: 2, ..default })
     );
+    for hair in 0..crate::appearance::HAIR.len() as u8 {
+        if hair == default.hair {
+            continue;
+        }
+        let changed = render(crate::appearance::CharacterRecipe { hair, ..default });
+        assert_ne!(original, changed, "every selected hair style must draw");
+        // Hair 0 sorts the right actor before the left one. Its origin, joints,
+        // face and texture must remain together after the instance regrouping.
+        for row in 0..HEIGHT as usize {
+            let start = row * WIDTH as usize * 4;
+            assert_eq!(
+                &original[start..start + WIDTH as usize * 2],
+                &changed[start..start + WIDTH as usize * 2],
+                "hair grouping changed a neighbor instance"
+            );
+        }
+    }
     assert_ne!(
         original,
         render(crate::appearance::CharacterRecipe {

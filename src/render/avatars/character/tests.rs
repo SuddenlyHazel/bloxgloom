@@ -38,6 +38,11 @@ fn authored_toggle_and_population_churn_reset_bounded_gpu_state() {
     let mut avatars = vec![avatar; MAX_AVATARS + 1];
     renderer.set(&queue, &avatars, true);
     assert_eq!(renderer.count, MAX_AVATARS as u32);
+    assert_eq!(
+        renderer.triangles(),
+        192 * MAX_AVATARS,
+        "unselected catalog meshes must not be submitted"
+    );
     assert_eq!(renderer.joints.size(), (MAX_AVATARS * JOINTS * 64) as u64);
     renderer.set(&queue, &avatars, false);
     assert_eq!(renderer.count, 0);
@@ -56,6 +61,19 @@ fn authored_toggle_and_population_churn_reset_bounded_gpu_state() {
     avatars[0].model = AvatarModel::Player;
     renderer.set(&queue, &avatars, true);
     assert_eq!(renderer.count, 1);
+    let mut selected = [avatar; 14];
+    for (index, actor) in selected.iter_mut().enumerate() {
+        actor.character_recipe.as_mut().unwrap().hair = index as u8;
+    }
+    renderer.set(&queue, &selected, true);
+    assert_eq!(renderer.style_counts, [1; 14]);
+    assert_eq!(renderer.triangles(), 8496);
+    selected[0].character_recipe.as_mut().unwrap().hair = 255;
+    renderer.set(&queue, &selected, true);
+    assert_eq!(
+        renderer.count, 13,
+        "invalid local recipes cannot index GPU arrays"
+    );
 }
 
 mod tint;

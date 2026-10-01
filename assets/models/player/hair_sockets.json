@@ -1,0 +1,617 @@
+{
+  "version": 1,
+  "material_zero": "body; appearance hair ID 0 attaches no mesh",
+  "socket": {
+    "joint": 1,
+    "name": "head",
+    "translation": [
+      0,
+      0,
+      0
+    ],
+    "rotation_xyzw": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "source_basis": {
+    "up": "+Y",
+    "forward": "-Z",
+    "units": "meters"
+  },
+  "native_uniform_scale": 0.9,
+  "rigid": true,
+  "secondary_motion": false,
+  "geometry_animation_sha256": "01a05e3a8c79e08662994cfb04f112491cddb10b0e8f41b3f2183bfea62cda37",
+  "joint_count": 7,
+  "clip_names": [
+    "walk",
+    "idle",
+    "crouch",
+    "tool_use_left",
+    "tool_use_right"
+  ],
+  "total_vertex_limit": 32768,
+  "total_index_limit": 98304,
+  "styles": [
+    {
+      "id": 1,
+      "key": "tousled_crop",
+      "source": "source/hair.glb",
+      "texture": "hair.png",
+      "mesh": "hair.mesh",
+      "mesh_sha256": "24769077be6bab22cd782f75ad337f100a7c58c7dfb979b5f23a2737006d983b",
+      "source_sha256": "6ca4827159498e8ae4863111bd4dd3367d6394bc9874685743c79bebfc0d097f",
+      "texture_sha256": "3b2870215fadfdc2fdf25763b13404c9f52edcdf4b7d4054a525148719fd1e14",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 360,
+      "index_range": [
+        216,
+        576
+      ],
+      "head_local_bounds": [
+        [
+          -0.28125,
+          0.20000000298023224,
+          -0.2906250059604645
+        ],
+        [
+          0.28125,
+          0.590624988079071,
+          0.28125
+        ]
+      ],
+      "vertex_limit": 512,
+      "head_local_bounds_limit": [
+        [
+          -0.3,
+          0.18,
+          -0.31
+        ],
+        [
+          0.3,
+          0.61,
+          0.3
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "key": "side_swept_undercut",
+      "source": "source/hair_undercut.glb",
+      "texture": "hair_undercut.png",
+      "mesh": "hair_undercut.mesh",
+      "mesh_sha256": "94b1d6076e7ea47d19ac166b75157674288aee4a809f0d4cbd40c3b6c1f9e833",
+      "source_sha256": "d9af93371dc27ca301b5af1524bc89b7872d9831d3f9e96784050ae6034885bf",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 504,
+      "index_range": [
+        576,
+        1080
+      ],
+      "head_local_bounds": [
+        [
+          -0.32499998807907104,
+          0.16875000298023224,
+          -0.3031249940395355
+        ],
+        [
+          0.26750001311302185,
+          0.612500011920929,
+          0.2737500071525574
+        ]
+      ],
+      "vertex_limit": 768,
+      "head_local_bounds_limit": [
+        [
+          -0.35,
+          0.15,
+          -0.33
+        ],
+        [
+          0.29,
+          0.64,
+          0.3
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "key": "space_buns",
+      "source": "source/hair_space_buns.glb",
+      "texture": "hair_space_buns.png",
+      "mesh": "hair_space_buns.mesh",
+      "mesh_sha256": "636ff2cf69710daf568d8d8118e9437c50e468dc6671094b95247ff2e97ddbf8",
+      "source_sha256": "acb17ec9dab1e8a5700de4e0b4396a2bce94877cbd9a5f39e5e5ba86abbaf385",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 792,
+      "index_range": [
+        1080,
+        1872
+      ],
+      "head_local_bounds": [
+        [
+          -0.39375001192092896,
+          0.22499999403953552,
+          -0.28593748807907104
+        ],
+        [
+          0.39375001192092896,
+          0.7796875238418579,
+          0.2874999940395355
+        ]
+      ],
+      "vertex_limit": 1024,
+      "head_local_bounds_limit": [
+        [
+          -0.42,
+          0.2,
+          -0.31
+        ],
+        [
+          0.42,
+          0.81,
+          0.31
+        ]
+      ]
+    },
+    {
+      "id": 4,
+      "key": "curly_bob",
+      "source": "source/hair_curly_bob.glb",
+      "texture": "hair_curly_bob.png",
+      "mesh": "hair_curly_bob.mesh",
+      "mesh_sha256": "8718e24e057133b5e90417a0fa35989e17eeffd2ec8c9dcc6afd76d3a8dda7cc",
+      "source_sha256": "8cab6f8d8e7f215c42f807d086a681604fdcc8a46c610ee2191dd1e67230773e",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 2664,
+      "index_range": [
+        1872,
+        4536
+      ],
+      "head_local_bounds": [
+        [
+          -0.36787500977516174,
+          0.13124999403953552,
+          -0.3466874957084656
+        ],
+        [
+          0.36906251311302185,
+          0.6171875,
+          0.3762499988079071
+        ]
+      ],
+      "vertex_limit": 3072,
+      "head_local_bounds_limit": [
+        [
+          -0.4,
+          0.11,
+          -0.37
+        ],
+        [
+          0.4,
+          0.64,
+          0.4
+        ]
+      ]
+    },
+    {
+      "id": 5,
+      "key": "curly_pigtails",
+      "source": "source/hair_curly_pigtails.glb",
+      "texture": "hair_curly_pigtails.png",
+      "mesh": "hair_curly_pigtails.mesh",
+      "mesh_sha256": "9a7677966096058bdf4b1d1c57b93d36913322684635d8c4c8aded1da3b00da6",
+      "source_sha256": "23cf96dcaf1bea75956192806c1c144e3d0f9529562d62b2d3e630f54a0bc96e",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 1764,
+      "index_range": [
+        4536,
+        6300
+      ],
+      "head_local_bounds": [
+        [
+          -0.47725000977516174,
+          0.13750000298023224,
+          -0.30156248807907104
+        ],
+        [
+          0.47725000977516174,
+          0.534375011920929,
+          0.3513124883174896
+        ]
+      ],
+      "vertex_limit": 2048,
+      "head_local_bounds_limit": [
+        [
+          -0.5,
+          0.11,
+          -0.33
+        ],
+        [
+          0.5,
+          0.56,
+          0.38
+        ]
+      ]
+    },
+    {
+      "id": 6,
+      "key": "sidepart_bob",
+      "source": "source/hair_sidepart_bob.glb",
+      "texture": "hair_sidepart_bob.png",
+      "mesh": "hair_sidepart_bob.mesh",
+      "mesh_sha256": "b18780595ca16c73a9abd31f537844fb0bbc5f51539b40506932fa9ad9c1e834",
+      "source_sha256": "16273263f9590453e59ba7baa1376c6d9c40b38e3ea896a7fbf1b3a01dd7f3e9",
+      "texture_sha256": "3b2870215fadfdc2fdf25763b13404c9f52edcdf4b7d4054a525148719fd1e14",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 360,
+      "index_range": [
+        6300,
+        6660
+      ],
+      "head_local_bounds": [
+        [
+          -0.2906250059604645,
+          0.08437500149011612,
+          -0.29374998807907104
+        ],
+        [
+          0.2906250059604645,
+          0.550000011920929,
+          0.2906250059604645
+        ]
+      ],
+      "vertex_limit": 512,
+      "head_local_bounds_limit": [
+        [
+          -0.3,
+          0.08,
+          -0.3
+        ],
+        [
+          0.3,
+          0.56,
+          0.3
+        ]
+      ]
+    },
+    {
+      "id": 7,
+      "key": "compact_braid",
+      "source": "source/hair_compact_braid.glb",
+      "texture": "hair_compact_braid.png",
+      "mesh": "hair_compact_braid.mesh",
+      "mesh_sha256": "98dfdbd10c133ee6c62e29dfab08a2d99a4c782c3250c69f689485ab4e976ccf",
+      "source_sha256": "ca60869103f3374d03cc696ccfa201ffb509757cf3381556ed1f6a01579b5496",
+      "texture_sha256": "3b2870215fadfdc2fdf25763b13404c9f52edcdf4b7d4054a525148719fd1e14",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 432,
+      "index_range": [
+        6660,
+        7092
+      ],
+      "head_local_bounds": [
+        [
+          -0.27812498807907104,
+          0.08749999850988388,
+          -0.28125
+        ],
+        [
+          0.27812498807907104,
+          0.534375011920929,
+          0.390625
+        ]
+      ],
+      "vertex_limit": 512,
+      "head_local_bounds_limit": [
+        [
+          -0.28,
+          0.08,
+          -0.29
+        ],
+        [
+          0.28,
+          0.54,
+          0.4
+        ]
+      ]
+    },
+    {
+      "id": 8,
+      "key": "long_loose_curls",
+      "source": "source/hair_long_loose_curls.glb",
+      "texture": "hair_long_loose_curls.png",
+      "mesh": "hair_long_loose_curls.mesh",
+      "mesh_sha256": "5b1d6330eb579bf75a757b7a0ae8e9dc31b4065bdfeb744d54b5f623782f0ee1",
+      "source_sha256": "71cd248d8825a57bd35dc77ab8800c8032012913bdde88e39c007dc51012e636",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 2772,
+      "index_range": [
+        7092,
+        9864
+      ],
+      "head_local_bounds": [
+        [
+          -0.3528124988079071,
+          -0.46875,
+          -0.3125
+        ],
+        [
+          0.3528124988079071,
+          0.6000000238418579,
+          0.6474375128746033
+        ]
+      ],
+      "vertex_limit": 2816,
+      "head_local_bounds_limit": [
+        [
+          -0.36,
+          -0.47,
+          -0.32
+        ],
+        [
+          0.36,
+          0.61,
+          0.65
+        ]
+      ]
+    },
+    {
+      "id": 9,
+      "key": "long_curly_ponytail",
+      "source": "source/hair_long_curly_ponytail.glb",
+      "texture": "hair_long_curly_ponytail.png",
+      "mesh": "hair_long_curly_ponytail.mesh",
+      "mesh_sha256": "c496e7e4fddd094505c38676fae715ec20ca9c55062dfc965e1363ab70a074c1",
+      "source_sha256": "d6dce8e230234dd674700bd7d603e0e02ba37f65670f0a249e2cb70acfd71813",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 1980,
+      "index_range": [
+        9864,
+        11844
+      ],
+      "head_local_bounds": [
+        [
+          -0.33406248688697815,
+          -0.48750001192092896,
+          -0.3125
+        ],
+        [
+          0.33406248688697815,
+          0.6000000238418579,
+          0.8114374876022339
+        ]
+      ],
+      "vertex_limit": 2048,
+      "head_local_bounds_limit": [
+        [
+          -0.34,
+          -0.49,
+          -0.32
+        ],
+        [
+          0.34,
+          0.61,
+          0.82
+        ]
+      ]
+    },
+    {
+      "id": 10,
+      "key": "half_up_curly_cascade",
+      "source": "source/hair_half_up_curly_cascade.glb",
+      "texture": "hair_half_up_curly_cascade.png",
+      "mesh": "hair_half_up_curly_cascade.mesh",
+      "mesh_sha256": "ccdf09bcd9eceb126351a2f6880c84722eb6bf940a79b8cdfb0670acf2402525",
+      "source_sha256": "09279575af63d1a9e0c210c860e8808a35a926071d38a6c1e8bd06ccee77e3ce",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 2412,
+      "index_range": [
+        11844,
+        14256
+      ],
+      "head_local_bounds": [
+        [
+          -0.3046875,
+          -0.40312498807907104,
+          -0.3125
+        ],
+        [
+          0.3046875,
+          0.6468750238418579,
+          0.667187511920929
+        ]
+      ],
+      "vertex_limit": 2560,
+      "head_local_bounds_limit": [
+        [
+          -0.31,
+          -0.41,
+          -0.32
+        ],
+        [
+          0.31,
+          0.65,
+          0.67
+        ]
+      ]
+    },
+    {
+      "id": 11,
+      "key": "rounded_afro",
+      "source": "source/hair_rounded_afro.glb",
+      "texture": "hair_rounded_afro.png",
+      "mesh": "hair_rounded_afro.mesh",
+      "mesh_sha256": "852e5f0f30bfc4b6ef09d6ddea598ebdbc3295e582964967692ea4aed16f0f1f",
+      "source_sha256": "fc16902affb1cd9e4d8cfaf3a7954fe36c25d99df246b0bef78fb1df2a0b61c6",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 4248,
+      "index_range": [
+        14256,
+        18504
+      ],
+      "head_local_bounds": [
+        [
+          -0.5008749961853027,
+          0.21406249701976776,
+          -0.38350000977516174
+        ],
+        [
+          0.49293750524520874,
+          0.9065625071525574,
+          0.4606249928474426
+        ]
+      ],
+      "vertex_limit": 4352,
+      "head_local_bounds_limit": [
+        [
+          -0.51,
+          0.21,
+          -0.39
+        ],
+        [
+          0.5,
+          0.91,
+          0.47
+        ]
+      ]
+    },
+    {
+      "id": 12,
+      "key": "twin_braids",
+      "source": "source/hair_twin_braids.glb",
+      "texture": "hair_twin_braids.png",
+      "mesh": "hair_twin_braids.mesh",
+      "mesh_sha256": "d0051af00a87488797fe5680699319e923545a4a55f8bf579ae532de19e4d86f",
+      "source_sha256": "6eecf4f6fc482f7e87749fcfa775a4ee951ef30ce41adf2cd8f175b5d3d962b2",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 3168,
+      "index_range": [
+        18504,
+        21672
+      ],
+      "head_local_bounds": [
+        [
+          -0.3933750092983246,
+          -0.53125,
+          -0.25999999046325684
+        ],
+        [
+          0.3933750092983246,
+          0.5625,
+          0.4059374928474426
+        ]
+      ],
+      "vertex_limit": 3328,
+      "head_local_bounds_limit": [
+        [
+          -0.4,
+          -0.54,
+          -0.26
+        ],
+        [
+          0.4,
+          0.57,
+          0.41
+        ]
+      ]
+    },
+    {
+      "id": 13,
+      "key": "curly_mohawk",
+      "source": "source/hair_curly_mohawk.glb",
+      "texture": "hair_curly_mohawk.png",
+      "mesh": "hair_curly_mohawk.mesh",
+      "mesh_sha256": "e3fab3c0d31330e8dd66c71537ffcc3880d89f79818c2fba1e66115ccfa96ccc",
+      "source_sha256": "62b950c5fa3a7a8e4aa9cccc2de4f039a19f3c5ffe285c93bbd85f577c2abbf3",
+      "texture_sha256": "789bae68afff424bf9f5b9623c9afafe3d20d5a03e812a0cc3d1f72e0a59bcec",
+      "texture_size": [
+        32,
+        32
+      ],
+      "vertex_count": 1008,
+      "index_range": [
+        21672,
+        22680
+      ],
+      "head_local_bounds": [
+        [
+          -0.25999999046325684,
+          0.3499999940395355,
+          -0.30156248807907104
+        ],
+        [
+          0.25999999046325684,
+          0.7796249985694885,
+          0.33406248688697815
+        ]
+      ],
+      "vertex_limit": 1024,
+      "head_local_bounds_limit": [
+        [
+          -0.26,
+          0.34,
+          -0.31
+        ],
+        [
+          0.26,
+          0.78,
+          0.34
+        ]
+      ]
+    }
+  ]
+}

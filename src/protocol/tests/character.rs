@@ -7,7 +7,7 @@ fn character_selection_is_session_scoped_and_bounded_on_wire() {
         None,
         Some(CharacterRecipe::default()),
         Some(CharacterRecipe {
-            hair: 2,
+            hair: 13,
             eyes: 7,
             mouth: 5,
             iris: Some([0, 128, 255]),
@@ -35,7 +35,19 @@ fn character_selection_is_session_scoped_and_bounded_on_wire() {
         vec![WIRE_VERSION, 19, 2],
         vec![WIRE_VERSION, 19, 0, 1],
         vec![WIRE_VERSION, 19, 1],
-        vec![WIRE_VERSION, 19, 1, 1, 3, 0, 0, 0, 0, 0, 0],
+        vec![
+            WIRE_VERSION,
+            19,
+            1,
+            1,
+            crate::appearance::HAIR.len() as u8,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ],
         vec![WIRE_VERSION, 19, 1, 1, 1, 0, 0, 0, 1, 0, 0],
     ] {
         let mut framed = Vec::new();
