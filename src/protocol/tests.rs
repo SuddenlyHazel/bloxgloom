@@ -1255,7 +1255,11 @@ fn weather_wire_round_trip_rejects_invalid_physical_values() {
     let message = ServerMessage::Weather { snapshot };
     let mut bytes = Vec::new();
     write_server(&mut bytes, &message).unwrap();
-    assert_eq!(read_server(&mut bytes.as_slice()).unwrap(), message);
+    let ServerMessage::Weather { snapshot: decoded } = read_server(&mut bytes.as_slice()).unwrap()
+    else {
+        panic!("expected weather snapshot");
+    };
+    assert_eq!(decoded, snapshot);
     snapshot.from.rain = f32::NAN;
     assert!(write_server(&mut Vec::new(), &ServerMessage::Weather { snapshot }).is_err());
 }
