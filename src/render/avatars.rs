@@ -271,7 +271,7 @@ impl AvatarRenderer {
                                 .is_none_or(|view| a.id != view.id)
                             && !(self.authored
                                 && *model == AvatarModel::Player
-                                && a.character_recipe.is_some())
+                                && a.character_recipe.is_some_and(|recipe| recipe.valid()))
                     })
                     .map(AvatarInstance::from),
             );

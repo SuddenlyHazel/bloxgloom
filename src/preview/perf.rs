@@ -1,3 +1,5 @@
+pub(crate) mod characters;
+
 use super::*;
 
 struct PerfGpuMesh {

@@ -2,9 +2,8 @@ struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage, read> joints: array<mat4x4<f32>>;
 @group(1) @binding(1) var body: texture_2d<f32>;
-@group(1) @binding(2) var hair: texture_2d<f32>;
 @group(1) @binding(3) var pixels: sampler;
-@group(1) @binding(4) var undercut: texture_2d<f32>;
+@group(1) @binding(4) var hair: texture_2d_array<f32>;
 @group(1) @binding(5) var face_features: texture_2d_array<f32>;
 @group(1) @binding(6) var iris_masks: texture_2d_array<f32>;
 struct Input {
@@ -55,7 +54,7 @@ struct Output {
         + mix(glow_bounce,bounce,camera.sun.w)*1.35);
     output.distance = output.clip.w; output.sky = sky;
     output.uv = input.uv; output.material = input.material;
-    output.recipe = min(input.recipe.xyz, vec3u(7u, 5u, 2u));
+    output.recipe = vec3u(min(input.recipe.x,7u),min(input.recipe.y,5u),input.recipe.z);
     output.iris = input.iris;
     output.face = select(0u,1u,input.material == 0u && input.joint == 1u && input.normal.z < -0.9);
     output.face_uv = (input.uv * vec2f(512.0,256.0) - vec2f(32.0)) / 32.0;
@@ -73,8 +72,7 @@ fn tint_iris(base: vec3f, shade: f32) -> vec3f {
     if input.eye_height > 0.0 && input.joint == 2u && input.local_height > input.eye_height - 0.12 { discard; }
     if input.material != 0u && input.material != input.recipe.z { discard; }
     var albedo = textureSampleLevel(body,pixels,input.uv,0.0);
-    if input.material == 1u { albedo = textureSampleLevel(hair,pixels,input.uv,0.0); }
-    if input.material == 2u { albedo = textureSampleLevel(undercut,pixels,input.uv,0.0); }
+    if input.material > 0u { albedo = textureSampleLevel(hair,pixels,input.uv,i32(input.material-1u),0.0); }
     if input.face == 1u {
         let clean = textureSampleLevel(face_features,pixels,input.face_uv,0,0.0);
         var eyes = textureSampleLevel(face_features,pixels,input.face_uv,i32(input.recipe.x+1u),0.0);

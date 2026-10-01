@@ -1,4 +1,5 @@
 """Structural checks on actual source assets and their checked-in conversion."""
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -7,17 +8,17 @@ import tempfile
 import struct
 import unittest
 
-from convert import DEST, Glb, convert, transform
+from convert import DEST, HAIR_CATALOG, Glb, convert, load_native, geometry_animation_sha256, transform, validate_geometry
 
 
 class AssetTests(unittest.TestCase):
     def setUp(self):
-        self.asset = json.loads((DEST / "character.json").read_text())
+        self.asset = load_native()
 
     def test_counts_and_rigid_weights(self):
         self.assertEqual(len(self.asset["joints"]), 7)
-        self.assertEqual(len(self.asset["vertices"]), 1080)
-        self.assertEqual(len(self.asset["indices"]), 1080)
+        self.assertEqual(len(self.asset["vertices"]), 22680)
+        self.assertEqual(len(self.asset["indices"]), 22680)
         body = Glb(DEST / "source/player.glb")
         for mesh in body.doc["meshes"]:
             for primitive in mesh["primitives"]:
@@ -61,7 +62,7 @@ class AssetTests(unittest.TestCase):
             self.assertEqual(movement[stationary], 0)
 
     def test_textures_are_byte_exact_and_keep_aspect(self):
-        for name, source, size in [("body", "player", (512, 256)), ("hair", "hair", (32, 32)), ("hair_undercut", "hair_undercut", (32, 32))]:
+        for name, source, size in [("body", "player", (512, 256))] + [(entry[2], entry[2], (32, 32)) for entry in HAIR_CATALOG]:
             png = (DEST / f"{name}.png").read_bytes()
             self.assertEqual(png, Glb(DEST / f"source/{source}.glb").png())
             self.assertEqual(struct.unpack_from(">II", png, 16), size)
@@ -80,7 +81,7 @@ class AssetTests(unittest.TestCase):
 
 
     def test_all_hair_vertices_preserve_source_head_local_normals_and_uvs(self):
-        for material, name, count in [(1, "hair", 360), (2, "hair_undercut", 504)]:
+        for (material, _, name, _, lo, hi), count in zip(HAIR_CATALOG, [360, 504, 792, 2664, 1764, 360, 432, 2772, 1980, 2412, 4248, 3168, 1008]):
             source = Glb(DEST / f"source/{name}.glb")
             converted = [v for v in self.asset["vertices"] if v["material"] == material]
             self.assertEqual(len(converted), count)
@@ -94,9 +95,7 @@ class AssetTests(unittest.TestCase):
                 self.assertEqual(vertex["normal"], normal)
                 self.assertEqual(vertex["uv"], uv)
                 self.assertEqual(vertex["joint"], 1)
-                self.assertTrue(-0.35 <= position[0] <= 0.35)
-                self.assertTrue(0.15 <= position[1] <= 0.65)
-                self.assertTrue(-0.35 <= position[2] <= 0.35)
+                self.assertTrue(all(lo[axis] <= position[axis] <= hi[axis] for axis in range(3)))
             self.assertEqual(len(expected), len(converted))
 
     def test_conversion_is_deterministic_and_texture_exact(self):
@@ -104,11 +103,11 @@ class AssetTests(unittest.TestCase):
             dest = Path(directory)
             shutil.copytree(DEST / "source", dest / "source")
             convert(dest)
-            for name in ["character.json", "body.png", "hair.png", "hair_undercut.png"]:
+            for name in ["character.json", "body.png", "hair_sockets.json"] + [f"clip_{name}.json" for name in ["walk", "idle", "crouch", "tool_use_left", "tool_use_right"]] + [entry[2] + ext for entry in HAIR_CATALOG for ext in [".png", ".mesh"]]:
                 self.assertEqual((dest / name).read_bytes(), (DEST / name).read_bytes())
 
     def test_rejects_interpolated_sampler_and_unsupported_material(self):
-        for name in ["player", "hair", "hair_undercut"]:
+        for name in ["player"] + [entry[2] for entry in HAIR_CATALOG]:
             glb = Glb(DEST / f"source/{name}.glb")
             glb.validate_material()
             glb.doc["samplers"][0]["magFilter"] = 9729
@@ -136,6 +135,35 @@ class AssetTests(unittest.TestCase):
             self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
             self.assertEqual(struct.unpack_from(">II", data, 16), (32, 32))
             self.assertEqual(data[24:26], bytes([8, 6]), "8-bit RGBA required")
+
+    def test_contiguous_single_material_ranges_and_socket_budgets(self):
+        validate_geometry(self.asset["vertices"], self.asset["indices"])
+        mixed = self.asset["indices"].copy()
+        mixed[0] = 216
+        with self.assertRaisesRegex(ValueError, "crosses materials"):
+            validate_geometry(self.asset["vertices"], mixed)
+        disjoint = self.asset["indices"] + self.asset["indices"][:3]
+        with self.assertRaisesRegex(ValueError, "contiguous and ordered"):
+            validate_geometry(self.asset["vertices"], disjoint)
+        outside = copy.deepcopy(self.asset["vertices"])
+        next(v for v in outside if v["material"] == 3)["position"][1] = 0.82
+        with self.assertRaisesRegex(ValueError, "socket envelope"):
+            validate_geometry(outside, self.asset["indices"])
+
+    def test_clearance_evidence_matches_exact_source_geometry_and_animations(self):
+        evidence = json.loads((DEST / "hair_compatibility.json").read_text())
+        self.assertEqual(evidence["geometry_animation_sha256"], geometry_animation_sha256(Glb(DEST / "source/player.glb")))
+        sockets = json.loads((DEST / "hair_sockets.json").read_text())
+        self.assertEqual([s["id"] for s in sockets["styles"]], list(range(1, 14)))
+        self.assertEqual([s["key"] for s in sockets["styles"]], [e[1] for e in HAIR_CATALOG])
+        for style in sockets["styles"]:
+            self.assertEqual(hashlib.sha256((DEST / style["source"]).read_bytes()).hexdigest(), style["source_sha256"])
+            self.assertEqual(hashlib.sha256((DEST / style["mesh"]).read_bytes()).hexdigest(), style["mesh_sha256"])
+            lo, hi = style["index_range"]
+            self.assertTrue(all(self.asset["vertices"][i]["material"] == style["id"] for i in self.asset["indices"][lo:hi]))
+            self.assertIn(style["key"], evidence["styles"])
+            self.assertEqual(style["source_sha256"], evidence["styles"][style["key"]]["source_sha256"])
+            self.assertEqual(len(evidence["styles"][style["key"]]["clips"]), 5)
 
 if __name__ == "__main__":
     unittest.main()

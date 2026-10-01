@@ -24,7 +24,22 @@ pub(crate) const MOUTHS: [&str; 6] = [
     "playful",
     "smirk",
 ];
-pub(crate) const HAIR: [&str; 3] = ["none", "tousled_crop", "side_swept_undercut"];
+pub(crate) const HAIR: [&str; 14] = [
+    "none",
+    "tousled_crop",
+    "side_swept_undercut",
+    "space_buns",
+    "curly_bob",
+    "curly_pigtails",
+    "sidepart_bob",
+    "compact_braid",
+    "long_loose_curls",
+    "long_curly_ponytail",
+    "half_up_curly_cascade",
+    "rounded_afro",
+    "twin_braids",
+    "curly_mohawk",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct CharacterRecipe {
