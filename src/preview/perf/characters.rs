@@ -73,6 +73,7 @@ fn scene(count: usize, hair: Option<u8>) -> (Vec<VisualAvatar>, Mat4) {
             animation: Default::default(),
             model: AvatarModel::Player,
             pose: [0.0; 4],
+            motion: None,
             character_pose: [0.0; 3],
             character_crouch: 0.0,
             character_tool: None,

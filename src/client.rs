@@ -1863,6 +1863,9 @@ impl ClientApp {
                 avatar.tint = tint;
             }
             let height = match avatar.model {
+                // Moving poses are body-centered; sample lighting at that
+                // authoritative center rather than the creature feet offset.
+                crate::render::AvatarModel::Moving(_) => 0.0,
                 crate::render::AvatarModel::Player => 1.45,
                 crate::render::AvatarModel::Registered(id) => self
                     .catalog

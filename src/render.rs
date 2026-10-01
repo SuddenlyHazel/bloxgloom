@@ -41,8 +41,8 @@ use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
 pub(crate) use avatars::{
-    AvatarModel, AvatarRenderer, FirstPersonView, MAX_AVATARS, VisualAvatar, character_eye_names,
-    character_mouth_names, character_tool_duration,
+    AvatarModel, AvatarRenderer, FirstPersonView, MAX_AVATARS, MovingVisual, VisualAvatar,
+    character_eye_names, character_mouth_names, character_tool_duration,
 };
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;

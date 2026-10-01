@@ -23,6 +23,7 @@ impl ClientApp {
         self.package_ui = None;
         self.observations = Arc::new(Default::default());
         self.visual_session = None;
+        self.actor_animator = Default::default();
         // Renderer owns the package UI textures, material and effect pipelines.
         // A later session constructs a new renderer against its frozen catalog.
         self.renderer = None;

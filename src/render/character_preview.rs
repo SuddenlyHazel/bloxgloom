@@ -102,6 +102,7 @@ impl CharacterPreview {
                 animation: Default::default(),
                 model: AvatarModel::Player,
                 pose: [-0.25, 0.0, 0.0, 0.0],
+                motion: None,
                 character_pose: [0.0; 3],
                 character_crouch: 0.0,
                 character_tool: None,

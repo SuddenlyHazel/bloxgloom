@@ -3,6 +3,7 @@ use crate::render::AvatarModel;
 
 fn avatar(id: u64) -> VisualAvatar {
     VisualAvatar {
+        motion: None,
         character_pose: [0.0; 3],
         character_crouch: 0.0,
         character_tool: None,

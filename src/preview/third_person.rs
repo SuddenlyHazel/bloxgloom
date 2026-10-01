@@ -204,6 +204,7 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
         model: render::AvatarModel::Player,
         animation: Default::default(),
         pose: [std::f32::consts::PI, 0.0, 0.0, 0.0],
+        motion: None,
         character_pose: [
             0.2,
             0.35,

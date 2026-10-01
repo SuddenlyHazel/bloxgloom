@@ -24,6 +24,7 @@ fn authored_toggle_and_population_churn_reset_bounded_gpu_state() {
         animation: Default::default(),
         model: AvatarModel::Player,
         pose: [0.0; 4],
+        motion: None,
         character_pose: [0.0; 3],
         character_crouch: 0.0,
         character_tool: None,

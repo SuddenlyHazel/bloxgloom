@@ -42,8 +42,9 @@ fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
         "turning while idle follows the local look direction"
     );
 }
-fn avatar(x: f32) -> VisualAvatar {
+pub(super) fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
+        motion: None,
         character_pose: [0.0; 3],
         character_crouch: 0.0,
         character_tool: None,

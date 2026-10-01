@@ -4,6 +4,8 @@ use crate::render::{AvatarModel, MAX_AVATARS, VisualAvatar};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
+mod moving;
+
 const DELAY: Duration = Duration::from_millis(80);
 const STEP: Duration = Duration::from_millis(40);
 
@@ -165,6 +167,7 @@ impl Track {
 #[derive(Default)]
 pub(crate) struct ActorAnimator {
     tracks: HashMap<u64, Track>,
+    moving: HashMap<u64, moving::Track>,
 }
 
 impl ActorAnimator {
@@ -180,7 +183,18 @@ impl ActorAnimator {
     ) {
         let ids: HashSet<_> = avatars.iter().take(MAX_AVATARS).map(|a| a.id).collect();
         self.tracks.retain(|id, _| ids.contains(id));
+        self.moving.retain(|id, _| ids.contains(id));
         for avatar in avatars.iter_mut().take(MAX_AVATARS) {
+            if avatar.motion.is_some() {
+                self.tracks.remove(&avatar.id);
+                let track = self
+                    .moving
+                    .entry(avatar.id)
+                    .or_insert_with(|| moving::Track::new(*avatar, now));
+                *avatar = track.update(*avatar, now);
+                continue;
+            }
+            self.moving.remove(&avatar.id);
             let track = self
                 .tracks
                 .entry(avatar.id)

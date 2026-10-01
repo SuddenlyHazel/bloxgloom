@@ -30,6 +30,7 @@ fn project_avatar(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     let appearance = crate::appearance::AppearanceState::decode(&entity.payload).ok_or(())?;
     let cosmetics = appearance.legacy();
     Ok(Some(VisualAvatar {
+        motion: None,
         character_pose: [0.0; 3],
         character_crouch: 0.0,
         character_tool: None,

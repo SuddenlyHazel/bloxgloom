@@ -84,8 +84,8 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
     }
 }
 
-const WIDTH: u32 = 128;
-const HEIGHT: u32 = 96;
+pub(super) const WIDTH: u32 = 128;
+pub(super) const HEIGHT: u32 = 96;
 fn render(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -105,24 +105,8 @@ fn render_recipe(
     clip: Option<(&'static str, f32)>,
     recipe: Option<crate::appearance::CharacterRecipe>,
 ) -> Vec<u8> {
-    let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
-        * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
-    let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: None,
-        contents: bytemuck::cast_slice(
-            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                .camera_data(camera),
-        ),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
-    let mut renderer = AvatarRenderer::new(
-        device,
-        queue,
-        wgpu::TextureFormat::Rgba8Unorm,
-        &camera,
-        catalog,
-    );
     let avatars = [(-0.65, [0; 4]), (0.65, selection)].map(|(x, cosmetics)| VisualAvatar {
+        motion: None,
         character_pose: [0.0; 3],
         character_crouch: 0.0,
         character_tool: None,
@@ -143,10 +127,37 @@ fn render_recipe(
         glow_bounce: [0; 4],
         tint: if x > 0.0 { tint } else { [1.0; 3] },
     });
+    render_avatars(device, queue, catalog, &avatars, clip)
+}
+
+pub(super) fn render_avatars(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    catalog: &Catalog,
+    avatars: &[VisualAvatar],
+    clip: Option<(&'static str, f32)>,
+) -> Vec<u8> {
+    let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
+        * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
+    let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(
+            &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                .camera_data(camera),
+        ),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let mut renderer = AvatarRenderer::new(
+        device,
+        queue,
+        wgpu::TextureFormat::Rgba8Unorm,
+        &camera,
+        catalog,
+    );
     if let Some((clip, time)) = clip {
         renderer.preview_character_clip(clip, time);
     }
-    renderer.set(queue, &avatars);
+    renderer.set(queue, avatars);
     let size = wgpu::Extent3d {
         width: WIDTH,
         height: HEIGHT,

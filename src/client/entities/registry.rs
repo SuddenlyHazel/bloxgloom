@@ -98,6 +98,51 @@ impl EntityClientRegistry {
         let mut avatars = Vec::new();
         for entity in entities.values() {
             if let Some(catalog) = &self.inventory_catalog
+                && let Some(definition) = catalog.moving_entity(entity.entity_type)
+            {
+                let projection = bloxgloom_host_api::motion::Projection::decode(&entity.payload)
+                    .map_err(|_| ())?;
+                if entity.location
+                    != (crate::protocol::PublicEntityLocation::Mobile {
+                        position: projection.motion.position,
+                    })
+                    || projection.data.len() > usize::from(definition.max_public_bytes)
+                    || glam::Vec3::from_array(projection.motion.velocity).length()
+                        > definition.body.max_speed + 0.001
+                    || glam::Vec3::from_array(projection.motion.acceleration).length()
+                        > definition.body.max_acceleration + 0.001
+                {
+                    return Err(());
+                }
+                if !definition.model.is_empty() {
+                    avatars.push(VisualAvatar {
+                        motion: Some(crate::render::MovingVisual {
+                            tick: projection.tick,
+                            revision: projection.motion.revision,
+                            orientation: projection.motion.orientation,
+                            velocity: projection.motion.velocity,
+                            stopped: projection.stopped,
+                        }),
+                        animation: Default::default(),
+                        model: crate::render::AvatarModel::Moving(entity.entity_type),
+                        pose: [0.0; 4],
+                        character_pose: [0.0; 3],
+                        character_crouch: 0.0,
+                        character_tool: None,
+                        character_recipe: None,
+                        airborne: !projection.motion.grounded,
+                        id: entity.id,
+                        position: glam::Vec3::from_array(projection.motion.position),
+                        cosmetics: [0; 4],
+                        light_levels: [0; 4],
+                        bounce: [0; 4],
+                        glow_bounce: [0; 4],
+                        tint: [1.0; 3],
+                    });
+                }
+                continue;
+            }
+            if let Some(catalog) = &self.inventory_catalog
                 && let Some(definition) = catalog.mobile_entity(entity.entity_type)
             {
                 let crate::protocol::PublicEntityLocation::Mobile { position } = entity.location
@@ -117,6 +162,7 @@ impl EntityClientRegistry {
                     return Err(());
                 }
                 avatars.push(VisualAvatar {
+                    motion: None,
                     character_pose: [0.0; 3],
                     character_crouch: 0.0,
                     character_tool: None,
@@ -153,6 +199,12 @@ impl EntityClientRegistry {
             }
         }
         Ok(avatars)
+    }
+
+    pub(super) fn moving(&self, entity_type: EntityTypeId) -> bool {
+        self.inventory_catalog
+            .as_ref()
+            .is_some_and(|catalog| catalog.moving_entity(entity_type).is_some())
     }
 
     /// Whether any registered adapter handles an aimed-block hit.

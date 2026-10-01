@@ -221,7 +221,11 @@ impl CharacterRenderer {
             immediate_size: 0,
         });
         let vertex_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32, 8 => Float32x2, 11 => Uint32];
-        let instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4];
+        let mut instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4];
+        // Actor instances also carry a rigid-object quaternion, which this
+        // character shader ignores. Recipe bytes follow the entire actor.
+        instance_attributes[7].offset = std::mem::offset_of!(CharacterInstance, recipe) as u64;
+        instance_attributes[8].offset = std::mem::offset_of!(CharacterInstance, iris) as u64;
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced authored characters"),
             layout: Some(&pipeline_layout),

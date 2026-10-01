@@ -1193,6 +1193,7 @@ async fn render_previews_at(
     ) {
         let mut visuals = [
             render::VisualAvatar {
+                motion: None,
                 character_pose: [0.0; 3],
                 character_crouch: 0.0,
                 character_tool: None,
@@ -1225,6 +1226,7 @@ async fn render_previews_at(
                 tint: [1.0; 3],
             },
             render::VisualAvatar {
+                motion: None,
                 character_pose: [0.0; 3],
                 character_crouch: 0.0,
                 character_tool: None,
@@ -1268,6 +1270,7 @@ async fn render_previews_at(
                 },
             },
             render::VisualAvatar {
+                motion: None,
                 character_pose: [0.0; 3],
                 character_crouch: 0.0,
                 character_tool: None,

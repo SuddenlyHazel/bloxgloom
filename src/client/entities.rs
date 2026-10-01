@@ -198,7 +198,8 @@ impl Replicas {
             .filter_map(|entity| {
                 let definition = catalog.entity_type(entity.entity_type)?;
                 if definition.key.split_once(':').map(|v| v.0) != Some(owner)
-                    || catalog.mobile_entity(entity.entity_type).is_none()
+                    || (catalog.mobile_entity(entity.entity_type).is_none()
+                        && catalog.moving_entity(entity.entity_type).is_none())
                 {
                     return None;
                 }
@@ -238,8 +239,18 @@ impl Replicas {
                             .to_string(),
                         position,
                         revision: entity.revision,
-                        motion_revision: entity.motion_revision,
-                        public: entity.payload.clone(),
+                        motion_revision: if catalog.moving_entity(entity.entity_type).is_some() {
+                            bloxgloom_host_api::motion::Projection::decode(&entity.payload)
+                                .map_or(entity.motion_revision, |value| value.motion.revision)
+                        } else {
+                            entity.motion_revision
+                        },
+                        public: if catalog.moving_entity(entity.entity_type).is_some() {
+                            bloxgloom_host_api::motion::Projection::decode(&entity.payload)
+                                .map_or_else(|_| vec![], |value| value.data)
+                        } else {
+                            entity.payload.clone()
+                        },
                     }
                 })
                 .collect(),
@@ -615,7 +626,7 @@ impl Replicas {
                 match change {
                     PublicEntityChange::Upsert(entity) => {
                         if let Some(old) = entities.get(&entity.id)
-                            && !valid_successor(old, entity)
+                            && !valid_successor(old, entity, registry.moving(entity.entity_type))
                         {
                             super::trace::event(format_args!(
                                 "entity mismatch {:?}: old={old:?} new={entity:?}",
@@ -736,12 +747,36 @@ impl Replicas {
 /// Mobile position has its own revision domain. A motion-only publication is
 /// valid without a payload revision bump; equal revisions still forbid changing
 /// identity, payload, or anchored state.
-fn valid_successor(old: &PublicEntity, new: &PublicEntity) -> bool {
+fn valid_successor(old: &PublicEntity, new: &PublicEntity, moving: bool) -> bool {
     if new.entity_type != old.entity_type
         || new.revision < old.revision
         || new.motion_revision < old.motion_revision
     {
         return false;
+    }
+    if moving {
+        let (Ok(a), Ok(b)) = (
+            bloxgloom_host_api::motion::Projection::decode(&old.payload),
+            bloxgloom_host_api::motion::Projection::decode(&new.payload),
+        ) else {
+            return false;
+        };
+        // The wire domain tracks positional moves; the projection domain also
+        // tracks controls, contact and orientation changes at the same pose.
+        return b.tick >= a.tick
+            && b.motion.revision >= a.motion.revision
+            && (b.motion.revision != a.motion.revision
+                || (a.motion == b.motion && a.stopped == b.stopped))
+            && (new.revision != old.revision || a.data == b.data)
+            && (new.motion_revision != old.motion_revision || new.location == old.location)
+            && matches!(
+                old.location,
+                crate::protocol::PublicEntityLocation::Mobile { .. }
+            )
+            && matches!(
+                new.location,
+                crate::protocol::PublicEntityLocation::Mobile { .. }
+            );
     }
     if new.revision != old.revision {
         return true;
@@ -760,5 +795,7 @@ fn valid_successor(old: &PublicEntity, new: &PublicEntity) -> bool {
         )
 }
 
+#[cfg(test)]
+mod moving_tests;
 #[cfg(test)]
 mod tests;

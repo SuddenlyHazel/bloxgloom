@@ -8,6 +8,8 @@ mod character_asset;
 pub(crate) use character_asset::tool_duration as character_tool_duration;
 mod mesh;
 #[cfg(test)]
+mod moving_tests;
+#[cfg(test)]
 mod tests;
 
 use super::DEPTH_FORMAT;
@@ -21,10 +23,12 @@ pub(crate) const MAX_AVATARS: usize = 512;
 pub(crate) enum AvatarModel {
     Player,
     Registered(crate::content::EntityTypeId),
+    Moving(crate::content::EntityTypeId),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VisualAvatar {
+    pub motion: Option<MovingVisual>,
     pub animation: bloxgloom_host_api::entity::Animation,
     pub model: AvatarModel,
     /// Yaw, stride, body bob, squash. Never used for authoritative movement.
@@ -47,6 +51,16 @@ pub(crate) struct VisualAvatar {
     pub tint: [f32; 3],
 }
 
+/// Authoritative motion metadata retained only for presentation interpolation.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MovingVisual {
+    pub tick: u64,
+    pub revision: u64,
+    pub orientation: [f32; 4],
+    pub velocity: [f32; 3],
+    pub stopped: bool,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct AvatarInstance {
@@ -57,6 +71,7 @@ struct AvatarInstance {
     pose: [f32; 4],
     tint: [f32; 3],
     glow_bounce: [u8; 4],
+    orientation: [f32; 4],
 }
 
 impl From<&VisualAvatar> for AvatarInstance {
@@ -69,6 +84,9 @@ impl From<&VisualAvatar> for AvatarInstance {
             pose: avatar.pose,
             tint: avatar.tint,
             glow_bounce: avatar.glow_bounce,
+            orientation: avatar
+                .motion
+                .map_or([0.0, 0.0, 0.0, 1.0], |motion| motion.orientation),
         }
     }
 }
@@ -138,6 +156,7 @@ impl AvatarRenderer {
             7 => Float32x4,
             9 => Float32x3,
             10 => Uint8x4,
+            11 => Float32x4,
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced public avatars"),
@@ -208,6 +227,18 @@ impl AvatarRenderer {
                 AvatarModel::Registered(id),
                 start..mesh.indices.len() as u32,
             ));
+        }
+        for (id, definition) in catalog.moving_entities() {
+            let start = mesh.indices.len() as u32;
+            for part in &definition.model {
+                let base = mesh.vertices.len();
+                // Rigid parts never receive the creature foot/body deformation.
+                mesh::emit_cuboid(&mut mesh, part.min, part.max, 12);
+                for vertex in &mut mesh.vertices[base..] {
+                    vertex.color = part.color;
+                }
+            }
+            models.push((AvatarModel::Moving(id), start..mesh.indices.len() as u32));
         }
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("shared avatar vertices"),

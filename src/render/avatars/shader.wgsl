@@ -13,6 +13,7 @@ struct VertexInput {
     @location(8) color: vec3<f32>,
     @location(9) tint: vec3<f32>,
     @location(10) glow_bounce: vec4<u32>,
+    @location(11) orientation: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -29,7 +30,7 @@ struct VertexOutput {
     var local = input.local;
     if input.part == 10u { local.y += max(0.0, input.pose.y) * 0.045; }
     if input.part == 11u { local.y += max(0.0, -input.pose.y) * 0.045; }
-    if input.part >= 5u {
+    if input.part >= 5u && input.part != 12u {
         local.y *= 1.0 - input.pose.w;
         local.x *= 1.0 + input.pose.w * 0.5;
         local.z *= 1.0 + input.pose.w * 0.5;
@@ -39,8 +40,15 @@ struct VertexOutput {
     }
     let c = cos(input.pose.x);
     let s = sin(input.pose.x);
-    let world = vec3<f32>(local.x * c + local.z * s, local.y, local.z * c - local.x * s) + input.origin;
-    let normal = normalize(vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s));
+    var rotated = vec3<f32>(local.x * c + local.z * s, local.y, local.z * c - local.x * s);
+    var normal = vec3<f32>(input.normal.x * c + input.normal.z * s, input.normal.y, input.normal.z * c - input.normal.x * s);
+    if input.part == 12u {
+        let q = normalize(input.orientation);
+        rotated = local + 2.0 * cross(q.xyz, cross(q.xyz, local) + q.w * local);
+        normal = input.normal + 2.0 * cross(q.xyz, cross(q.xyz, input.normal) + q.w * input.normal);
+    }
+    let world = rotated + input.origin;
+    normal = normalize(normal);
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
     var albedo = SKINS[min(input.cosmetics.x, 31u)];
     if input.part == 1u { albedo = SHIRTS[min(input.cosmetics.y, 31u)]; }
