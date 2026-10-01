@@ -106,7 +106,7 @@ impl WeatherSnapshot {
         }
         let slot = elapsed_ms / 15_000;
         let hash = mix(self.seed ^ slot);
-        let time = slot * 15_000 + 2_000 + hash % 8_000;
+        let time = (slot * 15_000).saturating_add(2_000 + hash % 8_000);
         if elapsed_ms < time
             || time
                 < self
@@ -150,6 +150,15 @@ pub(crate) fn mix(mut x: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn extreme_weather_clock_does_not_overflow_lightning_time() {
+        let mut s = WeatherSnapshot::initial(4);
+        s.elapsed_ms = u64::MAX - 1;
+        s.next_change_ms = u64::MAX;
+        s.to = WeatherKind::Storm;
+        assert!(s.valid());
+        let _ = s.lightning_near(s.elapsed_ms, [0.; 3]);
+    }
     #[test]
     fn regional_strikes_are_stable_world_positions_near_far_and_negative_players() {
         let mut s = WeatherSnapshot::initial(4);
