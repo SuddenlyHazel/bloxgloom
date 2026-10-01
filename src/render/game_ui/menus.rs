@@ -1,10 +1,7 @@
 //! Built-in menus on the same egui input and paint path as inventory.
 
 use super::Intent;
-#[cfg(test)]
-mod tests;
 
-mod character;
 mod join;
 use crate::{
     content::Catalog,
@@ -48,7 +45,6 @@ pub(super) fn draw(
                     .max_height(height - if compact { 24.0 } else { 44.0 })
                     .show(ui, |ui| match frame.screen {
                         UiScreen::Pause => pause(ui, intents),
-                        UiScreen::Character => character::draw(ui, frame, intents),
                         UiScreen::Settings | UiScreen::Graphics => settings(ui, frame, intents),
                         UiScreen::Actions => actions(ui, frame, intents),
                         UiScreen::Admin => admin(ui, frame, catalog, intents),
@@ -87,7 +83,6 @@ fn pause(ui: &mut egui::Ui, intents: &mut Vec<Intent>) {
     for (label, control) in [
         ("Resume", UiControl::Resume),
         ("Settings", UiControl::OpenSettings),
-        ("Character", UiControl::OpenCharacter),
         ("Commands", UiControl::OpenAdmin),
         ("Exit game", UiControl::Exit),
     ] {
@@ -111,42 +106,7 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
     }
     ui.add_space(8.0);
     let settings = frame.settings;
-    let rows = settings_rows(settings, graphics);
-    for (setting, label, value) in rows {
-        ui.horizontal(|ui| {
-            ui.label(label);
-            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("+").clicked() {
-                    intents.push(Intent::Control(UiControl::Increase(setting)));
-                }
-                ui.label(RichText::new(value).monospace().color(GOLD));
-                if ui.button("−").clicked() {
-                    intents.push(Intent::Control(UiControl::Decrease(setting)));
-                }
-            });
-        });
-        ui.separator();
-    }
-    ui.add_space(5.0);
-    button(
-        ui,
-        if settings.fullscreen {
-            "Fullscreen: on"
-        } else {
-            "Fullscreen: off"
-        },
-        UiControl::ToggleFullscreen,
-        intents,
-    );
-    ui.add_space(6.0);
-    button(ui, "Back", UiControl::Back, intents);
-}
-
-fn settings_rows(
-    settings: crate::ui::UiSettings,
-    graphics: bool,
-) -> Vec<(SettingId, &'static str, String)> {
-    if graphics {
+    let rows: Vec<(SettingId, &str, String)> = if graphics {
         vec![
             (
                 SettingId::PostProcessing,
@@ -172,16 +132,6 @@ fn settings_rows(
                 SettingId::BloomStrength,
                 "Bloom strength",
                 format!("{:.0}%", settings.bloom_strength * 100.0),
-            ),
-            (
-                SettingId::Characters,
-                "Characters",
-                if settings.authored_characters {
-                    "Authored"
-                } else {
-                    "Classic"
-                }
-                .into(),
             ),
         ]
     } else {
@@ -217,7 +167,35 @@ fn settings_rows(
                 .into(),
             ),
         ]
+    };
+    for (setting, label, value) in rows {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("+").clicked() {
+                    intents.push(Intent::Control(UiControl::Increase(setting)));
+                }
+                ui.label(RichText::new(value).monospace().color(GOLD));
+                if ui.button("−").clicked() {
+                    intents.push(Intent::Control(UiControl::Decrease(setting)));
+                }
+            });
+        });
+        ui.separator();
     }
+    ui.add_space(5.0);
+    button(
+        ui,
+        if settings.fullscreen {
+            "Fullscreen: on"
+        } else {
+            "Fullscreen: off"
+        },
+        UiControl::ToggleFullscreen,
+        intents,
+    );
+    ui.add_space(6.0);
+    button(ui, "Back", UiControl::Back, intents);
 }
 
 fn actions(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {

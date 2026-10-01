@@ -39,8 +39,6 @@ fn ui_free_replica_visual_worker_is_session_scoped_and_restarts() {
                 assert_eq!(visual.visual_pose(id), Some([0.25, 0.1, 0.0]));
                 assert_eq!(visual.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 let avatar = crate::render::VisualAvatar {
-                    character_pose: [0.0; 3],
-                    character_recipe: None,
                     animation: Default::default(),
                     model: crate::render::AvatarModel::Registered(
                         crate::content::MOSSBUN_ENTITY_TYPE,

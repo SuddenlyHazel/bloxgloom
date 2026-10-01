@@ -1139,6 +1139,3 @@ fn teleport_and_ready_frames_preserve_full_width_identities_and_strict_bounds() 
         );
     }
 }
-
-#[path = "tests/character.rs"]
-mod character;

@@ -49,9 +49,7 @@ impl UiBuilder<'_> {
             UiScreen::Actions => self.draw_actions(frame, layout),
             UiScreen::Admin => self.draw_admin(frame, layout, catalog),
             UiScreen::Pause => self.draw_pause(frame, layout),
-            UiScreen::Settings | UiScreen::Graphics | UiScreen::Character => {
-                self.draw_settings(frame, layout)
-            }
+            UiScreen::Settings | UiScreen::Graphics => self.draw_settings(frame, layout),
         }
         if let Some(debug) = frame.debug {
             self.draw_debug(debug);

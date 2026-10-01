@@ -114,8 +114,6 @@ fn downloaded_replica_visuals_use_exact_entity_ids_and_reset_on_switch() {
                 assert_eq!(session.visual_tint(id), Some([0.2, 0.8, 0.3]));
                 assert_eq!(session.text_at(1), "uidemo:creature");
                 let avatar = crate::render::VisualAvatar {
-                    character_pose: [0.0; 3],
-                    character_recipe: None,
                     animation: Default::default(),
                     model: crate::render::AvatarModel::Registered(
                         crate::content::MOSSBUN_ENTITY_TYPE,

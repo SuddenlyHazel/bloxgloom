@@ -62,7 +62,7 @@ pub(in crate::server) fn join_named_client(
         action_epoch,
         position,
         &inventory,
-        appearance.legacy(),
+        appearance,
     )?;
     let id = state.next_id;
     let next_id = state

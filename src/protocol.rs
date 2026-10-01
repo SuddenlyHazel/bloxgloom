@@ -19,7 +19,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 18;
+const WIRE_VERSION: u8 = 17;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -53,10 +53,6 @@ pub enum ClientMessage {
     /// Model zero is the frozen humanoid; clients cannot send RGB or a profile ID.
     SelectAppearance {
         palettes: [u8; 3],
-    },
-    /// Change only this admitted profile's bounded authored recipe; None selects legacy.
-    SelectCharacter {
-        recipe: Option<crate::appearance::CharacterRecipe>,
     },
     BundleRequest {
         identity: BundleIdentity,
@@ -378,16 +374,6 @@ pub fn write_client_with_catalog(
         ClientMessage::BundleRequest { identity } => {
             out.push(14);
             bundle::write_identity(&mut out, identity)?;
-        }
-        ClientMessage::SelectCharacter { recipe } => {
-            if recipe.is_some_and(|value| !value.valid()) {
-                return Err(invalid("invalid character recipe"));
-            }
-            out.push(19);
-            out.push(u8::from(recipe.is_some()));
-            if let Some(recipe) = recipe {
-                out.extend(recipe.encode());
-            }
         }
         ClientMessage::SelectAppearance { palettes } => {
             out.push(16);
@@ -1151,17 +1137,6 @@ pub fn read_client_with_catalog(
                 reset,
                 next_seq,
             }
-        }
-        19 => {
-            let recipe = match c.u8()? {
-                0 => None,
-                1 => Some(
-                    crate::appearance::CharacterRecipe::decode(c.take(8)?)
-                        .ok_or_else(|| invalid("invalid character recipe"))?,
-                ),
-                _ => return Err(invalid("invalid character presence")),
-            };
-            ClientMessage::SelectCharacter { recipe }
         }
         16 => ClientMessage::SelectAppearance {
             palettes: [c.u8()?, c.u8()?, c.u8()?],

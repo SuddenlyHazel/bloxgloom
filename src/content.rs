@@ -987,7 +987,6 @@ impl Catalog {
                 // Action keys have no numeric save identity. The player contract
                 // fingerprints the complete canonical registry at handshake/load.
                 if entity.key == "bloxgloom:player" {
-                    add(crate::appearance::fingerprint());
                     if let Some(appearance) = &self.player_appearance {
                         add(&appearance.fingerprint_bytes());
                     }

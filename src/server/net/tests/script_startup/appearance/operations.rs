@@ -119,8 +119,7 @@ fn luau_player_appearance_is_authorized_rollback_safe_peer_replicated_and_saved(
                 state
                     .appearance_store
                     .load(0xa992, state.world.catalog())
-                    .unwrap()
-                    .legacy(),
+                    .unwrap(),
                 if authority { [6, 8, 6, 0] } else { [0; 4] }
             );
             assert_eq!(

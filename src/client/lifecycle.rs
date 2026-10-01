@@ -6,7 +6,6 @@ use super::*;
 impl ClientApp {
     pub(super) fn retire_session(&mut self) {
         self.disconnected = true;
-        self.character_editor = Default::default();
         if let Some(lane) = self.player_services.take() {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }

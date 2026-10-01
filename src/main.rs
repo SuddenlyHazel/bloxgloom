@@ -1,4 +1,3 @@
-mod appearance;
 mod client;
 mod config;
 mod content;
@@ -65,9 +64,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v19-fixture"
+        "world-v18-fixture"
     } else {
-        "world-v19"
+        "world-v18"
     };
     match args.next().as_deref() {
         None | Some("local") => {
@@ -418,35 +417,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("usage: mossbun-preview [output.png]".into());
             }
             preview::render_mossbun_preview(std::path::Path::new(&path))?;
-        }
-        Some("character-style-preview") => {
-            let path = args.next().unwrap_or_else(|| "character-styles.png".into());
-            if args.next().is_some() {
-                return Err("usage: character-style-preview [output.png]".into());
-            }
-            preview::render_character_styles(std::path::Path::new(&path))?;
-        }
-        Some("character-motion-preview") => {
-            let directory = args.next().unwrap_or_else(|| "character-motion".into());
-            if args.next().is_some() {
-                return Err("usage: character-motion-preview [directory]".into());
-            }
-            preview::render_character_motion(std::path::Path::new(&directory))?;
-        }
-        Some("character-preview") => {
-            let path = args
-                .next()
-                .unwrap_or_else(|| "character-preview.png".into());
-            let clip = args.next().unwrap_or_else(|| "idle".into());
-            let time = args
-                .next()
-                .map(|s| s.parse::<f32>())
-                .transpose()?
-                .unwrap_or(0.0);
-            if args.next().is_some() {
-                return Err("usage: character-preview [output.png] [idle|walk|crouch|tool_use_left|tool_use_right] [seconds]".into());
-            }
-            preview::render_character_preview(std::path::Path::new(&path), &clip, time)?;
         }
         Some("avatar-preview") => {
             let path = args

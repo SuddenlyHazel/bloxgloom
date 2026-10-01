@@ -12,7 +12,6 @@ pub enum UiScreen {
     Pause,
     Settings,
     Graphics,
-    Character,
     Package,
     Joining,
     JoinFailed,
@@ -29,7 +28,6 @@ impl UiScreen {
                 | Self::Pause
                 | Self::Settings
                 | Self::Graphics
-                | Self::Character
                 | Self::Package
                 | Self::Joining
                 | Self::JoinFailed
@@ -45,7 +43,6 @@ pub enum SettingId {
     UiScale,
     Lighting,
     PostProcessing,
-    Characters,
     Exposure,
     Bloom,
     BloomStrength,
@@ -67,8 +64,6 @@ pub enum UiControl {
     OpenAdmin,
     Resume,
     OpenSettings,
-    OpenCharacter,
-    ApplyCharacter,
     ToggleSettingsPage,
     Exit,
     Back,
@@ -92,7 +87,6 @@ pub struct UiSettings {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
-    pub authored_characters: bool,
     pub post_processing: bool,
     pub exposure: f32,
     pub bloom_enabled: bool,
@@ -108,7 +102,6 @@ impl Default for UiSettings {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
-            authored_characters: true,
             post_processing: true,
             exposure: 1.0,
             bloom_enabled: true,
@@ -157,7 +150,6 @@ pub struct UiFrame<'a> {
     pub status: Option<&'a str>,
     pub debug: Option<UiDebug>,
     pub settings: UiSettings,
-    pub(crate) character: Option<CharacterPanel>,
     pub hovered: Option<UiControl>,
 }
 
@@ -183,7 +175,6 @@ impl Default for UiFrame<'_> {
             status: None,
             debug: None,
             settings: UiSettings::default(),
-            character: None,
             hovered: None,
         }
     }
@@ -201,16 +192,4 @@ impl UiRect {
     pub fn contains(self, x: f32, y: f32) -> bool {
         x >= self.x && y >= self.y && x < self.x + self.width && y < self.y + self.height
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CharacterPanel {
-    pub cosmetics: [u8; 4],
-    pub recipe: Option<crate::appearance::CharacterRecipe>,
-    pub can_apply: bool,
-    pub pending: bool,
-    pub status: &'static str,
-    pub clip: u8,
-    pub time: f32,
-    pub preview: Option<egui::TextureId>,
 }
