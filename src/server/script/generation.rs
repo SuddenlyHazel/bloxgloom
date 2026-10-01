@@ -105,6 +105,38 @@ struct ScriptContributor {
 
 impl Contributor for ScriptContributor {
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
+        self.execute(context, output, Limits::default())
+    }
+
+    fn generate_budgeted(
+        &self,
+        context: Context,
+        output: &mut Output,
+        remaining: std::time::Duration,
+    ) -> Result<std::time::Duration, GenerationError> {
+        if remaining.is_zero() {
+            return Err(GenerationError::Contributor(format!(
+                "{}: scripted chunk allowance exhausted (maximum 100ms)",
+                self.module
+            )));
+        }
+        let started = std::time::Instant::now();
+        let limits = Limits {
+            max_wall_time: Limits::default().max_wall_time.min(remaining),
+            ..Limits::default()
+        };
+        self.execute(context, output, limits)?;
+        Ok(started.elapsed())
+    }
+}
+
+impl ScriptContributor {
+    fn execute(
+        &self,
+        context: Context,
+        output: &mut Output,
+        limits: Limits,
+    ) -> Result<(), GenerationError> {
         // The production callers are server startup and chunk/edit workers,
         // never the window thread. No extra queue, thread, or global VM lock.
         let result = super::run(
@@ -114,9 +146,9 @@ impl Contributor for ScriptContributor {
                 invocation: Invocation::Generation(context),
             },
             ScriptInput { tick: 0, seed: 0 },
-            Limits::default(),
+            limits,
         )
-        .map_err(|error| GenerationError::Contributor(error.to_string()))?;
+        .map_err(|error| GenerationError::Contributor(format!("{}: {error}", self.module)))?;
         let super::Output::Generation(candidate) = result else {
             unreachable!("generation invocation")
         };

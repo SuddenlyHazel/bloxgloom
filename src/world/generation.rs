@@ -69,7 +69,10 @@ pub fn generate_chunk_with_contributors(
 
 fn validate(contributors: &[Registration]) -> Result<(), GenerationError> {
     if contributors.len() > 256 {
-        return Err(GenerationError::Contributor("too many contributors".into()));
+        return Err(GenerationError::Contributor(format!(
+            "generators/installation: attempted {}; maximum 256",
+            contributors.len()
+        )));
     }
     let mut seen = BTreeSet::new();
     for registration in contributors {
@@ -94,14 +97,19 @@ fn compose(
 ) -> Result<Chunk, GenerationError> {
     let mut blocks = vec![AIR; CHUNK_VOLUME];
     let context = Context::with_samples(seed, [key.x, key.y, key.z], &BUILTIN_SAMPLES);
-    apply(&Builtin, context, &mut blocks, catalog)?;
+    let mut remaining = crate::server::script_capacity::GENERATION_SCRIPT_WALL_TIME;
+    apply(&Builtin, context, &mut blocks, catalog, &mut remaining)?;
     for registration in ordered {
         apply(
             registration.contributor.as_ref(),
             context,
             &mut blocks,
             catalog,
-        )?;
+            &mut remaining,
+        )
+        .map_err(|error| {
+            GenerationError::Contributor(format!("{}: {error:?}", registration.key))
+        })?;
     }
     Ok(Chunk::from_blocks(key, 0, blocks))
 }
@@ -111,9 +119,13 @@ fn apply(
     context: Context,
     blocks: &mut [BlockId],
     catalog: &Catalog,
+    remaining: &mut std::time::Duration,
 ) -> Result<(), GenerationError> {
     let mut output = Output::default();
-    contributor.generate(context, &mut output)?;
+    let spent = contributor.generate_budgeted(context, &mut output, *remaining)?;
+    *remaining = remaining.checked_sub(spent).ok_or_else(|| {
+        GenerationError::Contributor("scripted chunk allowance exceeded (maximum 100ms)".into())
+    })?;
     output.finish()?;
     // Resolve all names before applying any writes from this contributor.
     let writes = output

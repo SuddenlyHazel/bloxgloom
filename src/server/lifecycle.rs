@@ -42,12 +42,18 @@ impl Registrar for Registration {
     ) -> Result<(), RegistrationError> {
         self.room()?;
         contributor.validate()?;
-        if self.generation.len() >= 256
-            || self.generation.iter().any(|old| old.key == contributor.key)
-        {
-            return Err(RegistrationError(
-                "duplicate generation contributor or capacity exceeded".into(),
-            ));
+        if self.generation.iter().any(|old| old.key == contributor.key) {
+            return Err(RegistrationError(format!(
+                "{}: duplicate generation contributor",
+                contributor.key
+            )));
+        }
+        if self.generation.len() >= 256 {
+            return Err(RegistrationError(format!(
+                "{} generators/installation: attempted {}; maximum 256",
+                contributor.key,
+                self.generation.len() + 1
+            )));
         }
         self.generation.push(contributor);
         Ok(())

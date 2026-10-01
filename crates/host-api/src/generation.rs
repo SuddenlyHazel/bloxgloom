@@ -5,6 +5,7 @@
 use crate::RegistrationError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const CHUNK_SIZE: i64 = 16;
 pub const MAX_WRITES: usize = 16 * 16 * 16;
@@ -191,6 +192,19 @@ impl Output {
 
 pub trait Contributor: Send + Sync {
     fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError>;
+
+    /// Host execution accounting, separate from deterministic gameplay inputs.
+    /// Trusted native contributors are uncharged; scripting adapters constrain
+    /// execution to the remaining chunk allowance and report elapsed time.
+    fn generate_budgeted(
+        &self,
+        context: Context,
+        output: &mut Output,
+        _remaining: Duration,
+    ) -> Result<Duration, GenerationError> {
+        self.generate(context, output)?;
+        Ok(Duration::ZERO)
+    }
 }
 
 #[derive(Clone)]

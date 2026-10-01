@@ -235,3 +235,32 @@ fn luau_generation_rejects_bad_registration_and_caught_output_errors() {
         drop(world);
     }
 }
+
+#[test]
+fn scripted_generator_obeys_remaining_allowance_and_retries_without_partial_output() {
+    let fixture = Fixture::new();
+    fixture.generator(REGISTER, MARKER);
+    let startup = fixture.startup(Arc::new(Catalog::builtins())).unwrap();
+    let entries = startup.generation();
+    let contributor = &entries[0].contributor;
+    let context = bloxgloom_host_api::generation::Context::new(73, [0, 8, 0]);
+    let mut output = bloxgloom_host_api::generation::Output::default();
+    assert!(
+        contributor
+            .generate_budgeted(context, &mut output, Duration::ZERO)
+            .is_err()
+    );
+    assert_eq!(output.writes().count(), 0);
+    assert!(
+        contributor
+            .generate_budgeted(context, &mut output, Duration::from_nanos(1))
+            .is_err()
+    );
+    assert_eq!(output.writes().count(), 0);
+    assert!(
+        contributor
+            .generate_budgeted(context, &mut output, Duration::from_millis(50))
+            .is_ok()
+    );
+    assert_eq!(output.writes().count(), 1);
+}

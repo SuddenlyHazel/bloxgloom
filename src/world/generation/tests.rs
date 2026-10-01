@@ -444,3 +444,49 @@ fn generation_failure_never_installs_air_or_replaces_recovery_snapshot() {
     drop(world);
     fs::remove_dir_all(path).unwrap();
 }
+
+/// Deterministic accounting exercises admission without scheduler-dependent sleeps.
+struct Charged(std::time::Duration);
+impl Contributor for Charged {
+    fn generate(&self, _: Context, output: &mut Output) -> Result<(), GenerationError> {
+        output.set([0, 0, 0], "bloxgloom:stone")
+    }
+
+    fn generate_budgeted(
+        &self,
+        context: Context,
+        output: &mut Output,
+        _: std::time::Duration,
+    ) -> Result<std::time::Duration, GenerationError> {
+        self.generate(context, output)?;
+        Ok(self.0)
+    }
+}
+
+#[test]
+fn scripted_generation_shares_one_chunk_allowance_and_rejects_whole_candidate() {
+    let catalog = Catalog::builtins();
+    let key = ChunkKey { x: 0, y: 8, z: 0 };
+    let charged = ["budget:a", "budget:b"].map(|key| Registration {
+        key: key.into(),
+        revision: 1,
+        contributor: Arc::new(Charged(std::time::Duration::from_millis(60))),
+    });
+    let error = generate_chunk_with_contributors(key, 73, &catalog, &charged).unwrap_err();
+    assert!(matches!(error, GenerationError::Contributor(ref message)
+        if message.contains("budget:b") && message.contains("chunk allowance")));
+    // Rejection cannot poison a retry or publish a partial chunk.
+    assert!(generate_chunk_with_contributors(key, 73, &catalog, &charged[..1]).is_ok());
+    let exact = Registration {
+        key: "budget:exact".into(),
+        revision: 1,
+        contributor: Arc::new(Charged(
+            crate::server::script_capacity::GENERATION_SCRIPT_WALL_TIME,
+        )),
+    };
+    // Trusted native work still runs after the scripted allowance is exhausted.
+    assert!(
+        generate_chunk_with_contributors(key, 73, &catalog, &[exact, registrations()[0].clone()])
+            .is_ok()
+    );
+}
