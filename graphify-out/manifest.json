@@ -594,9 +594,9 @@
     "semantic_hash": "46f951048e945afb1e5aad8f5eef0b74"
   },
   "src/client.rs": {
-    "mtime": 1790891666.599929,
-    "seen": 1790892017.913026,
-    "ast_hash": "2e2d0abc845a2eaf3445cfbaa0acb6db",
+    "mtime": 1790898222.0903273,
+    "seen": 1790898857.647497,
+    "ast_hash": "01f5ef98bb082dfa631d62e5786503e0",
     "semantic_hash": ""
   },
   "src/client/actions.rs": {
@@ -1146,9 +1146,9 @@
     "semantic_hash": ""
   },
   "src/main.rs": {
-    "mtime": 1790889672.775571,
-    "seen": 1790889794.209146,
-    "ast_hash": "e40b4ece3fde988fe9e99e835e1c58f0",
+    "mtime": 1790898654.04573,
+    "seen": 1790898857.647687,
+    "ast_hash": "a9e6123c60eef79487af9ab094fe9ce6",
     "semantic_hash": ""
   },
   "src/physics.rs": {
@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1790892227.986389,
-    "seen": 1790897322.020315,
-    "ast_hash": "1fa202b218751dd6a76ce5b026dd9c42",
+    "mtime": 1790898805.774427,
+    "seen": 1790898857.648363,
+    "ast_hash": "64120de66c9a0bf585b6f1409a598403",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -6996,9 +6996,9 @@
     "semantic_hash": ""
   },
   "src/audio.rs": {
-    "mtime": 1790891395.167897,
-    "seen": 1790892017.913001,
-    "ast_hash": "e887c0e3d8502b0773bef8e5040cbc75",
+    "mtime": 1790898653.4031518,
+    "seen": 1790898857.647464,
+    "ast_hash": "3f9e5797cc155c4abc0ef7b75a229521",
     "semantic_hash": ""
   },
   "src/audio/clip.rs": {
@@ -7014,9 +7014,9 @@
     "semantic_hash": ""
   },
   "src/audio/mixer.rs": {
-    "mtime": 1790890645.2428968,
-    "seen": 1790892017.9130082,
-    "ast_hash": "724ab586d0c09408dac6af0a7d6035d0",
+    "mtime": 1790898125.911147,
+    "seen": 1790898857.647469,
+    "ast_hash": "982a10b07a4d1932b4eea12638b50f38",
     "semantic_hash": ""
   },
   "src/audio/output.rs": {
@@ -7044,15 +7044,15 @@
     "semantic_hash": ""
   },
   "src/audio/preview.rs": {
-    "mtime": 1790890645.2466311,
-    "seen": 1790892017.913014,
-    "ast_hash": "a790ad67baf88faddf12b6152e16e278",
+    "mtime": 1790898653.3772545,
+    "seen": 1790898857.647476,
+    "ast_hash": "47e67b971ac725bd57d5e0fed0cc46cd",
     "semantic_hash": ""
   },
   "src/audio/procedural.rs": {
-    "mtime": 1790885942.3936937,
-    "seen": 1790887098.2836108,
-    "ast_hash": "253ad3f8d1ada61f10f1416f4a80bea8",
+    "mtime": 1790898653.399598,
+    "seen": 1790898857.647477,
+    "ast_hash": "f2870183c81adfbae9d77727e62de7d4",
     "semantic_hash": ""
   },
   "src/audio/procedural/dsp.rs": {
@@ -7062,9 +7062,9 @@
     "semantic_hash": ""
   },
   "src/audio/procedural/rain.rs": {
-    "mtime": 1790877790.711557,
-    "seen": 1790878420.4276018,
-    "ast_hash": "622475e1fe3b500cb1a35c3f6ebd249d",
+    "mtime": 1790898222.0896738,
+    "seen": 1790898857.6474829,
+    "ast_hash": "f58c56ce5fe0ec4cf38ccdf8e6fb86a6",
     "semantic_hash": ""
   },
   "src/audio/procedural/reverb.rs": {
@@ -7074,15 +7074,15 @@
     "semantic_hash": ""
   },
   "src/audio/procedural/spatial.rs": {
-    "mtime": 1790878121.7281077,
-    "seen": 1790878420.427604,
-    "ast_hash": "31b06867aabd7673c5a8385050b7525d",
+    "mtime": 1790898653.3911853,
+    "seen": 1790898857.647488,
+    "ast_hash": "ac504fed65558da51a55e8458fd041b1",
     "semantic_hash": ""
   },
   "src/audio/procedural/tests.rs": {
-    "mtime": 1790885942.3870945,
-    "seen": 1790887098.283616,
-    "ast_hash": "37e874f9885b84027e3e164c1c5c73d2",
+    "mtime": 1790898653.3923066,
+    "seen": 1790898857.647489,
+    "ast_hash": "62aacefd31e5f6b3adad078d22a8dfb2",
     "semantic_hash": ""
   },
   "src/audio/procedural/thunder.rs": {
@@ -7110,21 +7110,21 @@
     "semantic_hash": ""
   },
   "src/audio/tests.rs": {
-    "mtime": 1790891395.167404,
-    "seen": 1790892017.9130251,
-    "ast_hash": "d3e2ca9373ab8bfd53bfed3380f3418c",
+    "mtime": 1790898653.4026148,
+    "seen": 1790898857.647496,
+    "ast_hash": "5c211efa73a25ad58476625b415ddedf",
     "semantic_hash": ""
   },
   "src/client/audio.rs": {
-    "mtime": 1790891859.297431,
-    "seen": 1790892017.91304,
-    "ast_hash": "8b7621b5dec8d71937282eee9efb6325",
+    "mtime": 1790898958.16021,
+    "seen": 1790899002.377449,
+    "ast_hash": "cbe4b5d1183984f4e8c060e82a2e647f",
     "semantic_hash": ""
   },
   "src/client/audio/tests.rs": {
-    "mtime": 1790891944.3581495,
-    "seen": 1790892017.913044,
-    "ast_hash": "a0c26005d63b8ca6653af4fc44a2820d",
+    "mtime": 1790898615.7318254,
+    "seen": 1790898857.6475132,
+    "ast_hash": "d328e4f5f67d17b9658a5e4881a4521f",
     "semantic_hash": ""
   },
   "src/render/game_ui/menus/audio.rs": {
@@ -7134,9 +7134,9 @@
     "semantic_hash": ""
   },
   "docs/audio/FOUNDATION.md": {
-    "mtime": 1790891998.1833518,
-    "seen": 1790892017.913806,
-    "ast_hash": "558a26defedde5e0998750b8fb81da7c",
+    "mtime": 1790898984.9174478,
+    "seen": 1790899002.3782332,
+    "ast_hash": "fc819eba59e50cc2790ce9510708ed0e",
     "semantic_hash": ""
   },
   "third-party/README.md": {
@@ -7146,9 +7146,9 @@
     "semantic_hash": ""
   },
   "src/audio/mixer/tests.rs": {
-    "mtime": 1790891395.1417859,
-    "seen": 1790892017.913009,
-    "ast_hash": "0c60a2409b1c7cdc41fd235f4fd2f38d",
+    "mtime": 1790898615.7310338,
+    "seen": 1790898857.64747,
+    "ast_hash": "04fbd1acc9013dda2775efd187631ed3",
     "semantic_hash": ""
   },
   "src/client/admin/weather.rs": {
@@ -7158,9 +7158,9 @@
     "semantic_hash": ""
   },
   "src/client/weather.rs": {
-    "mtime": 1790897750.951162,
-    "seen": 1790897792.6824682,
-    "ast_hash": "ad83ad11dfb0ca648e2564456c5445d9",
+    "mtime": 1790898653.9552016,
+    "seen": 1790898857.6476212,
+    "ast_hash": "1fd0a78afc23791b23624c2a632b5cf2",
     "semantic_hash": ""
   },
   "src/client/weather/tests.rs": {
@@ -7218,9 +7218,9 @@
     "semantic_hash": ""
   },
   "docs/weather/FOUNDATION.md": {
-    "mtime": 1790890197.351818,
-    "seen": 1790892017.913835,
-    "ast_hash": "14b519a0903f95db653d6e43edee8f89",
+    "mtime": 1790898805.7735777,
+    "seen": 1790898857.648414,
+    "ast_hash": "acb4509c39ce9f444e094a954dc22ddf",
     "semantic_hash": ""
   },
   "src/render/sky/tests.rs": {
@@ -7536,9 +7536,9 @@
     "semantic_hash": ""
   },
   "src/client/audio/voices.rs": {
-    "mtime": 1790891944.3598745,
-    "seen": 1790892017.913044,
-    "ast_hash": "1ba263703781b011b6be66e49adbee48",
+    "mtime": 1790898266.415596,
+    "seen": 1790898857.647514,
+    "ast_hash": "20ca22fcf5c96c9ca1092675b3b2322c",
     "semantic_hash": ""
   },
   "src/protocol/sounds.rs": {
@@ -7623,6 +7623,66 @@
     "mtime": 1790891545.6362116,
     "seen": 1790892017.9139898,
     "ast_hash": "f9de3d2b6b9c275ffc2270deb1fcb10c",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/insects.rs": {
+    "mtime": 1790898653.3823664,
+    "seen": 1790898857.647479,
+    "ast_hash": "4cadf425145cf4fd9b0d7732c1998eef",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/insects/cicadas.rs": {
+    "mtime": 1790898653.3791533,
+    "seen": 1790898857.64748,
+    "ast_hash": "3154e0afbfe7eb1ebedb5b7701a267ce",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/insects/crickets.rs": {
+    "mtime": 1790898653.3801384,
+    "seen": 1790898857.6474812,
+    "ast_hash": "986f3f7be73fa6ccc1a8774f42faf493",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/insects/dsp.rs": {
+    "mtime": 1790898653.3804774,
+    "seen": 1790898857.6474822,
+    "ast_hash": "d300bec87baa5b353c1d8e2b4cb3b4b3",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/insects/tests.rs": {
+    "mtime": 1790898653.381165,
+    "seen": 1790898857.6474822,
+    "ast_hash": "f262e8a82153be01371f012193430eeb",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/rain/scene.rs": {
+    "mtime": 1790898266.414566,
+    "seen": 1790898857.6474838,
+    "ast_hash": "1a9fb55ced4eb8f0a665853085e22765",
+    "semantic_hash": ""
+  },
+  "src/audio/procedural/rain/scene/tests.rs": {
+    "mtime": 1790898653.3830986,
+    "seen": 1790898857.647485,
+    "ast_hash": "b732f19fd90e6ced048883ac85d979ee",
+    "semantic_hash": ""
+  },
+  "src/audio/rain_scene.rs": {
+    "mtime": 1790898653.4006736,
+    "seen": 1790898857.6474938,
+    "ast_hash": "98082aba1519d753e2b1feb2e2dc42f2",
+    "semantic_hash": ""
+  },
+  "src/client/weather/rain_scene.rs": {
+    "mtime": 1790898653.950615,
+    "seen": 1790898857.6476228,
+    "ast_hash": "2097df5333b981ffeb6db5e16ccd2c08",
+    "semantic_hash": ""
+  },
+  "src/client/weather/rain_scene/tests.rs": {
+    "mtime": 1790898168.6094384,
+    "seen": 1790898857.647624,
+    "ast_hash": "80b1e2f11ff5b27896b1994947010f61",
     "semantic_hash": ""
   }
 }
