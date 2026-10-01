@@ -419,6 +419,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_mossbun_preview(std::path::Path::new(&path))?;
         }
+        Some("third-person-preview") => {
+            let directory = args.next().unwrap_or_else(|| "third-person-preview".into());
+            if args.next().is_some() {
+                return Err("usage: third-person-preview [directory]".into());
+            }
+            preview::render_third_person_previews(std::path::Path::new(&directory))?;
+        }
         Some("character-style-preview") => {
             let path = args.next().unwrap_or_else(|| "character-styles.png".into());
             if args.next().is_some() {

@@ -61,7 +61,7 @@ impl UiBuilder<'_> {
     fn draw_hud(&mut self, frame: &UiFrame<'_>, layout: &UiLayout, catalog: &Catalog) {
         let center_x = self.width * 0.5;
         let center_y = self.height * 0.5;
-        if frame.screen == UiScreen::Playing {
+        if frame.screen == UiScreen::Playing && frame.show_crosshair {
             let gap = 4.0 * self.scale;
             let arm = 8.0 * self.scale;
             let thickness = (2.0 * self.scale).max(1.0);

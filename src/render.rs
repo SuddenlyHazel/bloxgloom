@@ -1,6 +1,7 @@
 //! Voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
 mod avatars;
+pub(crate) mod camera;
 mod character_preview;
 pub(crate) use character_preview::CharacterPreview;
 pub(crate) mod custom;

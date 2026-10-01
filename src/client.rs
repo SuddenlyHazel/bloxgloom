@@ -29,6 +29,7 @@ const MAX_OUTSTANDING_ACTIONS: usize = 128;
 const MAX_INCOMING_PER_FRAME: usize = 32;
 const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
+mod camera;
 mod character;
 pub(crate) mod drops;
 mod fire;
@@ -343,6 +344,7 @@ struct ClientApp {
     position: Vec3,
     yaw: f32,
     pitch: f32,
+    perspective: crate::render::camera::Perspective,
     keys: Keys,
     shift_down: bool,
     input_modifiers: winit::keyboard::ModifiersState,
@@ -429,6 +431,7 @@ impl ClientApp {
             position: Vec3::new(0.5, 40.0, 0.5),
             yaw: 0.0,
             pitch: -0.2,
+            perspective: Default::default(),
             keys: Keys::default(),
             shift_down: false,
             input_modifiers: winit::keyboard::ModifiersState::default(),
@@ -1686,11 +1689,13 @@ impl ClientApp {
                 }
             }
         }
-        let camera = self.camera();
+        let camera = self.view_camera();
         if self.status.as_ref().is_some_and(|(_, until)| now > *until) {
             self.status = None;
         }
-        let target = if self.screen == UiScreen::Playing {
+        let target = if self.screen == UiScreen::Playing
+            && self.perspective != crate::render::camera::Perspective::Front
+        {
             self.aimed_block().map(|hit| hit.block)
         } else {
             None
@@ -1704,6 +1709,7 @@ impl ClientApp {
         self.character_editor
             .observe(self.replicas.owned_appearance(self.owned_entity_id));
         let ui = UiFrame {
+            show_crosshair: self.perspective != crate::render::camera::Perspective::Front,
             character: (self.screen == UiScreen::Character).then(|| self.character_editor.panel()),
             package_ui: self.package_ui.as_ref(),
             join_address: None,
@@ -1753,10 +1759,17 @@ impl ClientApp {
         for drop in &mut visual_drops {
             drop.light = self.light_at(drop.center);
         }
-        let mut visual_avatars = self
-            .replicas
-            .visual_avatars(self.position, self.owned_entity_id);
-        self.actor_animator.present(&mut visual_avatars, now);
+        let mut visual_avatars = self.replicas.visual_avatars(
+            self.position,
+            if self.show_local_avatar(camera) {
+                None
+            } else {
+                self.owned_entity_id
+            },
+        );
+        self.prepare_local_avatar(&mut visual_avatars);
+        self.actor_animator
+            .present_with_local(&mut visual_avatars, now, self.owned_entity_id);
         for avatar in &mut visual_avatars {
             if let Some(pose) = self
                 .package_ui

@@ -1,5 +1,7 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
+mod third_person;
+pub use third_person::render_third_person_previews;
 mod daylight;
 pub use daylight::render_daylight_previews;
 mod block;
@@ -522,6 +524,7 @@ enum PreviewScene {
     Avatars,
     Characters(&'static str, f32),
     CharacterStyles,
+    ThirdPerson(third_person::Shot),
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
@@ -697,6 +700,7 @@ async fn render_previews_at(
         | PreviewScene::Kilns
         | PreviewScene::Hoppers
         | PreviewScene::Chests
+        | PreviewScene::ThirdPerson(_)
         | PreviewScene::Avatars
         | PreviewScene::Characters(..)
         | PreviewScene::CharacterStyles
@@ -744,7 +748,7 @@ async fn render_previews_at(
         }
     };
     let direction = (target - camera_position).normalize();
-    let camera_template = Camera {
+    let mut camera_template = Camera {
         position: camera_position,
         yaw: direction.z.atan2(direction.x),
         pitch: direction.y.asin(),
@@ -803,6 +807,11 @@ async fn render_previews_at(
                 }
             }
         }
+    }
+    if let PreviewScene::ThirdPerson(shot) = scene {
+        camera_template = third_person::prepare(shot, &mut chunks, target_xz, target_height);
+        avatar_renderer.set_authored(true);
+        avatar_renderer.set(&queue, &[third_person::avatar(target_xz, target_height)]);
     }
     if matches!(scene, PreviewScene::Fire) {
         // The cell has already burned to AIR; do not imply nearby flammable cells are lit.
@@ -1368,6 +1377,10 @@ async fn render_previews_at(
             has_target.then_some([target_xz.0, target_height, target_xz.1]),
             output.scale,
         );
+        if let PreviewScene::ThirdPerson(shot) = scene {
+            ui_frame.show_crosshair = shot.perspective != render::camera::Perspective::Front;
+            ui_frame.status = None;
+        }
         if output.screen == UiScreen::Admin
             && output
                 .path
@@ -1676,6 +1689,7 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
+        show_crosshair: true,
         character: None,
         package_ui: None,
         join_address: None,
@@ -1748,6 +1762,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        show_crosshair: true,
         character: None,
         package_ui: None,
         join_address: None,

@@ -1,4 +1,28 @@
 use super::*;
+
+#[test]
+fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
+    let now = Instant::now();
+    let mut animator = ActorAnimator::default();
+    let mut player = avatar(0.0);
+    player.model = AvatarModel::Player;
+    animator.present_with_local(&mut [player], now, Some(player.id));
+    player.position.x = 0.1;
+    player.pose[0] = 1.2;
+    let mut frame = [player];
+    animator.present_with_local(&mut frame, now + STEP, Some(player.id));
+    assert_eq!(frame[0].position, player.position);
+    assert_eq!(frame[0].pose[0], player.pose[0]);
+    assert!(frame[0].character_pose[0] > 0.0);
+    assert!(frame[0].character_pose[2] > 0.0);
+    player.pose[0] = -0.7;
+    let mut idle = [player];
+    animator.present_with_local(&mut idle, now + STEP * 2, Some(player.id));
+    assert_eq!(
+        idle[0].pose[0], -0.7,
+        "turning while idle follows the local look direction"
+    );
+}
 fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
         character_pose: [0.0; 3],

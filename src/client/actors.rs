@@ -41,6 +41,10 @@ impl Track {
     }
 
     fn update(&mut self, avatar: VisualAvatar, now: Instant) -> VisualAvatar {
+        self.update_mode(avatar, now, false)
+    }
+
+    fn update_mode(&mut self, avatar: VisualAvatar, now: Instant, local: bool) -> VisualAvatar {
         let previous = *self.samples.back().unwrap();
         if previous.avatar.model != avatar.model
             || previous.avatar.position.distance(avatar.position) > 4.0
@@ -76,14 +80,24 @@ impl Track {
         } else {
             1.0
         };
-        let mut visual = if t < 1.0 { a.avatar } else { b.avatar };
-        visual.position = a.avatar.position.lerp(b.avatar.position, t);
+        let mut visual = if local {
+            avatar
+        } else if t < 1.0 {
+            a.avatar
+        } else {
+            b.avatar
+        };
+        if !local {
+            visual.position = a.avatar.position.lerp(b.avatar.position, t);
+        }
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
         let delta = visual.position - self.last_position;
         self.last_position = visual.position;
         let distance = glam::Vec2::new(delta.x, delta.z).length();
-        let desired_yaw = if distance > 0.0001 {
+        let desired_yaw = if local {
+            avatar.pose[0]
+        } else if distance > 0.0001 {
             delta.x.atan2(delta.z)
         } else if visual.model == AvatarModel::Player {
             // Players currently replicate position, not a look vector. Preserve
@@ -95,7 +109,11 @@ impl Track {
         let angle = (desired_yaw - self.yaw + std::f32::consts::PI)
             .rem_euclid(std::f32::consts::TAU)
             - std::f32::consts::PI;
-        self.yaw += angle * (1.0 - (-14.0 * dt).exp());
+        if local {
+            self.yaw = desired_yaw;
+        } else {
+            self.yaw += angle * (1.0 - (-14.0 * dt).exp());
+        }
         visual.pose[0] = self.yaw;
         if visual.model == AvatarModel::Player {
             // Authored locomotion is presentation-only. Distance drives walk phase;
@@ -148,14 +166,27 @@ pub(crate) struct ActorAnimator {
 
 impl ActorAnimator {
     pub(crate) fn present(&mut self, avatars: &mut [VisualAvatar], now: Instant) {
+        self.present_with_local(avatars, now, None);
+    }
+
+    pub(crate) fn present_with_local(
+        &mut self,
+        avatars: &mut [VisualAvatar],
+        now: Instant,
+        local: Option<u64>,
+    ) {
         let ids: HashSet<_> = avatars.iter().take(MAX_AVATARS).map(|a| a.id).collect();
         self.tracks.retain(|id, _| ids.contains(id));
         for avatar in avatars.iter_mut().take(MAX_AVATARS) {
-            *avatar = self
+            let track = self
                 .tracks
                 .entry(avatar.id)
-                .or_insert_with(|| Track::new(*avatar, now))
-                .update(*avatar, now);
+                .or_insert_with(|| Track::new(*avatar, now));
+            *avatar = if Some(avatar.id) == local {
+                track.update_mode(*avatar, now, true)
+            } else {
+                track.update(*avatar, now)
+            };
         }
     }
 }

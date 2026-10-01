@@ -369,6 +369,10 @@ impl ClientApp {
                             return;
                         }
                         match code {
+                            KeyCode::F5 if self.screen == UiScreen::Playing => {
+                                self.cycle_perspective();
+                                return;
+                            }
                             KeyCode::F4 => {
                                 self.set_screen(UiScreen::Admin);
                                 return;
