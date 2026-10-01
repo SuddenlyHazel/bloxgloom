@@ -2,6 +2,7 @@
 //! Rigid vertices are stored in joint-local space, including inverse binds.
 use glam::{Mat4, Quat, Vec3};
 use serde::Deserialize;
+mod mesh;
 
 pub(super) const JOINT_COUNT: usize = 7;
 pub(super) const BODY_PNG: &[u8] = include_bytes!("../../../assets/models/player/body.png");
@@ -10,6 +11,40 @@ pub(super) const HAIR_PNG: &[u8] = include_bytes!("../../../assets/models/player
 // Numeric order is the persisted appearance ID order; never reorder these tables.
 pub(super) const HAIR_UNDERCUT_PNG: &[u8] =
     include_bytes!("../../../assets/models/player/hair_undercut.png");
+// Appearance ID 0 has no attachment; material/appearance ID n uses slot n - 1.
+pub(super) const HAIR_PNGS: [&[u8]; 13] = [
+    HAIR_PNG,
+    HAIR_UNDERCUT_PNG,
+    include_bytes!("../../../assets/models/player/hair_space_buns.png"),
+    include_bytes!("../../../assets/models/player/hair_curly_bob.png"),
+    include_bytes!("../../../assets/models/player/hair_curly_pigtails.png"),
+    include_bytes!("../../../assets/models/player/hair_sidepart_bob.png"),
+    include_bytes!("../../../assets/models/player/hair_compact_braid.png"),
+    include_bytes!("../../../assets/models/player/hair_long_loose_curls.png"),
+    include_bytes!("../../../assets/models/player/hair_long_curly_ponytail.png"),
+    include_bytes!("../../../assets/models/player/hair_half_up_curly_cascade.png"),
+    include_bytes!("../../../assets/models/player/hair_rounded_afro.png"),
+    include_bytes!("../../../assets/models/player/hair_twin_braids.png"),
+    include_bytes!("../../../assets/models/player/hair_curly_mohawk.png"),
+];
+const MATERIAL_VERTEX_LIMITS: [usize; 14] = [
+    256, 512, 768, 1024, 3072, 2048, 512, 512, 2816, 2048, 2560, 4352, 3328, 1024,
+];
+const HAIR_BOUNDS: [([f32; 3], [f32; 3]); 13] = [
+    ([-0.30, 0.18, -0.31], [0.30, 0.61, 0.30]),
+    ([-0.35, 0.15, -0.33], [0.29, 0.64, 0.30]),
+    ([-0.42, 0.20, -0.31], [0.42, 0.81, 0.31]),
+    ([-0.40, 0.11, -0.37], [0.40, 0.64, 0.40]),
+    ([-0.50, 0.11, -0.33], [0.50, 0.56, 0.38]),
+    ([-0.3, 0.08, -0.3], [0.3, 0.56, 0.3]),
+    ([-0.28, 0.08, -0.29], [0.28, 0.54, 0.4]),
+    ([-0.36, -0.47, -0.32], [0.36, 0.61, 0.65]),
+    ([-0.34, -0.49, -0.32], [0.34, 0.61, 0.82]),
+    ([-0.31, -0.41, -0.32], [0.31, 0.65, 0.67]),
+    ([-0.51, 0.21, -0.39], [0.5, 0.91, 0.47]),
+    ([-0.4, -0.54, -0.26], [0.4, 0.57, 0.41]),
+    ([-0.26, 0.34, -0.31], [0.26, 0.78, 0.34]),
+];
 pub(super) const CLEAN_FACE_PNG: &[u8] =
     include_bytes!("../../../assets/models/player/face/clean.png");
 pub(super) const EYE_PNGS: [&[u8]; 8] = [
@@ -122,12 +157,12 @@ struct LocalPose {
 
 impl CharacterAsset {
     pub fn builtin() -> Self {
-        Self::parse(include_str!("../../../assets/models/player/character.json"))
-            .expect("checked-in authored character asset must validate")
+        Self::from_builtin_parts().expect("checked-in authored character asset must validate")
     }
 
+    #[cfg(test)]
     pub fn parse(json: &str) -> Result<Self, String> {
-        if json.len() > 2 * 1024 * 1024 {
+        if json.len() > 4 * 1024 * 1024 {
             return Err("character asset exceeds byte limit".into());
         }
         let asset: Self = serde_json::from_str(json).map_err(|error| error.to_string())?;
@@ -143,9 +178,9 @@ impl CharacterAsset {
         if self.version != 1
             || self.joints.len() != JOINT_COUNT
             || self.vertices.is_empty()
-            || self.vertices.len() > 8192
+            || self.vertices.len() > 32768
             || self.indices.is_empty()
-            || self.indices.len() > 24576
+            || self.indices.len() > 98304
             || !self.indices.len().is_multiple_of(3)
             || self.clips.len() != 5
         {
@@ -168,7 +203,7 @@ impl CharacterAsset {
         }
         for vertex in &self.vertices {
             if vertex.joint >= JOINT_COUNT
-                || vertex.material > 2
+                || vertex.material as usize >= crate::appearance::HAIR.len()
                 || (vertex.material > 0 && vertex.joint != 1)
                 || !finite(&vertex.position)
                 || !finite(&vertex.normal)
@@ -186,6 +221,49 @@ impl CharacterAsset {
             .any(|&index| index as usize >= self.vertices.len())
         {
             return Err("character triangle index out of bounds".into());
+        }
+        let mut vertex_counts = [0; 14];
+        for vertex in &self.vertices {
+            let material = vertex.material as usize;
+            vertex_counts[material] += 1;
+            if material > 0 {
+                let (min, max) = HAIR_BOUNDS[material - 1];
+                if (0..3).any(|axis| !(min[axis]..=max[axis]).contains(&vertex.position[axis])) {
+                    return Err("hair outside authored socket envelope".into());
+                }
+            }
+        }
+        if vertex_counts
+            .iter()
+            .zip(MATERIAL_VERTEX_LIMITS)
+            .any(|(&count, limit)| count == 0 || count > limit)
+        {
+            return Err("character material vertex budget exceeded".into());
+        }
+        let mut index_counts = [0; 14];
+        let mut material = 0;
+        for triangle in self.indices.chunks_exact(3) {
+            let next = self.vertices[triangle[0] as usize].material as usize;
+            if triangle
+                .iter()
+                .any(|&i| self.vertices[i as usize].material as usize != next)
+            {
+                return Err("character triangle crosses materials".into());
+            }
+            if next != material {
+                if next != material + 1 || index_counts[material] == 0 {
+                    return Err("character material ranges must be contiguous and ordered".into());
+                }
+                material = next;
+            }
+            index_counts[material] += 3;
+        }
+        if index_counts
+            .iter()
+            .zip(MATERIAL_VERTEX_LIMITS)
+            .any(|(&count, limit)| count == 0 || count > limit * 3)
+        {
+            return Err("character material index budget exceeded".into());
         }
         let expected = ["walk", "idle", "crouch", "tool_use_left", "tool_use_right"];
         for name in expected {

@@ -259,7 +259,7 @@ impl AvatarRenderer {
                         a.model == *model
                             && !(self.authored
                                 && *model == AvatarModel::Player
-                                && a.character_recipe.is_some())
+                                && a.character_recipe.is_some_and(|recipe| recipe.valid()))
                     })
                     .map(AvatarInstance::from),
             );

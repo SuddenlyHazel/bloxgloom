@@ -65,9 +65,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v19-fixture"
+        "world-v20-fixture"
     } else {
-        "world-v19"
+        "world-v20"
     };
     match args.next().as_deref() {
         None | Some("local") => {
@@ -443,10 +443,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|s| s.parse::<f32>())
                 .transpose()?
                 .unwrap_or(0.0);
+            let hair = args
+                .next()
+                .map(|s| s.parse::<u8>())
+                .transpose()?
+                .unwrap_or(1);
             if args.next().is_some() {
-                return Err("usage: character-preview [output.png] [idle|walk|crouch|tool_use_left|tool_use_right] [seconds]".into());
+                return Err("usage: character-preview [output.png] [idle|walk|crouch|tool_use_left|tool_use_right] [seconds] [hair-id]".into());
             }
-            preview::render_character_preview(std::path::Path::new(&path), &clip, time)?;
+            preview::render_character_preview(std::path::Path::new(&path), &clip, time, hair)?;
         }
         Some("avatar-preview") => {
             let path = args
@@ -457,6 +462,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_avatar_preview(std::path::Path::new(&path))?;
             println!("wrote {path}");
+        }
+        Some("character-perf") => {
+            let frames = args
+                .next()
+                .map(|s| s.parse::<usize>())
+                .transpose()?
+                .unwrap_or(300);
+            let actors = args
+                .next()
+                .map(|s| s.parse::<usize>())
+                .transpose()?
+                .unwrap_or(128);
+            let hair = match args.next().as_deref() {
+                Some("classic") => None,
+                Some(value) => Some(value.parse::<u8>()?),
+                None => Some(1),
+            };
+            if args.next().is_some() {
+                return Err(
+                    "usage: character-perf [measured-frames] [actors] [hair-id|classic]".into(),
+                );
+            }
+            preview::run_character_benchmark(frames, actors, hair)?;
         }
         Some("perf") => {
             let steady_frames = args

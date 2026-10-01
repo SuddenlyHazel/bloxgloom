@@ -10,6 +10,7 @@ pub use block::render_block_preview;
 pub use egui_ui::{render_egui_previews, render_package_egui_previews};
 mod perf;
 
+pub(crate) use perf::characters::run_character_benchmark;
 use perf::run_perf_benchmark_async;
 use std::{
     collections::{HashMap, VecDeque},
@@ -274,7 +275,12 @@ pub fn render_avatar_preview(path: &Path) -> Result<(), Box<dyn Error>> {
 }
 
 /// Deterministic production character renderer, including authored one-shot clips.
-pub fn render_character_preview(path: &Path, clip: &str, time: f32) -> Result<(), Box<dyn Error>> {
+pub fn render_character_preview(
+    path: &Path,
+    clip: &str,
+    time: f32,
+    hair: u8,
+) -> Result<(), Box<dyn Error>> {
     let clip = match clip {
         "idle" => "idle",
         "walk" => "walk",
@@ -283,6 +289,9 @@ pub fn render_character_preview(path: &Path, clip: &str, time: f32) -> Result<()
         "tool_use_right" => "tool_use_right",
         _ => return Err("unknown character clip".into()),
     };
+    if usize::from(hair) >= crate::appearance::HAIR.len() {
+        return Err("unknown hair ID".into());
+    }
     if !time.is_finite() || time < 0.0 {
         return Err("time must be finite and nonnegative".into());
     }
@@ -296,7 +305,7 @@ pub fn render_character_preview(path: &Path, clip: &str, time: f32) -> Result<()
             orientation: None,
         }],
         (0, 0),
-        PreviewScene::Characters(clip, time),
+        PreviewScene::Characters(clip, time, hair),
     ))
 }
 
@@ -332,7 +341,7 @@ pub fn render_character_motion(directory: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(
         outputs,
         (0, 0),
-        PreviewScene::Characters("walk", 0.0),
+        PreviewScene::Characters("walk", 0.0, 1),
     ))
 }
 
@@ -520,7 +529,7 @@ enum PreviewScene {
     Vegetation,
     Drops(DropPhase),
     Avatars,
-    Characters(&'static str, f32),
+    Characters(&'static str, f32, u8),
     CharacterStyles,
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
@@ -1250,10 +1259,13 @@ async fn render_previews_at(
         if let PreviewScene::MossbunMotion(frame) = scene {
             actors::animate(&mut visuals, frame);
         }
-        if let PreviewScene::Characters(clip, time) = scene {
+        if let PreviewScene::Characters(clip, time, hair) = scene {
             avatar_renderer.preview_character_clip(clip, time);
             for visual in &mut visuals {
-                visual.character_recipe = Some(Default::default());
+                visual.character_recipe = Some(crate::appearance::CharacterRecipe {
+                    hair,
+                    ..Default::default()
+                });
             }
             // Front, three-quarter and back use the same production skinning path.
             visuals[0].pose[0] = 0.0;
@@ -1286,7 +1298,9 @@ async fn render_previews_at(
     }
 
     for (frame, output) in outputs.into_iter().enumerate() {
-        if let (PreviewScene::Characters(clip, time), Some(visuals)) = (scene, &character_visuals) {
+        if let (PreviewScene::Characters(clip, time, _), Some(visuals)) =
+            (scene, &character_visuals)
+        {
             avatar_renderer.preview_character_clip(clip, time + frame as f32 / 30.0);
             avatar_renderer.set(&queue, visuals);
         }

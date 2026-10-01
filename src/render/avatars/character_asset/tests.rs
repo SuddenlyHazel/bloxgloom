@@ -1,10 +1,12 @@
+mod clearance;
+
 use super::*;
 
 #[test]
 fn authored_geometry_has_correct_scale_and_socket() {
     let asset = CharacterAsset::builtin();
-    assert_eq!(asset.vertices.len(), 1080);
-    assert_eq!(asset.indices.len(), 1080);
+    assert_eq!(asset.vertices.len(), 22680);
+    assert_eq!(asset.indices.len(), 22680);
     let matrices = asset.sample("rest", 0.0);
     let body: Vec<_> = asset
         .vertices
@@ -154,7 +156,22 @@ fn both_tools_return_to_rest_and_idle_walk_transitions_stay_finite() {
 #[test]
 fn authored_material_ids_and_face_layers_stay_bounded() {
     let asset = CharacterAsset::builtin();
-    for (material, expected) in [(0, 216), (1, 360), (2, 504)] {
+    for (material, expected) in [
+        (0, 216),
+        (1, 360),
+        (2, 504),
+        (3, 792),
+        (4, 2664),
+        (5, 1764),
+        (6, 360),
+        (7, 432),
+        (8, 2772),
+        (9, 1980),
+        (10, 2412),
+        (11, 4248),
+        (12, 3168),
+        (13, 1008),
+    ] {
         assert_eq!(
             asset
                 .vertices
@@ -165,7 +182,7 @@ fn authored_material_ids_and_face_layers_stay_bounded() {
         );
     }
     let mut invalid = asset.clone();
-    invalid.vertices[0].material = 3;
+    invalid.vertices[0].material = 14;
     assert!(invalid.validate().is_err());
     let mut detached = asset;
     let hair = detached
@@ -216,4 +233,75 @@ fn authored_material_ids_and_face_layers_stay_bounded() {
     let decoder = png::Decoder::new(std::io::Cursor::new(HAIR_UNDERCUT_PNG));
     let reader = decoder.read_info().unwrap();
     assert_eq!((reader.info().width, reader.info().height), (32, 32));
+}
+
+#[test]
+fn hair_texture_array_and_socket_metadata_keep_stable_material_ids() {
+    let sockets: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../../assets/models/player/hair_sockets.json"
+    ))
+    .unwrap();
+    let styles = sockets["styles"].as_array().unwrap();
+    assert_eq!(styles.len(), 13);
+    let names = &crate::appearance::HAIR[1..];
+    for (index, (bytes, style)) in HAIR_PNGS.iter().zip(styles).enumerate() {
+        assert_eq!(style["id"].as_u64(), Some(index as u64 + 1));
+        assert_eq!(style["key"].as_str(), Some(names[index]));
+        let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+        let reader = decoder.read_info().unwrap();
+        assert_eq!((reader.info().width, reader.info().height), (32, 32));
+    }
+}
+
+#[test]
+fn every_hair_style_tracks_the_head_across_all_five_sampled_clips() {
+    let asset = CharacterAsset::builtin();
+    let rest = asset.sample("rest", 0.0);
+    for clip in &asset.clips {
+        let mut times: Vec<f32> = (0..=120)
+            .map(|step| clip.duration * step as f32 / 120.0)
+            .collect();
+        times.extend(
+            clip.channels
+                .iter()
+                .flat_map(|channel| channel.times.iter().copied()),
+        );
+        times.sort_by(f32::total_cmp);
+        times.dedup();
+        for time in times {
+            let pose = asset.sample(&clip.name, time);
+            let head_delta = pose[1] * rest[1].inverse();
+            assert!(
+                pose.iter()
+                    .all(|matrix| matrix.is_finite() && matrix.determinant() > 0.0)
+            );
+            for vertex in asset.vertices.iter().filter(|v| v.material > 0) {
+                let point = Vec3::from_array(vertex.position);
+                let expected = head_delta.transform_point3(rest[1].transform_point3(point));
+                let actual = pose[vertex.joint].transform_point3(point);
+                assert!(actual.is_finite() && actual.abs_diff_eq(expected, 0.00001));
+                let normal = pose[vertex.joint].transform_vector3(Vec3::from_array(vertex.normal));
+                assert!((normal.length() - 0.9).abs() < 0.00001);
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_or_disjoint_material_ranges_and_outside_socket_hair_are_rejected() {
+    let mut mixed = CharacterAsset::builtin();
+    mixed.indices[0] = 216;
+    assert!(mixed.validate().is_err());
+    let mut disjoint = CharacterAsset::builtin();
+    let first = disjoint.indices[0..3].to_vec();
+    disjoint.indices.extend(first);
+    assert!(disjoint.validate().is_err());
+    let mut outside = CharacterAsset::builtin();
+    outside
+        .vertices
+        .iter_mut()
+        .find(|v| v.material == 3)
+        .unwrap()
+        .position[1] = 0.82;
+    assert!(outside.validate().is_err());
 }

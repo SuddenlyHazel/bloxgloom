@@ -4,6 +4,7 @@
 No runtime importer or third-party Python package is required. Unsupported glTF
 features fail explicitly rather than silently changing the authored model.
 """
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -12,6 +13,25 @@ import struct
 ROOT = Path(__file__).resolve().parents[2]
 DEST = ROOT / "assets/models/player"
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+# Append-only appearance/material IDs, source/output stem, vertex budget and
+# authored head-local bounding envelope in meters. ID 0 is body/no hair.
+HAIR_CATALOG = [
+    (1, "tousled_crop", "hair", 512, (-0.30, 0.18, -0.31), (0.30, 0.61, 0.30)),
+    (2, "side_swept_undercut", "hair_undercut", 768, (-0.35, 0.15, -0.33), (0.29, 0.64, 0.30)),
+    (3, "space_buns", "hair_space_buns", 1024, (-0.42, 0.20, -0.31), (0.42, 0.81, 0.31)),
+    (4, "curly_bob", "hair_curly_bob", 3072, (-0.40, 0.11, -0.37), (0.40, 0.64, 0.40)),
+    (5, "curly_pigtails", "hair_curly_pigtails", 2048, (-0.50, 0.11, -0.33), (0.50, 0.56, 0.38)),
+    (6, 'sidepart_bob', 'hair_sidepart_bob', 512, (-0.3, 0.08, -0.3), (0.3, 0.56, 0.3)),
+    (7, 'compact_braid', 'hair_compact_braid', 512, (-0.28, 0.08, -0.29), (0.28, 0.54, 0.4)),
+    (8, 'long_loose_curls', 'hair_long_loose_curls', 2816, (-0.36, -0.47, -0.32), (0.36, 0.61, 0.65)),
+    (9, 'long_curly_ponytail', 'hair_long_curly_ponytail', 2048, (-0.34, -0.49, -0.32), (0.34, 0.61, 0.82)),
+    (10, 'half_up_curly_cascade', 'hair_half_up_curly_cascade', 2560, (-0.31, -0.41, -0.32), (0.31, 0.65, 0.67)),
+    (11, 'rounded_afro', 'hair_rounded_afro', 4352, (-0.51, 0.21, -0.39), (0.5, 0.91, 0.47)),
+    (12, 'twin_braids', 'hair_twin_braids', 3328, (-0.4, -0.54, -0.26), (0.4, 0.57, 0.41)),
+    (13, 'curly_mohawk', 'hair_curly_mohawk', 1024, (-0.26, 0.34, -0.31), (0.26, 0.78, 0.34)),
+]
+MAX_TOTAL_VERTICES = 32768
+MAX_TOTAL_INDICES = 98304
 
 
 def require(condition, message):
@@ -82,12 +102,56 @@ def transform(matrix, vector, w):
     return [sum(matrix[column * 4 + row] * vector[column] for column in range(3)) + matrix[12 + row] * w for row in range(3)]
 
 
+def geometry_animation_sha256(glb):
+    # Texture-independent fingerprint binds clearance evidence to the exact
+    # geometry, rig and animation values, even when the face atlas is replaced.
+    payload = {key: glb.doc[key] for key in ["meshes", "nodes", "skins", "animations"]}
+    payload["accessor_values"] = [glb.accessor(i) for i in range(len(glb.doc["accessors"]))]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def validate_geometry(vertices, indices):
+    require(0 < len(vertices) <= MAX_TOTAL_VERTICES, "total vertex budget exceeded")
+    require(0 < len(indices) <= MAX_TOTAL_INDICES and len(indices) % 3 == 0, "total index budget exceeded")
+    require(all(0 <= i < len(vertices) for i in indices), "triangle index out of bounds")
+    require(all(v["material"] in range(len(HAIR_CATALOG) + 1) for v in vertices), "unknown material")
+    materials = []
+    for start in range(0, len(indices), 3):
+        triangle = [vertices[i]["material"] for i in indices[start:start + 3]]
+        require(len(set(triangle)) == 1, "triangle crosses materials")
+        if not materials or materials[-1] != triangle[0]:
+            materials.append(triangle[0])
+    require(materials == list(range(len(HAIR_CATALOG) + 1)), "material ranges must be contiguous and ordered")
+    require(sum(v["material"] == 0 for v in vertices) <= 256, "body vertex budget exceeded")
+    for material, _, _, limit, lo, hi in HAIR_CATALOG:
+        selected = [v for v in vertices if v["material"] == material]
+        require(0 < len(selected) <= limit, "hair vertex budget exceeded")
+        require(sum(vertices[i]["material"] == material for i in indices) <= limit * 3, "hair index budget exceeded")
+        require(all(v["joint"] == 1 and all(lo[a] <= v["position"][a] <= hi[a] for a in range(3)) for v in selected), "hair outside authored head socket envelope")
+
+
+def load_native(dest=DEST):
+    """Reconstruct the exact runtime arrays for offline validation."""
+    dest = Path(dest)
+    result = json.loads((dest / "character.json").read_text())
+    result["clips"] = [json.loads((dest / f"clip_{name}.json").read_text()) for name in ["walk", "idle", "crouch", "tool_use_left", "tool_use_right"]]
+    for material, _, stem, _, _, _ in HAIR_CATALOG:
+        data = (dest / f"{stem}.mesh").read_bytes()
+        magic, count, index_count = struct.unpack_from("<4sII", data)
+        require(magic == b"BGH1" and len(data) == 12 + count * 32 + index_count * 2, "invalid native hair mesh")
+        start = len(result["vertices"])
+        for i in range(count):
+            values = struct.unpack_from("<8f", data, 12 + i * 32)
+            result["vertices"].append({"position": list(values[:3]), "normal": list(values[3:6]), "uv": list(values[6:]), "joint": 1, "material": material})
+        result["indices"].extend(start + struct.unpack_from("<H", data, 12 + count * 32 + i * 2)[0] for i in range(index_count))
+    return result
+
+
 def convert(dest=DEST):
     dest = Path(dest)
     body = Glb(dest / "source/player.glb")
-    hair = Glb(dest / "source/hair.glb")
-    undercut = Glb(dest / "source/hair_undercut.glb")
-    sources = [(body, 0), (hair, 1), (undercut, 2)]
+    hairs = [Glb(dest / f"source/{entry[2]}.glb") for entry in HAIR_CATALOG]
+    sources = [(body, 0)] + [(glb, entry[0]) for glb, entry in zip(hairs, HAIR_CATALOG)]
     for glb, _ in sources:
         glb.validate_material()
     skin, = body.doc["skins"]
@@ -95,7 +159,7 @@ def convert(dest=DEST):
     require(len(ids) == 7, "expected seven authored joints")
     bind = body.accessor(skin["inverseBindMatrices"])
     require(len(bind) == 7, "expected seven inverse bind matrices")
-    for glb in [hair, undercut]:
+    for glb in hairs:
         require(len(glb.doc["nodes"]) == 1 and not glb.doc["nodes"][0].get("children"), "hair must be one identity socket mesh")
     nodes = body.doc["nodes"]
     parents = {child: parent for parent, node in enumerate(nodes) for child in node.get("children", [])}
@@ -153,11 +217,35 @@ def convert(dest=DEST):
             channels.append({"joint": ids.index(target["node"]), "path": target["path"], "times": times, "values": [v + [0] if len(v) == 3 else v for v in values]})
         clips.append({"name": animation["name"], "duration": max(c["times"][-1] for c in channels), "looping": animation.get("extras", {}).get("loop", False), "channels": channels})
     require({c["name"] for c in clips} == {"idle", "walk", "crouch", "tool_use_left", "tool_use_right"}, "unexpected clip set")
-    result = {"version": 1, "joints": joints, "vertices": vertices, "indices": indices, "clips": clips}
+    validate_geometry(vertices, indices)
+    body_vertices = [v for v in vertices if v["material"] == 0]
+    body_indices = [i for i in indices if vertices[i]["material"] == 0]
+    result = {"version": 1, "joints": joints, "vertices": body_vertices, "indices": body_indices, "clips": []}
     (dest / "character.json").write_text(json.dumps(result, separators=(",", ":"), allow_nan=False) + "\n")
+    for clip in clips:
+        (dest / f"clip_{clip['name']}.json").write_text(json.dumps(clip, separators=(",", ":"), allow_nan=False) + "\n")
     (dest / "body.png").write_bytes(body.png())
-    (dest / "hair.png").write_bytes(hair.png())
-    (dest / "hair_undercut.png").write_bytes(undercut.png())
+    styles = []
+    for glb, (material, key, stem, limit, lo, hi) in zip(hairs, HAIR_CATALOG):
+        png = glb.png()
+        (dest / f"{stem}.png").write_bytes(png)
+        selected = [v for v in vertices if v["material"] == material]
+        locations = [i for i, index in enumerate(indices) if vertices[index]["material"] == material]
+        first_vertex = next(i for i, v in enumerate(vertices) if v["material"] == material)
+        local_indices = [indices[i] - first_vertex for i in locations]
+        require(len(selected) <= 65535 and all(0 <= i < len(selected) for i in local_indices), "hair mesh index exceeds u16")
+        packed = struct.pack("<4sII", b"BGH1", len(selected), len(local_indices))
+        packed += b"".join(struct.pack("<8f", *v["position"], *v["normal"], *v["uv"]) for v in selected)
+        packed += struct.pack("<" + "H" * len(local_indices), *local_indices)
+        (dest / f"{stem}.mesh").write_bytes(packed)
+        styles.append({"id": material, "key": key, "source": f"source/{stem}.glb", "texture": f"{stem}.png", "mesh": f"{stem}.mesh", "mesh_sha256": hashlib.sha256(packed).hexdigest(),
+            "source_sha256": hashlib.sha256((dest / f"source/{stem}.glb").read_bytes()).hexdigest(),
+            "texture_sha256": hashlib.sha256(png).hexdigest(), "texture_size": list(struct.unpack_from(">II", png, 16)),
+            "vertex_count": len(selected), "index_range": [locations[0], locations[-1] + 1],
+            "head_local_bounds": [[min(v["position"][axis] for v in selected) for axis in range(3)], [max(v["position"][axis] for v in selected) for axis in range(3)]],
+            "vertex_limit": limit, "head_local_bounds_limit": [lo, hi]})
+    sockets = {"version": 1, "material_zero": "body; appearance hair ID 0 attaches no mesh", "socket": {"joint": head, "name": "head", "translation": [0, 0, 0], "rotation_xyzw": [0, 0, 0, 1], "scale": [1, 1, 1]}, "source_basis": {"up": "+Y", "forward": "-Z", "units": "meters"}, "native_uniform_scale": 0.9, "rigid": True, "secondary_motion": False, "geometry_animation_sha256": geometry_animation_sha256(body), "joint_count": 7, "clip_names": [clip["name"] for clip in clips], "total_vertex_limit": MAX_TOTAL_VERTICES, "total_index_limit": MAX_TOTAL_INDICES, "styles": styles}
+    (dest / "hair_sockets.json").write_text(json.dumps(sockets, indent=2) + "\n")
     print(f"Converted {len(vertices)} vertices, {len(indices)//3} triangles, {len(joints)} joints, {len(clips)} clips")
 
 
