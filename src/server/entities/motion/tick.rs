@@ -397,30 +397,40 @@ fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<C
             "moving destination capacity",
         ));
     }
-    let transaction = state
-        .entities
-        .prepare_update(
+    let patch = EntityPatch {
+        payload: Some(EntityPayload::new(
+            record.encode().map_err(|e| invalid(&e.0))?,
+        )),
+        position: None,
+        next_tick: Some(Some(
+            if record.pending.is_some()
+                || record
+                    .next_behavior_tick
+                    .is_some_and(|due| due <= record.simulation_tick)
+            {
+                tick.saturating_add(1)
+            } else {
+                tick.saturating_add(STEP_TICKS)
+            },
+        )),
+    };
+    // Chunk crossings transfer the same fenced payload and schedule atomically.
+    // A positional update alone correctly rejects changing entity ownership.
+    let transaction = if destination != owner {
+        state
+            .entities
+            .prepare_transfer(id, snapshot.revision, record.motion.position, patch)
+    } else {
+        state.entities.prepare_update(
             id,
             snapshot.revision,
             EntityPatch {
-                payload: Some(EntityPayload::new(
-                    record.encode().map_err(|e| invalid(&e.0))?,
-                )),
                 position: Some(record.motion.position),
-                next_tick: Some(Some(
-                    if record.pending.is_some()
-                        || record
-                            .next_behavior_tick
-                            .is_some_and(|due| due <= record.simulation_tick)
-                    {
-                        tick.saturating_add(1)
-                    } else {
-                        tick.saturating_add(STEP_TICKS)
-                    },
-                )),
+                ..patch
             },
         )
-        .map_err(io::Error::other)?;
+    }
+    .map_err(io::Error::other)?;
     Ok(Some(commit(reads, transaction)))
 }
 fn clamp(v: &mut [f64; 3], max: f64) {
