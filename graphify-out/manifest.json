@@ -5826,15 +5826,15 @@
     "semantic_hash": ""
   },
   "src/render/avatars/character/first_person.rs": {
-    "mtime": 1790858994.187669,
-    "seen": 1790859010.425312,
-    "ast_hash": "9f799fe7f02087b14fe4e16d1cd206b0",
+    "mtime": 1790859314.8918614,
+    "seen": 1790859361.5609689,
+    "ast_hash": "478d12f51cad5f63a7139d8250f07e9c",
     "semantic_hash": ""
   },
   "src/render/avatars/character/first_person/tests.rs": {
-    "mtime": 1790859021.5616598,
-    "seen": 1790859079.340692,
-    "ast_hash": "af205e77003f4722d532a4b195c1eace",
+    "mtime": 1790859292.6069784,
+    "seen": 1790859361.560971,
+    "ast_hash": "7be839c22aff5bb339b1b21f5ac04594",
     "semantic_hash": ""
   }
 }
