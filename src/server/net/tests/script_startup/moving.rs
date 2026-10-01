@@ -196,8 +196,16 @@ fn moving_failed_impact_remains_durable_and_does_not_grant_partial_reward() {
         assert!(accepted, "{reason}");
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            if let ServerMessage::WorldCommitPart(part)=peer.read(deadline)
-                && part.entities.iter().any(|change|matches!(change,protocol::PublicEntityChange::Upsert(e) if e.entity_type==kind&&e.motion_revision>1)) { break; }
+            if let ServerMessage::WorldCommitPart(part) = peer.read(deadline)
+                && part.entities.iter().any(|change| {
+                    matches!(change, protocol::PublicEntityChange::Upsert(e)
+                        if e.entity_type == kind && e.motion_revision > 1
+                            && bloxgloom_host_api::motion::Projection::decode(&e.payload)
+                                .is_ok_and(|pose| pose.stopped))
+                })
+            {
+                break;
+            }
         }
     });
     let state = fixture.open().unwrap();
