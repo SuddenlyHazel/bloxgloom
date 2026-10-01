@@ -33,7 +33,10 @@ participate in content-map/handshake compatibility via the player contract.
 
 Block-bound actions take discovery precedence over entity-type actions on an
 anchor; item-bound actions similarly precede empty-space actions. Each discovery
-context is independently capped at eight, rather than merging then truncating.
+context is independently bounded, rather than merging then truncating. Nonempty
+targets allow eight actions; empty targets have separate pools of eight console
+commands and eight ordinary actions. Console commands are filtered out of the
+generic action menu.
 Luau `register_action` accepts `"entity"` as a target kind alongside `"empty"`,
 `"item"` and `"block"`. Its gameplay handler receives the resolved entity ID
 and uses the same server-side reach, revision and ownership checks as native
