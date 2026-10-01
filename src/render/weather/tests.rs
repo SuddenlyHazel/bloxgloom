@@ -1,4 +1,19 @@
 use super::*;
+
+#[test]
+fn full_storm_replaces_day_and_twilight_sky_colors_with_neutral_overcast() {
+    let storm = Presentation::new(1.0, 1.0, [0.0; 2], 1.0, 0.0, 0.0);
+    for time in [crate::daylight::INITIAL_MS, crate::daylight::CYCLE_MS / 2] {
+        let atmosphere = storm.atmosphere(Atmosphere::at(time));
+        for color in [atmosphere.horizon, atmosphere.zenith] {
+            assert!(color.z >= color.x);
+            assert!(
+                color.z - color.x < 0.02,
+                "storm sky retains a colored clear-sky gradient: {color:?}"
+            );
+        }
+    }
+}
 fn camera() -> Camera {
     Camera {
         position: Vec3::new(0.0, 10.0, 0.0),
@@ -11,7 +26,7 @@ fn camera() -> Camera {
 fn rain_is_bounded_and_roof_clipping_keeps_streaks_above_cover() {
     let mut weather = Presentation::new(1.0, 1.0, [18.0, 0.0], 1.0, 7.0, 0.0);
     let open = weather.vertices(camera());
-    assert_eq!(open.len(), MAX_STREAKS * 27);
+    assert_eq!(open.len(), 512 * 27);
     weather.set_cover([-8, -8], [12.0; 256]);
     let covered = weather.vertices(camera());
     assert!(covered.len() < open.len());
@@ -55,4 +70,31 @@ fn cloud_advection_is_continuous_across_wind_changes_and_clock_wrap() {
     let after = clouds(0.01, 2.0);
     assert!((before[0] - after[0]).abs() < 0.001);
     assert!((before[1] - after[1]).abs() < 0.001);
+}
+
+#[test]
+fn severe_storm_increases_rain_wind_and_fog_with_bounded_geometry() {
+    let base = Atmosphere::at(crate::daylight::INITIAL_MS);
+    let profile = |kind: crate::weather::WeatherKind| {
+        let values = kind.values();
+        Presentation::new(values.cloud, values.rain, [values.wind, 0.0], 1.0, 0.0, 0.0)
+    };
+    let mild = profile(crate::weather::WeatherKind::StormMild);
+    let normal = profile(crate::weather::WeatherKind::Storm);
+    let severe = profile(crate::weather::WeatherKind::StormSevere);
+    assert!(mild.vertices(camera()).len() < normal.vertices(camera()).len());
+    assert!(normal.vertices(camera()).len() < severe.vertices(camera()).len());
+    assert!(severe.vertices(camera()).len() <= MAX_STREAKS * 27);
+    assert_eq!(severe.wind[0], 30.0);
+    assert!(mild.atmosphere(base).fog < normal.atmosphere(base).fog);
+    assert!(normal.atmosphere(base).fog < severe.atmosphere(base).fog);
+    assert!(
+        (severe
+            .atmosphere(base)
+            .camera_data(glam::Mat4::IDENTITY, glam::Vec3::ZERO)[23]
+            - 0.065)
+            .abs()
+            < 1e-6
+    );
+    assert_eq!(Presentation::default().atmosphere(base).fog, 0.0);
 }

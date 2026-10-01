@@ -294,5 +294,6 @@ Client audio output and procedural weather previews are available through
 playback, offline WAV previews and the NoiseMachine port scope.
 
 Server-owned clear, rain and storm weather now drives clouds, rain, lightning and
-audio. Use `weather set <clear|rain|storm> [transition-seconds]` in the admin console;
+audio. Use `weather set <clear|rain|storm> [transition-seconds] [mild|normal|severe]`
+in the admin console (severity applies to storms);
 see [Game weather](docs/weather/FOUNDATION.md) for timing, shelter and testing.

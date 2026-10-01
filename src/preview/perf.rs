@@ -351,7 +351,8 @@ pub(super) async fn run_perf_benchmark_async(
             &camera_buffer,
             0,
             bytemuck::cast_slice(
-                &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS).camera_data(matrix),
+                &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                    .camera_data(matrix, camera.position),
             ),
         );
         queue.write_buffer(

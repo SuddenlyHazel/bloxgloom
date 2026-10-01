@@ -141,7 +141,12 @@ fn real_listener_synchronizes_admin_weather_and_denies_other_players() {
     let (mut other, other_epoch, other_inventory, second) = connect(address, 0x8676);
     assert_eq!(first.seed, second.seed);
     assert_eq!(first.to, WeatherKind::Clear);
-    send(&mut other, other_epoch, other_inventory, 2);
+    send(
+        &mut other,
+        other_epoch,
+        other_inventory,
+        WeatherKind::StormSevere as u8,
+    );
     loop {
         if let ServerMessage::ActionResult {
             accepted: false, ..
@@ -150,17 +155,17 @@ fn real_listener_synchronizes_admin_weather_and_denies_other_players() {
             break;
         }
     }
-    send(&mut peer, epoch, inventory, 2);
+    send(&mut peer, epoch, inventory, WeatherKind::StormSevere as u8);
     let changed = loop {
         if let ServerMessage::Weather { snapshot } = protocol::read_server(&mut peer).unwrap()
-            && snapshot.to == WeatherKind::Storm
+            && snapshot.to == WeatherKind::StormSevere
         {
             break snapshot;
         }
     };
     loop {
         if let ServerMessage::Weather { snapshot } = protocol::read_server(&mut other).unwrap()
-            && snapshot.to == WeatherKind::Storm
+            && snapshot.to == WeatherKind::StormSevere
         {
             assert_eq!(snapshot.revision, changed.revision);
             break;
@@ -171,7 +176,7 @@ fn real_listener_synchronizes_admin_weather_and_denies_other_players() {
     drop(other);
     let (address, server) = crate::server::start_local_server(7, root.clone()).unwrap();
     let (peer, _, _, resumed) = connect(address, 0x8675);
-    assert_eq!(resumed.to, WeatherKind::Storm);
+    assert_eq!(resumed.to, WeatherKind::StormSevere);
     assert_eq!(resumed.revision, changed.revision);
     server.stop().unwrap();
     drop(peer);
@@ -201,5 +206,30 @@ fn durable_apply_does_not_rewind_elapsed_weather_time() {
     assert!(clock.snapshot().elapsed_ms >= before);
     clock.finish().unwrap();
     drop(clock);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn severity_transitions_remain_continuous_and_survive_checkpoint() {
+    let root = temporary();
+    let mut clock = Clock::open(&root, 42).unwrap();
+    clock
+        .apply(clock.prepare(WeatherKind::StormSevere as u8, 0).unwrap())
+        .unwrap();
+    let severe = clock.snapshot();
+    assert_eq!(severe.sample_at(severe.elapsed_ms).rain, 1.8);
+    let change = clock.prepare(WeatherKind::StormMild as u8, 30_000).unwrap();
+    clock.apply(change).unwrap();
+    let before = clock.snapshot();
+    let end = before.sample_at(before.transition_start_ms + 30_000);
+    assert_eq!(end, WeatherKind::StormMild.values());
+    assert!(before.sample_at(before.elapsed_ms).rain > 1.79);
+    clock.finish().unwrap();
+    drop(clock);
+    let mut resumed = Clock::open(&root, 999).unwrap();
+    assert_eq!(resumed.snapshot().to, WeatherKind::StormMild);
+    assert_eq!(resumed.snapshot().from, before.from);
+    resumed.finish().unwrap();
+    drop(resumed);
     fs::remove_dir_all(root).unwrap();
 }

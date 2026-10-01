@@ -40,6 +40,7 @@ struct Voice {
     elapsed: u32,
     length: u32,
     pulse: [[Biquad; 2]; BANDS],
+    bass: [[Biquad; 2]; BANDS],
     air: [[[Biquad; 2]; 2]; BANDS],
     echoes: [Echo; ECHOES],
     span_log: f32,
@@ -55,6 +56,7 @@ impl Default for Voice {
             next: 0,
             elapsed: 0,
             length: 0,
+            bass: std::array::from_fn(|_| std::array::from_fn(|_| Biquad::default())),
             pulse: std::array::from_fn(|_| std::array::from_fn(|_| Biquad::default())),
             air: std::array::from_fn(|_| {
                 std::array::from_fn(|_| std::array::from_fn(|_| Biquad::default()))
@@ -382,6 +384,13 @@ fn build_voice(
         let cutoff = (1000.0 * (1000.0 / metres).powf(0.6)).clamp(150.0, 6000.0);
         for channel in 0..2 {
             voice.pulse[band][channel].tune(true, 1.0 / period, 0.7);
+            // A broad low-frequency body shares the physical strike excitation,
+            // stereo position and echoes, rather than adding an unrelated tone.
+            voice.bass[band][channel].tune(
+                true,
+                (65.0 * (1000.0 / metres).powf(0.15)).clamp(35.0, 85.0),
+                0.6,
+            );
             voice.air[band][channel][0].tune(false, cutoff, 0.541_196_1);
             voice.air[band][channel][1].tune(false, cutoff, 1.306_563);
         }
@@ -461,7 +470,8 @@ impl Voice {
         let mut out = [0.0; 2];
         for (channel, sample) in out.iter_mut().enumerate() {
             for (band, excitation) in excitation.iter().enumerate() {
-                let pulse = self.pulse[band][channel].next(excitation[channel]);
+                let pulse = 0.65 * self.pulse[band][channel].next(excitation[channel])
+                    + 2.4 * self.bass[band][channel].next(excitation[channel]);
                 let air = self.air[band][channel][0].next(pulse);
                 *sample += self.air[band][channel][1].next(air);
             }
@@ -485,6 +495,31 @@ fn limit(x: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn thunder_has_low_frequency_body_without_clipping_or_dc() {
+        for seed in [7, 27, 99] {
+            let mut thunder = Thunder::new(seed);
+            assert!(thunder.trigger(600.0, 0.0));
+            let mut bass = Biquad::bandpass(80.0, 0.6);
+            let mut treble = Biquad::bandpass(2000.0, 0.6);
+            let mut low_energy = 0.0_f64;
+            let mut high_energy = 0.0_f64;
+            let mut mean = 0.0_f64;
+            for _ in 0..44_100 * 12 {
+                let frame = thunder.next();
+                assert!(frame.iter().all(|v| v.is_finite() && v.abs() <= 1.0));
+                let sample = (frame[0] + frame[1]) * 0.5;
+                low_energy += f64::from(bass.next(sample)).powi(2);
+                high_energy += f64::from(treble.next(sample)).powi(2);
+                mean += f64::from(sample);
+            }
+            assert!(
+                low_energy > 4.0 * high_energy,
+                "seed {seed}: bass {low_energy}, treble {high_energy}"
+            );
+            assert!((mean / (44_100.0 * 12.0)).abs() < 0.01);
+        }
+    }
     #[test]
     fn strike_pool_rejects_overload_and_invalid_coordinates() {
         let mut thunder = Thunder::new(13);

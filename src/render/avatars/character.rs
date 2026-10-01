@@ -213,7 +213,9 @@ impl CharacterRenderer {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("authored character shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("character.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                super::super::fog::shader(include_str!("character.wgsl")).into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("authored character pipeline"),

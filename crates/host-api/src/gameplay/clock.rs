@@ -14,7 +14,8 @@ impl Context<'_> {
         if !self.snapshot.admin() {
             return self.fail(Error::Invalid("admin access denied".into()));
         }
-        if kind > 2 || transition_ms > 60_000 {
+        // 0 clear, 1 rain, 2 normal storm, 3 mild storm, 4 severe storm.
+        if kind > 4 || transition_ms > 60_000 {
             return self.fail(Error::Invalid("invalid weather request".into()));
         }
         self.plan.weather = Some((kind, transition_ms));

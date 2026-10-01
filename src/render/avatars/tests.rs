@@ -143,7 +143,7 @@ pub(super) fn render_avatars(
         label: None,
         contents: bytemuck::cast_slice(
             &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                .camera_data(camera),
+                .camera_data(camera, Vec3::new(0.0, 0.0, 4.0)),
         ),
         usage: wgpu::BufferUsages::UNIFORM,
     });
@@ -382,4 +382,17 @@ fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
             ..default
         })
     );
+}
+
+#[test]
+fn weather_fog_avatar_shader_validates_without_a_gpu() {
+    let source = super::appearance::shader(crate::content::catalog());
+    let module =
+        wgpu::naga::front::wgsl::parse_str(&source).expect("valid avatar weather fog WGSL");
+    wgpu::naga::valid::Validator::new(
+        wgpu::naga::valid::ValidationFlags::all(),
+        wgpu::naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .expect("valid avatar weather fog shader module");
 }

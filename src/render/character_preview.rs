@@ -22,7 +22,8 @@ impl CharacterPreview {
         let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("character menu camera"),
             contents: bytemuck::cast_slice(
-                &super::daylight::Atmosphere::at(crate::daylight::INITIAL_MS).camera_data(matrix),
+                &super::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                    .camera_data(matrix, Vec3::new(0.0, 0.0, 4.0)),
             ),
             usage: wgpu::BufferUsages::UNIFORM,
         });

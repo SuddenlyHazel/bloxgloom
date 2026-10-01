@@ -643,7 +643,11 @@ async fn render_previews_weather(
     let (mut pipeline, mut cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
-    let mut rain_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
+    let mut rain_renderer = render::fire::FireRenderer::with_capacity(
+        &device,
+        &camera_buffer,
+        render::weather::MAX_VERTEX_BYTES,
+    );
     let mut avatar_renderer = render::AvatarRenderer::new(
         &device,
         &queue,
@@ -1417,7 +1421,7 @@ async fn render_previews_weather(
         queue.write_buffer(
             &camera_buffer,
             0,
-            bytemuck::cast_slice(&atmosphere.camera_data(matrix)),
+            bytemuck::cast_slice(&atmosphere.camera_data(matrix, camera.position)),
         );
         let has_target = matches!(scene, PreviewScene::Surface)
             && output.screen == UiScreen::Playing

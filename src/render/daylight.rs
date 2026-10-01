@@ -9,6 +9,8 @@ pub(crate) struct Atmosphere {
     pub horizon: Vec3,
     pub zenith: Vec3,
     pub cloud: f32,
+    pub fog: f32,
+    pub fog_exposure: f32,
     pub drift: [f32; 2],
 }
 
@@ -23,6 +25,8 @@ impl Atmosphere {
         Self {
             sun,
             cloud: 0.0,
+            fog: 0.0,
+            fog_exposure: 1.0,
             drift: [0.0; 2],
             strength: 0.035 + 0.965 * day,
             horizon: Vec3::new(0.012, 0.018, 0.045)
@@ -32,11 +36,14 @@ impl Atmosphere {
         }
     }
 
-    pub(crate) fn camera_data(self, matrix: Mat4) -> [f32; 24] {
-        let mut data = [0.0; 24];
+    pub(crate) fn camera_data(self, matrix: Mat4, eye: Vec3) -> [f32; 28] {
+        let mut data = [0.0; 28];
         data[..16].copy_from_slice(&matrix.to_cols_array());
         data[16..20].copy_from_slice(&[self.sun.x, self.sun.y, self.sun.z, self.strength]);
         data[20..23].copy_from_slice(&self.horizon.to_array());
+        data[23] = super::fog::density(self.fog, 1.0);
+        data[24..27].copy_from_slice(&eye.to_array());
+        data[27] = self.fog_exposure;
         data
     }
 }

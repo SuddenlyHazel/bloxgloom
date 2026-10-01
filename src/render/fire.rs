@@ -98,12 +98,21 @@ fn triangle(out: &mut Vec<f32>, positions: [Vec3; 3], uv_y: [f32; 3], color: [f3
 pub(crate) struct FireRenderer {
     pipeline: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
+    capacity_bytes: u64,
     count: u32,
     camera_group: wgpu::BindGroup,
 }
 
 impl FireRenderer {
     pub(crate) fn new(device: &wgpu::Device, camera: &wgpu::Buffer) -> Self {
+        Self::with_capacity(device, camera, MAX_BYTES)
+    }
+
+    pub(crate) fn with_capacity(
+        device: &wgpu::Device,
+        camera: &wgpu::Buffer,
+        capacity_bytes: u64,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("burn flame shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("fire.wgsl").into()),
@@ -174,7 +183,7 @@ impl FireRenderer {
         });
         let vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("burn flame vertices"),
-            size: MAX_BYTES,
+            size: capacity_bytes,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -182,6 +191,7 @@ impl FireRenderer {
         Self {
             pipeline,
             vertices,
+            capacity_bytes,
             count: 0,
             camera_group,
         }
@@ -194,7 +204,7 @@ impl FireRenderer {
 
     /// Shared bounded, depth-tested translucent streak geometry (fire and rain).
     pub(crate) fn set_mesh(&mut self, queue: &wgpu::Queue, mesh: &[f32]) {
-        debug_assert!(std::mem::size_of_val(mesh) as u64 <= MAX_BYTES);
+        debug_assert!(std::mem::size_of_val(mesh) as u64 <= self.capacity_bytes);
         self.count = (mesh.len() / FLOATS) as u32;
         if !mesh.is_empty() {
             queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(mesh));

@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var<storage, read> joints: array<mat4x4<f32>>;
 @group(1) @binding(1) var body: texture_2d<f32>;
@@ -17,7 +17,7 @@ struct Input {
 };
 struct Output {
     @builtin(position) clip: vec4f, @location(0) light: vec3f,
-    @location(1) distance: f32, @location(2) sky: f32,
+    @location(2) sky: f32,
     @location(3) uv: vec2f, @location(4) @interpolate(flat) material: u32,
     @location(5) @interpolate(flat) recipe: vec3u,
     @location(6) @interpolate(flat) iris: vec4u,
@@ -26,6 +26,7 @@ struct Output {
     @location(9) local_height: f32,
     @location(10) @interpolate(flat) eye_height: f32,
     @location(11) @interpolate(flat) joint: u32,
+    @location(12) world_position: vec3f,
 };
 @vertex fn vs_main(input: Input) -> Output {
     var output: Output;
@@ -52,7 +53,8 @@ struct Output {
         + sky * camera.sun.w * (vec3f(0.31,0.40,0.53) + sun * vec3f(0.77,0.66,0.47))
         + glow * glow * vec3f(1.0,0.57,0.23)
         + mix(glow_bounce,bounce,camera.sun.w)*1.35);
-    output.distance = output.clip.w; output.sky = sky;
+    output.world_position = world;
+    output.sky = sky;
     output.uv = input.uv; output.material = input.material;
     output.recipe = vec3u(min(input.recipe.x,7u),min(input.recipe.y,5u),input.recipe.z);
     output.iris = input.iris;
@@ -87,7 +89,5 @@ fn tint_iris(base: vec3f, shade: f32) -> vec3f {
         albedo = vec4f(mix(face,mouth.rgb,mouth.a),1.0);
     }
     if albedo.a < 0.5 { discard; }
-    let fog = smoothstep(38.0,135.0,input.distance);
-    let fog_sky = mix(vec3f(0.006,0.009,0.016),camera.horizon.xyz,input.sky);
-    return vec4f(mix(albedo.rgb*input.light,fog_sky,fog),1.0);
+    return vec4f(bg_apply_fog(albedo.rgb * input.light, input.world_position, input.sky), 1.0);
 }

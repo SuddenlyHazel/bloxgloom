@@ -138,7 +138,8 @@ async fn run(frames: usize, count: usize, hair: Option<u8>) -> Result<(), Box<dy
     let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("character benchmark camera"),
         contents: bytemuck::cast_slice(
-            &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS).camera_data(matrix),
+            &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                .camera_data(matrix, Vec3::new(0.0, 0.0, 5.0)),
         ),
         usage: wgpu::BufferUsages::UNIFORM,
     });

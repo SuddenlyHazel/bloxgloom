@@ -1250,7 +1250,8 @@ fn committed_action_spawn_mappings_roundtrip_and_reject_invalid_ordinals() {
 #[test]
 fn weather_wire_round_trip_rejects_invalid_physical_values() {
     let mut snapshot = crate::weather::WeatherSnapshot::initial(123);
-    snapshot.to = crate::weather::WeatherKind::Storm;
+    snapshot.to = crate::weather::WeatherKind::StormSevere;
+    snapshot.from = snapshot.to.values();
     snapshot.transition_duration_ms = 30_000;
     let message = ServerMessage::Weather { snapshot };
     let mut bytes = Vec::new();

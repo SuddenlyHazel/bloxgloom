@@ -2,17 +2,78 @@ use super::*;
 use crate::weather::WeatherKind;
 
 #[test]
-fn shelter_uses_known_columns_and_roofs_instead_of_assuming_missing_air() {
-    assert_eq!(column_cover(0, 20, 0, |_, _, _| None), f32::INFINITY);
+fn grounded_and_hovering_weather_stays_exposed_at_vertical_chunk_edges() {
+    use crate::world::{AIR, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkKey, STONE};
+    use std::sync::Arc;
+    // Include a negative boundary: streaming and weather must both floor-divide.
+    for ground_y in [15.0, -1.0] {
+        let mut app = super::super::ClientApp::new(
+            super::super::Network::disconnected_for_test(),
+            crate::config::Config::default(),
+            std::env::temp_dir().join(format!("weather-cover-{}", std::process::id())),
+        );
+        let now = Instant::now();
+        for (step, feet_y) in [ground_y, ground_y + 1.0].into_iter().enumerate() {
+            app.position = Vec3::new(8.5, feet_y, 8.5);
+            app.chunks.clear();
+            let center = (feet_y.floor() as i32).div_euclid(CHUNK_SIZE as i32);
+            let ground = ground_y as i32 - 1;
+            for y in (center - crate::protocol::VERTICAL_VIEW_DISTANCE)
+                ..=(center + crate::protocol::VERTICAL_VIEW_DISTANCE)
+            {
+                let key = ChunkKey { x: 0, y, z: 0 };
+                let mut blocks = vec![AIR; CHUNK_VOLUME];
+                if ground.div_euclid(CHUNK_SIZE as i32) == y {
+                    for z in 0..CHUNK_SIZE {
+                        for x in 0..CHUNK_SIZE {
+                            blocks[Chunk::index([
+                                x,
+                                ground.rem_euclid(CHUNK_SIZE as i32) as usize,
+                                z,
+                            ])
+                            .unwrap()] = STONE;
+                        }
+                    }
+                }
+                app.chunks
+                    .insert(key, Arc::new(Chunk::from_blocks(key, 1, blocks)));
+            }
+            let camera = app.camera();
+            app.present_weather(camera, now + Duration::from_secs(step as u64));
+            assert_eq!(app.weather.target_exposure, 1.0, "feet at {feet_y}");
+            assert!(
+                app.weather.cover.iter().all(|roof| *roof == ground_y),
+                "feet at {feet_y}"
+            );
+        }
+    }
+}
+
+#[test]
+fn audio_cover_ignores_missing_ground_but_keeps_real_and_unknown_roofs() {
     assert_eq!(
-        column_cover(0, 20, 0, |_, _, _| Some(false)),
+        column_cover(0, 20, 0, 79, |_, y, _| (y >= 20).then_some(false)),
         f32::NEG_INFINITY
     );
-    assert_eq!(column_cover(0, 20, 0, |_, y, _| Some(y == 24)), 25.0);
-    assert_eq!(column_cover(0, 20, 0, |_, y, _| Some(y == 16)), 17.0);
+    assert_eq!(column_cover(0, 20, 0, 79, |_, y, _| Some(y == 25)), 26.0);
+    assert_eq!(
+        column_cover(0, 20, 0, 79, |_, y, _| (y != 30).then_some(false)),
+        f32::INFINITY
+    );
+}
+
+#[test]
+fn shelter_uses_known_columns_and_roofs_instead_of_assuming_missing_air() {
+    assert_eq!(column_cover(0, 4, 0, 84, |_, _, _| None), f32::INFINITY);
+    assert_eq!(
+        column_cover(0, 4, 0, 84, |_, _, _| Some(false)),
+        f32::NEG_INFINITY
+    );
+    assert_eq!(column_cover(0, 4, 0, 84, |_, y, _| Some(y == 24)), 25.0);
+    assert_eq!(column_cover(0, 4, 0, 84, |_, y, _| Some(y == 16)), 17.0);
     // A glass/leaf/other solid roof blocks rain regardless of opacity.
     assert_eq!(
-        column_cover(-4, 20, -4, |x, y, z| Some(x == -4 && z == -4 && y == 35)),
+        column_cover(-4, 4, -4, 84, |x, y, z| Some(x == -4 && z == -4 && y == 35)),
         36.0
     );
 }

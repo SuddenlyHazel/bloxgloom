@@ -1,7 +1,8 @@
 //! Bounded weather presentation; simulation and shelter queries stay outside rendering.
 use super::{Camera, daylight::Atmosphere};
 use glam::Vec3;
-pub(crate) const MAX_STREAKS: usize = 512;
+pub(crate) const MAX_STREAKS: usize = 1024;
+pub(crate) const MAX_VERTEX_BYTES: u64 = (MAX_STREAKS * 3 * 9 * 4) as u64;
 #[derive(Clone, Copy)]
 pub(crate) struct Presentation {
     cloud: f32,
@@ -35,8 +36,8 @@ impl Presentation {
         }
         Self {
             cloud: finite(cloud, 0.0, 1.0),
-            rain: finite(rain, 0.0, 1.0),
-            wind: wind.map(|v| finite(v, -18.0, 18.0)),
+            rain: finite(rain, 0.0, 1.8),
+            wind: wind.map(|v| finite(v, -30.0, 30.0)),
             exposure: finite(exposure, 0.0, 1.0),
             seconds: finite(seconds, 0.0, f32::MAX),
             flash: finite(flash, 0.0, 1.0),
@@ -48,14 +49,21 @@ impl Presentation {
     }
     pub(crate) fn atmosphere(self, mut a: Atmosphere) -> Atmosphere {
         a.cloud = self.cloud;
+        a.fog_exposure = self.exposure;
+        a.fog = ((self.rain - 0.6) / 1.2).clamp(0.0, 1.0);
         // A slow, closed cloud-advection path avoids displacement jumps when
         // wind changes, and is continuous across the client's one-hour clock wrap.
         // Rain streak slant still follows the authoritative instantaneous wind.
         let phase = self.seconds.rem_euclid(3600.0) * (std::f32::consts::TAU / 3600.0);
         a.drift = [24.0 * phase.sin(), 12.0 * (phase.cos() - 1.0)];
-        let gray = Vec3::new(0.19, 0.23, 0.28) * (0.12 + a.strength * 0.88);
-        a.horizon = a.horizon.lerp(gray, self.cloud * 0.72);
-        a.zenith = a.zenith.lerp(gray * 0.72, self.cloud * 0.85);
+        let overcast = ((self.cloud - 0.75) / 0.25).clamp(0.0, 1.0);
+        let overcast = overcast * overcast * (3.0 - 2.0 * overcast);
+        let gray = Vec3::new(0.19, 0.23, 0.28).lerp(Vec3::new(0.24, 0.245, 0.25), overcast)
+            * (0.12 + a.strength * 0.88);
+        a.horizon = a.horizon.lerp(gray, self.cloud * 0.72 + overcast * 0.28);
+        a.zenith = a
+            .zenith
+            .lerp(gray * 0.72, self.cloud * 0.85 + overcast * 0.15);
         // Flash changes skylight only. Sealed caves have zero sky visibility.
         a.strength = (a.strength * (1.0 - self.cloud * 0.38)).max(self.flash);
         a.horizon += Vec3::new(0.65, 0.72, 0.85) * self.flash;
@@ -72,7 +80,7 @@ impl Presentation {
         if intensity <= 0.001 {
             return Vec::new();
         }
-        let count = (MAX_STREAKS as f32 * intensity).ceil() as usize;
+        let count = (512.0 * intensity).ceil() as usize;
         let mut out = Vec::with_capacity(count * 27);
         let right = Vec3::new(-camera.yaw.sin(), 0.0, camera.yaw.cos()) * 0.012;
         let time = self.seconds.rem_euclid(1024.0);

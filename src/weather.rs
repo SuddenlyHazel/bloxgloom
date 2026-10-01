@@ -5,6 +5,8 @@ pub enum WeatherKind {
     Clear = 0,
     Rain = 1,
     Storm = 2,
+    StormMild = 3,
+    StormSevere = 4,
 }
 impl WeatherKind {
     pub(crate) fn from_u8(value: u8) -> Option<Self> {
@@ -12,6 +14,8 @@ impl WeatherKind {
             0 => Some(Self::Clear),
             1 => Some(Self::Rain),
             2 => Some(Self::Storm),
+            3 => Some(Self::StormMild),
+            4 => Some(Self::StormSevere),
             _ => None,
         }
     }
@@ -27,6 +31,16 @@ impl WeatherKind {
                 cloud: 0.75,
                 wind: 6.,
             },
+            Self::StormMild => WeatherValues {
+                rain: 0.7,
+                cloud: 1.,
+                wind: 10.,
+            },
+            Self::StormSevere => WeatherValues {
+                rain: 1.8,
+                cloud: 1.,
+                wind: 30.,
+            },
             Self::Storm => WeatherValues {
                 rain: 1.,
                 cloud: 1.,
@@ -35,7 +49,8 @@ impl WeatherKind {
         }
     }
 }
-/// Rain and cloud are normalized; wind is metres per second.
+/// Rain is relative to a normal storm (up to 1.8); cloud is normalized.
+/// Wind is metres per second.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WeatherValues {
     pub rain: f32,
@@ -82,6 +97,9 @@ impl WeatherSnapshot {
         };
         let t = t * t * (3. - 2. * t);
         let to = self.to.values();
+        if t >= 1.0 {
+            return to;
+        }
         WeatherValues {
             rain: self.from.rain + (to.rain - self.from.rain) * t,
             cloud: self.from.cloud + (to.cloud - self.from.cloud) * t,
@@ -101,7 +119,10 @@ impl WeatherSnapshot {
         {
             return None;
         }
-        if self.to != WeatherKind::Storm {
+        if !matches!(
+            self.to,
+            WeatherKind::Storm | WeatherKind::StormMild | WeatherKind::StormSevere
+        ) {
             return None;
         }
         let slot = elapsed_ms / 15_000;
@@ -130,11 +151,11 @@ impl WeatherSnapshot {
     }
     pub(crate) fn valid(self) -> bool {
         self.from.rain.is_finite()
-            && (0. ..=1.).contains(&self.from.rain)
+            && (0. ..=1.8).contains(&self.from.rain)
             && self.from.cloud.is_finite()
             && (0. ..=1.).contains(&self.from.cloud)
             && self.from.wind.is_finite()
-            && (0. ..=18.).contains(&self.from.wind)
+            && (0. ..=30.).contains(&self.from.wind)
             && self.transition_duration_ms <= 60_000
             && self.transition_start_ms <= self.elapsed_ms
             && self.next_change_ms > self.elapsed_ms

@@ -187,6 +187,18 @@ fn sky_noise(p: vec2<f32>) -> f32 {
     color += vec3f(0.7, 0.8, 1.0) * stars * night * (1.0 - cloud);
     let moon = smoothstep(0.9992, 0.99965, dot(ray, -sun_direction));
     color = mix(color, vec3f(0.55, 0.65, 0.85), moon * night);
+    // A storm has an unbroken cloud ceiling. Noise shades its surface instead
+    // of cutting blue holes into it, including at the horizon and sun/moon.
+    let overcast = smoothstep(0.75, 1.0, cover);
+    // The planar cloud projection is only meaningful above the horizon.
+    // Fade its contrast out before it can form a curtain below unloaded terrain.
+    let storm_sky = mix(horizon, zenith, smoothstep(-0.08, 0.86, ray.y))
+        * mix(1.0, 0.85 + 0.30 * cloud_noise, smoothstep(0.02, 0.20, ray.y));
+    color = mix(color, storm_sky, overcast);
     return vec4<f32>(color, 1.0);
 }
 "#;
+
+#[cfg(test)]
+#[path = "sky/tests.rs"]
+mod tests;

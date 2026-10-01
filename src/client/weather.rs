@@ -106,14 +106,19 @@ fn flash_at(age_ms: u64) -> f32 {
 }
 
 /// Scan only resident server chunks: a missing column is unknown, never clear.
-/// The nearby 80-block column is the presentation horizon, not an acoustic ray.
+/// Unknown cells inside the streamed range suppress rain until they arrive.
+/// Cells outside that range are excluded by the caller, not treated as roofs.
 fn column_cover(
     x: i32,
-    eye_y: i32,
+    bottom: i32,
     z: i32,
+    top: i32,
     mut block: impl FnMut(i32, i32, i32) -> Option<bool>,
 ) -> f32 {
-    for y in (eye_y.saturating_sub(16)..=eye_y.saturating_add(64)).rev() {
+    if bottom > top {
+        return f32::INFINITY;
+    }
+    for y in (bottom..=top).rev() {
         match block(x, y, z) {
             Some(true) => return y as f32 + 1.0,
             Some(false) => {}
@@ -121,6 +126,17 @@ fn column_cover(
         }
     }
     f32::NEG_INFINITY
+}
+
+/// Match vertical chunk interest, which is centered on feet rather than eyes.
+fn scan_ceiling(feet_y: f32, eye_y: i32) -> i32 {
+    let size = crate::world::CHUNK_SIZE as i32;
+    let center = (feet_y.floor() as i32).div_euclid(size);
+    let streamed_top = center
+        .saturating_add(crate::protocol::VERTICAL_VIEW_DISTANCE + 1)
+        .saturating_mul(size)
+        .saturating_sub(1);
+    eye_y.saturating_add(64).min(streamed_top)
 }
 
 impl super::ClientApp {
@@ -137,8 +153,9 @@ impl super::ClientApp {
                 for x in 0..COVER_SIDE {
                     cover[z * COVER_SIDE + x] = column_cover(
                         origin[0] + x as i32,
-                        eye_y,
+                        eye_y.saturating_sub(16),
                         origin[1] + z as i32,
+                        scan_ceiling(self.position.y, eye_y),
                         |x, y, z| {
                             self.block_at(x, y, z)
                                 .map(|id| self.catalog.block_flags(id) & crate::content::SOLID != 0)
@@ -154,6 +171,7 @@ impl super::ClientApp {
                 eye.x.floor() as i32,
                 eye.y.floor() as i32,
                 eye.z.floor() as i32,
+                scan_ceiling(self.position.y, eye.y.floor() as i32),
                 |x, y, z| {
                     self.block_at(x, y, z)
                         .map(|id| self.catalog.block_flags(id) & crate::content::SOLID != 0)

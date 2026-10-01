@@ -1,4 +1,4 @@
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
 struct VertexInput {
@@ -19,8 +19,8 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip: vec4<f32>,
     @location(0) color: vec3<f32>,
-    @location(1) distance: f32,
     @location(2) sky: f32,
+    @location(3) world_position: vec3f,
 };
 
 // REGISTERED_PALETTES
@@ -66,13 +66,11 @@ struct VertexOutput {
         + glow * glow * vec3<f32>(1.0, 0.57, 0.23)
         + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
     output.color = albedo * input.tint * light;
-    output.distance = output.clip.w;
+    output.world_position = world;
     output.sky = sky;
     return output;
 }
 
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let fog = smoothstep(38.0, 135.0, input.distance);
-    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), camera.horizon.xyz, input.sky);
-    return vec4<f32>(mix(input.color, fog_sky, fog), 1.0);
+    return vec4f(bg_apply_fog(input.color, input.world_position, input.sky), 1.0);
 }

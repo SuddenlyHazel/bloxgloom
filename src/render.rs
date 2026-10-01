@@ -8,6 +8,7 @@ pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
 pub(crate) mod fire;
+mod fog;
 pub(crate) mod game_ui;
 mod hooks;
 mod material;
@@ -261,7 +262,8 @@ impl Renderer {
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
-        let rain = fire::FireRenderer::new(&device, &camera_buffer);
+        let rain =
+            fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
         let avatars = avatars::AvatarRenderer::new(
             &device,
             &queue,
@@ -585,7 +587,7 @@ impl Renderer {
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&atmosphere.camera_data(view_projection)),
+            bytemuck::cast_slice(&atmosphere.camera_data(view_projection, camera.position)),
         );
         if let Some(gpu) = &mut self.material_gpu {
             gpu.update(&self.queue);

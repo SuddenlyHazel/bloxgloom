@@ -147,7 +147,7 @@ fn material_fragment(input: BgSurface) -> BgSurface {
         0,
         bytemuck::cast_slice(
             &crate::render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                .camera_data(glam::Mat4::IDENTITY),
+                .camera_data(glam::Mat4::IDENTITY, glam::Vec3::ZERO),
         ),
     );
 

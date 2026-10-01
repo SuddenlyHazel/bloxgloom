@@ -6,6 +6,8 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         ("clear", 0.0, 0.0, 0.0, 1.0, PreviewScene::Surface),
         ("rain", 0.75, 0.65, 0.0, 1.0, PreviewScene::Surface),
         ("storm", 1.0, 1.0, 0.0, 1.0, PreviewScene::Surface),
+        ("storm-mild", 1.0, 0.7, 0.0, 1.0, PreviewScene::Surface),
+        ("storm-severe", 1.0, 1.8, 0.0, 1.0, PreviewScene::Surface),
         ("lightning", 1.0, 1.0, 0.85, 1.0, PreviewScene::Surface),
         (
             "sheltered",
@@ -30,8 +32,14 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             },
         ),
     ] {
+        let wind = match name {
+            "storm-mild" => [10.0, 0.0],
+            "storm-severe" => [30.0, 0.0],
+            "storm" | "lightning" => [18.0, 0.0],
+            _ => [3.0, 1.0],
+        };
         let mut weather =
-            render::weather::Presentation::new(cloud, rain, [3.0, 1.0], exposure, 17.0, flash);
+            render::weather::Presentation::new(cloud, rain, wind, exposure, 17.0, flash);
         if matches!(scene, PreviewScene::Cave { .. }) {
             // The cave camera is (40.5, 12, 16.5), with solid roof cells at y=16.
             // Exercise the live cover-grid path: rain above the roof remains
@@ -44,7 +52,7 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             }
             weather.set_cover([32, 8], cover);
         }
-        let outputs = vec![PreviewOutput {
+        let mut outputs = vec![PreviewOutput {
             path: directory.join(format!("{name}.png")),
             width: 1000,
             height: 600,
@@ -52,6 +60,16 @@ pub fn render_weather_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             screen: UiScreen::Playing,
             orientation: None,
         }];
+        if matches!(scene, PreviewScene::Surface) {
+            outputs.push(PreviewOutput {
+                path: directory.join(format!("{name}-sky.png")),
+                width: 1000,
+                height: 600,
+                scale: 1.0,
+                screen: UiScreen::Playing,
+                orientation: Some((0.7, 0.65)),
+            });
+        }
         pollster::block_on(render_previews_weather(
             outputs,
             (0, 0),

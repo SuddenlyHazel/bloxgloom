@@ -345,7 +345,7 @@ impl ClientApp {
                         - 1
                 });
                 self.show_status(format!(
-                    "weather set <clear|rain|storm> [0..60 seconds] / time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
+                    "weather set <clear|rain|storm> [0..60 seconds] [mild|normal|severe storm] / time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
                     maxima[0], maxima[1], maxima[2]
                 ));
             }

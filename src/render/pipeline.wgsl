@@ -1,5 +1,5 @@
 
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -15,7 +15,6 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) light: vec3<f32>,
     @location(2) @interpolate(flat) layer: i32,
-    @location(3) distance: f32,
     @location(4) sky_level: f32,
     @location(5) world_position: vec3f,
     @location(6) normal: vec3f,
@@ -41,7 +40,6 @@ struct VertexOutput {
         + mix(glow_bounce, bounce, camera.sun.w) * 1.35;
     output.uv = vertex.uv;
     output.layer = i32(input.layer);
-    output.distance = output.position.w;
     output.sky_level = sky;
     output.world_position = vertex.position;
     output.normal = vertex.normal;
@@ -52,9 +50,8 @@ fn surface(input: VertexOutput, albedo: vec4f) -> BgSurface {
         input.uv, input.light, albedo.rgb * material_emission[u32(input.layer)]), u32(input.layer));
 }
 fn shade(input: VertexOutput, surface: BgSurface) -> vec4<f32> {
-    let fog = smoothstep(38.0, 135.0, input.distance);
-    let fog_sky = mix(vec3<f32>(0.006, 0.009, 0.016), camera.horizon.xyz, input.sky_level);
-    return vec4<f32>(mix(surface.albedo.rgb * surface.light + surface.emission, fog_sky, fog), 1.0);
+    return vec4f(bg_apply_fog(surface.albedo.rgb * surface.light + surface.emission,
+        input.world_position, input.sky_level), 1.0);
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let albedo = textureSample(material, material_sampler, input.uv, input.layer);
