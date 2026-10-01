@@ -586,22 +586,231 @@ and [repository guidance](AGENTS.md).
 
 ### 7. Content-pack scale and composition limits
 
-Current bounds include 32 blocks and 32 items per package; each block also
-consumes an item declaration. A package can register one generator and one
-owner system. The frozen snapshot permits 256 modules and 256 assets across
-packages, 256 KiB per asset, and 4 MiB of aggregate discovered file bytes.
+**Status: proposed scope, ready for review; not implemented.**
 
-**Impact:** content-heavy mods and packages containing several independent
-simulation systems encounter packaging limits quickly. Splitting packages can
-work around some per-package bounds, but does not remove aggregate limits.
+#### Proposed goal
 
-**Closure direction:** measure representative larger packages, support multiple
-independent declarations where appropriate, and revise limits with corresponding
-delivery, memory and admission budgets. Blanket removal of resource bounds is
-not required to support larger mods.
+Let one Luau package contain a substantial content set and several independently
+named simulation systems and terrain contributors. Preserve deterministic
+registration/generation, frozen catalogs, finite inventories and transactional
+owner state. Deliver a runnable farming package, measured capacity limits,
+actionable admission diagnostics and real-listener acceptance coverage.
 
-Evidence: [declaration limits](SCRIPTING.md#startup-host-and-required-capabilities)
-and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
+The intended author experience is one package with separate `farm:irrigation`,
+`farm:growth` and `farm:seasons` systems, plus separate terrain contributors for
+wild crops and groves. Authors should not have to combine those callbacks into
+one dispatcher or invent extra packages solely to bypass registration limits.
+
+#### Actual problems and existing foundation
+
+- Startup currently allows 32 blocks, 32 items and 32 textures per package.
+  Every block consumes an item slot, so 32 blocks leave no room for standalone
+  seeds, tools or produce. These are Luau adapter bounds; the native catalog has
+  much larger installation-wide ceilings.
+- `Pending` stores one optional system and one optional generator. Their Luau
+  declarers reject a second registration, although the native system registry
+  supports 256 systems and generation supports 256 contributors.
+- Discovery allows 64 modules and 64 assets per package, 256 of each across the
+  installation, 64 KiB per source, 256 KiB per general asset and 4 MiB of total
+  discovered files. Manifests are capped at 16 KiB.
+- Client declaration decoding repeats the small content caps, bundle decoding
+  repeats the file/count caps, and the current bundle byte ceiling is 7 MiB.
+  Raising only server discovery or registration would leave valid server content
+  impossible to deliver or install on clients.
+- More declarations increase startup work, compiled modules, decoded assets,
+  owner-job demand and generation cost. Larger files alone do not establish that
+  a package fits execution, memory, renderer or network admission budgets.
+
+#### Registration and composition contract
+
+Keep the existing Lua signatures. Repeated calls with distinct owned keys become
+valid; each declaration retains its own callback, schema/revision, seeds and
+resource-access contract. For example, this proposed registration form uses
+existing API fields:
+
+```luau
+host.register_generator("farm:10_wild_crops", 1, "farm:wild_crops")
+host.register_generator("farm:20_groves", 1, "farm:groves")
+
+-- Each table also supplies the existing required schema, revision, seeds,
+-- state and resource fields; these are separate complete declarations.
+host.register_system(irrigation)
+host.register_system(growth) -- growth.after = {"farm:irrigation"}
+host.register_system(seasons)
+```
+
+Implementation decisions:
+
+- Replace singleton pending fields with bounded collections, reject duplicate
+  keys, and canonicalize registrations before installing them. Manifest line
+  order and startup call order must not determine numeric IDs or execution order.
+- Resolve system `after` edges for both same-package and permitted direct-
+  dependency systems using the existing native phase planner. Reject missing
+  targets, undeclared dependency access, self-edges and cycles before world open.
+  Do not infer an execution edge from the order of `register_system` calls.
+- Keep owner state, deadlines, receipts and intents isolated by system key and
+  owner partition. Sharing a callback module must not merge two systems' state.
+  Existing wake routing remains available; durable intents remain same-system
+  messages. This goal does not add arbitrary cross-system state access or RPC.
+- Keep native generation semantics: builtin terrain first, then contributors in
+  lexical namespaced-key order; later contributors win overlapping writes.
+  `10_`/`20_` names make order deliberate within the example package. Contributors
+  still sample builtin terrain, not another contributor's partial output. A
+  failed contributor discards the whole candidate chunk. No new priority or
+  generator dependency API is proposed for this milestone.
+- Authoritative callbacks keep isolated attempts and deterministic RNG. Reuse
+  physical VMs/compiled code from the completed lifetime work; do not allocate a
+  persistent VM, thread or queue for every new declaration.
+- Retain native installation-wide catalog and system/contributor ceilings.
+  Validate the combined installation, including builtin declarations, rather
+  than assuming every package can simultaneously consume its local maximum.
+
+#### Capacity targets for review
+
+These are **initial implementation targets**, not measured promises. Establish
+baseline costs, exercise the target installation, and record any revised values
+with the reason before declaring the goal complete. Put authoritative limits in
+shared policy definitions consumed by discovery, registration, encoding and
+client verification rather than copying literals between those paths.
+
+| Resource | Today | Proposed target |
+| --- | --- | --- |
+| Blocks / package | 32 | 256 |
+| Total items / package, including block items | 32 | 512 |
+| Textures / package | 32 | 256 |
+| Owner systems / package | 1 | 8 |
+| Generation contributors / package | 1 | 8 |
+| Modules / package / installation | 64 / 256 | 256 / 1,024 |
+| Assets / package / installation | 64 / 256 | 256 / 1,024 |
+| Manifest bytes / package | 16 KiB | 64 KiB |
+| Source bytes / module | 64 KiB | 64 KiB |
+| General asset bytes / file | 256 KiB | 2 MiB |
+| Total discovered file bytes / installation | 4 MiB | 32 MiB |
+| Encoded client bundle bytes | 7 MiB | 40 MiB, including metadata |
+
+The item target permits 256 block items plus 256 standalone items. Keep both the
+local total and actual installation-wide item/state/texture capacities explicit
+in diagnostics. Asset-kind-specific source, image dimension, decoded pixel,
+font expansion and shader validation limits remain separately enforced; the
+2 MiB general ceiling does not automatically enlarge those limits.
+
+Keep the 64-package bound, direct exact dependencies, frozen installation model,
+128-item stack cap and current per-call gameplay limits. Increasing module count
+also does not increase import depth or retained client realm admission limits.
+
+#### Execution, delivery and memory budgets
+
+- Give declaration-heavy startup its own bounded initialization policy instead
+  of silently increasing every gameplay callback's limits. Initial proposal:
+  250 ms, 50,000 periodic instruction checks and 16 MiB per package startup,
+  plus a 10-second installation initialization deadline. Reuse the aggregate VM
+  reservation ledger; startup authority still ends at completion.
+- Keep existing per-system owner-job/effect/read/state limits and native summed
+  phase admission checks. Eight systems cannot each obtain an unlimited share
+  of a tick. Measure contention, conflict retries and unrelated player progress.
+- Add a shared budget across scripted contributors for each candidate chunk,
+  initially 100 ms of script execution with each invocation bounded by its
+  remaining allowance and existing instruction/output limits. Check all error
+  paths against whole-candidate rollback. Measure this separately from builtin
+  terrain, queue delay, meshing and delivery before accepting the target.
+- Audit bundle offer lengths, transfer chunking, queue admission, cancellation,
+  hashing, verified in-memory caching and all decode limits together. Preserve
+  server/client catalog agreement and fail unsupported budget/codec profiles
+  during negotiation, before a partial download or `ContentReady`.
+- Bound preparation and decoded resources independently of encoded file size.
+  Initially allow 10 seconds for client source validation, while retaining its
+  16 MiB compiler-VM reservation and off-window-thread execution. Account for
+  temporary download/verification buffers and cached bundle bytes so increasing
+  the payload limit does not multiply untracked copies per joining player.
+- Record encoded bytes, peak transfer/verification memory, decoded asset memory,
+  GPU resource use, VM reservations/cache occupancy, preparation latency and
+  steady movement/action latency. Reuse existing bounded delivery machinery;
+  introduce additional admission only where the audit shows a missing bound.
+
+#### Author diagnostics and compatibility
+
+For count, byte, schema and phase-budget failures report the owning package and
+module/declaration or asset path, the resource, attempted usage, maximum and
+whether the limit is local or installation-wide. Example:
+
+```text
+farm@1.0.0:main: register_block farm:crop_257 rejected
+blocks/package: attempted 257; maximum 256
+```
+
+For dependency errors show the involved system keys and a missing edge or cycle;
+for delivery/preparation failures show the stage and verified bundle identity.
+Caught startup errors must still reject the complete installation, with no
+partial catalog or world/save mutation.
+
+Keep existing single-registration packages valid. Canonical ordering preserves
+stable identities when only startup declaration order changes. Added or changed
+persistent declarations still follow existing compatibility checks. Improve those
+error explanations in touched paths without broadening into installation-wide
+fingerprint redesign, hot reload or save converters. If a required format change
+is incompatible, bump the prerelease format/world target and explain it.
+
+#### Runnable example and implementation sequence
+
+1. **Inventory and measurement:** map every server/client limit and enclosing
+   wire/renderer budget. Capture the existing combined mod's cold startup, join,
+   memory and steady latency. Build deterministic generated boundary fixtures
+   to exercise count/byte admission without presenting them as ordinary gameplay.
+2. **Multiple declarations:** implement bounded system/generator collections,
+   ownership/duplicate checks, canonical ordering and dependency validation.
+   Land a small same-package example first, preserving existing callback APIs.
+3. **Coordinated capacity:** implement shared limit policy, matching encode/decode
+   and negotiation changes, startup/generation/preparation budgets and measured
+   memory accounting. Verify old-size packages and all boundary rejection paths.
+4. **Representative mod:** add `fixtures/farming-scale/` with at least 128 blocks,
+   192 total items, several texture families, 96 modules, three independent
+   systems and two contributors. Irrigation wakes crop growth; seasons use their
+   own state/deadlines. Include a client panel and finite harvest/planting actions.
+   Separate generated pressure fixtures must cross the old module/asset/4 MiB
+   installation ceilings and exercise the proposed limits with valid content.
+5. **Acceptance and author docs:** run the real listener with isolated saves,
+   inspect client presentation, publish measured results and final limits, update
+   `SCRIPTING.md`, package/system/generation references and editor definitions,
+   analyze Luau fixtures, run relevant workspace/fmt/Clippy checks, refresh the
+   code graph and commit the finished work incrementally.
+
+#### Completion criteria
+
+- One package registers at least three independently keyed systems and two
+  contributors. Same-package and direct-dependency phase edges work; duplicate,
+  missing, forbidden and cyclic declarations fail before world open.
+- Systems sharing a module retain separate owner state and durable scheduling.
+  Cross-partition conflicts retry without partial edits, duplicate effects or
+  inventory creation. Restart recovers each system's state and deadlines.
+- Reordered declaration calls produce identical catalog identities and generator
+  output. Overlap precedence, negative/chunk-seam coordinates, worker assignment,
+  cold/warm attempts and failed-contributor rollback are covered.
+- Target-size content passes discovery, encoding, negotiation, download, client
+  verification and restart. Maximum-plus-one counts/bytes, metadata overflow,
+  decoded expansion, aggregate resource excess and corrupted transfers reject
+  atomically with actionable source-attributed diagnostics.
+- Multiple joining/cancelled/reconnecting clients cannot starve an established
+  player's movement or durable actions. Measure cold/cached join p50/p95/p99 and
+  action/movement tails, memory and queue behavior against the recorded baseline.
+  Regressions require explanation and correction before acceptance; no universal
+  hardware-independent latency promise is inferred from a microbenchmark.
+- Inspect the farming panel and representative registered art through the actual
+  release client when available, otherwise production GPU previews. Run renderer
+  performance checks if textures/materials/meshing paths change, separating
+  scene setup, geometry, CPU and GPU time from VM/join measurements.
+
+Motion/audio, imported models, tag-query services, command-schema expansion,
+persistent disk bundle caching, marketplaces/CDNs and hot reload remain separate
+projects. No implementation goal is active for this proposal until reviewed.
+
+Evidence: [startup collection](src/server/script/startup.rs),
+[system binding](src/server/script/system.rs),
+[generator binding](src/server/script/generation.rs),
+[native phases and budgets](src/server/registry.rs),
+[native generation ordering](src/world/generation.rs),
+[snapshot limits](src/server/script/package.rs),
+[client bundle verification](src/server/script/package/client.rs) and
+[client declaration decoding](src/server/script/package/client/declarations.rs).
 
 ## Smaller composability gaps
 
