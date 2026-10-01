@@ -190,6 +190,11 @@ fn moving_real_listener_capacity_measurements() {
         let ticks: Vec<_> = samples.iter().map(|sample| sample.tick_total).collect();
         let durable: Vec<_> = samples.iter().map(|sample| sample.phases[1]).collect();
         let commits: Vec<_> = samples.iter().map(|sample| sample.phases[3]).collect();
+        let capture: Vec<_> = samples.iter().map(|s| s.motion.capture).collect();
+        let solve: Vec<_> = samples.iter().map(|s| s.motion.solve).collect();
+        let attempts: u64 = samples.iter().map(|s| s.motion.attempts).sum();
+        let deferred: u64 = samples.iter().map(|s| s.motion.deferred).sum();
+        let failed: u64 = samples.iter().map(|s| s.motion.failed).sum();
         let pending = samples
             .iter()
             .map(|sample| sample.pending_durable_actions)
@@ -203,6 +208,7 @@ fn moving_real_listener_capacity_measurements() {
         let state = fixture.open().unwrap();
         let saved = count(&state);
         assert_eq!(saved.len(), bodies, "committed bodies/restart");
+        let record_bytes: usize = saved.iter().map(|(_, r)| r.encode().unwrap().len()).sum();
         assert!(
             saved
                 .iter()
@@ -228,6 +234,13 @@ fn moving_real_listener_capacity_measurements() {
             rank(&latencies, 50).as_secs_f64() * 1000.0,
             rank(&latencies, 95).as_secs_f64() * 1000.0,
             rank(&latencies, 99).as_secs_f64() * 1000.0
+        );
+        eprintln!(
+            "motion-load-physics bodies={bodies} attempts={attempts} deferred={deferred} failed={failed} capture_tick_p50_ms={:.3} capture_tick_p95_ms={:.3} solve_tick_p50_ms={:.3} solve_tick_p95_ms={:.3} encoded_record_bytes={record_bytes}",
+            rank(&capture, 50).as_secs_f64() * 1000.0,
+            rank(&capture, 95).as_secs_f64() * 1000.0,
+            rank(&solve, 50).as_secs_f64() * 1000.0,
+            rank(&solve, 95).as_secs_f64() * 1000.0
         );
         eprintln!(
             "motion-load-server bodies={bodies} tick_samples={} tick_p50_ms={:.3} tick_p95_ms={:.3} tick_p99_ms={:.3} durable_phase_p50_ms={:.3} durable_phase_p95_ms={:.3} commit_phase_p50_ms={:.3} commit_phase_p95_ms={:.3} pending_actions_max={pending} resident_chunks_max={resident}",

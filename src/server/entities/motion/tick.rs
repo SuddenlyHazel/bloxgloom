@@ -18,6 +18,22 @@ pub(in crate::server) fn plan(
     id: EntityId,
     tick: u64,
 ) -> io::Result<Option<CommitAction>> {
+    #[cfg(test)]
+    {
+        state.motion_metrics.attempts += 1;
+    }
+    let result = plan_inner(state, id, tick);
+    #[cfg(test)]
+    if let Err(error) = &result {
+        if error.kind() == ErrorKind::WouldBlock {
+            state.motion_metrics.deferred += 1;
+        } else {
+            state.motion_metrics.failed += 1;
+        }
+    }
+    result
+}
+fn plan_inner(state: &mut State, id: EntityId, tick: u64) -> io::Result<Option<CommitAction>> {
     let Some(snapshot) = state.entities.snapshot(id) else {
         return Ok(None);
     };
@@ -162,6 +178,8 @@ pub(in crate::server) fn plan(
                     normal: normal.map(f64::from),
                 })
             });
+    #[cfg(test)]
+    let capture_started = std::time::Instant::now();
     let mut colliders = Vec::new();
     let mut missing = std::collections::BTreeSet::new();
     for x in bounds.0[0]..=bounds.1[0] {
@@ -215,6 +233,12 @@ pub(in crate::server) fn plan(
             "moving collider capture capacity",
         ));
     }
+    #[cfg(test)]
+    {
+        state.motion_metrics.capture += capture_started.elapsed();
+    }
+    #[cfg(test)]
+    let solve_started = std::time::Instant::now();
     let step = match solver::integrate_with_contact_policy(
         solver::State {
             position: record.motion.position.map(f64::from),
@@ -263,6 +287,10 @@ pub(in crate::server) fn plan(
         }
         Err(error) => return Err(solver_error(error)),
     };
+    #[cfg(test)]
+    {
+        state.motion_metrics.solve += solve_started.elapsed();
+    }
     record.motion.position = step.position.map(|x| x as f32);
     // Persisting a rounded center inside a touched face would turn ordinary
     // resting contact into a false embedded-body failure on the next step.

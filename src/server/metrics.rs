@@ -21,6 +21,8 @@ pub(super) const TICK_BUDGET: Duration = Duration::from_millis(20);
 /// for every tick.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct TickSample {
+    #[cfg(test)]
+    pub(super) motion: MotionSample,
     pub(super) tick_id: u64,
     pub(super) tick_total: Duration,
     /// Ordered as input authorization, durable actions, simulation,
@@ -51,6 +53,16 @@ pub(super) struct TickSample {
     pub(super) replication_queue_depth: u64,
     pub(super) replication_queue_capacity: u64,
     pub(super) replication_queue_rejections: u64,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct MotionSample {
+    pub(super) attempts: u64,
+    pub(super) deferred: u64,
+    pub(super) failed: u64,
+    pub(super) capture: Duration,
+    pub(super) solve: Duration,
 }
 
 impl TickSample {
@@ -211,6 +223,14 @@ impl MetricsRecorder {
     pub(super) const fn new() -> Self {
         Self {
             samples: [TickSample {
+                #[cfg(test)]
+                motion: MotionSample {
+                    attempts: 0,
+                    deferred: 0,
+                    failed: 0,
+                    capture: Duration::ZERO,
+                    solve: Duration::ZERO,
+                },
                 tick_id: 0,
                 tick_total: Duration::ZERO,
                 phases: [Duration::ZERO; PHASE_COUNT],
