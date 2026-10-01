@@ -5,7 +5,9 @@ pub use third_person::{
     render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,
 };
 mod daylight;
+mod weather;
 pub use daylight::render_daylight_previews;
+pub use weather::render_weather_previews;
 mod block;
 mod visuals;
 pub use visuals::render_visual_previews;
@@ -598,7 +600,26 @@ async fn render_previews_at(
     package_root: Option<&Path>,
     world_time: u64,
 ) -> Result<(), Box<dyn Error>> {
-    let atmosphere = render::daylight::Atmosphere::at(world_time);
+    render_previews_weather(
+        outputs,
+        center_chunk,
+        scene,
+        package_root,
+        world_time,
+        render::weather::Presentation::default(),
+    )
+    .await
+}
+
+async fn render_previews_weather(
+    outputs: Vec<PreviewOutput>,
+    center_chunk: (i32, i32),
+    scene: PreviewScene,
+    package_root: Option<&Path>,
+    world_time: u64,
+    weather: render::weather::Presentation,
+) -> Result<(), Box<dyn Error>> {
+    let atmosphere = weather.atmosphere(render::daylight::Atmosphere::at(world_time));
     let instance = wgpu::Instance::default();
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions {
@@ -622,6 +643,7 @@ async fn render_previews_at(
     let (mut pipeline, mut cutout_pipeline, camera_buffer, camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
     let mut fire_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
+    let mut rain_renderer = render::fire::FireRenderer::new(&device, &camera_buffer);
     let mut avatar_renderer = render::AvatarRenderer::new(
         &device,
         &queue,
@@ -1390,6 +1412,7 @@ async fn render_previews_at(
                 atmosphere,
             )),
         );
+        rain_renderer.set_mesh(&queue, &weather.vertices(camera));
         let matrix = render::view_projection(camera, output.width, output.height);
         queue.write_buffer(
             &camera_buffer,
@@ -1583,6 +1606,7 @@ async fn render_previews_at(
             if matches!(scene, PreviewScene::Fire) {
                 fire_renderer.draw(&mut pass);
             }
+            rain_renderer.draw(&mut pass);
         }
         post.encode(&device, &queue, &mut encoder, &color_view);
         if has_target {

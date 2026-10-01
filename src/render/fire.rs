@@ -189,9 +189,15 @@ impl FireRenderer {
 
     pub(crate) fn set(&mut self, queue: &wgpu::Queue, fires: &[VisualFire]) {
         let mesh = vertices(fires);
+        self.set_mesh(queue, &mesh);
+    }
+
+    /// Shared bounded, depth-tested translucent streak geometry (fire and rain).
+    pub(crate) fn set_mesh(&mut self, queue: &wgpu::Queue, mesh: &[f32]) {
+        debug_assert!(std::mem::size_of_val(mesh) as u64 <= MAX_BYTES);
         self.count = (mesh.len() / FLOATS) as u32;
         if !mesh.is_empty() {
-            queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(&mesh));
+            queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(mesh));
         }
     }
 

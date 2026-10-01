@@ -94,7 +94,7 @@ pub(crate) fn sky_camera_data(
         forward.x,
         forward.y,
         forward.z,
-        0.0,
+        atmosphere.cloud,
         right.x,
         right.y,
         right.z,
@@ -110,11 +110,11 @@ pub(crate) fn sky_camera_data(
         atmosphere.horizon.x,
         atmosphere.horizon.y,
         atmosphere.horizon.z,
-        0.0,
+        atmosphere.drift[0],
         atmosphere.zenith.x,
         atmosphere.zenith.y,
         atmosphere.zenith.z,
-        0.0,
+        atmosphere.drift[1],
     ]
 }
 const SKY_SHADER: &str = r#"
@@ -168,17 +168,19 @@ fn sky_noise(p: vec2<f32>) -> f32 {
     let alignment = dot(ray, sun_direction);
     let haze = pow(max(alignment, 0.0), 10.0) * (1.0 - smoothstep(0.1, 0.75, ray.y));
     color = mix(color, vec3<f32>(0.95, 0.72, 0.54), haze * 0.22);
-    let cloud_coordinates = ray.xz / max(ray.y, 0.10) * 8.0;
+    let cloud_coordinates = ray.xz / max(ray.y, 0.10) * 8.0 + vec2f(sky_camera.horizon.w, sky_camera.zenith.w);
     let cloud_noise = sky_noise(cloud_coordinates * 0.45) * 0.68
         + sky_noise(cloud_coordinates * 0.90) * 0.32;
     let cloud_edge = max(0.075, 0.5 * fwidth(cloud_noise));
-    let cloud = smoothstep(0.625 - cloud_edge, 0.625 + cloud_edge, cloud_noise)
-        * smoothstep(0.10, 0.28, ray.y) * 0.54;
-    color = mix(color, mix(vec3f(0.025, 0.035, 0.06), vec3f(0.92, 0.94, 0.94), sky_camera.sun.w), cloud);
+    let cover = sky_camera.forward.w;
+    let threshold = mix(0.625, 0.25, cover);
+    let cloud = smoothstep(threshold - cloud_edge, threshold + cloud_edge, cloud_noise)
+        * smoothstep(0.02, mix(0.28, 0.08, cover), ray.y) * mix(0.54, 0.97, cover);
+    color = mix(color, mix(vec3f(0.025, 0.035, 0.06), vec3f(0.92, 0.94, 0.94), sky_camera.sun.w) * mix(1.0, 0.52, cover), cloud);
     let glow = smoothstep(0.88, 0.997, alignment);
     let disc = smoothstep(0.9990, 0.99955, alignment);
     color = mix(color, vec3<f32>(1.0, 0.82, 0.55), glow * 0.28 * smoothstep(-0.08, 0.08, sun_direction.y));
-    color = mix(color, vec3<f32>(5.0, 4.4, 3.2), disc * smoothstep(-0.04, 0.02, sun_direction.y));
+    color = mix(color, vec3<f32>(5.0, 4.4, 3.2), disc * smoothstep(-0.04, 0.02, sun_direction.y) * (1.0 - cover));
     let night = 1.0 - smoothstep(0.04, 0.35, sky_camera.sun.w);
     let star_cell = floor(ray.xz / max(ray.y, 0.12) * 120.0);
     let stars = smoothstep(0.997, 1.0, sky_hash(star_cell)) * smoothstep(0.08, 0.35, ray.y);

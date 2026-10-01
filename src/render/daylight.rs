@@ -8,6 +8,8 @@ pub(crate) struct Atmosphere {
     pub strength: f32,
     pub horizon: Vec3,
     pub zenith: Vec3,
+    pub cloud: f32,
+    pub drift: [f32; 2],
 }
 
 impl Atmosphere {
@@ -20,6 +22,8 @@ impl Atmosphere {
         let twilight = (1.0 - (sun.y / 0.22).abs()).max(0.0) * day;
         Self {
             sun,
+            cloud: 0.0,
+            drift: [0.0; 2],
             strength: 0.035 + 0.965 * day,
             horizon: Vec3::new(0.012, 0.018, 0.045)
                 .lerp(Vec3::new(0.59, 0.72, 0.82), day)

@@ -11,6 +11,7 @@ pub(crate) mod fire;
 pub(crate) mod game_ui;
 mod hooks;
 mod material;
+pub(crate) mod weather;
 pub(crate) use material::resources::required_limits as material_device_limits;
 mod mesh;
 pub(crate) mod parameters;
@@ -122,6 +123,8 @@ pub struct RenderStats {
 pub struct Renderer {
     catalog: Arc<Catalog>,
     atmosphere: daylight::Atmosphere,
+    weather: weather::Presentation,
+    rain: fire::FireRenderer,
     instance: wgpu::Instance,
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -258,6 +261,7 @@ impl Renderer {
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
+        let rain = fire::FireRenderer::new(&device, &camera_buffer);
         let avatars = avatars::AvatarRenderer::new(
             &device,
             &queue,
@@ -294,6 +298,8 @@ impl Renderer {
         });
         Ok(Self {
             atmosphere: daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            weather: weather::Presentation::default(),
+            rain,
             catalog,
             instance,
             window,
@@ -353,6 +359,22 @@ impl Renderer {
 
     pub(crate) fn set_world_time(&mut self, time: u64) {
         self.atmosphere = daylight::Atmosphere::at(time);
+    }
+
+    pub(crate) fn set_weather(
+        &mut self,
+        cloud: f32,
+        rain: f32,
+        wind: [f32; 2],
+        exposure: f32,
+        seconds: f32,
+        flash: f32,
+    ) {
+        self.weather = weather::Presentation::new(cloud, rain, wind, exposure, seconds, flash);
+    }
+
+    pub(crate) fn set_weather_rain_cover(&mut self, origin: [i32; 2], heights: [f32; 256]) {
+        self.weather.set_cover(origin, heights);
     }
 
     pub fn set_drops(&mut self, items: &[VisualDrop]) {
@@ -538,6 +560,9 @@ impl Renderer {
         ui_frame: &UiFrame<'_>,
     ) -> Result<RenderStats, RendererError> {
         let uploaded_chunks = self.upload_pending();
+        let atmosphere = self.weather.atmosphere(self.atmosphere);
+        self.rain
+            .set_mesh(&self.queue, &self.weather.vertices(camera));
         let mut stats = RenderStats {
             uploaded_chunks,
             pending_chunks: self.pending.len(),
@@ -554,13 +579,13 @@ impl Renderer {
                 camera,
                 self.config.width,
                 self.config.height,
-                self.atmosphere,
+                atmosphere,
             )),
         );
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&self.atmosphere.camera_data(view_projection)),
+            bytemuck::cast_slice(&atmosphere.camera_data(view_projection)),
         );
         if let Some(gpu) = &mut self.material_gpu {
             gpu.update(&self.queue);
@@ -691,6 +716,7 @@ impl Renderer {
                 stats.drawn_triangles += self.drop_cutout_index_count as usize / 3;
             }
             stats.drawn_triangles += self.fire.draw(&mut pass);
+            stats.drawn_triangles += self.rain.draw(&mut pass);
         }
         self.post
             .encode(&self.device, &self.queue, &mut encoder, &view);
