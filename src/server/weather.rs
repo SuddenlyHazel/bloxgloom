@@ -85,7 +85,11 @@ impl Clock {
     }
     pub(super) fn apply(&mut self, c: Change) -> io::Result<()> {
         self.validate(&c)?;
+        let elapsed_ms = self.snapshot().elapsed_ms;
         self.initial = crate::weather::codec::decode(&c.after).unwrap();
+        // WAL latency must not rewind the shared weather clock. The command
+        // anchor keeps its captured time; the live projection retains progress.
+        self.initial.elapsed_ms = self.initial.elapsed_ms.max(elapsed_ms);
         self.anchor = c.after;
         self.started = Instant::now();
         self.last_save = self.started - Duration::from_secs(5);

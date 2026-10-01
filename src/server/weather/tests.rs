@@ -189,3 +189,17 @@ fn natural_weather_is_independent_of_poll_partitioning() {
     assert_eq!(sampled, expected);
     assert!(expected.valid());
 }
+
+#[test]
+fn durable_apply_does_not_rewind_elapsed_weather_time() {
+    let root = temporary();
+    let mut clock = Clock::open(&root, 7).unwrap();
+    let change = clock.prepare(2, 30_000).unwrap();
+    clock.started -= Duration::from_secs(2);
+    let before = clock.snapshot().elapsed_ms;
+    clock.apply(change).unwrap();
+    assert!(clock.snapshot().elapsed_ms >= before);
+    clock.finish().unwrap();
+    drop(clock);
+    fs::remove_dir_all(root).unwrap();
+}
