@@ -874,8 +874,10 @@ mod tests {
     #[test]
     fn rain_tiny_rates_and_extreme_finite_gusts_remain_finite() {
         let mut rain = Rain::new(91);
-        let mut config = RainConfig::default();
-        config.max_drops_per_s = 1e-20;
+        let config = RainConfig {
+            max_drops_per_s: 1e-20,
+            ..RainConfig::default()
+        };
         rain.configure(config).unwrap();
         let weather = RainWeather {
             rain_mm_h: 500.0,
