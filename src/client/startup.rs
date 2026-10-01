@@ -4,12 +4,16 @@
 //! `host.set_state("package:document", "ASCII")` register initial UI state.
 //! Only the module's own package may be changed. `import("package:module")`
 //! sees this package and its direct exact dependencies, never server sources.
-//! No VM, host callback, or registration survives the worker invocation.
+//! Startup registration is isolated. Player callbacks retain module state only
+//! in their connection-owned worker realm; host callbacks expire after each call.
 use crate::server::client_bundle::ClientBundle;
 
 pub(super) mod players;
 mod readiness;
+mod realm;
 use mlua::{Lua, Value, VmState};
+pub(super) use realm::EventRealm;
+use realm::load;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::io;
@@ -96,19 +100,33 @@ pub(super) fn execute_event(
     state: &mut State,
     event: Option<&players::Event<'_>>,
 ) -> Result<(), String> {
+    let mut realm = EventRealm::new(&bundle, entry)?;
+    execute_retained(&mut realm, bundle, entry, state, event)
+}
+
+pub(super) fn execute_retained(
+    realm: &mut EventRealm,
+    bundle: Arc<ClientBundle>,
+    entry: &str,
+    state: &mut State,
+    event: Option<&players::Event<'_>>,
+) -> Result<(), String> {
     let id = identity(&bundle, entry);
     let phase = event.map_or("client startup", |_| "client player callback");
     let fail = |error: mlua::Error| format!("{phase} {id}: {error}");
-    let (lua, diagnostics) = crate::server::script_runtime::create(
-        &id,
-        crate::server::script_runtime::Execution::new(
-            event.map_or("client_startup", |e| e.kind),
-            event.map_or(0, |e| e.seed()),
-            "local_session",
-        )
-        .client(),
+    let lua = &realm.lua;
+    let diagnostics = &realm.diagnostics;
+    let execution = crate::server::script_runtime::Execution::new(
+        event.map_or("client_startup", |e| e.kind),
+        event.map_or(0, |e| e.seed()),
+        event.map_or_else(
+            || "local_session".to_owned(),
+            |e| format!("{}:{}:{}", e.profile, e.session, e.kind),
+        ),
     )
-    .map_err(fail)?;
+    .client();
+    let initializing = !realm.cached.borrow().contains_key(entry);
+    crate::server::script_runtime::memory_begin(lua);
     lua.set_memory_limit(8 * 1024 * 1024).map_err(fail)?;
     let deadline = Instant::now() + Duration::from_millis(50);
     let interrupts = Rc::new(Cell::new(10_000u64));
@@ -125,21 +143,41 @@ pub(super) fn execute_event(
         limit.set(limit.get() - 1);
         Ok(VmState::Continue)
     });
-    let cached = Rc::new(RefCell::new(BTreeMap::<String, mlua::RegistryKey>::new()));
-    let stack = Rc::new(RefCell::new(Vec::new()));
+    crate::server::script_runtime::begin(
+        lua,
+        diagnostics,
+        &id,
+        if initializing {
+            crate::server::script_runtime::Execution::new(
+                "client_module_init",
+                0,
+                execution.correlation.clone(),
+            )
+            .client()
+        } else {
+            execution.clone()
+        },
+    )
+    .map_err(fail)?;
+    let cached = &realm.cached;
+    let stack = &realm.stack;
     let registrations = Rc::new(RefCell::new(State {
         parameters: state.parameters.clone(),
         ..Default::default()
     }));
     let result = (|| -> mlua::Result<()> {
-        let value = load(&lua, Arc::clone(&bundle), entry, &cached, &stack)?;
+        let value = load(lua, Arc::clone(&bundle), entry, cached, stack)?;
         let function: mlua::Function = lua.unpack(value)?;
+        if initializing {
+            diagnostics.finish("initialized");
+            crate::server::script_runtime::begin(lua, diagnostics, &id, execution.clone())?;
+        }
         let host = lua.create_table()?;
         let startup = event.is_none();
         host.set(
             "set_player_handler",
             players::declarer(
-                &lua,
+                lua,
                 Rc::clone(&registrations),
                 Arc::clone(&bundle),
                 entry.split_once(':').unwrap().0.to_owned(),
@@ -243,37 +281,59 @@ pub(super) fn execute_event(
                 },
             )?,
         )?;
-        if let Some(event) = event {
-            // A caught invalid host call still rejects the whole local update.
-            let failed = Rc::new(Cell::new(false));
-            let entries = host
-                .pairs::<String, mlua::Function>()
-                .collect::<mlua::Result<Vec<_>>>()?;
-            for (key, function) in entries {
-                let failed = Rc::clone(&failed);
-                host.set(
-                    key,
-                    lua.create_function(move |_, args: mlua::MultiValue| {
-                        let result = function.call::<mlua::MultiValue>(args);
-                        if result.is_err() {
-                            failed.set(true);
-                        }
-                        result
-                    })?,
-                )?;
+        // Retained modules may save host functions, but those functions carry
+        // this call's revocation token and can never change a later reply.
+        let failed = Rc::new(Cell::new(false));
+        // Revocation also releases the owned Rust output/bundle captures;
+        // keeping an expired Lua function must not keep those allocations alive.
+        struct Revoke(Vec<Rc<RefCell<Option<mlua::Function>>>>);
+        impl Drop for Revoke {
+            fn drop(&mut self) {
+                for slot in &self.0 {
+                    slot.borrow_mut().take();
+                }
             }
-            host.set_readonly(true);
-            function.call::<()>((host, event.present(&lua, entry.split_once(':').unwrap().0)?))?;
-            if failed.get() {
-                return Err(mlua::Error::RuntimeError(
-                    "player callback rejected a host operation".into(),
-                ));
-            }
-            Ok(())
-        } else {
-            function.call::<()>(host)
         }
+        let mut revoke = Revoke(Vec::new());
+        let entries = host
+            .pairs::<String, mlua::Function>()
+            .collect::<mlua::Result<Vec<_>>>()?;
+        for (key, function) in entries {
+            let failed = Rc::clone(&failed);
+            let slot = Rc::new(RefCell::new(Some(function)));
+            revoke.0.push(Rc::clone(&slot));
+            host.set(
+                key,
+                lua.create_function(move |_, args: mlua::MultiValue| {
+                    let function = slot.borrow().clone().ok_or_else(|| {
+                        mlua::Error::RuntimeError("expired client host context".into())
+                    })?;
+                    let result = function.call::<mlua::MultiValue>(args);
+                    if result.is_err() {
+                        failed.set(true);
+                    }
+                    result
+                })?,
+            )?;
+        }
+        host.set_readonly(true);
+        if let Some(event) = event {
+            function.call::<()>((host, event.present(lua, entry.split_once(':').unwrap().0)?))?;
+        } else {
+            function.call::<()>(host)?;
+        }
+        if failed.get() {
+            return Err(mlua::Error::RuntimeError(
+                "client callback rejected a host operation".into(),
+            ));
+        }
+        Ok(())
     })();
+    lua.remove_interrupt();
+    if crate::server::script_runtime::memory_exceeded(lua) {
+        diagnostics.finish("memory_limit");
+        return Err(format!("client startup {id}: memory limit exceeded"));
+    }
     if exceeded.get() || Instant::now() >= deadline {
         diagnostics.finish("execution_limit");
         return Err(format!("client startup {id}: execution limit exceeded"));
@@ -284,6 +344,10 @@ pub(super) fn execute_event(
         "script_error"
     });
     result.map_err(fail)?;
+    lua.gc_step().map_err(fail)?;
+    if lua.used_memory() > 6 * 1024 * 1024 {
+        lua.gc_collect().map_err(fail)?;
+    }
     let output = registrations.borrow();
     if let Some(ui) = bundle.ui() {
         ui.validate_startup(&output)
@@ -317,87 +381,4 @@ pub(super) fn execute_event(
     state.replica = output.replica.clone().or_else(|| state.replica.take());
     state.parameters = output.parameters.clone();
     Ok(())
-}
-
-// Imports keep the lexical caller in their closure even when exported functions
-// travel across packages. Loading and the export cache are invocation-local.
-fn load(
-    lua: &Lua,
-    bundle: Arc<ClientBundle>,
-    key: &str,
-    cached: &Rc<RefCell<BTreeMap<String, mlua::RegistryKey>>>,
-    stack: &Rc<RefCell<Vec<String>>>,
-) -> mlua::Result<Value> {
-    if let Some(value) = cached.borrow().get(key) {
-        return lua.registry_value(value);
-    }
-    let id = identity(&bundle, key);
-    if stack.borrow().len() >= 32 || stack.borrow().iter().any(|k| k == key) {
-        return Err(mlua::Error::RuntimeError(format!(
-            "{id}: cyclic or deep import"
-        )));
-    }
-    let (owner, module) = key.split_once(':').unwrap();
-    let source = &bundle.packages()[owner].sources[module].source;
-    if source.len() > 64 * 1024 {
-        return Err(mlua::Error::RuntimeError(format!("{id}: source too large")));
-    }
-    stack.borrow_mut().push(key.to_owned());
-    let result = (|| {
-        let environment = lua.create_table()?;
-        let meta = lua.create_table()?;
-        meta.set("__index", lua.globals())?;
-        meta.set("__metatable", false)?;
-        environment.set_metatable(Some(meta))?;
-        let caller = key.to_owned();
-        let import_cached = Rc::clone(cached);
-        let import_stack = Rc::clone(stack);
-        let imports_bundle = Arc::clone(&bundle);
-        environment.set(
-            "import",
-            lua.create_function(move |lua, name: mlua::LuaString| {
-                let name = ascii(name, 129)?;
-                let (target, module) = name
-                    .split_once(':')
-                    .ok_or_else(|| mlua::Error::RuntimeError("invalid import".into()))?;
-                let (owner, _) = caller.split_once(':').unwrap();
-                let package = &imports_bundle.packages()[owner];
-                if !identifier(target)
-                    || !identifier(module)
-                    || (target != owner && !package.dependencies.contains_key(target))
-                    || imports_bundle
-                        .packages()
-                        .get(target)
-                        .is_none_or(|p| !p.sources.contains_key(module))
-                {
-                    return Err(mlua::Error::RuntimeError(format!(
-                        "{}: inaccessible client import {name}",
-                        identity(&imports_bundle, &caller)
-                    )));
-                }
-                load(
-                    lua,
-                    Arc::clone(&imports_bundle),
-                    &name,
-                    &import_cached,
-                    &import_stack,
-                )
-            })?,
-        )?;
-        let value: Value = lua
-            .load(source)
-            .set_name(&id)
-            .set_mode(mlua::chunk::ChunkMode::Text)
-            .set_environment(environment)
-            .eval()?;
-        if value.is_nil() {
-            return Err(mlua::Error::RuntimeError(format!("{id}: nil export")));
-        }
-        cached
-            .borrow_mut()
-            .insert(key.to_owned(), lua.create_registry_value(value.clone())?);
-        Ok(value)
-    })();
-    stack.borrow_mut().pop();
-    result.map_err(|error: mlua::Error| mlua::Error::RuntimeError(format!("{id}: {error}")))
 }

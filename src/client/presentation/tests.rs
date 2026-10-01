@@ -182,3 +182,60 @@ fn local_ui_callback_receives_typed_replica_without_a_replica_event() {
         sequence:1,event:"demo:click".into(),value:String::new(),state:String::new(),texts:vec![],node:None,values:vec![],replica:false,entities:vec![],observations:Arc::new(observations),entered:vec![],left:vec![]};
     assert!(run(request).unwrap().is_empty());
 }
+
+#[test]
+fn actual_presentation_worker_retains_coroutines_and_resets_after_errors() {
+    let script = Arc::new(Script {
+        module: "demo@1.0.0:retained".into(),
+        source: r#"
+            local count = 0
+            local task = coroutine.create(function()
+                while true do count += 1; coroutine.yield() end
+            end)
+            return function(input)
+                assert(coroutine.resume(task))
+                if input.event == 'fail' then error('reset me') end
+                return {{ op = 'state', value = tostring(count) }}
+            end
+        "#
+        .into(),
+    });
+    let worker = Worker::spawn().unwrap();
+    for (sequence, event, expected) in [
+        (1, "tick", Some("1")),
+        (2, "tick", Some("2")),
+        (3, "fail", None),
+        (4, "tick", Some("1")),
+    ] {
+        worker
+            .requests
+            .send(Request {
+                script: Arc::clone(&script),
+                sequence,
+                event: event.into(),
+                value: String::new(),
+                state: String::new(),
+                texts: vec![],
+                node: None,
+                values: vec![],
+                replica: false,
+                observations: Arc::new(Observations::default()),
+                entities: vec![],
+                entered: vec![],
+                left: vec![],
+            })
+            .unwrap();
+        let reply = worker
+            .replies
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(reply.sequence, sequence);
+        if let Some(expected) = expected {
+            assert!(
+                matches!(reply.result.unwrap().as_slice(), [Command::State(value)] if value == expected)
+            );
+        } else {
+            assert!(reply.result.is_err());
+        }
+    }
+}

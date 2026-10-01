@@ -143,3 +143,130 @@ fn client_player_callback_rejection_is_atomic_and_other_packages_keep_running() 
         ("SessionDisconnected", 0)
     );
 }
+
+#[test]
+fn retained_player_modules_keep_imports_and_coroutines_but_revoke_old_hosts() {
+    let fixture = Fixture::new(
+        r#"
+        local cache = import('demo:cache')
+        local calls = 0
+        local saved_host
+        local task = coroutine.create(function(host, event)
+            assert(event.kind == 'SessionReady')
+            coroutine.yield()
+            assert(not pcall(function() host.set_parameter('bad', 'bad', 1) end))
+            -- Copied readonly input remains historical data, not host authority.
+            assert(event.kind == 'SessionReady')
+        end)
+        return function(host, event)
+            calls += 1
+            cache.calls += 1
+            assert(calls == cache.calls)
+            if calls == 1 then
+                assert(event.kind == 'SessionReady')
+                saved_host = host
+                assert(coroutine.resume(task, host, event))
+            else
+                assert(calls == 2 and event.kind == 'PlayerStateChanged')
+                assert(not pcall(function() saved_host.set_state('demo:doc', 'stale') end))
+                assert(coroutine.resume(task))
+                assert(coroutine.status(task) == 'dead')
+            end
+        end
+    "#,
+    );
+    let manifest = fixture.0.join("demo/package.txt");
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("module client cache client/cache.luau\n");
+    std::fs::write(manifest, text).unwrap();
+    std::fs::write(
+        fixture.0.join("demo/client/cache.luau"),
+        "return { calls = 0 }",
+    )
+    .unwrap();
+    let bundle = fixture.bundle();
+    let mut realm = startup::EventRealm::new(&bundle, "demo:player").unwrap();
+    let public = states("ready");
+    for kind in ["SessionReady", "PlayerStateChanged"] {
+        let mut output = State::default();
+        let event = Event {
+            kind,
+            profile: 1,
+            session: 2,
+            states: &public,
+            reason: "",
+        };
+        startup::execute_retained(
+            &mut realm,
+            Arc::clone(&bundle),
+            "demo:player",
+            &mut output,
+            Some(&event),
+        )
+        .unwrap();
+        assert!(output.states.is_empty());
+    }
+    // A reconnect receives a fresh entry and dependency export, never the
+    // prior connection's counter or suspended coroutine.
+    let mut reconnected = startup::EventRealm::new(&bundle, "demo:player").unwrap();
+    let event = Event {
+        kind: "SessionReady",
+        profile: 1,
+        session: 3,
+        states: &public,
+        reason: "",
+    };
+    startup::execute_retained(
+        &mut reconnected,
+        bundle,
+        "demo:player",
+        &mut State::default(),
+        Some(&event),
+    )
+    .unwrap();
+}
+
+#[test]
+fn failed_client_import_initialization_is_cached_for_the_realm() {
+    let fixture = Fixture::new(
+        r#"
+        return function()
+            local first_ok, first = pcall(import, 'demo:broken')
+            math.random()
+            local second_ok, second = pcall(import, 'demo:broken')
+            assert(not first_ok and not second_ok)
+            -- Rust callback error envelopes have their own call-site traceback;
+            -- the failing initializer's random payload must remain identical.
+            local payload = 'broken"%]:1: ([%d%.e%+%-]+)'
+            local first_draw = string.match(tostring(first), payload)
+            assert(first_draw and first_draw == string.match(tostring(second), payload))
+        end
+    "#,
+    );
+    let manifest = fixture.0.join("demo/package.txt");
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("module client broken client/broken.luau\n");
+    std::fs::write(manifest, text).unwrap();
+    std::fs::write(
+        fixture.0.join("demo/client/broken.luau"),
+        "error(tostring(math.random()))",
+    )
+    .unwrap();
+    let bundle = fixture.bundle();
+    let mut realm = startup::EventRealm::new(&bundle, "demo:player").unwrap();
+    let event = Event {
+        kind: "SessionReady",
+        profile: 1,
+        session: 2,
+        states: &[],
+        reason: "",
+    };
+    startup::execute_retained(
+        &mut realm,
+        bundle,
+        "demo:player",
+        &mut State::default(),
+        Some(&event),
+    )
+    .unwrap();
+}

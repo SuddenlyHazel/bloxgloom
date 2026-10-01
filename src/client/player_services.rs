@@ -55,6 +55,7 @@ impl Lane {
                     handlers,
                     parameters,
                     sender,
+                    realms: Default::default(),
                 };
                 let failures = runner.deliver(&snapshot, "SessionReady", "", true);
                 #[cfg(test)]
@@ -128,6 +129,7 @@ struct Runner {
     handlers: std::collections::BTreeMap<String, String>,
     parameters: crate::render::parameters::State,
     sender: mpsc::SyncSender<State>,
+    realms: std::collections::BTreeMap<String, startup::EventRealm>,
 }
 impl Runner {
     fn deliver(
@@ -150,7 +152,28 @@ impl Runner {
                 states: &snapshot.states,
                 reason,
             };
-            match startup::execute_event(
+            // Explicit admission failure keeps retained state from silently
+            // disappearing under an LRU eviction. Eight 8 MiB realms bound the
+            // connection's player-service heap to 64 MiB.
+            if !self.realms.contains_key(module) {
+                if self.realms.len() >= 8 {
+                    failures += 1;
+                    tracing::warn!(%module, "client player realm admission limit");
+                    continue;
+                }
+                match startup::EventRealm::new(&self.bundle, module) {
+                    Ok(realm) => {
+                        self.realms.insert(module.clone(), realm);
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        tracing::warn!(%error, "client player realm initialization failed");
+                        continue;
+                    }
+                }
+            }
+            match startup::execute_retained(
+                self.realms.get_mut(module).unwrap(),
                 Arc::clone(&self.bundle),
                 module,
                 &mut output,
@@ -168,7 +191,8 @@ impl Runner {
                 }
                 Err(error) => {
                     failures += 1;
-                    tracing::warn!(%error, event=kind, "client player callback failed");
+                    self.realms.remove(module);
+                    tracing::warn!(%error, event=kind, %module, reset_reason="callback_error", "client player realm reset");
                 }
             }
         }
