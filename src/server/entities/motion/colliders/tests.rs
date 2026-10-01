@@ -99,13 +99,16 @@ fn moving_capture_uses_committed_creature_crossing_and_fences_target_motion() {
         .unwrap();
     state.entities.apply_committed(moved).unwrap();
     sample(&mut state, 2);
+    sample(&mut state, 3);
+    sample(&mut state, 4);
     let mut reads = TerrainReads::default();
     let body = declaration();
     let moving = record();
     let candidates = capture(
         &state,
         EntityId::new(999).unwrap(),
-        2,
+        4,
+        4,
         &body,
         &moving,
         ([3, 80, -1], [4, 80, 0]),
@@ -125,7 +128,7 @@ fn moving_capture_uses_committed_creature_crossing_and_fences_target_motion() {
             response: solver::Response::Stop,
             restitution: 0.0,
         },
-        super::super::DT,
+        2.0 * super::super::DT,
         &candidates,
         solver::Limits {
             colliders: 64,
@@ -142,6 +145,41 @@ fn moving_capture_uses_committed_creature_crossing_and_fences_target_motion() {
         "a collider crossing the whole body is visible even though neither endpoint overlaps"
     );
     assert!(reads.entities_current(&state.entities));
+    let mut launch = moving.clone();
+    launch.source = Some(id.get());
+    launch.source_ticks = 2;
+    assert_eq!(
+        capture(
+            &state,
+            EntityId::new(999).unwrap(),
+            4,
+            4,
+            &body,
+            &launch,
+            ([3, 80, -1], [4, 80, 0]),
+            &mut TerrainReads::default()
+        )
+        .unwrap()
+        .len(),
+        1,
+        "source must remain captured when exclusion expires in the second substep"
+    );
+    launch.source_ticks = 4;
+    assert!(
+        capture(
+            &state,
+            EntityId::new(999).unwrap(),
+            4,
+            4,
+            &body,
+            &launch,
+            ([3, 80, -1], [4, 80, 0]),
+            &mut TerrainReads::default()
+        )
+        .unwrap()
+        .is_empty(),
+        "source excluded for the whole horizon need not be offered"
+    );
     let snapshot = state.entities.snapshot(id).unwrap();
     let moved = state
         .entities
@@ -176,18 +214,19 @@ fn moving_history_restart_and_dormancy_do_not_invent_target_motion() {
             },
         )]),
     );
-    assert_eq!(history.start(id, 2, [2.0, 80.0, 0.0]), [1.0, 80.0, 0.0]);
+    assert_eq!(history.start(id, 2, 2, [2.0, 80.0, 0.0]), [1.0, 80.0, 0.0]);
+    assert_eq!(history.start(id, 4, 4, [2.0, 80.0, 0.0]), [1.0, 80.0, 0.0]);
     assert_eq!(
-        history.start(id, 20, [2.0, 80.0, 0.0]),
+        history.start(id, 20, 4, [2.0, 80.0, 0.0]),
         [2.0, 80.0, 0.0],
         "missing active-step history freezes instead of stretching old motion across dormancy"
     );
     for tick in 1..10 {
         history.replace(tick, BTreeMap::new());
     }
-    assert_eq!(history.frames.len(), 3);
+    assert_eq!(history.frames.len(), 5);
     assert_eq!(
-        History::default().start(id, 2, [2.0, 80.0, 0.0]),
+        History::default().start(id, 4, 4, [2.0, 80.0, 0.0]),
         [2.0, 80.0, 0.0]
     );
 }

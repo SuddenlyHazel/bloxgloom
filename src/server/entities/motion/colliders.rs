@@ -26,13 +26,13 @@ impl History {
             return;
         }
         self.frames.push_back((tick, poses));
-        while self.frames.len() > 3 {
+        while self.frames.len() > 5 {
             self.frames.pop_front();
         }
         self.overloaded = false;
     }
-    fn start(&self, id: EntityId, tick: u64, current: [f32; 3]) -> [f32; 3] {
-        let start_tick = tick.saturating_sub(STEP_TICKS);
+    fn start(&self, id: EntityId, tick: u64, span_ticks: u64, current: [f32; 3]) -> [f32; 3] {
+        let start_tick = tick.saturating_sub(span_ticks);
         self.frames
             .iter()
             .find(|frame| frame.0 == start_tick)
@@ -116,15 +116,23 @@ fn push(result: &mut Vec<solver::Collider>, value: solver::Collider) -> io::Resu
     result.push(value);
     Ok(())
 }
+#[allow(clippy::too_many_arguments)]
 pub(super) fn capture(
     state: &State,
     id: EntityId,
     tick: u64,
+    span_ticks: u64,
     declaration: &MovingEntity,
     record: &Record,
     bounds: ([i32; 3], [i32; 3]),
     reads: &mut TerrainReads,
 ) -> io::Result<Vec<solver::Collider>> {
+    if span_ticks != STEP_TICKS && span_ticks != 2 * STEP_TICKS {
+        return Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "moving capture horizon must be one or two fixed steps",
+        ));
+    }
     let mut result = Vec::new();
     if !declaration.body.collisions.creatures && !declaration.body.collisions.players {
         return Ok(result);
@@ -150,7 +158,11 @@ pub(super) fn capture(
             // A previously distant member can change pose into a crossing
             // before admission. Fence every enumerated record, not only hits.
             reads.entities(state.entities.capture_entity_dependency(target_id))?;
-            if target_id == id || record.source_ticks > 0 && record.source == Some(target_id.get())
+            // Keep a source whose exclusion can expire during this horizon;
+            // the owner filters it again for each fixed substep.
+            if target_id == id
+                || u64::from(record.source_ticks) >= span_ticks
+                    && record.source == Some(target_id.get())
             {
                 continue;
             }
@@ -163,7 +175,9 @@ pub(super) fn capture(
             let Some(definition) = catalog.mobile_entity(target.entity_type) else {
                 continue;
             };
-            let start = state.motion_history.start(target_id, tick, position);
+            let start = state
+                .motion_history
+                .start(target_id, tick, span_ticks, position);
             let c = collider(
                 solver::Target::Creature {
                     id: target_id.get(),
@@ -195,11 +209,15 @@ pub(super) fn capture(
             let Some(target_id) = EntityId::for_player_session(session) else {
                 continue;
             };
-            if record.source_ticks > 0 && record.source == Some(target_id.get()) {
+            if u64::from(record.source_ticks) >= span_ticks
+                && record.source == Some(target_id.get())
+            {
                 continue;
             }
             let position = client.position();
-            let start = state.motion_history.start(target_id, tick, position);
+            let start = state
+                .motion_history
+                .start(target_id, tick, span_ticks, position);
             let body = catalog
                 .player_rules()
                 .for_stance(client.movement.crouching())
