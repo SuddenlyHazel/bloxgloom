@@ -46,13 +46,12 @@ pub(super) fn prepare(
                 }
             }
         }
-        if let Some(source) = spawn.source {
-            if context
+        if let Some(source) = spawn.source
+            && context
                 .entities()
                 .is_none_or(|entities| !entities.iter().any(|entity| entity.id == source))
-            {
-                return Err(reject("launch source was not captured"));
-            }
+        {
+            return Err(reject("launch source was not captured"));
         }
         plan.entity_spawns.push(api::EntitySpawn {
             key: spawn.key,
@@ -137,14 +136,15 @@ pub(super) fn prepare(
         }
     }
     for change in &mut plan.entity_changes {
-        if let api::EntityChange::Update { id, state, .. } = change {
-            if let Some(record) = records.remove(id) {
-                *state = record.encode().map_err(|e| reject(e.0))?;
-            }
+        if let api::EntityChange::Update { id, state, .. } = change
+            && let Some(record) = records.remove(id)
+        {
+            *state = record.encode().map_err(|e| reject(e.0))?;
         }
     }
     Ok(())
 }
 
 #[cfg(test)]
+#[path = "motion/tests.rs"]
 mod tests;

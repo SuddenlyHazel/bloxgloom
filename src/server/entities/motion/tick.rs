@@ -292,7 +292,7 @@ fn plan_inner(
         let solve_started = std::time::Instant::now();
         let step = match solver::integrate_with_contact_policy(
             solver::State {
-                position: position,
+                position,
                 velocity,
                 acceleration: [0.0; 3],
             },
@@ -367,16 +367,16 @@ fn plan_inner(
     record.motion.position = step.position.map(|x| x as f32);
     // Persisting a rounded center inside a touched face would turn ordinary
     // resting contact into a false embedded-body failure on the next step.
-    if step.blocked != Some(solver::Blocked::Embedded) {
-        if let Some(resting) = step.resting {
-            for axis in 0..3 {
-                let rounded = &mut record.motion.position[axis];
-                if resting.normal[axis] > 0.0 && f64::from(*rounded) < step.position[axis] {
-                    *rounded = rounded.next_up();
-                }
-                if resting.normal[axis] < 0.0 && f64::from(*rounded) > step.position[axis] {
-                    *rounded = rounded.next_down();
-                }
+    if step.blocked != Some(solver::Blocked::Embedded)
+        && let Some(resting) = step.resting
+    {
+        for axis in 0..3 {
+            let rounded = &mut record.motion.position[axis];
+            if resting.normal[axis] > 0.0 && f64::from(*rounded) < step.position[axis] {
+                *rounded = rounded.next_up();
+            }
+            if resting.normal[axis] < 0.0 && f64::from(*rounded) > step.position[axis] {
+                *rounded = rounded.next_down();
             }
         }
     }
@@ -408,21 +408,21 @@ fn plan_inner(
     };
     record.contact = step.resting.map(|c| target_for(c.target)).transpose()?;
     record.contact_normal = step.resting.map(|c| c.normal.map(|v| v as f32));
-    if declaration.handles_impact {
-        if let Some(contact) = first_new {
-            record.pending = Some(Pending::Impact(Impact {
-                entity: id.get(),
-                motion_revision: record.motion.revision,
-                tick,
-                position: std::array::from_fn(|i| {
-                    (contact.position[i] - contact.normal[i] * half[i]) as f32
-                }),
-                normal: contact.normal.map(|x| x as f32),
-                incoming_velocity: contact.incoming_velocity.map(|x| x as f32),
-                target: target_for(contact.target)?,
-                blocked: step.blocked.is_some(),
-            }));
-        }
+    if declaration.handles_impact
+        && let Some(contact) = first_new
+    {
+        record.pending = Some(Pending::Impact(Impact {
+            entity: id.get(),
+            motion_revision: record.motion.revision,
+            tick,
+            position: std::array::from_fn(|i| {
+                (contact.position[i] - contact.normal[i] * half[i]) as f32
+            }),
+            normal: contact.normal.map(|x| x as f32),
+            incoming_velocity: contact.incoming_velocity.map(|x| x as f32),
+            target: target_for(contact.target)?,
+            blocked: step.blocked.is_some(),
+        }));
     }
     if world_boundary {
         if declaration.handles_expiry {
