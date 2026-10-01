@@ -132,6 +132,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
             (UiScreen::Pause, "pause"),
             (UiScreen::Settings, "settings"),
             (UiScreen::Graphics, "graphics"),
+            (UiScreen::Audio, "audio"),
             (UiScreen::Package, "package"),
             (UiScreen::Package, "package-edited"),
             (UiScreen::Package, "package-planted"),
@@ -157,6 +158,7 @@ pub fn render_ui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
+        (UiScreen::Audio, "audio"),
         (UiScreen::Package, "package"),
     ] {
         outputs.push(PreviewOutput {
@@ -1778,6 +1780,10 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         },
         debug: None,
         settings: UiSettings {
+            audio_master: 0.8,
+            audio_ambient: 0.6,
+            audio_effects: 0.8,
+            audio_preset: 0,
             sensitivity: 0.002,
             fov_degrees: 70.0,
             view_distance: 3,
@@ -1796,6 +1802,7 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
             UiScreen::Graphics => Some(UiControl::Increase(SettingId::Exposure)),
+            UiScreen::Audio => Some(UiControl::AudioTest),
             UiScreen::Character => Some(UiControl::ApplyCharacter),
         },
     }

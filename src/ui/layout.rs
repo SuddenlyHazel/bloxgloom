@@ -38,7 +38,9 @@ impl UiLayout {
             UiScreen::Container | UiScreen::Actions => {}
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
-            UiScreen::Settings | UiScreen::Graphics | UiScreen::Character => layout.add_settings(),
+            UiScreen::Settings | UiScreen::Graphics | UiScreen::Audio | UiScreen::Character => {
+                layout.add_settings()
+            }
         }
         layout
     }
@@ -321,15 +323,28 @@ impl UiLayout {
     fn add_settings(&mut self) {
         let panel = self.settings_panel();
         let compact = panel.height < 500.0 * self.scale;
-        self.push(
-            UiControl::ToggleSettingsPage,
-            UiRect {
-                x: panel.x + panel.width - 154.0 * self.scale,
-                y: panel.y + (if compact { 12.0 } else { 24.0 }) * self.scale,
-                width: 130.0 * self.scale,
-                height: 30.0 * self.scale,
-            },
-        );
+        if self.screen != UiScreen::Audio {
+            self.push(
+                UiControl::ToggleSettingsPage,
+                UiRect {
+                    x: panel.x + panel.width - 154.0 * self.scale,
+                    y: panel.y + (if compact { 12.0 } else { 24.0 }) * self.scale,
+                    width: 130.0 * self.scale,
+                    height: 30.0 * self.scale,
+                },
+            );
+        }
+        if self.screen == UiScreen::Settings {
+            self.push(
+                UiControl::OpenAudio,
+                UiRect {
+                    x: panel.x + panel.width - 300.0 * self.scale,
+                    y: panel.y + (if compact { 12.0 } else { 24.0 }) * self.scale,
+                    width: 130.0 * self.scale,
+                    height: 30.0 * self.scale,
+                },
+            );
+        }
         let row_height = if compact {
             36.0 * self.scale
         } else {
@@ -344,7 +359,14 @@ impl UiLayout {
         } else {
             (106.0 * self.scale).clamp(72.0, 128.0)
         };
-        let settings: &[SettingId] = if self.screen == UiScreen::Graphics {
+        let settings: &[SettingId] = if self.screen == UiScreen::Audio {
+            &[
+                SettingId::AudioMaster,
+                SettingId::AudioAmbient,
+                SettingId::AudioEffects,
+                SettingId::AudioPreview,
+            ]
+        } else if self.screen == UiScreen::Graphics {
             &[
                 SettingId::PostProcessing,
                 SettingId::Exposure,
@@ -382,9 +404,13 @@ impl UiLayout {
                 },
             );
         }
-        if self.screen == UiScreen::Settings {
+        if matches!(self.screen, UiScreen::Settings | UiScreen::Audio) {
             self.push(
-                UiControl::ToggleFullscreen,
+                if self.screen == UiScreen::Audio {
+                    UiControl::AudioTest
+                } else {
+                    UiControl::ToggleFullscreen
+                },
                 UiRect {
                     x: panel.x + panel.width * if compact { 0.45 } else { 0.22 },
                     y: panel.y + panel.height - (if compact { 46.0 } else { 104.0 }) * self.scale,

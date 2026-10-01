@@ -4,6 +4,10 @@ use super::*;
 fn production_egui_graphics_exposes_and_labels_authored_character_control() {
     for authored in [false, true] {
         let settings = crate::ui::UiSettings {
+            audio_master: 0.8,
+            audio_ambient: 0.6,
+            audio_effects: 0.8,
+            audio_preset: 0,
             authored_characters: authored,
             ..Default::default()
         };

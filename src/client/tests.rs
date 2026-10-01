@@ -713,3 +713,8 @@ fn confirmed_fire_visuals_expire_and_are_capped_and_distance_culled() {
             .is_empty()
     );
 }
+
+#[test]
+fn audio_screen_escape_returns_to_settings() {
+    assert_eq!(escape_screen(UiScreen::Audio), UiScreen::Settings);
+}

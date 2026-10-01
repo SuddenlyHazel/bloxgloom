@@ -193,7 +193,9 @@ impl UiBuilder<'_> {
         self.panel(panel);
         let compact = panel.height < 500.0 * self.scale;
         self.text(
-            if frame.screen == UiScreen::Graphics {
+            if frame.screen == UiScreen::Audio {
+                "AUDIO"
+            } else if frame.screen == UiScreen::Graphics {
                 "GRAPHICS"
             } else {
                 "SETTINGS"
@@ -206,7 +208,9 @@ impl UiBuilder<'_> {
         );
         if !compact {
             self.text(
-                if frame.screen == UiScreen::Graphics {
+                if frame.screen == UiScreen::Audio {
+                    "LOCAL PREVIEW - NOT WORLD WEATHER"
+                } else if frame.screen == UiScreen::Graphics {
                     "TONE MAPPING / EXPOSURE / BLOOM"
                 } else {
                     "LOCAL CLIENT OPTIONS"
@@ -230,6 +234,46 @@ impl UiBuilder<'_> {
                 true,
             );
         }
+        if let Some(rect) = layout.rect(UiControl::OpenAudio) {
+            self.button(
+                rect,
+                "AUDIO",
+                frame.hovered == Some(UiControl::OpenAudio),
+                true,
+            );
+        }
+        if let Some(rect) = layout.rect(UiControl::AudioTest) {
+            self.button(
+                rect,
+                "TEST SOUND",
+                frame.hovered == Some(UiControl::AudioTest),
+                true,
+            );
+        }
+        let audio_rows = [
+            (
+                SettingId::AudioMaster,
+                "MASTER",
+                format!("{:.0}%", frame.settings.audio_master * 100.0),
+            ),
+            (
+                SettingId::AudioAmbient,
+                "AMBIENT",
+                format!("{:.0}%", frame.settings.audio_ambient * 100.0),
+            ),
+            (
+                SettingId::AudioEffects,
+                "EFFECTS",
+                format!("{:.0}%", frame.settings.audio_effects * 100.0),
+            ),
+            (
+                SettingId::AudioPreview,
+                "LOCAL PREVIEW",
+                crate::audio::Preset::from_index(frame.settings.audio_preset)
+                    .label()
+                    .into(),
+            ),
+        ];
         let general_rows = [
             (
                 SettingId::Sensitivity,
@@ -308,7 +352,9 @@ impl UiBuilder<'_> {
                 .to_string(),
             ),
         ];
-        let rows: &[_] = if frame.screen == UiScreen::Graphics {
+        let rows: &[_] = if frame.screen == UiScreen::Audio {
+            &audio_rows
+        } else if frame.screen == UiScreen::Graphics {
             &graphics_rows
         } else {
             &general_rows
