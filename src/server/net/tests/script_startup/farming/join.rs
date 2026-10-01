@@ -79,7 +79,7 @@ fn farming_scale_cold_and_cached_join_latency() {
 
 fn report(label: &str, samples: &mut [Duration]) {
     samples.sort_unstable();
-    let index = |percent| (samples.len() - 1) * percent / 100;
+    let index = |percent| (samples.len() * percent).div_ceil(100).saturating_sub(1);
     eprintln!(
         "farming {label}: samples={},p50={:?},p95={:?},p99={:?},max={:?}",
         samples.len(),

@@ -176,9 +176,10 @@ fn farming_scale_mixed_load_preserves_response_progress_and_restart() {
 
 fn report(label: &str, samples: &mut [Duration]) {
     samples.sort_unstable();
-    let median = samples[samples.len() / 2];
-    let p95 = samples[(samples.len() - 1) * 95 / 100];
-    let p99 = samples[(samples.len() - 1) * 99 / 100];
+    let index = |percent| (samples.len() * percent).div_ceil(100).saturating_sub(1);
+    let median = samples[index(50)];
+    let p95 = samples[index(95)];
+    let p99 = samples[index(99)];
     let maximum = *samples.last().unwrap();
     eprintln!(
         "farming {label}: {} samples, median={median:?}, p95={p95:?}, p99={p99:?}, max={maximum:?}",
