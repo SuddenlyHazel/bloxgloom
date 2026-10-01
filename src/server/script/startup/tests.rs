@@ -191,3 +191,227 @@ fn startup_call_order_does_not_change_assigned_content_ids() {
         assert_eq!(catalogs[0].item_by_key(key), catalogs[1].item_by_key(key));
     }
 }
+
+fn content_capacity_fixture(extra: &str) -> Fixture {
+    let fixture = Fixture::new();
+    fixture.package("farm", "", &format!(
+        "for i=1,256 do h.register_texture('farm:texture_'..i,'pixel'); h.register_block('farm:block_'..i,'Crop','farm:texture_'..i); h.register_item('farm:seed_'..i,'Seed','farm:texture_'..i) end; {extra}"
+    ));
+    let directory = fixture.0.join("farm");
+    let manifest = fs::read_to_string(directory.join("package.txt"))
+        .unwrap()
+        .replace("format 1", "format 2")
+        .replace("\nmodule ", "\nmodule server ");
+    fs::write(
+        directory.join("package.txt"),
+        format!("{manifest}\nasset texture pixel assets/textures/pixel.png\n"),
+    )
+    .unwrap();
+    fs::create_dir_all(directory.join("assets/textures")).unwrap();
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([120, 180, 60, 255]))
+        .save(directory.join("assets/textures/pixel.png"))
+        .unwrap();
+    fixture
+}
+
+#[test]
+fn content_capacity_admits_full_block_item_texture_targets() {
+    let fixture = content_capacity_fixture("");
+    let declarations = fixture.discover().unwrap();
+    assert_eq!(declarations.blocks.len(), 256);
+    assert_eq!(
+        declarations.items.len(),
+        512,
+        "block items share the total item allowance"
+    );
+    assert_eq!(declarations.textures.len(), 256);
+    let catalog =
+        crate::server::catalog_with_extension(crate::content::Catalog::builtins(), &declarations)
+            .unwrap();
+    assert!(catalog.block_by_key("farm:block_256").is_some());
+    assert!(catalog.item_by_key("farm:block_256").is_some());
+    assert!(catalog.item_by_key("farm:seed_256").is_some());
+}
+
+#[test]
+fn content_capacity_max_plus_one_errors_survive_pcall_with_key_and_usage() {
+    for (call, key, resource, attempted, maximum) in [
+        (
+            "h.register_block('farm:block_257','Crop','farm:texture_1')",
+            "farm:block_257",
+            "blocks/package",
+            257,
+            256,
+        ),
+        (
+            "h.register_item('farm:seed_257','Seed','farm:texture_1')",
+            "farm:seed_257",
+            "items/package",
+            513,
+            512,
+        ),
+        (
+            "h.register_texture('farm:texture_257','pixel')",
+            "farm:texture_257",
+            "textures/package",
+            257,
+            256,
+        ),
+    ] {
+        let fixture = content_capacity_fixture(&format!("pcall(function() {call} end)"));
+        let error = fixture.error();
+        for expected in [
+            "farm@1.0.0:main",
+            key,
+            resource,
+            &format!("attempted {attempted}"),
+            &format!("maximum {maximum}"),
+        ] {
+            assert!(error.contains(expected), "missing {expected:?} in {error}");
+        }
+    }
+}
+
+#[test]
+fn block_auto_items_cannot_bypass_total_item_capacity() {
+    let fixture = Fixture::new();
+    fixture.package("farm", "", "for i=1,512 do h.register_item('farm:seed_'..i,'Seed','bloxgloom:stone') end; pcall(function() h.register_block('farm:crop','Crop','bloxgloom:stone') end)");
+    let error = fixture.error();
+    assert!(error.contains("register_block farm:crop"), "{error}");
+    assert!(
+        error.contains("items/package: attempted 513; maximum 512"),
+        "{error}"
+    );
+}
+
+fn system_installation_fixture(count: usize) -> Fixture {
+    let fixture = Fixture::new();
+    for package in 0..count.div_ceil(8) {
+        let name = format!("p{package:02}");
+        let startup = (0..(count - package * 8).min(8))
+            .map(|n| system(&format!("{name}:s{n}"), "", "S"))
+            .collect::<Vec<_>>()
+            .join(";");
+        fixture.package(&name, "", &startup);
+    }
+    fixture
+}
+
+#[test]
+fn native_owner_capacity_counts_preinstalled_entries_and_rejects_atomically() {
+    let fixture = system_installation_fixture(127);
+    let declarations = fixture.discover().unwrap();
+    let mut catalog = crate::content::Catalog::builtins();
+    let mut existing = declarations.systems[0].clone();
+    existing.key = "bloxgloom:preinstalled_owner".into();
+    catalog.register_owner_system(existing).unwrap();
+    crate::server::lifecycle::Registration::install(&declarations, &mut catalog).unwrap();
+    assert_eq!(catalog.owner_systems().count(), 128);
+    let extra = Fixture::new();
+    extra.package(
+        "extra",
+        "",
+        &format!(
+            "h.register_block('extra:unpublished','Crop','bloxgloom:stone'); {}",
+            system("extra:owner", "", "S")
+        ),
+    );
+    let extra = extra.discover().unwrap();
+    let error = match crate::server::lifecycle::Registration::install(&extra, &mut catalog) {
+        Ok(_) => panic!("129 owner systems must fail"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("owner system") || error.contains("systems/installation"),
+        "{error}"
+    );
+    assert_eq!(catalog.owner_systems().count(), 128);
+    assert!(catalog.block_by_key("extra:unpublished").is_none());
+}
+
+fn generator_installation_fixture(count: usize) -> Fixture {
+    let fixture = Fixture::new();
+    for package in 0..count.div_ceil(8) {
+        let name = format!("p{package:02}");
+        let startup = (0..(count - package * 8).min(8))
+            .map(|n| format!("h.register_generator('{name}:g{n}',1,'{name}:terrain')"))
+            .collect::<Vec<_>>()
+            .join(";");
+        fixture.package(&name, "", &startup);
+    }
+    fixture
+}
+
+struct NativeGenerator(bloxgloom_host_api::generation::Registration);
+impl Extension for NativeGenerator {
+    fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        registrar.generation_contributor(self.0.clone())
+    }
+}
+
+#[test]
+fn native_generation_capacity_counts_preinstalled_contributors() {
+    let fixture = generator_installation_fixture(255);
+    let declarations = fixture.discover().unwrap();
+    let mut existing = declarations.generation[0].clone();
+    existing.key = "bloxgloom:preinstalled_terrain".into();
+    let startup = crate::server::ServerStartup::new(Arc::new(crate::content::Catalog::builtins()))
+        .with_extension(&NativeGenerator(existing.clone()))
+        .unwrap()
+        .with_extension(&declarations)
+        .unwrap();
+    assert_eq!(startup.generation().len(), 256);
+    existing.key = "bloxgloom:overflow_terrain".into();
+    let error = match startup.with_extension(&NativeGenerator(existing)) {
+        Ok(_) => panic!("257 contributors must fail"),
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("capacity") || error.contains("contributors/installation"),
+        "{error}"
+    );
+    let oversized = generator_installation_fixture(257);
+    let declarations = oversized.discover().unwrap();
+    let mut catalog = crate::content::Catalog::builtins();
+    assert!(crate::server::lifecycle::Registration::install(&declarations, &mut catalog).is_err());
+    assert!(catalog.item_by_key("p00:anything").is_none());
+}
+
+#[test]
+fn caught_startup_execution_limit_cannot_publish_and_worker_recovers() {
+    let fixture = Fixture::new();
+    fixture.package("farm", "", "h.register_item('farm:unpublished','Seed','bloxgloom:stone'); pcall(function() while true do end end)");
+    let snapshot = Arc::new(PackageSnapshot::discover(&fixture.0).unwrap());
+    let worker = ScriptWorker::spawn(super::super::Limits {
+        max_interrupts: 4,
+        ..super::super::Limits::startup()
+    })
+    .unwrap();
+    let output = worker.submit(
+        Program::Package {
+            snapshot,
+            entry: "farm:main".into(),
+            invocation: Invocation::Startup,
+        },
+        ScriptInput { tick: 0, seed: 0 },
+    );
+    assert!(matches!(
+        output,
+        Err(super::super::ScriptError {
+            failure: super::super::ScriptFailure::InstructionLimit,
+            ..
+        })
+    ));
+    assert_eq!(
+        worker
+            .execute(
+                super::super::SourceModule {
+                    id: "healthy:callback".into(),
+                    source: "return function(_) return 17 end".into()
+                },
+                ScriptInput { tick: 0, seed: 0 }
+            )
+            .unwrap(),
+        17
+    );
+}
