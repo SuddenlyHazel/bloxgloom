@@ -168,10 +168,10 @@
     "semantic_hash": ""
   },
   "crates/host-api/src/generation.rs": {
-    "mtime": 1790574268.707087,
-    "seen": 1790731263.430284,
-    "ast_hash": "9febbac360b5e4251c63d3781dd8d60f",
-    "semantic_hash": "9febbac360b5e4251c63d3781dd8d60f"
+    "mtime": 1790867748.9616094,
+    "seen": 1790870366.583531,
+    "ast_hash": "b0ec44391eb80dc233079fb2a762cbcc",
+    "semantic_hash": ""
   },
   "crates/host-api/src/generation/tests.rs": {
     "mtime": 1790574127.5476007,
@@ -642,9 +642,9 @@
     "semantic_hash": "c963087f34638b42c525e52cd52565dd"
   },
   "src/client/bundle.rs": {
-    "mtime": 1790793375.3478227,
-    "seen": 1790793456.0649312,
-    "ast_hash": "e8bb46b865544adf4506e72d4271165a",
+    "mtime": 1790869333.9103074,
+    "seen": 1790870366.583738,
+    "ast_hash": "3dc7ae57a81daf6614e6119266e8de97",
     "semantic_hash": ""
   },
   "src/client/drops.rs": {
@@ -846,9 +846,9 @@
     "semantic_hash": ""
   },
   "src/client/startup/readiness.rs": {
-    "mtime": 1790864037.7976818,
-    "seen": 1790864338.0893629,
-    "ast_hash": "93055baa129c97887cd81148b9cdc91a",
+    "mtime": 1790867533.0669463,
+    "seen": 1790870366.583793,
+    "ast_hash": "73951fc8d291005d02b6c5bfc52ded0a",
     "semantic_hash": ""
   },
   "src/client/tests.rs": {
@@ -954,10 +954,10 @@
     "semantic_hash": "a64aec3441a11389050560bd588928ce"
   },
   "src/content/declarations.rs": {
-    "mtime": 1790522003.4090915,
-    "seen": 1790731263.430408,
-    "ast_hash": "2ba0760ac9749722046a0aa4a0167006",
-    "semantic_hash": "2ba0760ac9749722046a0aa4a0167006"
+    "mtime": 1790868576.1835961,
+    "seen": 1790870366.5838149,
+    "ast_hash": "3e7fb17d39cca292500ff507834ba203",
+    "semantic_hash": ""
   },
   "src/content/extensions.rs": {
     "mtime": 1790634764.26234,
@@ -1032,9 +1032,9 @@
     "semantic_hash": "672497e15f193821a36b50266d92a2d1"
   },
   "src/content/owner_systems.rs": {
-    "mtime": 1790783910.563211,
-    "seen": 1790785069.0188181,
-    "ast_hash": "55fe3965a65602a1c305028d24617686",
+    "mtime": 1790867886.44095,
+    "seen": 1790870366.583829,
+    "ast_hash": "58d3544429af55d196bc956033ecd253",
     "semantic_hash": ""
   },
   "src/content/player.rs": {
@@ -1158,9 +1158,9 @@
     "semantic_hash": "b452e995ed4c953633de831d8825b7bc"
   },
   "src/preview.rs": {
-    "mtime": 1790861037.336676,
-    "seen": 1790861308.065135,
-    "ast_hash": "f86379519ca7f6f000888482eace16af",
+    "mtime": 1790868945.2331746,
+    "seen": 1790870366.583853,
+    "ast_hash": "19494d05c49de197260634b4be07baa1",
     "semantic_hash": ""
   },
   "src/preview/actors.rs": {
@@ -1182,9 +1182,9 @@
     "semantic_hash": ""
   },
   "src/preview/perf.rs": {
-    "mtime": 1790861037.337291,
-    "seen": 1790861308.06514,
-    "ast_hash": "68facd70efb015b3325005fd7324eb16",
+    "mtime": 1790868945.2198179,
+    "seen": 1790870366.583858,
+    "ast_hash": "c70ce51c56ef6f070de72f3b074b0c3d",
     "semantic_hash": ""
   },
   "src/preview/visuals.rs": {
@@ -1200,9 +1200,9 @@
     "semantic_hash": ""
   },
   "src/protocol/bundle.rs": {
-    "mtime": 1790790499.5884945,
-    "seen": 1790791161.916865,
-    "ast_hash": "3ad438136bcfdc8fc00655b7e8f548f9",
+    "mtime": 1790867409.8259497,
+    "seen": 1790870366.5838652,
+    "ast_hash": "4c879c41543c8d9b01674d31b39c38de",
     "semantic_hash": ""
   },
   "src/protocol/entities.rs": {
@@ -1242,9 +1242,9 @@
     "semantic_hash": "2e7a01bb4e41d089b7f7bd31574e451d"
   },
   "src/render.rs": {
-    "mtime": 1790858724.597719,
-    "seen": 1790859010.4253068,
-    "ast_hash": "d0d9a1c6edb7748ab23ec574089acedb",
+    "mtime": 1790868683.6274092,
+    "seen": 1790870366.5838752,
+    "ast_hash": "9092be1492282615f14bf6d8e9214cd3",
     "semantic_hash": ""
   },
   "src/render/avatars.rs": {
@@ -1296,9 +1296,9 @@
     "semantic_hash": ""
   },
   "src/render/custom/tests.rs": {
-    "mtime": 1790733438.5025952,
-    "seen": 1790733691.5516028,
-    "ast_hash": "a3c7c4eaabeded1e95ed32a4a3c4b512",
+    "mtime": 1790868124.8090763,
+    "seen": 1790870366.5838988,
+    "ast_hash": "a78a58f8a31784baa7bd9e47c2401fb9",
     "semantic_hash": ""
   },
   "src/render/drops.rs": {
@@ -1410,10 +1410,10 @@
     "semantic_hash": "bf0109bbe457dbf78da0f36486f55af5"
   },
   "src/render/material.rs": {
-    "mtime": 1790699824.5550563,
-    "seen": 1790731263.430475,
-    "ast_hash": "abc938c5cc7f90d69d3c739dbab53ea2",
-    "semantic_hash": "abc938c5cc7f90d69d3c739dbab53ea2"
+    "mtime": 1790868124.7339187,
+    "seen": 1790870366.583922,
+    "ast_hash": "8b2e6ad679262c59afc8e3c560d24ad4",
+    "semantic_hash": ""
   },
   "src/render/mesh.rs": {
     "mtime": 1790733022.3265285,
@@ -1434,9 +1434,9 @@
     "semantic_hash": "81efd04bfae14301b73eb893595aa442"
   },
   "src/render/pipeline.rs": {
-    "mtime": 1790733022.3316047,
-    "seen": 1790733691.55163,
-    "ast_hash": "f9476e33bf744c856db809efe6b21bdd",
+    "mtime": 1790868167.005112,
+    "seen": 1790870366.583928,
+    "ast_hash": "0c9f9d5a2ad82520af0dec0e3247a806",
     "semantic_hash": ""
   },
   "src/render/post.rs": {
@@ -1500,9 +1500,9 @@
     "semantic_hash": ""
   },
   "src/server.rs": {
-    "mtime": 1790862880.318566,
-    "seen": 1790863479.757609,
-    "ast_hash": "de1ad6fd4c49d9cd2d8e361b58f4deba",
+    "mtime": 1790867533.0667987,
+    "seen": 1790870366.583955,
+    "ast_hash": "dd3433a88b25c51ca6051e15dbd2778e",
     "semantic_hash": ""
   },
   "src/server/appearance.rs": {
@@ -2568,9 +2568,9 @@
     "semantic_hash": "e186a9be277c45a56a8e914bf753c5e0"
   },
   "src/server/lifecycle.rs": {
-    "mtime": 1790784380.3816009,
-    "seen": 1790785069.019077,
-    "ast_hash": "567923c328c79a7abefb141a0f8dadb8",
+    "mtime": 1790867886.9070516,
+    "seen": 1790870366.584141,
+    "ast_hash": "d302c3499bf667ef299922135a7384a0",
     "semantic_hash": ""
   },
   "src/server/lifecycle/tests.rs": {
@@ -2712,9 +2712,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup.rs": {
-    "mtime": 1790857613.779904,
-    "seen": 1790857955.772109,
-    "ast_hash": "25d5e0b26917ea97e50c1604ac68aaa8",
+    "mtime": 1790869221.5562758,
+    "seen": 1790870366.58417,
+    "ast_hash": "c971259a4d3755a15d89c0e04f081830",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/appearance.rs": {
@@ -2790,10 +2790,10 @@
     "semantic_hash": "487d94280f89595344d59bb42dfd68f6"
   },
   "src/server/net/tests/script_startup/gameplay/blocks.rs": {
-    "mtime": 1790707845.9848378,
-    "seen": 1790731263.430667,
-    "ast_hash": "efd68c78e2ca2c37f01723020e0a4d33",
-    "semantic_hash": "efd68c78e2ca2c37f01723020e0a4d33"
+    "mtime": 1790869158.690311,
+    "seen": 1790870366.584197,
+    "ast_hash": "b6d27d8cdc3eff748cfe1cb5491d67d3",
+    "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/gameplay/blocks/storage.rs": {
     "mtime": 1790656113.3118184,
@@ -2838,10 +2838,10 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/generation.rs": {
-    "mtime": 1790711310.2454448,
-    "seen": 1790731263.4306738,
-    "ast_hash": "49ab71bdf4e8a4d53ddd0069c29c4047",
-    "semantic_hash": "49ab71bdf4e8a4d53ddd0069c29c4047"
+    "mtime": 1790869221.5568209,
+    "seen": 1790870366.584218,
+    "ast_hash": "155372bc29195eac31c597d0648dc784",
+    "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/join_lifecycle.rs": {
     "mtime": 1790780194.0583785,
@@ -2886,9 +2886,9 @@
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/system.rs": {
-    "mtime": 1790780478.4807882,
-    "seen": 1790780689.843223,
-    "ast_hash": "e791413d697d06e52391856db77d1dec",
+    "mtime": 1790869221.5573459,
+    "seen": 1790870366.584228,
+    "ast_hash": "1cb911ba541e0e63fcaef9f2a586a46b",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/system/decisions.rs": {
@@ -3240,9 +3240,9 @@
     "semantic_hash": "511f6afa3e4c8ee0666ebc690346cff3"
   },
   "src/server/script.rs": {
-    "mtime": 1790863069.2515001,
-    "seen": 1790863479.757975,
-    "ast_hash": "b9cea77007aee1cea0a2e9d2456ee4b2",
+    "mtime": 1790869235.8073888,
+    "seen": 1790870366.584301,
+    "ast_hash": "cbdb9b11ad437e62e08b4450872aa4d5",
     "semantic_hash": ""
   },
   "src/server/script/creature.rs": {
@@ -3306,10 +3306,10 @@
     "semantic_hash": ""
   },
   "src/server/script/generation.rs": {
-    "mtime": 1790711728.9603722,
-    "seen": 1790731263.430735,
-    "ast_hash": "bdf625e273ffdd248bde33be44f5b5cd",
-    "semantic_hash": "bdf625e273ffdd248bde33be44f5b5cd"
+    "mtime": 1790867824.1165304,
+    "seen": 1790870366.584318,
+    "ast_hash": "b0f76bc621b7a747bd4016a7d2c8e7df",
+    "semantic_hash": ""
   },
   "src/server/script/handles.rs": {
     "mtime": 1790782510.4639356,
@@ -3342,21 +3342,21 @@
     "semantic_hash": "422bce8b24ada6baaea096795817efc9"
   },
   "src/server/script/package.rs": {
-    "mtime": 1790799900.469579,
-    "seen": 1790800465.956244,
-    "ast_hash": "91ae1cb35090ffbb3c4cd076117b4a6c",
+    "mtime": 1790867543.1072564,
+    "seen": 1790870366.5843258,
+    "ast_hash": "f5e85c3c51d53cbe4ecde7af4469f16a",
     "semantic_hash": ""
   },
   "src/server/script/package/client.rs": {
-    "mtime": 1790799637.0725777,
-    "seen": 1790800465.956245,
-    "ast_hash": "80f00fc4ac33ce1ce4b687a13460402b",
+    "mtime": 1790869333.8143117,
+    "seen": 1790870366.584327,
+    "ast_hash": "c639a8160ae31ad9a67c40e752a69884",
     "semantic_hash": ""
   },
   "src/server/script/package/client/declarations.rs": {
-    "mtime": 1790799637.0721834,
-    "seen": 1790800465.956246,
-    "ast_hash": "320b62b9820d7d3f14df722461c62405",
+    "mtime": 1790868858.458355,
+    "seen": 1790870366.584328,
+    "ast_hash": "4df10402e4296d76bb9a607197718db2",
     "semantic_hash": ""
   },
   "src/server/script/package/client/declarations/appearance.rs": {
@@ -3390,16 +3390,16 @@
     "semantic_hash": "2457bf99acaa0d102ad9061ffe536af1"
   },
   "src/server/script/package/client/declarations/runtime.rs": {
-    "mtime": 1790786746.0612671,
-    "seen": 1790787053.76432,
-    "ast_hash": "5d236b9b4f4473269594a9f943c44a7c",
+    "mtime": 1790867543.049397,
+    "seen": 1790870366.5843358,
+    "ast_hash": "3577537597c526df91a087d6fdf73ed5",
     "semantic_hash": ""
   },
   "src/server/script/package/client/declarations/runtime/tests.rs": {
-    "mtime": 1790630810.728972,
-    "seen": 1790731263.4307468,
-    "ast_hash": "d29265c3ff1aa7a339abe0b6e0dd04fd",
-    "semantic_hash": "d29265c3ff1aa7a339abe0b6e0dd04fd"
+    "mtime": 1790867661.4372575,
+    "seen": 1790870366.584337,
+    "ast_hash": "22caffad7f78de6d2d109b0bd286327e",
+    "semantic_hash": ""
   },
   "src/server/script/package/client/declarations/states.rs": {
     "mtime": 1790642373.9227772,
@@ -3414,10 +3414,10 @@
     "semantic_hash": "5022cfbd2a653d35e33b5187020c2465"
   },
   "src/server/script/package/client/tests.rs": {
-    "mtime": 1790634764.2666123,
-    "seen": 1790731263.430749,
-    "ast_hash": "374de5470860dc69597b2f4c34bc74e0",
-    "semantic_hash": "374de5470860dc69597b2f4c34bc74e0"
+    "mtime": 1790868500.7853665,
+    "seen": 1790870366.584343,
+    "ast_hash": "4900b172884c04a46518e298559b7942",
+    "semantic_hash": ""
   },
   "src/server/script/package/client/tests/effects.rs": {
     "mtime": 1790607610.4438384,
@@ -3438,33 +3438,33 @@
     "semantic_hash": ""
   },
   "src/server/script/package/files.rs": {
-    "mtime": 1790582541.9950716,
-    "seen": 1790731263.430753,
-    "ast_hash": "65243ea0773d2c7f0f12fda20051bba7",
-    "semantic_hash": "65243ea0773d2c7f0f12fda20051bba7"
+    "mtime": 1790867543.096798,
+    "seen": 1790870366.5843468,
+    "ast_hash": "feee1d41b6464f8fdc284ff4ed4da278",
+    "semantic_hash": ""
   },
   "src/server/script/package/manifest.rs": {
-    "mtime": 1790607243.3342137,
-    "seen": 1790731263.430754,
-    "ast_hash": "2bfd501cda0fc8cea2df56c25d9c12e9",
-    "semantic_hash": "2bfd501cda0fc8cea2df56c25d9c12e9"
+    "mtime": 1790867543.10019,
+    "seen": 1790870366.584348,
+    "ast_hash": "8fb7ce356d19b739b3cbd3eac5998875",
+    "semantic_hash": ""
   },
   "src/server/script/package/tests.rs": {
-    "mtime": 1790780193.069519,
-    "seen": 1790780689.843315,
-    "ast_hash": "b9a3eb0207213e417db541e53bfeeeaf",
+    "mtime": 1790867630.5805366,
+    "seen": 1790870366.584349,
+    "ast_hash": "4630b0a1c8e3b936477582807d1c2caf",
     "semantic_hash": ""
   },
   "src/server/script/package/tests/client.rs": {
-    "mtime": 1790611467.3310215,
-    "seen": 1790731263.4307551,
-    "ast_hash": "9ec67e981320e6c7aeca6142a10a16df",
-    "semantic_hash": "9ec67e981320e6c7aeca6142a10a16df"
+    "mtime": 1790867543.102218,
+    "seen": 1790870366.5843499,
+    "ast_hash": "640cccd4cb1141c60bee832b1b91e078",
+    "semantic_hash": ""
   },
   "src/server/script/startup.rs": {
-    "mtime": 1790799900.5241442,
-    "seen": 1790800465.9562728,
-    "ast_hash": "d6b9bd78aac756ca7849dcc8816fd19b",
+    "mtime": 1790868576.1612835,
+    "seen": 1790870366.584364,
+    "ast_hash": "d1d082c8a2f216ec44a02785fefa79d1",
     "semantic_hash": ""
   },
   "src/server/script/startup/appearance.rs": {
@@ -3552,15 +3552,15 @@
     "semantic_hash": "a034128cbb1cc97383a922f158335c29"
   },
   "src/server/script/startup/tag.rs": {
-    "mtime": 1790639653.603926,
-    "seen": 1790731263.430768,
-    "ast_hash": "56cbfb8d5d3cfcc0abee936b18360e9d",
-    "semantic_hash": "56cbfb8d5d3cfcc0abee936b18360e9d"
+    "mtime": 1790868500.6007295,
+    "seen": 1790870366.584383,
+    "ast_hash": "95d2d44d94786f1b027dc37b3e9c9720",
+    "semantic_hash": ""
   },
   "src/server/script/system.rs": {
-    "mtime": 1790779632.0609834,
-    "seen": 1790780689.843335,
-    "ast_hash": "1dab348908c50c8379a782508fab6f6e",
+    "mtime": 1790867510.6310546,
+    "seen": 1790870366.584385,
+    "ast_hash": "807d3d43264d3d6047e291a5e7ccce98",
     "semantic_hash": ""
   },
   "src/server/script/system/bindings.rs": {
@@ -3612,9 +3612,9 @@
     "semantic_hash": "581a71ff79fdaf2978883a4248557b95"
   },
   "src/server/startup.rs": {
-    "mtime": 1790783909.6355202,
-    "seen": 1790785069.0192719,
-    "ast_hash": "80b25f1e52a66d28662daa7202b4d332",
+    "mtime": 1790868946.069762,
+    "seen": 1790870366.584394,
+    "ast_hash": "77fbddd0f70036ede5846e73b4fa6fde",
     "semantic_hash": ""
   },
   "src/server/startup/public_systems.rs": {
@@ -3906,16 +3906,16 @@
     "semantic_hash": "1469b9fa2a335e670119669efe277bd6"
   },
   "src/world/generation.rs": {
-    "mtime": 1790574128.3839538,
-    "seen": 1790731263.4308171,
-    "ast_hash": "9427bd8e90539cddc205903d051d03de",
-    "semantic_hash": "9427bd8e90539cddc205903d051d03de"
+    "mtime": 1790869432.947516,
+    "seen": 1790870366.584455,
+    "ast_hash": "967b8fc3199a982cf72317499b3e5cd4",
+    "semantic_hash": ""
   },
   "src/world/generation/tests.rs": {
-    "mtime": 1790574276.1267526,
-    "seen": 1790731263.4308171,
-    "ast_hash": "7cc281f9d84eeb19e8938561ccae2e64",
-    "semantic_hash": "7cc281f9d84eeb19e8938561ccae2e64"
+    "mtime": 1790867824.40045,
+    "seen": 1790870366.584455,
+    "ast_hash": "8596d9d1d18c98ee01163c6bdf08366d",
+    "semantic_hash": ""
   },
   "src/world/owner_apply.rs": {
     "mtime": 1790288459.67633,
@@ -3948,9 +3948,9 @@
     "semantic_hash": "30b4fdf739be61da13df8c27000a1326"
   },
   "types/bloxgloom.d.luau": {
-    "mtime": 1790863114.7905037,
-    "seen": 1790863479.7581382,
-    "ast_hash": "2db0dcfdfaa464c701dc181a0a7e7006",
+    "mtime": 1790868020.0100784,
+    "seen": 1790870366.5844631,
+    "ast_hash": "870d5defc69e233d2d5d631162bac842",
     "semantic_hash": ""
   },
   "src/client/world_time.rs": {
@@ -4032,9 +4032,9 @@
     "semantic_hash": ""
   },
   "SCRIPTING.md": {
-    "mtime": 1790862861.301884,
-    "seen": 1790863479.758147,
-    "ast_hash": "416cb2a913dde1d0ce7f56b9f0c82398",
+    "mtime": 1790868277.2381122,
+    "seen": 1790870366.584471,
+    "ast_hash": "2a11015ca9e8de82cb5069dcf1b8eca3",
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
@@ -4074,9 +4074,9 @@
     "semantic_hash": ""
   },
   "docs/modding/GENERATION.md": {
-    "mtime": 1790574181.9079487,
-    "seen": 1790733691.552109,
-    "ast_hash": "7ca883ddf7622f5959ba72df304bdab7",
+    "mtime": 1790867991.2728236,
+    "seen": 1790870366.584494,
+    "ast_hash": "dc10423c642053dce41132301986a65f",
     "semantic_hash": ""
   },
   "docs/modding/HOST-LIFECYCLE.md": {
@@ -4086,15 +4086,15 @@
     "semantic_hash": ""
   },
   "docs/modding/IDE.md": {
-    "mtime": 1790863114.7912164,
-    "seen": 1790863479.758175,
-    "ast_hash": "6d5a218dda10802eafcf2dc238301132",
+    "mtime": 1790868029.1964757,
+    "seen": 1790870366.584496,
+    "ast_hash": "ee9df8b22a43112882ad87d630bdd45a",
     "semantic_hash": ""
   },
   "docs/modding/LUAU-PACKAGES.md": {
-    "mtime": 1790862861.3021722,
-    "seen": 1790863479.758176,
-    "ast_hash": "49cef1fe38ad95ec08b01f022ed9b33e",
+    "mtime": 1790868271.706228,
+    "seen": 1790870366.584497,
+    "ast_hash": "88fbef15585bd2b608bed0370489fa18",
     "semantic_hash": ""
   },
   "docs/modding/PLAYER-RULES.md": {
@@ -4104,9 +4104,9 @@
     "semantic_hash": ""
   },
   "docs/modding/README.md": {
-    "mtime": 1790862861.3014078,
-    "seen": 1790863479.7581801,
-    "ast_hash": "29f3d9a40950248b54df828f8408ff53",
+    "mtime": 1790868367.3790472,
+    "seen": 1790870366.584502,
+    "ast_hash": "744098f7295514af7aca6720adb0dc1b",
     "semantic_hash": ""
   },
   "docs/modding/REGISTERED-ACTIONS.md": {
@@ -4116,9 +4116,9 @@
     "semantic_hash": ""
   },
   "docs/modding/REGISTERED-CONTENT.md": {
-    "mtime": 1790711385.695259,
-    "seen": 1790733691.55212,
-    "ast_hash": "8c63c22efbd233b2b035b55fa34d8bef",
+    "mtime": 1790868222.0787477,
+    "seen": 1790870366.584503,
+    "ast_hash": "df9f7e63fec896efc3f37afb899ad1b9",
     "semantic_hash": ""
   },
   "docs/modding/REGISTERED-INVENTORIES.md": {
@@ -4134,9 +4134,9 @@
     "semantic_hash": ""
   },
   "docs/modding/REGISTERED-SYSTEMS.md": {
-    "mtime": 1790612993.3541691,
-    "seen": 1790733691.5521228,
-    "ast_hash": "915e02bf7461e7620c44e04979f69680",
+    "mtime": 1790867642.6179829,
+    "seen": 1790870366.584506,
+    "ast_hash": "c8535dfefdd2358e68718380200d695c",
     "semantic_hash": ""
   },
   "docs/modding/UI-FOUNDATION.md": {
@@ -4704,9 +4704,9 @@
     "semantic_hash": ""
   },
   "LUAU-SCRIPTING-GAPS.md": {
-    "mtime": 1790863014.4838912,
-    "seen": 1790863479.758145,
-    "ast_hash": "e922c7d5e14f2c64675941becdf6dbdb",
+    "mtime": 1790870353.7087495,
+    "seen": 1790870366.584469,
+    "ast_hash": "2bc893f5c20bb5a492cbb0916f77d582",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -4878,9 +4878,9 @@
     "semantic_hash": ""
   },
   "src/server/script/package/client/players.rs": {
-    "mtime": 1790799679.119618,
-    "seen": 1790800465.956259,
-    "ast_hash": "768af0d48c6e6162d988898cb6e494be",
+    "mtime": 1790867842.2546034,
+    "seen": 1790870366.5843399,
+    "ast_hash": "6ce06e66ed70e0071cc9738c09b16c3f",
     "semantic_hash": ""
   },
   "src/server/script/players.rs": {
@@ -4956,9 +4956,9 @@
     "semantic_hash": ""
   },
   "src/server/script/package/client/observers.rs": {
-    "mtime": 1790799637.073285,
-    "seen": 1790800465.956258,
-    "ast_hash": "8060265e89ac1e9ed55653f27d8b5cc7",
+    "mtime": 1790867842.2547061,
+    "seen": 1790870366.5843399,
+    "ast_hash": "9058a9d09cb8c0a904f959ff8db87a97",
     "semantic_hash": ""
   },
   "fixtures/player-lifecycle/packages/welcome/assets/ui/label.json": {
@@ -5238,9 +5238,9 @@
     "semantic_hash": ""
   },
   "src/server/script/package/client/declarations/anchored.rs": {
-    "mtime": 1790800096.1445045,
-    "seen": 1790800465.956247,
-    "ast_hash": "8feb0e5dc44eb9670ee0b42a97d3528a",
+    "mtime": 1790867842.2548153,
+    "seen": 1790870366.584329,
+    "ast_hash": "e163ea0b9ad106e2126299816a5bd1d7",
     "semantic_hash": ""
   },
   "src/server/script/package/client/declarations/anchored/tests.rs": {
@@ -6030,9 +6030,9 @@
     "semantic_hash": ""
   },
   "docs/modding/VM-LIFETIME.md": {
-    "mtime": 1790864038.0277662,
-    "seen": 1790864338.090055,
-    "ast_hash": "7f0aec195d1ada634ac29d4198eb83fd",
+    "mtime": 1790864375.4695184,
+    "seen": 1790870366.5845098,
+    "ast_hash": "ce82c245d484ecd5d471372c3019a5f4",
     "semantic_hash": ""
   },
   "src/server/script/runtime/compiled/tests.rs": {
@@ -6045,6 +6045,798 @@
     "mtime": 1790863661.835338,
     "seen": 1790864338.0899122,
     "ast_hash": "d9fcea065a518bf6397ba2df3e314d55",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/generate-pressure.py": {
+    "mtime": 1790868052.4233172,
+    "seen": 1790870366.583571,
+    "ast_hash": "61e8850785ba05d3e9fefbde43cd58ee",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/generate.py": {
+    "mtime": 1790870039.4677165,
+    "seen": 1790870366.583572,
+    "ast_hash": "8f22bd17a41d740ecac865c202fb52a8",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/ui/button.json": {
+    "mtime": 1790867436.665204,
+    "seen": 1790870366.583573,
+    "ast_hash": "079626f630b7430bd165422e8e353691",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/ui/controls.json": {
+    "mtime": 1790867436.664949,
+    "seen": 1790870366.583574,
+    "ast_hash": "a544f4a8f2c69ebdae5ce4e4e56a9b99",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/ui/panel.json": {
+    "mtime": 1790867436.6650896,
+    "seen": 1790870366.583575,
+    "ast_hash": "f7379746cccafaf20c032e0090c84364",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/client/client_startup.luau": {
+    "mtime": 1790870039.4671507,
+    "seen": 1790870366.583576,
+    "ast_hash": "b708cbb6df8c758093d44f74f2bdb448",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/client/view.luau": {
+    "mtime": 1790867807.449147,
+    "seen": 1790870366.5835772,
+    "ast_hash": "86aa8c4f7fb919b1ad3e5641c1b229db",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_00.luau": {
+    "mtime": 1790867436.6600928,
+    "seen": 1790870366.583578,
+    "ast_hash": "4f83607133a6b036af838eec90d1243d",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_01.luau": {
+    "mtime": 1790867436.660186,
+    "seen": 1790870366.583578,
+    "ast_hash": "983668115adf2d4933244780d8559269",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_02.luau": {
+    "mtime": 1790867436.660276,
+    "seen": 1790870366.5835788,
+    "ast_hash": "440a06b2828284c277cfb7ad1871ca4c",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_03.luau": {
+    "mtime": 1790867436.6603572,
+    "seen": 1790870366.58358,
+    "ast_hash": "5696bfeaa46bfc367bd9b4d5a3299ea1",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_04.luau": {
+    "mtime": 1790867436.6604307,
+    "seen": 1790870366.583581,
+    "ast_hash": "4474bdc68195b27aeccce6ed0e33ca8d",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_05.luau": {
+    "mtime": 1790867436.660508,
+    "seen": 1790870366.583582,
+    "ast_hash": "6908c1d03d6d4687faa959f9ceea3718",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_06.luau": {
+    "mtime": 1790867436.660588,
+    "seen": 1790870366.583582,
+    "ast_hash": "864a7f092337115c040ec5c81a70c5a7",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_07.luau": {
+    "mtime": 1790867436.6606672,
+    "seen": 1790870366.5835829,
+    "ast_hash": "73c9f25820ed6ac40ae4bbb0100e5c8e",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_08.luau": {
+    "mtime": 1790867436.660744,
+    "seen": 1790870366.583584,
+    "ast_hash": "eca851e0506173a59733fd15d92f5e95",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_09.luau": {
+    "mtime": 1790867436.6608188,
+    "seen": 1790870366.583585,
+    "ast_hash": "d0796f80eee0dd17a09c03ebecdf1875",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_10.luau": {
+    "mtime": 1790867436.660893,
+    "seen": 1790870366.583586,
+    "ast_hash": "84c13283d3387e4a208f407361de70bf",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_11.luau": {
+    "mtime": 1790867436.6609747,
+    "seen": 1790870366.5835872,
+    "ast_hash": "dacf8e604c4e56e663833dbce4bf4a1a",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_12.luau": {
+    "mtime": 1790867436.6610582,
+    "seen": 1790870366.5835872,
+    "ast_hash": "7e3c68d33f1c1dfa91ad1f0afa694e42",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_13.luau": {
+    "mtime": 1790867436.6611412,
+    "seen": 1790870366.5835881,
+    "ast_hash": "6c8099d43cc98b37c8dc37a87178aa2b",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_14.luau": {
+    "mtime": 1790867436.6612244,
+    "seen": 1790870366.583589,
+    "ast_hash": "62eaaa56a81189e868698027f6071489",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_15.luau": {
+    "mtime": 1790867436.6613104,
+    "seen": 1790870366.5835898,
+    "ast_hash": "5674b71ad2c652fe0a97499ff734ddf6",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_16.luau": {
+    "mtime": 1790867436.6614015,
+    "seen": 1790870366.583591,
+    "ast_hash": "86c334e19fe35de9d3cca8c4722ffb48",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_17.luau": {
+    "mtime": 1790867436.661482,
+    "seen": 1790870366.583592,
+    "ast_hash": "9bec1beeeace0e1d628c478c12c618af",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_18.luau": {
+    "mtime": 1790867436.6615684,
+    "seen": 1790870366.583593,
+    "ast_hash": "884cb282b5e388390f4d4959405b8b51",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_19.luau": {
+    "mtime": 1790867436.6616497,
+    "seen": 1790870366.583593,
+    "ast_hash": "05165266e0f4d9ffa1e48627a794730f",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_20.luau": {
+    "mtime": 1790867436.6617389,
+    "seen": 1790870366.583594,
+    "ast_hash": "fc1217faedde5d1bea75b655829b72ac",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/calendar_21.luau": {
+    "mtime": 1790867436.6618266,
+    "seen": 1790870366.583595,
+    "ast_hash": "6e8fcf95da9f50114aa582a27dd6e423",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_barley.luau": {
+    "mtime": 1790867436.6542563,
+    "seen": 1790870366.583596,
+    "ast_hash": "2355e9c94d5e26f9cba22e7993e2cf7f",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_bean.luau": {
+    "mtime": 1790867436.655786,
+    "seen": 1790870366.583597,
+    "ast_hash": "f6c35d017d7c49c67a0765cbb0264040",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_beet.luau": {
+    "mtime": 1790867436.65641,
+    "seen": 1790870366.5835981,
+    "ast_hash": "a74db977404737d924cce5d2e161d3bc",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_blueberry.luau": {
+    "mtime": 1790867436.6599023,
+    "seen": 1790870366.5835981,
+    "ast_hash": "ee4b717f2f5db4ec0badc0e8fdc03938",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_cabbage.luau": {
+    "mtime": 1790867436.6576335,
+    "seen": 1790870366.583599,
+    "ast_hash": "ce5bad44b44ff98c01bf93f38477cd9e",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_carrot.luau": {
+    "mtime": 1790867436.656256,
+    "seen": 1790870366.5836,
+    "ast_hash": "e1d0270cf13f56f007e71f3762dba3d7",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_chickpea.luau": {
+    "mtime": 1790867436.6560924,
+    "seen": 1790870366.583601,
+    "ast_hash": "50b38ae6ce8e0c0457131f6447be09c4",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_corn.luau": {
+    "mtime": 1790867436.6549785,
+    "seen": 1790870366.583602,
+    "ast_hash": "4a2cff9997b178f6b9e4041733bff4fe",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_cucumber.luau": {
+    "mtime": 1790867436.658581,
+    "seen": 1790870366.583603,
+    "ast_hash": "a45ca42d2cf76b3cb9fdc4001c940aa6",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_garlic.luau": {
+    "mtime": 1790867436.6573083,
+    "seen": 1790870366.5836039,
+    "ast_hash": "5ebc5b3812e88597fd70511b8b315b74",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_kale.luau": {
+    "mtime": 1790867436.6577878,
+    "seen": 1790870366.583605,
+    "ast_hash": "406a6d50738c8fd943abbd2070e60f83",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_leek.luau": {
+    "mtime": 1790867436.657473,
+    "seen": 1790870366.583606,
+    "ast_hash": "c37ed977f79bdd2db783f1a7085bf16d",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_lentil.luau": {
+    "mtime": 1790867436.655929,
+    "seen": 1790870366.583606,
+    "ast_hash": "4e8f87f848fbfe69cc2f58e8bdf1b9d8",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_lettuce.luau": {
+    "mtime": 1790867436.6579413,
+    "seen": 1790870366.583607,
+    "ast_hash": "1eae93b182e43449a28db625829e29d6",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_melon.luau": {
+    "mtime": 1790867436.659027,
+    "seen": 1790870366.5836082,
+    "ast_hash": "bf51986a93534ca774f2977e527cec57",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_millet.luau": {
+    "mtime": 1790867436.6552727,
+    "seen": 1790870366.583609,
+    "ast_hash": "e2b6801a003e19124ccd7223c4acc7e6",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_oats.luau": {
+    "mtime": 1790867436.6548195,
+    "seen": 1790870366.58361,
+    "ast_hash": "d9b1be79b7ce78129613031e347626ea",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_onion.luau": {
+    "mtime": 1790867436.6571548,
+    "seen": 1790870366.58361,
+    "ast_hash": "35269124a2c02816d1a0304b9bc66424",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_pea.luau": {
+    "mtime": 1790867436.6556203,
+    "seen": 1790870366.5836108,
+    "ast_hash": "bff3e08b2ab4c75def2dc8162c45022f",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_pepper.luau": {
+    "mtime": 1790867436.6584208,
+    "seen": 1790870366.583612,
+    "ast_hash": "b375e4d91dd1b1b6af7c423a8462b06d",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_potato.luau": {
+    "mtime": 1790867436.656858,
+    "seen": 1790870366.583613,
+    "ast_hash": "7559d2f93e41427280620bb085159540",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_pumpkin.luau": {
+    "mtime": 1790867436.6587555,
+    "seen": 1790870366.5836139,
+    "ast_hash": "af1f79f93b96f3eabfe759ede08beeda",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_radish.luau": {
+    "mtime": 1790867436.6567154,
+    "seen": 1790870366.5836139,
+    "ast_hash": "6adce96d8bb549291d304d51a9af4cf4",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_rice.luau": {
+    "mtime": 1790867436.6551318,
+    "seen": 1790870366.583615,
+    "ast_hash": "f1fd3adcc623984900e956500f0d13fe",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_rye.luau": {
+    "mtime": 1790867436.6546535,
+    "seen": 1790870366.583616,
+    "ast_hash": "184f21f6afcb34026adf7aeaca5530bd",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_sorghum.luau": {
+    "mtime": 1790867436.6554515,
+    "seen": 1790870366.583617,
+    "ast_hash": "5f707ac72632a50fe137c3a36c6c5ff6",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_spinach.luau": {
+    "mtime": 1790867436.6581016,
+    "seen": 1790870366.5836182,
+    "ast_hash": "91e253bad328716a36b41eeaf20599d4",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_strawberry.luau": {
+    "mtime": 1790867436.6595678,
+    "seen": 1790870366.583619,
+    "ast_hash": "134d33e448cbe7f2b61bfca1204ca271",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_tomato.luau": {
+    "mtime": 1790867436.6582642,
+    "seen": 1790870366.58362,
+    "ast_hash": "70323a8860911a7ed1b72407bf2e916b",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_turnip.luau": {
+    "mtime": 1790867436.656576,
+    "seen": 1790870366.58362,
+    "ast_hash": "f9590dfc5680fe6d0cf79afbf0c855de",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_wheat.luau": {
+    "mtime": 1790867436.6544757,
+    "seen": 1790870366.583621,
+    "ast_hash": "6f5e035eb89b2249c62f2100bbce4d2b",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/crop_yam.luau": {
+    "mtime": 1790867436.6570158,
+    "seen": 1790870366.583622,
+    "ast_hash": "cf7497fe47ab831c8c8ddca4f9ffd782",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/groves.luau": {
+    "mtime": 1790867436.6630204,
+    "seen": 1790870366.583623,
+    "ast_hash": "8e8b0780213d4ff52f1a945f511e2e45",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/growth.luau": {
+    "mtime": 1790867436.6622436,
+    "seen": 1790870366.583624,
+    "ast_hash": "a43a65868702ffa206ef7835044a506e",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/harvest.luau": {
+    "mtime": 1790867436.6626494,
+    "seen": 1790870366.583625,
+    "ast_hash": "1bf73c891e193cb1828f754d2fdb4018",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/irrigation.luau": {
+    "mtime": 1790867436.662163,
+    "seen": 1790870366.583626,
+    "ast_hash": "ae90abec7387b582d48e3780eccd7dfd",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/main.luau": {
+    "mtime": 1790867436.6620703,
+    "seen": 1790870366.583626,
+    "ast_hash": "8a1dd81f1525501091418bc45d4d5a2b",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/plant.luau": {
+    "mtime": 1790867436.6624064,
+    "seen": 1790870366.583627,
+    "ast_hash": "3b9cd7c6571bc59b378c0eebd30f0888",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_barley.luau": {
+    "mtime": 1790867436.6543875,
+    "seen": 1790870366.583628,
+    "ast_hash": "21a2303ad3ae7f31a2d1480734f5c58f",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_bean.luau": {
+    "mtime": 1790867436.6558611,
+    "seen": 1790870366.5836291,
+    "ast_hash": "352dee91e1ebe6d78e236fffbe007775",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_beet.luau": {
+    "mtime": 1790867436.6564918,
+    "seen": 1790870366.58363,
+    "ast_hash": "ff483e0be2aa1d4fda8feebc20765f6f",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_blueberry.luau": {
+    "mtime": 1790867436.6599956,
+    "seen": 1790870366.583631,
+    "ast_hash": "976e8aa140993d84713004574b8c75e4",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_cabbage.luau": {
+    "mtime": 1790867436.6577141,
+    "seen": 1790870366.583631,
+    "ast_hash": "fa72c3c63b1b3d44e57a9c857c80f4bb",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_carrot.luau": {
+    "mtime": 1790867436.6563313,
+    "seen": 1790870366.5836318,
+    "ast_hash": "f40d5c1bda7c1fa19f1bb7510fd868ba",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_chickpea.luau": {
+    "mtime": 1790867436.6561754,
+    "seen": 1790870366.583633,
+    "ast_hash": "15a9a525dbbd9163486d6d0fdf4bd631",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_corn.luau": {
+    "mtime": 1790867436.6550546,
+    "seen": 1790870366.583634,
+    "ast_hash": "6900bafa4a7939d0bfb2c9af03a25254",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_cucumber.luau": {
+    "mtime": 1790867436.6586676,
+    "seen": 1790870366.5836349,
+    "ast_hash": "9a8a2ddfcf1f6f25937ec26546986352",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_garlic.luau": {
+    "mtime": 1790867436.6573937,
+    "seen": 1790870366.583636,
+    "ast_hash": "bdddd365cb70bea8c1884f39ddd9414a",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_kale.luau": {
+    "mtime": 1790867436.65786,
+    "seen": 1790870366.583637,
+    "ast_hash": "ea3ddf952cc4620e5632d810930fb264",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_leek.luau": {
+    "mtime": 1790867436.6575527,
+    "seen": 1790870366.583638,
+    "ast_hash": "d524e1400a49cf4d92544a57dd542212",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_lentil.luau": {
+    "mtime": 1790867436.6560016,
+    "seen": 1790870366.583638,
+    "ast_hash": "e55ca6633aa6bfc215ad4a4ccc6a104e",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_lettuce.luau": {
+    "mtime": 1790867436.658017,
+    "seen": 1790870366.5836391,
+    "ast_hash": "7dcaff3fe7de1e57ff64f778537ca071",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_melon.luau": {
+    "mtime": 1790867436.659453,
+    "seen": 1790870366.58364,
+    "ast_hash": "819f914bcfdc928b70d69586def8d192",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_millet.luau": {
+    "mtime": 1790867436.6553624,
+    "seen": 1790870366.583641,
+    "ast_hash": "4ea87979a633dfb4706ce31005fc51b0",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_oats.luau": {
+    "mtime": 1790867436.654896,
+    "seen": 1790870366.583642,
+    "ast_hash": "d9ce45a135791f803e44780ef4c9e0cf",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_onion.luau": {
+    "mtime": 1790867436.6572232,
+    "seen": 1790870366.583643,
+    "ast_hash": "bfc17ad18e5001a294f9db03a16ec8c0",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_pea.luau": {
+    "mtime": 1790867436.6556969,
+    "seen": 1790870366.583643,
+    "ast_hash": "22ac5b0f09b78e044662483a5314b1b5",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_pepper.luau": {
+    "mtime": 1790867436.6585023,
+    "seen": 1790870366.583644,
+    "ast_hash": "510519e9e31beb8e1770b78b324e6073",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_potato.luau": {
+    "mtime": 1790867436.6569407,
+    "seen": 1790870366.5836449,
+    "ast_hash": "7da3ceb661e472b22f443dbe40c3bc5c",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_pumpkin.luau": {
+    "mtime": 1790867436.6588452,
+    "seen": 1790870366.583646,
+    "ast_hash": "e0aaf2745b6354943a0fdd85317a7a3a",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_radish.luau": {
+    "mtime": 1790867436.656787,
+    "seen": 1790870366.583647,
+    "ast_hash": "fd7c2913ad9ee2d2f4e0290fdd0dcc15",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_rice.luau": {
+    "mtime": 1790867436.6552024,
+    "seen": 1790870366.583647,
+    "ast_hash": "671fbb6a91906ee1b0a0bf4113e001e8",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_rye.luau": {
+    "mtime": 1790867436.654733,
+    "seen": 1790870366.583648,
+    "ast_hash": "c7b4f8962d93f3771ada01a25b547388",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_sorghum.luau": {
+    "mtime": 1790867436.6555367,
+    "seen": 1790870366.583649,
+    "ast_hash": "3fe628c492a3d7d61bcdad05fe453620",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_spinach.luau": {
+    "mtime": 1790867436.6581767,
+    "seen": 1790870366.58365,
+    "ast_hash": "1c4a1484a966425e04ed6fe4163e74a9",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_strawberry.luau": {
+    "mtime": 1790867436.6597605,
+    "seen": 1790870366.58365,
+    "ast_hash": "2dad6a56a0a7c515ee69961f6c568d22",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_tomato.luau": {
+    "mtime": 1790867436.6583447,
+    "seen": 1790870366.583651,
+    "ast_hash": "116e89df46f287923b410c1f2636d2a5",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_turnip.luau": {
+    "mtime": 1790867436.6566472,
+    "seen": 1790870366.583652,
+    "ast_hash": "c8609d5b596699a3f7eb9fac551144b4",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_wheat.luau": {
+    "mtime": 1790867436.6545622,
+    "seen": 1790870366.5836532,
+    "ast_hash": "6350f9b74047d61a76aaa5bba3916ba2",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/recipe_yam.luau": {
+    "mtime": 1790867436.6570847,
+    "seen": 1790870366.5836532,
+    "ast_hash": "d8c05f0b79844d0479552670c61e2ed9",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/seasons.luau": {
+    "mtime": 1790867436.662322,
+    "seen": 1790870366.583654,
+    "ast_hash": "2b56f63218d2c0eded917a00c2cf66ac",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/server/wild_crops.luau": {
+    "mtime": 1790867436.6629076,
+    "seen": 1790870366.5836549,
+    "ast_hash": "e3ec5d3cf2ba0a02adc04c080db8e778",
+    "semantic_hash": ""
+  },
+  "src/client/bundle/memory.rs": {
+    "mtime": 1790868749.0310318,
+    "seen": 1790870366.5837388,
+    "ast_hash": "fb863a348a3feb825c558f0a12d4406c",
+    "semantic_hash": ""
+  },
+  "src/client/bundle/memory/tests.rs": {
+    "mtime": 1790868749.030867,
+    "seen": 1790870366.58374,
+    "ast_hash": "a1e9fbf1ffefeb8d68d80a8ff9cd912a",
+    "semantic_hash": ""
+  },
+  "src/client/bundle/recovery.rs": {
+    "mtime": 1790869333.9079142,
+    "seen": 1790870366.58374,
+    "ast_hash": "70ebfbee57ede13f3c0e12654bb3a87a",
+    "semantic_hash": ""
+  },
+  "src/client/bundle/recovery/tests.rs": {
+    "mtime": 1790869333.9076033,
+    "seen": 1790870366.583741,
+    "ast_hash": "0e5cfaf507f6b728e3d2e2cda4d71cfc",
+    "semantic_hash": ""
+  },
+  "src/content/declarations/budget.rs": {
+    "mtime": 1790868717.1253693,
+    "seen": 1790870366.583816,
+    "ast_hash": "9814e7ea036dbca9b9fb6b5cf803461d",
+    "semantic_hash": ""
+  },
+  "src/content/declarations/budget/tests.rs": {
+    "mtime": 1790868717.1476128,
+    "seen": 1790870366.583817,
+    "ast_hash": "22dab1fb30dd13ea5825c6bc85e1c19d",
+    "semantic_hash": ""
+  },
+  "src/render/material/resources.rs": {
+    "mtime": 1790868124.8367796,
+    "seen": 1790870366.5839229,
+    "ast_hash": "e7e7743bdf2de44bb893efd808fe537f",
+    "semantic_hash": ""
+  },
+  "src/render/material/resources/tests.rs": {
+    "mtime": 1790868374.4715362,
+    "seen": 1790870366.583924,
+    "ast_hash": "5ce555fde2e788a75c1ec7e43303dc22",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/farming.rs": {
+    "mtime": 1790868321.6622531,
+    "seen": 1790870366.584192,
+    "ast_hash": "97f33c23b64b331b06d92cbddb1c8481",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/farming/join.rs": {
+    "mtime": 1790868400.8762803,
+    "seen": 1790870366.584192,
+    "ast_hash": "5fd5c544cf5ff096d51f4cce8fee3bba",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/farming/mixed.rs": {
+    "mtime": 1790868400.8765001,
+    "seen": 1790870366.584193,
+    "ast_hash": "9eab05266600d4429cae43d50351ac98",
+    "semantic_hash": ""
+  },
+  "src/server/net/tests/script_startup/farming/pressure.rs": {
+    "mtime": 1790868052.4222207,
+    "seen": 1790870366.584194,
+    "ast_hash": "00223aa444ac15622987aafb519b103b",
+    "semantic_hash": ""
+  },
+  "src/server/script/capacity.rs": {
+    "mtime": 1790867465.1749985,
+    "seen": 1790870366.5843048,
+    "ast_hash": "78b7c6fb599c8e146ba41ea4365dccd2",
+    "semantic_hash": ""
+  },
+  "src/server/script/package/client/residency.rs": {
+    "mtime": 1790869236.0812595,
+    "seen": 1790870366.584341,
+    "ast_hash": "a957525c83afbf4a7e58d3090eb62c52",
+    "semantic_hash": ""
+  },
+  "src/server/script/package/client/residency/tests.rs": {
+    "mtime": 1790869333.803817,
+    "seen": 1790870366.584342,
+    "ast_hash": "b304f8164a7adaec1b1b02a320cb31d3",
+    "semantic_hash": ""
+  },
+  "src/server/script/package/tests/capacity.rs": {
+    "mtime": 1790868945.9699767,
+    "seen": 1790870366.584349,
+    "ast_hash": "33ca3455284e01e192b279d8aaa5d2c0",
+    "semantic_hash": ""
+  },
+  "src/server/script/startup/composition.rs": {
+    "mtime": 1790867510.572894,
+    "seen": 1790870366.58437,
+    "ast_hash": "743c54d878ca56a58a13b824e57d3e36",
+    "semantic_hash": ""
+  },
+  "src/server/script/startup/tests.rs": {
+    "mtime": 1790868595.2039785,
+    "seen": 1790870366.584383,
+    "ast_hash": "4a90115dd11d648eadeb9d05189f427a",
+    "semantic_hash": ""
+  },
+  "src/server/script/startup/tests/budget.rs": {
+    "mtime": 1790868595.2268052,
+    "seen": 1790870366.584384,
+    "ast_hash": "15726c82b980f2cec48557ac36ab40fd",
+    "semantic_hash": ""
+  },
+  "docs/modding/PACKAGE-COMPOSITION.md": {
+    "mtime": 1790870350.5164492,
+    "seen": 1790870366.584498,
+    "ast_hash": "921ea111dba49eaddc59fc6a1d35f6c2",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/README.md": {
+    "mtime": 1790868790.87807,
+    "seen": 1790870366.584521,
+    "ast_hash": "2cc5d1b9157ee6d19cfa8515573eb1c7",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/fonts/OFL.txt": {
+    "mtime": 1790867436.666044,
+    "seen": 1790870366.584522,
+    "ast_hash": "4368fc5a06da4c820a1e581b71a06ba9",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/package.txt": {
+    "mtime": 1790867436.6662638,
+    "seen": 1790870366.584523,
+    "ast_hash": "85513b036d5ae64930462a13408e5743",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/leaf_1.png": {
+    "mtime": 1790867436.663582,
+    "seen": 1790870366.58463,
+    "ast_hash": "0f49537175a91e48ceaefb34df6722f3",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/leaf_2.png": {
+    "mtime": 1790867436.6638143,
+    "seen": 1790870366.584631,
+    "ast_hash": "7d70dc15d2870f1bbfc87e8755273010",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/leaf_3.png": {
+    "mtime": 1790867436.6641715,
+    "seen": 1790870366.584631,
+    "ast_hash": "86d775a24fecea05dba0a6f20d65b197",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/leaf_4.png": {
+    "mtime": 1790867436.6646023,
+    "seen": 1790870366.5846322,
+    "ast_hash": "23ba9dbc59804fe6535348a075c43950",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/produce_1.png": {
+    "mtime": 1790867436.6636968,
+    "seen": 1790870366.584645,
+    "ast_hash": "07789356c3c69b733909b60b88fe2ced",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/produce_2.png": {
+    "mtime": 1790867436.6640377,
+    "seen": 1790870366.5846488,
+    "ast_hash": "0478ab47f49a7107881f754a86a7013a",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/produce_3.png": {
+    "mtime": 1790867436.664427,
+    "seen": 1790870366.58465,
+    "ast_hash": "3ffa1f1d1e243f602da4b39d3194707d",
+    "semantic_hash": ""
+  },
+  "fixtures/farming-scale/packages/farm/assets/textures/produce_4.png": {
+    "mtime": 1790867436.664747,
+    "seen": 1790870366.584651,
+    "ast_hash": "6e349f27f8655dc51a72e089d8d29b1f",
     "semantic_hash": ""
   }
 }
