@@ -456,8 +456,12 @@ Script creatures support terrain-aware ground movement toward horizontal
 targets and models built from colored cuboids. Moving entities now add free
 velocity/acceleration controls, swept collision and rigid cuboid presentation;
 the approved scope is implemented. A [native audio foundation](docs/audio/FOUNDATION.md)
-now provides device output, mixing and procedural weather synthesis, but has no
-Luau sound bindings or package sound delivery yet.
+now provides device output, mixing and procedural weather synthesis.
+[Packaged scripted audio](docs/audio/SCRIPTING.md) adds namespaced WAV delivery,
+transactional positional one-shots, entity-linked loops, gain/pitch updates,
+explicit stops and session/entity cleanup. Native gameplay cues publish after
+commit; the [audio timer fixture](fixtures/audio-machine/README.md) demonstrates
+running, interaction and completion sounds.
 [Game weather](docs/weather/FOUNDATION.md) now drives this native presentation,
 with script weather queries, hooks and controls still unbound. There are no imported
 models or custom player geometry. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
@@ -468,7 +472,7 @@ body rendering, walking and tool animations, and server-owned crouch stance.
 These improve the builtin player experience; they do not expose general Luau
 model imports, animation controllers, arbitrary motion or per-player physics.
 
-**Remaining impact:** vehicles, per-player physics, rich animation and audio
+**Remaining impact:** vehicles, per-player physics, rich animation and advanced audio
 need additional engine services. Simple projectiles and guided flying objects
 use the moving-entity contract rather than private-state position emulation.
 
@@ -480,12 +484,30 @@ Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exac
 [creatures](SCRIPTING.md#mobile-creatures) and
 [replica presentation](SCRIPTING.md#public-replica-presentation).
 
+#### Implemented extension: packaged and scripted audio
+
+Namespaced WAV assets are verified and decoded before play. Gameplay Context stages
+positional one-shots, entity-linked loops, gain/pitch updates and stops until the
+commit barrier. Native block break/place, pickup and interaction cues use committed
+effects. Receipt retries, failed callbacks and stale attempts do not produce new
+sound. Client UI/replica commands support the same playback operations with separate
+package-scoped voices. Attached voices follow authoritative positions and stop on
+entity/session retirement; stops retry under queue pressure. Ordered batch IDs
+suppress duplicate delivery throughout the session.
+
+The [audio contract](docs/audio/SCRIPTING.md) records bounds and exact API fields.
+The [audio timer machine](fixtures/audio-machine/README.md) demonstrates a running
+loop reconstructed from current public state, transactional start/completion clips
+and cleanup on removal. Dedicated process-machine/creature callback signatures,
+weather scripting, occlusion/reverb, buses, streamed music and device recovery are
+separate remaining work. No save conversion or imported models are introduced.
+
 #### Accepted goal: authoritative moving entities and projectiles
 
 **Status: implemented and verified (2026-10-01).**
-This closes the simple moving-object/projectile portion of section 5. Audio,
-vehicles, general animation controllers and imported models remain separate
-work. The author contract is in [Moving entities](docs/modding/MOVING-ENTITIES.md)
+This closes the simple moving-object/projectile portion of section 5. The
+subsequent audio scope is documented below; vehicles, general animation
+controllers and imported models remain separate work. The author contract is in [Moving entities](docs/modding/MOVING-ENTITIES.md)
 and the runnable example is [moving-projectiles](fixtures/moving-projectiles/README.md).
 
 Acceptance includes swept-collision regressions, real nonblocking TCP gameplay,
@@ -706,7 +728,8 @@ Acceptance requires:
   update after implementation. Publish measured motion workload results and any
   remaining limits alongside the completed author contract.
 
-Completion closes the motion/projectile portion only. Audio, vehicle controls/
+Completion closes the motion/projectile portion only. The audio extension below
+closes basic packaged/scripted playback; advanced audio, vehicle controls/
 rigid-body constraints, per-player physics, imported models and general animation
 controllers remain visible section-5 gaps for separate goals.
 
@@ -954,7 +977,7 @@ projects. Save conversion remains excluded during this prerelease.
 
 ## Suggested priority
 
-1. Additional motion, audio and richer presentation contracts.
+1. Weather scripting, advanced audio, additional motion and richer presentation contracts.
 2. Development iteration and the remaining smaller composability gaps.
 
 VM lifetime and retained runtime state are implemented in section 6; larger-package

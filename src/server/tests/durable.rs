@@ -174,6 +174,7 @@ fn outstanding_terrain_edit_defers_drop_motion_until_replanned_single_and_batche
             entities: None,
             entity_wakes: Vec::new(),
             owner_changes: vec![],
+            sounds: Vec::new(),
             player_publication: None,
         };
         assert!(
@@ -1761,6 +1762,7 @@ fn drops_conserve_and_cap_across_spawn_fall_merge_take_expiry_restart() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(expired),
     };

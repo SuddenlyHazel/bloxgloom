@@ -178,6 +178,7 @@ pub(in crate::server) fn plan_event(
         entities,
         entity_wakes: Vec::new(),
         owner_changes: profile_changes,
+        sounds: plan.sounds,
         player_publication: crate::server::players::Published::operations(plan.player_operations),
     }))
 }

@@ -9,7 +9,7 @@ fn composed_resources_require_exact_direct_dependencies() {
     let package = |output: &str, input: &str, final_output: bool, dependencies| {
         ClientPackage {
         version: "1.0.0".into(), dependencies, sources: BTreeMap::new(), textures: BTreeMap::new(),
-        ui_assets: BTreeMap::new(), material_assets: BTreeMap::new(),
+        ui_assets: BTreeMap::new(), material_assets: BTreeMap::new(), sound_assets: BTreeMap::new(),
         effect_assets: BTreeMap::from([
             ("pass".into(),(7,format!(r#"{{"version":2,"shader":"shader","inputs":["{input}"],"output":"{output}","final":{final_output}}}"#).into_bytes())),
             ("shader".into(),(6,b"fn effect_fragment(uv:vec2f)->vec4f { return effect_input(uv,0u); }".to_vec())),

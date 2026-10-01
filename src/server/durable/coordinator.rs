@@ -634,6 +634,7 @@ fn stage_motion_batch(
         entities,
         entity_wakes: wakes,
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     };
     if let Err(error) = state.entities.validate_prepared(
@@ -968,6 +969,7 @@ fn queue_action_result(
         deltas: Vec::new(),
         entity_commit: None,
         pickups: Vec::new(),
+        sounds: Vec::new(),
         fire_bursts: Vec::new(),
     });
 }

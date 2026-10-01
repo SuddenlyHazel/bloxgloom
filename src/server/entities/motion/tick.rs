@@ -564,6 +564,7 @@ fn commit(
         entities: Some(entities),
         entity_wakes: vec![],
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     }
 }

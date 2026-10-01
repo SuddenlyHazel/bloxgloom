@@ -80,6 +80,7 @@ fn readonly_inventory_reservations_fence_writers_and_detect_stale_revisions() {
         weather_change: None,
         entities: None,
         entity_wakes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         owner_changes: changes,
     };

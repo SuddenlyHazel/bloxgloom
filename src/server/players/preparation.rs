@@ -178,6 +178,7 @@ pub(super) fn prepare(
         entities: None,
         entity_wakes: vec![],
         owner_changes: changes,
+        sounds: Vec::new(),
         player_publication: Some(Published::Lifecycle {
             key: key(reg, event),
             session,

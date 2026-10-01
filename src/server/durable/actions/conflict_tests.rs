@@ -92,6 +92,7 @@ fn action(entities: PreparedEntityTransaction) -> CommitAction {
         entities: Some(entities),
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     }
 }

@@ -1264,3 +1264,65 @@ fn weather_wire_round_trip_rejects_invalid_physical_values() {
     snapshot.from.rain = f32::NAN;
     assert!(write_server(&mut Vec::new(), &ServerMessage::Weather { snapshot }).is_err());
 }
+
+#[test]
+fn sound_batch_roundtrip_length_and_truncated_frames_are_checked() {
+    use bloxgloom_host_api::sound::{Event, Kind};
+    let events = vec![
+        Event {
+            owner: "demo".into(),
+            voice: "run".into(),
+            kind: Kind::Play {
+                clip: "demo:motor".into(),
+                position: [1.0, 2.0, 3.0],
+                entity: Some(u64::MAX),
+                gain: 0.5,
+                pitch: 1.25,
+                looping: true,
+            },
+        },
+        Event {
+            owner: "demo".into(),
+            voice: "run".into(),
+            kind: Kind::Update {
+                position: Some([2.0; 3]),
+                gain: 1.0,
+                pitch: 0.5,
+            },
+        },
+        Event {
+            owner: "demo".into(),
+            voice: "run".into(),
+            kind: Kind::Stop,
+        },
+    ];
+    let message = ServerMessage::Sounds { id: 7, events };
+    let mut bytes = Vec::new();
+    write_server(&mut bytes, &message).unwrap();
+    assert_eq!(bytes.len(), server_wire_len(&message));
+    let ServerMessage::Sounds { id, events } = read_server(bytes.as_slice()).unwrap() else {
+        panic!("expected sounds")
+    };
+    let ServerMessage::Sounds {
+        id: expected,
+        events: expected_events,
+    } = message
+    else {
+        unreachable!()
+    };
+    assert_eq!(id, expected);
+    assert_eq!(events, expected_events);
+    for len in 0..bytes.len() {
+        assert!(read_server(&bytes[..len]).is_err());
+    }
+    assert!(
+        write_server(
+            Vec::new(),
+            &ServerMessage::Sounds {
+                id: 0,
+                events: vec![]
+            }
+        )
+        .is_err()
+    );
+}

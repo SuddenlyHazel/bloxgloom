@@ -29,6 +29,7 @@ fn commit(state: &mut State, batch: entities::PreparedEntityBatch) {
         entities: Some(batch),
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     };
     assert!(

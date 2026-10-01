@@ -290,6 +290,7 @@ fn oversized_profile_inventory_transaction_is_denied_and_next_wal_action_succeed
         weather_change: None,
         entities: None,
         entity_wakes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         owner_changes,
     };

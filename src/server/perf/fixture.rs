@@ -361,6 +361,7 @@ fn add_clients_and_seed_drops(
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(spawns),
     };

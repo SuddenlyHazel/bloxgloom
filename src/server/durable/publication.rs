@@ -102,6 +102,7 @@ fn apply_committed_action_inner(
     // through the caller's fatal path. Wake and cursor changes must reach
     // publication: filtering to the state domain only would silently drop
     // them here.
+    super::sounds::builtin(state, &mut action);
     let mut owner_changes: Vec<Change> = action
         .entities
         .as_ref()
@@ -267,6 +268,7 @@ fn apply_committed_action_inner(
         deltas: action.deltas,
         entity_commit,
         pickups: action.pickups,
+        sounds: action.sounds,
         fire_bursts,
     });
     super::super::players::inventory::publish(state, profile_inventories);
@@ -330,6 +332,7 @@ pub(super) fn publish_committed_fire_after_world(
             deltas,
             entity_commit: None,
             pickups: Vec::new(),
+            sounds: Vec::new(),
             fire_bursts: changed_cells
                 .iter()
                 .map(|cell| [cell.x, cell.y, cell.z])

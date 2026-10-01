@@ -296,6 +296,7 @@ fn action_and_tick_expand_secondary_cell_once_and_refund_final_inventory_on_rest
             entities,
             entity_wakes: vec![],
             owner_changes: vec![],
+            sounds: Vec::new(),
             player_publication: None,
         };
         let permit = action.entities.as_ref().map(|_| {

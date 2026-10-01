@@ -168,6 +168,7 @@ fn empty_action() -> CommitAction {
         weather_change: None,
         entity_wakes: vec![],
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     }

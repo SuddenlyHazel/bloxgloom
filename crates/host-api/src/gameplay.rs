@@ -15,6 +15,7 @@ mod observations;
 mod player_operations;
 mod players;
 mod profile_state;
+mod sounds;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
@@ -67,6 +68,9 @@ impl std::error::Error for Error {}
 /// Host implementation must capture dependencies for successful reads, including
 /// air. A missing chunk is `Unavailable`, never procedural fallback or air.
 pub trait Snapshot {
+    fn sound_registered(&self, _key: &str) -> bool {
+        false
+    }
     fn motion_contact(
         &mut self,
         _id: u64,
@@ -191,6 +195,7 @@ pub struct DropSpawn {
 /// Constructing a plan does not publish anything or bypass host validation.
 #[derive(Debug, Default)]
 pub struct Plan {
+    pub sounds: Vec<crate::sound::Event>,
     pub moving_spawns: Vec<MovingSpawn>,
     pub motion_commands: BTreeMap<u64, MotionCommand>,
     pub profile_states: BTreeMap<(String, u128), ProfileCell>,

@@ -125,6 +125,9 @@ impl Snapshot for WorldSnapshot<'_> {
     fn action_id(&self) -> Option<u128> {
         self.action_id
     }
+    fn sound_registered(&self, key: &str) -> bool {
+        self.world.catalog().sounds.contains(key)
+    }
     fn world_time(&mut self) -> Result<bloxgloom_host_api::gameplay::WorldTime, Error> {
         let clock = self
             .clock
@@ -395,6 +398,7 @@ pub(super) struct OperationInput<'a> {
 }
 
 pub(super) struct WorldPlan {
+    pub sounds: Vec<bloxgloom_host_api::sound::Event>,
     pub profile_inventory_changes: Vec<crate::server::journal::Change>,
     pub profile_states:
         std::collections::BTreeMap<(String, u128), bloxgloom_host_api::gameplay::ProfileCell>,
@@ -947,6 +951,7 @@ pub(super) fn plan_with_lifecycles(
         entity_updates.extend(despawns);
     }
     Ok(WorldPlan {
+        sounds: plan.sounds,
         profile_inventory_changes,
         profile_states: plan.profile_states,
         player_operations: plan.player_operations,

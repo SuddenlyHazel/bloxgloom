@@ -232,6 +232,7 @@ pub(super) struct CommitAction {
     pub(super) entity_wakes: Vec<EntityId>,
     /// Related owner cells and explicitly prepared profile inventory participants.
     pub(super) owner_changes: Vec<crate::server::journal::Change>,
+    pub(super) sounds: Vec<bloxgloom_host_api::sound::Event>,
     pub(super) player_publication: Option<super::players::Published>,
 }
 
@@ -256,6 +257,7 @@ impl CommitAction {
             entities: None,
             entity_wakes: Vec::new(),
             owner_changes: vec![],
+            sounds: Vec::new(),
             player_publication: None,
         }
     }
@@ -280,6 +282,7 @@ pub(super) struct PublishEffects {
     pub(super) deltas: Vec<BlockDelta>,
     pub(super) entity_commit: Option<EntityCommit>,
     pub(super) pickups: Vec<DroppedItem>,
+    pub(super) sounds: Vec<bloxgloom_host_api::sound::Event>,
     pub(super) fire_bursts: Vec<[i32; 3]>,
 }
 
@@ -568,3 +571,5 @@ impl Durability {
         Ok(true)
     }
 }
+
+mod sounds;

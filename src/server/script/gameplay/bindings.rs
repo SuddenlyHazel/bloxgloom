@@ -53,6 +53,19 @@ pub(in crate::server::script) fn invoke_fields<R: mlua::FromLuaMulti>(
         profile_state::install(scope, &host, &context, rejected)?;
         motion::install(scope, &host, &context, rejected)?;
         host.set(
+            "sound",
+            scope.create_function(|_, value: Value| {
+                checked(rejected, || {
+                    let Value::Table(table) = value else {
+                        return Err(invalid("expected sound table"));
+                    };
+                    let (voice, kind) =
+                        crate::audio::luau::decode(&table).map_err(|e| invalid(&e.to_string()))?;
+                    context.borrow_mut().sound(voice, kind)
+                })
+            })?,
+        )?;
+        host.set(
             "world_time",
             scope.create_function(|lua, ()| {
                 let time = checked(rejected, || context.borrow_mut().world_time())?;

@@ -407,6 +407,8 @@ export type BloxGameplayContext = {
     set_block: (x: number, y: number, z: number, state_key: string) -> (),
     --- Stage an exact-count move between 0-indexed player inventory slots. Returns false if the move cannot be made.
     transfer: (from_slot: number, to_slot: number, count: number) -> boolean,
+    --- Presentation publishes only after this gameplay transaction commits. Invalid calls latch rollback.
+    sound: (event: BloxSound) -> (),
     spawn_drop: (x: number, y: number, z: number, item: string, count: number, delay_ms: number) -> (),
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
     --- Opaque attempt-local allocation reference; this is not an entity ID.
@@ -636,7 +638,8 @@ export type BloxUiNode = {
     options: {{key: string, label: string}}?, selected: string?,
 }
 export type BloxUiCommand =
-    { op: "text", node: string, value: string }
+    BloxSoundCommand
+    | { op: "text", node: string, value: string }
     | { op: "value", node: string, value: BloxUiValue }
     | { op: "children", node: string, nodes: {BloxUiNode} }
     | { op: "visible", node: string, value: boolean }
@@ -689,8 +692,21 @@ export type BloxReplicaInput = {
     left: {BloxReplicaId},
 }
 --- Local presentation updates. Entity commands must reference an entity in the current replica window; they do not change gameplay.
+--- Named voices are scoped to the entry package and server/client side. Loops require an entity.
+export type BloxSound =
+    { kind: "play", voice: string, clip: string, position: BloxTriple?, entity: BloxEntityId?,
+      gain: number?, pitch: number?, looping: boolean? }
+    | { kind: "update", voice: string, position: BloxTriple?, gain: number?, pitch: number? }
+    | { kind: "stop", voice: string }
+export type BloxSoundCommand =
+    { op: "sound", kind: "play", voice: string, clip: string, position: BloxTriple?, entity: BloxEntityId?,
+      gain: number?, pitch: number?, looping: boolean? }
+    | { op: "sound", kind: "update", voice: string, position: BloxTriple?, gain: number?, pitch: number? }
+    | { op: "sound", kind: "stop", voice: string }
+
 export type BloxReplicaCommand =
-    { op: "text", node: string, value: string }
+    BloxSoundCommand
+    | { op: "text", node: string, value: string }
     | { op: "value", node: string, value: BloxUiValue }
     | { op: "children", node: string, nodes: {BloxUiNode} }
     | { op: "visible", node: string, value: boolean }

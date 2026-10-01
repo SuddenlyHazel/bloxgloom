@@ -32,6 +32,8 @@ mod players;
 mod profile_state;
 #[path = "gameplay/runtime_tools.rs"]
 mod runtime_tools;
+#[path = "gameplay/sounds.rs"]
+mod sounds;
 #[path = "gameplay/vm_latency.rs"]
 mod vm_latency;
 

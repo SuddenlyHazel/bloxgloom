@@ -286,6 +286,7 @@ impl State {
                 deltas,
             }),
             pickups: Vec::new(),
+            sounds: vec![],
             fire_bursts: Vec::new(),
         });
         Ok(())

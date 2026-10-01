@@ -54,3 +54,52 @@ fn world_and_preview_sources_change_only_at_fade_boundary() {
     assert!(mixer.desired_world.is_none());
     assert!(!mixer.synth.world_active());
 }
+
+#[test]
+fn live_voice_updates_glide_pitch_gain_and_follow_position_without_restarting() {
+    let mut mixer = Mixer::new(4);
+    assert!(mixer.command(Command::Play {
+        clip: std::sync::Arc::new(Clip::click()),
+        position: Some([0.0, 0.0, 1.0]),
+        gain: 1.0,
+        pitch: 1.0,
+        looping: true,
+        id: 91,
+    }));
+    mixer.render(&mut [[0.0; 2]; 512]);
+    assert_eq!(mixer.voices[0].cursor, 512.0);
+    assert!(mixer.command(Command::Update {
+        id: 91,
+        position: Some([0.0, 0.0, -1.0]),
+        gain: 0.5,
+        pitch: 2.0
+    }));
+    mixer.render(&mut [[0.0; 2]; 512]);
+    let voice = &mixer.voices[0];
+    assert!(voice.cursor > 1100.0 && voice.cursor < 1536.0);
+    assert!(voice.pitch > 1.0 && voice.pitch < 2.0);
+    assert!(voice.gain > 0.5 && voice.gain < 1.0);
+    mixer.render(&mut [[0.0; 2]; 3000]);
+    assert!(mixer.voices[0].ears[0] > 10.0 * mixer.voices[0].ears[1]);
+    assert!(!mixer.command(Command::Update {
+        id: 91,
+        position: None,
+        gain: 1.0,
+        pitch: f32::NAN
+    }));
+    assert!(!mixer.command(Command::Update {
+        id: 92,
+        position: None,
+        gain: 1.0,
+        pitch: 1.0
+    }));
+    assert!(mixer.command(Command::Stop(91)));
+    assert!(!mixer.command(Command::Update {
+        id: 91,
+        position: None,
+        gain: 1.0,
+        pitch: 1.0
+    }));
+    mixer.render(&mut [[0.0; 2]; 1000]);
+    assert!(mixer.voices.is_empty());
+}

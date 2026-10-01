@@ -298,6 +298,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
         entities,
         entity_wakes: vec![],
         owner_changes: profile_changes,
+        sounds: plan.sounds,
         player_publication: crate::server::players::Published::operations(plan.player_operations),
     })
 }

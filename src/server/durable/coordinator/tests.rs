@@ -101,6 +101,7 @@ fn inventory_action(state: &State, profile: u128, action_id: u128) -> CommitActi
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     }

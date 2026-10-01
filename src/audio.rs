@@ -116,8 +116,15 @@ pub(crate) enum Command {
         clip: Arc<Clip>,
         position: Option<[f32; 3]>,
         gain: f32,
+        pitch: f32,
         looping: bool,
         id: u64,
+    },
+    Update {
+        id: u64,
+        position: Option<[f32; 3]>,
+        gain: f32,
+        pitch: f32,
     },
     Click(u64),
     Stop(u64),
@@ -137,3 +144,6 @@ pub(crate) enum Command {
     },
     Reset,
 }
+
+pub(crate) mod luau;
+pub(crate) mod sounds;

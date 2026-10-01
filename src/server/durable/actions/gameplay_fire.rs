@@ -116,6 +116,7 @@ pub(in crate::server) fn plan(
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: planned.sounds,
         player_publication: None,
         entities,
     })

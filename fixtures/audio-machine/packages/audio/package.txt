@@ -1,0 +1,14 @@
+format 2
+package audio
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:actions/v1
+module server main server/main.luau
+module server machine server/machine.luau
+module client client_startup client/client_startup.luau
+module client sounds client/sounds.luau
+asset texture machine assets/textures/machine.png
+asset sound motor assets/sounds/motor.wav
+asset sound start assets/sounds/start.wav
+asset sound complete assets/sounds/complete.wav

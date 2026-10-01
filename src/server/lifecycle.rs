@@ -9,6 +9,7 @@ mod tests;
 
 #[derive(Default)]
 pub(crate) struct Registration {
+    sounds: Vec<String>,
     player_lifecycles: Vec<bloxgloom_host_api::players::Registration>,
     gameplay_observers: Vec<bloxgloom_host_api::gameplay::ObserverRegistration>,
     gameplay_entities: Vec<bloxgloom_host_api::gameplay::EntityDefinition>,
@@ -27,6 +28,14 @@ pub(crate) struct Registration {
     pub(crate) generation: Vec<bloxgloom_host_api::generation::Registration>,
 }
 impl Registrar for Registration {
+    fn sound(&mut self, key: String) -> Result<(), RegistrationError> {
+        self.room()?;
+        if !bloxgloom_host_api::sound::key(&key) || self.sounds.len() >= 256 {
+            return Err(RegistrationError("invalid sound registration".into()));
+        }
+        self.sounds.push(key);
+        Ok(())
+    }
     fn player_lifecycle(
         &mut self,
         registration: bloxgloom_host_api::players::Registration,
@@ -245,6 +254,7 @@ impl Registrar for Registration {
 impl Registration {
     fn room(&self) -> Result<(), RegistrationError> {
         if self.content.len()
+            + self.sounds.len()
             + self.gameplay_entities.len()
             + self.gameplay_handlers.len()
             + self.gameplay_observers.len()
@@ -275,6 +285,11 @@ impl Registration {
         let mut registration = Self::default();
         extension.register(&mut registration)?;
         let mut candidate = catalog.clone();
+        for key in &registration.sounds {
+            if !candidate.sounds.insert(key.clone()) {
+                return Err(RegistrationError(format!("duplicate sound {key}")));
+            }
+        }
         registration.systems.sort_by(|a, b| a.key.cmp(&b.key));
         registration.generation.sort_by(|a, b| a.key.cmp(&b.key));
         registration

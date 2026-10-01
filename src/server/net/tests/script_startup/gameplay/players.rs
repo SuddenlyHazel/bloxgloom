@@ -306,6 +306,7 @@ fn luau_player_profile_timer_runs_offline_on_logical_deadline_after_restart() {
         entities: None,
         entity_wakes: vec![],
         owner_changes: vec![change],
+        sounds: Vec::new(),
         player_publication: None,
     };
     assert!(

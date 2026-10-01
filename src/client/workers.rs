@@ -35,6 +35,11 @@ pub(super) struct Network {
 }
 
 impl Network {
+    pub(super) fn package_sounds(&self) -> Option<std::sync::Arc<crate::audio::sounds::Clips>> {
+        self._bundle
+            .as_ref()
+            .map(|bundle| std::sync::Arc::clone(bundle.sounds()))
+    }
     #[cfg(test)]
     pub(crate) fn bundle_for_test(
         &self,
@@ -165,6 +170,7 @@ impl Network {
         profile: u128,
         control: &super::join_worker::Control,
     ) -> io::Result<Self> {
+        crate::audio::sounds::builtin_cached().map_err(io::Error::other)?;
         let mut stage = "connecting";
         tracing::info!(stage, "joining server");
         Self::prepare(addr, view_distance, profile, &mut stage, control).map_err(|error| {

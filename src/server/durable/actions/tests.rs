@@ -539,6 +539,7 @@ fn kiln_place_interact_tick_restart_and_break_conserve_items_across_seam() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };
@@ -2234,6 +2235,7 @@ fn coordinator_drain_preserves_deferred_entity_tick_until_commit() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(spawn),
     };
@@ -2655,6 +2657,7 @@ fn stage_entity_spawn(
         entities: Some(prepared),
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     };
     assert!(
@@ -2732,6 +2735,7 @@ fn stage_entity_spawn_batch(
         entities: Some(prepared),
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     };
     assert!(
@@ -3611,6 +3615,7 @@ fn stage_entity_update(
         entities: Some(prepared),
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     };
     assert!(

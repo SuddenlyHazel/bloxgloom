@@ -59,6 +59,7 @@ fn offline_profile_tick_loads_asynchronously_and_commits_both_inventories() {
         weather_change: None,
         entities: None,
         entity_wakes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         owner_changes: changes,
     };

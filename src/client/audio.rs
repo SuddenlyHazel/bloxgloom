@@ -5,7 +5,13 @@ use crate::{
 };
 use std::time::{Duration, Instant};
 
+mod voices;
 pub(super) struct State {
+    voices: voices::Voices,
+    #[cfg(test)]
+    sent: std::cell::RefCell<Vec<Command>>,
+    #[cfg(test)]
+    blocked: std::cell::Cell<bool>,
     output: Option<AudioOutput>,
     preset: Preset,
     next_voice: u64,
@@ -25,6 +31,11 @@ impl State {
         };
         Self {
             output,
+            voices: Default::default(),
+            #[cfg(test)]
+            sent: Default::default(),
+            #[cfg(test)]
+            blocked: Default::default(),
             preset: Preset::Off,
             next_voice: 1,
             world: None,
@@ -125,6 +136,7 @@ impl State {
         }
     }
     pub(super) fn retire_session(&mut self, config: &Config) {
+        self.voices = Default::default();
         self.preset = Preset::Off;
         self.world = None;
         self.sent_world = None;

@@ -43,6 +43,9 @@ pub(super) struct Metadata {
 }
 
 impl Catalog {
+    pub(crate) fn has_public_script_entity(&self, key: &str) -> bool {
+        self.client_metadata.entities.contains_key(key) || self.gameplay_entities.contains_key(key)
+    }
     pub(crate) fn client_entity(&mut self, entity: Entity) -> Result<(), RegistrationError> {
         if entity.max_state_bytes == 0
             || entity

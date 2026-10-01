@@ -329,6 +329,7 @@ fn ignition_chain(bootstrap: bool) {
         weather_change: None,
         entity_wakes: vec![],
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };

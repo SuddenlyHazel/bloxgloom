@@ -61,6 +61,19 @@ pub(super) enum Assembly {
 }
 
 impl Replicas {
+    pub(super) fn sound_position(&self, id: u64) -> Option<[f32; 3]> {
+        let entity = self
+            .entities
+            .values()
+            .find_map(|entities| entities.get(&id))?;
+        Some(match entity.location {
+            crate::protocol::PublicEntityLocation::Mobile { position } => position,
+            crate::protocol::PublicEntityLocation::Anchored { anchor, .. } => {
+                anchor.map(|v| v as f32 + 0.5)
+            }
+        })
+    }
+
     /// Cells become observable only after the whole commit has installed.
     pub(super) fn take_installed_cells(&mut self) -> (Vec<(ChunkKey, [u8; 3])>, bool) {
         (
@@ -199,7 +212,8 @@ impl Replicas {
                 let definition = catalog.entity_type(entity.entity_type)?;
                 if definition.key.split_once(':').map(|v| v.0) != Some(owner)
                     || (catalog.mobile_entity(entity.entity_type).is_none()
-                        && catalog.moving_entity(entity.entity_type).is_none())
+                        && catalog.moving_entity(entity.entity_type).is_none()
+                        && !catalog.has_public_script_entity(&definition.key))
                 {
                     return None;
                 }

@@ -274,6 +274,7 @@ pub(in crate::server) fn plan_durable_request(
                 weather_change: None,
                 entity_wakes: Vec::new(),
                 owner_changes: vec![],
+                sounds: Vec::new(),
                 player_publication: None,
                 entities: Some(entities),
             }))
@@ -500,6 +501,7 @@ fn plan_block_edit(
             entities,
             entity_wakes: Vec::new(),
             owner_changes: vec![],
+            sounds: plan.sounds,
             player_publication: None,
         });
     }
@@ -559,6 +561,7 @@ fn plan_block_edit(
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: plan.sounds,
         player_publication: None,
         entities,
     })

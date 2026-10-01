@@ -280,6 +280,7 @@ fn one_wal_record_recovers_linked_block_and_entity_after_unapplied_receipt() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(spawn),
     };
@@ -370,6 +371,7 @@ fn synced_entity_action_reaches_checkpoint_mirror_before_restart() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(spawn),
     };

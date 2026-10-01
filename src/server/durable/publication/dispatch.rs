@@ -39,9 +39,10 @@ pub(super) fn publish(state: &mut State) -> io::Result<()> {
             Ok(changes) => changes?,
             Err(()) => None, // failed projection: resnapshot, never lose the effect's reliable reply
         };
-        let commit_id = if changes
-            .as_ref()
-            .is_some_and(commit::CommitChanges::is_empty)
+        let commit_id = if effect.sounds.is_empty()
+            && changes
+                .as_ref()
+                .is_some_and(commit::CommitChanges::is_empty)
         {
             None
         } else {
@@ -113,6 +114,30 @@ fn prepare(
         }
     }
     let world_frames = frames.len();
+    if let Some(id) = commit_id
+        && !effect.sounds.is_empty()
+    {
+        let events = effect
+            .sounds
+            .iter()
+            .filter(|event| match &event.kind {
+                bloxgloom_host_api::sound::Kind::Play { position, .. } => capture.sent.contains(
+                    &crate::world::world_to_chunk(
+                        position[0].floor() as i32,
+                        position[1].floor() as i32,
+                        position[2].floor() as i32,
+                    )
+                    .0,
+                ),
+                _ => true,
+            })
+            .take(32)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !events.is_empty() {
+            frames.push(SharedMessage::new(ServerMessage::Sounds { id, events }));
+        }
+    }
     if effect.client_id == Some(capture.id)
         && effect
             .profile

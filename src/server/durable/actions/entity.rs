@@ -350,6 +350,7 @@ pub(in crate::server) fn plan_interact(
         entities: Some(entities),
         entity_wakes: wakes,
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     })
 }
@@ -703,6 +704,7 @@ pub(in crate::server) fn commit_tick_plan(
             .prepare_update(id, snapshot.revision, patch)
             .map_err(tick_preparation_error)?
     };
+    let mut sounds = Vec::new();
     if plan.lifecycle.despawn && catalog.anchored_entity(snapshot.entity_type).is_some() {
         if plan
             .block_states
@@ -721,6 +723,7 @@ pub(in crate::server) fn commit_tick_plan(
             &mut terrain_reads,
             entities,
         )?;
+        sounds = removal.sounds;
         world_edits = removal.prepared;
         changed_cells = removal
             .edits
@@ -773,6 +776,7 @@ pub(in crate::server) fn commit_tick_plan(
         entities: Some(entities),
         entity_wakes: wakes,
         owner_changes: vec![],
+        sounds,
         player_publication: None,
     }))
 }

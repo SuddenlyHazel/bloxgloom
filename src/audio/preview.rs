@@ -123,6 +123,7 @@ pub(crate) fn play_file(path: &Path, seconds: f32) -> io::Result<()> {
             clip,
             position: None,
             gain: 1.0,
+            pitch: 1.0,
             looping: false,
             id: 1,
         })

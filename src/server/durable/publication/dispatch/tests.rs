@@ -65,6 +65,7 @@ fn effect() -> PublishEffects {
         deltas: Vec::new(),
         entity_commit: None,
         pickups: Vec::new(),
+        sounds: Vec::new(),
         fire_bursts: Vec::new(),
     }
 }

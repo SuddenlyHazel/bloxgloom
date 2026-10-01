@@ -485,7 +485,7 @@ body/state limits, restart semantics and authority. Run the
 [moving seeds fixture](fixtures/moving-projectiles/README.md) for inventory-backed
 throws, conditional impact planting, guided motion and presentation sparks.
 Ground creatures retain their existing locomotion. Vehicles, imported meshes,
-animation controllers and audio remain separate engine work.
+animation controllers remain separate engine work. [Packaged audio](docs/audio/SCRIPTING.md) now supports transactional positional clips and entity-linked loops.
 
 ## Durable owner systems
 
@@ -994,7 +994,7 @@ retain their specialized inventory and recipe contracts.
 
 There is no bound API for arbitrary block meshes, partial collision shapes,
 translucent/liquid physics, imported models, custom player models, per-stack
-render callbacks, sound, arbitrary renderer/GPU access, direct network messages,
+render callbacks, arbitrary renderer/GPU access, direct network messages,
 filesystem/HTTP access, unrestricted world/player administration, runtime catalog
 mutation, script state migration, or hot reload. Client replicas offer bounded
 public windows and summaries, not general access to server private state.
@@ -1054,3 +1054,18 @@ restores an exact profile handle without granting authority. See
 and the welcome fixture's package roles and admission bans.
 
 Package composition, separate execution/delivery budgets and measured acceptance are described in [PACKAGE-COMPOSITION.md](docs/modding/PACKAGE-COMPOSITION.md).
+
+## Packaged sound and gameplay audio
+
+Declare format-2 `asset sound <local-name> assets/sounds/<name>.wav` to register
+`package:local-name`. Gameplay Context exposes `sound{kind='play'|'update'|'stop',
+voice=...}`; play names a clip and position or entity. Entity-linked loops follow
+installed authoritative replicas and stop when the entity leaves or the session
+retires. UI/replica callbacks return `op='sound'` with the same fields. Gain/pitch
+updates and explicit stop are bounded native mixer commands; WAV decoding happens
+before play on preparation workers.
+
+Server sounds publish after commit. Failed actions and receipt replay produce no
+new audio. Break/place, pickup and interaction have stock committed cues.
+See [the audio contract](docs/audio/SCRIPTING.md) for exact fields, resource bounds,
+join/retry semantics and remaining work, and [the timer-machine example](fixtures/audio-machine/README.md).

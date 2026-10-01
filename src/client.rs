@@ -394,7 +394,13 @@ impl ClientApp {
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
         let entity_registry = EntityClientRegistry::builtins(&catalog);
-        let audio = audio::State::new(&config);
+        let mut audio = audio::State::new(&config);
+        if let Some(clips) = network
+            .package_sounds()
+            .or_else(|| crate::audio::sounds::builtin_cached().ok())
+        {
+            audio.install_sounds(clips);
+        }
         Self {
             observations: Arc::new(Default::default()),
             package_ui: network.package_ui(),
@@ -1316,6 +1322,9 @@ impl ClientApp {
             ServerMessage::Pickups { items } => {
                 self.drop_animator.picked_up(items, Instant::now());
             }
+            ServerMessage::Sounds { id, events } => {
+                self.play_sounds(true, Some(id), events, Instant::now())
+            }
             ServerMessage::FireBursts { cells } => {
                 self.fire_animator.confirmed_burns(&cells, Instant::now());
             }
@@ -1757,6 +1766,32 @@ impl ClientApp {
         }
     }
 
+    fn play_sounds(
+        &mut self,
+        server: bool,
+        batch: Option<u64>,
+        mut events: Vec<bloxgloom_host_api::sound::Event>,
+        now: Instant,
+    ) {
+        events.retain_mut(|event| {
+            if let bloxgloom_host_api::sound::Kind::Play {
+                entity: Some(id),
+                position,
+                looping,
+                ..
+            } = &mut event.kind
+            {
+                if let Some(at) = self.replicas.sound_position(*id) {
+                    *position = at;
+                } else if !server || *looping {
+                    return false;
+                }
+            }
+            true
+        });
+        self.audio.sounds(server, batch, events, now);
+    }
+
     fn frame(&mut self) {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f32();
@@ -1769,7 +1804,19 @@ impl ClientApp {
         self.move_player(dt);
         self.audio
             .poll_listener(self.position.to_array(), self.yaw, now);
+        self.audio
+            .follow_sounds(now, |id| self.replicas.sound_position(id));
         self.repeat_held_break(now);
+        let mut sounds = self
+            .package_ui
+            .as_mut()
+            .map_or_else(Vec::new, |ui| ui.take_sounds());
+        if let Some(visual) = &mut self.visual_session {
+            sounds.extend(visual.take_sounds());
+        }
+        for batch in sounds.chunks(32) {
+            self.play_sounds(false, None, batch.to_vec(), now);
+        }
         let mut parameter_updates = self
             .package_ui
             .as_mut()

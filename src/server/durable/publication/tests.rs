@@ -87,6 +87,7 @@ fn several_cells_in_one_chunk_publish_one_atomic_commit_part() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };

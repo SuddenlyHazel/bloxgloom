@@ -264,6 +264,14 @@ impl Declarations {
 
 impl Extension for Declarations {
     fn register(&self, registrar: &mut dyn Registrar) -> Result<(), RegistrationError> {
+        for key in self
+            .client_bundle
+            .sounds()
+            .keys()
+            .filter(|key| !key.starts_with("bloxgloom:"))
+        {
+            registrar.sound(key.clone())?;
+        }
         for observer in &self.observers {
             registrar.gameplay_observer(observer.clone())?;
         }

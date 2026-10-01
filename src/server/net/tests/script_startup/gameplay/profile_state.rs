@@ -256,6 +256,7 @@ fn profile_state_reads_reserve_existing_cells_and_absence_until_receipt() {
             weather_change: None,
             entities: None,
             entity_wakes: vec![],
+            sounds: Vec::new(),
             player_publication: None,
             owner_changes: crate::server::players::state::prepare(
                 &state.system_runtime,

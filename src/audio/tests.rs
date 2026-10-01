@@ -15,6 +15,7 @@ fn mixer_is_buffer_partition_independent_and_limits_overload() {
                 clip: clip.clone(),
                 position: None,
                 gain: 4.0,
+                pitch: 1.0,
                 looping: true,
                 id
             }));
@@ -23,6 +24,7 @@ fn mixer_is_buffer_partition_independent_and_limits_overload() {
             clip: clip.clone(),
             position: None,
             gain: 1.0,
+            pitch: 1.0,
             looping: false,
             id: 33
         }));
@@ -59,6 +61,7 @@ fn positioned_clip_follows_listener_and_stop_releases_voice() {
         clip,
         position: Some([0.0, 0.0, 1.0]),
         gain: 1.0,
+        pitch: 1.0,
         looping: true,
         id: 1
     }));
@@ -108,6 +111,10 @@ fn wav_decode_preserves_mono_rate_and_rejects_nonfinite_audio() {
     }
     writer.finalize().unwrap();
     let clip = Clip::load(&path).unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let prepared = Clip::decode(&bytes).unwrap();
+    assert_eq!(prepared.frames, clip.frames);
+    assert!(Clip::decode(&bytes[..bytes.len() - 1]).is_err());
     assert_eq!(clip.rate, 48_000);
     assert_eq!(clip.frames, [[0.0; 2], [0.5; 2], [-0.5; 2]]);
     let bad = root.join("nan.wav");

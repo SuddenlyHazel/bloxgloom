@@ -6,6 +6,7 @@ use std::{
 };
 static DECODED_BYTES: AtomicUsize = AtomicUsize::new(0);
 const MAX_DECODED_BYTES: usize = 64 * 1024 * 1024;
+#[derive(Debug)]
 struct Reservation(usize);
 impl Reservation {
     fn new(bytes: usize) -> io::Result<Self> {
@@ -29,12 +30,16 @@ impl Drop for Reservation {
 }
 pub(crate) const MAX_CLIP_FRAMES: usize = 1_323_000;
 const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
+#[derive(Debug)]
 pub(crate) struct Clip {
     pub(super) frames: Vec<[f32; 2]>,
     pub(super) rate: u32,
     _reservation: Reservation,
 }
 impl Clip {
+    pub(crate) fn duration_seconds(&self) -> f32 {
+        self.frames.len() as f32 / self.rate as f32
+    }
     pub fn load(path: &Path) -> io::Result<Self> {
         if std::fs::metadata(path)?.len() > MAX_FILE_BYTES {
             return Err(io::Error::new(
@@ -42,7 +47,17 @@ impl Clip {
                 "audio file exceeds16MiB",
             ));
         }
-        let mut reader = hound::WavReader::open(path).map_err(io::Error::other)?;
+        let reader = hound::WavReader::open(path).map_err(io::Error::other)?;
+        Self::decode_reader(reader)
+    }
+    pub fn decode(bytes: &[u8]) -> io::Result<Self> {
+        if bytes.len() as u64 > MAX_FILE_BYTES {
+            return Err(io::Error::other("audio file exceeds 16 MiB"));
+        }
+        let reader = hound::WavReader::new(io::Cursor::new(bytes)).map_err(io::Error::other)?;
+        Self::decode_reader(reader)
+    }
+    fn decode_reader<R: io::Read>(mut reader: hound::WavReader<R>) -> io::Result<Self> {
         let spec = reader.spec();
         if !(1..=2).contains(&spec.channels)
             || !(8_000..=192_000).contains(&spec.sample_rate)
@@ -75,7 +90,8 @@ impl Clip {
                 ));
             }
         };
-        if samples.iter().any(|x| !x.is_finite() || x.abs() > 1.0)
+        if samples.len() != reader.duration() as usize * usize::from(spec.channels)
+            || samples.iter().any(|x| !x.is_finite() || x.abs() > 1.0)
             || !samples.len().is_multiple_of(usize::from(spec.channels))
         {
             return Err(io::Error::new(

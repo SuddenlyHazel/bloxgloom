@@ -117,6 +117,7 @@ fn stage_edit(state: &mut State, cell: [i32; 3], block: crate::content::BlockSta
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };
@@ -451,6 +452,7 @@ fn dense_snapshot_disconnects_only_affected_client_and_closes_earlier_jobs() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: Some(entities),
     };

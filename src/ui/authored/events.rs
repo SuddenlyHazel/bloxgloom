@@ -3,6 +3,9 @@ use super::*;
 use crate::client::presentation::{Command, Reply, Request};
 
 impl Session {
+    pub(crate) fn take_sounds(&mut self) -> Vec<bloxgloom_host_api::sound::Event> {
+        std::mem::take(&mut self.sounds)
+    }
     pub(crate) fn activate(&mut self) {
         if let Some(i) = self
             .focused
@@ -386,6 +389,12 @@ impl Session {
             // name this exact document, not even another document of this package.
             let valid = commands.iter().all(|c| match c {
                 Command::State(_) => true,
+                Command::Sound(event) => match &event.kind {
+                    bloxgloom_host_api::sound::Kind::Play {
+                        entity: Some(id), ..
+                    } => reply.replica && reply.offered_entities.contains(id),
+                    _ => true,
+                },
                 Command::Parameter(_) => true,
                 Command::Text(_, _)
                 | Command::Value(_, _)
@@ -448,6 +457,7 @@ impl Session {
             }
             for command in commands {
                 match command {
+                    Command::Sound(event) => self.sounds.push(event),
                     Command::State(value) => self.state = value,
                     Command::Parameter(update) => {
                         self.parameters

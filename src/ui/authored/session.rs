@@ -39,6 +39,7 @@ pub(crate) struct Session {
     pub(super) replica_previous: Vec<u64>,
     pub(super) anchor_previous: Vec<u64>,
     pub(super) startup: crate::client::startup::State,
+    pub(super) sounds: Vec<bloxgloom_host_api::sound::Event>,
     pub(super) parameters: crate::render::parameters::State,
 }
 
@@ -90,6 +91,7 @@ impl Session {
             effects: Default::default(),
             replica_previous: Vec::new(),
             anchor_previous: Vec::new(),
+            sounds: vec![],
             parameters: startup.parameters.clone(),
             startup,
         };

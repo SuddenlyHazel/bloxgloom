@@ -99,6 +99,7 @@ fn empty_action() -> CommitAction {
         entities: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
     }
 }

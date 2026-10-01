@@ -21,9 +21,10 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 23;
+const WIRE_VERSION: u8 = 24;
 mod player_states;
 mod players;
+mod sounds;
 pub use player_states::PlayerState;
 pub use players::PlayerSummary;
 pub const MIN_VIEW_DISTANCE: u8 = 1;
@@ -151,6 +152,10 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    Sounds {
+        id: u64,
+        events: Vec<bloxgloom_host_api::sound::Event>,
+    },
     Weather {
         snapshot: crate::weather::WeatherSnapshot,
     },
@@ -320,6 +325,7 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
             }
             ServerMessage::Drops { items, .. } => 8 + 2 + items.len() * DROP_ITEM,
             ServerMessage::Pickups { items } => 2 + items.len() * DROP_ITEM,
+            ServerMessage::Sounds { events, .. } => sounds::len(events),
             ServerMessage::FireBursts { cells } => 1 + cells.len() * 12,
             ServerMessage::WorldSnapshotStart(start) => entities::snapshot_start_wire_len(start),
             ServerMessage::EntitySnapshotPage(page) => entities::snapshot_page_wire_len(page),
@@ -808,6 +814,10 @@ pub fn write_server_with_catalog(
         ServerMessage::Pickups { items } => {
             out.push(10);
             write_drop_items(&mut out, items, content_catalog)?;
+        }
+        ServerMessage::Sounds { id, events } => {
+            out.push(38);
+            sounds::write(&mut out, *id, events)?;
         }
         ServerMessage::FireBursts { cells } => {
             if cells.is_empty() || cells.len() > MAX_FIRE_BURSTS {
@@ -1471,6 +1481,10 @@ pub fn read_server_with_catalog(
                 cells.push([c.i32()?, c.i32()?, c.i32()?]);
             }
             ServerMessage::FireBursts { cells }
+        }
+        38 => {
+            let (id, events) = sounds::read(&mut c)?;
+            ServerMessage::Sounds { id, events }
         }
         27 => {
             let entity_id = c.u64()?;

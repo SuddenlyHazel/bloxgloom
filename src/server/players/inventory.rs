@@ -95,6 +95,7 @@ pub(in crate::server) fn publish(state: &mut State, inventories: Vec<(u128, Inve
             deltas: vec![],
             entity_commit: None,
             pickups: vec![],
+            sounds: Vec::new(),
             fire_bursts: vec![],
         });
     }

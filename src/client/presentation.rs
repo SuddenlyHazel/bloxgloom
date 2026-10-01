@@ -69,6 +69,7 @@ pub(crate) fn window_changes(previous: &[u64], current: &[EntityView]) -> (Vec<u
 
 #[derive(Debug)]
 pub(crate) enum Command {
+    Sound(bloxgloom_host_api::sound::Event),
     Text(String, String),
     Visible(String, bool),
     Value(String, String),
@@ -278,6 +279,21 @@ fn run_retained(
                     let command: mlua::Table = output.raw_get(index)?;
                     let op = text(&command, "op", 16)?;
                     commands.push(match op.as_str() {
+                        "sound" => {
+                            let (voice, kind) = crate::audio::luau::decode(&command)?;
+                            let owner = request
+                                .script
+                                .module
+                                .split(['@', ':'])
+                                .next()
+                                .unwrap_or("")
+                                .to_owned();
+                            let event = bloxgloom_host_api::sound::Event { owner, voice, kind };
+                            if !event.validate() {
+                                return Err(invalid());
+                            }
+                            Command::Sound(event)
+                        }
                         "parameter" => Command::Parameter(crate::render::parameters::Update {
                             resource: text(&command, "resource", 129)?,
                             name: text(&command, "name", 64)?,

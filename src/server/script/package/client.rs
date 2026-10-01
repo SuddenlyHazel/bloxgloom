@@ -136,6 +136,7 @@ pub struct ClientPackage {
     pub(crate) ui_assets: BTreeMap<String, (u32, Vec<u8>)>,
     pub(crate) effect_assets: BTreeMap<String, (u32, Vec<u8>)>,
     pub(crate) material_assets: BTreeMap<String, (u32, Vec<u8>)>,
+    pub(crate) sound_assets: BTreeMap<String, Vec<u8>>,
 }
 
 /// Immutable bytes and decoded view, published together only after validation.
@@ -149,9 +150,14 @@ pub struct ClientBundle {
     ui: Option<std::sync::Arc<crate::ui::authored::Resources>>,
     effect: Option<std::sync::Arc<crate::render::effects::Prepared>>,
     material: Option<std::sync::Arc<crate::render::custom::Source>>,
+    sounds: std::sync::Arc<crate::audio::sounds::Clips>,
 }
 
 impl ClientBundle {
+    pub(crate) fn sounds(&self) -> &std::sync::Arc<crate::audio::sounds::Clips> {
+        &self.sounds
+    }
+
     pub(crate) fn permits_player_services(&self, owner: &str) -> bool {
         self.declarations
             .as_ref()
@@ -361,6 +367,7 @@ impl ClientBundle {
             let mut ui_assets = BTreeMap::new();
             let mut effect_assets = BTreeMap::new();
             let mut material_assets = BTreeMap::new();
+            let mut sound_assets = BTreeMap::new();
             let mut previous = String::new();
             for _ in 0..count {
                 let key = reader.identifier()?;
@@ -368,7 +375,7 @@ impl ClientBundle {
                     return Err(invalid());
                 }
                 previous.clone_from(&key);
-                let kind = reader.count(9)? as u32;
+                let kind = reader.count(10)? as u32;
                 if kind == 0 {
                     return Err(invalid());
                 }
@@ -393,6 +400,8 @@ impl ClientBundle {
                     ui_assets.insert(key, (kind, bytes.to_vec()));
                 } else if kind <= 7 {
                     effect_assets.insert(key, (kind, bytes.to_vec()));
+                } else if kind == 10 {
+                    sound_assets.insert(key, bytes.to_vec());
                 } else {
                     material_assets.insert(key, (kind, bytes.to_vec()));
                 }
@@ -407,6 +416,7 @@ impl ClientBundle {
                     ui_assets,
                     effect_assets,
                     material_assets,
+                    sound_assets,
                 },
             );
         }
@@ -705,6 +715,8 @@ impl ClientBundle {
         let material = crate::render::custom::prepare_assets(&packages)
             .map_err(|message| error("<client-material>", message))?
             .map(std::sync::Arc::new);
+        let sounds = crate::audio::sounds::prepare(&packages)
+            .map_err(|message| error("<client-sound>", message))?;
         Ok(Self {
             bytes: bytes.to_vec(),
             residency,
@@ -714,6 +726,7 @@ impl ClientBundle {
             ui,
             effect,
             material,
+            sounds: std::sync::Arc::new(sounds),
         })
     }
 }

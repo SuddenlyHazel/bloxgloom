@@ -268,6 +268,7 @@ fn plan_observed_request(
                 entities: None,
                 entity_wakes: vec![],
                 owner_changes: vec![],
+                sounds: Vec::new(),
                 player_publication: None,
             })
         }

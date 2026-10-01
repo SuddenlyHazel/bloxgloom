@@ -30,6 +30,7 @@ pub(crate) struct VisualSession {
     effects: EffectBuffer,
     failure: Option<String>,
     parameters: crate::render::parameters::State,
+    sounds: Vec<bloxgloom_host_api::sound::Event>,
 }
 
 impl VisualSession {
@@ -45,6 +46,7 @@ impl VisualSession {
         parameters: crate::render::parameters::State,
     ) -> std::io::Result<Self> {
         Ok(Self {
+            sounds: vec![],
             observation_events: false,
             script,
             worker: Worker::spawn()?,
@@ -263,6 +265,12 @@ impl VisualSession {
                             && (0.05..=0.5).contains(size)
                             && (100..=2000).contains(lifetime_ms)
                     }
+                    Command::Sound(event) => match &event.kind {
+                        bloxgloom_host_api::sound::Kind::Play {
+                            entity: Some(id), ..
+                        } => reply.offered_entities.contains(id),
+                        _ => true,
+                    },
                     Command::Parameter(_) => true,
                     _ => false,
                 })
@@ -285,6 +293,7 @@ impl VisualSession {
                     Command::Spark(id, offset, color, size, lifetime_ms) => {
                         sparks.push((id, offset, color, size, lifetime_ms))
                     }
+                    Command::Sound(event) => self.sounds.push(event),
                     Command::Parameter(update) => {
                         let owner = self.owner().to_owned();
                         self.parameters
@@ -320,6 +329,10 @@ impl VisualSession {
                 self.queued.clear();
             }
         }
+    }
+
+    pub(crate) fn take_sounds(&mut self) -> Vec<bloxgloom_host_api::sound::Event> {
+        std::mem::take(&mut self.sounds)
     }
 
     pub(crate) fn take_parameters(&mut self) -> Vec<crate::render::parameters::Update> {

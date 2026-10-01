@@ -10,6 +10,9 @@ struct Voice {
     cursor: f64,
     position: Option<[f32; 3]>,
     gain: f32,
+    target_gain: f32,
+    pitch: f32,
+    target_pitch: f32,
     looping: bool,
     id: u64,
     ears: [f32; 2],
@@ -74,6 +77,7 @@ impl Mixer {
                 clip: self.click.clone(),
                 position: None,
                 gain: 1.0,
+                pitch: 1.0,
                 looping: false,
                 id,
             });
@@ -83,10 +87,13 @@ impl Mixer {
                 clip,
                 position,
                 gain,
+                pitch,
                 looping,
                 id,
             } => {
                 if id == 0
+                    || !pitch.is_finite()
+                    || !(0.25..=4.0).contains(&pitch)
                     || !gain.is_finite()
                     || !(0.0..=4.0).contains(&gain)
                     || position.is_some_and(|p| {
@@ -105,6 +112,9 @@ impl Mixer {
                         cursor: 0.0,
                         position,
                         gain,
+                        target_gain: gain,
+                        pitch,
+                        target_pitch: pitch,
                         looping,
                         id,
                         ears,
@@ -112,6 +122,33 @@ impl Mixer {
                         stop_remaining: None,
                     });
                     true
+                }
+            }
+            Command::Update {
+                id,
+                position,
+                gain,
+                pitch,
+            } => {
+                if !gain.is_finite()
+                    || !(0.0..=4.0).contains(&gain)
+                    || !pitch.is_finite()
+                    || !(0.25..=4.0).contains(&pitch)
+                    || position
+                        .is_some_and(|p| p.iter().any(|x| !x.is_finite() || x.abs() > 16_000_000.0))
+                {
+                    false
+                } else if let Some(voice) = self
+                    .voices
+                    .iter_mut()
+                    .find(|v| v.id == id && v.stop_remaining.is_none())
+                {
+                    voice.position = position;
+                    voice.target_gain = gain;
+                    voice.target_pitch = pitch;
+                    true
+                } else {
+                    false
                 }
             }
             Command::Click(_) => unreachable!("handled above"),
@@ -232,6 +269,8 @@ impl Mixer {
                     sample = [mono; 2];
                 }
                 let target = gains(voice.position, self.listener, self.yaw);
+                voice.gain += (voice.target_gain - voice.gain) / (0.02 * SAMPLE_RATE as f32);
+                voice.pitch += (voice.target_pitch - voice.pitch) / (0.02 * SAMPLE_RATE as f32);
                 let mut fade = (voice.age as f32 / 64.0).min(1.0);
                 voice.age = voice.age.saturating_add(1);
                 if let Some(remaining) = &mut voice.stop_remaining {
@@ -243,7 +282,8 @@ impl Mixer {
                         (target[ear] - voice.ears[ear]) / (0.02 * SAMPLE_RATE as f32);
                     mix[ear] += sample[ear] * voice.ears[ear] * voice.gain * fade * self.levels[2];
                 }
-                voice.cursor += voice.clip.rate as f64 / SAMPLE_RATE as f64;
+                voice.cursor +=
+                    voice.clip.rate as f64 / SAMPLE_RATE as f64 * f64::from(voice.pitch);
                 index += 1;
             }
             *out = self.limiter.next(mix.map(|x| x * self.levels[0]));

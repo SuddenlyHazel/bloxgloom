@@ -110,6 +110,7 @@ fn fire_burn_uses_public_removal_and_support_handlers_in_one_receipt() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };
@@ -248,6 +249,7 @@ fn check_seeded_fire_restart() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };
@@ -344,6 +346,7 @@ fn dirty_fire_keys_use_one_checkpoint_job_and_revision_fenced_receipt() {
         weather_change: None,
         entity_wakes: Vec::new(),
         owner_changes: vec![],
+        sounds: Vec::new(),
         player_publication: None,
         entities: None,
     };

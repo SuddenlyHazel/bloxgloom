@@ -213,6 +213,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    pub(crate) sounds: HashSet<String>,
     player_appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_selection: Option<player::Selection>,
     player_rules: bloxgloom_host_api::player::PlayerRules,
@@ -278,6 +279,15 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            sounds: [
+                "bloxgloom:break",
+                "bloxgloom:place",
+                "bloxgloom:pickup",
+                "bloxgloom:interact",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
             player_appearance: None,
             player_selection: None,
             player_rules: bloxgloom_host_api::player::BUILTIN_RULES,
