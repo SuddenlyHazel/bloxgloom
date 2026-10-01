@@ -475,7 +475,7 @@ impl ClientApp {
                             KeyCode::ArrowLeft | KeyCode::ArrowRight
                                 if matches!(
                                     self.screen,
-                                    UiScreen::Settings | UiScreen::Graphics
+                                    UiScreen::Settings | UiScreen::Graphics | UiScreen::Audio
                                 ) =>
                             {
                                 if let Some(

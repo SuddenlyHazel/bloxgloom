@@ -4,6 +4,7 @@ use super::Intent;
 #[cfg(test)]
 mod tests;
 
+mod audio;
 mod character;
 mod join;
 use crate::{
@@ -48,6 +49,7 @@ pub(super) fn draw(
                     .max_height(height - if compact { 24.0 } else { 44.0 })
                     .show(ui, |ui| match frame.screen {
                         UiScreen::Pause => pause(ui, intents),
+                        UiScreen::Audio => audio::draw(ui, frame, intents),
                         UiScreen::Character => character::draw(ui, frame, intents),
                         UiScreen::Settings | UiScreen::Graphics => settings(ui, frame, intents),
                         UiScreen::Actions => actions(ui, frame, intents),
@@ -103,6 +105,11 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
         if graphics { "Graphics" } else { "Settings" },
         "Local client options",
     );
+    if !graphics {
+        button(ui, "Audio", UiControl::OpenAudio, intents);
+        ui.add_space(6.0);
+    }
+
     if ui
         .button(if graphics { "General" } else { "Graphics" })
         .clicked()

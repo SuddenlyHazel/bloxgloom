@@ -327,6 +327,10 @@ pub(super) async fn run_perf_benchmark_async(
                 latency_ms: Some(24),
             }),
             settings: UiSettings {
+                audio_master: 0.8,
+                audio_ambient: 0.6,
+                audio_effects: 0.8,
+                audio_preset: 0,
                 view_distance: radius,
                 ..UiSettings::default()
             },

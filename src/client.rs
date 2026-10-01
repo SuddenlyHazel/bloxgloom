@@ -29,6 +29,7 @@ const MAX_OUTSTANDING_ACTIONS: usize = 128;
 const MAX_INCOMING_PER_FRAME: usize = 32;
 const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
+mod audio;
 mod camera;
 mod character;
 mod character_motion;
@@ -121,7 +122,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         | UiScreen::Package
         | UiScreen::Pause => UiScreen::Playing,
         UiScreen::Settings | UiScreen::Character => UiScreen::Pause,
-        UiScreen::Graphics => UiScreen::Settings,
+        UiScreen::Graphics | UiScreen::Audio => UiScreen::Settings,
         UiScreen::Joining | UiScreen::JoinFailed => screen,
     }
 }
@@ -322,6 +323,7 @@ struct ClientApp {
     network: Network,
     mesher: Mesher,
     config: Config,
+    audio: audio::State,
     config_writer: ConfigWriter,
     screen: UiScreen,
     exit_requested: bool,
@@ -390,6 +392,7 @@ impl ClientApp {
         let effective_view_distance = config.view_distance;
         let config_writer = ConfigWriter::new(&config, config_path);
         let entity_registry = EntityClientRegistry::builtins(&catalog);
+        let audio = audio::State::new(&config);
         Self {
             observations: Arc::new(Default::default()),
             package_ui: network.package_ui(),
@@ -414,6 +417,7 @@ impl ClientApp {
             mesher: Mesher::new(),
             config,
             config_writer,
+            audio,
             screen: UiScreen::Playing,
             exit_requested: false,
             window: None,
@@ -597,7 +601,23 @@ impl ClientApp {
 
     fn change_setting(&mut self, setting: SettingId, increase: bool) {
         let sign = if increase { 1.0 } else { -1.0 };
+        if setting == SettingId::AudioPreview {
+            self.audio.change_preview(increase, &self.config);
+            return;
+        }
         match setting {
+            SettingId::AudioMaster => {
+                self.config.audio_master = (self.config.audio_master + sign * 0.05).clamp(0.0, 1.0)
+            }
+            SettingId::AudioAmbient => {
+                self.config.audio_ambient =
+                    (self.config.audio_ambient + sign * 0.05).clamp(0.0, 1.0)
+            }
+            SettingId::AudioEffects => {
+                self.config.audio_effects =
+                    (self.config.audio_effects + sign * 0.05).clamp(0.0, 1.0)
+            }
+            SettingId::AudioPreview => unreachable!(),
             SettingId::PostProcessing => self.config.post_processing = !self.config.post_processing,
             SettingId::Bloom => self.config.bloom_enabled = !self.config.bloom_enabled,
             SettingId::Exposure => {
@@ -634,6 +654,7 @@ impl ClientApp {
             }
         }
         self.config.sanitize();
+        self.audio.set_volumes(&self.config);
         self.config_writer.request_save(&self.config);
     }
 
@@ -664,6 +685,8 @@ impl ClientApp {
             UiControl::KilnSlot(_) => {}
             UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
+            UiControl::OpenAudio => self.set_screen(UiScreen::Audio),
+            UiControl::AudioTest => self.audio.test_sound(),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
             UiControl::OpenCharacter => self.set_screen(UiScreen::Character),
             UiControl::ApplyCharacter => {
@@ -744,11 +767,13 @@ impl ClientApp {
                     self.exit_requested = true;
                 }
             }
-            UiControl::Back => self.set_screen(if self.screen == UiScreen::Graphics {
-                UiScreen::Settings
-            } else {
-                UiScreen::Pause
-            }),
+            UiControl::Back => self.set_screen(
+                if matches!(self.screen, UiScreen::Graphics | UiScreen::Audio) {
+                    UiScreen::Settings
+                } else {
+                    UiScreen::Pause
+                },
+            ),
             UiControl::Decrease(setting) => self.change_setting(setting, false),
             UiControl::Increase(setting) => self.change_setting(setting, true),
             UiControl::ToggleFullscreen => {
@@ -811,6 +836,7 @@ impl ClientApp {
             }
             UiScreen::Character => vec![UiControl::ApplyCharacter, UiControl::Back],
             UiScreen::Settings => vec![
+                UiControl::OpenAudio,
                 UiControl::ToggleSettingsPage,
                 UiControl::Decrease(SettingId::Sensitivity),
                 UiControl::Increase(SettingId::Sensitivity),
@@ -823,6 +849,18 @@ impl ClientApp {
                 UiControl::Decrease(SettingId::Lighting),
                 UiControl::Increase(SettingId::Lighting),
                 UiControl::ToggleFullscreen,
+                UiControl::Back,
+            ],
+            UiScreen::Audio => vec![
+                UiControl::Decrease(SettingId::AudioMaster),
+                UiControl::Increase(SettingId::AudioMaster),
+                UiControl::Decrease(SettingId::AudioAmbient),
+                UiControl::Increase(SettingId::AudioAmbient),
+                UiControl::Decrease(SettingId::AudioEffects),
+                UiControl::Increase(SettingId::AudioEffects),
+                UiControl::Decrease(SettingId::AudioPreview),
+                UiControl::Increase(SettingId::AudioPreview),
+                UiControl::AudioTest,
                 UiControl::Back,
             ],
             UiScreen::Graphics => vec![
@@ -1723,6 +1761,8 @@ impl ClientApp {
         }
         self.validate_kiln_screen();
         self.move_player(dt);
+        self.audio
+            .poll_listener(self.position.to_array(), self.yaw, now);
         self.repeat_held_break(now);
         let mut parameter_updates = self
             .package_ui
@@ -1792,6 +1832,10 @@ impl ClientApp {
                 latency_ms: None,
             }),
             settings: UiSettings {
+                audio_master: self.config.audio_master,
+                audio_ambient: self.config.audio_ambient,
+                audio_effects: self.config.audio_effects,
+                audio_preset: self.audio.preset() as u8,
                 post_processing: self.config.post_processing,
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,

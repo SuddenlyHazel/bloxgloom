@@ -288,3 +288,7 @@ Run `cargo run --release -- server-perf 300` to measure separate 16-player clust
 Run `cargo run --release -- server-perf fire-cpu --workers 1 --iterations 3000` and repeat with `--workers 4` for matched fire-compute measurements. Run `cargo run --release -- server-perf tcp --clients 128 --ticks 15000 --scene clustered` (or `spread`) for paced production-listener TCP measurements. These are separate workloads; a network baseline alone does not establish the combined foundation gate.
 
 Append `bounced` to benchmark the optional lighting mode, for example `cargo run --release -- perf 300 6 bounced`. Scene setup includes light-field construction and meshing; its time is reported separately from steady frame samples.
+
+Client audio output and procedural weather previews are available through
+**Settings → Audio**. See [Audio foundation](docs/audio/FOUNDATION.md) for native
+playback, offline WAV previews and the NoiseMachine port scope.

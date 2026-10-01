@@ -32,6 +32,9 @@ pub struct Config {
     pub post_processing: bool,
     pub bloom_enabled: bool,
     pub bloom_strength: f32,
+    pub audio_master: f32,
+    pub audio_ambient: f32,
+    pub audio_effects: f32,
     pub selected_slot: usize,
     pub debug_hud: bool,
     pub profile: u128,
@@ -52,6 +55,9 @@ impl Default for Config {
             post_processing: true,
             bloom_enabled: true,
             bloom_strength: 0.12,
+            audio_master: 0.8,
+            audio_ambient: 0.6,
+            audio_effects: 0.8,
             selected_slot: 1,
             debug_hud: false,
             profile: 0,
@@ -163,6 +169,9 @@ impl Config {
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
             bloom_strength: clamp_finite(self.bloom_strength, 0.0, 1.0, 0.12),
+            audio_master: clamp_finite(self.audio_master, 0.0, 1.0, 0.8),
+            audio_ambient: clamp_finite(self.audio_ambient, 0.0, 1.0, 0.6),
+            audio_effects: clamp_finite(self.audio_effects, 0.0, 1.0, 0.8),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
             profile: self.profile,
@@ -200,6 +209,10 @@ impl Config {
             bindings::letter(self.bindings.kiln_fuel).expect("sanitized kiln fuel binding"),
             bindings::letter(self.bindings.drop).expect("sanitized drop binding"),
         );
+        text.push_str(&format!(
+            "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
+            self.audio_master, self.audio_ambient, self.audio_effects
+        ));
         for (action, key) in &self.named_bindings.0 {
             text.push_str(&format!(
                 "bind_action.{action}={}\n",
@@ -268,6 +281,9 @@ fn parse_config(contents: &str) -> Config {
             }
             "exposure" => config.exposure = parse_clamped_float(value, 0.25, 4.0, 1.0),
             "bloom_strength" => config.bloom_strength = parse_clamped_float(value, 0.0, 1.0, 0.12),
+            "audio_master" => config.audio_master = parse_clamped_float(value, 0.0, 1.0, 0.8),
+            "audio_ambient" => config.audio_ambient = parse_clamped_float(value, 0.0, 1.0, 0.6),
+            "audio_effects" => config.audio_effects = parse_clamped_float(value, 0.0, 1.0, 0.8),
             "version" => version = value.parse::<u32>().ok(),
             "sensitivity" => {
                 config.sensitivity =

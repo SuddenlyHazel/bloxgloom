@@ -37,6 +37,9 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wgpu = "30.0.1"
 winit = "0.30.13"
+cpal = "0.18.2"
+rtrb = "0.4.0"
+hound = "3.5.1"
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1.1.5", features = ["fs"] }

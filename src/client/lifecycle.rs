@@ -5,6 +5,7 @@ use super::*;
 
 impl ClientApp {
     pub(super) fn retire_session(&mut self) {
+        self.audio.retire_session(&self.config);
         self.disconnected = true;
         self.character_editor = Default::default();
         self.character_motion = Default::default();

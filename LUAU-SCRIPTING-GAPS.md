@@ -455,8 +455,10 @@ Evidence: [Rust anchored contract](crates/host-api/src/anchored.rs),
 Script creatures support terrain-aware ground movement toward horizontal
 targets and models built from colored cuboids. Moving entities now add free
 velocity/acceleration controls, swept collision and rigid cuboid presentation;
-the approved scope is implemented. There are no bound sound APIs,
-imported models or custom player geometry. Client presentation offers bounded
+the approved scope is implemented. A [native audio foundation](docs/audio/FOUNDATION.md)
+now provides device output, mixing and procedural weather synthesis, but has no
+Luau sound bindings or package sound delivery yet. There are no imported models or custom player geometry. Client presentation
+offers bounded
 replica windows, pose/tint overrides, sparks and embers rather than a general
 scene/entity renderer.
 

@@ -12,6 +12,7 @@ pub enum UiScreen {
     Pause,
     Settings,
     Graphics,
+    Audio,
     Character,
     Package,
     Joining,
@@ -29,6 +30,7 @@ impl UiScreen {
                 | Self::Pause
                 | Self::Settings
                 | Self::Graphics
+                | Self::Audio
                 | Self::Character
                 | Self::Package
                 | Self::Joining
@@ -48,6 +50,10 @@ pub enum SettingId {
     Exposure,
     Bloom,
     BloomStrength,
+    AudioMaster,
+    AudioAmbient,
+    AudioEffects,
+    AudioPreview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +72,8 @@ pub enum UiControl {
     OpenAdmin,
     Resume,
     OpenSettings,
+    OpenAudio,
+    AudioTest,
     OpenCharacter,
     ApplyCharacter,
     ToggleSettingsPage,
@@ -95,6 +103,10 @@ pub struct UiSettings {
     pub exposure: f32,
     pub bloom_enabled: bool,
     pub bloom_strength: f32,
+    pub audio_master: f32,
+    pub audio_ambient: f32,
+    pub audio_effects: f32,
+    pub audio_preset: u8,
 }
 
 impl Default for UiSettings {
@@ -110,6 +122,10 @@ impl Default for UiSettings {
             exposure: 1.0,
             bloom_enabled: true,
             bloom_strength: 0.12,
+            audio_master: 0.8,
+            audio_ambient: 0.6,
+            audio_effects: 0.8,
+            audio_preset: 0,
         }
     }
 }

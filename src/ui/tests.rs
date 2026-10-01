@@ -19,6 +19,10 @@ fn joining_controls_fit_and_long_failures_keep_geometry_bounded() {
                 screen,
                 status: Some(&error),
                 settings: UiSettings {
+                    audio_master: 0.8,
+                    audio_ambient: 0.6,
+                    audio_effects: 0.8,
+                    audio_preset: 0,
                     scale,
                     ..Default::default()
                 },
@@ -500,6 +504,10 @@ fn worst_case_ui_stays_well_within_fixed_vertex_budget() {
                 status: Some(long_status),
                 debug: Some(debug),
                 settings: UiSettings {
+                    audio_master: 0.8,
+                    audio_ambient: 0.6,
+                    audio_effects: 0.8,
+                    audio_preset: 0,
                     scale,
                     ..UiSettings::default()
                 },
@@ -584,4 +592,34 @@ fn inventory_search_only_edits_local_ascii_query() {
     assert!(search.text().is_empty());
     search.edit(KeyCode::KeyA, Some("abcdefghijklmnopqrstuvwxyz"));
     assert_eq!(search.text(), "abcdefghijklmnopqrst");
+}
+
+#[test]
+fn audio_settings_are_reachable_and_fit_compact_legacy_layout() {
+    for (width, height) in [(1280, 720), (640, 360)] {
+        let general = UiLayout::new(width, height, 1.0, UiScreen::Settings);
+        assert!(general.rect(UiControl::OpenAudio).is_some());
+        let audio = UiLayout::new(width, height, 1.0, UiScreen::Audio);
+        for control in [
+            UiControl::Increase(SettingId::AudioMaster),
+            UiControl::Increase(SettingId::AudioAmbient),
+            UiControl::Increase(SettingId::AudioEffects),
+            UiControl::Increase(SettingId::AudioPreview),
+            UiControl::AudioTest,
+            UiControl::Back,
+        ] {
+            let rect = audio.rect(control).unwrap();
+            assert!(
+                rect.x >= 0.0
+                    && rect.y >= 0.0
+                    && rect.x + rect.width <= width as f32
+                    && rect.y + rect.height <= height as f32,
+                "{control:?} must fit {width}x{height}"
+            );
+            assert_eq!(
+                audio.hit_test(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(control)
+            );
+        }
+    }
 }
