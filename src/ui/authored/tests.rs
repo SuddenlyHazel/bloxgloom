@@ -241,6 +241,10 @@ fn handlers_fail_closed_atomically_with_module_attribution_and_sandbox_limits() 
         session.activate();
         let error = session.wait_for_presentation().unwrap_err();
         assert!(error.contains("uidemo:view"), "{error}");
+        assert!(
+            session.worker.is_none(),
+            "failed presentation heap must retire"
+        );
         assert_eq!(session.text_at(1), "Welcome to the garden");
         assert!(session.state.is_empty());
         session.activate();

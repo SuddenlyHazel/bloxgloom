@@ -18,6 +18,9 @@ pub(in crate::client) struct EventRealm {
     pub(super) stack: Rc<RefCell<Vec<String>>>,
 }
 impl EventRealm {
+    pub(in crate::client) fn id(&self) -> u64 {
+        self._reservation.id()
+    }
     pub(in crate::client) fn new(bundle: &ClientBundle, entry: &str) -> Result<Self, String> {
         let id = identity(bundle, entry);
         let reservation = crate::server::script_runtime::Reservation::acquire(8 * 1024 * 1024)
@@ -28,6 +31,7 @@ impl EventRealm {
                 .client(),
         )
         .map_err(|error| format!("client realm {id}: {error}"))?;
+        tracing::debug!(module=%id, runtime_id=reservation.id(), "client player realm initialized");
         Ok(Self {
             lua,
             _reservation: reservation,

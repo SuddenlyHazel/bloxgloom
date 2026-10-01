@@ -482,6 +482,10 @@ impl Session {
         if let Err(error) = result {
             tracing::warn!(%error, sequence = reply.sequence, "client presentation event failed");
             self.failure = Some(error);
+            // Semantic output rejection happens after Lua execution. Quarantine
+            // the family and release retained heaps, not just its UI state.
+            self.worker = None;
+            self.replica_events.clear();
         }
     }
 

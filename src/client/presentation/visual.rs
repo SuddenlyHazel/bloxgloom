@@ -313,7 +313,12 @@ impl VisualSession {
                         .spark_with(id, offset, color, size, lifetime_ms);
                 }
             }
-            Err(error) => self.failure = Some(error),
+            Err(error) => {
+                tracing::warn!(%error, reset_reason="invalid_output", "client visual worker retired");
+                self.failure = Some(error);
+                self.worker.retire();
+                self.queued.clear();
+            }
         }
     }
 

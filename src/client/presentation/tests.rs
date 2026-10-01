@@ -195,6 +195,7 @@ fn actual_presentation_worker_retains_coroutines_and_resets_after_errors() {
             return function(input)
                 assert(coroutine.resume(task))
                 if input.event == 'fail' then error('reset me') end
+                if input.event == 'invalid' then return {{ op = 'invalid' }} end
                 return {{ op = 'state', value = tostring(count) }}
             end
         "#
@@ -206,6 +207,8 @@ fn actual_presentation_worker_retains_coroutines_and_resets_after_errors() {
         (2, "tick", Some("2")),
         (3, "fail", None),
         (4, "tick", Some("1")),
+        (5, "invalid", None),
+        (6, "tick", Some("1")),
     ] {
         worker
             .requests

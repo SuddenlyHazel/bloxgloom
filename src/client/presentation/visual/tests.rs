@@ -42,6 +42,10 @@ fn invalid_parameter_prevents_other_replica_mutations() {
     );
     assert_eq!(session.visual_pose(1), None);
     assert!(session.take_parameters().is_empty());
+    assert!(matches!(
+        session.worker.replies.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
 }
 
 fn view(id: u64, anchored: bool) -> EntityView {

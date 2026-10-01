@@ -191,8 +191,8 @@ impl Runner {
                 }
                 Err(error) => {
                     failures += 1;
-                    self.realms.remove(module);
-                    tracing::warn!(%error, event=kind, %module, reset_reason="callback_error", "client player realm reset");
+                    let runtime_id = self.realms.remove(module).map(|realm| realm.id());
+                    tracing::warn!(%error, event=kind, %module, ?runtime_id, reset_reason="callback_error", "client player realm reset");
                 }
             }
         }

@@ -104,6 +104,15 @@ pub(crate) struct Worker {
 }
 
 impl Worker {
+    /// Close both ends without joining the owning execution thread. Semantic
+    /// validation on the window thread can quarantine the entire worker this way.
+    pub(crate) fn retire(&mut self) {
+        let (requests, _) = mpsc::sync_channel(1);
+        let (_, replies) = mpsc::sync_channel(1);
+        self.requests = requests;
+        self.replies = replies;
+    }
+
     pub(crate) fn spawn() -> std::io::Result<Self> {
         let (requests, receiver) = mpsc::sync_channel::<Request>(1);
         let (sender, replies) = mpsc::sync_channel(1);
