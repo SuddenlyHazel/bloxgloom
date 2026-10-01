@@ -114,6 +114,14 @@ fn audio_output_controls_are_coherent_bounded_and_queue_reset_is_guaranteed() {
     assert!(!output.try_send(Command::Stop(2)));
     assert!(output.try_send(Command::Reset));
     assert_eq!(output.shared.epoch.load(Ordering::Acquire), 1);
+    assert_eq!(
+        unpack_controls(output.shared.controls.load(Ordering::Acquire)).preset,
+        Preset::Off
+    );
+    assert!(
+        (unpack_controls(output.shared.controls.load(Ordering::Acquire)).ambient - 0.25).abs()
+            < 0.00002
+    );
     assert!(receiver.try_iter().all(|command| command.epoch == 0));
     output.set_controls(Controls {
         master: f32::NAN,
@@ -127,4 +135,39 @@ fn audio_output_controls_are_coherent_bounded_and_queue_reset_is_guaranteed() {
     assert_eq!(updated.effects, 1.0);
     assert!(matches!(updated.preset, Preset::Rain));
     assert_eq!(output.stats().rejected_commands, 1);
+}
+
+#[test]
+fn audio_output_reset_adoption_restores_explicit_post_reset_preview_controls() {
+    let shared = Arc::new(Shared::new(controls()));
+    let (commands, _receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
+    let (complete, done) = mpsc::channel();
+    drop(complete);
+    let output = AudioOutput {
+        commands,
+        shared,
+        done,
+        worker: None,
+    };
+    let mut source = Source::new();
+    apply_latest_controls(&mut source, &output.shared);
+    output.reset();
+    // The window's explicit setter can arrive after reset but before the worker
+    // adopts the new epoch during its queue drain. Resetting the mixer again
+    // must reapply this current selection even if its revision was seen earlier.
+    output.set_controls(Controls {
+        preset: Preset::Rain,
+        ..controls()
+    });
+    apply_latest_controls(&mut source, &output.shared);
+    source.reset();
+    apply_latest_controls(&mut source, &output.shared);
+    let mut frames = vec![[0.0; 2]; 4096];
+    source.mixer.render(&mut frames);
+    assert!(frames.iter().flatten().any(|sample| sample.abs() > 0.00001));
+    output.reset();
+    source.reset();
+    apply_latest_controls(&mut source, &output.shared);
+    source.mixer.render(&mut frames);
+    assert!(frames.iter().flatten().all(|sample| *sample == 0.0));
 }

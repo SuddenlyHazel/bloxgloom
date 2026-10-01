@@ -136,6 +136,12 @@ impl AudioOutput {
     /// Reset is independent of queue capacity. Old commands and buffered PCM
     /// retain their old epoch and cannot cross a reconnect/session boundary.
     pub(crate) fn reset(&self) {
+        self.shared
+            .controls
+            .fetch_and((1u64 << 48) - 1, Ordering::AcqRel);
+        self.shared
+            .controls_revision
+            .fetch_add(1, Ordering::Release);
         self.shared.epoch.fetch_add(1, Ordering::AcqRel);
     }
     pub(crate) fn stats(&self) -> OutputStats {
@@ -223,6 +229,7 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
             source.reset();
             resampler.reset();
             epoch = current_epoch;
+            (controls, controls_revision) = apply_latest_controls(&mut source, shared);
         }
         let latest = shared.controls.load(Ordering::Acquire);
         let latest_revision = shared.controls_revision.load(Ordering::Acquire);
@@ -242,6 +249,7 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
                 source.reset();
                 resampler.reset();
                 epoch = current_epoch;
+                (controls, controls_revision) = apply_latest_controls(&mut source, shared);
             }
             if message.epoch == epoch && !source.mixer.command(message.command) {
                 shared.rejected.fetch_add(1, Ordering::Relaxed);
@@ -268,6 +276,14 @@ fn run(commands: mpsc::Receiver<Queued>, shared: &Arc<Shared>) {
         tracing::warn!("audio device failed; continuing silently");
     }
     drop(stream);
+}
+/// Used after every reset, even if an identical setter was applied earlier in
+/// the queue drain. Reset clears Mixer state; its controls must be restored too.
+fn apply_latest_controls(source: &mut Source, shared: &Shared) -> (u64, u64) {
+    let controls = shared.controls.load(Ordering::Acquire);
+    let revision = shared.controls_revision.load(Ordering::Acquire);
+    source.mixer.set_controls(unpack_controls(controls));
+    (controls, revision)
 }
 fn fill(
     producer: &mut Producer<Frame>,

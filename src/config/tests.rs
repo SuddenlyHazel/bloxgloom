@@ -25,6 +25,9 @@ fn config_round_trips_through_explicit_path() {
         post_processing: false,
         bloom_enabled: false,
         bloom_strength: 0.0,
+        audio_master: 0.4,
+        audio_ambient: 0.2,
+        audio_effects: 0.9,
         selected_slot: 7,
         debug_hud: true,
         profile: 0x1234,
@@ -168,4 +171,41 @@ fn authored_rendering_defaults_on_and_explicit_classic_roundtrips() {
     };
     assert_eq!(parse_config(&config.serialize()), config);
     assert!(parse_config("version=1\nauthored_characters=invalid\n").authored_characters);
+}
+
+#[test]
+fn audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset() {
+    let old = parse_config("version=1\nsensitivity=0.003\n");
+    assert_eq!(
+        (old.audio_master, old.audio_ambient, old.audio_effects),
+        (0.8, 0.6, 0.8)
+    );
+    let bounded = parse_config(
+        "version=1\naudio_master=NaN\naudio_ambient=-2\naudio_effects=9\naudio_preset=storm\n",
+    );
+    assert_eq!(
+        (
+            bounded.audio_master,
+            bounded.audio_ambient,
+            bounded.audio_effects
+        ),
+        (0.8, 0.0, 1.0)
+    );
+    assert!(!bounded.serialize().contains("audio_preset"));
+    let mut direct = Config {
+        audio_master: f32::INFINITY,
+        audio_ambient: f32::NAN,
+        audio_effects: -0.1,
+        ..Config::default()
+    };
+    direct.sanitize();
+    assert_eq!(
+        (
+            direct.audio_master,
+            direct.audio_ambient,
+            direct.audio_effects
+        ),
+        (0.8, 0.6, 0.0)
+    );
+    assert_eq!(parse_config(&bounded.serialize()), bounded);
 }
