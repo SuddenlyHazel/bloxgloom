@@ -143,6 +143,16 @@ pub(super) fn declarer(
                 Value::Nil => false,
                 _ => return Err("creates_entities must be boolean"),
             };
+            let creates_moving_entities = match field(&table, "creates_moving_entities")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("creates_moving_entities must be boolean"),
+            };
+            let mutates_motion = match field(&table, "mutates_motion")? {
+                Value::Boolean(value) => value,
+                Value::Nil => false,
+                _ => return Err("mutates_motion must be boolean"),
+            };
             let reads_entities = match field(&table, "reads_entities")? {
                 Value::Boolean(value) => value,
                 Value::Nil => false,
@@ -158,6 +168,15 @@ pub(super) fn declarer(
             }
             if creates_entities && read_radius_chunks.is_none() {
                 return Err("creates_entities requires read_world=true");
+            }
+            if creates_moving_entities && read_radius_chunks.is_none() {
+                return Err("creates_moving_entities requires read_world=true");
+            }
+            if mutates_motion && !reads_entities {
+                return Err("mutates_motion requires reads_entities=true");
+            }
+            if (creates_moving_entities || mutates_motion) && !snapshot.permits_moving(&namespace) {
+                return Err("motion systems require content/v1, actions/v1 and moving_entities/v1");
             }
             if reads_entities && read_radius_chunks.is_none() {
                 return Err("reads_entities requires read_world=true");
@@ -255,6 +274,8 @@ pub(super) fn declarer(
                     edit_cause,
                     creates_drops,
                     creates_entities,
+                    creates_moving_entities,
+                    mutates_motion,
                     reads_entities,
                     mutates_entities,
                 }),
@@ -301,6 +322,8 @@ struct ScriptSystem {
     edit_cause: api::EditCause,
     creates_drops: bool,
     creates_entities: bool,
+    creates_moving_entities: bool,
+    mutates_motion: bool,
     reads_entities: bool,
     mutates_entities: bool,
 }
@@ -310,6 +333,12 @@ impl api::Behavior for ScriptSystem {
     }
     fn creates_drops(&self) -> bool {
         self.creates_drops
+    }
+    fn creates_moving_entities(&self) -> bool {
+        self.creates_moving_entities
+    }
+    fn mutates_motion(&self) -> bool {
+        self.mutates_motion
     }
     fn creates_entities(&self) -> bool {
         self.creates_entities
@@ -380,6 +409,8 @@ impl ScriptSystem {
                     bindings::Capabilities {
                         drops: self.creates_drops,
                         entities: self.creates_entities,
+                        moving_entities: self.creates_moving_entities,
+                        motion: self.mutates_motion,
                         entity_mutations: self.mutates_entities,
                     },
                     inbox,

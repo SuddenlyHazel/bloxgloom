@@ -68,6 +68,46 @@ impl Context<'_> {
         self.plan.moving_spawns.push(spawn);
         Ok(reference)
     }
+    /// Replace an uncommitted launch using its attempt-local reference. The
+    /// registered type stays fixed; no allocation identity exists until receipt.
+    pub fn configure_spawn(
+        &mut self,
+        reference: &SpawnReference,
+        spawn: MovingSpawn,
+    ) -> Result<(), Error> {
+        self.charge()?;
+        if !self.owns_spawn_reference(reference)
+            || self.plan.moving_spawns[reference.index].key != spawn.key
+        {
+            return self.fail(Error::Invalid(
+                "foreign or incompatible spawn reference".into(),
+            ));
+        }
+        let owner = self.motion_owner()?.to_owned();
+        let motion = Motion {
+            position: spawn.position,
+            velocity: spawn.velocity,
+            acceleration: [0.0; 3],
+            orientation: spawn.orientation,
+            revision: 0,
+            grounded: false,
+        };
+        if let Err(error) = motion.validate() {
+            return self.fail(Error::Invalid(error.0));
+        }
+        if let Err(error) = self.snapshot.validate_moving_spawn(&owner, &spawn) {
+            return self.fail(error);
+        }
+        self.plan.moving_spawns[reference.index] = spawn;
+        Ok(())
+    }
+    /// Cancel a stuck owned moving object and its pending reaction atomically.
+    pub fn cancel_moving_entity(&mut self,id:u64)->Result<bool,Error> {
+        self.charge()?;
+        if !self.snapshot.admin(){return self.fail(Error::Invalid("admin access denied".into()))}
+        if self.motion(id)?.is_none(){return Ok(false)}
+        self.remove_entity(id)
+    }
     fn motion_owner(&self) -> Result<&str, Error> {
         self.handler_namespace
             .as_deref()

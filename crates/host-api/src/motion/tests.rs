@@ -14,6 +14,7 @@ fn record() -> Record {
         next_behavior_tick: Some(21),
         source: Some(9),
         source_ticks: 3,
+        contact_normal: Some([0.0, 1.0, 0.0]),
         contact: Some(Target::Terrain {
             cell: [0, 9, 0],
             state: "builtin:stone".into(),

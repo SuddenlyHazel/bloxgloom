@@ -73,9 +73,22 @@ struct Adapter(Arc<api::System>);
 struct OwnerWorldView<'a> {
     chunks: &'a [Arc<crate::world::Chunk>],
     entities: Option<Vec<api::OwnedEntity>>,
+    motion: std::collections::BTreeMap<u64, bloxgloom_host_api::motion::Motion>,
     catalog: &'a crate::content::Catalog,
 }
 impl api::WorldRead for OwnerWorldView<'_> {
+    fn motion(
+        &self,
+        id: u64,
+    ) -> Result<Option<bloxgloom_host_api::motion::Motion>, bloxgloom_host_api::gameplay::Error>
+    {
+        if self.entities.is_none() {
+            return Err(bloxgloom_host_api::gameplay::Error::Invalid(
+                "motion reads require captured entities".into(),
+            ));
+        }
+        Ok(self.motion.get(&id).copied())
+    }
     fn entities(&self) -> Option<&[api::OwnedEntity]> {
         self.entities.as_deref()
     }
@@ -98,6 +111,8 @@ impl api::WorldRead for OwnerWorldView<'_> {
 }
 #[path = "public_systems/entities.rs"]
 mod entities;
+#[path = "public_systems/motion.rs"]
+mod motion;
 #[cfg(test)]
 mod tests;
 impl OwnerValueCodec for Adapter {
@@ -157,12 +172,40 @@ impl SystemHandler for Adapter {
                             revision: snapshot.revision,
                             key: definition.key.to_string(),
                             position: *position,
-                            state: snapshot.private_payload.downcast_ref::<Vec<u8>>()?.clone(),
+                            state: {
+                                let bytes = snapshot.private_payload.downcast_ref::<Vec<u8>>()?;
+                                if catalog.moving_entity(snapshot.entity_type).is_some() {
+                                    bloxgloom_host_api::motion::Record::decode(bytes)
+                                        .ok()?
+                                        .state
+                                } else {
+                                    bytes.clone()
+                                }
+                            },
                         })
                     })
                     .collect()
             });
+            let motion = job
+                .world_entities()
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|snapshot| {
+                    let definition = catalog.entity_type(snapshot.entity_type)?;
+                    if definition.key.split_once(':')?.0 != namespace
+                        || catalog.moving_entity(snapshot.entity_type).is_none()
+                    {
+                        return None;
+                    }
+                    let record = bloxgloom_host_api::motion::Record::decode(
+                        snapshot.private_payload.downcast_ref::<Vec<u8>>()?,
+                    )
+                    .ok()?;
+                    Some((snapshot.id.get(), record.motion))
+                })
+                .collect();
             OwnerWorldView {
+                motion,
                 chunks: job.world_chunks(),
                 entities,
                 catalog,
@@ -176,7 +219,7 @@ impl SystemHandler for Adapter {
             world: world.as_ref().map(|world| world as &dyn api::WorldRead),
         };
         let mut outbox = api::IntentOutbox::default();
-        let plan = self
+        let mut plan = self
             .0
             .behavior
             .plan_with_intents(&context, inbox, &mut outbox)
@@ -283,7 +326,10 @@ impl SystemHandler for Adapter {
                     catalog
                         .gameplay_entity(&spawn.key)
                         .is_none_or(|definition| {
-                            spawn.state.len() > usize::from(definition.max_state_bytes)
+                            catalog
+                                .entity_type_id_by_key(&spawn.key)
+                                .is_some_and(|id| catalog.moving_entity(id).is_some())
+                                || spawn.state.len() > usize::from(definition.max_state_bytes)
                                 || definition.state.validate(&spawn.state).is_err()
                                 || !definition
                                     .state
@@ -303,6 +349,7 @@ impl SystemHandler for Adapter {
             job.owner_catalog(),
             self.0.behavior.mutates_entities(),
         )?;
+        motion::prepare(&mut plan, &context, job, &self.0)?;
         let mut edited = std::collections::BTreeSet::new();
         let edit_cause = self.0.behavior.edit_cause();
         for edit in &plan.edits {

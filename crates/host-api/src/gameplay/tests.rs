@@ -514,14 +514,17 @@ fn moving_spawn_references_are_local_and_never_predict_durable_ids() {
             if let Some(old) = old {
                 assert!(!ctx.owns_spawn_reference(&old));
             }
-            let reference = ctx.spawn_moving_entity(MovingSpawn {
+            let mut spawn = MovingSpawn {
                 key: "test:bolt".into(),
                 position: [0.0; 3],
                 velocity: [0.0; 3],
                 orientation: [0.0, 0.0, 0.0, 1.0],
                 state: vec![1],
                 source: None,
-            })?;
+            };
+            let reference = ctx.spawn_moving_entity(spawn.clone())?;
+            spawn.velocity = [2.0, 0.0, 0.0];
+            ctx.configure_spawn(&reference, spawn)?;
             assert_eq!(reference.index(), 0);
             assert!(ctx.owns_spawn_reference(&reference));
             *self.0.lock().unwrap() = Some(reference);
@@ -548,6 +551,8 @@ fn moving_spawn_references_are_local_and_never_predict_durable_ids() {
             },
         )
         .unwrap();
-        assert_eq!(ctx.finish().unwrap().moving_spawns.len(), 1);
+        let plan = ctx.finish().unwrap();
+        assert_eq!(plan.moving_spawns.len(), 1);
+        assert_eq!(plan.moving_spawns[0].velocity, [2.0, 0.0, 0.0]);
     }
 }

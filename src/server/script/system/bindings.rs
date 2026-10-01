@@ -3,11 +3,14 @@
 use super::*;
 use std::cell::Cell;
 mod intents;
+mod motion;
 
 #[derive(Clone, Copy)]
 pub(super) struct Capabilities {
     pub drops: bool,
     pub entities: bool,
+    pub moving_entities: bool,
+    pub motion: bool,
     pub entity_mutations: bool,
 }
 
@@ -70,10 +73,26 @@ pub(super) fn invoke(
     let edits = RefCell::new(Vec::new());
     let drops = RefCell::new(Vec::new());
     let entity_spawns = RefCell::new(Vec::new());
+    let moving_spawns = RefCell::new(Vec::new());
+    let spawn_scope = std::sync::Arc::new(());
+    let motion_commands = RefCell::new(Vec::new());
     let entity_changes = RefCell::new(Vec::new());
     let wakes = RefCell::new(Vec::new());
     let outbox = RefCell::new(outbox);
     lua.scope(|scope| {
+        motion::install(
+            scope,
+            &host,
+            context,
+            capabilities,
+            &rejected,
+            motion::Output {
+                scope: &spawn_scope,
+                spawns: &moving_spawns,
+                commands: &motion_commands,
+                generic_spawns: &entity_spawns,
+            },
+        )?;
         host.set(
             "send",
             scope.create_function(|_, (x, y, z, payload): (Value, Value, Value, Value)| {
@@ -195,7 +214,7 @@ pub(super) fn invoke(
                             return Err("system has not declared entity creation");
                         }
                         let mut spawns = entity_spawns.borrow_mut();
-                        if spawns.len() >= 16 {
+                        if spawns.len() + moving_spawns.borrow().len() >= 16 {
                             return Err("system entity spawn limit exceeded (16)");
                         }
                         let cell = cell(x, y, z)?;
@@ -383,6 +402,8 @@ pub(super) fn invoke(
                 entity_spawns: std::mem::take(&mut *entity_spawns.borrow_mut()),
                 entity_changes: std::mem::take(&mut *entity_changes.borrow_mut()),
                 wakes: std::mem::take(&mut *wakes.borrow_mut()),
+                moving_spawns: std::mem::take(&mut *moving_spawns.borrow_mut()),
+                motion_commands: std::mem::take(&mut *motion_commands.borrow_mut()),
             })
         })
     })

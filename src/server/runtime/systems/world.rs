@@ -15,6 +15,8 @@ use std::sync::Arc;
 mod anchored;
 #[path = "world/entities.rs"]
 mod entities;
+#[path = "world/moving.rs"]
+mod moving;
 
 /// Capture complete entity pages alongside terrain so a worker can inspect
 /// package-owned private state without racing a concurrent spawn or update.
@@ -166,6 +168,32 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     let mut edit_owners = Vec::new();
     let mut edited = std::collections::BTreeSet::new();
     let catalog = world.catalog_arc();
+    let moving_ids = entities
+        .mobile_ids_of_types(
+            catalog.moving_entities().map(|(id, _)| id),
+            crate::server::entities::motion::MAX_BODIES,
+        )
+        .map_err(|error| io::Error::new(ErrorKind::WouldBlock, error))?;
+    let mut moving_total = moving_ids.len();
+    let mut moving_chunks = std::collections::BTreeMap::new();
+    for id in moving_ids {
+        let Some(snapshot) = entities.snapshot(id) else {
+            return Err(io::Error::new(
+                ErrorKind::WouldBlock,
+                "moving count changed",
+            ));
+        };
+        let crate::server::entities::EntityLocation::Mobile { position } = snapshot.location else {
+            continue;
+        };
+        let key = crate::world::world_to_chunk(
+            position[0].floor() as i32,
+            position[1].floor() as i32,
+            position[2].floor() as i32,
+        )
+        .0;
+        *moving_chunks.entry(key).or_insert(0usize) += 1;
+    }
     let direct_changes =
         entities::plan_changes(entities, &catalog, system_key, radius, patches, reads)?;
     for patch in patches {
@@ -185,7 +213,15 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
             let namespace = system_key.split_once(':').map_or("", |(owner, _)| owner);
             for spawn in OwnerEffectPatch::entity_spawns(patch) {
                 if direct_entities.len() >= 256
-                    || spawn.state.len() > 1024
+                    || spawn.state.len()
+                        > if catalog
+                            .entity_type_id_by_key(&spawn.key)
+                            .is_some_and(|id| catalog.moving_entity(id).is_some())
+                        {
+                            1536
+                        } else {
+                            1024
+                        }
                     || spawn
                         .position
                         .iter()
@@ -226,6 +262,19 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
                 let entity_type = catalog.entity_type_id_by_key(&spawn.key).ok_or_else(|| {
                     io::Error::new(ErrorKind::InvalidInput, "unknown owner entity type")
                 })?;
+                if catalog.moving_entity(entity_type).is_some() {
+                    let count = moving_chunks.entry(key).or_default();
+                    if moving_total >= crate::server::entities::motion::MAX_BODIES
+                        || *count >= crate::server::entities::motion::MAX_CHUNK_BODIES
+                    {
+                        return Err(io::Error::new(
+                            ErrorKind::WouldBlock,
+                            "owner moving body capacity exceeded",
+                        ));
+                    }
+                    *count += 1;
+                    moving_total += 1;
+                }
                 direct_entities.push((spawn.position, entity_type, spawn.state.clone()));
             }
         }
@@ -466,6 +515,17 @@ pub(super) fn plan_edits(inputs: EditInputs<'_>) -> io::Result<Option<CommitActi
     planned.drops.extend(anchored.drops);
     planned.drops.extend(direct_drops);
     for (position, entity_type, state) in direct_entities {
+        moving::validate(moving::Spawn {
+            world,
+            store: entities,
+            position,
+            entity_type,
+            bytes: &state,
+            players,
+            edits: &planned.edits,
+            reads,
+            missing,
+        })?;
         let [x, y, z] = position.map(|v| v.floor() as i32);
         let block = if let Some(&(_, _, _, block)) = planned
             .edits

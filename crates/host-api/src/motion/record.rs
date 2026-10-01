@@ -73,6 +73,7 @@ pub struct Record {
     pub source: Option<u64>,
     pub source_ticks: u32,
     pub contact: Option<Target>,
+    pub contact_normal: Option<[f32; 3]>,
     pub pending: Option<Pending>,
     pub state: Vec<u8>,
 }
@@ -87,6 +88,11 @@ impl Record {
         put_option_u64(&mut out, self.source);
         out.extend(self.source_ticks.to_le_bytes());
         put_optional_target(&mut out, self.contact.as_ref());
+        if let Some(normal) = self.contact_normal {
+            for x in normal {
+                out.extend(x.to_le_bytes());
+            }
+        }
         match &self.pending {
             None => out.push(0),
             Some(Pending::Impact(value)) => {
@@ -138,6 +144,11 @@ impl Record {
             1 => Some(c.target()?),
             _ => return Err(invalid()),
         };
+        let contact_normal = if contact.is_some() {
+            Some(c.vector()?)
+        } else {
+            None
+        };
         let pending = match c.byte()? {
             0 => None,
             1 => Some(Pending::Impact(Impact {
@@ -175,6 +186,7 @@ impl Record {
             source,
             source_ticks,
             contact,
+            contact_normal,
             pending,
             state,
         };
@@ -188,6 +200,13 @@ impl Record {
             || self.source_ticks > super::MAX_SOURCE_EXCLUSION_TICKS
             || self.source.is_none() && self.source_ticks != 0
             || self.source == Some(0)
+        {
+            return Err(invalid());
+        }
+        if self.contact.is_some() != self.contact_normal.is_some()
+            || self.contact_normal.is_some_and(|n| {
+                n.iter().any(|x| !x.is_finite()) || (length(n) - 1.0).abs() > 0.001
+            })
         {
             return Err(invalid());
         }

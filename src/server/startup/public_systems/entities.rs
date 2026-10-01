@@ -37,15 +37,25 @@ pub(super) fn validate_changes(
             let definition = catalog
                 .gameplay_entity(&entity.key)
                 .ok_or_else(|| reject("owner entity has no general schema"))?;
-            if state == &entity.state
-                || state.len() > 1024
-                || state.len() > usize::from(definition.max_state_bytes)
-                || definition.state.validate(state).is_err()
-                || !definition
-                    .state
-                    .public(state)
-                    .is_ok_and(|view| view.len() <= 4096)
-            {
+            let moving = catalog
+                .entity_type_id_by_key(&entity.key)
+                .and_then(|id| catalog.moving_entity(id));
+            let valid = if let Some(moving) = moving {
+                state.len() <= usize::from(moving.max_state_bytes)
+                    && moving.state.validate(state).is_ok()
+                    && moving
+                        .state
+                        .public(state)
+                        .is_ok_and(|view| view.len() <= usize::from(moving.max_public_bytes))
+            } else {
+                state.len() <= usize::from(definition.max_state_bytes)
+                    && definition.state.validate(state).is_ok()
+                    && definition
+                        .state
+                        .public(state)
+                        .is_ok_and(|view| view.len() <= 4096)
+            };
+            if state == &entity.state || state.len() > 1024 || !valid {
                 return Err(reject("invalid owner entity state update"));
             }
         }
