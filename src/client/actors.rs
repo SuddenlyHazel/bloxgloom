@@ -50,6 +50,7 @@ impl Track {
             || previous.avatar.pose[0] != avatar.pose[0]
             || previous.avatar.airborne != avatar.airborne
             || previous.avatar.cosmetics != avatar.cosmetics
+            || previous.avatar.character_recipe != avatar.character_recipe
         {
             if now.duration_since(previous.at) > Duration::from_millis(200) {
                 self.samples.clear();
@@ -84,6 +85,10 @@ impl Track {
         let distance = glam::Vec2::new(delta.x, delta.z).length();
         let desired_yaw = if distance > 0.0001 {
             delta.x.atan2(delta.z)
+        } else if visual.model == AvatarModel::Player {
+            // Players currently replicate position, not a look vector. Preserve
+            // their last movement heading instead of turning north when idle.
+            self.yaw
         } else {
             visual.pose[0]
         };

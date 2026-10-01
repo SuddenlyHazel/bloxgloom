@@ -7,6 +7,58 @@ pub(super) const JOINT_COUNT: usize = 7;
 pub(super) const BODY_PNG: &[u8] = include_bytes!("../../../assets/models/player/body.png");
 pub(super) const HAIR_PNG: &[u8] = include_bytes!("../../../assets/models/player/hair.png");
 
+// Numeric order is the persisted appearance ID order; never reorder these tables.
+pub(super) const HAIR_UNDERCUT_PNG: &[u8] =
+    include_bytes!("../../../assets/models/player/hair_undercut.png");
+pub(super) const CLEAN_FACE_PNG: &[u8] =
+    include_bytes!("../../../assets/models/player/face/clean.png");
+pub(super) const EYE_PNGS: [&[u8]; 8] = [
+    include_bytes!("../../../assets/models/player/face/eyes/0.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/1.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/2.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/3.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/4.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/5.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/6.png"),
+    include_bytes!("../../../assets/models/player/face/eyes/7.png"),
+];
+pub(super) const MOUTH_PNGS: [&[u8]; 6] = [
+    include_bytes!("../../../assets/models/player/face/mouths/0.png"),
+    include_bytes!("../../../assets/models/player/face/mouths/1.png"),
+    include_bytes!("../../../assets/models/player/face/mouths/2.png"),
+    include_bytes!("../../../assets/models/player/face/mouths/3.png"),
+    include_bytes!("../../../assets/models/player/face/mouths/4.png"),
+    include_bytes!("../../../assets/models/player/face/mouths/5.png"),
+];
+pub(super) const IRIS_MASK_PNGS: [&[u8]; 8] = [
+    include_bytes!("../../../assets/models/player/face/masks/0.png"),
+    include_bytes!("../../../assets/models/player/face/masks/1.png"),
+    include_bytes!("../../../assets/models/player/face/masks/2.png"),
+    include_bytes!("../../../assets/models/player/face/masks/3.png"),
+    include_bytes!("../../../assets/models/player/face/masks/4.png"),
+    include_bytes!("../../../assets/models/player/face/masks/5.png"),
+    include_bytes!("../../../assets/models/player/face/masks/6.png"),
+    include_bytes!("../../../assets/models/player/face/masks/7.png"),
+];
+pub(super) const EYE_NAMES: [&str; 8] = [
+    "classic",
+    "cute_glint",
+    "kawaii_star",
+    "playful_wink",
+    "happy_crescent",
+    "neon_focus",
+    "neon_curious",
+    "soft_sleepy",
+];
+pub(super) const MOUTH_NAMES: [&str; 6] = [
+    "classic",
+    "soft_smile",
+    "cat_smile",
+    "tiny_open",
+    "playful",
+    "smirk",
+];
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CharacterVertex {
@@ -116,7 +168,8 @@ impl CharacterAsset {
         }
         for vertex in &self.vertices {
             if vertex.joint >= JOINT_COUNT
-                || vertex.material > 1
+                || vertex.material > 2
+                || (vertex.material > 0 && vertex.joint != 1)
                 || !finite(&vertex.position)
                 || !finite(&vertex.normal)
                 || !finite(&vertex.uv)

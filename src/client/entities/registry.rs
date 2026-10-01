@@ -118,6 +118,7 @@ impl EntityClientRegistry {
                 }
                 avatars.push(VisualAvatar {
                     character_pose: [0.0; 3],
+                    character_recipe: None,
                     animation: definition.animation,
                     model: crate::render::AvatarModel::Registered(entity.entity_type),
                     pose: [pose.yaw, 0.0, 0.0, 0.0],

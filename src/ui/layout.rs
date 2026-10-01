@@ -38,7 +38,7 @@ impl UiLayout {
             UiScreen::Container | UiScreen::Actions => {}
             UiScreen::Admin => layout.add_admin(),
             UiScreen::Pause => layout.add_pause(),
-            UiScreen::Settings | UiScreen::Graphics => layout.add_settings(),
+            UiScreen::Settings | UiScreen::Graphics | UiScreen::Character => layout.add_settings(),
         }
         layout
     }

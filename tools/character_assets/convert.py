@@ -60,6 +60,16 @@ class Glb:
         require(all(math.isfinite(x) for row in values for x in row), "nonfinite accessor")
         return values
 
+    def validate_material(self):
+        require(len(self.doc.get("materials", [])) == 1, "one source material required")
+        material = self.doc["materials"][0]
+        pbr = material.get("pbrMetallicRoughness", {})
+        require(pbr.get("baseColorTexture", {}).get("index") == 0, "base color texture zero required")
+        require(material.get("alphaMode", "OPAQUE") == "OPAQUE", "only opaque source materials supported")
+        require(not material.get("emissiveTexture") and material.get("emissiveFactor", [0, 0, 0]) == [0, 0, 0], "emissive materials unsupported")
+        require(self.doc.get("textures") == [{"sampler": 0, "source": 0}], "one embedded texture required")
+        require(self.doc.get("samplers") == [{"magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071}], "nearest clamp sampler required")
+
     def png(self):
         image, = self.doc["images"]
         require(image["mimeType"] == "image/png", "PNG texture required")
@@ -72,15 +82,21 @@ def transform(matrix, vector, w):
     return [sum(matrix[column * 4 + row] * vector[column] for column in range(3)) + matrix[12 + row] * w for row in range(3)]
 
 
-def convert():
-    body = Glb(DEST / "source/player.glb")
-    hair = Glb(DEST / "source/hair.glb")
+def convert(dest=DEST):
+    dest = Path(dest)
+    body = Glb(dest / "source/player.glb")
+    hair = Glb(dest / "source/hair.glb")
+    undercut = Glb(dest / "source/hair_undercut.glb")
+    sources = [(body, 0), (hair, 1), (undercut, 2)]
+    for glb, _ in sources:
+        glb.validate_material()
     skin, = body.doc["skins"]
     ids = skin["joints"]
     require(len(ids) == 7, "expected seven authored joints")
     bind = body.accessor(skin["inverseBindMatrices"])
     require(len(bind) == 7, "expected seven inverse bind matrices")
-    require(len(hair.doc["nodes"]) == 1 and not hair.doc["nodes"][0].get("children"), "hair must be one identity socket mesh")
+    for glb in [hair, undercut]:
+        require(len(glb.doc["nodes"]) == 1 and not glb.doc["nodes"][0].get("children"), "hair must be one identity socket mesh")
     nodes = body.doc["nodes"]
     parents = {child: parent for parent, node in enumerate(nodes) for child in node.get("children", [])}
     joints = []
@@ -92,7 +108,7 @@ def convert():
         joints.append({"name": node["name"], "parent": parent, "translation": node.get("translation", [0, 0, 0]), "rotation": node.get("rotation", [0, 0, 0, 1])})
     head = next(i for i, joint in enumerate(joints) if joint["name"] == "head")
     vertices, indices = [], []
-    for glb, material in [(body, 0), (hair, 1)]:
+    for glb, material in sources:
         for node in glb.doc["nodes"]:
             if "mesh" not in node:
                 continue
@@ -102,6 +118,7 @@ def convert():
                 require(not any(node is glb.doc["nodes"][child] for parent in glb.doc["nodes"] for child in parent.get("children", [])), "mesh parent transforms unsupported")
             for primitive in glb.doc["meshes"][node["mesh"]]["primitives"]:
                 require(primitive.get("mode", 4) == 4 and not primitive.get("targets"), "only rigid triangles supported")
+                require(primitive.get("material", 0) == 0, "only source material zero supported")
                 attrs = primitive["attributes"]
                 positions, normals, uvs = [glb.accessor(attrs[name]) for name in ["POSITION", "NORMAL", "TEXCOORD_0"]]
                 require(len(positions) == len(normals) == len(uvs), "attribute length mismatch")
@@ -137,9 +154,10 @@ def convert():
         clips.append({"name": animation["name"], "duration": max(c["times"][-1] for c in channels), "looping": animation.get("extras", {}).get("loop", False), "channels": channels})
     require({c["name"] for c in clips} == {"idle", "walk", "crouch", "tool_use_left", "tool_use_right"}, "unexpected clip set")
     result = {"version": 1, "joints": joints, "vertices": vertices, "indices": indices, "clips": clips}
-    (DEST / "character.json").write_text(json.dumps(result, separators=(",", ":"), allow_nan=False) + "\n")
-    (DEST / "body.png").write_bytes(body.png())
-    (DEST / "hair.png").write_bytes(hair.png())
+    (dest / "character.json").write_text(json.dumps(result, separators=(",", ":"), allow_nan=False) + "\n")
+    (dest / "body.png").write_bytes(body.png())
+    (dest / "hair.png").write_bytes(hair.png())
+    (dest / "hair_undercut.png").write_bytes(undercut.png())
     print(f"Converted {len(vertices)} vertices, {len(indices)//3} triangles, {len(joints)} joints, {len(clips)} clips")
 
 

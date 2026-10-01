@@ -5,6 +5,8 @@ use super::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
+mod material;
+use material::texture;
 
 const JOINTS: usize = super::character_asset::JOINT_COUNT;
 
@@ -16,6 +18,14 @@ struct Vertex {
     joint: u32,
     uv: [f32; 2],
     material: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct CharacterInstance {
+    actor: AvatarInstance,
+    recipe: [u8; 4],
+    iris: [u8; 4],
 }
 
 pub(super) struct CharacterRenderer {
@@ -77,7 +87,7 @@ impl CharacterRenderer {
         };
         let instances = dynamic(
             "bounded character instances",
-            (MAX_AVATARS * std::mem::size_of::<AvatarInstance>()) as u64,
+            (MAX_AVATARS * std::mem::size_of::<CharacterInstance>()) as u64,
             wgpu::BufferUsages::VERTEX,
         );
         let joints = dynamic(
@@ -85,12 +95,12 @@ impl CharacterRenderer {
             (MAX_AVATARS * JOINTS * 64) as u64,
             wgpu::BufferUsages::STORAGE,
         );
-        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+        let texture_entry = |binding, dimension| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Texture {
                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                view_dimension: wgpu::TextureViewDimension::D2,
+                view_dimension: dimension,
                 multisampled: false,
             },
             count: None,
@@ -108,8 +118,11 @@ impl CharacterRenderer {
                     },
                     count: None,
                 },
-                texture_entry(1),
-                texture_entry(2),
+                texture_entry(1, wgpu::TextureViewDimension::D2),
+                texture_entry(2, wgpu::TextureViewDimension::D2),
+                texture_entry(4, wgpu::TextureViewDimension::D2),
+                texture_entry(5, wgpu::TextureViewDimension::D2Array),
+                texture_entry(6, wgpu::TextureViewDimension::D2Array),
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -129,6 +142,30 @@ impl CharacterRenderer {
             queue,
             super::character_asset::HAIR_PNG,
             "character hair atlas",
+        );
+        let undercut = texture(
+            device,
+            queue,
+            super::character_asset::HAIR_UNDERCUT_PNG,
+            "character undercut atlas",
+        );
+        let face_layers: Vec<_> = std::iter::once(super::character_asset::CLEAN_FACE_PNG)
+            .chain(super::character_asset::EYE_PNGS)
+            .chain(super::character_asset::MOUTH_PNGS)
+            .collect();
+        let faces = material::array(
+            device,
+            queue,
+            &face_layers,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            "character face features",
+        );
+        let masks = material::array(
+            device,
+            queue,
+            &super::character_asset::IRIS_MASK_PNGS,
+            wgpu::TextureFormat::Rgba8Unorm,
+            "character iris shade masks",
         );
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("nearest character pixels"),
@@ -154,6 +191,18 @@ impl CharacterRenderer {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&undercut),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&faces),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(&masks),
+                },
             ],
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -166,7 +215,7 @@ impl CharacterRenderer {
             immediate_size: 0,
         });
         let vertex_attributes = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32, 8 => Float32x2, 11 => Uint32];
-        let instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4];
+        let instance_attributes = wgpu::vertex_attr_array![3 => Float32x3, 4 => Uint8x4, 5 => Uint8x4, 6 => Uint8x4, 7 => Float32x4, 9 => Float32x3, 10 => Uint8x4, 12 => Uint8x4, 13 => Uint8x4];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("instanced authored characters"),
             layout: Some(&pipeline_layout),
@@ -181,7 +230,7 @@ impl CharacterRenderer {
                         attributes: &vertex_attributes,
                     }),
                     Some(wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<AvatarInstance>() as u64,
+                        array_stride: std::mem::size_of::<CharacterInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &instance_attributes,
                     }),
@@ -239,9 +288,17 @@ impl CharacterRenderer {
         for avatar in avatars
             .iter()
             .take(MAX_AVATARS)
-            .filter(|a| a.model == AvatarModel::Player)
+            .filter(|a| a.model == AvatarModel::Player && a.character_recipe.is_some())
         {
-            instances.push(AvatarInstance::from(avatar));
+            let recipe = avatar.character_recipe.expect("filtered character recipe");
+            let iris = recipe
+                .iris
+                .map_or([0; 4], |rgb| [rgb[0], rgb[1], rgb[2], 1]);
+            instances.push(CharacterInstance {
+                actor: AvatarInstance::from(avatar),
+                recipe: [recipe.eyes, recipe.mouth, recipe.hair, 0],
+                iris,
+            });
             let pose = match self.preview_clip {
                 Some((clip, time)) => self.asset.sample(clip, time),
                 None => self.asset.sample_blended(
@@ -276,50 +333,6 @@ impl CharacterRenderer {
         pass.draw_indexed(0..self.asset.indices.len() as u32, 0, 0..self.count);
         self.asset.indices.len() * self.count as usize / 3
     }
-}
-
-/// Keep native atlas dimensions/UVs and pixel edges. Never use terrain resizing.
-fn texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    png: &[u8],
-    label: &str,
-) -> wgpu::TextureView {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().expect("builtin character PNG header");
-    let mut bytes = vec![0; reader.output_buffer_size().expect("bounded builtin PNG")];
-    let info = reader
-        .next_frame(&mut bytes)
-        .expect("builtin character PNG pixels");
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => bytes[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => bytes[..info.buffer_size()]
-            .chunks_exact(3)
-            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
-            .collect(),
-        _ => panic!("builtin character PNG must be RGB/RGBA"),
-    };
-    let texture = device.create_texture_with_data(
-        queue,
-        &wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
-                width: info.width,
-                height: info.height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        },
-        wgpu::util::TextureDataOrder::LayerMajor,
-        &rgba,
-    );
-    texture.create_view(&Default::default())
 }
 
 #[cfg(test)]

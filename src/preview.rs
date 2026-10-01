@@ -300,6 +300,22 @@ pub fn render_character_preview(path: &Path, clip: &str, time: f32) -> Result<()
     ))
 }
 
+/// Three simultaneous authoritative-recipe render inputs, with distinct features.
+pub fn render_character_styles(path: &Path) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(render_previews(
+        vec![PreviewOutput {
+            path: path.to_owned(),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        }],
+        (0, 0),
+        PreviewScene::CharacterStyles,
+    ))
+}
+
 /// One world setup, then deterministic 30 Hz native animation frames.
 pub fn render_character_motion(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
@@ -505,6 +521,7 @@ enum PreviewScene {
     Drops(DropPhase),
     Avatars,
     Characters(&'static str, f32),
+    CharacterStyles,
     Creature(crate::content::EntityTypeId, Option<[f32; 3]>),
     MossbunMotion(u32),
     Cave { lamp: bool, bounced: bool },
@@ -682,6 +699,7 @@ async fn render_previews_at(
         | PreviewScene::Chests
         | PreviewScene::Avatars
         | PreviewScene::Characters(..)
+        | PreviewScene::CharacterStyles
         | PreviewScene::Creature(..)
         | PreviewScene::Block(_)
         | PreviewScene::MossbunMotion(_) => {
@@ -701,12 +719,20 @@ async fn render_previews_at(
                 Vec3::new(2.8, 1.7, 4.1)
             } else if matches!(scene, PreviewScene::Hoppers | PreviewScene::Chests) {
                 Vec3::new(5.0, 3.8, 7.0)
-            } else if matches!(scene, PreviewScene::Avatars | PreviewScene::Characters(..)) {
+            } else if matches!(
+                scene,
+                PreviewScene::Avatars
+                    | PreviewScene::Characters(..)
+                    | PreviewScene::CharacterStyles
+            ) {
                 Vec3::new(5.5, 3.1, 7.0)
             } else {
                 Vec3::new(4.0, 2.6, 5.0)
             };
-            if matches!(scene, PreviewScene::Characters(..)) {
+            if matches!(
+                scene,
+                PreviewScene::Characters(..) | PreviewScene::CharacterStyles
+            ) {
                 (target + Vec3::new(0.0, 1.8, 5.0), target + Vec3::Y * 0.9)
             } else {
                 (target + offset, target)
@@ -722,7 +748,10 @@ async fn render_previews_at(
         position: camera_position,
         yaw: direction.z.atan2(direction.x),
         pitch: direction.y.asin(),
-        fov_y_radians: if matches!(scene, PreviewScene::Characters(..)) {
+        fov_y_radians: if matches!(
+            scene,
+            PreviewScene::Characters(..) | PreviewScene::CharacterStyles
+        ) {
             45f32.to_radians()
         } else {
             70f32.to_radians()
@@ -753,6 +782,7 @@ async fn render_previews_at(
             | PreviewScene::Block(_)
             | PreviewScene::MossbunMotion(_)
             | PreviewScene::Characters(..)
+            | PreviewScene::CharacterStyles
             | PreviewScene::Kilns
             | PreviewScene::Hoppers
             | PreviewScene::Chests
@@ -1121,12 +1151,14 @@ async fn render_previews_at(
         scene,
         PreviewScene::Avatars
             | PreviewScene::Characters(..)
+            | PreviewScene::CharacterStyles
             | PreviewScene::Creature(..)
             | PreviewScene::MossbunMotion(_)
     ) {
         let mut visuals = [
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_recipe: None,
                 animation: Default::default(),
                 id: 1,
                 model: if matches!(
@@ -1156,6 +1188,7 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_recipe: None,
                 animation: Default::default(),
                 id: 2,
                 model: if matches!(
@@ -1196,6 +1229,7 @@ async fn render_previews_at(
             },
             render::VisualAvatar {
                 character_pose: [0.0; 3],
+                character_recipe: None,
                 animation: Default::default(),
                 id: 3,
                 model: render::AvatarModel::Player,
@@ -1218,11 +1252,35 @@ async fn render_previews_at(
         }
         if let PreviewScene::Characters(clip, time) = scene {
             avatar_renderer.preview_character_clip(clip, time);
+            for visual in &mut visuals {
+                visual.character_recipe = Some(Default::default());
+            }
             // Front, three-quarter and back use the same production skinning path.
             visuals[0].pose[0] = 0.0;
             visuals[1].pose[0] = -0.7;
             visuals[2].pose[0] = std::f32::consts::PI;
             character_visuals = Some(visuals);
+        }
+        if matches!(scene, PreviewScene::CharacterStyles) {
+            avatar_renderer.preview_character_clip("idle", 0.35);
+            for (visual, recipe) in visuals.iter_mut().zip([
+                crate::appearance::CharacterRecipe::default(),
+                crate::appearance::CharacterRecipe {
+                    hair: 2,
+                    eyes: 5,
+                    mouth: 5,
+                    iris: Some([36, 220, 95]),
+                },
+                crate::appearance::CharacterRecipe {
+                    hair: 0,
+                    eyes: 2,
+                    mouth: 2,
+                    iris: Some([235, 80, 155]),
+                },
+            ]) {
+                visual.character_recipe = Some(recipe);
+                visual.pose[0] = 0.0;
+            }
         }
         avatar_renderer.set(&queue, &visuals);
     }
@@ -1618,6 +1676,7 @@ fn action_preview_panel() -> bloxgloom_host_api::actions::Panel {
 
 fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFrame<'static> {
     UiFrame {
+        character: None,
         package_ui: None,
         join_address: None,
         join_progress: None,
@@ -1682,12 +1741,14 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
             UiScreen::Pause => Some(UiControl::Resume),
             UiScreen::Settings => Some(UiControl::Increase(SettingId::FieldOfView)),
             UiScreen::Graphics => Some(UiControl::Increase(SettingId::Exposure)),
+            UiScreen::Character => Some(UiControl::ApplyCharacter),
         },
     }
 }
 
 fn measure_ui_prepare(ui_renderer: &mut ui::UiRenderer, queue: &wgpu::Queue) {
     let frame = UiFrame {
+        character: None,
         package_ui: None,
         join_address: None,
         join_progress: None,

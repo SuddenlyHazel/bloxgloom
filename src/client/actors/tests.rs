@@ -2,6 +2,7 @@ use super::*;
 fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
         character_pose: [0.0; 3],
+        character_recipe: None,
         animation: Default::default(),
         model: AvatarModel::Registered(crate::content::MOSSBUN_ENTITY_TYPE),
         pose: [0.0; 4],
@@ -86,6 +87,10 @@ fn player_walk_blends_from_replicated_distance_then_stops_without_drift() {
     let stopped = track.update(player(0.7), now + STEP * 80);
     assert_eq!(stopped.position, player(0.7).position);
     assert!(stopped.character_pose[2] < 0.001);
+    assert!(
+        (stopped.pose[0] - std::f32::consts::FRAC_PI_2).abs() < 0.01,
+        "idle player must retain movement heading"
+    );
     assert!(stopped.character_pose[1] > walking.character_pose[1]);
     let phase = stopped.character_pose[0];
     assert_eq!(

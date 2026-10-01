@@ -29,6 +29,7 @@ pub(crate) struct VisualAvatar {
     pub pose: [f32; 4],
     /// Separate from package pose offsets: walk seconds, idle seconds, walk blend.
     pub character_pose: [f32; 3],
+    pub character_recipe: Option<crate::appearance::CharacterRecipe>,
     pub airborne: bool,
     pub id: u64,
     pub position: Vec3,
@@ -255,7 +256,10 @@ impl AvatarRenderer {
                     .iter()
                     .take(MAX_AVATARS)
                     .filter(|a| {
-                        a.model == *model && !(self.authored && *model == AvatarModel::Player)
+                        a.model == *model
+                            && !(self.authored
+                                && *model == AvatarModel::Player
+                                && a.character_recipe.is_some())
                     })
                     .map(AvatarInstance::from),
             );
@@ -287,4 +291,11 @@ impl AvatarRenderer {
         }
         triangles + character_triangles
     }
+}
+
+pub(crate) fn character_eye_names() -> &'static [&'static str; 8] {
+    &character_asset::EYE_NAMES
+}
+pub(crate) fn character_mouth_names() -> &'static [&'static str; 6] {
+    &character_asset::MOUTH_NAMES
 }

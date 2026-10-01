@@ -3,8 +3,8 @@ use super::*;
 #[test]
 fn authored_geometry_has_correct_scale_and_socket() {
     let asset = CharacterAsset::builtin();
-    assert_eq!(asset.vertices.len(), 576);
-    assert_eq!(asset.indices.len(), 576);
+    assert_eq!(asset.vertices.len(), 1080);
+    assert_eq!(asset.indices.len(), 1080);
     let matrices = asset.sample("rest", 0.0);
     let body: Vec<_> = asset
         .vertices
@@ -20,7 +20,7 @@ fn authored_geometry_has_correct_scale_and_socket() {
         asset
             .vertices
             .iter()
-            .filter(|v| v.material == 1)
+            .filter(|v| v.material > 0)
             .all(|v| v.joint == 1)
     );
     assert_eq!(asset.joints[1].name, "head");
@@ -92,7 +92,7 @@ fn hair_stays_rigidly_attached_through_crouch_and_tool_rotation() {
     ] {
         let animated = asset.sample(clip, time);
         let head_delta = animated[1] * rest[1].inverse();
-        for vertex in asset.vertices.iter().filter(|v| v.material == 1) {
+        for vertex in asset.vertices.iter().filter(|v| v.material > 0) {
             let local = Vec3::from_array(vertex.position);
             let expected = head_delta.transform_point3(rest[1].transform_point3(local));
             let actual = animated[vertex.joint].transform_point3(local);
@@ -115,4 +115,105 @@ fn malformed_assets_fail_before_rendering() {
     asset.clips[0].channels[0].times[1] = -1.0;
     assert!(asset.validate().is_err());
     assert!(CharacterAsset::parse("{}").is_err());
+}
+
+#[test]
+fn both_tools_return_to_rest_and_idle_walk_transitions_stay_finite() {
+    let asset = CharacterAsset::builtin();
+    let rest = asset.sample("rest", 0.0);
+    for name in ["tool_use_left", "tool_use_right"] {
+        let clip = asset.clips.iter().find(|clip| clip.name == name).unwrap();
+        let last = asset.sample(name, clip.duration);
+        assert_eq!(last, asset.sample(name, 600.0), "one-shots must not loop");
+        for (actual, expected) in last.iter().zip(rest) {
+            assert!(
+                actual.abs_diff_eq(expected, 0.00001),
+                "tool should return to rest"
+            );
+        }
+    }
+    let idle = asset.clips.iter().find(|clip| clip.name == "idle").unwrap();
+    for (a, b) in asset
+        .sample("idle", 0.1)
+        .iter()
+        .zip(asset.sample("idle", idle.duration + 0.1))
+    {
+        assert!(a.abs_diff_eq(b, 0.00001));
+    }
+    for step in 0..=100 {
+        let matrices =
+            asset.sample_blended(step as f32 / 30.0, step as f32 / 40.0, step as f32 / 100.0);
+        assert!(
+            matrices
+                .iter()
+                .all(|matrix| matrix.is_finite() && matrix.determinant() > 0.0)
+        );
+    }
+}
+
+#[test]
+fn authored_material_ids_and_face_layers_stay_bounded() {
+    let asset = CharacterAsset::builtin();
+    for (material, expected) in [(0, 216), (1, 360), (2, 504)] {
+        assert_eq!(
+            asset
+                .vertices
+                .iter()
+                .filter(|v| v.material == material)
+                .count(),
+            expected
+        );
+    }
+    let mut invalid = asset.clone();
+    invalid.vertices[0].material = 3;
+    assert!(invalid.validate().is_err());
+    let mut detached = asset;
+    let hair = detached
+        .vertices
+        .iter_mut()
+        .find(|v| v.material == 2)
+        .unwrap();
+    hair.joint = 0;
+    assert!(detached.validate().is_err());
+    assert_eq!(EYE_PNGS.len(), EYE_NAMES.len());
+    assert_eq!(EYE_PNGS.len(), IRIS_MASK_PNGS.len());
+    assert_eq!(MOUTH_PNGS.len(), MOUTH_NAMES.len());
+    assert_eq!(
+        EYE_NAMES,
+        [
+            "classic",
+            "cute_glint",
+            "kawaii_star",
+            "playful_wink",
+            "happy_crescent",
+            "neon_focus",
+            "neon_curious",
+            "soft_sleepy"
+        ]
+    );
+    assert_eq!(
+        MOUTH_NAMES,
+        [
+            "classic",
+            "soft_smile",
+            "cat_smile",
+            "tiny_open",
+            "playful",
+            "smirk"
+        ]
+    );
+    for bytes in std::iter::once(CLEAN_FACE_PNG)
+        .chain(EYE_PNGS)
+        .chain(MOUTH_PNGS)
+        .chain(IRIS_MASK_PNGS)
+    {
+        let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+        let reader = decoder.read_info().unwrap();
+        assert_eq!((reader.info().width, reader.info().height), (32, 32));
+        assert_eq!(reader.info().color_type, png::ColorType::Rgba);
+        assert_eq!(reader.info().bit_depth, png::BitDepth::Eight);
+    }
+    let decoder = png::Decoder::new(std::io::Cursor::new(HAIR_UNDERCUT_PNG));
+    let reader = decoder.read_info().unwrap();
+    assert_eq!((reader.info().width, reader.info().height), (32, 32));
 }

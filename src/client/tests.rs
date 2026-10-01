@@ -226,11 +226,11 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
         Config::default(),
         path.clone(),
     );
+    let authored = app.config.authored_characters;
     app.change_setting(SettingId::Characters, true);
-    assert!(app.config.authored_characters);
+    assert_eq!(app.config.authored_characters, !authored);
     app.change_setting(SettingId::Characters, false);
-    assert!(!app.config.authored_characters);
-    app.change_setting(SettingId::Characters, true);
+    assert_eq!(app.config.authored_characters, authored);
     app.change_setting(SettingId::Exposure, true);
     app.change_setting(SettingId::BloomStrength, true);
     let exposure = app.config.exposure;

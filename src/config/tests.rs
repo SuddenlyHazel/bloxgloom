@@ -160,12 +160,12 @@ fn profile_is_generated_once_and_survives_reload() {
 }
 
 #[test]
-fn authored_characters_is_opt_in_and_roundtrips_without_changing_palettes() {
-    assert!(!Config::default().authored_characters);
+fn authored_rendering_defaults_on_and_explicit_classic_roundtrips() {
+    assert!(Config::default().authored_characters);
     let config = Config {
-        authored_characters: true,
+        authored_characters: false,
         ..Config::default()
     };
     assert_eq!(parse_config(&config.serialize()), config);
-    assert!(!parse_config("version=1\nauthored_characters=invalid\n").authored_characters);
+    assert!(parse_config("version=1\nauthored_characters=invalid\n").authored_characters);
 }

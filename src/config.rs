@@ -50,7 +50,7 @@ impl Default for Config {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
-            authored_characters: false,
+            authored_characters: true,
             exposure: 1.0,
             post_processing: true,
             bloom_enabled: true,

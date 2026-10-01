@@ -1,6 +1,8 @@
 //! Voxel renderer. CPU meshing is independent of the window/GPU and can run on workers.
 
 mod avatars;
+mod character_preview;
+pub(crate) use character_preview::CharacterPreview;
 pub(crate) mod custom;
 mod drops;
 pub(crate) mod effects;
@@ -36,7 +38,10 @@ use crate::world::ChunkKey;
 use mesh::{GpuMesh, GpuSubmesh};
 use visibility::create_depth;
 
-pub(crate) use avatars::{AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar};
+pub(crate) use avatars::{
+    AvatarModel, AvatarRenderer, MAX_AVATARS, VisualAvatar, character_eye_names,
+    character_mouth_names,
+};
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;
 pub(crate) use drops::mesh_with_catalog as mesh_dropped_items_with_catalog;
@@ -252,7 +257,7 @@ impl Renderer {
         );
         let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
             create_target_pipeline(&device, format);
-        let game_ui = game_ui::GameUi::new(&window, &device, format);
+        let game_ui = game_ui::GameUi::new(&window, &device, &queue, format, &catalog);
         let drop_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("dropped item vertices"),
             size: drops::MAX_VERTEX_BYTES,

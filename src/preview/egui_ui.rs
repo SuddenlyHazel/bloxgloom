@@ -40,6 +40,13 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         .request_device(&wgpu::DeviceDescriptor::default())
         .await?;
     let mut renderer = egui_wgpu::Renderer::new(&device, FORMAT, Default::default());
+    let mut character_preview =
+        render::CharacterPreview::new(&device, &queue, crate::content::catalog());
+    let character_texture = renderer.register_native_texture(
+        &device,
+        &character_preview.sampled,
+        wgpu::FilterMode::Nearest,
+    );
     let default_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/packages");
     let package_snapshot = crate::server::PackageSnapshot::discover(root.unwrap_or(&default_root))?;
     let package_resources = Arc::clone(
@@ -116,6 +123,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
+        (UiScreen::Character, "character"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Package, "package"),
         (UiScreen::Package, "package-updated"),
@@ -180,6 +188,21 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         };
         let preview = preview_frame(screen_kind, None, 1.0);
         let frame = UiFrame {
+            character: (screen_kind == UiScreen::Character).then_some(crate::ui::CharacterPanel {
+                cosmetics: [0; 4],
+                recipe: Some(crate::appearance::CharacterRecipe {
+                    hair: 2,
+                    eyes: 5,
+                    mouth: 5,
+                    iris: Some([36, 220, 95]),
+                }),
+                can_apply: true,
+                pending: false,
+                status: "Unapplied changes",
+                clip: 1,
+                time: 0.2,
+                preview: Some(character_texture),
+            }),
             package_ui: (screen_kind == UiScreen::Package).then_some(package),
             join_address: matches!(screen_kind, UiScreen::Joining | UiScreen::JoinFailed)
                 .then_some("127.0.0.1:25565"),
@@ -250,6 +273,9 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("egui preview"),
         });
+        if let Some(panel) = frame.character {
+            character_preview.encode(&queue, &mut encoder, panel);
+        }
         renderer.update_buffers(&device, &queue, &mut encoder, &paint, &screen);
         {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

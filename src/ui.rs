@@ -28,3 +28,5 @@ pub(crate) fn join_action_rect(width: u32, height: u32, scale: f32) -> UiRect {
 #[cfg(test)]
 #[path = "ui/tests.rs"]
 mod tests;
+
+pub(crate) use types::CharacterPanel;

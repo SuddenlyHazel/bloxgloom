@@ -4,6 +4,7 @@ use super::Intent;
 #[cfg(test)]
 mod tests;
 
+mod character;
 mod join;
 use crate::{
     content::Catalog,
@@ -47,6 +48,7 @@ pub(super) fn draw(
                     .max_height(height - if compact { 24.0 } else { 44.0 })
                     .show(ui, |ui| match frame.screen {
                         UiScreen::Pause => pause(ui, intents),
+                        UiScreen::Character => character::draw(ui, frame, intents),
                         UiScreen::Settings | UiScreen::Graphics => settings(ui, frame, intents),
                         UiScreen::Actions => actions(ui, frame, intents),
                         UiScreen::Admin => admin(ui, frame, catalog, intents),
@@ -85,6 +87,7 @@ fn pause(ui: &mut egui::Ui, intents: &mut Vec<Intent>) {
     for (label, control) in [
         ("Resume", UiControl::Resume),
         ("Settings", UiControl::OpenSettings),
+        ("Character", UiControl::OpenCharacter),
         ("Commands", UiControl::OpenAdmin),
         ("Exit game", UiControl::Exit),
     ] {

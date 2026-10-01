@@ -668,6 +668,9 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             "time command requires durable dispatch",
         )),
         ClientMessage::SelectAppearance { palettes } => appearance::select(state, id, palettes),
+        ClientMessage::SelectCharacter { recipe } => {
+            appearance::select_character(state, id, recipe)
+        }
         ClientMessage::Hello { .. } => {
             Err(io::Error::new(ErrorKind::InvalidData, "duplicate Hello"))
         }

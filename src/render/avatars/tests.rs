@@ -94,6 +94,17 @@ fn render(
     tint: [f32; 3],
     clip: Option<(&'static str, f32)>,
 ) -> Vec<u8> {
+    render_recipe(device, queue, catalog, selection, tint, clip, None)
+}
+fn render_recipe(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    catalog: &Catalog,
+    selection: [u8; 4],
+    tint: [f32; 3],
+    clip: Option<(&'static str, f32)>,
+    recipe: Option<crate::appearance::CharacterRecipe>,
+) -> Vec<u8> {
     let camera = glam::camera::rh::proj::directx::orthographic(-1.4, 1.4, -0.1, 1.9, 0.1, 10.0)
         * glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 0.0, 4.0), Vec3::ZERO, Vec3::Y);
     let camera = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -113,6 +124,11 @@ fn render(
     );
     let avatars = [(-0.65, [0; 4]), (0.65, selection)].map(|(x, cosmetics)| VisualAvatar {
         character_pose: [0.0; 3],
+        character_recipe: if x > 0.0 {
+            recipe.or_else(|| clip.map(|_| Default::default()))
+        } else {
+            clip.map(|_| Default::default())
+        },
         animation: Default::default(),
         model: AvatarModel::Player,
         pose: [0.0; 4],
@@ -269,5 +285,71 @@ fn authored_gpu_character_draws_textured_animated_geometry_and_instance_tint() {
     assert!(
         tinted.iter().map(|&n| u64::from(n)).sum::<u64>()
             < idle.iter().map(|&n| u64::from(n)).sum::<u64>()
+    );
+}
+
+#[test]
+fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let catalog = Catalog::builtins();
+    let render = |recipe| {
+        render_recipe(
+            &device,
+            &queue,
+            &catalog,
+            [0; 4],
+            [1.0; 3],
+            Some(("idle", 0.0)),
+            Some(recipe),
+        )
+    };
+    let default = crate::appearance::CharacterRecipe::default();
+    let original = render(default);
+    let tinted = render(crate::appearance::CharacterRecipe {
+        iris: Some([255, 0, 0]),
+        ..default
+    });
+    assert_ne!(original, tinted, "open irises must accept color");
+    for row in 0..HEIGHT as usize {
+        let start = row * WIDTH as usize * 4;
+        assert_eq!(
+            &original[start..start + WIDTH as usize * 2],
+            &tinted[start..start + WIDTH as usize * 2],
+            "neighbor recipe changed"
+        );
+        if row > 32 {
+            assert_eq!(
+                &original[start..start + WIDTH as usize * 4],
+                &tinted[start..start + WIDTH as usize * 4],
+                "iris tint changed body pixels"
+            );
+        }
+    }
+    let closed = crate::appearance::CharacterRecipe { eyes: 4, ..default };
+    assert_eq!(
+        render(closed),
+        render(crate::appearance::CharacterRecipe {
+            iris: Some([255, 0, 0]),
+            ..closed
+        }),
+        "closed eyes must not be tinted"
+    );
+    assert_ne!(
+        original,
+        render(crate::appearance::CharacterRecipe { hair: 0, ..default })
+    );
+    assert_ne!(
+        original,
+        render(crate::appearance::CharacterRecipe { hair: 2, ..default })
+    );
+    assert_ne!(
+        original,
+        render(crate::appearance::CharacterRecipe {
+            eyes: 5,
+            mouth: 5,
+            ..default
+        })
     );
 }

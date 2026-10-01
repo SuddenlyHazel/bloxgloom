@@ -6,6 +6,8 @@ use crate::protocol::{PublicEntity, PublicEntityChange};
 use crate::server::client_bundle::{CacheKey, ClientBundle};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+#[path = "appearance/characters.rs"]
+mod characters;
 #[path = "appearance/operations.rs"]
 mod operations;
 

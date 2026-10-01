@@ -25,6 +25,7 @@ fn authored_toggle_and_population_churn_reset_bounded_gpu_state() {
         model: AvatarModel::Player,
         pose: [0.0; 4],
         character_pose: [0.0; 3],
+        character_recipe: Some(Default::default()),
         airborne: false,
         id: 1,
         position: glam::Vec3::ZERO,
@@ -56,3 +57,5 @@ fn authored_toggle_and_population_churn_reset_bounded_gpu_state() {
     renderer.set(&queue, &avatars, true);
     assert_eq!(renderer.count, 1);
 }
+
+mod tint;

@@ -6,6 +6,7 @@ authored character kit. The original game-facing GLBs are kept under `source/`:
 - `player.glb`: refined-crouch six-cuboid player, seven-joint rigid skin, with the
   existing styled **cute_glint / soft_smile** face baked into its 512 × 256 atlas
 - `hair.glb`: **tousled_crop** rigid head attachment, independent 32 × 32 texture
+- `hair_undercut.glb`: **side_swept_undercut**, another short head-local attachment
 
 These are the supplied project assets, not downloaded third-party models. The
 body geometry, UVs, five clips, and painted texture pixels are retained. No
@@ -41,7 +42,8 @@ positive source X. The names are reversed relative to the textured -Z face:
 These mappings were checked against the source clip channels. Do not rename
 channels by guessing from legacy bone labels.
 
-Material 0 uses `body.png`; material 1 uses `hair.png`. Keep them independently
+Material 0 uses `body.png`; material 1 uses `hair.png`; material 2 uses
+`hair_undercut.png`. Only the selected hair material is drawn. Keep them independently
 sized, nearest-filtered, and sRGB-decoded. Neither uses emission. The character
 atlas must not pass through the terrain's 128 × 128 resampler.
 
@@ -50,24 +52,41 @@ Idle/walk loop; crouch clamps at its held final frame; tool clips finish at thei
 authored returned-to-rest pose. All are visual-only, with no gameplay root
 motion. The crouch clip does not change collision or create a crouch mechanic.
 
-This slice deliberately contains one short hairstyle and one baked face, not a
-creator UI, all 48 expression combinations, networked head look, clothing, or
-hair physics. Additional selections need a versioned appearance contract and
-bounded asset catalog before multiplayer use.
+## Native character editor and multiplayer
 
-## Try it in the native client
+Open **Pause → Character**. Choose Classic or Authored; authored selections expose
+three hair choices (none, tousled crop, side-swept undercut), eight eye styles,
+six mouths, and an optional RGB iris color. Untinted irises retain the original
+per-style artwork. Closed eyes are unaffected by tint; temple accents and all
+body pixels remain unchanged. Neon-looking details are painted, never emissive.
 
-Open **Settings → Graphics → Characters** and choose **AUTHORED**. The setting is
-local and saved as `authored_characters=true`; **CLASSIC** remains the default.
-The real replicated-player draw path uses the authored body, face and short hair,
-with movement-derived walk timing and a smooth idle/walk blend. As before, this
-first-person game does not draw your own body. Another connected player is needed
-to inspect the feature during gameplay. Registered creatures remain unchanged.
+The animated portrait uses the production skinning/material path. Its animation
+selector previews idle, walk, held crouch and both anatomical tool actions.
+Changing controls edits a local draft. **Apply** sends only a bounded recipe for
+the admitted session's player; “Saved” appears only after the authoritative own
+replica echoes it. Closing discards unapplied edits. Pending Apply is disabled
+and survives closing/reopening; disconnect clears the local pending state.
 
-The authored base intentionally does not interpret the old skin/shirt/pants
-palette bytes as clothing. The server's appearance data and selection protocol
-are preserved, and choosing CLASSIC restores that presentation. This is a local
-rendering preview of the kit, not synchronized character customization.
+The server validates IDs, atomically persists the profile's full appearance, and
+replicates it to peers and late joiners. Reconnect and server restart restore the
+recipe. Identical retries are no-ops. Existing palette selection/Luau operations
+retain their three-color projection and preserve the authored recipe; choosing
+Classic makes those palettes visible again. No client chooses a target profile.
+
+**Settings → Graphics → Characters** remains a local rendering fallback. Authored
+rendering is enabled by default; a player whose recipe is Classic still uses the
+classic mesh. Existing explicit Classic config choices remain respected. Applying
+an authored selection also enables the local authored renderer.
+
+Wire version 18, player schema 2, exact asset/catalog fingerprinting and BGA2
+appearance saves keep IDs and pixels consistent. This prerelease deliberately
+starts default saves in **world-v19** (and world-v19-fixture); old appearance/save
+formats are rejected rather than silently migrated or discarded. Existing world
+folders are not modified by using the new default.
+
+This is a bounded builtin kit, not generic runtime glTF loading, uploaded atlases,
+clothing, physics hair, or a networked crouch/tool mechanic. First-person self-body
+rendering remains unchanged; use the native portrait to inspect your own model.
 
 For a repeatable headless native render (same production GPU pipeline):
 
@@ -81,3 +100,9 @@ Each image shows the kit from three angles in the lit world. Crouch and tool-use
 are inspectable authored clips here; gameplay does not yet replicate crouch or
 hand-action animation states, so the live path uses idle/walk only. Server
 movement, collisions, inventory and block interactions are unchanged.
+
+A repeatable two-second, 30 Hz walk sequence can be captured without rebuilding
+the world per frame:
+
+    cargo run -- character-motion-preview character-motion
+    ffmpeg -framerate 30 -i character-motion/%03d.png -pix_fmt yuv420p character-walk.mp4
