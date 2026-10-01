@@ -2,7 +2,7 @@
 
 This is the active reference for the player-services goal. The
 [gap assessment](../../LUAU-SCRIPTING-GAPS.md#2-player-and-lifecycle-hooks)
-records the completed agreed scope and deferred mechanics. VM lifetime, chat/combat, region hooks and save
+records the completed agreed scope and deferred mechanics. Chat/combat, region hooks and save
 converters are outside this work.
 
 ## Landed: exact identity and action queries
@@ -86,8 +86,8 @@ pre-Welcome protocol closes the connection without a dedicated rejection frame.
 
 Joined/Spawned queue after successful admission. Leaving/Left capture the final
 player view and session bytes without blocking disconnection or permitting a veto.
-Callbacks run in bounded fresh VMs on the server coordinator, independent of the
-socket reactor. Four queued callbacks are attempted per tick. Profile/inventory
+Callbacks run with fresh mutable module state in bounded runtimes on the server
+coordinator, independent of the socket reactor. Four queued callbacks are attempted per tick. Profile/inventory
 changes share one revision-fenced WAL record and become visible only after sync.
 Script errors, caught invalid host calls, oversized states and unsupported
 operations publish no partial reward or progress. Critical first-join behavior
@@ -151,8 +151,9 @@ movement, appearance or world-clock changes.
 Delivery occurs after WAL sync/publication on a separate observer worker, in
 frozen registration order. The queue holds 32 events; events exceeding 256 KiB
 or arriving under pressure can drop. Shutdown need not drain the queue, and
-restart never replays advisory observations. Each Luau callback uses a fresh
-bounded VM. An error or exhausted budget is logged and does not block a commit
+restart never replays advisory observations. Each registered Luau observer retains
+ephemeral module state in a bounded realm. An error resets that realm, is logged,
+and does not block a commit
 or poison later callbacks. Use lifecycle state plus atomic inventory decisions
 and durable profile deadlines for critical rewards/progression. Observer logs
 and presentation notifications cannot promise exactly-once delivery.
@@ -189,10 +190,12 @@ Inputs contain exact `profile`/`session`, honest `identity_trust`, and a readonl
 callbacks do not promise one invocation per intermediate commit. Public-state
 delivery contains no event for private inventory contents.
 
-All callbacks execute on a session-owned worker in fresh bounded VMs (8 MiB,
+All callbacks execute on a session-owned worker in retained bounded realms (8 MiB,
 10000 interrupts, 50 ms per invocation), including imports. An invalid host call,
 even when caught, refuses the entire local output; other packages and later events
-continue. Disconnect signals bypass the update/reply queues, so retirement never
+continue. A callback error retires its retained state; the next admitted event
+reinitializes it. Presentation and player-service workers have separate module
+state; see [VM lifetime](VM-LIFETIME.md). Disconnect signals bypass the update/reply queues, so retirement never
 waits on script execution or a full queue. An admitted callback may finish before
 the final disconnect hook, but its old replies cannot update a replacement session.
 Shutdown can interrupt final advisory hooks; server cleanup never relies on them.
@@ -418,7 +421,7 @@ Readonly queries and exact round trips retain dependencies without writing an
 unchanged inventory.
 
 An offline profile loads asynchronously through a bounded worker pool. While a
-load is pending, the whole candidate is deferred and retried in a fresh VM; partial
+load is pending, the whole candidate is deferred and retried with fresh module state; partial
 work is discarded. This also applies to an offline profile timer's actor inventory.
 A missing file uses the native empty inventory; a corrupt file rejects access and
 never silently replaces saved items. Committed overlays take precedence over

@@ -2,6 +2,8 @@
 
 The server audit callback logs committed inventory revisions through the readonly
 observer lane. It is advisory; first-join rewards use durable profile decisions.
+Its module-local `observed` counter demonstrates retained advisory state; it is
+reset by server restart or realm recovery and is not a count of durable commits.
 
 Run from the repository root with a fresh temporary save:
 
@@ -19,6 +21,15 @@ explicit public projection through SessionReady/PlayerStateChanged callbacks.
 Client disconnect callbacks run off the window thread, log the retired session,
 and cannot apply stale replies to a replacement connection. Private kit/session
 bytes are not delivered.
+
+The client controller caches formatted public labels and manually resumes a
+coroutine once per delivered snapshot. Enable
+`RUST_LOG=warn,bloxgloom=info,bloxgloom::script=debug` to see its `callbacks` count
+increase. Closing and reopening F6 does not retire the player-service worker;
+reconnect creates a new controller and starts at one. The coroutine retains no
+host context and does not run between callbacks. See the
+[VM lifetime contract](../../docs/modding/VM-LIFETIME.md) for realm boundaries,
+limits and reset behavior.
 
 Render the initial panel with:
 

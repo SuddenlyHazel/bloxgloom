@@ -32,6 +32,8 @@ impact on larger mods.
   currently bound callbacks; runtime validation remains authoritative.
 - [Runtime tools](RUNTIME-TOOLS.md): standard libraries, deterministic native
   randomness, coroutines and structured attempt diagnostics on server and client.
+- [VM lifetime](VM-LIFETIME.md): reused execution infrastructure, isolated
+  authoritative attempts, retained client/observer module state and reset rules.
 - [Generation](GENERATION.md): deterministic chunk contributors and seams.
 - [Player rules](PLAYER-RULES.md): startup-selected, negotiated body, movement,
   spawn and eye contract.

@@ -23,7 +23,7 @@ server, select a fresh save directory when content identity changes, and
 restart/reconnect. The client downloads and verifies the new artifact; no
 Rust recompilation is needed when running an already-built game binary.
 `RUST_LOG` controls structured stderr diagnostics; package/module errors retain
-source identity. Server callbacks run in fresh VMs, so persistent state belongs
+source identity. Authoritative server callbacks run with fresh module state, so persistent state belongs
 in the transaction or owner bytes rather than module globals.
 
 With script DEBUG enabled, downloaded client startup logs `Garden presentation prepared`

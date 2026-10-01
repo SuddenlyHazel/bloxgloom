@@ -90,10 +90,12 @@ ranges, prerelease suffixes and leading zeroes are unsupported.
   sees its own package and exact direct dependencies, subject to side rules.
   Servers cannot execute client modules; clients cannot import server modules.
 - Imported modules can export non-nil tables, functions or scalars. Initialization
-  is lazy and cached within one invocation. Cyclic initialization fails. Import
+  is lazy and cached within its execution realm. Cyclic initialization fails. Import
   nesting is limited to 32 modules.
-- Each invocation uses a fresh VM and import cache. Module globals do not persist
-  gameplay state between calls or retries. Imports share the invocation budget.
+- Execution lanes reuse bounded VMs and compiled code. Authoritative attempts use
+  fresh exports and closures; client and readonly observer realms can retain them.
+  Imports share the invocation budget. [VM lifetime](docs/modding/VM-LIFETIME.md)
+  defines the realm boundaries and reset contract. Module globals are readonly.
 
 Identifiers are 1–64 lowercase ASCII letters, digits, underscores or hyphens.
 Registered keys use `package:local_name` and normally belong to the declaring
@@ -412,7 +414,7 @@ scope, ownership and schema rules. The production gameplay context has a shared
 4096-operation budget. A rejected host operation poisons the plan even if caught
 with `pcall`. Successful staged effects still require host transaction admission;
 errors, stale reads or failed commits do not partially apply the script's effects.
-Retries get a fresh VM. See [bindings](src/server/script/gameplay/bindings.rs)
+Retries get fresh mutable module state. See [bindings](src/server/script/gameplay/bindings.rs)
 and [inventory services](src/server/script/gameplay/inventory.rs).
 
 ## General persistent block entities
@@ -721,8 +723,9 @@ binary argument bytes. The client supplies its current selected item or aimed
 block/entity and observed version. UI cannot provide target coordinates or an
 arbitrary entity ID. The server authorizes and commits the result, with applied
 or denied receipts. UI feedback also distinguishes unsent/pending requests.
-Each event uses a fresh bounded worker VM and explicit local state; invalid
-results do not partially mutate presentation.
+Events reuse a connection worker's bounded retained module realm. Explicit local
+state remains available; invalid results do not partially mutate presentation.
+See [VM lifetime](docs/modding/VM-LIFETIME.md) for reset behavior.
 
 See [the UI fixture](fixtures/packages/uidemo/),
 [block-target UI actions](fixtures/ui-target-actions/README.md),

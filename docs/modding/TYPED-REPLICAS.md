@@ -69,7 +69,8 @@ Its server callback still validates selected input, exact components, quantity
 and output capacity. Predictions do not authorize crafting.
 
 Arbitrary world queries, remote inventories, complete event histories,
-larger-package composition, VM reuse and save converters are outside this scope.
+larger-package composition and save converters are outside this scope. Retained
+replica callback state is described in [VM lifetime](VM-LIFETIME.md).
 
 ## Verification
 

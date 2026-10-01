@@ -79,7 +79,8 @@ module clock scripts/clock.luau
 ```
 
 `ScriptWorker::execute_package` runs the entry from an immutable discovered
-snapshot in a fresh, sandboxed Luau VM. Modules use `import("arithmetic:operations")`;
+snapshot in a bounded, sandboxed Luau runtime with fresh authoritative module
+state. Modules use `import("arithmetic:operations")`;
 only their own modules and direct dependencies are visible. Errors name the
 package/version/module. Sources and imports share one execution and memory
 budget. Filesystem access happens only during bounded discovery, off the window
@@ -132,7 +133,7 @@ module returns a chunk function using chunk coordinates,
 and `set_block`. `random_at(x,y,z,salt?)` returns a deterministic sample in
 `[0,1)`; its optional integer salt is `0..4294967295` and defaults to zero.
 The host consumes the exact world seed internally. Bump the declared revision whenever its output changes;
-`world.meta` rejects incompatible restarts. Scripts run in fresh bounded VMs
+`world.meta` rejects incompatible restarts. Scripts run in isolated bounded attempts
 on generation workers and never write neighboring chunks directly.
 Local packages may register up to 32 semantic actions under the actions capability:
 

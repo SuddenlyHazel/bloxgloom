@@ -70,7 +70,8 @@ the same bounded runtime as other callbacks.
 No arbitrary table serialization occurs. The private codec is exact binary
 identity; optional `Validate` can enforce a package's own byte schema on proposed
 and recovered values. Native round-trip validation and public projection can
-invoke callbacks more than once. Each invocation gets a fresh bounded VM and
+invoke callbacks more than once. Each invocation gets fresh mutable module state
+in a bounded runtime, and
 all deterministic random seed inputs come from its captured event. Logs describe
 attempts, not receipts; callbacks must not perform external side effects.
 

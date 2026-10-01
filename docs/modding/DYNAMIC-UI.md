@@ -124,5 +124,5 @@ host receipt chrome distinguishes pending, denied and applied requests.
 UI trees and values reset on reconnect/document cycling; closing and reopening
 retains the active document. This contract does not expose direct egui/HTML,
 a general animation API, arbitrary GPU access, mouse/gamepad bindings or modifier
-chords. Imported models, VM reuse, hot reload and save converters remain separate
+chords. Imported models, hot reload and save converters remain separate
 work.

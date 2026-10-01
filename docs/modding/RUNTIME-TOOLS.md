@@ -1,9 +1,10 @@
 # Luau runtime tools
 
 Server startup, generation, gameplay, owner systems, machines and creatures,
-plus client startup and presentation, share this runtime surface. Each invocation
-still gets a fresh bounded VM. This work does not change VM ownership, reuse,
-callback scheduling or persisted state.
+plus client startup and presentation, share this runtime surface. Execution lanes
+reuse bounded VMs and compiled code; authoritative attempts retain fresh mutable
+module state while supported client and readonly observer realms retain module
+locals. See [VM lifetime](VM-LIFETIME.md) for ownership, reset and isolation.
 
 ## Libraries
 
@@ -14,7 +15,7 @@ callback scheduling or persisted state.
 | `math` | Complete bundled library, including ordinary calculations, constants, `random` and `randomseed` |
 | `utf8`, `bit32` | Unicode code-point operations and 32-bit bit operations |
 | `buffer`, `vector`, `integer` | Binary buffers, native vector calculations and native 64-bit integer arithmetic |
-| `coroutine` | Create, resume, yield and wrap within the current invocation |
+| `coroutine` | Create, resume, yield and wrap; retained realms can resume across callbacks |
 | `debug` | Luau's `info` and `traceback` introspection |
 | `os` | `difftime` only |
 | `log`, `print` | Structured attempt diagnostics through the engine's `tracing` writer |
@@ -46,16 +47,21 @@ local exact = integer.fromstring("9007199254740993")
 assert(tostring(integer.add(exact, integer.create(1))) == "9007199254740994")
 ```
 
-Coroutines are local control flow. A coroutine cannot survive the invocation or
-become a background task; use existing durable host scheduling for future work.
+Coroutines are manually driven control flow. In retained realms they can survive
+callbacks, but cannot keep an expired host context alive. Authoritative attempts
+discard them on completion. No automatic background task scheduler is supplied;
+use existing durable host scheduling for future gameplay work.
 VM memory, interrupt and time ceilings apply to coroutine execution too. Catching
 an execution-limit error with `pcall` or `coroutine.resume` does not make the
 invocation eligible to publish effects.
 
 ## Deterministic randomness
 
-The host seeds Luau's native PRNG **before any entry or imported module runs**.
-Module initializers and callbacks share that invocation's stream. The native
+For authoritative attempts, the host seeds Luau's native PRNG **before any entry
+or imported module runs**. Their initializers and callbacks share the attempt's
+stream. Retained module initialization instead uses a stable identity seed, and
+each callback reseeds from its own captured inputs, independently of initializer
+draws. The native
 `math.random` and `math.randomseed` implementations and argument semantics remain
 available. Authors can deliberately reseed:
 
@@ -169,4 +175,5 @@ Client host contract **7**, on wire version **17**, includes this
 runtime. Older client contracts are rejected before bundle execution. Use matching
 client/server binaries. Source edits still affect frozen content fingerprints;
 use a fresh garden save when testing the updated fixture. This change introduces
-no world-format conversion or VM reuse.
+no world-format conversion. [VM lifetime](VM-LIFETIME.md) describes interpreter
+reuse and the retained-state contract; hot reload remains separate.

@@ -1,8 +1,8 @@
 # Luau scripting gaps
 
 Current assessment: October 1, 2026, after Phase 8, runtime tools, player services,
-dynamic UI, anchored entities and typed client replicas. VM lifetime work below
-is a proposal for review; implementation has not started.
+dynamic UI, anchored entities, typed client replicas and the VM lifetime work
+recorded in section 6.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
@@ -10,8 +10,9 @@ scheduled work, UI and authored visuals. It still leaves gaps that limit larger
 mods and new game modes. This document records those gaps and their practical
 impact. Sections 1–4 record the completed runtime tools, player-services,
 dynamic UI and general anchored-entity goals. Typed client observations are also
-complete within their stated scope. Their limitations and the other sections
-remain open gaps.
+complete within their stated scope. VM reuse and retained advisory/client state
+are implemented in section 6; save continuity remains open. Their limitations
+and the other sections remain open gaps.
 
 See [SCRIPTING.md](SCRIPTING.md) for the implemented Luau API and
 [Phase 8 acceptance](docs/modding/PHASE-8-ACCEPTANCE.md) for verification and the
@@ -47,8 +48,9 @@ runtime on unchanged wire version 13.
 
 The [runtime tools reference](docs/modding/RUNTIME-TOOLS.md) documents exact
 library support, seed inputs, diagnostic budgets and attempt-versus-commit
-semantics. VM reuse, cross-invocation coroutine persistence, live debugging and
-hot reload remain separate work; this closure does not change VM lifetime.
+semantics. The subsequent VM lifetime work in section 6 adds interpreter reuse
+and retained manually resumed coroutines. Live debugging and hot reload remain
+separate work.
 
 Evidence: [shared runtime](src/server/script/runtime.rs),
 [diagnostics bridge](src/server/script/runtime/diagnostics.rs),
@@ -475,258 +477,90 @@ Evidence: [gameplay entities](SCRIPTING.md#persistent-gameplay-entities-and-exac
 
 ### 6. Development iteration and save continuity
 
-This area contains two related projects: runtime lifetime/state retention and
-save-compatibility diagnostics. VM lifetime is the proposed next project, ahead
-of larger-package composition. It does not require hot reload or save conversion.
+**VM lifetime and retained state are implemented.** Execution lanes now reuse
+bounded Luau interpreters and an immutable compiled-code cache. Authoritative
+attempts keep fresh mutable environments, module exports and closures, preserving
+retry and generation determinism. Supported client and readonly observer realms
+retain module locals, imported exports and manually resumed coroutines.
 
-#### Current VM lifetime and practical problems
+The complete author contract, runnable example and measurements are in
+[VM lifetime](docs/modding/VM-LIFETIME.md). Save continuity remains a separate gap.
 
-The shared runner creates a Luau VM for each invocation. It installs libraries,
-deterministic random state, diagnostics and limits, constructs an invocation-local
-import cache, evaluates the entry module, invokes the returned callback, and
-then drops the VM. Imports share cached exports within that invocation, but the
-next invocation evaluates those modules again. Reusing the immutable package
-snapshot does not reuse its Lua globals, exported closures or heap.
+#### Implemented runtime ownership and state policy
 
-Some surrounding Rust workers and session objects already live across calls.
-Their lifetime should not be confused with the lifetime of the Lua interpreter.
-Gameplay adapters also borrow their host context through `mlua::scope`; moving
-the VM into a long-lived field does not make those borrowed contexts reusable.
-
-This has several costs for mod authors and the engine:
-
-- Module-local tables, closure state and globals disappear after each call.
-  Authors cannot naturally retain an animation controller, compiled lookup
-  table, UI controller or coroutine between callbacks in those Lua objects.
-- VM setup, module compilation/evaluation and allocation repeat. Their actual
-  share of callback cost needs measurement; reuse is not a measured speedup yet.
-- A module initializer is currently part of each invocation. Changing its
-  lifetime changes observable behavior, including random draws and diagnostics.
-- Long-lived workers do not currently provide a clear script-level initialization,
-  reset and teardown contract for a retained runtime.
-
-Persistent gameplay state is already supported through host-owned entity,
-profile and scheduled-owner state; package-owned session state also exists.
-The missing feature is useful Lua/runtime state retention and efficient execution,
-not the ability to save quest progress at all.
-
-#### Proposed goal and author experience
-
-Replace invocation-owned VM allocation with bounded runtimes owned by the
-appropriate execution lanes. Give authors documented retained module state in
-supported non-authoritative callback realms, while preserving isolated,
-deterministic attempts for authoritative gameplay. Define initialization,
-reset, resource accounting, host-context lifetime and coroutine behavior before
-making retained state part of the public runtime contract.
-
-Two improvements must be distinguished explicitly:
-
-| Improvement | Author-visible promise |
+| Callback class | Implemented lifetime/state contract |
 | --- | --- |
-| VM and compiled-code reuse | Calls can reuse interpreter infrastructure without inheriting another attempt's mutable state |
-| Retained module state | Locals, tables and closures survive successive callbacks in a named runtime realm, until a defined reset |
+| Startup registration | Bounded initialization per world installation/client connection; registration authority ends after startup |
+| Generation and authoritative actions, admission, owner jobs, machines and entities | Execution-lane VM/compiled-code reuse with fresh mutable state and imports for each attempt |
+| Readonly committed observers | Serialized entry-scoped ephemeral state on the world observer lane; advisory delivery is neither durable nor exactly once |
+| Client UI, replica and visual callbacks | Retained entry-scoped state on connection-owned presentation workers |
+| Client player-service callbacks | Retained handler-entry state on the connection's separate player-service worker |
 
-For example, a client presentation module could retain its selected recipe,
-animation tracks or a lookup cache in ordinary locals. Closing its UI should not
-silently destroy connection-scoped module state. Reconnect or switching servers
-must start a new realm. Existing explicit UI state remains available; authors
-should know when it is preferable to ordinary module locals.
+Different entry modules, callback worker families, worlds and connections do not
+share mutable dependency exports. Worker assignment cannot define authoritative
+state. Client code continues to execute off the window/network threads. Closing
+an authored UI panel alone does not retire its connection worker; reconnect and
+server switching replace the connection's realms.
 
-For authoritative callbacks, `local requests = 0` followed by incrementing it
-inside a retryable action cannot be treated as committed state. A rejected
-attempt might increment it, and a retry would then see a different value. Gameplay
-progress and decisions continue to use captured host-owned state with revision
-checks and atomic effects. A reused VM alone does not solve that transaction.
+Existing host-owned profile, entity, scheduled-owner and package session state
+remain the authoritative state mechanism. Mutable Lua heaps are not transactional
+snapshots, durable progress or commit receipts. Additional world/owner transient
+stores still require their own representation, revisions and atomic commit design.
 
-#### Runtime realms, ownership and execution lanes
+#### Initialization, randomness and host lifetime
 
-A **realm** is a documented lifetime and isolation boundary for a package's
-execution state. Its identity must include the server world or client connection,
-side, frozen installation identity, entry package and callback lifetime policy.
-An owner/session identity belongs in the key only when the contract actually
-offers state with that scope.
+Retained entry modules initialize lazily once per realm, with a stable identity
+seed. Each callback reseeds native randomness independently from captured inputs.
+Imports evaluated during entry initialization use its stable initialization
+stream. A dependency first imported inside a later callback instead initializes
+from that callback's current stream and then retains its exports. Authoritative
+attempts preserve the previous initializer/callback shared stream and retry seeds.
+Import visibility, source attribution, cycle detection and bounded depth remain.
 
-Recommended ownership rules:
+Contexts and staged outputs are invocation-bound. Saved host methods are revoked
+at completion; resuming an old coroutine cannot regain an expired context or act
+on another player. Copied readonly data can remain as historical data. Cached
+logging helpers resolve the current callback's diagnostics, correlation and
+executing source. No background task scheduler is implied by a retained thread.
 
-- Keep each physical VM confined to its owning execution lane. Serialize calls
-  that share mutable module state; do not share one global VM behind a lock.
-  Client Lua continues to execute off the window/network threads.
-- Separate startup, generation, authoritative decisions, committed observers and
-  client presentation/lifecycle contexts. A server capability must not become
-  available merely because its module was loaded into a client or readonly realm.
-- Define state by logical realm, not by whichever worker happens to receive a
-  job. Worker-local caches are an implementation detail, not a package-wide state
-  API. Scheduling an owner on another worker must not change authoritative output.
-- Keep dependency exports isolated by consuming realm unless sharing is an
-  explicitly supported immutable contract. A mutable dependency singleton must
-  not accidentally connect otherwise independent packages or sessions.
-- Bound both runtime count and total resident memory. A VM for every entity,
-  player/package combination or callback is not an acceptable default allocation
-  strategy without a corresponding admission and memory model.
+Manually resumed coroutines can survive supported retained callbacks. Each resume
+uses the current invocation's limits. Authoritative attempts cannot carry a
+coroutine across a transaction boundary; durable delayed gameplay still uses the
+host scheduler. Automatic waits, signals, promises and wakeups remain deferred.
 
-The implementation should retain focused modules for realm ownership, imports,
-attempt bindings, accounting and lifecycle. Reuse the existing execution lanes
-where their ownership fits; identify adapters that need routing changes rather
-than adding an independent scheduler around every script call.
+#### Resource accounting, failure and cleanup
 
-#### Recommended state policy by callback class
+Every invocation resets instruction, wall-time, diagnostic and output counters
+and failure latches. Default Lua heaps reserve 8 MiB each against a process-wide
+256 MiB reservation ceiling. Client worker families admit eight entry realms;
+observer lanes admit 32. Admission fails visibly rather than silently evicting
+state. Immutable compiled caches independently bound source/code to 128 entries
+and 4 MiB per engine; their eviction only causes recompilation.
 
-| Callback class | Proposed lifetime/state contract |
-| --- | --- |
-| Startup registration | Bounded server initialization per world installation and client initialization per connection; registration authority ends when startup finishes |
-| Terrain generation | Reuse VM/compiled code, with isolated mutable attempts; output cannot depend on chunk request order or worker assignment |
-| Actions, decisions, owner jobs, entity/device callbacks and admission decisions | Reuse execution infrastructure; preserve attempt isolation and host-owned transactional state |
-| Readonly committed observers | Retained ephemeral locals may support diagnostics/caches; advisory delivery is not durable or exactly once |
-| Client UI, replica, visual and player-service callbacks | Retain module state in defined connection/package realms, with serialization and explicit teardown |
+Ordinary errors and limit failures retire retained state and discard partial
+host outputs. Subsequent calls initialize fresh state, with reset diagnostics;
+the shared retained engine increments its generation. Successful isolated
+attempts release imports, registry references, environments and temporary state
+before returning infrastructure to their lane. Uncertain failed runtimes are
+released. Collection runs on workers; teardown releases references without
+requiring successful script finalizers. Frozen installations remain frozen.
 
-Client UI and player-service callbacks currently use different workers. Before
-promising that they share a package's globals, decide whether to consolidate
-their execution or document separate realms with explicit communication. Two
-independent copies of a module must not be advertised as one shared singleton.
+#### Acceptance and examples
 
-Reuse existing package-owned session state where authoritative transient state
-is needed. If a demonstrated world/owner scope needs an additional host-owned
-transient store, specify its data representation, bounds, revisions, commit
-ordering and restart reset behavior separately. It must not publish updates from
-failed attempts or become a second, unrelated persistence system.
+The [welcome fixture](fixtures/player-lifecycle/README.md) demonstrates a retained
+client label cache and manually resumed coroutine, plus an ephemeral readonly
+observer counter. These illustrate runtime state rather than replacing durable
+first-join rewards, profile revisions or existing action receipts.
 
-An arbitrary mutable Lua heap is not a transaction snapshot. Freezing an export
-table does not freeze scalar upvalues in its functions; copying tables does not
-restore closures, aliases, threads or host userdata. Do not claim general mutable
-server module state is rollback-safe without a design that covers those cases.
-
-#### Module initialization, imports and deterministic randomness
-
-Cache source or compiled chunks before attempting to cache live authoritative
-exports. Isolated callback environments and invocation-local import results can
-preserve the current retry semantics while the physical VM remains alive. Live
-export/closure caching belongs in retained-state realms unless a sound immutable
-module contract has been established.
-
-Stateful realms should initialize a module once per realm and retain its exports.
-Specify lazy/eager initialization, import cycles, failed-initializer caching,
-dependency ownership and reset ordering. Initializers should not capture the
-first player's action context or gain authority to submit effects for that action.
-Startup registration is its own explicit initialization contract.
-
-Preserve deterministic seeding for authoritative attempts, including retries,
-recaptured inputs and generation. Reset random state at the defined attempt
-boundary rather than allowing a previous callback to advance the next one's RNG.
-Budget failures, logging and unrelated package work must not perturb its draws.
-
-Retained-state module initialization needs a separate stable realm/module seed
-and documented callback random behavior. Today an initializer may consume random
-draws before the callback; evaluating it once changes both its values and the
-callback's draw sequence. Treat this as an author-visible contract decision,
-not an incidental consequence of adding a cache. Decide defaults and opt-in/version
-behavior before migrating existing callback classes to retained state.
-
-Keep the current import namespace, dependency visibility, source attribution and
-bounded cycle/depth checks. Cache keys must include the frozen source identity;
-an old server connection or installation cannot supply another realm's exports.
-
-#### Host-context lifetime and coroutine behavior
-
-Per-invocation host contexts, staged effects, captured snapshots and diagnostic
-correlation must be rebound for each call. A cached function must never retain a
-live borrowed Rust context from an earlier invocation. Define a revocable context
-generation: saved context objects/methods must fail after their invocation ends,
-rather than access an expired borrow or act on the next player's context.
-
-Authors may retain copied readonly data as historical data, within memory limits.
-Such data is not a fresh world view or an authorization token. Logging helpers
-that survive initialization must resolve the current invocation's correlation
-and executing module rather than retain the initializer's identity forever.
-
-Keeping a VM alive makes retaining a coroutine object possible; it does not
-create a task scheduler. The recommended initial scope is manually resumed
-coroutines in supported retained-state realms, with the current callback's
-instruction/time budget covering every resume. Suspending one cannot extend a
-borrowed host context's lifetime.
-
-Authoritative attempts must not yield across a transaction/receipt boundary.
-Durable delayed work continues to use the existing host scheduler. Host-managed
-`wait`, signals, promises and automatic coroutine wakeups require a separately
-specified scheduler, cancellation and budget contract; they are not implied by
-this first milestone. On realm teardown, retained threads and references are
-released and can no longer submit commands for the departed session.
-
-#### Limits, failures, garbage collection and reset
-
-Retain per-call instruction, wall-time, diagnostic and staged-effect budgets.
-Every invocation starts with fresh counters and failure latches, including calls
-made after a previous limit violation. Protected calls and coroutine resumes
-must not turn a host rejection or exhausted budget into accepted effects.
-
-Long-lived heaps also need resident-memory and aggregate process budgets.
-Separate retained module/cache/state accounting from temporary callback pressure;
-do not let garbage accumulate until the next unrelated call takes the blame.
-Measure garbage-collection cost and schedule bounded work on execution workers,
-with no collector work in the window draw path.
-
-Specify which ordinary errors leave a realm usable and which failures require a
-reset. Instruction exhaustion, memory pressure and worker failure must release
-attempt contexts and partial effects. If retained module state can be partially
-mutated before an error, document whether it survives or the realm resets; output
-batch rollback does not automatically roll back ordinary Lua tables.
-
-Attempt cleanup must release environments, import registry references, temporary
-threads and scoped host bindings before reuse. A runtime whose isolation cannot
-be restored after a failure should be discarded and rebuilt, with an explicit
-reason, rather than returned to a pool in an uncertain state.
-
-Stateless compiled-code caches may be evicted and rebuilt. Stateful realms must
-not silently lose module locals through an arbitrary cache eviction. Define
-admission rejection or a visible reset notification with a reason, new realm
-generation and deterministic reinitialization. Reconnect, server switch, world
-shutdown, package replacement and worker recovery all need explicit policies.
-Cleanup must be bounded and cannot depend on a script successfully running a
-finalizer. Frozen packages remain frozen during play; no hot reload is added here.
-
-#### Proposed implementation order and acceptance
-
-1. Inventory all shared-runner adapters and execution lanes. Record present VM
-   creation/module-evaluation counts, callback latency, allocation/heap behavior
-   and contention under representative action, generation and client workloads.
-2. Define the realm identity, callback-class state policy, initialization/random
-   contract and reset behavior. Resolve whether client callback families share
-   one realm and how readonly observer state is owned.
-3. Introduce worker-owned VM/compiled-code reuse while preserving authoritative
-   attempt isolation. Centralize reusable setup and fresh attempt bindings; keep
-   unrelated gameplay adapters in their focused modules.
-4. Add retained modules to the supported client/readonly realms. Demonstrate a
-   client controller/cache and manually resumed coroutine surviving callbacks,
-   while reconnect and reset produce a fresh realm.
-5. Audit host-context revocation, imports, RNG, budgets, memory/GC and failures.
-   Deliver actionable diagnostics identifying realm, package/module, callback,
-   attempt and reset reason. Finish editor definitions and the runtime reference.
-6. Verify behavior, measure the resulting tradeoffs, update this document with
-   exact acceptance evidence and refresh Graphify. Further server transient-state
-   APIs or automatic task scheduling require their own explicit scope decision.
-
-Acceptance needs useful regressions and runnable examples covering:
-
-- Equivalent authoritative inputs producing equivalent effects despite unrelated
-  calls, failed/retried attempts, different worker assignments or cold/warm caches.
-- Generation remaining independent of chunk request order and parallel scheduling.
-- Retained module locals and exports surviving the documented callbacks, with
-  package/dependency/session isolation and predictable initializer counts.
-- An expired saved context, stale session handle or resumed old coroutine never
-  acquiring authority over the next invocation or a replacement connection.
-- Fresh instruction/time/diagnostic budgets after ordinary errors and limit
-  failures, and no partial host effects escaping failed callbacks.
-- Heap pressure, eviction/reset and shutdown releasing registry keys, threads and
-  borrowed resources without unbounded growth or hanging cleanup.
-- Real nonblocking-listener actions, joins, reconnects and disconnects with an
-  isolated save, proving durable rewards/inventories and existing receipts still
-  behave correctly. Client examples exercise actual presentation workers.
-
-Compare cold startup and warm callback latency separately, including p95/p99,
-module evaluations, memory high-water marks, GC cost and worker contention.
-Exercise mixed gameplay load so a faster microbenchmark cannot conceal worse
-movement/action latency. The static world-render benchmark does not measure VM
-reuse. Run relevant workspace tests, formatting, strict Clippy and fixture Luau
-analysis, and inspect production UI/visual examples where behavior changes.
+The opt-in VM benchmark records cold setup, reusable interpreter and retained
+callback p50/p95/p99, initializer counts and post-collection heap; production
+runner measurements include per-call budget rebinding and cleanup. The
+[measurement reference](docs/modding/VM-LIFETIME.md#runnable-example-and-measurement)
+states exactly what each benchmark includes. Static world-render timings do not
+measure VM reuse. Regression coverage exercises attempt isolation, retained
+locals/imports, context expiry, deterministic RNG, budget failures, realm resets
+and worker lifecycle. Final verification evidence is recorded with the runtime
+implementation rather than treating a microbenchmark speed ratio as completion.
 
 #### Save continuity remains a separate follow-up
 
@@ -789,9 +623,10 @@ and [snapshot limits](SCRIPTING.md#runtime-delivery-and-save-compatibility).
 
 ## Suggested priority
 
-1. VM lifetime and retained runtime state, using the proposed scope in section 6.
-2. Larger-package composition, driven by real mods.
-3. Additional motion, audio and richer presentation contracts.
+1. Larger-package composition, driven by real mods.
+2. Additional motion, audio and richer presentation contracts.
+
+VM lifetime and retained runtime state are implemented in section 6.
 
 Compatibility diagnostics should improve alongside those changes. Imported
 models, hot reload and native fire migration remain deferred; save conversion
