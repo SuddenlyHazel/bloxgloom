@@ -148,6 +148,21 @@ impl Replicas {
         }
     }
 
+    pub(super) fn owned_appearance(
+        &self,
+        owned: Option<u64>,
+    ) -> Option<crate::appearance::AppearanceState> {
+        let avatar = self.avatars.get(&owned?)?;
+        Some(crate::appearance::AppearanceState {
+            palettes: [
+                avatar.cosmetics[0],
+                avatar.cosmetics[1],
+                avatar.cosmetics[2],
+            ],
+            character: avatar.character_recipe,
+        })
+    }
+
     pub(super) fn visual_avatars(
         &self,
         camera: glam::Vec3,

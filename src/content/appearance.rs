@@ -56,6 +56,14 @@ impl Catalog {
             .copied()
     }
 
+    pub(crate) fn valid_appearance_state(
+        &self,
+        appearance: crate::appearance::AppearanceState,
+    ) -> bool {
+        self.valid_appearance(appearance.legacy())
+            && appearance.character.is_none_or(|recipe| recipe.valid())
+    }
+
     pub(crate) fn valid_appearance(&self, appearance: [u8; 4]) -> bool {
         appearance[3] == 0
             && (0..3).all(|part| self.appearance_color(part, appearance[part]).is_some())

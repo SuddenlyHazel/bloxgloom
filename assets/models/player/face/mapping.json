@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "size": [
+    32,
+    32
+  ],
+  "head_front_atlas_rect": [
+    32,
+    32,
+    32,
+    32
+  ],
+  "atlas_size": [
+    512,
+    256
+  ],
+  "mask_encoding": "RGBA alpha selects iris; gray 128 is base color, lower shades toward black, higher toward white",
+  "eyes": [
+    {
+      "id": 0,
+      "name": "classic",
+      "file": "eyes/0.png"
+    },
+    {
+      "id": 1,
+      "name": "cute_glint",
+      "file": "eyes/1.png"
+    },
+    {
+      "id": 2,
+      "name": "kawaii_star",
+      "file": "eyes/2.png"
+    },
+    {
+      "id": 3,
+      "name": "playful_wink",
+      "file": "eyes/3.png"
+    },
+    {
+      "id": 4,
+      "name": "happy_crescent",
+      "file": "eyes/4.png"
+    },
+    {
+      "id": 5,
+      "name": "neon_focus",
+      "file": "eyes/5.png"
+    },
+    {
+      "id": 6,
+      "name": "neon_curious",
+      "file": "eyes/6.png"
+    },
+    {
+      "id": 7,
+      "name": "soft_sleepy",
+      "file": "eyes/7.png"
+    }
+  ],
+  "mouths": [
+    {
+      "id": 0,
+      "name": "classic",
+      "file": "mouths/0.png"
+    },
+    {
+      "id": 1,
+      "name": "soft_smile",
+      "file": "mouths/1.png"
+    },
+    {
+      "id": 2,
+      "name": "cat_smile",
+      "file": "mouths/2.png"
+    },
+    {
+      "id": 3,
+      "name": "tiny_open",
+      "file": "mouths/3.png"
+    },
+    {
+      "id": 4,
+      "name": "playful",
+      "file": "mouths/4.png"
+    },
+    {
+      "id": 5,
+      "name": "smirk",
+      "file": "mouths/5.png"
+    }
+  ],
+  "sha256": {
+    "clean.png": "9e137fb425e73c030a4bcb26a91e752bc1d43869a6271ce661b4764d43122ad3",
+    "eyes/0.png": "3941814e20a8c37d17233f4e321a51bce251b4eaf37e0f3b404b953323c54346",
+    "masks/0.png": "df265410c06e6b39fa2d1aab7e42df4b177d4bf65df678121c7b44320d5d33b0",
+    "eyes/1.png": "e05ae91d9c18d0a894c9a79d061ab614679f240cf3eaedd2da7104a7a6fe855a",
+    "masks/1.png": "9d3f853cfd0a944582ba37381bef4b637fe200f837a3ef1d53566ae59296c09d",
+    "eyes/2.png": "20938257c229902af1fadb75602eb1a02a9c1cad575cfc967770fd18801ca85c",
+    "masks/2.png": "858e00a1f03f6b9b98cb909803c06513427963fb391940060fe763d344cabbfc",
+    "eyes/3.png": "e635b85e8494777478e69be1997024e7139464ec2ec1b921bc44ed4d61862b6c",
+    "masks/3.png": "b175e72214b30af321fc393d0853834acab3d7f04b5f8aa0482e22789e21a953",
+    "eyes/4.png": "2c41c0d095ae454939a4d44236e8b9a887f941bcc251027b27f542ed43b2f84c",
+    "masks/4.png": "b0775cba09eadf2fde241b35daa28cdcd03af6d23e99e0decd32b42f13f6d220",
+    "eyes/5.png": "51757a2e8781b592c1c10fcd69c012d353789b19fe517e31ffdc8635ce0915f8",
+    "masks/5.png": "9996e75357eec504dc5dbfe37b5e83033404c3189e40fbe5d4548c33fedef894",
+    "eyes/6.png": "3a907dde56a1aea77125f062f78182a5891463f4afc7a1af93e66441c557ecd9",
+    "masks/6.png": "9996e75357eec504dc5dbfe37b5e83033404c3189e40fbe5d4548c33fedef894",
+    "eyes/7.png": "bca73a5285a1f6d54f10450aa2c65651ffcc63f2b2f6a28e3e9a7a08fd0a911a",
+    "masks/7.png": "fa5eb7121f610d004c1f47d0d2c3ed19a3d2e31fdfb19efb7343437bce27a59a",
+    "mouths/0.png": "5316befaed1decbee28db2fd14835525bf5ca54d2663058061563de85ac286ed",
+    "mouths/1.png": "de1c1b43b6fad1967915f9fbf20940095cd18f8d19f28f63488cabf14d9a0d4f",
+    "mouths/2.png": "1b32de6cd61fb02665341a5b12de8018a5b39cf772057de151958d63d9ad95bd",
+    "mouths/3.png": "244db41dd140fb618bcbbfdb65494bc7cee3ea6e3452547a26c16222cf037d3e",
+    "mouths/4.png": "d56cff2272c7eab97f9b2e0ac850f77527b436c994dab2943d2a9bdcd018e2ad",
+    "mouths/5.png": "2f7f95f7a1f18cac41a7390ade2d11dd55747d74d05b5330e601890ac0be6f3b"
+  }
+}

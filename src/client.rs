@@ -29,6 +29,7 @@ const MAX_OUTSTANDING_ACTIONS: usize = 128;
 const MAX_INCOMING_PER_FRAME: usize = 32;
 const INCOMING_FRAME_BUDGET: Duration = Duration::from_millis(2);
 
+mod character;
 pub(crate) mod drops;
 mod fire;
 use drops::DropAnimator;
@@ -116,7 +117,7 @@ fn escape_screen(screen: UiScreen) -> UiScreen {
         | UiScreen::Admin
         | UiScreen::Package
         | UiScreen::Pause => UiScreen::Playing,
-        UiScreen::Settings => UiScreen::Pause,
+        UiScreen::Settings | UiScreen::Character => UiScreen::Pause,
         UiScreen::Graphics => UiScreen::Settings,
         UiScreen::Joining | UiScreen::JoinFailed => screen,
     }
@@ -306,6 +307,7 @@ struct ClientApp {
     drop_animator: DropAnimator,
     fire_animator: FireAnimator,
     actor_animator: actors::ActorAnimator,
+    character_editor: character::CharacterEditor,
     kiln_target: Option<([i32; 3], u64)>,
     kiln_source: Option<u8>,
     action_choices: Vec<actions::ActionChoice>,
@@ -391,6 +393,7 @@ impl ClientApp {
             inventory: Inventory::default(),
             fire_animator: FireAnimator::new(),
             actor_animator: actors::ActorAnimator::default(),
+            character_editor: character::CharacterEditor::default(),
             kiln_target: None,
             kiln_source: None,
             action_choices: Vec::new(),
@@ -475,6 +478,10 @@ impl ClientApp {
     fn set_screen(&mut self, screen: UiScreen) {
         if let Some(renderer) = &mut self.renderer {
             renderer.clear_game_ui_intents();
+        }
+        if screen == UiScreen::Character && self.screen != UiScreen::Character {
+            self.character_editor
+                .open(self.replicas.owned_appearance(self.owned_entity_id));
         }
         self.screen = screen;
         if screen != UiScreen::Admin {
@@ -568,6 +575,9 @@ impl ClientApp {
     fn change_setting(&mut self, setting: SettingId, increase: bool) {
         let sign = if increase { 1.0 } else { -1.0 };
         match setting {
+            SettingId::Characters => {
+                self.config.authored_characters = !self.config.authored_characters
+            }
             SettingId::PostProcessing => self.config.post_processing = !self.config.post_processing,
             SettingId::Bloom => self.config.bloom_enabled = !self.config.bloom_enabled,
             SettingId::Exposure => {
@@ -635,6 +645,20 @@ impl ClientApp {
             UiControl::InventorySlot(_) => {}
             UiControl::Resume => self.set_screen(UiScreen::Playing),
             UiControl::OpenSettings => self.set_screen(UiScreen::Settings),
+            UiControl::OpenCharacter => self.set_screen(UiScreen::Character),
+            UiControl::ApplyCharacter => {
+                if self.screen == UiScreen::Character && !self.disconnected {
+                    self.character_editor
+                        .observe(self.replicas.owned_appearance(self.owned_entity_id));
+                    if let Some(recipe) = self.character_editor.apply() {
+                        if recipe.is_some() {
+                            self.config.authored_characters = true;
+                            self.config_writer.request_save(&self.config);
+                        }
+                        self.queue_command(ClientMessage::SelectCharacter { recipe });
+                    }
+                }
+            }
             UiControl::ToggleSettingsPage => {
                 self.set_screen(if self.screen == UiScreen::Graphics {
                     UiScreen::Settings
@@ -760,11 +784,16 @@ impl ClientApp {
                 controls
             }
             UiScreen::Pause => {
-                let mut controls = vec![UiControl::Resume, UiControl::OpenSettings];
+                let mut controls = vec![
+                    UiControl::Resume,
+                    UiControl::OpenSettings,
+                    UiControl::OpenCharacter,
+                ];
                 controls.push(UiControl::OpenAdmin);
                 controls.push(UiControl::Exit);
                 controls
             }
+            UiScreen::Character => vec![UiControl::ApplyCharacter, UiControl::Back],
             UiScreen::Settings => vec![
                 UiControl::ToggleSettingsPage,
                 UiControl::Decrease(SettingId::Sensitivity),
@@ -790,6 +819,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
+                UiControl::Decrease(SettingId::Characters),
+                UiControl::Increase(SettingId::Characters),
                 UiControl::Back,
             ],
         }
@@ -1670,7 +1701,10 @@ impl ClientApp {
             self.status.as_ref().map(|(message, _)| message.as_str())
         };
         let binding_view = self.binding_view();
+        self.character_editor
+            .observe(self.replicas.owned_appearance(self.owned_entity_id));
         let ui = UiFrame {
+            character: (self.screen == UiScreen::Character).then(|| self.character_editor.panel()),
             package_ui: self.package_ui.as_ref(),
             join_address: None,
             join_progress: None,
@@ -1702,6 +1736,7 @@ impl ClientApp {
             }),
             settings: UiSettings {
                 post_processing: self.config.post_processing,
+                authored_characters: self.config.authored_characters,
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
                 bloom_strength: self.config.bloom_strength,
@@ -1779,6 +1814,7 @@ impl ClientApp {
             renderer.set_world_time(self.world_time.now());
             renderer.set_fire(&visual_fire);
             renderer.set_drops(&visual_drops);
+            renderer.set_authored_characters(self.config.authored_characters);
             renderer.set_avatars(&visual_avatars);
             renderer.configure_post(
                 self.config.post_processing,
@@ -1857,6 +1893,16 @@ impl ClientApp {
                         && let Some(session) = &mut self.package_ui
                     {
                         session.apply_egui(intent);
+                    }
+                }
+                crate::render::GameUiIntent::CharacterRecipe(recipe) => {
+                    if self.screen == UiScreen::Character {
+                        self.character_editor.edit(recipe);
+                    }
+                }
+                crate::render::GameUiIntent::CharacterClip(clip) => {
+                    if self.screen == UiScreen::Character {
+                        self.character_editor.clip(clip);
                     }
                 }
                 crate::render::GameUiIntent::JoinAddress(_)

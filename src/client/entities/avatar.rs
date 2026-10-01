@@ -27,8 +27,11 @@ fn project_avatar(entity: &PublicEntity) -> Result<Option<VisualAvatar>, ()> {
     let PublicEntityLocation::Mobile { position } = &entity.location else {
         return Err(());
     };
-    let cosmetics: [u8; 4] = entity.payload.as_slice().try_into().map_err(|_| ())?;
+    let appearance = crate::appearance::AppearanceState::decode(&entity.payload).ok_or(())?;
+    let cosmetics = appearance.legacy();
     Ok(Some(VisualAvatar {
+        character_pose: [0.0; 3],
+        character_recipe: appearance.character,
         animation: Default::default(),
         model: crate::render::AvatarModel::Player,
         pose: [0.0; 4],

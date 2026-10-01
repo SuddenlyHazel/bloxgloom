@@ -55,7 +55,7 @@ fn player(id: u64, revision: u64) -> PublicEntity {
         location: PublicEntityLocation::Mobile {
             position: [0.5, 2.0, 0.5],
         },
-        payload: vec![1, 2, 3, 4],
+        payload: vec![1, 2, 3, 0],
     }
 }
 
@@ -195,6 +195,8 @@ fn probe_avatar(entity: &PublicEntity) -> Result<Option<crate::render::VisualAva
         return Err(());
     }
     Ok(Some(crate::render::VisualAvatar {
+        character_pose: [0.0; 3],
+        character_recipe: None,
         animation: Default::default(),
         model: crate::render::AvatarModel::Player,
         pose: [0.0; 4],
@@ -831,4 +833,28 @@ fn cross_chunk_player_transfer_changes_avatar_only_after_full_group() {
         16.5
     );
     assert!(replicas.entities_in(key(0)).unwrap().is_empty());
+}
+
+#[test]
+fn player_projection_preserves_recipe_and_rejects_noncanonical_flags() {
+    let registry = EntityClientRegistry::builtins(&Catalog::builtins());
+    let recipe = crate::appearance::CharacterRecipe {
+        hair: 2,
+        eyes: 6,
+        mouth: 3,
+        iris: Some([25, 130, 240]),
+    };
+    let appearance = crate::appearance::AppearanceState {
+        palettes: [1, 2, 3],
+        character: Some(recipe),
+    };
+    let mut entity = player(1, 1);
+    entity.payload = appearance.encode();
+    let projected = registry
+        .project(&BTreeMap::from([(1, entity.clone())]))
+        .unwrap();
+    assert_eq!(projected[0].character_recipe, Some(recipe));
+    assert_eq!(projected[0].cosmetics, [1, 2, 3, 0]);
+    entity.payload[3] = 4;
+    assert!(registry.project(&BTreeMap::from([(1, entity)])).is_err());
 }
