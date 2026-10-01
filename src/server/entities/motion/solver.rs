@@ -392,6 +392,7 @@ fn integrate_inner(
     } else {
         let previous = match policy.pause {
             Pause::New(previous) => previous,
+            #[cfg(test)]
             _ => None,
         };
         result.resting = result
