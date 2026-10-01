@@ -83,6 +83,10 @@ pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, S
         .as_mut()
         .ok_or_else(invalid)?
         .set_player_identities(identities);
+    // Retire the inner canonical buffer before allocating the outer one.
+    // Nested compatibility wrappers must not add another full payload copy
+    // to the download + canonical + decoded-payload reservation.
+    drop(std::mem::take(&mut bundle.bytes));
     bundle.bytes = bytes.to_vec();
     bundle.key = expected;
     Ok(bundle)

@@ -43,6 +43,7 @@ use sha2::{Digest, Sha256};
 use super::manifest::{SourceSide, identifier, valid_version};
 use super::{MAX_ASSET_BYTES, MAX_ASSETS, MAX_MODULES, MAX_PACKAGES, MAX_SOURCE_BYTES};
 use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
+use crate::server::script::capacity::{MAX_ASSETS_PER_PACKAGE, MAX_MODULES_PER_PACKAGE};
 
 mod declarations;
 mod observers;
@@ -81,11 +82,8 @@ const STORAGE_FOOTPRINT_MAGIC: &[u8] = b"BGCLIENT\x26";
 const MACHINE_COMPONENT_MAGIC: &[u8] = b"BGCLIENT\x27";
 const MACHINE_ACTIVE_MAGIC: &[u8] = b"BGCLIENT\x28";
 const MACHINE_VARIANTS_MAGIC: &[u8] = b"BGCLIENT\x29";
-/// Payloads share the 4 MiB discovery budget. An extra MiB bounds all identity,
-/// dependency and record framing overhead (64 packages, 256 modules/256 assets).
-/// Two further MiB bound declarative startup metadata. Every record category
-/// also has per-package count/string bounds; runtime seeds/state are excluded.
-pub const MAX_BUNDLE_BYTES: usize = MAX_TOTAL_BYTES + 3 * 1024 * 1024;
+/// Canonical encoded bytes, including declaration metadata and wrapper framing.
+pub use crate::server::script::capacity::MAX_BUNDLE_BYTES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CacheKey([u8; 32]);
@@ -236,7 +234,13 @@ impl ClientBundle {
 
     pub fn decode_verify(bytes: &[u8], expected: CacheKey) -> Result<Self, ScriptError> {
         if bytes.len() > MAX_BUNDLE_BYTES {
-            return Err(invalid());
+            return Err(error(
+                "<client-bundle>",
+                format!(
+                    "encoded bytes/installation: attempted {}; maximum {MAX_BUNDLE_BYTES}",
+                    bytes.len()
+                ),
+            ));
         }
         if CacheKey(Sha256::digest(bytes).into()) != expected {
             return Err(error("<client-bundle>", "SHA-256 integrity mismatch"));
@@ -304,7 +308,15 @@ impl ClientBundle {
                 }
                 dependencies.insert(dependency, reader.version()?);
             }
-            let count = reader.count(64.min(MAX_MODULES - modules))?;
+            let count = reader.count_named(
+                MAX_MODULES_PER_PACKAGE.min(MAX_MODULES - modules),
+                &name,
+                if MAX_MODULES - modules < MAX_MODULES_PER_PACKAGE {
+                    "modules/installation remaining"
+                } else {
+                    "modules/package"
+                },
+            )?;
             modules += count;
             let mut sources = BTreeMap::new();
             for _ in 0..count {
@@ -315,11 +327,26 @@ impl ClientBundle {
                     2 => ClientSide::Shared,
                     _ => return Err(invalid()),
                 };
-                let source = reader.text(MAX_SOURCE_BYTES.min(MAX_TOTAL_BYTES - payload))?;
+                let id = format!("{name}@{version}:{key}");
+                let source = std::str::from_utf8(reader.field_named(
+                    MAX_SOURCE_BYTES.min(MAX_TOTAL_BYTES - payload),
+                    &id,
+                    "source bytes/module or payload bytes/installation remaining",
+                )?)
+                .map_err(|_| error(&id, "client source is not UTF-8"))?
+                .to_owned();
                 payload += source.len();
                 sources.insert(key, ClientSource { side, source });
             }
-            let count = reader.count(64.min(MAX_ASSETS - assets))?;
+            let count = reader.count_named(
+                MAX_ASSETS_PER_PACKAGE.min(MAX_ASSETS - assets),
+                &name,
+                if MAX_ASSETS - assets < MAX_ASSETS_PER_PACKAGE {
+                    "assets/installation remaining"
+                } else {
+                    "assets/package"
+                },
+            )?;
             assets += count;
             let mut textures = BTreeMap::new();
             let mut ui_assets = BTreeMap::new();
@@ -344,10 +371,12 @@ impl ClientBundle {
                     _ => MAX_ASSET_BYTES,
                 };
                 let bytes = reader
-                    .field(asset_limit.min(MAX_TOTAL_BYTES - payload))
-                    .map_err(|_| {
-                        error(&name, format!("asset {key}: invalid or oversized payload"))
-                    })?;
+                    .field_named(
+                        asset_limit.min(MAX_TOTAL_BYTES - payload),
+                        &name,
+                        &format!("asset {key} bytes/file or payload bytes/installation remaining"),
+                    )
+                    .map_err(|e| error(&name, format!("asset {key}: {e}")))?;
                 payload += bytes.len();
                 if kind == 1 {
                     textures.insert(key, bytes.to_vec());
@@ -731,6 +760,37 @@ impl<'a> Reader<'a> {
             return Err(invalid());
         }
         Ok(count)
+    }
+
+    fn count_named(
+        &mut self,
+        max: usize,
+        owner: &str,
+        resource: &str,
+    ) -> Result<usize, ScriptError> {
+        let count = self.count(usize::MAX)?;
+        if count > max {
+            return Err(error(
+                owner,
+                format!("{resource}: attempted {count}; maximum {max}"),
+            ));
+        }
+        Ok(count)
+    }
+
+    fn field_named(
+        &mut self,
+        max: usize,
+        owner: &str,
+        resource: &str,
+    ) -> Result<&'a [u8], ScriptError> {
+        let len = self.count_named(max, owner, resource)?;
+        self.take(len).map_err(|_| {
+            error(
+                owner,
+                format!("{resource}: truncated payload ({len} declared bytes)"),
+            )
+        })
     }
 
     fn field(&mut self, max: usize) -> Result<&'a [u8], ScriptError> {

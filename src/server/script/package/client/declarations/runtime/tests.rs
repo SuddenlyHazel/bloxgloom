@@ -1,6 +1,50 @@
 use super::*;
 
 #[test]
+fn multiple_system_and_generator_metadata_roundtrips_and_rejects_excess_or_foreign_keys() {
+    let requires = vec![
+        composition::OWNER_SYSTEMS.into(),
+        composition::GENERATION.into(),
+    ];
+    for excess in [false, true] {
+        let mut runtime = Runtime::default();
+        for index in 0..(MAX_SYSTEMS + usize::from(excess)) {
+            runtime.systems.push(Identity {
+                kind: b'Y',
+                key: format!("farm:s{index:02}"),
+                fingerprint: index as u64,
+            });
+        }
+        for index in 0..MAX_GENERATORS {
+            runtime.generation.push((format!("farm:g{index:02}"), 1));
+        }
+        let mut encoded = Writer(Vec::new());
+        runtime.encode_package(&mut encoded, "farm").unwrap();
+        let mut reader = Reader(&encoded.0);
+        let mut decoded = Runtime::default();
+        let result = decoded.decode_package(&mut reader, "farm", &requires);
+        if excess {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+            assert!(reader.0.is_empty());
+            assert_eq!(decoded.systems.len(), MAX_SYSTEMS);
+            assert_eq!(decoded.generation, runtime.generation);
+        }
+        assert!(
+            Runtime::default()
+                .decode_package(&mut Reader(&encoded.0), "other", &requires)
+                .is_err()
+        );
+        assert!(
+            Runtime::default()
+                .decode_package(&mut Reader(&encoded.0), "farm", &[])
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn command_metadata_roundtrips_schema_and_permissions_and_rejects_forgery() {
     let requires = vec![composition::ACTIONS.into()];
     for command in [

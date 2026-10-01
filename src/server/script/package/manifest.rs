@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::error;
 use crate::server::script::ScriptError;
+use crate::server::script::capacity::{MAX_ASSETS_PER_PACKAGE, MAX_MODULES_PER_PACKAGE};
 
 pub(super) struct Manifest {
     pub version: String,
@@ -82,8 +83,17 @@ impl Manifest {
                     }
                 }
                 (Some("module"), Some(key), Some(value), None)
-                    if identifier(key) && valid_path(value) && modules.len() < 64 =>
+                    if identifier(key) && valid_path(value) =>
                 {
+                    if modules.len() == MAX_MODULES_PER_PACKAGE {
+                        return Err(error(
+                            directory,
+                            format!(
+                                "module {key}: modules/package: attempted {}; maximum {MAX_MODULES_PER_PACKAGE}",
+                                modules.len() + 1
+                            ),
+                        ));
+                    }
                     if modules.insert(key.to_owned(), value.to_owned()).is_some() {
                         return Err(fail());
                     }
@@ -91,8 +101,17 @@ impl Manifest {
                     legacy_modules = true;
                 }
                 (Some("module"), Some(side), Some(key), Some(path))
-                    if identifier(key) && valid_path(path) && modules.len() < 64 =>
+                    if identifier(key) && valid_path(path) =>
                 {
+                    if modules.len() == MAX_MODULES_PER_PACKAGE {
+                        return Err(error(
+                            directory,
+                            format!(
+                                "module {key}: modules/package: attempted {}; maximum {MAX_MODULES_PER_PACKAGE}",
+                                modules.len() + 1
+                            ),
+                        ));
+                    }
                     let kind = match side {
                         "server" => SourceSide::Server,
                         "client" => SourceSide::Client,
@@ -109,8 +128,17 @@ impl Manifest {
                     classified_files = true;
                 }
                 (Some("asset"), Some(kind), Some(key), Some(path))
-                    if identifier(key) && asset_path(kind, path).is_some() && assets.len() < 64 =>
+                    if identifier(key) && asset_path(kind, path).is_some() =>
                 {
+                    if assets.len() == MAX_ASSETS_PER_PACKAGE {
+                        return Err(error(
+                            directory,
+                            format!(
+                                "asset {key} {path}: assets/package: attempted {}; maximum {MAX_ASSETS_PER_PACKAGE}",
+                                assets.len() + 1
+                            ),
+                        ));
+                    }
                     if assets.insert(key.to_owned(), path.to_owned()).is_some() {
                         return Err(fail());
                     }

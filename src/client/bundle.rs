@@ -8,6 +8,8 @@ use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod memory;
+
 static CACHE: Mutex<Option<Arc<ClientBundle>>> = Mutex::new(None);
 
 // Tests asserting single-entry cache reuse must exclude concurrent production
@@ -68,6 +70,10 @@ pub(crate) fn receive_progress(
         progress(0, true)?;
         bundle
     } else {
+        // Download storage, the canonical retained bytes and decoded payload
+        // coexist during verification. Concurrent join workers share this
+        // reservation; admission occurs before asking the server for bytes.
+        let _memory = memory::reserve(identity.total_len as usize)?;
         progress(0, false)?;
         protocol::write_client(&mut stream, &ClientMessage::BundleRequest { identity })?;
         let total = identity.total_len as usize;

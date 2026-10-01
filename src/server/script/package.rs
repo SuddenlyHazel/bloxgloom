@@ -28,8 +28,8 @@
 //! paths end in `.luau`, have at most eight components and 240 bytes, and use only
 //! ASCII letters/digits, `_`, `-`, `.`, and `/`. Empty, `.` and `..` components
 //! are forbidden. Unlisted package files are ignored, not recursively scanned.
-//! Bounds: 64 packages, 32 dependencies and 64 modules per package, 256 modules
-//! total, 16 KiB per manifest, 64 KiB per source, and 4 MiB aggregate file bytes.
+//! Bounds: 64 packages, 32 dependencies and 256 modules per package, 1,024 modules
+//! total, 64 KiB per manifest, 64 KiB per source, and 32 MiB aggregate file bytes.
 //! Up to 32 distinct `requires` capability strings (255 bytes each) are allowed;
 //! startup, not integer execution, validates which capabilities are supported.
 //! Root paths have at most 4096 bytes/64 components and no parent traversal.
@@ -54,8 +54,8 @@
 //! entry must be server or shared. Client modules cannot be imported/executed on
 //! the server. Texture paths must start with `assets/textures/` and end in `.png`.
 //! All format 2 paths obey the existing depth/length/character bounds and forbid
-//! dot-prefixed components. Assets are limited to 64/package, 256 total, and
-//! 256 KiB/file, sharing the 4 MiB aggregate discovery budget with manifests and
+//! dot-prefixed components. Assets are limited to 256/package, 1,024 total, and
+//! 2 MiB/file, sharing the 32 MiB aggregate discovery budget with manifests and
 //! all sources. No wildcard, directory asset, arbitrary data or save file type
 //! is supported. PNG is a classification, not image validity/decoded-size proof.
 //! Authors explicitly approve everything in client/shared sources and assets;
@@ -122,13 +122,10 @@ use std::sync::{Arc, OnceLock};
 use super::{ScriptError, ScriptFailure};
 use manifest::Manifest;
 
-pub const MAX_PACKAGES: usize = 64;
-pub const MAX_MODULES: usize = 256;
-pub const MAX_SOURCE_BYTES: usize = 64 * 1024;
-pub const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
-pub const MAX_ASSETS: usize = 256;
-pub const MAX_ASSET_BYTES: usize = 256 * 1024;
-const MAX_MANIFEST_BYTES: usize = 16 * 1024;
+pub use super::capacity::{
+    MAX_ASSET_BYTES, MAX_ASSETS, MAX_MANIFEST_BYTES, MAX_MODULES, MAX_PACKAGES, MAX_SOURCE_BYTES,
+    MAX_TOTAL_BYTES,
+};
 
 /// Private fields prevent mutation or bypassing validation after discovery.
 pub struct PackageSnapshot {
@@ -400,13 +397,25 @@ impl PackageSnapshot {
                     "package.txt",
                     MAX_MANIFEST_BYTES.min(MAX_TOTAL_BYTES - total_bytes),
                 )
-                .map_err(|e| error(&name, e))?;
+                .map_err(|e| {
+                    error(
+                        &name,
+                        format!(
+                            "package.txt: manifest bytes/package or file bytes/installation: {e}"
+                        ),
+                    )
+                })?;
             total_bytes += text.len();
             let manifest = Manifest::parse(&name, &text)?;
             let owner = format!("{}@{}", name, manifest.version);
             module_count += manifest.modules.len();
             if module_count > MAX_MODULES {
-                return Err(error(&owner, "too many modules in package set"));
+                return Err(error(
+                    &owner,
+                    format!(
+                        "modules/installation: attempted {module_count}; maximum {MAX_MODULES}"
+                    ),
+                ));
             }
             let mut sources = BTreeMap::new();
             for (module, path) in &manifest.modules {
@@ -416,19 +425,27 @@ impl PackageSnapshot {
                     .ok_or_else(|| error(&id, "package set byte limit exceeded"))?;
                 let source = directory
                     .read(path, MAX_SOURCE_BYTES.min(remaining))
-                    .map_err(|e| error(&id, e))?;
+                    .map_err(|e| {
+                        error(
+                            &id,
+                            format!("{path}: source bytes/module or file bytes/installation: {e}"),
+                        )
+                    })?;
                 total_bytes += source.len();
                 sources.insert(module.clone(), source);
             }
             asset_count += manifest.assets.len();
             if asset_count > MAX_ASSETS {
-                return Err(error(&owner, "too many assets in package set"));
+                return Err(error(
+                    &owner,
+                    format!("assets/installation: attempted {asset_count}; maximum {MAX_ASSETS}"),
+                ));
             }
             let mut assets = BTreeMap::new();
             for (asset, path) in &manifest.assets {
                 let bytes = directory
                     .read_bytes(path, MAX_ASSET_BYTES.min(MAX_TOTAL_BYTES - total_bytes))
-                    .map_err(|e| error(&owner, e))?;
+                    .map_err(|e| error(&owner, format!("asset {asset} {path}: asset bytes/file or file bytes/installation: {e}")))?;
                 total_bytes += bytes.len();
                 assets.insert(asset.clone(), bytes);
             }

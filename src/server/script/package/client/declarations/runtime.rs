@@ -5,6 +5,9 @@
 //! is informational: generation has its own saved manifest, not a content ID.
 use super::*;
 use crate::content::client_metadata::{Entity, Identity};
+use crate::server::script::capacity::{
+    GENERATORS_PER_PACKAGE as MAX_GENERATORS, SYSTEMS_PER_PACKAGE as MAX_SYSTEMS,
+};
 use bloxgloom_host_api::{
     RegistrationError,
     actions::{
@@ -56,8 +59,8 @@ impl Runtime {
         if d.actions.len() > MAX_PACKAGES * 32
             || d.entities.len() > MAX_PACKAGES * 32
             || d.handlers.len() > MAX_PACKAGES * 32
-            || d.systems.len() > MAX_PACKAGES
-            || d.generation.len() > MAX_PACKAGES
+            || d.systems.len() > MAX_PACKAGES * MAX_SYSTEMS
+            || d.generation.len() > MAX_PACKAGES * MAX_GENERATORS
         {
             return Err(invalid());
         }
@@ -306,7 +309,12 @@ impl Runtime {
                 composition::ACTIONS,
                 &mut self.handlers,
             ),
-            (b'Y', 1, composition::OWNER_SYSTEMS, &mut self.systems),
+            (
+                b'Y',
+                MAX_SYSTEMS,
+                composition::OWNER_SYSTEMS,
+                &mut self.systems,
+            ),
         ] {
             previous.clear();
             for _ in 0..count(reader, max, requires, capability)? {
@@ -318,7 +326,7 @@ impl Runtime {
             }
         }
         previous.clear();
-        for _ in 0..count(reader, 1, requires, composition::GENERATION)? {
+        for _ in 0..count(reader, MAX_GENERATORS, requires, composition::GENERATION)? {
             let key = own_key(reader, name, &mut previous)?;
             let revision = reader.count(u32::MAX as usize)? as u32;
             if revision == 0 {

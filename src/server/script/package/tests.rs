@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::*;
 use crate::server::script::{Limits, ScriptInput, ScriptWorker};
 
+mod capacity;
 mod client;
 
 struct Fixture(PathBuf);
@@ -367,7 +368,7 @@ fn discovery_bounds_directory_count_source_bytes_and_total_bytes() {
     for name in ["a", "b"] {
         let mut declarations = String::new();
         fixture.package(name, "", &[]);
-        for index in 0..33 {
+        for index in 0..crate::server::script::capacity::MAX_MODULES_PER_PACKAGE {
             let module = if index == 0 {
                 "main".to_owned()
             } else {

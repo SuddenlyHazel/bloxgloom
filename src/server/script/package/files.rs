@@ -87,13 +87,22 @@ mod platform {
                     )?;
                     let file = File::from(fd);
                     let metadata = file.metadata()?;
-                    if !metadata.is_file() || metadata.len() > limit as u64 {
+                    if !metadata.is_file() {
                         return Err(io::Error::other("source must be a bounded regular file"));
+                    }
+                    if metadata.len() > limit as u64 {
+                        return Err(io::Error::other(format!(
+                            "file bytes: attempted {}; maximum {limit} (bounded regular file)",
+                            metadata.len()
+                        )));
                     }
                     let mut bytes = Vec::new();
                     file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
                     if bytes.len() > limit {
-                        return Err(io::Error::other("file byte limit exceeded"));
+                        return Err(io::Error::other(format!(
+                            "file bytes: attempted {}; maximum {limit}",
+                            bytes.len()
+                        )));
                     }
                     return Ok(bytes);
                 }

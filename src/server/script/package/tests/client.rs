@@ -1,7 +1,12 @@
 use super::*;
 use crate::server::script::package::client::{ClientBundle, ClientSide};
 
-fn classified(fixture: &Fixture, name: &str, declarations: &str, files: &[(&str, &str)]) {
+pub(super) fn classified(
+    fixture: &Fixture,
+    name: &str,
+    declarations: &str,
+    files: &[(&str, &str)],
+) {
     fixture.package(name, declarations, files);
     let path = fixture.0.join(name).join("package.txt");
     let text = fs::read_to_string(&path)
@@ -185,7 +190,7 @@ fn assets_use_secure_bounded_regular_file_reads() {
 fn asset_aggregate_bytes_and_declaration_count_are_bounded() {
     let fixture = Fixture::new();
     let mut declarations = String::from("module server main server/main.luau\n");
-    for i in 0..17 {
+    for i in 0..(MAX_TOTAL_BYTES / MAX_ASSET_BYTES + 1) {
         declarations.push_str(&format!("asset texture a{i} assets/textures/icon.png\n"));
     }
     classified(
@@ -203,7 +208,9 @@ fn asset_aggregate_bytes_and_declaration_count_are_bounded() {
     )
     .unwrap();
     fixture.error();
-    for i in 17..65 {
+    for i in (MAX_TOTAL_BYTES / MAX_ASSET_BYTES + 1)
+        ..=crate::server::script::capacity::MAX_ASSETS_PER_PACKAGE
+    {
         declarations.push_str(&format!("asset texture a{i} assets/textures/icon.png\n"));
     }
     classified(
@@ -219,7 +226,7 @@ fn asset_aggregate_bytes_and_declaration_count_are_bounded() {
 fn asset_set_count_is_bounded_even_for_empty_files() {
     let fixture = Fixture::new();
     let mut declarations = String::from("module server main server/main.luau\n");
-    for i in 0..64 {
+    for i in 0..crate::server::script::capacity::MAX_ASSETS_PER_PACKAGE {
         declarations.push_str(&format!("asset texture a{i} assets/textures/icon.png\n"));
     }
     for i in 0..4 {
@@ -252,5 +259,5 @@ fn asset_set_count_is_bounded_even_for_empty_files() {
             ("assets/textures/icon.png", ""),
         ],
     );
-    assert!(fixture.error().to_string().contains("too many assets"));
+    assert!(fixture.error().to_string().contains("assets/installation"));
 }

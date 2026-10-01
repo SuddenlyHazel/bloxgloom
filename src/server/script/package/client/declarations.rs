@@ -14,9 +14,10 @@ mod runtime;
 mod states;
 mod storage;
 
-const MAX_ITEMS: usize = 32;
-const MAX_TEXTURES: usize = 32;
-const MAX_BLOCKS: usize = 32;
+use crate::server::script::capacity::{
+    BLOCKS_PER_PACKAGE as MAX_BLOCKS, ITEMS_PER_PACKAGE as MAX_ITEMS,
+    TEXTURES_PER_PACKAGE as MAX_TEXTURES,
+};
 
 pub(super) struct Format {
     pub sized: bool,
