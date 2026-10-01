@@ -18,6 +18,7 @@ mod response_trace;
 mod server;
 mod storage;
 mod ui;
+mod weather;
 mod world;
 
 fn main() -> std::process::ExitCode {
@@ -344,6 +345,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 preview::render_egui_previews(std::path::Path::new(&directory))?;
             }
             println!("wrote egui previews to {directory}");
+        }
+        Some("weather-preview") => {
+            let directory = args
+                .next()
+                .unwrap_or_else(|| "weather-previews".to_string());
+            if args.next().is_some() {
+                return Err("usage: weather-preview [output-dir]".into());
+            }
+            preview::render_weather_previews(std::path::Path::new(&directory))?;
+            println!("wrote weather previews to {directory}");
         }
         Some("daylight-preview") => {
             let directory = args

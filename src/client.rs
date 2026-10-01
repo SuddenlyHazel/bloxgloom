@@ -278,6 +278,7 @@ mod mesh_queue;
 mod observations;
 pub(crate) mod presentation;
 pub(crate) mod startup;
+mod weather;
 mod workers;
 mod world_time;
 use entities::{Assembly, EntityClientRegistry, EntityVerb, Replicas};
@@ -340,6 +341,7 @@ struct ClientApp {
     next_lighting_revision: u64,
     world_seed: Option<u64>,
     world_time: world_time::Clock,
+    weather: weather::State,
     owned_entity_id: Option<u64>,
     player_stances: BTreeMap<u64, bool>,
     crouch_requested: bool,
@@ -433,6 +435,7 @@ impl ClientApp {
             next_lighting_revision: 1,
             world_seed: None,
             world_time: world_time::Clock::default(),
+            weather: weather::State::default(),
             owned_entity_id: None,
             player_stances: BTreeMap::new(),
             crouch_requested: false,
@@ -1080,6 +1083,9 @@ impl ClientApp {
                     self.roster_revision = revision;
                     self.player_roster = players;
                 }
+            }
+            ServerMessage::Weather { snapshot } => {
+                self.weather.synchronize(snapshot, Instant::now());
             }
             ServerMessage::WorldTime { elapsed_ms } => {
                 self.world_time.synchronize(elapsed_ms);
@@ -1790,6 +1796,7 @@ impl ClientApp {
             }
         }
         let camera = self.view_camera();
+        self.present_weather(camera, now);
         if self.status.as_ref().is_some_and(|(_, until)| now > *until) {
             self.status = None;
         }

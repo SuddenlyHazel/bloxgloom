@@ -73,11 +73,13 @@ mod players;
 #[cfg(test)]
 mod tests;
 mod time;
+mod weather;
 
 enum Command {
     Help,
     Appearance([u8; 3]),
     Time(u64),
+    Weather(crate::weather::WeatherKind, u32),
     Registered(Request),
 }
 
@@ -124,6 +126,10 @@ fn parse_with_players(
     let key = match key {
         "help" if values.is_empty() => return Ok(Command::Help),
         "time" => return time::parse(&values).map(Command::Time),
+        "weather" => {
+            return weather::parse(&values)
+                .map(|(kind, transition)| Command::Weather(kind, transition));
+        }
         "appearance" => {
             if values.len() != 3 {
                 return Err("Usage: appearance <skin> <shirt> <pants>");
@@ -339,7 +345,7 @@ impl ClientApp {
                         - 1
                 });
                 self.show_status(format!(
-                    "time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
+                    "weather set <clear|rain|storm> [0..60 seconds] / time set <sunrise|noon|sunset|midnight|HH:MM> / appearance <skin 0..{}> <shirt 0..{}> <pants 0..{}> / {commands}",
                     maxima[0], maxima[1], maxima[2]
                 ));
             }
@@ -359,6 +365,19 @@ impl ClientApp {
                     entity: 0,
                     entity_revision: 0,
                     arguments: elapsed_ms.to_le_bytes().to_vec(),
+                });
+            }
+            Ok(Command::Weather(kind, transition_ms)) => {
+                let mut arguments = vec![kind as u8];
+                arguments.extend(transition_ms.to_le_bytes());
+                self.submit_admin_command(Request {
+                    key: crate::gameplay::admin::WEATHER.into(),
+                    version: 1,
+                    slot: 0,
+                    inventory_revision: self.inventory.revision,
+                    entity: 0,
+                    entity_revision: 0,
+                    arguments,
                 });
             }
             Ok(Command::Registered(request)) => self.submit_admin_command(request),
