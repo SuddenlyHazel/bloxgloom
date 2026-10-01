@@ -321,3 +321,6 @@ fn texture(
     );
     texture.create_view(&Default::default())
 }
+
+#[cfg(test)]
+mod tests;

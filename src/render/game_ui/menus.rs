@@ -1,6 +1,8 @@
 //! Built-in menus on the same egui input and paint path as inventory.
 
 use super::Intent;
+#[cfg(test)]
+mod tests;
 
 mod join;
 use crate::{
@@ -106,7 +108,42 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
     }
     ui.add_space(8.0);
     let settings = frame.settings;
-    let rows: Vec<(SettingId, &str, String)> = if graphics {
+    let rows = settings_rows(settings, graphics);
+    for (setting, label, value) in rows {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("+").clicked() {
+                    intents.push(Intent::Control(UiControl::Increase(setting)));
+                }
+                ui.label(RichText::new(value).monospace().color(GOLD));
+                if ui.button("−").clicked() {
+                    intents.push(Intent::Control(UiControl::Decrease(setting)));
+                }
+            });
+        });
+        ui.separator();
+    }
+    ui.add_space(5.0);
+    button(
+        ui,
+        if settings.fullscreen {
+            "Fullscreen: on"
+        } else {
+            "Fullscreen: off"
+        },
+        UiControl::ToggleFullscreen,
+        intents,
+    );
+    ui.add_space(6.0);
+    button(ui, "Back", UiControl::Back, intents);
+}
+
+fn settings_rows(
+    settings: crate::ui::UiSettings,
+    graphics: bool,
+) -> Vec<(SettingId, &'static str, String)> {
+    if graphics {
         vec![
             (
                 SettingId::PostProcessing,
@@ -132,6 +169,16 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
                 SettingId::BloomStrength,
                 "Bloom strength",
                 format!("{:.0}%", settings.bloom_strength * 100.0),
+            ),
+            (
+                SettingId::Characters,
+                "Characters",
+                if settings.authored_characters {
+                    "Authored"
+                } else {
+                    "Classic"
+                }
+                .into(),
             ),
         ]
     } else {
@@ -167,35 +214,7 @@ fn settings(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
                 .into(),
             ),
         ]
-    };
-    for (setting, label, value) in rows {
-        ui.horizontal(|ui| {
-            ui.label(label);
-            ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("+").clicked() {
-                    intents.push(Intent::Control(UiControl::Increase(setting)));
-                }
-                ui.label(RichText::new(value).monospace().color(GOLD));
-                if ui.button("−").clicked() {
-                    intents.push(Intent::Control(UiControl::Decrease(setting)));
-                }
-            });
-        });
-        ui.separator();
     }
-    ui.add_space(5.0);
-    button(
-        ui,
-        if settings.fullscreen {
-            "Fullscreen: on"
-        } else {
-            "Fullscreen: off"
-        },
-        UiControl::ToggleFullscreen,
-        intents,
-    );
-    ui.add_space(6.0);
-    button(ui, "Back", UiControl::Back, intents);
 }
 
 fn actions(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {

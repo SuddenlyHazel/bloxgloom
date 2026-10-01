@@ -418,6 +418,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             preview::render_mossbun_preview(std::path::Path::new(&path))?;
         }
+        Some("character-motion-preview") => {
+            let directory = args.next().unwrap_or_else(|| "character-motion".into());
+            if args.next().is_some() {
+                return Err("usage: character-motion-preview [directory]".into());
+            }
+            preview::render_character_motion(std::path::Path::new(&directory))?;
+        }
         Some("character-preview") => {
             let path = args
                 .next()

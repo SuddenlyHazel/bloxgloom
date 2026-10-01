@@ -300,6 +300,26 @@ pub fn render_character_preview(path: &Path, clip: &str, time: f32) -> Result<()
     ))
 }
 
+/// One world setup, then deterministic 30 Hz native animation frames.
+pub fn render_character_motion(directory: &Path) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(directory)?;
+    let outputs = (0..60)
+        .map(|frame| PreviewOutput {
+            path: directory.join(format!("{frame:03}.png")),
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+            screen: UiScreen::Playing,
+            orientation: None,
+        })
+        .collect();
+    pollster::block_on(render_previews(
+        outputs,
+        (0, 0),
+        PreviewScene::Characters("walk", 0.0),
+    ))
+}
+
 /// Production actor shader, with two mossbuns and a player for scale.
 pub fn render_mossbun_preview(path: &Path) -> Result<(), Box<dyn Error>> {
     pollster::block_on(render_previews(
@@ -1096,6 +1116,7 @@ async fn render_previews_at(
     } else {
         None
     };
+    let mut character_visuals = None;
     if matches!(
         scene,
         PreviewScene::Avatars
@@ -1201,11 +1222,16 @@ async fn render_previews_at(
             visuals[0].pose[0] = 0.0;
             visuals[1].pose[0] = -0.7;
             visuals[2].pose[0] = std::f32::consts::PI;
+            character_visuals = Some(visuals);
         }
         avatar_renderer.set(&queue, &visuals);
     }
 
-    for output in outputs {
+    for (frame, output) in outputs.into_iter().enumerate() {
+        if let (PreviewScene::Characters(clip, time), Some(visuals)) = (scene, &character_visuals) {
+            avatar_renderer.preview_character_clip(clip, time + frame as f32 / 30.0);
+            avatar_renderer.set(&queue, visuals);
+        }
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("preview color"),
             size: wgpu::Extent3d {

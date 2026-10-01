@@ -115,6 +115,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Container, "container"),
         (UiScreen::Pause, "pause"),
         (UiScreen::Settings, "settings"),
+        (UiScreen::Graphics, "graphics"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Package, "package"),
         (UiScreen::Package, "package-updated"),

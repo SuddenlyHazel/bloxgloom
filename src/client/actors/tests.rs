@@ -96,3 +96,22 @@ fn player_walk_blends_from_replicated_distance_then_stops_without_drift() {
     assert_eq!(reset.character_pose[0], 0.0);
     assert_eq!(reset.character_pose[2], 0.0);
 }
+
+#[test]
+fn switching_actor_model_cannot_reuse_character_gait_or_old_pose() {
+    let now = Instant::now();
+    let player = |x| VisualAvatar {
+        model: AvatarModel::Player,
+        ..avatar(x)
+    };
+    let mut track = Track::new(player(0.0), now);
+    for i in 1..10 {
+        track.update(player(i as f32 * 0.1), now + STEP * i);
+    }
+    assert!(track.gait > 0.0);
+    let creature = track.update(avatar(0.9), now + STEP * 10);
+    assert_eq!(creature.character_pose, [0.0; 3]);
+    let replaced = track.update(player(0.9), now + STEP * 11);
+    assert_eq!(replaced.character_pose[0], 0.0);
+    assert_eq!(replaced.character_pose[2], 0.0);
+}

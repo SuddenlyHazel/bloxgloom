@@ -40,6 +40,8 @@ struct Output {
     return output;
 }
 @fragment fn fs_main(input: Output) -> @location(0) vec4f {
+    // Additional builtin hair meshes stay hidden until an appearance selects them.
+    if input.material > 1u { discard; }
     let body_color = textureSample(body, pixels, input.uv);
     let hair_color = textureSample(hair, pixels, input.uv);
     let albedo = select(body_color,hair_color,input.material == 1u);
