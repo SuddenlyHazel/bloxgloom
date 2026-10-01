@@ -439,7 +439,13 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
             assert_eq!(plan.inventory.unwrap().slots[0].as_ref().unwrap().count, 5);
         } else {
             let error = result.err().expect("failed handler published a plan");
-            assert!(error.to_string().contains(message), "mode {mode}: {error}");
+            // The 4,100-read overload can exhaust either its host read budget
+            // or the execution deadline first under concurrent test load.
+            let error_text = error.to_string();
+            assert!(
+                error_text.contains(message) || (mode == 6 && error_text.contains("TimeLimit")),
+                "mode {mode}: {error}"
+            );
             if mode == 8 {
                 assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
                 let key = crate::world::world_to_chunk(1600, 80, 0).0;

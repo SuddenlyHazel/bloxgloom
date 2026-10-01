@@ -40,3 +40,6 @@ impl Compiled {
         Ok(bytes)
     }
 }
+
+#[cfg(test)]
+mod tests;
