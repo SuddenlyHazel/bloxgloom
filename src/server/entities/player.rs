@@ -8,13 +8,15 @@ use super::types::{
     EntityError, EntityId, EntityLocation, EntityOwnership, EntityPayload, EntityPublicView,
     TRANSIENT_ENTITY_ID_BIT, TickPolicy,
 };
+use crate::appearance::{AppearanceState, CharacterRecipe};
 use crate::content::EntityTypeId;
 use crate::world::ChunkKey;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 pub(in crate::server) const PLAYER_ENTITY_TYPE: EntityTypeId = EntityTypeId(2);
-pub(in crate::server) const MAX_PLAYER_ENTITY_PAYLOAD_BYTES: usize = 4;
+pub(in crate::server) const MAX_PLAYER_ENTITY_PAYLOAD_BYTES: usize =
+    crate::appearance::MAX_APPEARANCE_BYTES;
 const MAX_SESSION_PLAYER_ENTITIES: usize = 256;
 
 /// Public cosmetic state only. Profile identity and movement authority remain
@@ -25,20 +27,44 @@ pub(in crate::server) struct PlayerEntityPayload {
     pub(in crate::server) shirt: u8,
     pub(in crate::server) pants: u8,
     pub(in crate::server) flags: u8,
+    character: Option<CharacterRecipe>,
 }
 
 impl PlayerEntityPayload {
+    #[cfg(test)]
     pub(in crate::server) const fn new(skin: u8, shirt: u8, pants: u8, flags: u8) -> Self {
         Self {
             skin,
             shirt,
             pants,
             flags,
+            character: None,
         }
     }
 
-    const fn encode(self) -> [u8; MAX_PLAYER_ENTITY_PAYLOAD_BYTES] {
-        [self.skin, self.shirt, self.pants, self.flags]
+    fn encode(self) -> Option<Vec<u8>> {
+        if self.flags != 0 || self.character.is_some_and(|recipe| !recipe.valid()) {
+            return None;
+        }
+        Some(
+            AppearanceState {
+                palettes: [self.skin, self.shirt, self.pants],
+                character: self.character,
+            }
+            .encode(),
+        )
+    }
+}
+
+impl From<AppearanceState> for PlayerEntityPayload {
+    fn from(state: AppearanceState) -> Self {
+        Self {
+            skin: state.palettes[0],
+            shirt: state.palettes[1],
+            pants: state.palettes[2],
+            flags: 0,
+            character: state.character,
+        }
     }
 }
 
@@ -58,14 +84,14 @@ impl PlayerEntityStore {
         session_id: u64,
         position: [f32; 3],
     ) -> Result<(EntityId, EntityDelta), EntityError> {
-        self.spawn_session_with_appearance(session_id, position, [0; 4])
+        self.spawn_session_with_appearance(session_id, position, AppearanceState::default())
     }
 
     pub(in crate::server) fn spawn_session_with_appearance(
         &mut self,
         session_id: u64,
         position: [f32; 3],
-        appearance: [u8; 4],
+        appearance: AppearanceState,
     ) -> Result<(EntityId, EntityDelta), EntityError> {
         if self.by_session.contains_key(&session_id)
             || self.by_session.len() >= MAX_SESSION_PLAYER_ENTITIES
@@ -75,8 +101,7 @@ impl PlayerEntityStore {
         let id = EntityId::for_player_session(session_id).ok_or(EntityError::IdExhausted)?;
         let location = EntityLocation::Mobile { position };
         let owner = location.owner()?;
-        let [skin, shirt, pants, flags] = appearance;
-        let payload = PlayerEntityPayload::new(skin, shirt, pants, flags);
+        let payload = PlayerEntityPayload::from(appearance);
         let public_view = PlayerPayloadCodec
             .public_view(&EntityPayload::new(payload))
             .map_err(|_| EntityError::CodecRejected)?;
@@ -152,12 +177,13 @@ impl PlayerEntityStore {
     pub(in crate::server) fn prepare_appearance(
         &self,
         session_id: u64,
-        appearance: [u8; 4],
+        appearance: AppearanceState,
     ) -> Result<Option<EntityPublicView>, EntityError> {
         let before = self
             .by_session
             .get(&session_id)
             .ok_or(EntityError::InvalidTransaction)?;
+        let appearance = appearance.encode();
         if before.payload == appearance {
             return Ok(None);
         }
@@ -166,7 +192,7 @@ impl PlayerEntityStore {
             .revision
             .checked_add(1)
             .ok_or(EntityError::RevisionExhausted)?;
-        after.payload = appearance.to_vec();
+        after.payload = appearance;
         Ok(Some(after))
     }
 
@@ -232,12 +258,15 @@ impl PlayerEntityStore {
     }
 
     pub(in crate::server) fn appearance_for_session(&self, session_id: u64) -> Option<[u8; 4]> {
-        self.by_session
-            .get(&session_id)?
-            .payload
-            .as_slice()
-            .try_into()
-            .ok()
+        self.appearance_state_for_session(session_id)
+            .map(AppearanceState::legacy)
+    }
+
+    pub(in crate::server) fn appearance_state_for_session(
+        &self,
+        session_id: u64,
+    ) -> Option<AppearanceState> {
+        AppearanceState::decode(&self.by_session.get(&session_id)?.payload)
     }
 
     pub(in crate::server) fn public_views_for_chunk_bounded(
@@ -283,21 +312,15 @@ struct PlayerPayloadCodec;
 
 impl EntityPayloadCodec for PlayerPayloadCodec {
     fn decode(&self, payload: &[u8]) -> Result<EntityPayload, EntityCodecError> {
-        let value: [u8; MAX_PLAYER_ENTITY_PAYLOAD_BYTES] = payload
-            .try_into()
-            .map_err(|_| EntityCodecError::InvalidData)?;
-        let [skin, shirt, pants, flags] = value;
-        Ok(EntityPayload::new(PlayerEntityPayload::new(
-            skin, shirt, pants, flags,
-        )))
+        let state = AppearanceState::decode(payload).ok_or(EntityCodecError::InvalidData)?;
+        Ok(EntityPayload::new(PlayerEntityPayload::from(state)))
     }
 
     fn encode(&self, payload: &EntityPayload) -> Result<Vec<u8>, EntityCodecError> {
         payload
             .downcast_ref::<PlayerEntityPayload>()
             .copied()
-            .map(PlayerEntityPayload::encode)
-            .map(Vec::from)
+            .and_then(PlayerEntityPayload::encode)
             .ok_or(EntityCodecError::InvalidData)
     }
 

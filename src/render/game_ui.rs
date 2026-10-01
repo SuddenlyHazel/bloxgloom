@@ -44,10 +44,14 @@ pub(crate) enum Intent {
     Package(crate::ui::authored::EguiIntent),
     JoinAddress(String),
     JoinAction,
+    CharacterRecipe(Option<crate::appearance::CharacterRecipe>),
+    CharacterClip(u8),
 }
 
 pub(super) struct GameUi {
     context: egui::Context,
+    character_preview: super::character_preview::CharacterPreview,
+    character_texture: egui::TextureId,
     input: egui_winit::State,
     renderer: egui_wgpu::Renderer,
     package_atlas: Option<egui::TextureHandle>,
@@ -83,7 +87,13 @@ impl SlotFilter {
 }
 
 impl GameUi {
-    pub(super) fn new(window: &Window, device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+    pub(super) fn new(
+        window: &Window,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        catalog: &Catalog,
+    ) -> Self {
         let context = themed_context();
         let input = egui_winit::State::new(
             context.clone(),
@@ -93,8 +103,17 @@ impl GameUi {
             None,
             None,
         );
-        let renderer = egui_wgpu::Renderer::new(device, format, Default::default());
+        let mut renderer = egui_wgpu::Renderer::new(device, format, Default::default());
+        let character_preview =
+            super::character_preview::CharacterPreview::new(device, queue, catalog);
+        let character_texture = renderer.register_native_texture(
+            device,
+            &character_preview.sampled,
+            wgpu::FilterMode::Nearest,
+        );
         Self {
+            character_preview,
+            character_texture,
             context,
             input,
             renderer,
@@ -133,11 +152,17 @@ impl GameUi {
     ) {
         self.context
             .set_zoom_factor(frame.settings.scale.clamp(0.75, 2.0));
+        let mut frame = frame.clone();
+        if let Some(panel) = &mut frame.character {
+            self.character_preview
+                .encode(target.queue, target.encoder, *panel);
+            panel.preview = Some(self.character_texture);
+        }
         let raw_input = self.input.take_egui_input(target.window);
         let mut output = self.context.run_ui(raw_input, |ui| {
             draw_screen(
                 ui,
-                frame,
+                &frame,
                 catalog,
                 self.package_atlas.as_ref().map(egui::TextureHandle::id),
                 &mut self.search,

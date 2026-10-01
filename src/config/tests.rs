@@ -20,6 +20,7 @@ fn config_round_trips_through_explicit_path() {
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
+        authored_characters: true,
         exposure: 1.25,
         post_processing: false,
         bloom_enabled: false,
@@ -156,4 +157,15 @@ fn profile_is_generated_once_and_survives_reload() {
     loaded.ensure_profile(&path).unwrap();
     assert_eq!(loaded.profile, profile);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn authored_rendering_defaults_on_and_explicit_classic_roundtrips() {
+    assert!(Config::default().authored_characters);
+    let config = Config {
+        authored_characters: false,
+        ..Config::default()
+    };
+    assert_eq!(parse_config(&config.serialize()), config);
+    assert!(parse_config("version=1\nauthored_characters=invalid\n").authored_characters);
 }
