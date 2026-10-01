@@ -4,10 +4,10 @@ use crate::{inventory::Stack, server::entities::EntityId};
 use bloxgloom_host_api::motion::{Pending, Record};
 
 const PROFILE: u128 = 0x5c71;
-#[path = "moving/lifecycle.rs"]
-mod lifecycle;
 #[path = "moving/cold.rs"]
 mod cold;
+#[path = "moving/lifecycle.rs"]
+mod lifecycle;
 #[path = "moving/load.rs"]
 mod load;
 const REGISTER: &str = r#"return function(h)
