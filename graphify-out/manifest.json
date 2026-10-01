@@ -594,9 +594,9 @@
     "semantic_hash": "46f951048e945afb1e5aad8f5eef0b74"
   },
   "src/client.rs": {
-    "mtime": 1790858723.4670444,
-    "seen": 1790859010.4251661,
-    "ast_hash": "f86676729fe67b790ef16f97fb8ef1bd",
+    "mtime": 1790859741.3664358,
+    "seen": 1790859877.6615832,
+    "ast_hash": "cab92166038613d6722f2b41158f85d0",
     "semantic_hash": ""
   },
   "src/client/actions.rs": {
@@ -708,9 +708,9 @@
     "semantic_hash": ""
   },
   "src/client/events.rs": {
-    "mtime": 1790857632.7328467,
-    "seen": 1790857955.7717419,
-    "ast_hash": "cb31c12800deb6489b690c4f3ff2836a",
+    "mtime": 1790859883.6786954,
+    "seen": 1790859947.745454,
+    "ast_hash": "6ec1d3febca6d0317f8b02389486a0cd",
     "semantic_hash": ""
   },
   "src/client/fire.rs": {
@@ -756,9 +756,9 @@
     "semantic_hash": "49833e9e7a36fb8322ec1d87c65ae165"
   },
   "src/client/lifecycle.rs": {
-    "mtime": 1790857632.733271,
-    "seen": 1790857955.771753,
-    "ast_hash": "1c203c0da533a9b6685610c5f9d25bfb",
+    "mtime": 1790859741.3680017,
+    "seen": 1790859877.6616251,
+    "ast_hash": "f1f827ec2e053b0adef9277b3b27b057",
     "semantic_hash": ""
   },
   "src/client/lifecycle/tests.rs": {
@@ -4026,9 +4026,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1790858787.5711055,
-    "seen": 1790859010.4258828,
-    "ast_hash": "9b97c2983564fee6bcbed4dc812aec80",
+    "mtime": 1790859741.36878,
+    "seen": 1790859877.662569,
+    "ast_hash": "f5cdefbae7c27d52c466cb43bda11413",
     "semantic_hash": ""
   },
   "SCRIPTING.md": {
@@ -5796,15 +5796,15 @@
     "semantic_hash": ""
   },
   "src/client/interactions.rs": {
-    "mtime": 1790857938.767908,
-    "seen": 1790857955.771745,
-    "ast_hash": "3b8e9930e7773441f04e16eb92cccc5c",
+    "mtime": 1790859742.067819,
+    "seen": 1790859877.6616168,
+    "ast_hash": "147f5a79e7bdf14aa7efeaf5ac9e5e14",
     "semantic_hash": ""
   },
   "src/client/interactions/tests.rs": {
-    "mtime": 1790858055.1423929,
-    "seen": 1790858091.3479218,
-    "ast_hash": "c56ae6cf68a897705c55b00e3d699233",
+    "mtime": 1790859809.662205,
+    "seen": 1790859877.661618,
+    "ast_hash": "4d4ce8f352401e00dc393fd7c7da00f2",
     "semantic_hash": ""
   },
   "src/render/avatars/character_asset/gameplay.rs": {
