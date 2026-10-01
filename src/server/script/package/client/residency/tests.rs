@@ -63,3 +63,17 @@ fn compact_artifacts_cannot_hide_metadata_from_process_admission() {
         .add_payload(crate::content::declarations::budget::MAX_BYTES)
         .unwrap();
 }
+
+#[test]
+fn metadata_admission_preserves_typed_pressure_with_declaration_context() {
+    let process = Budget(Mutex::new((MAX_BYTES - 512, 0)));
+    let mut artifact = process.reserve(64).unwrap();
+    let mut content = crate::content::declarations::budget::Budget::default();
+    let error = artifact
+        .reserve_declaration(&mut content, 512, "farm:crop", "farm")
+        .unwrap_err();
+    assert!(error.is_bundle_residency_exhausted());
+    assert!(error.module.contains("farm:crop"));
+    drop(artifact);
+    assert_eq!(*process.0.lock().unwrap(), (MAX_BYTES - 512, 0));
+}

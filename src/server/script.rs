@@ -83,6 +83,8 @@ pub enum ScriptFailure {
     TimeLimit,
     Lua(String),
     Package(String),
+    /// Process artifact residency admission; an unused client cache may be retired.
+    BundleResidency(String),
     WorkerStopped,
 }
 
@@ -91,6 +93,12 @@ pub enum ScriptFailure {
 pub struct ScriptError {
     pub module: String,
     pub failure: ScriptFailure,
+}
+
+impl ScriptError {
+    pub(crate) fn is_bundle_residency_exhausted(&self) -> bool {
+        matches!(self.failure, ScriptFailure::BundleResidency(_))
+    }
 }
 
 impl fmt::Display for ScriptError {

@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod memory;
+mod recovery;
 
 static CACHE: Mutex<Option<Arc<ClientBundle>>> = Mutex::new(None);
 
@@ -105,12 +106,13 @@ pub(crate) fn receive_progress(
             progress(bytes.len() as u32, false)?;
         }
         Arc::new(
-            ClientBundle::decode_verify(&bytes, identity.key).map_err(|error| {
-                io::Error::other(format!(
-                    "client bundle verification {}: {error}",
-                    identity.key.cache_name()
-                ))
-            })?,
+            recovery::decode(&CACHE, || ClientBundle::decode_verify(&bytes, identity.key))
+                .map_err(|error| {
+                    io::Error::other(format!(
+                        "client bundle verification {}: {error}",
+                        identity.key.cache_name()
+                    ))
+                })?,
         )
     };
     protocol::write_client(&mut stream, &ClientMessage::BundleReady { identity })?;

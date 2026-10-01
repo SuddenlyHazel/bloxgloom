@@ -23,6 +23,13 @@ pub(super) fn reserve(encoded: usize) -> Result<Reservation<'static>, ScriptErro
     BUDGET.reserve(encoded)
 }
 
+fn exhausted(message: String) -> ScriptError {
+    ScriptError {
+        module: "<client-bundle>".into(),
+        failure: crate::server::script::ScriptFailure::BundleResidency(message),
+    }
+}
+
 impl Budget {
     fn reserve(&self, encoded: usize) -> Result<Reservation<'_>, ScriptError> {
         let bytes = encoded
@@ -30,14 +37,11 @@ impl Budget {
             .ok_or_else(|| error("<client-bundle>", "residency byte overflow"))?;
         let mut used = self.0.lock().unwrap();
         if used.0.saturating_add(bytes) > MAX_BYTES || used.1 == MAX_ARTIFACTS {
-            return Err(error(
-                "<client-bundle>",
-                format!(
-                    "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}; artifacts/process: attempted {}; maximum {MAX_ARTIFACTS}",
-                    used.0.saturating_add(bytes),
-                    used.1 + 1
-                ),
-            ));
+            return Err(exhausted(format!(
+                "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}; artifacts/process: attempted {}; maximum {MAX_ARTIFACTS}",
+                used.0.saturating_add(bytes),
+                used.1 + 1
+            )));
         }
         used.0 += bytes;
         used.1 += 1;
@@ -61,20 +65,19 @@ impl Reservation<'_> {
         budget
             .reserve(1, bytes, key)
             .map_err(|error| super::error(owner, error.0))?;
-        self.add_payload(bytes)
-            .map_err(|error| super::error(owner, format!("declaration {key}: {error}")))
+        self.add_payload(bytes).map_err(|mut error| {
+            error.module = format!("{owner}:declaration {key}");
+            error
+        })
     }
 
     pub(super) fn add_payload(&mut self, bytes: usize) -> Result<(), ScriptError> {
         let mut used = self.budget.0.lock().unwrap();
         let next = used.0.saturating_add(bytes);
         if next > MAX_BYTES {
-            return Err(error(
-                "<client-bundle>",
-                format!(
-                    "canonical/source/asset/declaration bytes/process: attempted {next}; maximum {MAX_BYTES}"
-                ),
-            ));
+            return Err(exhausted(format!(
+                "canonical/source/asset/declaration bytes/process: attempted {next}; maximum {MAX_BYTES}"
+            )));
         }
         used.0 = next;
         self.bytes += bytes;
@@ -89,13 +92,10 @@ impl Reservation<'_> {
         let mut used = self.budget.0.lock().unwrap();
         let next = used.0 - self.bytes;
         if next.saturating_add(bytes) > MAX_BYTES {
-            return Err(error(
-                "<client-bundle>",
-                format!(
-                    "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}",
-                    next.saturating_add(bytes)
-                ),
-            ));
+            return Err(exhausted(format!(
+                "canonical/source/asset/declaration bytes/process: attempted {}; maximum {MAX_BYTES}",
+                next.saturating_add(bytes)
+            )));
         }
         used.0 = next + bytes;
         self.bytes = bytes;

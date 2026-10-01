@@ -40,9 +40,12 @@ use std::collections::BTreeMap;
 
 use sha2::{Digest, Sha256};
 
+pub(crate) use super::super::ScriptError;
+#[cfg(test)]
+pub(crate) use super::super::ScriptFailure;
 use super::manifest::{SourceSide, identifier, valid_version};
 use super::{MAX_ASSET_BYTES, MAX_ASSETS, MAX_MODULES, MAX_PACKAGES, MAX_SOURCE_BYTES};
-use super::{MAX_TOTAL_BYTES, Package, ScriptError, error};
+use super::{MAX_TOTAL_BYTES, Package, error};
 use crate::server::script::capacity::{MAX_ASSETS_PER_PACKAGE, MAX_MODULES_PER_PACKAGE};
 
 mod declarations;
@@ -733,8 +736,14 @@ struct Writer(Vec<u8>);
 
 impl Writer {
     fn put(&mut self, bytes: &[u8]) -> Result<(), ScriptError> {
-        if bytes.len() > MAX_BUNDLE_BYTES - self.0.len() {
-            return Err(invalid());
+        let attempted = self.0.len().saturating_add(bytes.len());
+        if attempted > MAX_BUNDLE_BYTES {
+            return Err(error(
+                "<client-bundle>",
+                format!(
+                    "encoded bytes/installation: attempted {attempted}; maximum {MAX_BUNDLE_BYTES}"
+                ),
+            ));
         }
         self.0.extend_from_slice(bytes);
         Ok(())
