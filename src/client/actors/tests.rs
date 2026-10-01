@@ -45,7 +45,8 @@ fn predicted_local_player_is_not_delayed_and_faces_the_current_look_heading() {
 pub(super) fn avatar(x: f32) -> VisualAvatar {
     VisualAvatar {
         motion: None,
-        character_pose: [0.0; 3],
+        character_pose: [0.0; 4],
+        character_look: [0.0; 2],
         character_crouch: 0.0,
         character_tool: None,
         character_recipe: None,
@@ -161,8 +162,73 @@ fn switching_actor_model_cannot_reuse_character_gait_or_old_pose() {
     }
     assert!(track.gait > 0.0);
     let creature = track.update(avatar(0.9), now + STEP * 10);
-    assert_eq!(creature.character_pose, [0.0; 3]);
+    assert_eq!(creature.character_pose, [0.0; 4]);
     let replaced = track.update(player(0.9), now + STEP * 11);
     assert_eq!(replaced.character_pose[0], 0.0);
     assert_eq!(replaced.character_pose[2], 0.0);
+}
+
+#[test]
+fn ground_speed_blends_walk_and_run_but_stale_or_airborne_motion_decays() {
+    let now = Instant::now();
+    let player = |x, airborne| VisualAvatar {
+        model: AvatarModel::Player,
+        airborne,
+        ..avatar(x)
+    };
+    let mut slow = Track::new(player(0.0, false), now);
+    let mut fast = Track::new(player(0.0, false), now);
+    let mut visual = player(0.0, false);
+    for i in 1..=30 {
+        let at = now + STEP * i;
+        let walk = slow.update_mode(player(i as f32 * 0.08, false), at, true);
+        visual = fast.update_mode(player(i as f32 * 0.32, false), at, true);
+        assert!(walk.character_pose[3] < 0.001);
+    }
+    assert!(visual.character_pose[3] > 0.99);
+    let frozen = visual.position.x;
+    for i in 31..=70 {
+        visual = fast.update_mode(player(frozen, false), now + STEP * i, true);
+    }
+    assert!(visual.character_pose[2] < 0.001 && visual.character_pose[3] < 0.001);
+    for i in 71..=110 {
+        visual = fast.update_mode(
+            player(frozen + (i - 70) as f32 * 0.32, true),
+            now + STEP * i,
+            true,
+        );
+    }
+    assert!(visual.character_pose[2] < 0.001 && visual.character_pose[3] < 0.001);
+}
+
+#[test]
+fn crouch_and_head_pitch_ease_and_teleport_resets_the_presentation_history() {
+    let now = Instant::now();
+    let mut player = VisualAvatar {
+        model: AvatarModel::Player,
+        ..avatar(0.0)
+    };
+    let mut track = Track::new(player, now);
+    player.character_crouch = 1.0;
+    player.character_look = [0.0, 1.2];
+    let first = track.update_mode(player, now + STEP, true);
+    assert!(first.character_crouch > 0.0 && first.character_crouch < 1.0);
+    assert!(first.character_look[1] > 0.0 && first.character_look[1] < 5.0_f32.to_radians());
+    for i in 2..=30 {
+        track.update_mode(player, now + STEP * i, true);
+    }
+    player.character_crouch = 0.0;
+    player.character_look[1] = 0.0;
+    let first = track.update_mode(player, now + STEP * 31, true);
+    assert!(first.character_crouch > 0.0 && first.character_crouch < 1.0);
+    for i in 32..=70 {
+        track.update_mode(player, now + STEP * i, true);
+    }
+    player.position.x = 100.0;
+    let teleported = track.update_mode(player, now + STEP * 71, true);
+    assert_eq!(teleported.character_pose[0], 0.0);
+    assert_eq!(teleported.character_pose[2], 0.0);
+    assert_eq!(teleported.character_pose[3], 0.0);
+    assert_eq!(teleported.character_crouch, 0.0);
+    assert_eq!(teleported.character_look, [0.0; 2]);
 }

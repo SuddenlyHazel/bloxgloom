@@ -20,7 +20,6 @@ fn config_round_trips_through_explicit_path() {
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
-        authored_characters: true,
         exposure: 1.25,
         post_processing: false,
         bloom_enabled: false,
@@ -160,12 +159,11 @@ fn profile_is_generated_once_and_survives_reload() {
 }
 
 #[test]
-fn authored_rendering_defaults_on_and_explicit_classic_roundtrips() {
-    assert!(Config::default().authored_characters);
-    let config = Config {
-        authored_characters: false,
-        ..Config::default()
-    };
+fn obsolete_classic_setting_is_ignored_without_losing_other_preferences() {
+    let config =
+        parse_config("version=1\nauthored_characters=false\nfov_degrees=92\nprofile=1234\n");
+    assert_eq!(config.fov_degrees, 92.0);
+    assert_eq!(config.profile, 0x1234);
+    assert!(!config.serialize().contains("authored_characters"));
     assert_eq!(parse_config(&config.serialize()), config);
-    assert!(parse_config("version=1\nauthored_characters=invalid\n").authored_characters);
 }

@@ -76,7 +76,7 @@ impl Track {
                 .lerp(glam::Vec3::from_array(b.avatar.motion.unwrap().velocity), t)
                 .to_array();
         visual.pose = [0.0; 4];
-        visual.character_pose = [0.0; 3];
+        visual.character_pose = [0.0; 4];
         visual
     }
 }

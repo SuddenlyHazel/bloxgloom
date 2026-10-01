@@ -27,7 +27,7 @@ fn committed_ticks_interpolate_orientation_without_gait_or_extrapolation() {
     let facing = glam::Quat::from_array(frame.motion.unwrap().orientation) * glam::Vec3::X;
     assert!((facing.x - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
     assert_eq!(frame.pose, [0.0; 4]);
-    assert_eq!(frame.character_pose, [0.0; 3]);
+    assert_eq!(frame.character_pose, [0.0; 4]);
     assert_eq!(
         track.update(next, now + Duration::from_secs(1)).position,
         next.position

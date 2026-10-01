@@ -130,7 +130,8 @@ impl NetworkedVisualProbe {
     pub(crate) fn has_spark(&self, id: u64) -> bool {
         let avatar = crate::render::VisualAvatar {
             motion: None,
-            character_pose: [0.0; 3],
+            character_pose: [0.0; 4],
+            character_look: [0.0; 2],
             character_crouch: 0.0,
             character_tool: None,
             character_recipe: None,

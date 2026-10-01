@@ -5,7 +5,11 @@ pub(crate) fn fingerprint() -> &'static [u8; 32] {
     catalog::fingerprint()
 }
 
-pub(crate) const MAX_APPEARANCE_BYTES: usize = 12;
+pub(crate) const CHARACTER_RECIPE_BYTES: usize = 12;
+pub(crate) const MAX_APPEARANCE_BYTES: usize = 4 + CHARACTER_RECIPE_BYTES;
+pub(crate) const BODIES: [&str; 2] = ["flat_chest", "defined_chest_sports_bra"];
+/// sRGB highlight color from the kit's default tousled-crop metadata (#BE7940).
+pub(crate) const DEFAULT_HAIR_COLOR: [u8; 3] = [190, 121, 64];
 pub(crate) const EYES: [&str; 8] = [
     "classic",
     "cute_glint",
@@ -43,6 +47,9 @@ pub(crate) const HAIR: [&str; 14] = [
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct CharacterRecipe {
+    pub body: u8,
+    /// sRGB color bytes, decoded to linear light once by the renderer.
+    pub hair_color: [u8; 3],
     pub hair: u8,
     pub eyes: u8,
     pub mouth: u8,
@@ -53,8 +60,10 @@ pub struct CharacterRecipe {
 impl Default for CharacterRecipe {
     fn default() -> Self {
         Self {
+            body: 0,
+            hair_color: DEFAULT_HAIR_COLOR,
             hair: 1,
-            eyes: 1,
+            eyes: 0,
             mouth: 1,
             iris: None,
         }
@@ -63,14 +72,16 @@ impl Default for CharacterRecipe {
 
 impl CharacterRecipe {
     pub fn valid(self) -> bool {
-        usize::from(self.hair) < HAIR.len()
+        usize::from(self.body) < BODIES.len()
+            && usize::from(self.hair) < HAIR.len()
             && usize::from(self.eyes) < EYES.len()
             && usize::from(self.mouth) < MOUTHS.len()
     }
-    pub fn encode(self) -> [u8; 8] {
+    pub fn encode(self) -> [u8; CHARACTER_RECIPE_BYTES] {
         let rgb = self.iris.unwrap_or([0; 3]);
         [
-            1,
+            2,
+            self.body,
             self.hair,
             self.eyes,
             self.mouth,
@@ -78,14 +89,34 @@ impl CharacterRecipe {
             rgb[0],
             rgb[1],
             rgb[2],
+            self.hair_color[0],
+            self.hair_color[1],
+            self.hair_color[2],
         ]
     }
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        let [version, hair, eyes, mouth, enabled, r, g, b]: [u8; 8] = bytes.try_into().ok()?;
-        if version != 1 || enabled > 1 || (enabled == 0 && [r, g, b] != [0; 3]) {
+        // Recipe v1 is intentionally incompatible. Prerelease worlds are never
+        // silently converted or reset; v22 uses a fresh world folder.
+        let [
+            version,
+            body,
+            hair,
+            eyes,
+            mouth,
+            enabled,
+            r,
+            g,
+            b,
+            hr,
+            hg,
+            hb,
+        ]: [u8; CHARACTER_RECIPE_BYTES] = bytes.try_into().ok()?;
+        if version != 2 || enabled > 1 || (enabled == 0 && [r, g, b] != [0; 3]) {
             return None;
         }
         let recipe = Self {
+            body,
+            hair_color: [hr, hg, hb],
             hair,
             eyes,
             mouth,
@@ -98,6 +129,7 @@ impl CharacterRecipe {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AppearanceState {
     pub palettes: [u8; 3],
+    /// None uses the articulated default with these same palettes.
     pub character: Option<CharacterRecipe>,
 }
 

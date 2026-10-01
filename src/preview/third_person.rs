@@ -14,6 +14,7 @@ pub(super) struct Shot {
 pub(super) enum GameplayPose {
     Idle,
     Walk,
+    Run,
     Crouch,
     CrouchWalk,
     Tool(bool),
@@ -52,6 +53,7 @@ pub fn render_gameplay_animation_previews(directory: &Path) -> Result<(), Box<dy
     fs::create_dir_all(directory)?;
     for (name, animation) in [
         ("walk.png", GameplayPose::Walk),
+        ("run.png", GameplayPose::Run),
         ("crouch.png", GameplayPose::Crouch),
         ("crouch-walk.png", GameplayPose::CrouchWalk),
         ("tool-left.png", GameplayPose::Tool(false)),
@@ -87,6 +89,8 @@ pub fn render_first_person_previews(directory: &Path) -> Result<(), Box<dyn Erro
         ("walk-down.png", GameplayPose::Walk, -1.48),
         ("crouch-down.png", GameplayPose::Crouch, -1.48),
         ("tool.png", GameplayPose::Tool(true), 0.0),
+        ("tool-left.png", GameplayPose::Tool(false), 0.0),
+        ("tool-left-down.png", GameplayPose::Tool(false), -0.7),
         ("tool-down.png", GameplayPose::Tool(true), -0.7),
         ("crouch-tool.png", GameplayPose::CrouchWalkTool, 0.0),
     ] {
@@ -196,6 +200,7 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
             eyes: 5,
             mouth: 3,
             iris: Some([36, 220, 95]),
+            ..Default::default()
         }),
     };
     let appearance = crate::appearance::AppearanceState::decode(&appearance.encode()).unwrap();
@@ -210,13 +215,22 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
             0.35,
             if matches!(
                 shot.animation,
-                GameplayPose::Walk | GameplayPose::CrouchWalk | GameplayPose::CrouchWalkTool
+                GameplayPose::Walk
+                    | GameplayPose::Run
+                    | GameplayPose::CrouchWalk
+                    | GameplayPose::CrouchWalkTool
             ) {
                 1.0
             } else {
                 0.0
             },
+            if matches!(shot.animation, GameplayPose::Run) {
+                1.0
+            } else {
+                0.0
+            },
         ],
+        character_look: [0.0; 2],
         character_crouch: if matches!(
             shot.animation,
             GameplayPose::Crouch | GameplayPose::CrouchWalk | GameplayPose::CrouchWalkTool

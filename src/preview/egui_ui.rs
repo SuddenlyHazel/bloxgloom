@@ -196,6 +196,7 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
                     eyes: 5,
                     mouth: 5,
                     iris: Some([36, 220, 95]),
+                    ..Default::default()
                 }),
                 can_apply: true,
                 pending: false,

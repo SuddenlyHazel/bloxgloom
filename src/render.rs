@@ -393,10 +393,6 @@ impl Renderer {
         self.fire.set(&self.queue, fires);
     }
 
-    pub(crate) fn set_authored_characters(&mut self, enabled: bool) {
-        self.avatars.set_authored(enabled);
-    }
-
     pub(crate) fn set_first_person_character(&mut self, view: Option<avatars::FirstPersonView>) {
         self.avatars.set_first_person(view);
     }

@@ -21,7 +21,7 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 20;
+const WIRE_VERSION: u8 = 21;
 mod player_states;
 mod players;
 pub use player_states::PlayerState;
@@ -55,11 +55,11 @@ pub enum ClientMessage {
         elapsed_ms: u64,
     },
     /// Select registered skin/shirt/pants indices for this server-admitted profile.
-    /// Model zero is the frozen humanoid; clients cannot send RGB or a profile ID.
+    /// These palette indices apply to both articulated body variants.
     SelectAppearance {
         palettes: [u8; 3],
     },
-    /// Change only this admitted profile's bounded authored recipe; None selects legacy.
+    /// Change this admitted profile's articulated recipe; None resets to its default.
     SelectCharacter {
         recipe: Option<crate::appearance::CharacterRecipe>,
     },
@@ -1201,8 +1201,10 @@ pub fn read_client_with_catalog(
             let recipe = match c.u8()? {
                 0 => None,
                 1 => Some(
-                    crate::appearance::CharacterRecipe::decode(c.take(8)?)
-                        .ok_or_else(|| invalid("invalid character recipe"))?,
+                    crate::appearance::CharacterRecipe::decode(
+                        c.take(crate::appearance::CHARACTER_RECIPE_BYTES)?,
+                    )
+                    .ok_or_else(|| invalid("invalid character recipe"))?,
                 ),
                 _ => return Err(invalid("invalid character presence")),
             };

@@ -93,9 +93,16 @@ impl CharacterPreview {
         encoder: &mut wgpu::CommandEncoder,
         panel: CharacterPanel,
     ) {
-        let clips = ["idle", "walk", "crouch", "tool_use_left", "tool_use_right"];
+        let clips = [
+            "idle",
+            "walk",
+            "crouch",
+            "tool_use_left",
+            "tool_use_right",
+            "run",
+        ];
         self.renderer
-            .preview_character_clip(clips[usize::from(panel.clip.min(4))], panel.time);
+            .preview_character_clip(clips[usize::from(panel.clip.min(5))], panel.time);
         self.renderer.set(
             queue,
             &[VisualAvatar {
@@ -103,7 +110,8 @@ impl CharacterPreview {
                 model: AvatarModel::Player,
                 pose: [-0.25, 0.0, 0.0, 0.0],
                 motion: None,
-                character_pose: [0.0; 3],
+                character_pose: [0.0; 4],
+                character_look: [0.0; 2],
                 character_crouch: 0.0,
                 character_tool: None,
                 character_recipe: panel.recipe,

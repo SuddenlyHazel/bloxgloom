@@ -65,9 +65,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     content::install(catalog).map_err(|_| "content catalog was installed more than once")?;
     let mut args = arguments.into_iter();
     let default_world = if cfg!(feature = "lifecycle-fixture") {
-        "world-v21-fixture"
+        "world-v22-fixture"
     } else {
-        "world-v21"
+        "world-v22"
     };
     match args.next().as_deref() {
         None | Some("local") => {
@@ -472,7 +472,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .unwrap_or(1);
             if args.next().is_some() {
-                return Err("usage: character-preview [output.png] [idle|walk|crouch|tool_use_left|tool_use_right] [seconds] [hair-id]".into());
+                return Err("usage: character-preview [output.png] [idle|walk|run|crouch|tool_use_left|tool_use_right] [seconds] [hair-id]".into());
             }
             preview::render_character_preview(std::path::Path::new(&path), &clip, time, hair)?;
         }
@@ -498,13 +498,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .transpose()?
                 .unwrap_or(128);
             let hair = match args.next().as_deref() {
-                Some("classic") => None,
+                Some("default") => None,
                 Some(value) => Some(value.parse::<u8>()?),
                 None => Some(1),
             };
             if args.next().is_some() {
                 return Err(
-                    "usage: character-perf [measured-frames] [actors] [hair-id|classic]".into(),
+                    "usage: character-perf [measured-frames] [actors] [hair-id|default]".into(),
                 );
             }
             preview::run_character_benchmark(frames, actors, hair)?;

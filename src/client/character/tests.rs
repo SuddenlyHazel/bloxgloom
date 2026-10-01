@@ -3,13 +3,17 @@ use super::*;
 fn draft_cancel_apply_echo_and_duplicate_apply_are_distinct() {
     let mut editor = CharacterEditor::default();
     editor.open(state(None));
-    let recipe = Some(CharacterRecipe::default());
+    let recipe = Some(CharacterRecipe {
+        body: 1,
+        hair_color: [1, 128, 255],
+        ..Default::default()
+    });
     editor.edit(recipe);
     assert!(editor.panel().can_apply);
     editor.open(state(None));
     assert_eq!(
         editor.panel().recipe,
-        None,
+        Some(CharacterRecipe::default()),
         "reopen discards unapplied draft"
     );
     editor.edit(recipe);
@@ -44,7 +48,10 @@ fn unknown_snapshot_and_rejected_draft_cannot_apply_and_disconnect_clears_state(
         ..Default::default()
     }));
     assert_eq!(editor.apply(), None);
-    editor.edit(Some(Default::default()));
+    editor.edit(Some(CharacterRecipe {
+        body: 1,
+        ..Default::default()
+    }));
     assert!(editor.apply().is_some());
     editor = CharacterEditor::default();
     assert!(!editor.panel().pending);
@@ -60,11 +67,14 @@ fn state(character: Option<CharacterRecipe>) -> Option<AppearanceState> {
 }
 
 #[test]
-fn classic_preview_preserves_palettes_and_clean_drafts_follow_server_changes() {
+fn default_articulated_preview_preserves_palettes_and_clean_drafts_follow_server_changes() {
     let mut editor = CharacterEditor::default();
     editor.open(state(None));
     assert_eq!(editor.panel().cosmetics, [2, 4, 1, 0]);
-    let first = Some(CharacterRecipe::default());
+    let first = Some(CharacterRecipe {
+        body: 1,
+        ..Default::default()
+    });
     editor.observe(state(first));
     assert_eq!(editor.panel().recipe, first);
     let draft = Some(CharacterRecipe {
@@ -79,4 +89,27 @@ fn classic_preview_preserves_palettes_and_clean_drafts_follow_server_changes() {
         "authoritative change must not erase an unapplied draft"
     );
     assert!(editor.panel().can_apply);
+}
+
+#[test]
+fn implicit_default_is_editable_without_a_model_toggle_or_phantom_changes() {
+    let mut editor = CharacterEditor::default();
+    editor.open(state(None));
+    assert_eq!(editor.panel().recipe, Some(CharacterRecipe::default()));
+    assert!(!editor.panel().can_apply);
+    editor.edit(None);
+    assert_eq!(editor.apply(), None);
+    editor.observe(state(Some(CharacterRecipe::default())));
+    assert!(!editor.panel().can_apply);
+}
+
+#[test]
+fn preview_run_selection_is_bounded_and_does_not_edit_recipe() {
+    let mut editor = CharacterEditor::default();
+    let recipe = editor.draft;
+    editor.clip(5);
+    assert_eq!(editor.panel().clip, 5);
+    editor.clip(6);
+    assert_eq!(editor.panel().clip, 5);
+    assert_eq!(editor.draft, recipe);
 }

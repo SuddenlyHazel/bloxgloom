@@ -22,15 +22,36 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             ],
         })
         .unwrap();
-    let original = render(&device, &queue, &builtin, [0; 4], [1.0; 3], None);
-    let changed = render(&device, &queue, &authored, [6, 8, 6, 0], [1.0; 3], None);
-    let tinted = render(
+    let recipe = crate::appearance::CharacterRecipe {
+        body: 1,
+        ..Default::default()
+    };
+    let original = render_recipe(
+        &device,
+        &queue,
+        &builtin,
+        [0; 4],
+        [1.0; 3],
+        None,
+        Some(recipe),
+    );
+    let changed = render_recipe(
+        &device,
+        &queue,
+        &authored,
+        [6, 8, 6, 0],
+        [1.0; 3],
+        None,
+        Some(recipe),
+    );
+    let tinted = render_recipe(
         &device,
         &queue,
         &authored,
         [6, 8, 6, 0],
         [0.0, 1.0, 0.0],
         None,
+        Some(recipe),
     );
     for row in 0..HEIGHT as usize {
         let start = row * WIDTH as usize * 4;
@@ -45,11 +66,16 @@ fn gpu_registered_player_palettes_preserve_default_and_color_all_three_parts() {
             "tint changed another avatar"
         );
     }
-    let shirt = ((1.9 - 1.0) / 2.0 * HEIGHT as f32) as usize * WIDTH as usize
+    let shirt = ((1.9 - 1.07) / 2.0 * HEIGHT as f32) as usize * WIDTH as usize
         + ((0.65 + 1.4) / 2.8 * WIDTH as f32) as usize;
-    assert!(changed[shirt * 4] > tinted[shirt * 4] + 25);
+    assert!(
+        changed[shirt * 4] > tinted[shirt * 4] + 25,
+        "shirt pixel {:?} tinted {:?}",
+        &changed[shirt * 4..shirt * 4 + 4],
+        &tinted[shirt * 4..shirt * 4 + 4]
+    );
     // Samples are on the front face, avoiding eyes, seams, hair and silhouettes.
-    for (x, y, channel) in [(0.65, 1.43, 1), (0.65, 1.0, 0), (0.53, 0.35, 2)] {
+    for (x, y, channel) in [(0.65, 0.98, 1), (0.65, 1.07, 0), (0.53, 0.65, 2)] {
         let px = ((x + 1.4) / 2.8 * WIDTH as f32) as usize;
         let py = ((1.9 - y) / 2.0 * HEIGHT as f32) as usize;
         let pixel = &changed[(py * WIDTH as usize + px) * 4..][..4];
@@ -107,7 +133,8 @@ fn render_recipe(
 ) -> Vec<u8> {
     let avatars = [(-0.65, [0; 4]), (0.65, selection)].map(|(x, cosmetics)| VisualAvatar {
         motion: None,
-        character_pose: [0.0; 3],
+        character_pose: [0.0; 4],
+        character_look: [0.0; 2],
         character_crouch: 0.0,
         character_tool: None,
         character_recipe: if x > 0.0 {
@@ -381,5 +408,53 @@ fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
             mouth: 5,
             ..default
         })
+    );
+}
+
+#[test]
+fn both_bodies_all_hairstyles_support_independent_rgb_without_neighbor_changes() {
+    let instance = wgpu::Instance::default();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+    let catalog = Catalog::builtins();
+    let draw = |body, hair, color| {
+        render_recipe(
+            &device,
+            &queue,
+            &catalog,
+            [0; 4],
+            [1.0; 3],
+            Some(("idle", 0.0)),
+            Some(crate::appearance::CharacterRecipe {
+                body,
+                hair,
+                hair_color: color,
+                ..Default::default()
+            }),
+        )
+    };
+    for body in 0..2 {
+        for hair in 0..14 {
+            let red = draw(body, hair, [220, 35, 40]);
+            let blue = draw(body, hair, [40, 100, 225]);
+            if hair == 0 {
+                assert_eq!(red, blue, "bald recipe must ignore hair color");
+            } else {
+                assert_ne!(red, blue, "body {body} hair {hair} must visibly recolor");
+            }
+            for row in 0..HEIGHT as usize {
+                let start = row * WIDTH as usize * 4;
+                assert_eq!(
+                    &red[start..start + WIDTH as usize * 2],
+                    &blue[start..start + WIDTH as usize * 2],
+                    "hair RGB leaked to another actor"
+                );
+            }
+        }
+    }
+    assert_ne!(
+        draw(0, 0, [0; 3]),
+        draw(1, 0, [0; 3]),
+        "body selection must select distinct geometry"
     );
 }
