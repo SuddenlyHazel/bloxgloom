@@ -116,7 +116,9 @@ impl ContactMemory {
 
 #[derive(Clone, Copy)]
 enum Pause {
+    #[cfg(test)]
     Never,
+    #[cfg(test)]
     First,
     New(Option<ContactMemory>),
 }
@@ -170,6 +172,7 @@ pub fn swept_cells(
 /// Semi-implicit Euler: velocity += acceleration * dt; displacement = velocity
 /// * dt. Gravity is included in the captured acceleration by the adapter. All
 /// slab tests use full displacement, including moving targets' relative motion.
+#[cfg(test)]
 pub fn integrate(
     state: State,
     body: Body,
@@ -192,6 +195,7 @@ pub fn integrate(
 
 /// Apply the first collision response and pause at the contact pose. Pending
 /// impact delivery must complete before the owner integrates another step.
+#[cfg(test)]
 pub fn integrate_until_contact(
     state: State,
     body: Body,
@@ -368,7 +372,9 @@ fn integrate_inner(
         }
         cap_speed(&mut result.velocity, policy.max_speed);
         let pause = match policy.pause {
+            #[cfg(test)]
             Pause::Never => false,
+            #[cfg(test)]
             Pause::First => true,
             Pause::New(previous) => {
                 !previous.is_some_and(|old| old.matches(result.contacts.last().expect("contact")))
