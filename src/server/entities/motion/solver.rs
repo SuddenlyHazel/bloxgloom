@@ -83,6 +83,48 @@ pub struct Step {
     pub contacts: Vec<Contact>,
     pub blocked: Option<Blocked>,
     pub grounded: bool,
+    pub resting: Option<ContactMemory>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContactMemory {
+    pub target: Target,
+    pub normal: [f64; 3],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ContactPolicy {
+    pub previous: Option<ContactMemory>,
+    pub pause_on_new: bool,
+    pub max_speed: f64,
+}
+
+impl ContactMemory {
+    pub fn matches(self, contact: &Contact) -> bool {
+        let same_target = match (self.target, contact.target) {
+            (Target::Player { id: a, .. }, Target::Player { id: b, .. })
+            | (Target::Creature { id: a, .. }, Target::Creature { id: b, .. }) => a == b,
+            (a, b) => a == b,
+        };
+        same_target
+            && (0..3)
+                .map(|axis| self.normal[axis] * contact.normal[axis])
+                .sum::<f64>()
+                > 0.999
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Pause {
+    Never,
+    First,
+    New(Option<ContactMemory>),
+}
+
+#[derive(Clone, Copy)]
+struct Policy {
+    pause: Pause,
+    max_speed: Option<f64>,
 }
 
 fn finite(vector: [f64; 3]) -> bool {
@@ -135,7 +177,17 @@ pub fn integrate(
     colliders: &[Collider],
     limits: Limits,
 ) -> Result<Step, Error> {
-    integrate_inner(state, body, dt, colliders, limits, false)
+    integrate_inner(
+        state,
+        body,
+        dt,
+        colliders,
+        limits,
+        Policy {
+            pause: Pause::Never,
+            max_speed: None,
+        },
+    )
 }
 
 /// Apply the first collision response and pause at the contact pose. Pending
@@ -147,7 +199,49 @@ pub fn integrate_until_contact(
     colliders: &[Collider],
     limits: Limits,
 ) -> Result<Step, Error> {
-    integrate_inner(state, body, dt, colliders, limits, true)
+    integrate_inner(
+        state,
+        body,
+        dt,
+        colliders,
+        limits,
+        Policy {
+            pause: Pause::First,
+            max_speed: None,
+        },
+    )
+}
+
+/// Continue through previously resting contacts, pausing only a new reaction.
+/// Capture must cover the speed-bounded reflected envelope, not merely the
+/// original straight displacement. Clamp moving-frame responses before using
+/// their displacement so a moving collider cannot escape that capture.
+pub fn integrate_with_contact_policy(
+    state: State,
+    body: Body,
+    dt: f64,
+    colliders: &[Collider],
+    limits: Limits,
+    policy: ContactPolicy,
+) -> Result<Step, Error> {
+    if !policy.max_speed.is_finite() || policy.max_speed < 0.0 {
+        return Err(Error::InvalidInput);
+    }
+    integrate_inner(
+        state,
+        body,
+        dt,
+        colliders,
+        limits,
+        Policy {
+            pause: if policy.pause_on_new {
+                Pause::New(policy.previous)
+            } else {
+                Pause::Never
+            },
+            max_speed: Some(policy.max_speed),
+        },
+    )
 }
 
 fn integrate_inner(
@@ -156,7 +250,7 @@ fn integrate_inner(
     dt: f64,
     colliders: &[Collider],
     limits: Limits,
-    pause_at_contact: bool,
+    policy: Policy,
 ) -> Result<Step, Error> {
     if !finite(state.position)
         || !finite(state.velocity)
@@ -185,7 +279,8 @@ fn integrate_inner(
     }) {
         return Err(Error::InvalidInput);
     }
-    let velocity = std::array::from_fn(|a| state.velocity[a] + state.acceleration[a] * dt);
+    let mut velocity = std::array::from_fn(|a| state.velocity[a] + state.acceleration[a] * dt);
+    cap_speed(&mut velocity, policy.max_speed);
     let displacement = std::array::from_fn(|a| velocity[a] * dt);
     swept_cells(
         state.position,
@@ -202,6 +297,7 @@ fn integrate_inner(
         contacts: Vec::new(),
         blocked: None,
         grounded: false,
+        resting: None,
     };
     let mut elapsed = 0.0;
     for iteration in 0..=limits.contacts {
@@ -227,6 +323,7 @@ fn integrate_inner(
                 result.position[axis] += value;
             }
             check_bounds(result.position, body, limits)?;
+            elapsed = 1.0;
             break;
         };
         if iteration == limits.contacts {
@@ -269,11 +366,87 @@ fn integrate_inner(
         for (axis, value) in normal.iter().enumerate() {
             result.velocity[axis] -= factor * inward * value;
         }
-        if pause_at_contact || elapsed >= 1.0 {
+        cap_speed(&mut result.velocity, policy.max_speed);
+        let pause = match policy.pause {
+            Pause::Never => false,
+            Pause::First => true,
+            Pause::New(previous) => {
+                !previous.is_some_and(|old| old.matches(result.contacts.last().expect("contact")))
+            }
+        };
+        if pause || elapsed >= 1.0 {
             break;
         }
     }
+    if result.blocked == Some(Blocked::Embedded) {
+        result.resting = result.contacts.last().map(|c| ContactMemory {
+            target: c.target,
+            normal: c.normal,
+        });
+    } else {
+        let previous = match policy.pause {
+            Pause::New(previous) => previous,
+            _ => None,
+        };
+        result.resting = result
+            .contacts
+            .iter()
+            .rev()
+            .map(|c| ContactMemory {
+                target: c.target,
+                normal: c.normal,
+            })
+            .chain(previous)
+            .find(|memory| {
+                colliders
+                    .iter()
+                    .find(|c| c.target == memory.target)
+                    .is_some_and(|c| {
+                        resting_at(
+                            result.position,
+                            body.half_extents,
+                            memory.normal,
+                            c,
+                            elapsed,
+                        )
+                    })
+            });
+    }
+    result.grounded = result
+        .resting
+        .is_some_and(|contact| contact.normal[1] > 0.0);
     Ok(result)
+}
+
+fn cap_speed(velocity: &mut [f64; 3], maximum: Option<f64>) {
+    let Some(maximum) = maximum else { return };
+    let length = velocity.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if length > maximum {
+        for v in velocity {
+            *v *= maximum / length;
+        }
+    }
+}
+
+fn resting_at(
+    position: [f64; 3],
+    half: [f64; 3],
+    normal: [f64; 3],
+    collider: &Collider,
+    elapsed: f64,
+) -> bool {
+    (0..3).all(|axis| {
+        let min = collider.min[axis] + collider.displacement[axis] * elapsed - half[axis];
+        let max = collider.max[axis] + collider.displacement[axis] * elapsed + half[axis];
+        let tolerance = (f64::from(f32::EPSILON) * position[axis].abs().max(1.0) * 2.0).max(1e-7);
+        if normal[axis] < 0.0 {
+            (position[axis] - min).abs() <= tolerance
+        } else if normal[axis] > 0.0 {
+            (position[axis] - max).abs() <= tolerance
+        } else {
+            position[axis] > min && position[axis] < max
+        }
+    })
 }
 
 fn check_bounds(position: [f64; 3], body: Body, limits: Limits) -> Result<(), Error> {
@@ -301,7 +474,22 @@ fn sweep(
     let max: [f64; 3] =
         std::array::from_fn(|a| collider.max[a] + collider.displacement[a] * elapsed + half[a]);
     if (0..3).all(|a| position[a] > min[a] && position[a] < max[a]) {
-        return Some((0.0, [0.0; 3], true));
+        // Minimum translation face, with X/Y/Z and negative-face ties stable.
+        // Never push an embedded body out, but still expose a meaningful unit
+        // normal to its blocked impact callback.
+        let mut depth = f64::INFINITY;
+        let mut normal = [0.0; 3];
+        for axis in 0..3 {
+            let negative = position[axis] - min[axis];
+            let positive = max[axis] - position[axis];
+            let candidate = negative.min(positive);
+            if candidate < depth {
+                depth = candidate;
+                normal = [0.0; 3];
+                normal[axis] = if negative <= positive { -1.0 } else { 1.0 };
+            }
+        }
+        return Some((0.0, normal, true));
     }
     let relative: [f64; 3] =
         std::array::from_fn(|a| movement[a] - collider.displacement[a] * remaining);

@@ -263,3 +263,117 @@ fn earlier_wall_contact_prevents_false_world_boundary_removal() {
     assert_eq!(step.position, [4.75, 0.5, 0.5]);
     assert_eq!(step.blocked, None);
 }
+
+#[test]
+fn resting_slide_continues_tangent_motion_without_repeating_impact() {
+    let floor = voxel([0, 0, 0]);
+    let previous = ContactMemory {
+        target: floor.target,
+        normal: [0.0, 1.0, 0.0],
+    };
+    let step = integrate_with_contact_policy(
+        state([0.5, 1.25, 0.5], [1.0, -0.8, 0.0]),
+        body(Response::Slide),
+        0.04,
+        &[floor],
+        limits(),
+        ContactPolicy {
+            previous: Some(previous),
+            pause_on_new: true,
+            max_speed: 64.0,
+        },
+    )
+    .unwrap();
+    near(step.position[0], 0.54);
+    near(step.position[1], 1.25);
+    assert!(step.grounded);
+    assert!(step.contacts.iter().all(|c| previous.matches(c)));
+}
+
+#[test]
+fn resting_floor_does_not_hide_a_new_wall_reaction() {
+    let floor = voxel([0, 0, 0]);
+    let wall = voxel([1, 1, 0]);
+    let previous = ContactMemory {
+        target: floor.target,
+        normal: [0.0, 1.0, 0.0],
+    };
+    let step = integrate_with_contact_policy(
+        state([0.5, 1.25, 0.5], [8.0, -0.8, 0.0]),
+        body(Response::Slide),
+        0.04,
+        &[floor, wall],
+        limits(),
+        ContactPolicy {
+            previous: Some(previous),
+            pause_on_new: true,
+            max_speed: 64.0,
+        },
+    )
+    .unwrap();
+    near(step.position[0], 0.75);
+    assert_eq!(
+        step.contacts
+            .iter()
+            .find(|c| !previous.matches(c))
+            .unwrap()
+            .target,
+        wall.target
+    );
+}
+
+#[test]
+fn native_bounce_consumes_remaining_time_and_forgets_separated_contact() {
+    let step = integrate_with_contact_policy(
+        state([0.0, 0.5, 0.5], [8.0, 0.0, 0.0]),
+        body(Response::Bounce),
+        0.2,
+        &[voxel([1, 0, 0])],
+        limits(),
+        ContactPolicy {
+            previous: None,
+            pause_on_new: false,
+            max_speed: 64.0,
+        },
+    )
+    .unwrap();
+    near(step.position[0], -0.1);
+    assert_eq!(step.velocity, [-8.0, 0.0, 0.0]);
+    assert!(step.resting.is_none());
+}
+
+#[test]
+fn dynamic_frame_bounce_obeys_declared_speed_cap() {
+    let mut moving = voxel([1, 0, 0]);
+    moving.displacement = [-1.0, 0.0, 0.0];
+    let step = integrate_with_contact_policy(
+        state([0.0, 0.5, 0.5], [8.0, 0.0, 0.0]),
+        body(Response::Bounce),
+        0.2,
+        &[moving],
+        limits(),
+        ContactPolicy {
+            previous: None,
+            pause_on_new: true,
+            max_speed: 10.0,
+        },
+    )
+    .unwrap();
+    near(step.velocity[0], -10.0);
+}
+
+#[test]
+fn embedded_contact_has_stable_unit_normal_without_pushout() {
+    let initial = state([0.5; 3], [1.0, 0.0, 0.0]);
+    let step = integrate(
+        initial,
+        body(Response::Slide),
+        0.04,
+        &[voxel([0; 3])],
+        limits(),
+    )
+    .unwrap();
+    assert_eq!(step.blocked, Some(Blocked::Embedded));
+    assert_eq!(step.position, initial.position);
+    assert_eq!(step.contacts[0].normal, [-1.0, 0.0, 0.0]);
+}
