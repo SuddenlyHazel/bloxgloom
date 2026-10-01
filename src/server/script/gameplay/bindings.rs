@@ -9,7 +9,7 @@
 //! ownership, schema, read dependencies and commit validation are not bypassed.
 use super::*;
 use bloxgloom_host_api::gameplay::Cell;
-mod motion;
+pub(in crate::server::script) mod motion;
 pub(in crate::server::script) mod players;
 mod profile_state;
 mod queries;

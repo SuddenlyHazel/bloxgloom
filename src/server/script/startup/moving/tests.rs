@@ -127,5 +127,5 @@ fn moving_startup_supports_private_model_free_entities() {
     let declarations = fixture.discover().unwrap();
     assert_eq!(declarations.handlers.len(), 1);
     assert!(declarations.moving[0].model.is_empty());
-    assert_eq!(declarations.moving[0].state.public(&[0; 8]).unwrap(), []);
+    assert!(declarations.moving[0].state.public(&[0; 8]).unwrap().is_empty());
 }

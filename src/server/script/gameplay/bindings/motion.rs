@@ -22,24 +22,9 @@ pub(super) fn install<'scope>(
         "spawn_moving_entity",
         scope.create_function(|lua, (key, options): (Value, Value)| {
             let reference = checked(rejected, || {
-                let options = table(options)?;
-                let velocity =
-                    optional_vector::<3>(field(&options, "velocity")?)?.unwrap_or([0.0; 3]);
-                let orientation = optional_vector::<4>(field(&options, "orientation")?)?
-                    .unwrap_or([0.0, 0.0, 0.0, 1.0]);
-                let source = match field(&options, "source")? {
-                    Value::Nil => None,
-                    value => Some(handles::entity_value(value).map_err(invalid)?),
-                };
-                let state = state_bytes(field(&options, "state")?)?;
-                context.borrow_mut().spawn_moving_entity(MovingSpawn {
-                    key: text(key).map_err(invalid)?,
-                    position: vector(field(&options, "position")?)?,
-                    velocity,
-                    orientation,
-                    state: state.as_bytes().to_vec(),
-                    source,
-                })
+                context
+                    .borrow_mut()
+                    .spawn_moving_entity(parse_spawn(key, options)?)
             })?;
             lua.create_userdata(SpawnRef(reference))
                 .inspect_err(|error| queries::latch(rejected, error))
@@ -63,30 +48,7 @@ pub(super) fn install<'scope>(
         "set_motion",
         scope.create_function(|_, (id, revision, options): (Value, Value, Value)| {
             checked(rejected, || {
-                let options = table(options)?;
-                // Position is deliberately absent: steering cannot teleport a body.
-                for pair in options.clone().pairs::<Value, Value>().take(4) {
-                    let (Value::String(key), _) =
-                        pair.map_err(|_| invalid("invalid motion field"))?
-                    else {
-                        return Err(invalid("invalid motion field"));
-                    };
-                    if !matches!(
-                        key.to_str()
-                            .map_err(|_| invalid("invalid motion field"))?
-                            .as_ref(),
-                        "velocity" | "acceleration" | "orientation"
-                    ) {
-                        return Err(invalid(
-                            "motion changes accept only velocity, acceleration and orientation",
-                        ));
-                    }
-                }
-                let change = MotionChange {
-                    velocity: optional_vector(field(&options, "velocity")?)?,
-                    acceleration: optional_vector(field(&options, "acceleration")?)?,
-                    orientation: optional_vector(field(&options, "orientation")?)?,
-                };
+                let change = parse_change(options)?;
                 context.borrow_mut().set_motion(
                     handles::entity_value(id).map_err(invalid)?,
                     handles::revision_value(revision).map_err(invalid)?,
@@ -96,6 +58,53 @@ pub(super) fn install<'scope>(
         })?,
     )?;
     Ok(())
+}
+
+pub(in crate::server::script) fn parse_spawn(
+    key: Value,
+    options: Value,
+) -> Result<MovingSpawn, Error> {
+    let options = table(options)?;
+    let velocity = optional_vector::<3>(field(&options, "velocity")?)?.unwrap_or([0.0; 3]);
+    let orientation =
+        optional_vector::<4>(field(&options, "orientation")?)?.unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    let source = match field(&options, "source")? {
+        Value::Nil => None,
+        value => Some(handles::entity_value(value).map_err(invalid)?),
+    };
+    let state = state_bytes(field(&options, "state")?)?;
+    Ok(MovingSpawn {
+        key: text(key).map_err(invalid)?,
+        position: vector(field(&options, "position")?)?,
+        velocity,
+        orientation,
+        state: state.as_bytes().to_vec(),
+        source,
+    })
+}
+pub(in crate::server::script) fn parse_change(options: Value) -> Result<MotionChange, Error> {
+    let options = table(options)?;
+    // Position is deliberately absent: steering cannot teleport a body.
+    for pair in options.clone().pairs::<Value, Value>().take(4) {
+        let (Value::String(key), _) = pair.map_err(|_| invalid("invalid motion field"))? else {
+            return Err(invalid("invalid motion field"));
+        };
+        if !matches!(
+            key.to_str()
+                .map_err(|_| invalid("invalid motion field"))?
+                .as_ref(),
+            "velocity" | "acceleration" | "orientation"
+        ) {
+            return Err(invalid(
+                "motion changes accept only velocity, acceleration and orientation",
+            ));
+        }
+    }
+    Ok(MotionChange {
+        velocity: optional_vector(field(&options, "velocity")?)?,
+        acceleration: optional_vector(field(&options, "acceleration")?)?,
+        orientation: optional_vector(field(&options, "orientation")?)?,
+    })
 }
 
 fn field(table: &mlua::Table, key: &str) -> Result<Value, Error> {

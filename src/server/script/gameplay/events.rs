@@ -19,7 +19,7 @@ fn triple<T: mlua::IntoLua>(lua: &Lua, values: [T; 3]) -> mlua::Result<Table> {
     Ok(value)
 }
 
-pub(super) fn motion(
+pub(in crate::server::script) fn motion(
     lua: &Lua,
     motion: &bloxgloom_host_api::motion::Motion,
 ) -> mlua::Result<Table> {
