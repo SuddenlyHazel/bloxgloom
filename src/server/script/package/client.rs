@@ -48,6 +48,7 @@ use crate::server::script::capacity::{MAX_ASSETS_PER_PACKAGE, MAX_MODULES_PER_PA
 mod declarations;
 mod observers;
 mod players;
+mod residency;
 
 const MAGIC: &[u8] = b"BGCLIENT\x07";
 const SIZED_MAGIC: &[u8] = b"BGCLIENT\x08";
@@ -138,6 +139,7 @@ pub struct ClientPackage {
 #[derive(Debug)]
 pub struct ClientBundle {
     bytes: Vec<u8>,
+    residency: residency::Reservation<'static>,
     key: CacheKey,
     packages: BTreeMap<String, ClientPackage>,
     declarations: Option<declarations::Startup>,
@@ -254,6 +256,7 @@ impl ClientBundle {
         if bytes.starts_with(players::MAGIC) {
             return players::decode(bytes, expected);
         }
+        let mut residency = residency::reserve(bytes.len())?;
         let mut reader = Reader(bytes);
         let version = reader.take(MAGIC.len())?;
         if ![
@@ -404,6 +407,7 @@ impl ClientBundle {
         let declarations = declarations::Startup::decode(
             &mut reader,
             &packages,
+            &mut residency,
             declarations::Format {
                 sized: version == SIZED_MAGIC
                     || version == ANIMATED_MAGIC
@@ -697,6 +701,7 @@ impl ClientBundle {
             .map(std::sync::Arc::new);
         Ok(Self {
             bytes: bytes.to_vec(),
+            residency,
             key: expected,
             packages,
             declarations,

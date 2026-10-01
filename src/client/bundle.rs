@@ -73,7 +73,15 @@ pub(crate) fn receive_progress(
         // Download storage, the canonical retained bytes and decoded payload
         // coexist during verification. Concurrent join workers share this
         // reservation; admission occurs before asking the server for bytes.
-        let _memory = memory::reserve(identity.total_len as usize)?;
+        let _memory = memory::reserve(identity.total_len as usize).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!(
+                    "client bundle download {}: {error}",
+                    identity.key.cache_name()
+                ),
+            )
+        })?;
         progress(0, false)?;
         protocol::write_client(&mut stream, &ClientMessage::BundleRequest { identity })?;
         let total = identity.total_len as usize;
@@ -96,7 +104,14 @@ pub(crate) fn receive_progress(
             bytes.extend_from_slice(&part);
             progress(bytes.len() as u32, false)?;
         }
-        Arc::new(ClientBundle::decode_verify(&bytes, identity.key).map_err(io::Error::other)?)
+        Arc::new(
+            ClientBundle::decode_verify(&bytes, identity.key).map_err(|error| {
+                io::Error::other(format!(
+                    "client bundle verification {}: {error}",
+                    identity.key.cache_name()
+                ))
+            })?,
+        )
     };
     protocol::write_client(&mut stream, &ClientMessage::BundleReady { identity })?;
     Ok(bundle)

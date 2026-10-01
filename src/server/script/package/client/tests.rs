@@ -3,6 +3,47 @@ mod effects;
 mod materials;
 mod runtime;
 
+#[test]
+fn repeated_texture_bindings_cannot_multiply_one_asset_past_decoded_admission() {
+    let mut writer = header(1);
+    writer.field(b"farm").unwrap();
+    writer.field(b"1.0.0").unwrap();
+    writer.count(0).unwrap(); // dependencies
+    writer.count(0).unwrap(); // sources
+    writer.count(1).unwrap(); // one asset, reused by many declarations
+    writer.field(b"tile").unwrap();
+    writer.count(1).unwrap();
+    let mut png = include_bytes!("../../../../../assets/textures/blocks/stone.png").to_vec();
+    png.resize(MAX_ASSET_BYTES, 0);
+    writer.field(&png).unwrap();
+    writer.count(1).unwrap(); // startup
+    writer.count(1).unwrap();
+    writer.field(b"bloxgloom:content/v1").unwrap();
+    writer.count(0).unwrap(); // items
+    writer.count(33).unwrap();
+    for index in 0..33 {
+        writer
+            .field(format!("farm:tile_{index:02}").as_bytes())
+            .unwrap();
+        writer.field(b"tile").unwrap();
+    }
+    writer.count(0).unwrap(); // blocks
+    for _ in 0..5 {
+        writer.count(0).unwrap();
+    }
+    let error = ClientBundle::decode_verify(&writer.0, key(&writer.0)).unwrap_err();
+    assert!(
+        error.to_string().contains("texture PNG bytes/installation"),
+        "{error}"
+    );
+    // A failed verification releases its artifact admission and leaves the
+    // next healthy artifact installable.
+    let mut healthy = header(1);
+    package(&mut healthy, "farm", None);
+    healthy.count(0).unwrap();
+    ClientBundle::decode_verify(&healthy.0, key(&healthy.0)).unwrap();
+}
+
 fn key(bytes: &[u8]) -> CacheKey {
     CacheKey::from_bytes(Sha256::digest(bytes).into())
 }

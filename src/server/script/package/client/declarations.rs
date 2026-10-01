@@ -657,6 +657,7 @@ impl Startup {
     pub(super) fn decode(
         reader: &mut Reader<'_>,
         packages: &BTreeMap<String, ClientPackage>,
+        residency: &mut residency::Reservation<'static>,
         Format {
             sized,
             animated,
@@ -714,6 +715,7 @@ impl Startup {
             }
             return Ok(None);
         }
+        let mut texture_payload = 0usize;
         let mut has_nondefault_size = false;
         let mut has_nondefault_animation = false;
         let mut has_nondefault_policy = false;
@@ -886,6 +888,17 @@ impl Startup {
                 };
                 has_visual |= alpha_cutout;
                 previous.clone_from(&key);
+                texture_payload = texture_payload.saturating_add(png.len());
+                if texture_payload > 64 * 1024 * 1024 {
+                    return Err(error(
+                        name,
+                        format!(
+                            "texture {key}: texture PNG bytes/installation: attempted {texture_payload}; maximum {}",
+                            64 * 1024 * 1024
+                        ),
+                    ));
+                }
+                residency.add_payload(png.len())?;
                 startup.textures.push(content::Texture {
                     key,
                     png: std::borrow::Cow::Owned(png.clone()),

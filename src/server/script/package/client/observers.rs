@@ -83,6 +83,7 @@ pub(super) fn decode(bytes: &[u8], expected: CacheKey) -> Result<ClientBundle, S
     // Retire the inner canonical buffer before allocating the outer one.
     // Nested compatibility wrappers must not add another full payload copy
     // to the download + canonical + decoded-payload reservation.
+    bundle.residency.resize(bytes.len())?;
     drop(std::mem::take(&mut bundle.bytes));
     bundle.bytes = bytes.to_vec();
     bundle.key = expected;
