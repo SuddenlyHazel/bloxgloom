@@ -22,5 +22,10 @@ Client sparks only mark visible replicas. Shapes and models use center-origin
 coordinates in blocks. Stop and restart with the same package sources and save
 to resume committed motion; dormant terrain pauses active lifetime.
 
+The admin command `/throw:cancelprojectiles` removes captured owned projectiles
+within eight blocks, including permanently failing pending impacts. Cancellation
+does not award a seed refund. The host checks admin authority in addition to the
+registered command's permission.
+
 Change package sources using a fresh save directory. This prerelease rejects
 incompatible package records and does not convert them.

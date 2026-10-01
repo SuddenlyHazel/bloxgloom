@@ -148,6 +148,12 @@ again, but committed rewards and edits happen once. A failed callback preserves
 the pending record. Packages that omit an impact handler use the host response
 without an authored reaction.
 
+An authorized admin can call `c.cancel_moving_entity(id)` to remove an owned
+moving object and its pending reaction together, without applying its failed
+effects. The moving seed fixture binds this to `/throw:cancelprojectiles` for
+nearby owned projectiles. Ordinary `remove_entity` remains available to owned
+gameplay reactions.
+
 Persisted records contain pose, velocity, acceleration, orientation, contact,
 remaining active lifetime, behavior deadline, source exclusion and pending
 reaction. Restart resumes committed state. Dormancy and server downtime do not
@@ -160,6 +166,7 @@ Owner transfer across chunk seams remains part of the entity commit.
 | Resource | Bound |
 | --- | --- |
 | Moving declarations per Luau package | 8 |
+| Moving declarations per installation | 128 |
 | Fixed authored private state | 1–4096 bytes |
 | Public authored state prefix | 0–min(private length, 4000) bytes |
 | Model parts | 1–16 when model is supplied |
@@ -173,6 +180,7 @@ Owner transfer across chunk seams remains part of the entity commit.
 | Live moving bodies | 256 total; 64 per owner chunk |
 | Swept voxel capture | 4096 cells per step |
 | Dynamic collider capture | 64 per step |
+| Contact iterations | 4 per integration |
 
 Limits reject or suspend work rather than silently removing colliders. Native
 declarations share host validation; native authored-state bounds can exceed the

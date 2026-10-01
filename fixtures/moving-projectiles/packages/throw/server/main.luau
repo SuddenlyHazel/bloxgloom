@@ -21,4 +21,7 @@ return function(h: BloxStartupHost): ()
     })
     h.register_action("throw:launch_seed", 1, "Throw seed", "item", "throw:seed", "throw:launch")
     h.register_action("throw:launch_guided", 1, "Launch guided seed", "item", "throw:seed", "throw:launch")
+    h.register_action("throw:cancelprojectiles", 1, "Cancel nearby projectiles", "empty", nil, "throw:cancel", {
+        permission = "Admin", arguments = {},
+    })
 end

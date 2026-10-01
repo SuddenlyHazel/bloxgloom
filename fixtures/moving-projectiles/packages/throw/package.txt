@@ -9,5 +9,6 @@ module server main server/main.luau
 module server launch server/launch.luau
 module server seed server/seed.luau
 module server guided server/guided.luau
+module server cancel server/cancel.luau
 module client client_startup client/client_startup.luau
 module client visuals client/visuals.luau

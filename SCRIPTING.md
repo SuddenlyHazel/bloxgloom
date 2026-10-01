@@ -463,6 +463,30 @@ access permissions. Legacy validated numeric-word forms remain compatibility
 paths; new authoring should use handles. Binary state and component strings
 may contain zero bytes and are distinct from presentation text.
 
+## Moving entities and projectiles
+
+`host.register_moving_entity(declaration)` declares a center-origin, server-owned
+moving body, optional colored-cuboid model and owned binary state. Require
+`bloxgloom:content/v1`, `bloxgloom:actions/v1` and
+`bloxgloom:moving_entities/v1`. Each Luau package can declare eight moving types.
+
+Gameplay services include `c.spawn_moving_entity(key, options)`, scoped staged
+spawn replacement with `c.configure_spawn(reference, key, options)`, captured
+`c.motion(id)` and revision-fenced `c.set_motion(id, revision, options)`.
+`MovingTick`, `MovingImpact` and `MovingExpiry` callbacks use exact IDs/revisions
+and normal transaction rules. The server sweeps the complete collision box,
+applies declared stop/bounce/slide responses, and persists pending reactions
+before their effects. Authored state services expose authored bytes, separately
+from the host motion envelope. Admin cancellation can clear permanently failed
+owned reactions.
+
+See [Moving entities](docs/modding/MOVING-ENTITIES.md) for coordinates, events,
+body/state limits, restart semantics and authority. Run the
+[moving seeds fixture](fixtures/moving-projectiles/README.md) for inventory-backed
+throws, conditional impact planting, guided motion and presentation sparks.
+Ground creatures retain their existing locomotion. Vehicles, imported meshes,
+animation controllers and audio remain separate engine work.
+
 ## Durable owner systems
 
 `host.register_system(declaration)` defines up to eight independently keyed persistent systems per package.
