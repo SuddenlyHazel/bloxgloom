@@ -11,7 +11,7 @@ A package named `factory` registers that clip as `factory:motor`. File paths nev
 cross the wire or reach gameplay callbacks. The existing exact bundle hash,
 streaming verification and dependency checks cover audio bytes. Audio uses asset
 tag 10 in the existing canonical bundle grammars; wire version 24 and client
-runtime contract 10 require matching clients before downloading a bundle.
+runtime contract 11 require matching clients before downloading a bundle.
 No save schema or numeric content IDs change.
 
 WAV accepts mono/stereo integer PCM at 8/16/24/32 bits or 32-bit float, 8–192 kHz.
@@ -95,7 +95,10 @@ state or action receipts. Playback controls and stops glide over about 20 ms.
 There is horizontal panning and inverse-distance attenuation, with the existing
 limiter and Effects/Master volume controls. Occlusion, reverb, buses, compression,
 streamed music, device selection and hot-plug recovery remain follow-up work.
-Weather continues to use its native procedural path; no weather Luau API is added.
+Weather continues to use its native procedural path. Luau now supplies captured
+weather reads, advisory transition hooks and authorized admin controls, while block
+`acoustics` metadata selects native/custom impact profiles and insect habitats.
+See [weather and acoustic authoring](../../SCRIPTING.md#weather-hooks-and-block-acoustics).
 
 See [the playable audio timer](../../fixtures/audio-machine/README.md),
 [editor definitions](../../types/bloxgloom.d.luau) and

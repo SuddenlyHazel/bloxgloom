@@ -205,8 +205,9 @@ retirement clears it. There is no disk I/O or synthesis on the window thread.
 Builtin grass, dirt, moss, sand, gravel and snow use the upstream dirt profile;
 solid cutout foliage uses leaf; stone and other hard solids use concrete. All
 wood axis states use a new damped wood profile. Modded solid cutout blocks inherit
-leaf and other modded solids currently inherit concrete. Explicit package acoustic
-material declarations are a follow-up. Water, glass, metal, plastic and asphalt
+leaf and other modded solids inherit concrete when acoustic metadata is omitted.
+Explicit package declarations select a surface, bounded custom impact profile
+and insect habitat. Water, glass, metal, plastic and asphalt
 profiles are retained for comparisons, but they do not invent corresponding
 materials in a world without those block types.
 
@@ -347,3 +348,19 @@ deep rooms, bent passages and entrances outside the sampled patch remain muted.
 Regression tests model an open hillside shelter, close its entrance, and verify
 both exposure and increased rain energy through the production mixer. Unknown
 cells/sky and solid walls cannot fabricate outdoor openings.
+
+
+## Package acoustic authoring
+
+Block declarations can select any of the ten native rain surfaces and declare
+insect habitat explicitly. Optional finite custom solid profiles control each
+spatial impact's click, two resonances, damping, lowpass and gain; they retain
+actual world-space source positions. Water bubbles use the unchanged water preset.
+Profiles are captured by active impact voices, so editing a surface does not
+retune droplets already ringing. Limits remain 768 scene faces and 128 impacts.
+
+See [the current Luau contract](../../SCRIPTING.md#weather-hooks-and-block-acoustics)
+and [rain collector example](../../fixtures/rain-collector/README.md). A reproducible
+`audio-material-preview custom` renders that collector's profile through the
+same production mixer. This adds material/habitat authoring, not new full-world
+acoustic tracing or additional cicada synthesis families.

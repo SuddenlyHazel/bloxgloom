@@ -464,7 +464,10 @@ explicit stops and session/entity cleanup. Native gameplay cues publish after
 commit; the [audio timer fixture](fixtures/audio-machine/README.md) demonstrates
 running, interaction and completion sounds.
 [Game weather](docs/weather/FOUNDATION.md) now drives this native presentation,
-with script weather queries, hooks and controls still unbound. There are no imported
+with captured script weather reads, advisory target-transition hooks, authenticated
+admin controls and readonly client observations. Packages declare block rain
+materials, bounded custom impact profiles and insect habitats. The
+[rain collector fixture](fixtures/rain-collector/README.md) combines these contracts. There are no imported
 models or custom player geometry. Client presentation offers bounded replica windows, pose/tint overrides, sparks and embers rather than a general
 scene/entity renderer.
 
@@ -500,8 +503,38 @@ The [audio contract](docs/audio/SCRIPTING.md) records bounds and exact API field
 The [audio timer machine](fixtures/audio-machine/README.md) demonstrates a running
 loop reconstructed from current public state, transactional start/completion clips
 and cleanup on removal. Dedicated process-machine/creature callback signatures,
-weather scripting, geometry-aware occlusion/reverb, buses, streamed music and device recovery are
+geometry-aware occlusion/reverb, buses, streamed music and device recovery are
 separate remaining work. No save conversion or imported models are introduced.
+
+#### Implemented extension: weather and acoustic authoring
+
+**Status: implemented and verified (2026-10-01).**
+
+Captured `c.weather()` reads are invocation-stable historical inputs. Explicit
+admin overrides invalidate old pending weather reads and reserve the durable
+weather key. `c.admin_set_weather(kind, transition_ms)` checks authenticated
+operator authority and shares the complete action transaction, including caught
+error rollback and receipt deduplication. Natural evolution remains server-owned.
+
+`register_weather_observer` delivers readonly live target changes through the
+bounded advisory lane; it cannot mutate state and may drop under pressure.
+Authoritative gameplay uses scheduled ticks and captured reads. Installed client
+snapshots expose readonly weather and optional `replica:weather` notifications.
+
+Block `acoustics` declarations select ten native surface profiles, explicitly
+assign ground/canopy/no insect habitat, and optionally replace solid impact
+parameters within finite frequency/damping/gain bounds. Frozen metadata is
+delivered without executable server callbacks, contributes to the session
+fingerprint and applies to every legal block state. Save block identities and
+physical/audio capacity limits are preserved. The rain collector demonstrates
+persistent weather-driven fill and entity-linked running audio.
+
+See [current scripting contract](SCRIPTING.md#weather-hooks-and-block-acoustics)
+and [playable fixture](fixtures/rain-collector/README.md). Dedicated process-machine,
+anchored, generator and owner-system hosts have not gained this weather read API.
+Full acoustic tracing, geometry-derived reverb, material authoring beyond these
+bounded profiles, climate and additional insect species remain separate scope.
+
 
 #### Accepted goal: authoritative moving entities and projectiles
 
@@ -978,7 +1011,7 @@ projects. Save conversion remains excluded during this prerelease.
 
 ## Suggested priority
 
-1. Weather scripting, advanced audio, additional motion and richer presentation contracts.
+1. Advanced audio, additional motion and richer presentation contracts.
 2. Development iteration and the remaining smaller composability gaps.
 
 VM lifetime and retained runtime state are implemented in section 6; larger-package

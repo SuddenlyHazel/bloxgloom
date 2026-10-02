@@ -381,6 +381,8 @@ host coordinate sequences are readonly. A block descriptor contains `state`,
 | `c.collect_drop(id,max_count)` | Credits an eligible drop to the acting player's finite inventory |
 | `c.admin_give(item,count)` | Host-authorized operator-only item grant; returns boolean |
 | `c.admin_spawn(key)` | Host-authorized operator-only creature spawn |
+| `c.weather()` | Readonly captured weather: target `kind`, rain in mm/h, wind in m/s, cloud 0..1, linear transition progress 0..1; exact elapsed/revision split into `_lo`/`_hi` words. Repeated reads are identical within one decision; explicit overrides invalidate pending old reads |
+| `c.admin_set_weather(kind, transition_ms)` | Authenticated operator action only; clear/rain/storm/storm_mild/storm_severe, integer transition 0..60000 ms; atomic with all staged effects. Caught rejection still rolls back. Reads show captured input until commit |
 | `c.world_time()` | In gameplay action callbacks, a readonly captured `{elapsed_ms,cycle_ms}` daylight phase; observes this action's staged changes |
 | `c.admin_set_time(elapsed_ms)` | In gameplay action callbacks, stage an admin-authorized integer phase `0 <= elapsed_ms < cycle_ms`; commits with the action's world, inventory and entity changes |
 
@@ -1069,3 +1071,45 @@ Server sounds publish after commit. Failed actions and receipt replay produce no
 new audio. Break/place, pickup and interaction have stock committed cues.
 See [the audio contract](docs/audio/SCRIPTING.md) for exact fields, resource bounds,
 join/retry semantics and remaining work, and [the timer-machine example](fixtures/audio-machine/README.md).
+
+### Weather hooks and block acoustics
+
+`h.register_weather_observer(key, revision, module)` requires `bloxgloom:actions/v1`
+and shares the eight-observer package limit with committed observers. The readonly
+callback receives `{kind="WeatherChanged", previous=BloxWeather, current=BloxWeather}`
+when the server begins a new natural or committed admin target transition. It runs
+on the bounded advisory worker, has no writer, may drop under pressure, and does
+not replay on join/restart. Target changes include transitions toward the same
+kind; completion is represented by the next captured read's `transition=1`,
+without a separate completion hook. Use scheduled durable entity ticks and
+`c.weather()` for authoritative crops, creatures and machines.
+
+Client UI and replica snapshots expose readonly `weather` after an accepted
+server sample (one sample per second). It is historical installed server data,
+not an interpolated local forecast; unknown weather is nil. `replica:weather`
+notifies opted-in presentation handlers. Neither client data nor callback
+retained state grants control of server weather. Weather reads are available in
+generic gameplay decisions, actions and player callbacks; dedicated machine,
+anchored, generator and owner-system hosts retain their existing contracts.
+
+Block options accept `acoustics={surface='wood',habitat='none'}`. Surface presets
+are water, dirt, leaf, stone/concrete, glass, metal, plastic, asphalt, roof and wood.
+All legal states inherit their block's declaration. Habitat defaults to none
+when an acoustics table is supplied. Omitted metadata preserves
+native classification; explicit habitat none disables automatic insect habitat.
+Ground drives nighttime crickets and canopy drives daytime dog-day cicadas.
+Exposed non-solid foliage contributes its habitat to the ground tile underneath;
+unknown columns and covered surfaces never invent habitat or rain impacts.
+
+An optional `impact={gain=0.8,click=0.55,frequency_hz={450,1100},
+damping_per_s={180,350},resonance=0.65,lowpass_hz=5000}` replaces the preset's
+solid impact model while retaining world-space source placement. All six fields
+are required: gain/click/resonance 0..2, two frequencies 50..16000 Hz, two damping
+rates 10..2000/s, lowpass 100..18000 Hz, all finite. Custom impact profiles model
+solid clicks and resonances; omit impact to retain water bubbles. Unknown fields,
+nonfinite values and invalid bounds reject startup even if caught with pcall.
+Metadata is frozen and verified in the delivered client artifact and session
+fingerprint, while save block/schema identities remain unchanged. The scene
+stays bounded to 768 faces and synthesis to 128 active impacts.
+
+See `fixtures/rain-collector/README.md` for an example combining these contracts.

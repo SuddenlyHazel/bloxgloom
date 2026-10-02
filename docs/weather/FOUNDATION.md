@@ -3,7 +3,8 @@
 The server now owns clear, rainy and stormy weather. Clients interpolate its
 weather snapshots and present clouds, rain, lightning and procedural sound.
 Weather changes presentation; it does not damage players, grow crops, extinguish
-fires or change blocks in this first pass. Luau weather bindings are follow-up work.
+fires or change blocks in this first pass. Luau captured reads, advisory hooks and authenticated admin controls are available;
+see the services section below.
 
 ## Try it
 
@@ -227,3 +228,27 @@ impacts at their actual distance/bearing. Nearby grass/moss and canopy habitat
 also supply spatial cricket and dog-day cicada ambience, gated by the shared
 world clock and weather. Leaf cover keeps surrounding weather audible, while
 solid roofs soften it. See the [audio integration and listening probes](../audio/FOUNDATION.md#world-space-rain-surfaces).
+
+
+## Luau weather services
+
+Gameplay decisions can read one captured `c.weather()` view: target kind,
+physical rain/wind/cloud values, transition progress and exact clock/revision
+words. Authenticated operator actions can call `c.admin_set_weather` through the
+existing durable weather transaction. Readonly target-change observers use the
+bounded advisory delivery worker; scheduled durable ticks remain authoritative.
+Client UI/replica observations include installed weather without control authority.
+
+The [binding contract](../../SCRIPTING.md#weather-hooks-and-block-acoustics) records
+bounds and lifecycle semantics. The [rain collector](../../fixtures/rain-collector/README.md)
+is a playable example of persistent weather-driven behavior, custom acoustic
+materials and running audio reconstructed from public state. There is no new
+world-save format or client-selected authority in these services.
+
+
+Verification: `cargo test --workspace --all-features` passed 1,494 tests
+(1,448 game tests and 46 host API tests; six existing tests ignored). After the
+last changes, 42 targeted weather tests passed, including real-listener Luau
+admin authority/rollback/retry/restart and the collector's roof, filling,
+clear-weather pause, negotiated acoustic metadata and reconstructed loop/stop.
+Formatting and strict all-target/all-feature Clippy passed.
