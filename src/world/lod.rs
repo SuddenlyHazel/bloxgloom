@@ -167,11 +167,19 @@ fn build(
         key,
         revision,
         columns,
-        geometric_error: width as u32 - 1,
+        // Center sampling can miss a cliff or an underground void. Horizontal
+        // sample spacing alone is not a bound on that vertical displacement;
+        // use the full finite builtin coverage height until tighter generator
+        // error bounds are measured. Level zero samples every column exactly.
+        geometric_error: if key.level == 0 {
+            0
+        } else {
+            (width as u32 - 1).max((top - bottom) as u32)
+        },
     };
     if tile.validate(catalog).is_err() {
         // Remove material boundaries only. No occupied interval or cave gap is
-        // discarded; the upper material wins stable ties and lighting stays dark.
+        // discarded; the upper material and exposed-surface light win.
         for column in &mut tile.columns {
             let mut spans: Vec<Span> = Vec::new();
             for s in &column.spans {
@@ -180,7 +188,7 @@ fn build(
                 {
                     last.top = s.top;
                     last.state = s.state;
-                    last.sky = last.sky.min(s.sky);
+                    last.sky = s.sky;
                     last.glow = last.glow.max(s.glow);
                 } else {
                     spans.push(*s);

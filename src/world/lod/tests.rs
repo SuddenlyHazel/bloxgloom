@@ -75,3 +75,22 @@ fn coarse_tiles_are_deterministic_and_dark_beneath_top_surface() {
         }
     }
 }
+
+#[test]
+fn routine_distant_skyline_tiles_fit_payload_budget() {
+    let catalog = Catalog::builtins();
+    for seed in [1, 17, 44] {
+        for (x, z) in [(-1, 0), (0, 0), (1, -1)] {
+            let key = TileKey { level: 4, x, z };
+            let tile = builtin_lod_tile(key, 1, seed, &catalog)
+                .unwrap_or_else(|error| panic!("seed{seed} tile{x},{z}: {error}"));
+            println!(
+                "builtin seed{seed} tile{x},{z}: {} bytes {} spans",
+                tile.encoded_bytes(),
+                tile.columns.iter().map(|c| c.spans.len()).sum::<usize>()
+            );
+            assert!(tile.encoded_bytes() <= crate::lod::MAX_TILE_BYTES);
+            assert!(tile.geometric_error >= 144);
+        }
+    }
+}
