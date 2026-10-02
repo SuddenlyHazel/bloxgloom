@@ -51,10 +51,12 @@ fn command_metadata_roundtrips_schema_and_permissions_and_rejects_forgery() {
         None,
         Some(Command {
             permission: CommandPermission::Player,
+            aliases: Vec::new(),
             arguments: vec![],
         }),
         Some(Command {
             permission: CommandPermission::Admin,
+            aliases: Vec::new(),
             arguments: vec![
                 CommandArgument::ItemKey { max_bytes: 64 },
                 CommandArgument::EntityKey { max_bytes: 48 },
@@ -163,4 +165,56 @@ fn generated_motion_handler_keys_use_native_runtime_key_vocabulary() {
     assert!(reader.0.is_empty());
     assert_eq!(decoded.handlers[0].key, key);
     assert_eq!(decoded.handlers[0].fingerprint, 77);
+}
+
+#[test]
+fn extended_command_metadata_roundtrips_and_commits_aliases_and_bounds() {
+    use bloxgloom_host_api::actions::FiniteNumber;
+    let runtime = Runtime {
+        actions: vec![Action {
+            key: "demo:command".into(),
+            version: 1,
+            label: "Command".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(Command {
+                permission: CommandPermission::Admin,
+                aliases: vec!["tune".into()],
+                arguments: vec![
+                    CommandArgument::Text { max_bytes: 48 },
+                    CommandArgument::Integer { min: -10, max: 10 },
+                    CommandArgument::Number {
+                        min: FiniteNumber::new(0.0).unwrap(),
+                        max: FiniteNumber::new(1.0).unwrap(),
+                    },
+                ],
+            }),
+        }],
+        ..Default::default()
+    };
+    let mut writer = Writer(Vec::new());
+    runtime.encode_package(&mut writer, "demo").unwrap();
+    let mut decoded = Runtime::default();
+    let mut reader = Reader(&writer.0);
+    decoded
+        .decode_package(&mut reader, "demo", &[composition::ACTIONS.into()])
+        .unwrap();
+    assert!(reader.0.is_empty());
+    assert_eq!(decoded.actions, runtime.actions);
+    assert_eq!(
+        decoded.actions[0].fingerprint_bytes(),
+        runtime.actions[0].fingerprint_bytes()
+    );
+    for len in 0..writer.0.len() {
+        assert!(
+            Runtime::default()
+                .decode_package(
+                    &mut Reader(&writer.0[..len]),
+                    "demo",
+                    &[composition::ACTIONS.into()]
+                )
+                .is_err()
+        );
+    }
 }

@@ -6,8 +6,14 @@ use bloxgloom_host_api::actions::{Action, CommandArgument, CommandPermission};
 fn command_signature(action: &Action) -> Option<String> {
     let command = action.command.as_ref()?;
     let mut signature = action.key.clone();
+    if !command.aliases.is_empty() {
+        signature.push_str(&format!(" ({})", command.aliases.join(", ")));
+    }
     for argument in &command.arguments {
         match argument {
+            CommandArgument::Text { .. } => signature.push_str(" <text>"),
+            CommandArgument::Integer { .. } => signature.push_str(" <integer>"),
+            CommandArgument::Number { .. } => signature.push_str(" <number>"),
             CommandArgument::Player => signature.push_str(" <player>"),
             CommandArgument::ItemKey { .. } => signature.push_str(" <item>"),
             CommandArgument::EntityKey { .. } => signature.push_str(" <entity>"),

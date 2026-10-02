@@ -11,7 +11,7 @@ pub(super) fn normalize(
     players: &[PlayerSummary],
 ) -> Result<Vec<String>, &'static str> {
     let command = catalog
-        .action(key)
+        .command_action(key)
         .and_then(|a| a.command.as_ref())
         .ok_or("Unknown command")?;
     let mut normalized = Vec::with_capacity(values.len());
@@ -39,18 +39,15 @@ pub(super) fn complete(
     if input.len() > 1024 {
         return Err("Command is too long");
     }
-    let parts = input
-        .trim_start_matches('/')
-        .split_whitespace()
-        .collect::<Vec<_>>();
-    let key = *parts.first().ok_or("Enter a player command")?;
+    let parts = super::tokens::spanned(input)?;
+    let key = parts.first().ok_or("Enter a player command")?.0.as_str();
     let trailing = input.ends_with(char::is_whitespace);
     if parts.len() == 1 && !trailing {
         return Err("Type a space before completing the player argument");
     }
     let argument = parts.len().saturating_sub(if trailing { 1 } else { 2 });
     let schema = catalog
-        .action(key)
+        .command_action(key)
         .and_then(|a| a.command.as_ref())
         .ok_or("Unknown command")?;
     if !matches!(
@@ -62,7 +59,9 @@ pub(super) fn complete(
     let prefix = if trailing {
         ""
     } else {
-        parts.get(argument + 1).copied().unwrap_or("")
+        parts
+            .get(argument + 1)
+            .map_or("", |(value, _)| value.as_str())
     };
     let mut matches = players
         .iter()
@@ -74,7 +73,7 @@ pub(super) fn complete(
     let cut = if trailing {
         input.len()
     } else {
-        input.len() - prefix.len()
+        parts.last().ok_or("Enter a player argument")?.1
     };
     let value = format!("{}{}", &input[..cut], token(player));
     if value.len() > 1024 {

@@ -74,6 +74,7 @@ fn negotiated_commands_enforce_permission_and_zero_args_with_receipts_and_restar
                     action.command,
                     Some(Command {
                         permission: permission.clone(),
+                        aliases: Vec::new(),
                         arguments: vec![],
                     })
                 );
@@ -315,4 +316,80 @@ fn typed_mod_command_negotiates_order_validates_before_handler_and_recovers_once
             (round != 0).then_some(round as u16)
         );
     }
+}
+
+#[test]
+fn extended_commands_negotiate_aliases_and_reject_forged_values_before_durable_dispatch() {
+    let _cache = crate::client::bundle::TEST_CACHE_LOCK.lock().unwrap();
+    let fixture = Fixture::new();
+    fixture.action(
+        "return function(h) h.register_action('demo:shift',1,'Shift','empty',nil,'demo:action',{permission='Admin',aliases={'tune'},arguments={{kind='text',max_bytes=24},{kind='integer',min=-5,max=5},{kind='number',min=0,max=1}}}) end",
+        "return function(c,e) assert(e.command_arguments[1]=='hello 🌿'); assert(e.command_arguments[2]==-2); assert(e.command_arguments[3]==0.5); assert(c.transfer(0,1,1)) end",
+    );
+    for admin in [false, true] {
+        let mut state = Box::new(fixture.open().unwrap());
+        state.admin_profile = admin.then_some(PROFILE);
+        if !admin {
+            let mut inventory = Inventory::default();
+            inventory.slots[0] = Some(Stack::new(crate::items::STICK, 4));
+            state.inventory_store.save(PROFILE, &inventory).unwrap();
+        }
+        serve(state, |address| {
+            let negotiated =
+                crate::client::connect_catalog_probe(&address.to_string(), PROFILE + 1).unwrap();
+            let action = negotiated.command_action("tune").unwrap();
+            assert_eq!(action.key, "demo:shift");
+            assert!(negotiated.action("tune").is_none());
+            let schema = action.command.clone().unwrap();
+            assert_eq!(schema.aliases, ["tune"]);
+            let valid = schema.encode_arguments(&["hello 🌿", "-2", "0.5"]).unwrap();
+            let mut peer = Peer::connect(address, negotiated);
+            peer.inventory_at(4);
+            if admin {
+                let mut nonfinite = valid.clone();
+                let len = nonfinite.len();
+                nonfinite[len - 8..].copy_from_slice(&f64::INFINITY.to_bits().to_le_bytes());
+                let mut outside = valid.clone();
+                outside[len - 16..len - 8].copy_from_slice(&6_i64.to_le_bytes());
+                let mut control = valid.clone();
+                control[1] = b'\n';
+                let mut trailing = valid.clone();
+                trailing.push(0);
+                for bad in [nonfinite, outside, control, trailing, vec![]] {
+                    let request = typed_request(&mut peer, "demo:shift", bad);
+                    let (accepted, reason) = peer.send(&request);
+                    assert!(!accepted, "{reason}");
+                    assert!(reason.contains("invalid command arguments"), "{reason}");
+                }
+                let mut alias = typed_request(&mut peer, "demo:shift", valid.clone());
+                if let ClientMessage::EntityInteract { payload, .. } = &mut alias {
+                    let n = usize::from(payload[1]);
+                    // Bypass the local encoder to exercise authoritative rejection.
+                    *payload = [
+                        payload[..1].to_vec(),
+                        vec![4],
+                        b"tune".to_vec(),
+                        payload[n + 2..].to_vec(),
+                    ]
+                    .concat();
+                    assert!(Request::decode(payload).is_none());
+                }
+                assert!(!peer.send(&alias).0, "wire aliases must not authorize");
+            }
+            let request = typed_request(&mut peer, "demo:shift", valid);
+            let (accepted, reason) = peer.send(&request);
+            assert_eq!(accepted, admin, "{reason}");
+            if admin {
+                peer.inventory_at(3);
+                assert!(peer.send(&request).0);
+                assert_eq!(peer.inventory.slots[1].as_ref().unwrap().count, 1);
+            } else {
+                assert!(reason.contains("requires admin"), "{reason}");
+            }
+        });
+    }
+    let recovered = fixture.open().unwrap();
+    let inventory = recovered.inventory_store.load(PROFILE).unwrap();
+    assert_eq!(inventory.slots[0].as_ref().unwrap().count, 3);
+    assert_eq!(inventory.slots[1].as_ref().unwrap().count, 1);
 }

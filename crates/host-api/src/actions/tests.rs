@@ -247,6 +247,7 @@ fn command_facets_are_empty_gameplay_only_and_fingerprint_permissions() {
     let mut definition = action("test:command");
     definition.command = Some(Command {
         permission: CommandPermission::Player,
+        aliases: Vec::new(),
         arguments: vec![],
     });
     assert!(
@@ -263,6 +264,7 @@ fn command_facets_are_empty_gameplay_only_and_fingerprint_permissions() {
     let player = definition.fingerprint_bytes();
     definition.command = Some(Command {
         permission: CommandPermission::Admin,
+        aliases: Vec::new(),
         arguments: vec![],
     });
     definition.validate().unwrap();
@@ -271,6 +273,7 @@ fn command_facets_are_empty_gameplay_only_and_fingerprint_permissions() {
     assert_ne!(player, definition.fingerprint_bytes());
     definition.command = Some(Command {
         permission: CommandPermission::Player,
+        aliases: Vec::new(),
         arguments: vec![],
     });
     definition.key = format!("test:{}", "a".repeat(124));
@@ -297,6 +300,7 @@ fn command_facets_are_empty_gameplay_only_and_fingerprint_permissions() {
 fn ordered_command_schema_has_canonical_bounded_arguments_and_identity() {
     let mut command = Command {
         permission: CommandPermission::Admin,
+        aliases: Vec::new(),
         arguments: vec![
             CommandArgument::ItemKey { max_bytes: 128 },
             CommandArgument::Count { default: Some(128) },
@@ -371,6 +375,7 @@ fn ordered_command_schema_has_canonical_bounded_arguments_and_identity() {
 fn typed_player_arguments_preserve_full_width_identity_and_reject_forged_bytes() {
     let command = Command {
         permission: CommandPermission::Player,
+        aliases: Vec::new(),
         arguments: vec![
             CommandArgument::Player,
             CommandArgument::Count { default: Some(1) },
@@ -412,6 +417,7 @@ fn empty_console_commands_do_not_consume_generic_action_capacity() {
         command.operation = Operation::Gameplay;
         command.command = Some(Command {
             permission: CommandPermission::Admin,
+            aliases: Vec::new(),
             arguments: vec![CommandArgument::Count { default: None }],
         });
         registry.register(command).unwrap();
@@ -427,9 +433,98 @@ fn empty_console_commands_do_not_consume_generic_action_capacity() {
         if is_command {
             overflow.command = Some(Command {
                 permission: CommandPermission::Admin,
+                aliases: Vec::new(),
                 arguments: vec![],
             });
         }
         assert!(registry.register(overflow).is_err());
     }
+}
+
+#[test]
+fn extended_command_arguments_validate_wire_and_canonical_metadata() {
+    let number = |n| FiniteNumber::new(n).unwrap();
+    let command = Command {
+        permission: CommandPermission::Player,
+        aliases: vec!["tune".into()],
+        arguments: vec![
+            CommandArgument::Text { max_bytes: 20 },
+            CommandArgument::Integer { min: -20, max: 20 },
+            CommandArgument::Number {
+                min: number(-2.5),
+                max: number(2.5),
+            },
+        ],
+    };
+    let encoded = command
+        .encode_arguments(&["hello 🌿", "-20", "1.25"])
+        .unwrap();
+    assert_eq!(
+        command.decode_arguments(&encoded),
+        Some(vec![
+            CommandValue::Text("hello 🌿".into()),
+            CommandValue::Integer(-20),
+            CommandValue::Number(number(1.25))
+        ])
+    );
+    for values in [
+        ["", "0", "1"],
+        ["hello\n", "0", "1"],
+        ["hello", "-21", "1"],
+        ["hello", "1.5", "1"],
+        ["hello", "0", "NaN"],
+        ["hello", "0", "inf"],
+        ["hello", "0", "2.6"],
+    ] {
+        assert!(command.encode_arguments(&values).is_none());
+    }
+    let schema = command.schema_bytes().unwrap();
+    assert_eq!(
+        Command::from_extended_schema(CommandPermission::Player, &schema),
+        Some(command.clone())
+    );
+    for length in 0..schema.len() {
+        assert!(
+            Command::from_extended_schema(CommandPermission::Player, &schema[..length]).is_none()
+        );
+    }
+    let mut trailing = schema.clone();
+    trailing.push(0);
+    assert!(Command::from_extended_schema(CommandPermission::Player, &trailing).is_none());
+    let mut forged = encoded.clone();
+    let end = forged.len();
+    forged[end - 8..].copy_from_slice(&f64::NAN.to_bits().to_le_bytes());
+    assert!(command.decode_arguments(&forged).is_none());
+    forged[end - 8..].copy_from_slice(&(-0.0_f64).to_bits().to_le_bytes());
+    assert!(command.decode_arguments(&forged).is_none());
+    let zero = command.encode_arguments(&["zero", "0", "-0"]).unwrap();
+    assert_eq!(&zero[zero.len() - 8..], &[0; 8]);
+}
+
+#[test]
+fn declared_aliases_are_unique_and_do_not_create_authoritative_action_keys() {
+    let action = |key: &str| Action {
+        key: key.into(),
+        version: 1,
+        label: "Tune".into(),
+        target: Target::Empty,
+        operation: Operation::Gameplay,
+        panel: None,
+        command: Some(Command {
+            permission: CommandPermission::Admin,
+            arguments: vec![],
+            aliases: vec!["tune".into()],
+        }),
+    };
+    let mut registry = Registry::default();
+    registry.register(action("demo:tune")).unwrap();
+    assert!(registry.get("tune").is_none());
+    assert!(registry.register(action("other:tune")).is_err());
+    let mut different = action("other:tune");
+    different.command.as_mut().unwrap().aliases = vec!["adjust".into()];
+    assert_ne!(
+        different.fingerprint_bytes(),
+        action("other:tune").fingerprint_bytes()
+    );
+    registry.register(different).unwrap();
 }

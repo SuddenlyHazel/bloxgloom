@@ -10,6 +10,7 @@ fn command_facet_participates_in_catalog_and_saved_player_identity() {
         operation: Operation::Gameplay,
         panel: None,
         command: permission.map(|permission| Command {
+            aliases: Vec::new(),
             permission,
             arguments: vec![],
         }),

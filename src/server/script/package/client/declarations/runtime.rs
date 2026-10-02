@@ -153,11 +153,23 @@ impl Runtime {
                     Some(Command {
                         permission: CommandPermission::Player,
                         ..
-                    }) => 5,
+                    }) => {
+                        if action.command.as_ref().is_some_and(Command::extended) {
+                            8
+                        } else {
+                            5
+                        }
+                    }
                     Some(Command {
                         permission: CommandPermission::Admin,
                         ..
-                    }) => 6,
+                    }) => {
+                        if action.command.as_ref().is_some_and(Command::extended) {
+                            9
+                        } else {
+                            6
+                        }
+                    }
                 })?,
                 Target::Item(key) | Target::Block(key) => {
                     writer.count(if matches!(action.target, Target::Item(_)) {
@@ -175,16 +187,15 @@ impl Runtime {
                 }
             }
             if let Some(command) = &action.command {
-                writer.count(command.arguments.len())?;
-                for argument in &command.arguments {
-                    let (kind, bound) = match argument {
-                        CommandArgument::Player => (3, 0),
-                        CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
-                        CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
-                        CommandArgument::Count { default } => (2, default.unwrap_or(0)),
-                    };
-                    writer.count(kind)?;
-                    writer.count(usize::from(bound))?;
+                if command.extended() {
+                    writer.field(&command.schema_bytes().ok_or_else(invalid)?)?;
+                } else {
+                    let bytes = command.schema_bytes().ok_or_else(invalid)?;
+                    writer.count(usize::from(bytes[0]))?;
+                    for pair in bytes[1..].chunks_exact(2) {
+                        writer.count(usize::from(pair[0]))?;
+                        writer.count(usize::from(pair[1]))?;
+                    }
                 }
             }
         }
@@ -237,16 +248,28 @@ impl Runtime {
             let key = own_key(reader, name, &mut previous)?;
             let version = reader.count(u16::MAX.into())? as u16;
             let label = reader.text(255)?;
-            let kind = reader.count(7)?;
+            let kind = reader.count(9)?;
             let target = match kind {
                 0 => Target::Empty,
                 1 => Target::Item(reader.text(255)?),
                 2 => Target::Block(reader.text(255)?),
                 7 => Target::Entity(reader.text(255)?),
-                5 | 6 => Target::Empty,
+                5 | 6 | 8 | 9 => Target::Empty,
                 _ => return Err(invalid()),
             };
-            let command = if kind == 5 || kind == 6 {
+            let command = if kind == 8 || kind == 9 {
+                Some(
+                    Command::from_extended_schema(
+                        if kind == 8 {
+                            CommandPermission::Player
+                        } else {
+                            CommandPermission::Admin
+                        },
+                        reader.field(512)?,
+                    )
+                    .ok_or_else(invalid)?,
+                )
+            } else if kind == 5 || kind == 6 {
                 let count = reader.count(MAX_COMMAND_ARGUMENTS)?;
                 let mut arguments = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -269,6 +292,7 @@ impl Runtime {
                         CommandPermission::Admin
                     },
                     arguments,
+                    aliases: Vec::new(),
                 })
             } else {
                 None

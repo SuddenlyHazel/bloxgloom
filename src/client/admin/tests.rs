@@ -48,6 +48,7 @@ fn generic_parser_uses_ordered_negotiated_schema_not_builtin_names() {
             panel: None,
             command: Some(Descriptor {
                 permission: CommandPermission::Player,
+                aliases: Vec::new(),
                 arguments: vec![
                     CommandArgument::EntityKey { max_bytes: 48 },
                     CommandArgument::ItemKey { max_bytes: 48 },
@@ -84,6 +85,7 @@ fn binding_candidates_require_zero_arg_empty_target_and_keep_absent_local_entrie
                 panel: None,
                 command: Some(Descriptor {
                     permission: CommandPermission::Player,
+                    aliases: Vec::new(),
                     arguments,
                 }),
             })
@@ -210,6 +212,7 @@ fn player_command_names_completion_and_reconnect_use_exact_sessions() {
     let mut catalog = Catalog::builtins();
     let schema = Descriptor {
         permission: CommandPermission::Player,
+        aliases: Vec::new(),
         arguments: vec![CommandArgument::Player],
     };
     catalog
@@ -263,4 +266,100 @@ fn player_command_names_completion_and_reconnect_use_exact_sessions() {
     assert!(parse_with_players("demo:target Alice", &catalog, &ambiguous).is_err());
     assert!(players::complete("demo:target Ali", &catalog, &ambiguous).is_err());
     assert!(parse_with_players("demo:target Nobody", &catalog, &roster).is_err());
+}
+
+#[test]
+fn declared_aliases_and_quoted_text_use_canonical_typed_requests() {
+    use bloxgloom_host_api::actions::{CommandValue, FiniteNumber};
+    let mut catalog = Catalog::builtins();
+    let number = |n| FiniteNumber::new(n).unwrap();
+    catalog
+        .register_action(Action {
+            key: "demo:tune".into(),
+            version: 1,
+            label: "Tune".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(Descriptor {
+                permission: CommandPermission::Admin,
+                aliases: vec!["tune".into()],
+                arguments: vec![
+                    CommandArgument::Text { max_bytes: 48 },
+                    CommandArgument::Integer { min: -5, max: 5 },
+                    CommandArgument::Number {
+                        min: number(0.0),
+                        max: number(1.0),
+                    },
+                ],
+            }),
+        })
+        .unwrap();
+    let request = request(r#"/tune "hello 🌿 \"rain\"" -2 0.5"#, &catalog);
+    assert_eq!(request.key, "demo:tune");
+    assert_eq!(
+        catalog.command_arguments(
+            catalog
+                .action(&request.key)
+                .unwrap()
+                .command
+                .as_ref()
+                .unwrap(),
+            &request.arguments
+        ),
+        Some(vec![
+            CommandValue::Text("hello 🌿 \"rain\"".into()),
+            CommandValue::Integer(-2),
+            CommandValue::Number(number(0.5))
+        ])
+    );
+    for input in [
+        "tune hello 6 0.5",
+        "tune hello 1 NaN",
+        "tune hello 1 0.5 extra",
+        "tune \"unclosed",
+        "tune hello\\x 1 0.5",
+        "tune \"\" 1 0.5",
+    ] {
+        assert!(parse(input, &catalog).is_err(), "{input}");
+    }
+}
+
+#[test]
+fn player_completion_respects_aliases_and_quoted_prior_arguments() {
+    let mut catalog = Catalog::builtins();
+    catalog
+        .register_action(Action {
+            key: "demo:label".into(),
+            version: 1,
+            label: "Label".into(),
+            target: Target::Empty,
+            operation: Operation::Gameplay,
+            panel: None,
+            command: Some(Descriptor {
+                permission: CommandPermission::Player,
+                aliases: vec!["label".into()],
+                arguments: vec![
+                    CommandArgument::Text { max_bytes: 32 },
+                    CommandArgument::Player,
+                ],
+            }),
+        })
+        .unwrap();
+    let roster = vec![crate::protocol::PlayerSummary {
+        profile: 1,
+        session: 2,
+        name: "Hazel".into(),
+    }];
+    let completed = players::complete("label \"hello world\" Ha", &catalog, &roster).unwrap();
+    assert_eq!(
+        completed,
+        format!("label \"hello world\" {}", players::token(&roster[0]))
+    );
+    assert!(matches!(
+        parse_with_players(&completed, &catalog, &roster),
+        Ok(Command::Registered(_))
+    ));
+    assert_eq!(tokens::parse("cmd 1 2 3 4 5 6 7 8 ").unwrap().len(), 9);
+    assert!(tokens::parse("cmd 1 2 3 4 5 6 7 8 9 ").is_err());
 }

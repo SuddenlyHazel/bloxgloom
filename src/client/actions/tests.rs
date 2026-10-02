@@ -86,6 +86,7 @@ fn named_shortcut_is_inert_without_matching_session_command() {
             panel: None,
             command: Some(Command {
                 permission: CommandPermission::Player,
+                aliases: Vec::new(),
                 arguments: vec![],
             }),
         })
@@ -110,6 +111,7 @@ fn named_shortcut_is_inert_without_matching_session_command() {
             panel: None,
             command: Some(Command {
                 permission: CommandPermission::Player,
+                aliases: Vec::new(),
                 arguments: vec![CommandArgument::EntityKey { max_bytes: 32 }],
             }),
         })

@@ -350,8 +350,15 @@ fn admin(ui: &mut egui::Ui, frame: &UiFrame<'_>, catalog: &Catalog, intents: &mu
                 .take(8)
             {
                 let mut signature = action.key.clone();
+                let command = action.command.as_ref().unwrap();
+                if !command.aliases.is_empty() {
+                    signature.push_str(&format!(" ({})", command.aliases.join(", ")));
+                }
                 for argument in &action.command.as_ref().unwrap().arguments {
                     signature.push_str(match argument {
+                        CommandArgument::Text { .. } => " <text>",
+                        CommandArgument::Integer { .. } => " <integer>",
+                        CommandArgument::Number { .. } => " <number>",
                         CommandArgument::Player => " <player>",
                         CommandArgument::ItemKey { .. } => " <item>",
                         CommandArgument::EntityKey { .. } => " <entity>",

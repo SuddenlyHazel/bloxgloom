@@ -622,6 +622,7 @@ impl Catalog {
                     ))
                     .then(|| bloxgloom_host_api::actions::Command {
                         permission: bloxgloom_host_api::actions::CommandPermission::Admin,
+                        aliases: Vec::new(),
                         arguments: if key == crate::gameplay::admin::GIVE {
                             vec![
                                 bloxgloom_host_api::actions::CommandArgument::ItemKey {

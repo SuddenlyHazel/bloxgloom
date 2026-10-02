@@ -5,7 +5,10 @@ use crate::RegistrationError;
 mod command;
 #[cfg(test)]
 mod tests;
-pub use command::{Command, CommandArgument, CommandValue, MAX_COMMAND_ARGUMENTS};
+pub use command::{
+    Command, CommandArgument, CommandValue, FiniteNumber, MAX_COMMAND_ALIASES,
+    MAX_COMMAND_ARGUMENTS, MAX_EXACT_INTEGER, command_alias,
+};
 
 pub const MAX_ACTIONS: usize = 256;
 /// Empty-target commands and ordinary actions have independent bounded pools;
@@ -62,6 +65,17 @@ pub struct Registry(std::collections::BTreeMap<String, std::sync::Arc<Action>>);
 impl Registry {
     pub fn register(&mut self, action: Action) -> Result<(), RegistrationError> {
         action.validate()?;
+        if action.command.as_ref().is_some_and(|command| {
+            command.aliases.iter().any(|alias| {
+                self.values().any(|old| {
+                    old.command
+                        .as_ref()
+                        .is_some_and(|c| c.aliases.contains(alias))
+                })
+            })
+        }) {
+            return Err(RegistrationError("duplicate command alias".into()));
+        }
         if self.0.len() >= MAX_ACTIONS
             || self.0.contains_key(&action.key)
             || self
@@ -343,21 +357,16 @@ impl Action {
         // Non-command identities are unchanged. Commands commit to permission,
         // ordered types, bounds, defaults, and the canonical encoding version.
         if let Some(command) = &self.command {
-            out.extend(b"command/v2\0");
+            out.extend(if command.extended() {
+                b"command/v3\0"
+            } else {
+                b"command/v2\0"
+            });
             out.push(match command.permission {
                 CommandPermission::Player => 0,
                 CommandPermission::Admin => 1,
             });
-            out.push(command.arguments.len() as u8);
-            for argument in &command.arguments {
-                let (kind, bound) = match argument {
-                    CommandArgument::Player => (3, 0),
-                    CommandArgument::ItemKey { max_bytes } => (0, *max_bytes),
-                    CommandArgument::EntityKey { max_bytes } => (1, *max_bytes),
-                    CommandArgument::Count { default } => (2, default.unwrap_or(0)),
-                };
-                out.extend([kind, bound]);
-            }
+            out.extend(command.schema_bytes().unwrap_or_default());
         }
         out
     }

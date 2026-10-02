@@ -19,7 +19,11 @@ impl Catalog {
             .all(|value| match value {
                 CommandValue::ItemKey(key) => self.item_by_key(key).is_some(),
                 CommandValue::EntityKey(key) => self.entity_type_id_by_key(key).is_some(),
-                CommandValue::Count(_) | CommandValue::Player { .. } => true,
+                CommandValue::Count(_)
+                | CommandValue::Player { .. }
+                | CommandValue::Text(_)
+                | CommandValue::Integer(_)
+                | CommandValue::Number(_) => true,
             })
             .then_some(values)
     }
@@ -73,6 +77,18 @@ impl Catalog {
     }
     pub(crate) fn action(&self, key: &str) -> Option<&Arc<Action>> {
         self.actions.get(key)
+    }
+    /// Alias lookup is for client convenience only. Authoritative dispatch uses action().
+    pub(crate) fn command_action(&self, key: &str) -> Option<&Arc<Action>> {
+        self.action(key)
+            .filter(|a| a.command.is_some())
+            .or_else(|| {
+                self.registered_actions().find(|a| {
+                    a.command
+                        .as_ref()
+                        .is_some_and(|c| c.aliases.iter().any(|alias| alias == key))
+                })
+            })
     }
     pub(crate) fn registered_actions(&self) -> impl Iterator<Item = &Arc<Action>> {
         self.actions.values()

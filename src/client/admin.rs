@@ -6,7 +6,7 @@ use crate::content::Catalog;
 use crate::inventory::STACK_LIMIT;
 use crate::items::ItemId;
 use crate::protocol::ClientMessage;
-use bloxgloom_host_api::actions::{MAX_COMMAND_ARGUMENTS, Request};
+use bloxgloom_host_api::actions::Request;
 use winit::keyboard::KeyCode;
 
 pub(super) const BINDING_ROWS_PER_PAGE: usize = 8;
@@ -73,6 +73,7 @@ mod players;
 #[cfg(test)]
 mod tests;
 mod time;
+mod tokens;
 mod weather;
 
 enum Command {
@@ -112,16 +113,9 @@ fn parse_with_players(
     catalog: &Catalog,
     roster: &[crate::protocol::PlayerSummary],
 ) -> Result<Command, &'static str> {
-    // Bound token traversal/capture even for callers outside the text widget.
-    if input.len() > 1024 {
-        return Err("Command is too long");
-    }
-    let mut parts = input.trim().trim_start_matches('/').split_whitespace();
-    let key = parts.next().ok_or("Enter a command or help")?;
-    let mut values = parts.take(MAX_COMMAND_ARGUMENTS + 1).collect::<Vec<_>>();
-    if values.len() > MAX_COMMAND_ARGUMENTS {
-        return Err("Too many command arguments");
-    }
+    let tokens = tokens::parse(input)?;
+    let key = tokens.first().ok_or("Enter a command or help")?.as_str();
+    let mut values = tokens[1..].iter().map(String::as_str).collect::<Vec<_>>();
     let normalized;
     let key = match key {
         "help" if values.is_empty() => return Ok(Command::Help),
@@ -178,6 +172,11 @@ fn parse_with_players(
         }
         key => key,
     };
+    let key = catalog
+        .command_action(key)
+        .ok_or("Unknown command")?
+        .key
+        .as_str();
     let values = players::normalize(catalog, key, &values, roster)?;
     let values = values.iter().map(String::as_str).collect::<Vec<_>>();
     registered(catalog, key, &values).map(Command::Registered)
@@ -335,7 +334,14 @@ impl ClientApp {
                     .catalog
                     .registered_actions()
                     .filter(|action| action.command.is_some())
-                    .map(|action| action.key.as_str())
+                    .map(|action| {
+                        let aliases = &action.command.as_ref().unwrap().aliases;
+                        if aliases.is_empty() {
+                            action.key.clone()
+                        } else {
+                            format!("{} ({})", action.key, aliases.join(", "))
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(" / ");
                 let maxima = std::array::from_fn::<_, 3, _>(|part| {

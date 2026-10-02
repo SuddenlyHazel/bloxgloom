@@ -278,6 +278,9 @@ pub(super) fn fields_with_command(
                     list.raw_set(index + 1, key)?
                 }
                 CommandValue::Count(count) => list.raw_set(index + 1, count)?,
+                CommandValue::Text(value) => list.raw_set(index + 1, value)?,
+                CommandValue::Integer(value) => list.raw_set(index + 1, value)?,
+                CommandValue::Number(value) => list.raw_set(index + 1, value.get())?,
             }
         }
         list.set_readonly(true);
