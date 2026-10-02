@@ -182,6 +182,9 @@ impl State {
             renderer.clear_lod();
         }
         renderer.set_lod_horizon(self.horizon);
+        for (&key, &minimum) in &self.minimum {
+            renderer.discard_obsolete_lod(key, minimum);
+        }
         let center = [
             (position.x.floor() as i32).div_euclid(32),
             (position.z.floor() as i32).div_euclid(32),

@@ -213,7 +213,11 @@ fn structure_tile() -> LodTile {
                 bottom: 0,
                 top: 4,
                 state: world::STONE,
-                sky: 0,
+                sky: if (4..14).contains(&x) && (21..31).contains(&z) {
+                    0
+                } else {
+                    15
+                },
                 glow: 0,
             });
             if (5..27).contains(&x) && (12..18).contains(&z) {

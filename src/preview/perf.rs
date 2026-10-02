@@ -59,7 +59,8 @@ pub(super) async fn run_perf_benchmark_async(
     let grid_width = u32::from(radius) * 2 + 1;
     let requested_chunks = grid_width * grid_width * 3;
     let max_frames = usize::try_from(requested_chunks)?
-        .checked_add(steady_frames + 128)
+        .checked_add(steady_frames)
+        .and_then(|frames| frames.checked_add(128))
         .ok_or("frame count overflow")?;
     let max_queries = u32::try_from(max_frames.checked_mul(2).ok_or("query count overflow")?)?;
     if timestamp_supported && max_queries > wgpu::QUERY_SET_MAX_QUERIES {
@@ -675,8 +676,10 @@ pub(super) async fn run_perf_benchmark_async(
         .max()
         .unwrap_or_default();
     eprintln!(
-        "LOD benchmark: horizon={lod_horizon} summary-bytes={lod_summary_bytes} mesh-bytes={lod_mesh_bytes} gpu-tiles={}",
-        lod_gpu.ready_keys().count()
+        "LOD benchmark: horizon={lod_horizon} summary-bytes={lod_summary_bytes} mesh-bytes={lod_mesh_bytes} gpu-tiles={} selected-tiles={} gpu-bytes={}",
+        lod_gpu.ready_keys().count(),
+        lod_gpu.selected_count(),
+        lod_gpu.resident_bytes()
     );
     eprintln!(
         "headless scene: seed=0x{SEED:016x}, radius={radius}, requested={requested_chunks}, nonempty={nonempty_meshes}, gpu-resident={} ({} uploaded), final-visible={final_visible} / max-visible={max_visible}, final-triangles={final_triangles} / max-triangles={max_triangles}, mesh-bytes={mesh_bytes}, upload-bytes={total_upload_bytes}, max-upload/frame={max_uploaded_frame} chunks / {max_upload_bytes_frame} bytes (budget {} bytes), peak-queued={peak_pending_chunks}",

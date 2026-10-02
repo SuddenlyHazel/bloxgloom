@@ -2092,6 +2092,8 @@ impl ClientApp {
                             pending_uploads = stats.pending_chunks,
                             cached_chunks = self.chunks.len(),
                             lod_tiles = self.lod.cached_tiles(),
+                            lod_drawn_tiles = stats.lod_tiles,
+                            lod_gpu_bytes = stats.lod_bytes,
                             lod_horizon = self.lod.horizon,
                             "client frame statistics"
                         );
