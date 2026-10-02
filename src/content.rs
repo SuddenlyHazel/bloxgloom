@@ -19,7 +19,7 @@ pub(crate) mod declarations;
 mod extensions;
 mod gameplay;
 mod gameplay_entities;
-mod icons;
+pub(crate) mod icons;
 mod ids;
 mod inventories;
 pub(crate) mod machines;
@@ -235,6 +235,7 @@ pub struct Catalog {
         u32,
         std::sync::Arc<bloxgloom_host_api::gameplay::ObserverRegistration>,
     >,
+    pub(crate) item_visuals: std::sync::Arc<crate::client::item_visuals::Cache>,
     item_icons: HashMap<String, std::sync::Arc<bloxgloom_host_api::icon::ItemIcon>>,
     player_lifecycles:
         std::collections::BTreeMap<u32, std::sync::Arc<bloxgloom_host_api::players::Registration>>,
@@ -300,6 +301,7 @@ impl Catalog {
             gameplay_observers: Default::default(),
             gameplay_dispatch: Default::default(),
             item_icons: HashMap::new(),
+            item_visuals: Default::default(),
             player_lifecycles: Default::default(),
             owner_systems: Default::default(),
             anchored_blocks: Vec::new(),

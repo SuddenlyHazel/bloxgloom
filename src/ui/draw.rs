@@ -128,7 +128,7 @@ impl UiBuilder<'_> {
                 );
                 let swatch = inset(rect, 10.0 * self.scale, 10.0 * self.scale);
                 if let Some(stack) = frame.inventory[index].as_ref() {
-                    self.draw_item_swatch(swatch, stack.item, catalog);
+                    self.draw_stack_swatch(swatch, stack, catalog);
                     self.text(
                         &stack.count.to_string(),
                         rect.x + 3.0 * self.scale,
@@ -181,7 +181,22 @@ impl UiBuilder<'_> {
     }
 
     pub(super) fn draw_item_swatch(&mut self, rect: UiRect, item: ItemId, catalog: &Catalog) {
-        let Some(icon) = catalog.item_icon(item) else {
+        self.draw_stack_swatch(rect, &crate::inventory::Stack::new(item, 1), catalog);
+    }
+
+    pub(super) fn draw_stack_swatch(
+        &mut self,
+        rect: UiRect,
+        stack: &crate::inventory::Stack,
+        catalog: &Catalog,
+    ) {
+        let item = stack.item;
+        let visual = catalog.item_visuals.visual(stack);
+        let Some(icon) = visual
+            .as_ref()
+            .and_then(|visual| visual.icon.as_deref())
+            .or_else(|| catalog.item_icon(item))
+        else {
             self.rect(
                 rect.x,
                 rect.y,

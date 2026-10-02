@@ -1,6 +1,7 @@
 use super::*;
 use bloxgloom_host_api::{RegistrationError as ApiError, icon::ItemIcon};
 mod builtins;
+pub(crate) mod script;
 impl Catalog {
     pub(crate) fn register_item_icon(&mut self, mut icon: ItemIcon) -> Result<(), ApiError> {
         icon.validate()?;

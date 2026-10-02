@@ -100,7 +100,12 @@ fn paint_icon(ui: &Ui, rect: Rect, stack: &Stack, catalog: &Catalog) {
         Vec2::splat(icon_side),
     );
     let painter = ui.painter();
-    if let Some(icon) = catalog.item_icon(stack.item) {
+    let visual = catalog.item_visuals.visual(stack);
+    if let Some(icon) = visual
+        .as_ref()
+        .and_then(|visual| visual.icon.as_deref())
+        .or_else(|| catalog.item_icon(stack.item))
+    {
         let columns = icon.rows.iter().map(String::len).max().unwrap_or(1) as f32;
         let cell_w = icon_rect.width() / columns;
         let cell_h = icon_rect.height() / icon.rows.len() as f32;
@@ -146,3 +151,6 @@ fn color_from_swatch(rgba: [f32; 4]) -> Color32 {
         (rgba[3] * 255.0) as u8,
     )
 }
+
+#[cfg(test)]
+mod tests;

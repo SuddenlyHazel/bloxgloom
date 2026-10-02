@@ -10,6 +10,7 @@ pub(super) mod anchored;
 mod appearance;
 mod components;
 mod creature;
+pub(super) mod icons;
 mod machine;
 pub(super) mod moving;
 mod runtime;
@@ -54,6 +55,7 @@ pub(super) struct Startup {
     player_rules: Option<crate::content::player::Selection>,
     packages: Vec<composition::Package>,
     items: Vec<content::Item>,
+    icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     tags: Vec<content::Tag>,
     textures: Vec<content::Texture>,
     blocks: Vec<content::Block>,
@@ -560,7 +562,8 @@ impl ClientBundle {
         let result = super::observers::wrap(result, declarations)?;
         let result = anchored::wrap(result, declarations)?;
         let result = moving::wrap(result, declarations)?;
-        acoustics::wrap(result, declarations)
+        let result = acoustics::wrap(result, declarations)?;
+        icons::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.
@@ -592,6 +595,9 @@ impl ClientBundle {
                         let mut catalog = crate::content::Catalog::builtins();
                         declarations.install_base(&mut catalog)?;
                         declarations.install_items_and_tags(&mut catalog)?;
+                        for icon in &startup.icons {
+                            catalog.register_item_icon(icon.clone())?;
+                        }
                         catalog.refresh_builtin_fuels()?;
                         for creature in &startup.creatures {
                             catalog.register_mobile(creature.clone())?;
@@ -748,6 +754,7 @@ impl Startup {
         let mut has_machine_active = false;
         let mut has_machine_variants = false;
         let mut startup = Self {
+            icons: Vec::new(),
             appearance: None,
             player_rules: None,
             packages: Vec::new(),

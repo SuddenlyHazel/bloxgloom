@@ -54,6 +54,7 @@ pub(in crate::server::script) use block::visual as visual_block;
 pub(in crate::server::script) use block::{has_state, placement_state, stateful as stateful_block};
 mod anchored;
 mod appearance;
+mod icons;
 mod item;
 mod player;
 mod storage;
@@ -76,6 +77,7 @@ pub(in crate::server) struct Declarations {
     pub(in crate::server) client_bundle: Arc<super::package::client::ClientBundle>,
     pub(super) packages: Vec<bloxgloom_host_api::composition::Package>,
     pub(super) items: Vec<Item>,
+    pub(super) icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     pub(super) tags: Vec<bloxgloom_host_api::content::Tag>,
     pub(super) blocks: Vec<Block>,
     pub(super) textures: Vec<PackageTexture>,
@@ -100,6 +102,7 @@ impl Declarations {
         let packages = snapshot.startup_packages().map_err(std::io::Error::other)?;
         let worker = ScriptWorker::spawn(super::Limits::startup())?;
         let mut items = Vec::new();
+        let mut icons = Vec::new();
         let mut tags = Vec::new();
         let mut blocks = Vec::new();
         let mut textures = Vec::new();
@@ -163,6 +166,7 @@ impl Declarations {
                 ));
             }
             items.extend(declarations.items);
+            icons.extend(declarations.icons);
             tags.extend(declarations.tags);
             if let Some(selection) = declarations.appearance
                 && appearance.replace(selection).is_some()
@@ -213,6 +217,7 @@ impl Declarations {
             client_bundle: Arc::clone(snapshot.client_bundle()),
             packages,
             items,
+            icons,
             tags,
             blocks,
             textures,
@@ -291,6 +296,9 @@ impl Extension for Declarations {
         for item in &self.items {
             registrar.item(item.clone())?;
         }
+        for icon in &self.icons {
+            registrar.item_icon(icon.clone())?;
+        }
         for tag in &self.tags {
             registrar.tag(tag.clone())?;
         }
@@ -338,6 +346,7 @@ pub(super) struct Pending {
     appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_rules: Option<crate::content::player::Selection>,
     items: Vec<Item>,
+    icons: Vec<bloxgloom_host_api::icon::ItemIcon>,
     tags: Vec<bloxgloom_host_api::content::Tag>,
     blocks: Vec<Block>,
     textures: Vec<PackageTexture>,
@@ -435,6 +444,7 @@ pub(super) fn invoke(
     let storage = storage::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let creature = creature::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
     let machine = machine::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let icon = icons::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let tag = tag::declarer(lua, Rc::clone(&pending), namespace, permits_content)?;
     let capture = Rc::clone(&pending);
     let texture_capture = Rc::clone(&pending);
@@ -730,6 +740,7 @@ pub(super) fn invoke(
     host.set("register_texture", register_texture)?;
     host.set("register_block", register_block)?;
     host.set("register_tag", tag)?;
+    host.set("register_item_icon", icon)?;
     host.set("register_anchored", anchored)?;
     host.set("register_storage", storage)?;
     host.set("register_creature", creature)?;

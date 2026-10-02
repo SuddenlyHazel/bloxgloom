@@ -247,6 +247,13 @@ impl Network {
             Some(bundle) => super::startup::prepare(Arc::clone(bundle))?,
             None => Default::default(),
         };
+        if let Some(bundle) = &bundle {
+            catalog.item_visuals.bind(
+                Arc::clone(bundle),
+                &startup.item_visual_handlers,
+                &catalog,
+            )?;
+        }
         preparing(stage, "server readiness acknowledgement", control)?;
         protocol::write_client(
             &mut socket,

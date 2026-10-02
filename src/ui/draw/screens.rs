@@ -111,7 +111,7 @@ impl UiBuilder<'_> {
             );
             if let Some(stack) = frame.inventory[index as usize].as_ref() {
                 let swatch = inset(rect, rect.width * 0.23, rect.height * 0.23);
-                self.draw_item_swatch(swatch, stack.item, catalog);
+                self.draw_stack_swatch(swatch, stack, catalog);
                 let count = stack.count.to_string();
                 self.text(
                     &count,

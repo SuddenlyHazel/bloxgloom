@@ -4,18 +4,18 @@ use crate::server::client_bundle::ClientBundle;
 use mlua::{Lua, Value};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 
-pub(super) enum Export {
+pub(in crate::client) enum Export {
     Ready(mlua::RegistryKey),
     Failed(String),
 }
 
 /// One handler's connection-owned realm; errors retire the entire VM.
 pub(in crate::client) struct EventRealm {
-    pub(super) lua: Lua,
+    pub(in crate::client) lua: Lua,
     _reservation: crate::server::script_runtime::Reservation,
     pub(super) diagnostics: crate::server::script_runtime::Diagnostics,
-    pub(super) cached: Rc<RefCell<BTreeMap<String, Export>>>,
-    pub(super) stack: Rc<RefCell<Vec<String>>>,
+    pub(in crate::client) cached: Rc<RefCell<BTreeMap<String, Export>>>,
+    pub(in crate::client) stack: Rc<RefCell<Vec<String>>>,
 }
 impl EventRealm {
     pub(in crate::client) fn id(&self) -> u64 {
@@ -51,7 +51,7 @@ impl Drop for EventRealm {
 
 // Imports keep the lexical caller in their closure even when exported functions
 // travel across packages. Export caches belong to a single handler realm.
-pub(super) fn load(
+pub(in crate::client) fn load(
     lua: &Lua,
     bundle: Arc<ClientBundle>,
     key: &str,

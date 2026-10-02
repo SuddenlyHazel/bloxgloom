@@ -124,9 +124,9 @@ impl UiBuilder<'_> {
                 self.scale,
             );
             if let Some(stack) = stack {
-                self.draw_item_swatch(
+                self.draw_stack_swatch(
                     inset(rect, rect.width * 0.23, rect.height * 0.23),
-                    stack.item,
+                    stack,
                     catalog,
                 );
                 let count = stack.count.to_string();

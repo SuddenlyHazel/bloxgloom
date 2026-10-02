@@ -58,7 +58,7 @@ impl DropAnimator {
     pub(crate) fn picked_up(&mut self, items: Vec<DroppedItem>, now: Instant) {
         for item in items {
             let animation = self.catalog.drop_animation(item.item);
-            let start = self
+            let mut start = self
                 .items
                 .iter()
                 .find(|live| live.id == item.id)
@@ -70,6 +70,13 @@ impl DropAnimator {
                     visual
                 })
                 .unwrap_or_else(|| live_visual(&item, item.age_ms as f32 / 1000.0, animation));
+            if let Some(presentation) = self
+                .catalog
+                .item_visuals
+                .visual(&crate::inventory::Stack::new(item.item, item.count))
+            {
+                start.scale *= presentation.drop_scale;
+            }
             if let Some(live) = self.items.iter_mut().find(|live| live.id == item.id) {
                 live.count = live.count.saturating_sub(item.count);
             }
@@ -98,6 +105,13 @@ impl DropAnimator {
             let age = (u128::from(item.age_ms) + elapsed_ms) as f32 / 1000.0;
             let mut visual = live_visual(item, age, self.catalog.drop_animation(item.item));
             visual.center += self.position_for(item, now) - Vec3::from_array(item.position);
+            if let Some(presentation) = self
+                .catalog
+                .item_visuals
+                .visual(&crate::inventory::Stack::new(item.item, item.count))
+            {
+                visual.scale *= presentation.drop_scale;
+            }
             result.push(visual);
         }
         let target = player + Vec3::new(0.0, 1.25, 0.0);

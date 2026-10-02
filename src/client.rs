@@ -36,6 +36,7 @@ mod character_motion;
 pub(crate) mod drops;
 mod fire;
 mod interactions;
+pub(crate) mod item_visuals;
 use drops::DropAnimator;
 use fire::FireAnimator;
 mod movement;

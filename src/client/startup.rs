@@ -10,7 +10,7 @@ use crate::server::client_bundle::ClientBundle;
 
 pub(super) mod players;
 mod readiness;
-mod realm;
+pub(super) mod realm;
 use mlua::{Lua, Value, VmState};
 pub(super) use realm::EventRealm;
 use realm::load;
@@ -28,6 +28,7 @@ pub(crate) struct State {
     pub(crate) replica: Option<Arc<crate::client::presentation::Script>>,
     pub(crate) replica_observations: bool,
     pub(crate) player_handlers: BTreeMap<String, String>,
+    pub(crate) item_visual_handlers: BTreeMap<String, String>,
     pub(crate) parameters: crate::render::parameters::State,
 }
 
@@ -177,6 +178,16 @@ pub(super) fn execute_retained(
         host.set(
             "set_player_handler",
             players::declarer(
+                lua,
+                Rc::clone(&registrations),
+                Arc::clone(&bundle),
+                entry.split_once(':').unwrap().0.to_owned(),
+                startup,
+            )?,
+        )?;
+        host.set(
+            "set_item_visual_handler",
+            item_visual_declarer(
                 lua,
                 Rc::clone(&registrations),
                 Arc::clone(&bundle),
@@ -373,6 +384,17 @@ pub(super) fn execute_retained(
             ));
         }
     }
+    for (item, module) in &output.item_visual_handlers {
+        if state
+            .item_visual_handlers
+            .insert(item.clone(), module.clone())
+            .is_some()
+        {
+            return Err(format!(
+                "client startup {id}: duplicate item visual handler"
+            ));
+        }
+    }
     state.texts.extend(output.texts.clone());
     state.states.extend(output.states.clone());
     if output.replica.is_some() {
@@ -381,4 +403,23 @@ pub(super) fn execute_retained(
     state.replica = output.replica.clone().or_else(|| state.replica.take());
     state.parameters = output.parameters.clone();
     Ok(())
+}
+
+fn item_visual_declarer(
+    lua: &Lua,
+    registrations: Rc<RefCell<State>>,
+    bundle: Arc<ClientBundle>,
+    owner: String,
+    startup: bool,
+) -> mlua::Result<mlua::Function> {
+    lua.create_function(move |_, (item, module): (mlua::LuaString, mlua::LuaString)| {
+        let item = ascii(item, 129)?;
+        let module = ascii(module, 129)?;
+        let valid = |key: &str| key.split_once(':').is_some_and(|(package, local)| package == owner && identifier(local));
+        if !startup || !valid(&item) || !valid(&module) || registrations.borrow().item_visual_handlers.len() >= 32 || registrations.borrow().item_visual_handlers.contains_key(&item) || !bundle.packages()[&owner].sources.contains_key(module.split_once(':').unwrap().1) {
+            return Err(mlua::Error::RuntimeError("invalid or duplicate item visual handler (32 per package; owned client module required)".into()));
+        }
+        registrations.borrow_mut().item_visual_handlers.insert(item, module);
+        Ok(())
+    })
 }

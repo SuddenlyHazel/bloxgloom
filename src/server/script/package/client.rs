@@ -256,6 +256,9 @@ impl ClientBundle {
         if CacheKey(Sha256::digest(bytes).into()) != expected {
             return Err(error("<client-bundle>", "SHA-256 integrity mismatch"));
         }
+        if bytes.starts_with(declarations::icons::MAGIC) {
+            return declarations::icons::decode(bytes, expected);
+        }
         if bytes.starts_with(declarations::acoustics::MAGIC) {
             return declarations::acoustics::decode(bytes, expected);
         }
