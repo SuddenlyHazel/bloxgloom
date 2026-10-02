@@ -236,6 +236,8 @@ fn greedy_quads_repeat_material_once_per_voxel() {
 
 #[test]
 fn material_mips_preserve_opaque_and_cutout_layers() {
+    let leaf_layer = material::material_layer(LEAVES, 1, 1) as usize;
+    assert!(crate::content::catalog().textures()[leaf_layer].alpha_cutout);
     let mips = material::material_mips();
     assert_eq!(mips.len(), material::TEXTURE_MIPS as usize);
     for (level, pixels) in mips.iter().enumerate() {
@@ -246,7 +248,7 @@ fn material_mips_preserve_opaque_and_cutout_layers() {
         );
         let layer_bytes = (size * size * 4) as usize;
         assert!(
-            pixels[..12 * layer_bytes]
+            pixels[..11 * layer_bytes]
                 .chunks_exact(4)
                 .all(|pixel| pixel[3] == 255)
         );

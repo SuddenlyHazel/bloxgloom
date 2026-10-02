@@ -77,6 +77,30 @@ pub(super) fn register(catalog: &mut Catalog) {
             "glowstone_s",
             include_bytes!("../../assets/textures/blocks/glowstone_s.png"),
         ),
+        (
+            "wood_side_n",
+            include_bytes!("../../assets/textures/blocks/wood_side_n.png"),
+        ),
+        (
+            "wood_side_s",
+            include_bytes!("../../assets/textures/blocks/wood_side_s.png"),
+        ),
+        (
+            "wood_top_n",
+            include_bytes!("../../assets/textures/blocks/wood_top_n.png"),
+        ),
+        (
+            "wood_top_s",
+            include_bytes!("../../assets/textures/blocks/wood_top_s.png"),
+        ),
+        (
+            "stick_n",
+            include_bytes!("../../assets/textures/items/stick_n.png"),
+        ),
+        (
+            "stick_s",
+            include_bytes!("../../assets/textures/items/stick_s.png"),
+        ),
     ];
     for &(name, png) in MAPS {
         catalog.embedded_texture(&Texture {

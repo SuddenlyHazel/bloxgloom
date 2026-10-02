@@ -85,9 +85,9 @@ impl Catalog {
             (
                 "leaves",
                 include_bytes!("../../assets/textures/foliage/leaves.png"),
-                true,
-                true,
                 false,
+                false,
+                true,
             ),
             (
                 "flower_red",

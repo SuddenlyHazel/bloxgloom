@@ -76,11 +76,14 @@ fn data_mips_are_linear_and_do_not_weight_normals_by_height_alpha() {
 }
 
 #[test]
-fn builtin_terrain_companions_are_registered_without_changing_original_layers() {
+fn builtin_companions_are_registered_without_changing_original_layers() {
     let catalog = Catalog::builtins();
     let maps = prepare(&catalog);
-    assert_eq!(&maps.flags[..9], &[3; 9]);
-    assert!(maps.flags[9..].iter().all(|&f| f == 0));
+    assert_eq!(&maps.flags[..11], &[3; 11]);
+    assert!(maps.flags[11..19].iter().all(|&f| f == 0));
+    assert_eq!(maps.flags[19], 3);
+    assert!(maps.flags[20..].iter().all(|&f| f == 0));
     assert_eq!(catalog.textures()[3].key, "bloxgloom:stone");
     assert_eq!(catalog.textures()[27].key, "bloxgloom:grass_top_n");
+    assert_eq!(catalog.textures()[45].key, "bloxgloom:wood_side_n");
 }
