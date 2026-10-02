@@ -201,3 +201,123 @@ fn cancelled_builds_retire_every_budget_slot_and_shutdown_with_full_completion_q
     drop(world);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unrelated_commit_keeps_inflight_tile_while_related_commit_rejects_old_result() {
+    let root = temporary();
+    let mut state = crate::server::server_state(7, root.clone()).unwrap();
+    let near = TileKey {
+        level: 4,
+        x: 0,
+        z: 0,
+    };
+    let distant = TileKey {
+        level: 4,
+        x: 2,
+        z: 0,
+    };
+    for key in [distant, near] {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        state
+            .lod
+            .jobs
+            .as_ref()
+            .unwrap()
+            .try_send(worker::Job {
+                key,
+                revision: 1,
+                overlays: vec![],
+                children: None,
+                requested_at: Instant::now(),
+                cancelled: cancelled.clone(),
+            })
+            .unwrap();
+        state.lod.pending.insert(key, (1, cancelled));
+    }
+    // A real newer committed overlay exists before these completions install.
+    state
+        .world
+        .get_chunk(ChunkKey { x: 0, y: 6, z: 0 })
+        .unwrap();
+    let edit = state
+        .world
+        .prepare_edit(0, 100, 0, crate::world::GLOWSTONE)
+        .unwrap();
+    state.world.apply_prepared_edit(edit).unwrap();
+    invalidate(&mut state, [ChunkKey { x: 0, y: 6, z: 0 }]);
+    assert_eq!(state.lod.revision, 2);
+    assert!(!state.lod.pending[&distant].1.load(Ordering::Relaxed));
+    assert!(state.lod.pending[&near].1.load(Ordering::Relaxed));
+    for _ in 0..2 {
+        let result = state
+            .lod
+            .results
+            .recv_timeout(Duration::from_secs(20))
+            .unwrap();
+        if result.key == distant {
+            assert!(result.tile.is_some());
+            assert!(
+                state.lod.finish(&result),
+                "unrelated edit must not starve valid distant builds"
+            );
+        } else {
+            assert!(
+                !state.lod.finish(&result),
+                "related old work must never install"
+            );
+        }
+    }
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state
+        .lod
+        .jobs
+        .as_ref()
+        .unwrap()
+        .try_send(worker::Job {
+            key: near,
+            revision: 2,
+            overlays: state.world.lod_overlays(near.bounds().unwrap()).unwrap(),
+            children: None,
+            requested_at: Instant::now(),
+            cancelled: cancelled.clone(),
+        })
+        .unwrap();
+    state.lod.pending.insert(near, (2, cancelled));
+    let result = state
+        .lod
+        .results
+        .recv_timeout(Duration::from_secs(20))
+        .unwrap();
+    assert!(state.lod.finish(&result));
+    assert!(
+        result.tile.unwrap().columns[0]
+            .spans
+            .iter()
+            .any(|s| s.bottom <= 100 && s.top > 100 && s.state == crate::world::GLOWSTONE)
+    );
+    drop(state);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn revision_exhaustion_cancels_every_inflight_dependency() {
+    let root = temporary();
+    let world = World::with_capacity(7, root.clone(), 4).unwrap();
+    let mut service = Service::new(&world, root.clone()).unwrap();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    service.pending.insert(
+        TileKey {
+            level: 4,
+            x: 0,
+            z: 0,
+        },
+        (u64::MAX, cancelled.clone()),
+    );
+    service.revision = u64::MAX;
+    assert!(!service.advance_revision());
+    assert!(service.exhausted);
+    assert!(cancelled.load(Ordering::Relaxed));
+    drop(service);
+    drop(world);
+    std::fs::remove_dir_all(root).unwrap();
+}

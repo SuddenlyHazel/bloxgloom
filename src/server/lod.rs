@@ -29,6 +29,7 @@ pub(super) struct Service {
     order: VecDeque<TileKey>,
     clients: HashMap<u64, Interest>,
     revision: u64,
+    exhausted: bool,
     cursor: u64,
 }
 impl Service {
@@ -48,15 +49,41 @@ impl Service {
             order: VecDeque::new(),
             clients: HashMap::new(),
             revision: 1,
+            exhausted: false,
             cursor: 0,
         })
     }
-    pub(super) fn invalidate(&mut self) {
-        self.revision = self.revision.saturating_add(1);
+    fn advance_revision(&mut self) -> bool {
+        if let Some(next) = self.revision.checked_add(1) {
+            self.revision = next;
+            true
+        } else {
+            self.exhausted = true;
+            for (_, cancelled) in self.pending.values() {
+                cancelled.store(true, Ordering::Relaxed);
+            }
+            false
+        }
+    }
+    #[cfg(test)]
+    fn invalidate(&mut self) {
+        self.advance_revision();
         for (_, cancelled) in self.pending.values() {
             cancelled.store(true, Ordering::Relaxed);
         }
-        // Cached old geometry remains on clients until a ready replacement.
+    }
+    /// Retire exactly the matching accepted job. Unrelated commits may advance
+    /// the world counter while this tile's captured dependencies remain valid.
+    fn finish(&mut self, result: &worker::Completion) -> bool {
+        if !self
+            .pending
+            .get(&result.key)
+            .is_some_and(|(revision, _)| *revision == result.revision)
+        {
+            return false;
+        }
+        let (_, cancelled) = self.pending.remove(&result.key).unwrap();
+        !cancelled.load(Ordering::Relaxed)
     }
 }
 impl Drop for Service {
@@ -78,7 +105,7 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
     };
     match message {
         ClientMessage::LodConfig { horizon } => {
-            let horizon = if horizon == 0 {
+            let horizon = if horizon == 0 || state.lod.exhausted {
                 0
             } else {
                 horizon.clamp(
@@ -135,9 +162,9 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
 /// globally per tick, and never behind an already substantial gameplay backlog.
 pub(super) fn poll(state: &mut State) {
     while let Ok(result) = state.lod.results.try_recv() {
-        state.lod.pending.remove(&result.key);
+        let valid = state.lod.finish(&result);
         tracing::debug!(key=?result.key,generation_ms=result.elapsed.as_millis(),queue_ms=result.queue_age.as_millis(),"LOD terrain completion");
-        if result.revision != state.lod.revision {
+        if !valid {
             continue;
         }
         if let Some(tile) = result.tile {
@@ -278,11 +305,26 @@ pub(super) fn poll(state: &mut State) {
         }
     }
 }
-/// Fence builds globally, but invalidate ready summaries only where committed
+/// Fence builds and ready summaries only where committed
 /// chunks intersect their horizontal footprint. Huge publications fall back to
 /// one explicit world-wide refresh instead of flooding control queues.
 pub(super) fn invalidate(state: &mut State, chunks: impl IntoIterator<Item = ChunkKey>) {
-    state.lod.invalidate();
+    if !state.lod.advance_revision() {
+        state.lod.cache.clear();
+        state.lod.order.clear();
+        for (&id, interest) in &mut state.lod.clients {
+            interest.horizon = 0;
+            interest.requests.clear();
+            if let Some(client) = state.clients.get(&id) {
+                client.enqueue(ServerMessage::LodStatus {
+                    session: client.action_epoch,
+                    horizon: 0,
+                    max_level: state.world.lod_max_level(),
+                });
+            }
+        }
+        return;
+    }
     let mut affected = std::collections::BTreeSet::new();
     for chunk in chunks {
         let Some(x) = chunk.x.checked_mul(crate::world::CHUNK_SIZE as i32) else {
@@ -301,6 +343,11 @@ pub(super) fn invalidate(state: &mut State, chunks: impl IntoIterator<Item = Chu
         }
     }
     let all = affected.len() > 32;
+    for (key, (_, cancelled)) in &state.lod.pending {
+        if all || affected.contains(key) {
+            cancelled.store(true, Ordering::Relaxed);
+        }
+    }
     if all {
         state.lod.cache.clear();
         state.lod.order.clear();
