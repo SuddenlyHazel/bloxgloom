@@ -364,3 +364,10 @@ and [rain collector example](../../fixtures/rain-collector/README.md). A reprodu
 `audio-material-preview custom` renders that collector's profile through the
 same production mixer. This adds material/habitat authoring, not new full-world
 acoustic tracing or additional cicada synthesis families.
+
+
+The collector custom-profile probe rendered eight seconds of stereo audio in
+271 ms on the development machine: 7,171 impacts, zero dropped/rejected commands,
+peak 0.0408 and RMS 0.00793. A two-second `audio-file` device smoke test exited
+successfully. These are execution and signal checks, not a subjective listening
+approval or a live gameplay performance measurement.

@@ -8,11 +8,10 @@ its 64-block catchment clearance. Unknown terrain defers the tick until loaded.
 This is a small demonstration counter, not a recipe or water-item producer.
 
 ```sh
-cargo run --release -- server-packages fixtures/rain-collector/packages 127.0.0.1:4000 /tmp/bloxgloom-rain-collector-test
-cargo run --release -- client 127.0.0.1:4000
+cargo run --release -- local-packages fixtures/rain-collector/packages /tmp/bloxgloom-rain-collector-test
 ```
 
-Use the operator console to grant `rain:collector`, then place it outdoors.
+The local package launcher selects your profile as operator. Use the operator console to grant `rain:collector`, then place it outdoors.
 Run `weather set storm 0 severe` for a severe storm with zero transition. You should hear the loop
 start; **Empty rain collector** becomes usable as it fills. Rain fills it in
 roughly 34 seconds in a severe storm, then its loop stops. Emptying it plays the
