@@ -81,7 +81,14 @@ pub(super) fn handle(state: &mut State, id: u64, message: ClientMessage) -> io::
             let horizon = if horizon == 0 {
                 0
             } else {
-                horizon.clamp(128, 1024)
+                horizon.clamp(
+                    128,
+                    if state.world.lod_max_level() == 4 {
+                        1024
+                    } else {
+                        512
+                    },
+                )
             };
             state.lod.clients.insert(
                 id,
@@ -217,7 +224,6 @@ pub(super) fn poll(state: &mut State) {
         let Some(&(request, key)) = interest.requests.front() else {
             continue;
         };
-        state.lod.cursor = id;
         if let Some(tile) = state.lod.cache.get(&key) {
             if client
                 .sender
@@ -229,6 +235,7 @@ pub(super) fn poll(state: &mut State) {
                 .is_ok()
             {
                 interest.requests.pop_front();
+                state.lod.cursor = id;
                 admitted += 1;
             }
             if admitted >= 4 {
@@ -267,6 +274,7 @@ pub(super) fn poll(state: &mut State) {
         };
         if state.lod.jobs.as_ref().unwrap().try_send(job).is_ok() {
             state.lod.pending.insert(key, (revision, cancelled));
+            state.lod.cursor = id;
         }
     }
 }

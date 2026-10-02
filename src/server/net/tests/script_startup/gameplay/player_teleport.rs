@@ -40,6 +40,21 @@ fn luau_player_teleport_loads_far_terrain_rejects_final_obstructions_and_resets_
     let catalog = state.world.catalog_arc();
     serve(state, |address| {
         let mut peer = Peer::connect(address, catalog);
+        protocol::write_client(&mut peer.stream, &ClientMessage::LodConfig { horizon: 512 })
+            .unwrap();
+        let lod_deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            if let ServerMessage::LodStatus {
+                session,
+                horizon,
+                max_level,
+            } = peer.read(lod_deadline)
+            {
+                assert_eq!(session, peer.epoch);
+                assert_eq!((horizon, max_level), (512, 4));
+                break;
+            }
+        }
         for mode in 1..=4 {
             let request = peer.request(mode);
             assert!(!peer.send(&request).0);
@@ -48,6 +63,15 @@ fn luau_player_teleport_loads_far_terrain_rejects_final_obstructions_and_resets_
         let ClientMessage::EntityInteract { action_id, .. } = &request else {
             unreachable!()
         };
+        let old_key = crate::lod::TileKey::containing(4, 0, 0).unwrap();
+        protocol::write_client(
+            &mut peer.stream,
+            &ClientMessage::LodRequest {
+                request: 101,
+                key: old_key,
+            },
+        )
+        .unwrap();
         protocol::write_client(&mut peer.stream, &request).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut teleport = None;
@@ -75,6 +99,59 @@ fn luau_player_teleport_loads_far_terrain_rejects_final_obstructions_and_resets_
             }
         }
         let reset = teleport.expect("accepted teleport did not reset its target");
+        // The old horizon is retired after the authoritative teleport, while
+        // the destination can receive terrain independently of near chunks.
+        protocol::write_client(
+            &mut peer.stream,
+            &ClientMessage::LodRequest {
+                request: 102,
+                key: old_key,
+            },
+        )
+        .unwrap();
+        loop {
+            if let ServerMessage::LodUnavailable {
+                session,
+                request: 102,
+                ..
+            } = peer.read(lod_deadline)
+            {
+                assert_eq!(session, peer.epoch);
+                break;
+            }
+        }
+        let destination = crate::lod::TileKey::containing(4, 1200, 0).unwrap();
+        let recovery = Instant::now();
+        protocol::write_client(
+            &mut peer.stream,
+            &ClientMessage::LodRequest {
+                request: 103,
+                key: destination,
+            },
+        )
+        .unwrap();
+        loop {
+            match peer.read(lod_deadline) {
+                ServerMessage::LodTile {
+                    session,
+                    request: 103,
+                    tile,
+                } => {
+                    assert_eq!(session, peer.epoch);
+                    assert_eq!(tile.key, destination);
+                    assert!(!tile.columns[0].known(296, 312));
+                    break;
+                }
+                ServerMessage::LodUnavailable { request: 103, .. } => {
+                    panic!("teleport destination LOD unavailable")
+                }
+                _ => {}
+            }
+        }
+        eprintln!(
+            "LOD authoritative teleport destination recovery: {}ms",
+            recovery.elapsed().as_millis()
+        );
         peer.inventory_at(1);
         protocol::write_client(
             &mut peer.stream,
@@ -157,12 +234,45 @@ fn luau_player_teleport_loads_far_terrain_rejects_final_obstructions_and_resets_
         .unwrap();
         let (fingerprint, _) = receive_content_manifest(&mut stream);
         protocol::write_client(&mut stream, &ClientMessage::ContentReady { fingerprint }).unwrap();
+        let mut session = 0;
         loop {
-            if let ServerMessage::Position { x, y, z, .. } =
-                protocol::read_server(&mut stream).unwrap()
-            {
-                assert_eq!([x, y, z], saved);
-                break;
+            match protocol::read_server(&mut stream).unwrap() {
+                ServerMessage::ActionSession { epoch, .. } => session = epoch,
+                ServerMessage::Position { x, y, z, .. } => {
+                    assert_eq!([x, y, z], saved);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert_ne!(session, 0);
+        protocol::write_client(&mut stream, &ClientMessage::LodConfig { horizon: 512 }).unwrap();
+        protocol::write_client(
+            &mut stream,
+            &ClientMessage::LodRequest {
+                request: 104,
+                key: crate::lod::TileKey::containing(4, 1200, 0).unwrap(),
+            },
+        )
+        .unwrap();
+        loop {
+            match protocol::read_server(&mut stream).unwrap() {
+                ServerMessage::LodTile {
+                    session: received,
+                    request: 104,
+                    tile,
+                } => {
+                    assert_eq!(received, session);
+                    assert_eq!(
+                        tile.key,
+                        crate::lod::TileKey::containing(4, 1200, 0).unwrap()
+                    );
+                    break;
+                }
+                ServerMessage::LodUnavailable { request: 104, .. } => {
+                    panic!("rejoined destination LOD unavailable")
+                }
+                _ => {}
             }
         }
     });

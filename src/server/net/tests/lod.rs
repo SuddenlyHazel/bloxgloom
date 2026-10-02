@@ -326,7 +326,7 @@ fn registered_contributor_summary_negotiates_bounded_fallback_and_preserves_mark
             }
         }
         protocol::write_client(&mut peer, &ClientMessage::SetView { radius: 1 }).unwrap();
-        protocol::write_client(&mut peer, &ClientMessage::LodConfig { horizon: 512 }).unwrap();
+        protocol::write_client(&mut peer, &ClientMessage::LodConfig { horizon: 1024 }).unwrap();
         loop {
             if let ServerMessage::LodStatus {
                 max_level, horizon, ..
