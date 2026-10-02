@@ -29,7 +29,7 @@ pub(super) fn load(bytes: &[u8], controls: Controls) -> Result<Model> {
         "one embedded GLB buffer required",
     )?;
     ensure(
-        g.nodes().len() <= 256 && g.meshes().len() <= 256 && g.skins().len() <= 32,
+        g.nodes().len() <= 1024 && g.meshes().len() <= 1024 && g.skins().len() <= 32,
         "GLB node/mesh/skin limits exceeded",
     )?;
     for view in g.views() {

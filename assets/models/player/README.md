@@ -3,7 +3,9 @@
 A new [native GLB import and preview foundation](../../../docs/modding/AUTHORED-MODELS.md)
 preserves authored clips and named appearance controls for future player/creature
 models. It can inspect a GLB directly with `model-preview`; the in-game builtin
-family described below remains installed during this preparation stage.
+family described below remains installed during this preparation stage. The supplied
+[revised master](master/README.md) now has native previews of its authored gameplay
+clips, body/hair variants and independent color controls.
 
 The articulated family is the game's only player renderer. There is no Classic/Authored switch or legacy fallback. A palette-only player snapshot resolves to the default articulated recipe.
 
@@ -48,7 +50,8 @@ Exact black necessarily removes the painted shade contrast; a lifted charcoal pr
 
 ## Rebuild and verify
 
-The runtime has no glTF parser and cannot receive asset paths or arbitrary geometry over the wire. The offline converter validates embedded GLBs, rigid weights, hierarchy and mesh limits, bakes hair adjustment handles at neutral, and writes bounded BGC2 mesh files. Its standard-library-only rebuild is deterministic:
+The installed player renderer uses the offline format below; the native GLB preview
+loader is separate. Clients cannot receive asset paths or arbitrary geometry over the wire. The offline converter validates embedded GLBs, rigid weights, hierarchy and mesh limits, bakes hair adjustment handles at neutral, and writes bounded BGC2 mesh files. Its standard-library-only rebuild is deterministic:
 
 ```sh
 python tools/character_assets/convert.py

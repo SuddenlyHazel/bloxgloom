@@ -1,15 +1,18 @@
 struct Camera { view_projection: mat4x4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read> joints: array<mat4x4f>;
+@group(0) @binding(2) var<storage, read> colors: array<vec4f>;
 @group(1) @binding(0) var albedo: texture_2d<f32>;
 @group(1) @binding(1) var pixels: sampler;
-struct Material { base: vec4f, tint: vec4f, alpha: vec4f };
+struct Material { base: vec4f, alpha: vec4f };
 @group(1) @binding(2) var<uniform> material: Material;
 struct Input {
     @location(0) position: vec3f, @location(1) normal: vec3f,
     @location(2) uv: vec2f, @location(3) joints: vec4u, @location(4) weights: vec4f,
+    @location(5) tint: u32,
 };
-struct Output { @builtin(position) clip: vec4f, @location(0) normal: vec3f, @location(1) uv: vec2f };
+struct Output { @builtin(position) clip: vec4f, @location(0) normal: vec3f, @location(1) uv: vec2f,
+    @location(2) @interpolate(flat) tint: u32 };
 @vertex fn vs_main(input: Input) -> Output {
     let transform = joints[input.joints.x]*input.weights.x + joints[input.joints.y]*input.weights.y
         + joints[input.joints.z]*input.weights.z + joints[input.joints.w]*input.weights.w;
@@ -25,12 +28,14 @@ struct Output { @builtin(position) clip: vec4f, @location(0) normal: vec3f, @loc
     }
     output.normal = safe_normal;
     output.uv = input.uv;
+    output.tint = input.tint;
     return output;
 }
 @fragment fn fs_main(input: Output, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let sampled = textureSample(albedo,pixels,input.uv) * material.base;
     if material.alpha.x >= 0.0 && sampled.a < material.alpha.x { discard; }
-    let rgb = select(sampled.rgb * material.tint.rgb, material.tint.rgb,material.tint.w > 0.5);
+    let tint = colors[input.tint];
+    let rgb = select(sampled.rgb * tint.rgb, tint.rgb,tint.w > 0.5);
     let normal = normalize(select(-input.normal,input.normal,front));
     let light = 0.35 + 0.65*max(0.0,dot(normal,normalize(vec3f(-0.5,0.8,-0.7))));
     return vec4f(rgb*light,1.0);

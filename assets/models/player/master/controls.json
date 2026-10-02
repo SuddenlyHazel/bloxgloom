@@ -1,0 +1,267 @@
+{
+  "variants": [
+    {
+      "name": "body",
+      "default": "flat_chest",
+      "options": [
+        {
+          "name": "flat_chest",
+          "nodes": [
+            "body_00_flat_chest"
+          ]
+        },
+        {
+          "name": "defined_chest",
+          "nodes": [
+            "body_01_defined_chest"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "hair_style",
+      "default": "tousled_crop",
+      "options": [
+        {
+          "name": "none",
+          "nodes": [
+            "hair_00_none"
+          ]
+        },
+        {
+          "name": "tousled_crop",
+          "nodes": [
+            "hair_01_tousled_crop"
+          ]
+        },
+        {
+          "name": "side_swept_undercut",
+          "nodes": [
+            "hair_02_side_swept_undercut"
+          ]
+        },
+        {
+          "name": "space_buns",
+          "nodes": [
+            "hair_03_space_buns"
+          ]
+        },
+        {
+          "name": "curly_bob",
+          "nodes": [
+            "hair_04_curly_bob"
+          ]
+        },
+        {
+          "name": "curly_pigtails",
+          "nodes": [
+            "hair_05_curly_pigtails"
+          ]
+        },
+        {
+          "name": "sidepart_bob",
+          "nodes": [
+            "hair_06_sidepart_bob"
+          ]
+        },
+        {
+          "name": "compact_braid",
+          "nodes": [
+            "hair_07_compact_braid"
+          ]
+        },
+        {
+          "name": "long_loose_curls",
+          "nodes": [
+            "hair_08_long_loose_curls"
+          ]
+        },
+        {
+          "name": "long_curly_ponytail",
+          "nodes": [
+            "hair_09_long_curly_ponytail"
+          ]
+        },
+        {
+          "name": "half_up_curly_cascade",
+          "nodes": [
+            "hair_10_half_up_curly_cascade"
+          ]
+        },
+        {
+          "name": "rounded_afro",
+          "nodes": [
+            "hair_11_rounded_afro"
+          ]
+        },
+        {
+          "name": "twin_braids",
+          "nodes": [
+            "hair_12_twin_braids"
+          ]
+        },
+        {
+          "name": "curly_mohawk",
+          "nodes": [
+            "hair_13_curly_mohawk"
+          ]
+        }
+      ]
+    }
+  ],
+  "layers": [],
+  "tints": [
+    {
+      "name": "hair_color",
+      "materials": [
+        "hair_01_tousled_crop__tintable_neutral.png",
+        "hair_02_side_swept_undercut__tintable_neutral.png",
+        "hair_03_space_buns__tintable_neutral.png",
+        "hair_04_curly_bob__tintable_neutral.png",
+        "hair_05_curly_pigtails__tintable_neutral.png",
+        "hair_06_sidepart_bob__tintable_neutral.png",
+        "hair_07_compact_braid__tintable_neutral.png",
+        "hair_08_long_loose_curls__tintable_neutral.png",
+        "hair_09_long_curly_ponytail__tintable_neutral.png",
+        "hair_10_half_up_curly_cascade__tintable_neutral.png",
+        "hair_11_rounded_afro__tintable_neutral.png",
+        "hair_12_twin_braids__tintable_neutral.png",
+        "hair_13_curly_mohawk__tintable_neutral.png"
+      ],
+      "color": {
+        "rgb": [
+          190,
+          121,
+          64
+        ],
+        "mode": "multiply"
+      }
+    },
+    {
+      "name": "skin_color",
+      "materials": [
+        "body_shared_atlas.png"
+      ],
+      "nodes": [
+        "geo__body__head_shell",
+        "geo__body__ear_R",
+        "geo__body__ear_inset_R",
+        "geo__body__ear_L",
+        "geo__body__ear_inset_L",
+        "geo__body__neck_core",
+        "geo__body__wrist_core_R",
+        "geo__body__hand_block_R",
+        "geo__body__thumb_R",
+        "geo__body__elbow_core_R",
+        "geo__body__forearm_shell_R",
+        "geo__body__upper_arm_shell_R",
+        "geo__body__wrist_core_L",
+        "geo__body__hand_block_L",
+        "geo__body__thumb_L",
+        "geo__body__elbow_core_L",
+        "geo__body__forearm_shell_L",
+        "geo__body__upper_arm_shell_L",
+        "geo__body_00__chest_shell",
+        "geo__body_01__chest_shell",
+        "geo__body_01__defined_chest_contour",
+        "geo__body__abdomen_shell",
+        "geo__body__toe_block_R",
+        "geo__body__ankle_core_R",
+        "geo__body__foot_heel_R",
+        "geo__body__knee_core_R",
+        "geo__body__shin_shell_R",
+        "geo__body__thigh_skin_R",
+        "geo__body__toe_block_L",
+        "geo__body__ankle_core_L",
+        "geo__body__foot_heel_L",
+        "geo__body__knee_core_L",
+        "geo__body__shin_shell_L",
+        "geo__body__thigh_skin_L",
+        "geo__body__waist_joint"
+      ],
+      "color": {
+        "rgb": [
+          255,
+          255,
+          255
+        ],
+        "mode": "multiply"
+      }
+    },
+    {
+      "name": "shorts_color",
+      "materials": [
+        "body_shared_atlas.png"
+      ],
+      "nodes": [
+        "geo__body__shorts_leg_R",
+        "geo__body__shorts_hem_R",
+        "geo__body__shorts_leg_L",
+        "geo__body__shorts_hem_L",
+        "geo__body__shorts_hip_yoke",
+        "geo__body__shorts_waistband"
+      ],
+      "color": {
+        "rgb": [
+          255,
+          255,
+          255
+        ],
+        "mode": "multiply"
+      }
+    },
+    {
+      "name": "shirt_color",
+      "materials": [
+        "body_shared_atlas.png"
+      ],
+      "nodes": [
+        "geo__body_01__sports_bra_front",
+        "geo__body_01__sports_bra_back",
+        "geo__body_01__sports_bra_side_R",
+        "geo__body_01__sports_bra_front_strap_R",
+        "geo__body_01__sports_bra_shoulder_strap_R",
+        "geo__body_01__sports_bra_back_strap_R",
+        "geo__body_01__sports_bra_side_L",
+        "geo__body_01__sports_bra_front_strap_L",
+        "geo__body_01__sports_bra_shoulder_strap_L",
+        "geo__body_01__sports_bra_back_strap_L"
+      ],
+      "color": {
+        "rgb": [
+          255,
+          255,
+          255
+        ],
+        "mode": "multiply"
+      }
+    },
+    {
+      "name": "iris_color",
+      "materials": [
+        "body_shared_atlas.png"
+      ],
+      "nodes": [
+        "geo__body__iris_R",
+        "geo__body__iris_L"
+      ],
+      "color": {
+        "rgb": [
+          255,
+          255,
+          255
+        ],
+        "mode": "multiply"
+      }
+    }
+  ],
+  "loops": {
+    "idle": true,
+    "walk": true,
+    "run": true,
+    "crouch": false,
+    "tool_use_left": false,
+    "tool_use_right": false,
+    "hair_fit_head_turn": true
+  }
+}

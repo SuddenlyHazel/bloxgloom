@@ -113,6 +113,7 @@ async fn render_async(
     });
     let mut renderer = ModelRenderer::new(&device, &queue, FORMAT, &camera, model);
     renderer.set(&queue, pose, appearance);
+    println!("GPU material draw batches: {}", renderer.draw_calls());
     let size = wgpu::Extent3d {
         width: 768,
         height: 768,

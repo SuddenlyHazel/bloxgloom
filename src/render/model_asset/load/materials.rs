@@ -4,7 +4,7 @@ use gltf::material::AlphaMode;
 
 pub(super) fn load(g: &gltf::Gltf, blob: &[u8]) -> Result<(Vec<Material>, Vec<Image>)> {
     ensure(
-        g.materials().len() > 0 && g.materials().len() <= 32 && g.images().len() <= 16,
+        g.materials().len() > 0 && g.materials().len() <= 32 && g.images().len() <= 32,
         "model material/image limits exceeded",
     )?;
     let mut images = Vec::new();
@@ -111,8 +111,15 @@ pub(super) fn load(g: &gltf::Gltf, blob: &[u8]) -> Result<(Vec<Material>, Vec<Im
             alpha_cutoff.is_none_or(|v| v.is_finite() && (0.0..=1.0).contains(&v)),
             "invalid material alpha cutoff",
         )?;
+        let source_texture = texture.as_ref().map(|t| t.texture());
         materials.push(Material {
-            name: named(material.name(), "material", material.index().unwrap())?,
+            name: named(
+                material
+                    .name()
+                    .or_else(|| source_texture.as_ref().and_then(|t| t.name())),
+                "material",
+                material.index().unwrap(),
+            )?,
             texture: texture.map(|t| t.texture().source().index()),
             color,
             alpha_cutoff,

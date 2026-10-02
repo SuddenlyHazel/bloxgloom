@@ -55,6 +55,9 @@ pub(crate) struct Color {
 pub(crate) struct Tint {
     pub name: String,
     pub materials: Vec<String>,
+    /// Optional node subtrees restrict a shared atlas to selected body parts.
+    #[serde(default)]
+    pub nodes: Vec<String>,
     pub color: Color,
 }
 #[derive(Default, Deserialize)]
@@ -69,7 +72,7 @@ pub(crate) struct Look {
 }
 pub(crate) struct Appearance {
     pub visible: Vec<bool>,
-    /// Linear RGB customization color and replacement flag, per material.
+    /// Linear RGB customization color and replacement flag, per primitive.
     pub colors: Vec<[f32; 4]>,
 }
 fn control_name(value: &str) -> Result<()> {
@@ -109,7 +112,7 @@ impl Controls {
     pub(crate) fn validate(&self, model: &Model) -> Result<()> {
         let mut names = HashSet::new();
         let mut nodes = HashSet::new();
-        let mut materials = HashSet::new();
+        let mut tinted = HashSet::new();
         ensure(
             self.variants.len() + self.layers.len() + self.tints.len() <= 64,
             "more than 64 appearance controls",
@@ -151,13 +154,10 @@ impl Controls {
             }
         }
         for tint in &self.tints {
-            for material in resolve(
-                &tint.materials,
-                model.materials.iter().map(|m| m.name.clone()),
-            )? {
+            for primitive in tint.targets(model)? {
                 ensure(
-                    materials.insert(material),
-                    "material belongs to multiple tint controls",
+                    tinted.insert(primitive),
+                    "model primitive belongs to multiple tint controls",
                 )?;
             }
         }
@@ -219,7 +219,7 @@ impl Model {
                 visible[i] &= visible[parent];
             }
         }
-        let mut colors = vec![[1.0, 1.0, 1.0, 0.0]; self.materials.len()];
+        let mut colors = vec![[1.0, 1.0, 1.0, 0.0]; self.primitives.len()];
         for tint in &self.controls.tints {
             let color = look.tints.get(&tint.name).copied().unwrap_or(tint.color);
             let rgb = color.rgb.map(|v| {
@@ -230,10 +230,7 @@ impl Model {
                     ((v + 0.055) / 1.055).powf(2.4)
                 }
             });
-            for id in resolve(
-                &tint.materials,
-                self.materials.iter().map(|m| m.name.clone()),
-            )? {
+            for id in tint.targets(self)? {
                 colors[id] = [
                     rgb[0],
                     rgb[1],
@@ -243,5 +240,46 @@ impl Model {
             }
         }
         Ok(Appearance { visible, colors })
+    }
+}
+
+impl Tint {
+    fn targets(&self, model: &Model) -> Result<Vec<usize>> {
+        let materials = resolve(
+            &self.materials,
+            model.materials.iter().map(|m| m.name.clone()),
+        )?;
+        let nodes = if self.nodes.is_empty() {
+            Vec::new()
+        } else {
+            resolve(&self.nodes, model.nodes.iter().map(|n| n.name.clone()))?
+        };
+        let targets: Vec<_> = model
+            .primitives
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                if !materials.contains(&p.material) {
+                    return false;
+                }
+                if nodes.is_empty() {
+                    return true;
+                }
+                let mut node = Some(p.node);
+                while let Some(id) = node {
+                    if nodes.contains(&id) {
+                        return true;
+                    }
+                    node = model.nodes[id].parent;
+                }
+                false
+            })
+            .map(|(i, _)| i)
+            .collect();
+        ensure(
+            !targets.is_empty(),
+            "tint control matches no model geometry",
+        )?;
+        Ok(targets)
     }
 }

@@ -56,7 +56,7 @@ pub(super) fn load(
                 .index()
                 .ok_or("primitive needs a named material")?;
             ensure(
-                material < material_count && primitives.len() < 256,
+                material < material_count && primitives.len() < 1024,
                 "primitive material or count invalid",
             )?;
             let reader = primitive.reader(|_| Some(blob));
@@ -151,6 +151,7 @@ pub(super) fn load(
                     uv: uvs[i],
                     joints: joints[i],
                     weights: weights[i],
+                    tint: primitives.len() as u32,
                 });
             }
             primitives.push(Primitive {

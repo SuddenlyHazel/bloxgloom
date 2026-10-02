@@ -192,3 +192,88 @@ fn native_glb_decodes_embedded_png_and_weighted_skins() {
         .sum();
     assert_eq!(x, 1.0);
 }
+
+#[test]
+fn atlas_color_controls_can_target_separate_parts_and_reject_overlap() {
+    let mut config = controls();
+    config.tints[0].nodes = vec!["body".into()];
+    let mut eyes: super::controls::Tint = serde_json::from_value(json!({
+        "name":"iris_color","materials":["body_color"],"nodes":["iris"],
+        "color":{"rgb":[30,100,220],"mode":"replace"}
+    }))
+    .unwrap();
+    config.tints.push(
+        serde_json::from_value(json!({
+            "name":"iris_color","materials":["body_color"],"nodes":["iris"],
+            "color":{"rgb":[30,100,220],"mode":"replace"}
+        }))
+        .unwrap(),
+    );
+    let model = Model::from_glb(&Fixture::new().bytes(), config).unwrap();
+    let a = model.appearance(&Look::default()).unwrap();
+    for (i, p) in model.primitives.iter().enumerate() {
+        match model.nodes[p.node].name.as_str() {
+            "body" => assert_eq!(a.colors[i][3], 0.0),
+            "iris" => assert_eq!(a.colors[i][3], 1.0),
+            _ => assert_eq!(a.colors[i], [1.0, 1.0, 1.0, 0.0]),
+        }
+    }
+    eyes.nodes = vec!["body".into()];
+    let mut overlapping = controls();
+    overlapping.tints[0].nodes = vec!["body".into()];
+    overlapping.tints.push(eyes);
+    assert!(Model::from_glb(&Fixture::new().bytes(), overlapping).is_err());
+}
+
+#[test]
+fn revised_master_preserves_baked_gameplay_clips_and_player_scale() {
+    let controls = serde_json::from_slice(include_bytes!(
+        "../../../assets/models/player/master/controls.json"
+    ))
+    .unwrap();
+    let model = Model::from_glb(
+        include_bytes!("../../../assets/models/player/master/model.glb"),
+        controls,
+    )
+    .unwrap();
+    assert_eq!(model.nodes.len(), 794);
+    assert_eq!(model.images.len(), 17);
+    for name in [
+        "idle",
+        "walk",
+        "run",
+        "crouch",
+        "tool_use_left",
+        "tool_use_right",
+        "hair_fit_head_turn",
+    ] {
+        let clip = model.clips.iter().find(|c| c.name == name).unwrap();
+        for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            assert!(
+                model
+                    .sample(Some(name), clip.duration * fraction)
+                    .unwrap()
+                    .iter()
+                    .all(|m| m.is_finite())
+            );
+        }
+    }
+    let pose = model.sample(None, 0.0).unwrap();
+    let look = serde_json::from_value(json!({"variants":{"hair_style":"none"}})).unwrap();
+    let visible = model.appearance(&look).unwrap().visible;
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for p in model.primitives.iter().filter(|p| visible[p.node]) {
+        for v in &p.vertices {
+            let position =
+                pose[v.joints[0] as usize].transform_point3(Vec3::from_array(v.position));
+            min = min.min(position);
+            max = max.max(position);
+        }
+    }
+    assert!(
+        (max.y - min.y - 1.8).abs() < 0.01,
+        "body height must fit the player: {min:?} .. {max:?}"
+    );
+    assert!(min.y.abs() < 0.01, "feet must be near the origin: {min:?}");
+}

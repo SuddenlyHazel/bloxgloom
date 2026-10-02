@@ -37,6 +37,7 @@ pub(crate) struct Vertex {
     pub uv: [f32; 2],
     pub joints: [u32; 4],
     pub weights: [f32; 4],
+    pub tint: u32,
 }
 pub(crate) struct Primitive {
     pub node: usize,

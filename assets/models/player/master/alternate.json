@@ -1,0 +1,20 @@
+{
+  "clip": "idle",
+  "seconds": 0.6,
+  "look": {
+    "variants": {
+      "body": "defined_chest",
+      "hair_style": "long_loose_curls"
+    },
+    "tints": {
+      "hair_color": {
+        "rgb": [
+          65,
+          105,
+          170
+        ],
+        "mode": "multiply"
+      }
+    }
+  }
+}

@@ -63,8 +63,12 @@ are rejected before GPU upload.
 
 Variants choose one option in a group; layers are independent on/off controls.
 Visibility changes rendering only, never animation joints. Use neutral/light
-textures for materials whose color should be adjustable. Put fixed-color details
-in separate materials, even when they share a texture atlas.
+textures for materials whose color should be adjustable. An optional tint
+`nodes` list restricts its materials to named node subtrees. This lets skin, iris
+and clothes share an atlas while retaining independent colors. Omit `nodes` to
+color the whole material. Distinct controls may share materials when their
+geometry targets do not overlap. Fixed-color details need separate geometry or
+materials to remain outside the tint selection.
 
 Color inputs are 8-bit sRGB and decoded exactly once. `multiply` multiplies
 linear sampled texture × glTF baseColorFactor × selected color, preserving
@@ -101,8 +105,11 @@ with consistent rest-pose framing and simple inspection lighting. World lighting
 first-person body framing, held-item attachments and animation event dispatch
 are not exercised by this command.
 
-Geometry and textures upload once. Preview changes upload joint matrices and
-material parameters; hidden primitive groups are skipped. Loading and PNG
+Vertices, textures and material parameters upload once. Pose/color changes upload
+joint matrices and a per-part color palette. Geometry is batched by material;
+only appearance visibility changes rebuild the visible index buffers. Hidden
+variants contribute no draws. The revised player master uses two material draws
+for its default body/hair despite exporting hundreds of cube meshes. Loading and PNG
 decoding are ordinary CPU functions and can run on an asset worker when connected
 to play; the current headless command has no window thread.
 
@@ -111,8 +118,8 @@ to play; the current headless command has no window thread.
 - One embedded GLB buffer; embedded PNG images, UV set 0, static/skinned triangles.
 - Opaque and alpha-cutout materials, base color factors, double-sided geometry,
   and clamp/repeat/mirror wrapping. Textures currently use nearest filtering.
-- 64 MiB GLB; 256 scene nodes/primitives; 65,536 vertices; 196,608 indices;
-  32 materials; 16 images up to 2048×2048, 64 MiB decoded texture budget.
+- 64 MiB GLB; 1,024 scene nodes/meshes/primitives; 65,536 vertices; 196,608 indices;
+  32 materials; 32 images up to 2048×2048, 64 MiB decoded texture budget.
 - 64 clips; 120-second clips; 4,096 time keys/channel; 262,144 total stored
   animation values; at most 1,024 skin-palette entries.
 - 64 appearance controls, 32 options/group; each controls/preview file at most
@@ -128,3 +135,10 @@ Verification includes native parser/skin/image tests, stepped/cubic/quaternion
 sampling, subtree/choice validation, and GPU image regressions showing authored
 pose changes, eye selection, hat visibility, and both color modes. The checked-in
 [fixture](../../fixtures/authored-model/README.md) makes those checks repeatable.
+
+## Revised player master
+
+The supplied [revised Blockbench master](../../assets/models/player/master/README.md)
+is checked in unchanged, with mapped body/hair choices, atlas-scoped color
+controls and preview settings. Its seven gameplay clips are sampled directly
+from the export. Eye/mouth variants will come from a later authored export.

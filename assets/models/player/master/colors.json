@@ -1,0 +1,44 @@
+{
+  "clip": "idle",
+  "seconds": 0.6,
+  "look": {
+    "variants": {
+      "body": "defined_chest",
+      "hair_style": "compact_braid"
+    },
+    "tints": {
+      "hair_color": {
+        "rgb": [
+          95,
+          45,
+          120
+        ],
+        "mode": "multiply"
+      },
+      "iris_color": {
+        "rgb": [
+          80,
+          165,
+          240
+        ],
+        "mode": "replace"
+      },
+      "shirt_color": {
+        "rgb": [
+          125,
+          70,
+          190
+        ],
+        "mode": "replace"
+      },
+      "shorts_color": {
+        "rgb": [
+          40,
+          95,
+          115
+        ],
+        "mode": "replace"
+      }
+    }
+  }
+}
