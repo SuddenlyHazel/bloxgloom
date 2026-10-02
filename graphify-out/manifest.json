@@ -894,9 +894,9 @@
     "semantic_hash": ""
   },
   "src/content.rs": {
-    "mtime": 1790900770.1484566,
-    "seen": 1790906849.50911,
-    "ast_hash": "c4637500ba0825b1bdafe5205243e4b3",
+    "mtime": 1790909405.997401,
+    "seen": 1790909619.745158,
+    "ast_hash": "bcf3a112a6f3479e79dc340bac599570",
     "semantic_hash": ""
   },
   "src/content/actions.rs": {
@@ -924,9 +924,9 @@
     "semantic_hash": ""
   },
   "src/content/builtins.rs": {
-    "mtime": 1790900564.57709,
-    "seen": 1790906849.509115,
-    "ast_hash": "7c8791891698a41edd670f5adf009b86",
+    "mtime": 1790909241.398453,
+    "seen": 1790909619.745163,
+    "ast_hash": "05e2d2adfb990d96c78bac450d197ff9",
     "semantic_hash": ""
   },
   "src/content/client_metadata.rs": {
@@ -1056,9 +1056,9 @@
     "semantic_hash": ""
   },
   "src/content/tests.rs": {
-    "mtime": 1790872778.9877713,
-    "seen": 1790906849.509141,
-    "ast_hash": "82b7f3c41713335c9e04c559282aa199",
+    "mtime": 1790909241.3998687,
+    "seen": 1790909619.745194,
+    "ast_hash": "971412b7161787bea23cd6f703d6d714",
     "semantic_hash": ""
   },
   "src/gameplay.rs": {
@@ -1410,9 +1410,9 @@
     "semantic_hash": "bf0109bbe457dbf78da0f36486f55af5"
   },
   "src/render/material.rs": {
-    "mtime": 1790872778.9746668,
-    "seen": 1790906849.5092669,
-    "ast_hash": "8b2e6ad679262c59afc8e3c560d24ad4",
+    "mtime": 1790909406.2022676,
+    "seen": 1790909619.7453299,
+    "ast_hash": "f693a8eeccbef8a9342cab23e545e850",
     "semantic_hash": ""
   },
   "src/render/mesh.rs": {
@@ -1434,9 +1434,9 @@
     "semantic_hash": "81efd04bfae14301b73eb893595aa442"
   },
   "src/render/pipeline.rs": {
-    "mtime": 1790906053.7612047,
-    "seen": 1790906849.509272,
-    "ast_hash": "0ebb16a416ea317e8e58a3816fc0bd98",
+    "mtime": 1790909639.8020701,
+    "seen": 1790909795.908905,
+    "ast_hash": "526548a591b98a997268066b85c672eb",
     "semantic_hash": ""
   },
   "src/render/post.rs": {
@@ -4038,9 +4038,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
-    "mtime": 1790470816.5036998,
-    "seen": 1790906849.50983,
-    "ast_hash": "3e2624a8f062d37c119d012d06e21c38",
+    "mtime": 1790909592.6471221,
+    "seen": 1790909619.746007,
+    "ast_hash": "d2af374981edf91db1659c302b02d2fa",
     "semantic_hash": ""
   },
   "assets/textures/foliage/SOURCES.md": {
@@ -4308,33 +4308,33 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/dirt.png": {
-    "mtime": 1790209756.1718464,
-    "seen": 1790906849.509984,
-    "ast_hash": "1fca6f6c20341a2db9a2d93950cf611c",
+    "mtime": 1790909774.5762641,
+    "seen": 1790909795.909715,
+    "ast_hash": "4342d6fe50fd1f0a40ab9fe5ddb583de",
     "semantic_hash": ""
   },
   "assets/textures/blocks/glowstone.png": {
-    "mtime": 1790253740.030251,
-    "seen": 1790906849.509985,
-    "ast_hash": "bd953e24c8970d229df0e95f07200ad7",
+    "mtime": 1790909774.8254828,
+    "seen": 1790909795.909718,
+    "ast_hash": "044f4c9f3d382788330e9ea2e9455f54",
     "semantic_hash": ""
   },
   "assets/textures/blocks/grass_side.png": {
-    "mtime": 1790209756.168775,
-    "seen": 1790906849.5099862,
-    "ast_hash": "7100ab9fa1e5d0690466eb49edf65229",
+    "mtime": 1790909774.5494468,
+    "seen": 1790909795.9097211,
+    "ast_hash": "f12a26135515c41fefcc553ff72792a9",
     "semantic_hash": ""
   },
   "assets/textures/blocks/grass_top.png": {
-    "mtime": 1790209756.1656365,
-    "seen": 1790906849.509987,
-    "ast_hash": "c2da4b3b1b3abde70994eba116a78af4",
+    "mtime": 1790909774.5016208,
+    "seen": 1790909795.909724,
+    "ast_hash": "aa3df58e8f4d4e8bb428c06fb05582c3",
     "semantic_hash": ""
   },
   "assets/textures/blocks/gravel.png": {
-    "mtime": 1790252880.1705194,
-    "seen": 1790906849.509988,
-    "ast_hash": "da38f6d7fbedb107002ef56e158bb5f1",
+    "mtime": 1790909774.8024495,
+    "seen": 1790909795.9097269,
+    "ast_hash": "1547ac1abbf3216d1b9cc230086b43d1",
     "semantic_hash": ""
   },
   "assets/textures/blocks/hopper_side.png": {
@@ -4368,21 +4368,21 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/moss.png": {
-    "mtime": 1790252880.1656833,
-    "seen": 1790906849.509994,
-    "ast_hash": "4d74da1a9a8a4a85ff07dbc7ea142e98",
+    "mtime": 1790909774.75488,
+    "seen": 1790909795.909735,
+    "ast_hash": "48305bccb1589a816551b69efd9a5d36",
     "semantic_hash": ""
   },
   "assets/textures/blocks/sand.png": {
-    "mtime": 1790252880.1584282,
-    "seen": 1790906849.509994,
-    "ast_hash": "0d25cf562e69d5efda29bb778388c0f0",
+    "mtime": 1790909774.681411,
+    "seen": 1790909795.9097369,
+    "ast_hash": "fa2a0b8ba7f6dec69248b3cbe47a890a",
     "semantic_hash": ""
   },
   "assets/textures/blocks/snow.png": {
-    "mtime": 1790252880.1616848,
-    "seen": 1790906849.509995,
-    "ast_hash": "7632fc03c6ae7e5e8bd49a0e8f024fdb",
+    "mtime": 1790909774.7264898,
+    "seen": 1790909795.90974,
+    "ast_hash": "75868bc40cb94f7c97a5b8aa87d5f274",
     "semantic_hash": ""
   },
   "assets/textures/blocks/source/wood-side-revision.png": {
@@ -4398,9 +4398,9 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/stone.png": {
-    "mtime": 1790209756.174837,
-    "seen": 1790906849.509998,
-    "ast_hash": "391c4ff21f7440bff98f751587c81242",
+    "mtime": 1790909774.6204338,
+    "seen": 1790909795.909745,
+    "ast_hash": "1291fd7d658ea055bc34bc087b2939b7",
     "semantic_hash": ""
   },
   "assets/textures/blocks/wood_side.png": {
@@ -6546,15 +6546,15 @@
     "semantic_hash": ""
   },
   "src/render/material/resources.rs": {
-    "mtime": 1790872779.1709156,
-    "seen": 1790906849.509268,
-    "ast_hash": "e7e7743bdf2de44bb893efd808fe537f",
+    "mtime": 1790909297.3500443,
+    "seen": 1790909619.745334,
+    "ast_hash": "556205bafa60b7661182b5bd5648d35f",
     "semantic_hash": ""
   },
   "src/render/material/resources/tests.rs": {
-    "mtime": 1790872779.1712878,
-    "seen": 1790906849.509269,
-    "ast_hash": "5ce555fde2e788a75c1ec7e43303dc22",
+    "mtime": 1790909297.3504355,
+    "seen": 1790909619.745335,
+    "ast_hash": "0ec2b106ed31567ba376448dd5d98cb0",
     "semantic_hash": ""
   },
   "src/server/net/tests/script_startup/farming.rs": {
@@ -7224,9 +7224,9 @@
     "semantic_hash": ""
   },
   "src/render/sky/tests.rs": {
-    "mtime": 1790902688.6636593,
-    "seen": 1790906849.509279,
-    "ast_hash": "4068bade8e192adc8e524473682648a5",
+    "mtime": 1790909517.082746,
+    "seen": 1790909619.745347,
+    "ast_hash": "c9ec2f8447487fc8e222e94eae294819",
     "semantic_hash": ""
   },
   "src/render/fog.rs": {
@@ -8289,6 +8289,144 @@
     "mtime": 1790908613.4358525,
     "seen": 1790908798.882996,
     "ast_hash": "d102a212e12248e3d45fa1dbb90ff5c2",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/source/import_napp.py": {
+    "mtime": 1790909773.3745334,
+    "seen": 1790909795.908271,
+    "ast_hash": "b9a3e134f41c3a41c7077100f8a2b0bf",
+    "semantic_hash": ""
+  },
+  "src/content/companions.rs": {
+    "mtime": 1790909405.9527545,
+    "seen": 1790909619.745165,
+    "ast_hash": "3c64702054c86be7fa20d072f7353093",
+    "semantic_hash": ""
+  },
+  "src/render/material/companions.rs": {
+    "mtime": 1790909466.2422907,
+    "seen": 1790909619.745331,
+    "ast_hash": "0dabd6c944f685b3274341e6634ac832",
+    "semantic_hash": ""
+  },
+  "src/render/material/companions/tests.rs": {
+    "mtime": 1790909563.4835286,
+    "seen": 1790909619.745332,
+    "ast_hash": "1b2358d9374a01c6a67e9d1f500627de",
+    "semantic_hash": ""
+  },
+  "src/render/material/companions/tests/gpu.rs": {
+    "mtime": 1790909603.5603697,
+    "seen": 1790909619.745333,
+    "ast_hash": "5152836ef8e366871e529c6bc4d3a2bc",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/dirt_n.png": {
+    "mtime": 1790909775.072453,
+    "seen": 1790909795.909716,
+    "ast_hash": "4cf8c0ebfb2f50805b50640781547796",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/dirt_s.png": {
+    "mtime": 1790909775.1454678,
+    "seen": 1790909795.909717,
+    "ast_hash": "b91a399f32216d3aa3cac5a6364de8c5",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/glowstone_n.png": {
+    "mtime": 1790909775.721583,
+    "seen": 1790909795.909719,
+    "ast_hash": "7ed5fbca4865487722c1f881ebe56baa",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/glowstone_s.png": {
+    "mtime": 1790909775.7704628,
+    "seen": 1790909795.9097202,
+    "ast_hash": "6bbed2cc3c79242a9de54b25f5f95570",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/grass_side_n.png": {
+    "mtime": 1790909774.9704647,
+    "seen": 1790909795.909722,
+    "ast_hash": "b90367a115258dd92bf1faa63d2d3822",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/grass_side_s.png": {
+    "mtime": 1790909775.0264437,
+    "seen": 1790909795.9097228,
+    "ast_hash": "9fd9bb6e3c72bfaf8a80943a71b8ae6f",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/grass_top_n.png": {
+    "mtime": 1790909774.8613515,
+    "seen": 1790909795.909725,
+    "ast_hash": "ea5ed824468213288a9516f853db8dec",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/grass_top_s.png": {
+    "mtime": 1790909774.9224482,
+    "seen": 1790909795.909726,
+    "ast_hash": "926dbabb10b84d68125c2db94f4519cc",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/gravel_n.png": {
+    "mtime": 1790909775.6073728,
+    "seen": 1790909795.9097269,
+    "ast_hash": "6c3cfb0766baf0c3ba5c979a95b32051",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/gravel_s.png": {
+    "mtime": 1790909775.6696146,
+    "seen": 1790909795.909728,
+    "ast_hash": "41b81cf40190f4e702771286b097d69f",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/moss_n.png": {
+    "mtime": 1790909775.4904258,
+    "seen": 1790909795.909735,
+    "ast_hash": "023b29905aa4d952388b6ce53543f159",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/moss_s.png": {
+    "mtime": 1790909775.5277414,
+    "seen": 1790909795.909736,
+    "ast_hash": "3812f61cd1fbe88c6cdecdd7e94a21ec",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/sand_n.png": {
+    "mtime": 1790909775.312641,
+    "seen": 1790909795.909738,
+    "ast_hash": "4a95f21868f3c8cee217652c0aec3506",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/sand_s.png": {
+    "mtime": 1790909775.349419,
+    "seen": 1790909795.909739,
+    "ast_hash": "fcef12aae786458d7c3caa2f0a8fa18a",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/snow_n.png": {
+    "mtime": 1790909775.3894224,
+    "seen": 1790909795.9097412,
+    "ast_hash": "ce78ffb47a65e83b3f008839fa2d60c5",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/snow_s.png": {
+    "mtime": 1790909775.4346018,
+    "seen": 1790909795.909742,
+    "ast_hash": "2706ca98037fe2587d12180c601bc820",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/stone_n.png": {
+    "mtime": 1790909775.192782,
+    "seen": 1790909795.909746,
+    "ast_hash": "4ebf5b384c8a74518185c6163f82af4d",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/stone_s.png": {
+    "mtime": 1790909775.2693954,
+    "seen": 1790909795.909747,
+    "ast_hash": "3d970ce30266697bb8a33f37966cc165",
     "semantic_hash": ""
   }
 }
