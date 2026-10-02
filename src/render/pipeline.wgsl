@@ -50,13 +50,13 @@ fn voxel_vertex(input: VertexInput) -> VertexOutput {
     return output;
 }
 struct MaterialSurface { shaded: BgSurface, light: vec3f, normal: vec3f };
-fn surface(input: VertexOutput, albedo: vec4f) -> MaterialSurface {
-    let normal = bg_material_normal(input);
+fn surface(input: VertexOutput, albedo: vec4f, coordinates: MaterialCoordinates) -> MaterialSurface {
+    let normal = bg_material_normal(input, coordinates);
     let flat = bg_surface_light(input.normal, camera.sun, input.sky_level, 0.0, vec3f(0.0), vec3f(0.0), 1.0);
     let mapped = bg_surface_light(normal, camera.sun, input.sky_level, 0.0, vec3f(0.0), vec3f(0.0), 1.0);
     let light = max(vec3f(0.0), input.light + (mapped - flat));
     let shaded = bg_surface(BgSurface(albedo, input.world_position, normal,
-        input.uv, light, albedo.rgb * material_emission[u32(input.layer)]), u32(input.layer));
+        coordinates.uv, light, albedo.rgb * material_emission[u32(input.layer)]), u32(input.layer));
     return MaterialSurface(shaded, light, normal);
 }
 fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: vec4f) -> vec4<f32> {
@@ -77,19 +77,23 @@ fn shade(input: VertexOutput, material_surface: MaterialSurface, specular: vec4f
         input.world_position, input.sky_level), 1.0);
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let albedo = textureSample(material, material_sampler, input.uv, input.layer);
-    return shade(input, surface(input, albedo), bg_material_specular(input));
+    let coordinates = bg_material_coordinates(input, true);
+    let albedo = textureSampleGrad(material, material_sampler, coordinates.uv, input.layer, coordinates.dx, coordinates.dy);
+    return shade(input, surface(input, albedo, coordinates), bg_material_specular(input, coordinates));
 }
 @fragment fn fs_cutout(input: VertexOutput) -> @location(0) vec4<f32> {
-    let texel = textureSample(material, material_sampler, input.uv, input.layer);
-    let shaded = surface(input, texel);
-    let specular = bg_material_specular(input);
+    // Keep camera-dependent height offsets away from cutout alpha and casters.
+    let coordinates = bg_material_coordinates(input, false);
+    let texel = textureSampleGrad(material, material_sampler, coordinates.uv, input.layer, coordinates.dx, coordinates.dy);
+    let shaded = surface(input, texel, coordinates);
+    let specular = bg_material_specular(input, coordinates);
     if shaded.shaded.albedo.a < 0.5 { discard; }
     return shade(input, shaded, specular);
 }
 
 @fragment fn fs_shadow(input: VertexOutput) {
-    let albedo = textureSample(material, material_sampler, input.uv, input.layer);
-    let shaded = surface(input, albedo);
+    let coordinates = bg_material_coordinates(input, false);
+    let albedo = textureSampleGrad(material, material_sampler, coordinates.uv, input.layer, coordinates.dx, coordinates.dy);
+    let shaded = surface(input, albedo, coordinates);
     if shaded.shaded.albedo.a < 0.5 { discard; }
 }

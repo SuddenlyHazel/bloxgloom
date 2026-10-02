@@ -1,6 +1,7 @@
 use super::*;
 use std::borrow::Cow;
 mod gpu;
+mod parallax;
 
 fn register(catalog: &mut Catalog, key: &str, pixels: &[u8]) {
     let mut bytes = vec![];

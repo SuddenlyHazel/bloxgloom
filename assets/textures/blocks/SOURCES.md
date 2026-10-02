@@ -21,9 +21,14 @@ controls smoothness and green controls metallic reflectance, following the
 oldPBR convention: https://shaders.properties/current/how-to/pbr_standards/.
 Specular highlights use the sun, voxel sky visibility, and sun shadows.
 
-Normal alpha retains the supplied height data; specular blue/alpha are retained
-in the assets. Height displacement, parallax, and extra emission channels are
-not interpreted by this first normal/specular implementation.
+Normal alpha supplies height for parallax occlusion mapping on opaque blocks.
+White is the face plane; darker heights recede up to 0.035 texture tiles.
+The bounded 12–32-step trace fades from 16 to 32 world units, also fading
+undersampled and grazing-angle detail. Albedo, normal, specular, and material
+hooks use the same shifted UVs and original mip gradients. Cutout alpha and
+sun casters retain their original coordinates. This changes apparent surface
+depth; geometry, silhouettes, collisions, and world state stay voxel-based.
+Specular blue/alpha remain in the assets; extra emission channels are unused.
 
 To reproduce from the original local pack:
 

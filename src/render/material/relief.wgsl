@@ -1,14 +1,25 @@
 // Pure normal-frame and reflected-light math, shared by runtime and GPU regressions.
-fn bg_normal_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f,
-    tangent_normal: vec3f) -> vec3f {
+fn bg_texture_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f) -> mat3x3f {
     let determinant = ux.x * uy.y - ux.y * uy.x;
-    if abs(determinant) < 0.000000000001 { return flat; }
     let n = normalize(flat);
     let raw_t = (px * uy.y - py * ux.y) / determinant;
     let raw_b = (py * ux.x - px * uy.x) / determinant;
     let t = normalize(raw_t - n * dot(n, raw_t));
     let b = normalize(raw_b - n * dot(n, raw_b));
-    return normalize(t * tangent_normal.x + b * tangent_normal.y + n * tangent_normal.z);
+    return mat3x3f(t, b, n);
+}
+fn bg_normal_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f,
+    tangent_normal: vec3f) -> vec3f {
+    if abs(ux.x * uy.y - ux.y * uy.x) < 0.000000000001 { return flat; }
+    return normalize(bg_texture_frame(flat, px, py, ux, uy) * tangent_normal);
+}
+
+// Height 1 is the original face plane; lower heights recede into the block.
+// Fade undersampled and distant detail, and suppress unstable grazing offsets.
+fn bg_parallax_ray(view: vec3f, distance: f32, mip: f32) -> vec2f {
+    let scale = 0.035 * (1.0-smoothstep(16.0, 32.0, distance))
+        * (1.0-smoothstep(2.0, 4.0, mip)) * smoothstep(0.08, 0.20, view.z);
+    return view.xy / max(view.z, 0.12) * scale;
 }
 
 fn bg_specular_light(normal: vec3f, v: vec3f, sun: vec4f, sky: f32,

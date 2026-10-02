@@ -46,7 +46,7 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
         "material texture array admitted"
     );
     let source = format!(
-        "{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
+        "{}\n{RELIEF_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
         custom::TYPES
     );
     Ok(create_voxel_pipeline_source(
@@ -74,7 +74,7 @@ pub(crate) fn create_custom_voxel_pipeline(
         "material texture array admitted"
     );
     let source = format!(
-        "{}\n{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\n{SHADER}",
+        "{}\n{}\n{RELIEF_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{SHADER}",
         custom::TYPES,
         custom::compose(prepared)
     );
@@ -390,7 +390,7 @@ pub(crate) fn create_sun_shadow_pipelines(
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
     let hooks = prepared.map_or_else(|| String::from("fn bg_vertex(input: BgVertex, layer: u32) -> BgVertex { return input; }\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface { return input; }"), custom::compose);
     let source = super::daylight::shader(&format!(
-        "{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\n{hooks}\n{SHADER}",
+        "{}\n{RELIEF_SHADER}\n{PARALLAX_SHADER}\n{DETAIL_SHADER}\n{hooks}\n{SHADER}",
         custom::TYPES
     ));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -451,5 +451,6 @@ pub(crate) fn create_sun_shadow_pipelines(
 }
 
 const RELIEF_SHADER: &str = include_str!("material/relief.wgsl");
+const PARALLAX_SHADER: &str = include_str!("material/parallax.wgsl");
 const DETAIL_SHADER: &str = include_str!("material/companions.wgsl");
 const SHADER: &str = include_str!("pipeline.wgsl");

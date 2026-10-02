@@ -1,23 +1,21 @@
 // RGB tangent normals use image-down green (DirectX convention). Derivatives
 // reconstruct the actual UV frame, including mirrored cube faces and rotating drops.
-fn bg_material_normal(input: VertexOutput) -> vec3f {
+fn bg_material_normal(input: VertexOutput, coordinates: MaterialCoordinates) -> vec3f {
     let px = dpdx(input.world_position);
     let py = dpdy(input.world_position);
-    let ux = dpdx(input.uv);
-    let uy = dpdy(input.uv);
+    let ux = coordinates.dx;
+    let uy = coordinates.dy;
     let determinant = ux.x * uy.y - ux.y * uy.x;
     if (material_map_flags[u32(input.layer)] & 1u) == 0u || abs(determinant) < 0.000000000001 {
         return input.normal;
     }
-    let texel = textureSampleGrad(material_normal, material_sampler, input.uv, input.layer, ux, uy);
+    let texel = textureSampleGrad(material_normal, material_sampler, coordinates.uv, input.layer, ux, uy);
     return bg_normal_frame(input.normal, px, py, ux, uy, normalize(texel.rgb * 2.0 - 1.0));
 }
 
-fn bg_material_specular(input: VertexOutput) -> vec4f {
-    let ux = dpdx(input.uv);
-    let uy = dpdy(input.uv);
+fn bg_material_specular(input: VertexOutput, coordinates: MaterialCoordinates) -> vec4f {
     if (material_map_flags[u32(input.layer)] & 2u) == 0u { return vec4f(0.0); }
-    let texel = textureSampleGrad(material_specular, material_sampler, input.uv, input.layer, ux, uy);
+    let texel = textureSampleGrad(material_specular, material_sampler, coordinates.uv, input.layer, coordinates.dx, coordinates.dy);
     return vec4f(texel.rgb, 1.0);
 }
 
