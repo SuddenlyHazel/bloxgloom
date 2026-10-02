@@ -80,7 +80,7 @@ fn coarse_tiles_are_deterministic_and_dark_beneath_top_surface() {
 fn routine_distant_skyline_tiles_fit_payload_budget() {
     let catalog = Catalog::builtins();
     for seed in [1, 17, 44] {
-        for (x, z) in [(-1, 0), (0, 0), (1, -1)] {
+        for (x, z) in [(-2, -2), (-1, 0), (0, 0), (1, -1), (2, 2)] {
             let key = TileKey { level: 4, x, z };
             let tile = builtin_lod_tile(key, 1, seed, &catalog)
                 .unwrap_or_else(|error| panic!("seed{seed} tile{x},{z}: {error}"));
