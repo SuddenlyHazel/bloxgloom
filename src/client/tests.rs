@@ -393,11 +393,11 @@ fn audio_controls_survive_character_settings_reconciliation() {
         SettingId::AudioEffects,
     ] {
         assert!(app.focus_order().contains(&UiControl::Increase(setting)));
-        app.activate_control(None, UiControl::Increase(setting));
+        app.activate_control(None, UiControl::Decrease(setting));
     }
-    assert!((app.config.audio_master - 0.85).abs() < 0.0001);
-    assert!((app.config.audio_ambient - 0.65).abs() < 0.0001);
-    assert!((app.config.audio_effects - 0.85).abs() < 0.0001);
+    assert!((app.config.audio_master - 0.95).abs() < 0.0001);
+    assert!((app.config.audio_ambient - 0.95).abs() < 0.0001);
+    assert!((app.config.audio_effects - 0.95).abs() < 0.0001);
     let saved = app.config.clone();
     for preset in [
         crate::audio::Preset::Rain,

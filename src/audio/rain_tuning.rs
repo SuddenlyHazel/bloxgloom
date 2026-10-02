@@ -84,7 +84,7 @@ pub struct RainConfig {
     pub surfaces: [Surface; RAIN_MATERIALS],
 }
 const fn default_wind_gain() -> f32 {
-    0.35
+    0.12
 }
 const fn default_insect_gain() -> f32 {
     1.0
@@ -99,18 +99,18 @@ impl Default for RainConfig {
         water.bubble_gain = [1.2, 2.5];
         water.bubble_decay = [3.0, 8.0];
         Self {
-            gain: 0.5,
-            drop_gain: 1.0,
+            gain: 2.35,
+            drop_gain: 3.25,
             reverb_gain: 1.0,
             wind_gain: default_wind_gain(),
             insect_gain: default_insect_gain(),
             use_block_profiles: true,
-            max_drops_per_s: 900.0,
+            max_drops_per_s: 1200.0,
             // Keep the continuous far-rain wash behind the discrete surface impacts.
-            bed_gain: 0.10,
-            sheet_depth: 1.0,
-            min_distance_m: 0.75,
-            max_distance_m: 5.0,
+            bed_gain: 0.20,
+            sheet_depth: 0.87,
+            min_distance_m: 0.31,
+            max_distance_m: 4.5,
             surfaces: [
                 water,
                 Surface::solid(

@@ -23,8 +23,10 @@ compare bed and drops, first mute wind/insects, then set either bed or drops to
 zero. **Mute rain / wind / insects** silences all three layers while keeping
 thunder and gameplay effects available through Effects. Rain and insect reverb
 returns are independent and obey their layer's mute. The starting bed gain is
-0.10 and wind gain is 0.35. Expand the arrival/distance/gust and
-material sections for click, resonance, filter and bubble controls. Material
+0.20 and wind gain is 0.12. The tuned profile uses rain volume 2.35, individual
+drops 3.25, impact reverb 1.0, insects 1.0, a 1200/s arrival cap, 0.31–4.5 m
+distances, and gust modulation 0.87. Master/Ambient/Effects default to 100%. Expand
+the arrival/distance/gust and material sections for click, resonance, filter and bubble controls. Material
 coverage weights and the wind-facing checkbox affect the local preview; live
 impacts use exposed world blocks and rotate with the camera. Custom block sound
 profiles retain their authored timbre unless **Honor custom block sound profiles**

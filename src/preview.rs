@@ -1914,9 +1914,6 @@ fn preview_frame(screen: UiScreen, target: Option<[i32; 3]>, scale: f32) -> UiFr
         },
         debug: None,
         settings: UiSettings {
-            audio_master: 0.8,
-            audio_ambient: 0.6,
-            audio_effects: 0.8,
             audio_preset: 0,
             sensitivity: 0.002,
             fov_degrees: 70.0,

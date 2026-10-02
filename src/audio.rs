@@ -64,9 +64,9 @@ pub(crate) struct Controls {
 impl Default for Controls {
     fn default() -> Self {
         Self {
-            master: 0.8,
-            ambient: 0.6,
-            effects: 0.8,
+            master: 1.0,
+            ambient: 1.0,
+            effects: 1.0,
             preset: Preset::Off,
         }
     }

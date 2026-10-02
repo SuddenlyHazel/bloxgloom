@@ -116,9 +116,9 @@ impl Default for Config {
             post_processing: true,
             bloom_enabled: true,
             bloom_strength: 0.12,
-            audio_master: 0.8,
-            audio_ambient: 0.6,
-            audio_effects: 0.8,
+            audio_master: 1.0,
+            audio_ambient: 1.0,
+            audio_effects: 1.0,
             rain_audio: Default::default(),
             selected_slot: 1,
             debug_hud: false,
@@ -235,9 +235,9 @@ impl Config {
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
             bloom_strength: clamp_finite(self.bloom_strength, 0.0, 1.0, 0.12),
-            audio_master: clamp_finite(self.audio_master, 0.0, 1.0, 0.8),
-            audio_ambient: clamp_finite(self.audio_ambient, 0.0, 1.0, 0.6),
-            audio_effects: clamp_finite(self.audio_effects, 0.0, 1.0, 0.8),
+            audio_master: clamp_finite(self.audio_master, 0.0, 1.0, 1.0),
+            audio_ambient: clamp_finite(self.audio_ambient, 0.0, 1.0, 1.0),
+            audio_effects: clamp_finite(self.audio_effects, 0.0, 1.0, 1.0),
             rain_audio: self.rain_audio.sanitized(),
             selected_slot: self.selected_slot.min(8),
             debug_hud: self.debug_hud,
@@ -364,9 +364,9 @@ fn parse_config(contents: &str) -> Config {
             }
             "exposure" => config.exposure = parse_clamped_float(value, 0.25, 4.0, 1.0),
             "bloom_strength" => config.bloom_strength = parse_clamped_float(value, 0.0, 1.0, 0.12),
-            "audio_master" => config.audio_master = parse_clamped_float(value, 0.0, 1.0, 0.8),
-            "audio_ambient" => config.audio_ambient = parse_clamped_float(value, 0.0, 1.0, 0.6),
-            "audio_effects" => config.audio_effects = parse_clamped_float(value, 0.0, 1.0, 0.8),
+            "audio_master" => config.audio_master = parse_clamped_float(value, 0.0, 1.0, 1.0),
+            "audio_ambient" => config.audio_ambient = parse_clamped_float(value, 0.0, 1.0, 1.0),
+            "audio_effects" => config.audio_effects = parse_clamped_float(value, 0.0, 1.0, 1.0),
             "rain_audio" => {
                 if let Ok(profile) =
                     serde_json::from_str::<crate::audio::rain_tuning::RainConfig>(value)

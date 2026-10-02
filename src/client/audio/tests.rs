@@ -22,7 +22,7 @@ fn local_audio_preview_is_ephemeral_and_listener_poll_is_bounded() {
         state.next_voice, 2,
         "session reset cannot reuse live voice IDs"
     );
-    assert_eq!(config.audio_master, 0.8);
+    assert_eq!(config.audio_master, 1.0);
 }
 
 #[test]

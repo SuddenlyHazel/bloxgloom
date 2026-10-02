@@ -260,7 +260,7 @@ fn audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset() {
     let old = parse_config("version=1\nsensitivity=0.003\n");
     assert_eq!(
         (old.audio_master, old.audio_ambient, old.audio_effects),
-        (0.8, 0.6, 0.8)
+        (1.0, 1.0, 1.0)
     );
     let bounded = parse_config(
         "version=1\naudio_master=NaN\naudio_ambient=-2\naudio_effects=9\naudio_preset=storm\n",
@@ -271,7 +271,7 @@ fn audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset() {
             bounded.audio_ambient,
             bounded.audio_effects
         ),
-        (0.8, 0.0, 1.0)
+        (1.0, 0.0, 1.0)
     );
     assert!(!bounded.serialize().contains("audio_preset"));
     let mut direct = Config {
@@ -287,7 +287,7 @@ fn audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset() {
             direct.audio_ambient,
             direct.audio_effects
         ),
-        (0.8, 0.6, 0.0)
+        (1.0, 1.0, 0.0)
     );
     assert_eq!(parse_config(&bounded.serialize()), bounded);
 }

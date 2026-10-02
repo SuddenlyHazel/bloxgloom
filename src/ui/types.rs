@@ -138,9 +138,9 @@ impl Default for UiSettings {
             exposure: 1.0,
             bloom_enabled: true,
             bloom_strength: 0.12,
-            audio_master: 0.8,
-            audio_ambient: 0.6,
-            audio_effects: 0.8,
+            audio_master: 1.0,
+            audio_ambient: 1.0,
+            audio_effects: 1.0,
             audio_preset: 0,
             rain_audio: Default::default(),
         }
