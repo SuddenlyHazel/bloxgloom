@@ -496,6 +496,9 @@ pub(super) fn tick_with_inputs(
         if let Some(barrier) = barrier {
             durable::complete_barrier(context.state, barrier)?;
         }
+        if phase == Phase::Publish {
+            lod::poll(context.state);
+        }
         phase_times[phase_index] = phase_started.elapsed();
     }
     let movement_load = context.movement_load;

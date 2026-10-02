@@ -222,6 +222,15 @@ fn apply_committed_action_inner(
             .durability
             .remember_checkpoint(durable::chunk_state_key(key), snapshot);
     }
+    if !action.changed_cells.is_empty() {
+        crate::server::lod::invalidate(
+            state,
+            action
+                .changed_cells
+                .iter()
+                .map(|cell| crate::world::world_to_chunk(cell.x, cell.y, cell.z).0),
+        );
+    }
     state.pending_block_changes.extend(action.changed_cells);
     let completed_pickup =
         action.action_id.is_none() && action.profile.is_some() && action.inventory.is_some();
@@ -324,6 +333,14 @@ pub(super) fn publish_committed_fire_after_world(
                 local: local.map(|coordinate| coordinate as u8),
                 block,
             });
+        }
+        if !changed_cells.is_empty() {
+            crate::server::lod::invalidate(
+                state,
+                changed_cells
+                    .iter()
+                    .map(|cell| crate::world::world_to_chunk(cell.x, cell.y, cell.z).0),
+            );
         }
         state
             .pending_block_changes

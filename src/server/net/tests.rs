@@ -5,6 +5,8 @@ mod extension_anchored;
 mod fire;
 #[path = "tests/generation.rs"]
 mod generation;
+#[path = "tests/lod.rs"]
+mod lod;
 #[cfg(unix)]
 #[path = "tests/package_load.rs"]
 mod package_load;

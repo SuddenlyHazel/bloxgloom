@@ -23,6 +23,7 @@ mod interest;
 mod inventory_loading;
 mod journal;
 mod lifecycle;
+mod lod;
 #[cfg(test)]
 mod loot;
 mod metrics;
@@ -230,6 +231,7 @@ struct State {
     phase_plan: PhasePlan,
     system_runtime: SystemRuntime,
     loader: ChunkLoader,
+    lod: lod::Service,
     movement_executor: PhaseExecutor<MovementBatch, ()>,
     entity_tick_executor:
         PhaseExecutor<durable::actions::entity::TickWorkerResult, entities::EntityError>,
@@ -610,6 +612,7 @@ fn server_state_with_startup(
     // validates against resident authoritative chunks and defers cache misses.
     let spawn_anchor = spawn_position(&mut world)?;
     let loader = ChunkLoader::new(&world, LOADER_CAPACITY)?;
+    let lod = lod::Service::new(&world, save_dir.clone())?;
     let worker_count = thread::available_parallelism()
         .map_or(2, |count| count.get())
         .clamp(1, 8);
@@ -665,6 +668,7 @@ fn server_state_with_startup(
         phase_plan,
         system_runtime,
         loader,
+        lod,
         movement_executor,
         entity_tick_executor,
         entity_tick_dispatch_batch: None,
@@ -713,6 +717,9 @@ fn handle_message(state: &mut State, id: u64, message: ClientMessage) -> io::Res
             ErrorKind::InvalidData,
             "duplicate content readiness",
         )),
+        message @ (ClientMessage::LodConfig { .. } | ClientMessage::LodRequest { .. }) => {
+            lod::handle(state, id, message)
+        }
         ClientMessage::Ping { nonce } => {
             if let Some(client) = state.clients.get(&id) {
                 client.enqueue(ServerMessage::Pong { nonce });

@@ -21,7 +21,8 @@ pub use entities::{MAX_ENTITY_SNAPSHOT_PAGES, MAX_WORLD_COMMIT_BYTES, MAX_WORLD_
 pub const MAX_FRAME: usize = 64 * 1024;
 pub const MAX_MANIFEST_PART: usize = 60 * 1024;
 pub const MAX_ENTITY_INTERACT_BYTES: usize = 256;
-const WIRE_VERSION: u8 = 24;
+const WIRE_VERSION: u8 = 25;
+pub(crate) mod lod;
 mod player_states;
 mod players;
 mod sounds;
@@ -42,6 +43,13 @@ fn valid_action_id(id: u128) -> bool {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    LodConfig {
+        horizon: u16,
+    },
+    LodRequest {
+        request: u64,
+        key: crate::lod::TileKey,
+    },
     SetCrouching {
         crouching: bool,
     },
@@ -152,6 +160,29 @@ pub struct DroppedItem {
     reason = "Keep fixed-size inventory messages inline; changing transport allocations needs a separate measured change."
 )]
 pub enum ServerMessage {
+    LodStatus {
+        session: u64,
+        horizon: u16,
+    },
+    LodTile {
+        session: u64,
+        request: u64,
+        tile: crate::lod::LodTile,
+    },
+    LodUnavailable {
+        session: u64,
+        request: u64,
+        key: crate::lod::TileKey,
+    },
+    LodInvalidate {
+        session: u64,
+        key: crate::lod::TileKey,
+        revision: u64,
+    },
+    LodInvalidateAll {
+        session: u64,
+        revision: u64,
+    },
     Sounds {
         id: u64,
         events: Vec<bloxgloom_host_api::sound::Event>,
@@ -278,6 +309,11 @@ pub(crate) fn server_wire_len(message: &ServerMessage) -> usize {
     const DROP_ITEM: usize = 8 + 4 + 2 + 12 + 4;
     HEADER
         + match message {
+            ServerMessage::LodStatus { .. } => 10,
+            ServerMessage::LodTile { tile, .. } => 16 + lod::tile_len(tile),
+            ServerMessage::LodUnavailable { .. } => 25,
+            ServerMessage::LodInvalidate { .. } => 25,
+            ServerMessage::LodInvalidateAll { .. } => 16,
             ServerMessage::PlayerStance { .. } => 8 + 1,
             ServerMessage::PlayerTeleport { .. } => 16 + 8 + 8 + 12,
             ServerMessage::PlayerNotice { text, .. } => 16 + 8 + 1 + 1 + text.len(),
@@ -387,6 +423,15 @@ pub fn write_client_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ClientMessage::LodConfig { horizon } => {
+            out.push(21);
+            out.extend(horizon.to_le_bytes());
+        }
+        ClientMessage::LodRequest { request, key } => {
+            out.push(22);
+            out.extend(request.to_le_bytes());
+            lod::write_key(&mut out, *key)?;
+        }
         ClientMessage::SetCrouching { crouching } => {
             out.push(20);
             out.push(u8::from(*crouching));
@@ -600,6 +645,46 @@ pub fn write_server_with_catalog(
 ) -> io::Result<()> {
     let mut out = vec![WIRE_VERSION];
     match message {
+        ServerMessage::LodInvalidateAll { session, revision } => {
+            out.push(43);
+            out.extend(session.to_le_bytes());
+            out.extend(revision.to_le_bytes());
+        }
+        ServerMessage::LodStatus { session, horizon } => {
+            out.push(39);
+            out.extend(session.to_le_bytes());
+            out.extend(horizon.to_le_bytes());
+        }
+        ServerMessage::LodTile {
+            session,
+            request,
+            tile,
+        } => {
+            out.push(40);
+            out.extend(session.to_le_bytes());
+            out.extend(request.to_le_bytes());
+            lod::write_tile(&mut out, tile, content_catalog)?;
+        }
+        ServerMessage::LodUnavailable {
+            session,
+            request,
+            key,
+        } => {
+            out.push(41);
+            out.extend(session.to_le_bytes());
+            out.extend(request.to_le_bytes());
+            lod::write_key(&mut out, *key)?;
+        }
+        ServerMessage::LodInvalidate {
+            session,
+            key,
+            revision,
+        } => {
+            out.push(42);
+            out.extend(session.to_le_bytes());
+            lod::write_key(&mut out, *key)?;
+            out.extend(revision.to_le_bytes());
+        }
         ServerMessage::PlayerStance {
             entity_id,
             crouching,
@@ -1068,6 +1153,11 @@ pub fn read_client_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        21 => ClientMessage::LodConfig { horizon: c.u16()? },
+        22 => ClientMessage::LodRequest {
+            request: c.u64()?,
+            key: lod::read_key(&mut c)?,
+        },
         1 => ClientMessage::Hello {
             name: c.string()?,
             profile: c.u128()?,
@@ -1254,6 +1344,29 @@ pub fn read_server_with_catalog(
     let bytes = read_frame(reader)?;
     let mut c = Cursor::new(&bytes);
     let message = match bytes[1] {
+        43 => ServerMessage::LodInvalidateAll {
+            session: c.u64()?,
+            revision: c.u64()?,
+        },
+        39 => ServerMessage::LodStatus {
+            session: c.u64()?,
+            horizon: c.u16()?,
+        },
+        40 => ServerMessage::LodTile {
+            session: c.u64()?,
+            request: c.u64()?,
+            tile: lod::read_tile(&mut c, content_catalog)?,
+        },
+        41 => ServerMessage::LodUnavailable {
+            session: c.u64()?,
+            request: c.u64()?,
+            key: lod::read_key(&mut c)?,
+        },
+        42 => ServerMessage::LodInvalidate {
+            session: c.u64()?,
+            key: lod::read_key(&mut c)?,
+            revision: c.u64()?,
+        },
         1 => ServerMessage::Welcome {
             id: c.u64()?,
             seed: c.u64()?,

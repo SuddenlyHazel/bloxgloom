@@ -509,6 +509,30 @@ impl World {
         self.storage.clone()
     }
 
+    /// Capture newer committed checkpoints for a distant worker without registering
+    /// gameplay loads or pinning cache entries. The caller fences against commits.
+    pub(crate) fn lod_overlays(&self, bounds: [i32; 4]) -> io::Result<Vec<(ChunkKey, Vec<u8>)>> {
+        let mut result = Vec::new();
+        let mut bytes = 0usize;
+        for (&key, snapshot) in &self.pending_snapshots {
+            let x = i64::from(key.x) * CHUNK_SIZE as i64;
+            let z = i64::from(key.z) * CHUNK_SIZE as i64;
+            if x >= i64::from(bounds[0])
+                && x < i64::from(bounds[2])
+                && z >= i64::from(bounds[1])
+                && z < i64::from(bounds[3])
+            {
+                let snapshot = snapshot.clone().unwrap_or_default();
+                bytes += snapshot.len();
+                if bytes > 4 * 1024 * 1024 || result.len() >= 4096 {
+                    return Err(io::Error::other("LOD committed overlay budget exceeded"));
+                }
+                result.push((key, snapshot));
+            }
+        }
+        Ok(result)
+    }
+
     /// The current per-key load epoch. Epoch entries are retained only while
     /// loads are in flight, so exploration does not grow a permanent map.
     pub fn edit_epoch(&self, key: ChunkKey) -> u64 {
