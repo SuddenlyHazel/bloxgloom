@@ -1396,16 +1396,16 @@ async fn render_previews_weather(
                 crate::appearance::CharacterRecipe::default(),
                 crate::appearance::CharacterRecipe {
                     hair: 2,
-                    eyes: 5,
-                    mouth: 5,
+                    eyes: 0,
+                    mouth: 0,
                     iris: Some([36, 220, 95]),
                     body: 1,
                     hair_color: [125, 85, 180],
                 },
                 crate::appearance::CharacterRecipe {
                     hair: 0,
-                    eyes: 2,
-                    mouth: 2,
+                    eyes: 0,
+                    mouth: 0,
                     iris: Some([235, 80, 155]),
                     ..Default::default()
                 },

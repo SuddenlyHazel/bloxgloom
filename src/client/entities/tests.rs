@@ -846,8 +846,8 @@ fn player_projection_preserves_recipe_and_rejects_noncanonical_flags() {
         body: 1,
         hair_color: [66, 136, 206],
         hair: 2,
-        eyes: 6,
-        mouth: 3,
+        eyes: 0,
+        mouth: 0,
         iris: Some([25, 130, 240]),
     };
     let appearance = crate::appearance::AppearanceState {

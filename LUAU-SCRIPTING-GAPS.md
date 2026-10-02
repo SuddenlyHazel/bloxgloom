@@ -477,12 +477,12 @@ body rendering, walking and tool animations, and server-owned crouch stance.
 These improve the builtin player experience; they do not expose general Luau
 model imports, animation controllers, arbitrary motion or per-player physics.
 
-The [native GLB model foundation](docs/modding/AUTHORED-MODELS.md) now loads
-embedded textures, static/skinned geometry and named baked clips directly in
-Rust. Its wgpu preview exercises clip blending, switchable node subtrees and
-multiply/replace color controls. Catalog installation, negotiated model assets,
-player appearance persistence/menu integration and Luau creature registration
-remain open; this preparation path does not close the general model API gap.
+The [native GLB model pipeline](docs/modding/AUTHORED-MODELS.md) loads
+embedded textures and baked clips in Rust and renders them through wgpu. The
+revised builtin player is installed in gameplay and the Character menu, with
+server-authoritative appearance persistence. Generic Luau creature registration,
+arbitrary model packages and animation-controller APIs remain outside this
+builtin installation.
 
 **Remaining impact:** vehicles, per-player physics, rich animation and advanced audio
 need additional engine services. Simple projectiles and guided flying objects

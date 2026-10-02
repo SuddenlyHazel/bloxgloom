@@ -22,16 +22,16 @@ fn articulated_recipes_replicate_independently_and_survive_server_restart() {
     let first_recipe = CharacterRecipe {
         body: 1,
         hair_color: [66, 136, 206],
-        eyes: 6,
-        mouth: 4,
+        eyes: 0,
+        mouth: 0,
         hair: 13,
         iris: Some([12, 170, 255]),
     };
     let second_recipe = CharacterRecipe {
         body: 0,
         hair_color: [219, 184, 233],
-        eyes: 2,
-        mouth: 2,
+        eyes: 0,
+        mouth: 0,
         hair: 0,
         iris: None,
     };

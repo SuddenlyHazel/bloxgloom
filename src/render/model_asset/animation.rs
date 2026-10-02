@@ -58,12 +58,23 @@ impl Channel {
     }
 }
 impl Model {
-    fn local_pose(&self, name: Option<&str>, time: f32) -> Result<Vec<Transform>> {
+    pub(crate) fn local_pose_into(
+        &self,
+        name: Option<&str>,
+        time: f32,
+        pose: &mut [Transform],
+    ) -> Result<()> {
+        ensure(
+            pose.len() == self.nodes.len(),
+            "local pose has the wrong node count",
+        )?;
         ensure(
             time.is_finite() && time >= 0.0,
             "animation time must be finite and nonnegative",
         )?;
-        let mut pose: Vec<_> = self.nodes.iter().map(|n| n.rest).collect();
+        for (p, n) in pose.iter_mut().zip(&self.nodes) {
+            *p = n.rest;
+        }
         if let Some(name) = name {
             let clip = self
                 .clips
@@ -86,6 +97,11 @@ impl Model {
                 }
             }
         }
+        Ok(())
+    }
+    pub(crate) fn local_pose(&self, name: Option<&str>, time: f32) -> Result<Vec<Transform>> {
+        let mut pose: Vec<_> = self.nodes.iter().map(|n| n.rest).collect();
+        self.local_pose_into(name, time, &mut pose)?;
         Ok(pose)
     }
     pub(crate) fn sample(&self, name: Option<&str>, time: f32) -> Result<Vec<Mat4>> {
@@ -116,7 +132,7 @@ impl Model {
                 .collect(),
         )
     }
-    fn matrices(&self, pose: Vec<Transform>) -> Result<Vec<Mat4>> {
+    pub(crate) fn matrices(&self, pose: Vec<Transform>) -> Result<Vec<Mat4>> {
         let mut worlds = vec![Mat4::IDENTITY; pose.len()];
         for (i, local) in pose.into_iter().enumerate() {
             ensure(

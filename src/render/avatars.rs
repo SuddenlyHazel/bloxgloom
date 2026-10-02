@@ -317,11 +317,8 @@ impl AvatarRenderer {
     }
 }
 
-pub(crate) fn character_eye_names() -> &'static [&'static str; 8] {
-    &character_asset::EYE_NAMES
-}
-pub(crate) fn character_mouth_names() -> &'static [&'static str; 6] {
-    &character_asset::MOUTH_NAMES
+pub(crate) fn prepare_character_asset() {
+    let _ = character_asset::CharacterAsset::builtin();
 }
 
 pub(super) fn character_shader(catalog: &crate::content::Catalog) -> String {

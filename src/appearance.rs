@@ -10,24 +10,8 @@ pub(crate) const MAX_APPEARANCE_BYTES: usize = 4 + CHARACTER_RECIPE_BYTES;
 pub(crate) const BODIES: [&str; 2] = ["flat_chest", "defined_chest_sports_bra"];
 /// sRGB highlight color from the kit's default tousled-crop metadata (#BE7940).
 pub(crate) const DEFAULT_HAIR_COLOR: [u8; 3] = [190, 121, 64];
-pub(crate) const EYES: [&str; 8] = [
-    "classic",
-    "cute_glint",
-    "kawaii_star",
-    "playful_wink",
-    "happy_crescent",
-    "neon_focus",
-    "neon_curious",
-    "soft_sleepy",
-];
-pub(crate) const MOUTHS: [&str; 6] = [
-    "classic",
-    "soft_smile",
-    "cat_smile",
-    "tiny_open",
-    "playful",
-    "smirk",
-];
+pub(crate) const EYES: [&str; 1] = ["authored"];
+pub(crate) const MOUTHS: [&str; 1] = ["none"];
 pub(crate) const HAIR: [&str; 14] = [
     "none",
     "tousled_crop",
@@ -64,7 +48,7 @@ impl Default for CharacterRecipe {
             hair_color: DEFAULT_HAIR_COLOR,
             hair: 1,
             eyes: 0,
-            mouth: 1,
+            mouth: 0,
             iris: None,
         }
     }
@@ -80,7 +64,7 @@ impl CharacterRecipe {
     pub fn encode(self) -> [u8; CHARACTER_RECIPE_BYTES] {
         let rgb = self.iris.unwrap_or([0; 3]);
         [
-            2,
+            3,
             self.body,
             self.hair,
             self.eyes,
@@ -95,8 +79,8 @@ impl CharacterRecipe {
         ]
     }
     pub fn decode(bytes: &[u8]) -> Option<Self> {
-        // Recipe v1 is intentionally incompatible. Prerelease worlds are never
-        // silently converted or reset; v22 uses a fresh world folder.
+        // Earlier character families are intentionally incompatible. Prerelease
+        // worlds are never converted or reset; v23 uses a fresh folder.
         let [
             version,
             body,
@@ -111,7 +95,7 @@ impl CharacterRecipe {
             hg,
             hb,
         ]: [u8; CHARACTER_RECIPE_BYTES] = bytes.try_into().ok()?;
-        if version != 2 || enabled > 1 || (enabled == 0 && [r, g, b] != [0; 3]) {
+        if version != 3 || enabled > 1 || (enabled == 0 && [r, g, b] != [0; 3]) {
             return None;
         }
         let recipe = Self {

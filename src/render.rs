@@ -49,7 +49,7 @@ use visibility::create_depth;
 
 pub(crate) use avatars::{
     AvatarModel, AvatarRenderer, FirstPersonView, MAX_AVATARS, MovingVisual, VisualAvatar,
-    character_eye_names, character_mouth_names, character_tool_duration,
+    character_tool_duration, prepare_character_asset,
 };
 pub(crate) use drops::VisualDrop;
 pub(crate) use drops::mesh as mesh_dropped_items;

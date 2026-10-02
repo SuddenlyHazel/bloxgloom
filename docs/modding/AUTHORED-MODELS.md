@@ -5,12 +5,17 @@ immutable model data, authored animation sampling/blending, appearance controls,
 and a wgpu inspection command. The preview reads the GLB directly: no Python
 conversion or intermediate mesh format is required.
 
-This is the preparation stage. The current in-game player still uses the builtin
-articulated renderer and its existing appearance recipe. Installing new models
-into the startup catalog, negotiating them with peers, authorizing/persisting
-new appearance choices, wiring the character menu, and exposing creature model
-registration through Luau remain integration work after the supplied asset is
-verified. No player wire/save format changes occur in this stage.
+The revised builtin player is installed in live gameplay and the Character menu.
+Its geometry, baked clips and embedded textures are loaded natively. The live
+player compiler folds static cubes into thirty actor joints for bounded instancing;
+all authored animation targets survive. Public body/hair choices and colors remain
+server-authoritative and persist under stable profile IDs. The current export has
+one eye design and no mouth variants, so no alternate face selectors appear.
+
+Generic creature model registration through Luau, arbitrary runtime model packages
+and additional appearance controls still require catalog/network integration. The
+builtin installation uses a fixed checked-in GLB, recipe v3 and world-v23; it does
+not expose filesystem paths or arbitrary geometry over the wire.
 
 ## Blockbench authoring
 

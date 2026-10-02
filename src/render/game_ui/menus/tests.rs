@@ -251,6 +251,14 @@ fn native_character_menu_keeps_apply_visible_and_blocks_repeat_while_pending() {
         let (output, _) = draw(&frame, vec![]);
         label_center(&output.shapes, "Body");
         label_center(&output.shapes, "Hair color");
+        assert!(
+            output.shapes.iter().all(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) =>
+                    !["Eyes", "Mouth"].contains(&text.galley.job.text.as_str()),
+                _ => true,
+            }),
+            "face selectors must come from the installed GLB"
+        );
         let apply = label_center(&output.shapes, "Apply");
         let close = label_center(&output.shapes, "Close");
         assert!(

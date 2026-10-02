@@ -48,8 +48,8 @@ fn walk_and_run_articulate_all_major_joint_chains() {
             assert!(
                 (0..16).any(|step| {
                     let animated = asset.sample(clip, step as f32 * 0.05);
-                    !relative(&animated, joint, &asset)
-                        .abs_diff_eq(relative(&rest, joint, &asset), 1e-4)
+                    !relative(&animated, joint, asset)
+                        .abs_diff_eq(relative(&rest, joint, asset), 1e-4)
                 }),
                 "{clip} never articulates {}",
                 asset.joints[joint].name
@@ -57,7 +57,10 @@ fn walk_and_run_articulate_all_major_joint_chains() {
         }
     }
     for i in 0..JOINT_COUNT {
-        assert!(asset.sample("walk", 0.2)[i].abs_diff_eq(asset.sample("walk", 1.0)[i], 1e-5));
+        assert!(
+            asset.sample("walk", 0.2)[i]
+                .abs_diff_eq(asset.sample("walk", 0.2 + asset.duration("walk"))[i], 1e-5)
+        );
     }
     assert_ne!(asset.sample("walk", 0.2), asset.sample("run", 0.2));
 }
@@ -83,8 +86,8 @@ fn mirrored_tools_move_both_elbows_and_wrists_and_return_without_a_pop() {
         for arm in [RIGHT_ARM, LEFT_ARM] {
             for joint in [arm[2], arm[3]] {
                 assert!(
-                    !relative(&active, joint, &asset)
-                        .abs_diff_eq(relative(&rest, joint, &asset), 1e-4)
+                    !relative(&active, joint, asset)
+                        .abs_diff_eq(relative(&rest, joint, asset), 1e-4)
                 );
             }
         }
@@ -137,8 +140,7 @@ fn final_head_look_clamps_animation_and_input_to_the_hair_envelope() {
                     Some((right, 0.24)),
                     [yaw, pitch],
                 );
-                let (_, rotation, _) =
-                    relative(&pose, HEAD, &asset).to_scale_rotation_translation();
+                let (_, rotation, _) = relative(&pose, HEAD, asset).to_scale_rotation_translation();
                 let (yaw, pitch, _) = rotation.to_euler(EulerRot::YXZ);
                 assert!(yaw.abs() <= 20.0_f32.to_radians() + 1e-5);
                 assert!(pitch.abs() <= 5.0_f32.to_radians() + 1e-5);
@@ -206,7 +208,7 @@ fn native_articulated_pose_dump() {
         }));
     };
     add("rest".into(), asset.sample("rest", 0.0));
-    for clip in &asset.clips {
+    for clip in &asset.animation.clips {
         for step in 0..=120 {
             let t = clip.duration * step as f32 / 120.0;
             add(
@@ -352,13 +354,35 @@ fn planted_stance_and_clear_swing_feet_follow_actual_mesh_through_all_gait_blend
                 );
                 for knee in [RIGHT_LEG[1], LEFT_LEG[1]] {
                     let (_, rotation, _) =
-                        relative(&pose, knee, &asset).to_scale_rotation_translation();
+                        relative(&pose, knee, asset).to_scale_rotation_translation();
                     let flexion = rotation.to_euler(EulerRot::XYZ).0.to_degrees();
                     assert!(
                         (-179.0..=0.001).contains(&flexion),
                         "knee folded through itself: {flexion}"
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn live_stride_clock_keeps_authored_walk_and_run_phase_aligned() {
+    let asset = CharacterAsset::builtin();
+    for phase in [0.0, 0.2, 0.4, 0.6] {
+        for (clip, run) in [("walk", 0.0), ("run", 1.0)] {
+            let mut expected = asset.sample(clip, phase * asset.duration(clip) / 0.8);
+            asset.ground(&mut expected);
+            let actual = asset.sample_gameplay_look(0.0, phase, 1.0, run, 0.0, None, [0.0; 2]);
+            for (joint, (a, b)) in actual.iter().zip(expected).enumerate() {
+                // Live head look clamps the final authored head rotation.
+                if [HEAD, 15, 16, 17, 27, 28, 29].contains(&joint) {
+                    continue;
+                }
+                assert!(
+                    a.abs_diff_eq(b, 1e-5),
+                    "{clip} at phase {phase}, joint {joint}"
+                );
             }
         }
     }

@@ -23,6 +23,14 @@ fn recipe_save_failure_never_publishes_and_invalid_selection_never_writes() {
             hair: crate::appearance::HAIR.len() as u8,
             ..Default::default()
         },
+        CharacterRecipe {
+            eyes: 1,
+            ..Default::default()
+        },
+        CharacterRecipe {
+            mouth: 1,
+            ..Default::default()
+        },
     ] {
         assert!(
             handle_message(
@@ -66,8 +74,8 @@ fn recipe_save_is_profile_bound_canonical_and_exposes_only_legacy_host_projectio
     let recipe = CharacterRecipe {
         body: 1,
         hair_color: [66, 136, 206],
-        eyes: 7,
-        mouth: 5,
+        eyes: 0,
+        mouth: 0,
         hair: 13,
         iris: Some([0, 255, 81]),
     };

@@ -194,8 +194,8 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
                 cosmetics: [0; 4],
                 recipe: Some(crate::appearance::CharacterRecipe {
                     hair: 2,
-                    eyes: 5,
-                    mouth: 5,
+                    eyes: 0,
+                    mouth: 0,
                     iris: Some([36, 220, 95]),
                     ..Default::default()
                 }),

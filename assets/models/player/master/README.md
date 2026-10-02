@@ -1,9 +1,8 @@
 # Revised Blockbench character master
 
 `model.glb` is the unchanged `Bloxgloom-Character-Master-Revised.glb` supplied by
-Hazel. It is a native GLB asset for the preparation/inspection pipeline; the
-installed in-game player remains the articulated family until its replacement
-is integrated. Keep the editable `.bbmodel` alongside your authoring files.
+Hazel. It is the installed native player asset for gameplay, the Character menu
+and headless inspection. Keep the editable `.bbmodel` alongside your authoring files.
 
 SHA-256: `0bbf30cd94428cd55622145ad23226b54202f2eeb7cdabdd87bc0bf94ffe6aaa`.
 
@@ -34,8 +33,8 @@ The body is 1.8 units tall with feet at Y=0 and glTF -Z forward.
 | crouch_test / grip_test / weight_shift / wrist_ankle_test | 3 s | Validation, one-shot |
 
 The GLB supplies these tracks directly; no procedural gameplay clips replace
-them. Game transitions, first-person framing and returning tool motion to idle
-remain integration behavior rather than properties of this preview.
+them. The live character renderer blends these tracks for game transitions and
+first-person framing; the generic model preview samples individual clips.
 
 ## Controls and previews
 

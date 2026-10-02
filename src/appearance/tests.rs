@@ -34,7 +34,7 @@ fn recipe_ids_and_optional_iris_round_trip_canonically() {
             hair_color: DEFAULT_HAIR_COLOR,
             hair: 1,
             eyes: 0,
-            mouth: 1,
+            mouth: 0,
             iris: None
         }
     );
@@ -85,7 +85,7 @@ fn builtin_identity_is_stable_and_covers_exact_assets() {
             .entity_type(crate::content::EntityTypeId(2))
             .unwrap()
             .schema_version,
-        3
+        4
     );
     assert!(!catalog.valid_appearance_state(AppearanceState {
         palettes: [255, 0, 0],
@@ -112,6 +112,9 @@ fn builtin_identity_is_stable_and_covers_exact_assets() {
 fn legacy_character_recipes_are_rejected_without_becoming_default() {
     let old_recipe = [1, 13, 7, 5, 1, 66, 136, 206];
     assert!(CharacterRecipe::decode(&old_recipe).is_none());
+    let mut old_v2 = CharacterRecipe::default().encode();
+    old_v2[0] = 2;
+    assert!(CharacterRecipe::decode(&old_v2).is_none());
     let mut old_appearance = vec![1, 2, 3, 0];
     old_appearance.extend(old_recipe);
     assert!(AppearanceState::decode(&old_appearance).is_none());

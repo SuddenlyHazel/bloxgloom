@@ -10,8 +10,8 @@ fn character_selection_is_session_scoped_and_bounded_on_wire() {
             body: 1,
             hair_color: [66, 136, 206],
             hair: 13,
-            eyes: 7,
-            mouth: 5,
+            eyes: 0,
+            mouth: 0,
             iris: Some([0, 128, 255]),
         }),
     ] {
@@ -47,7 +47,7 @@ fn character_selection_is_session_scoped_and_bounded_on_wire() {
         // Old recipe v1 is not a truncated/new default recipe.
         vec![WIRE_VERSION, 19, 1, 1, 1, 1, 1, 0, 0, 0, 0],
     ];
-    for (index, value) in [(0, 1), (1, 2), (2, 14), (3, 8), (4, 6), (5, 2), (6, 1)] {
+    for (index, value) in [(0, 1), (1, 2), (2, 14), (3, 1), (4, 1), (5, 2), (6, 1)] {
         let mut recipe = valid;
         recipe[index] = value;
         let mut payload = vec![WIRE_VERSION, 19, 1];

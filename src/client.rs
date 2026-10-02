@@ -2227,6 +2227,8 @@ pub fn run_client_with_admin(addr: &str) -> Result<(), Box<dyn std::error::Error
 
 #[tracing::instrument(name = "client", skip_all, fields(server_addr = %addr))]
 fn run_client_inner(addr: &str, admin_enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
+    // Decode the immutable GLB/PNGs before the window event loop starts.
+    crate::render::prepare_character_asset();
     let event_loop = EventLoop::new()?;
     let mut app = joining::JoinApp::new(addr, admin_enabled);
     let result = event_loop.run_app(&mut app);

@@ -35,7 +35,7 @@ struct CharacterInstance {
 }
 
 pub(super) struct CharacterRenderer {
-    asset: CharacterAsset,
+    asset: &'static CharacterAsset,
     pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
@@ -59,8 +59,8 @@ impl CharacterRenderer {
         catalog: &crate::content::Catalog,
     ) -> Self {
         let asset = CharacterAsset::builtin();
-        assert_eq!(asset.joints.len(), JOINTS);
-        assert_eq!(super::character_asset::HAIR_PNGS.len() / 2 + 1, STYLES);
+        assert_eq!(asset.animation.nodes.len(), JOINTS);
+
         let mut material_ranges: [std::ops::Range<u32>; MATERIALS] = std::array::from_fn(|_| 0..0);
         for (index, triangle) in asset.indices.chunks_exact(3).enumerate() {
             let material = asset.vertices[triangle[0] as usize].material as usize;
@@ -70,19 +70,16 @@ impl CharacterRenderer {
             }
             range.end = (index * 3 + 3) as u32;
         }
-        let visibility =
-            super::character_asset::occlusion::builtin_visibility(asset.vertices.len());
         let vertices: Vec<_> = asset
             .vertices
             .iter()
-            .zip(visibility)
-            .map(|(v, visibility)| Vertex {
+            .map(|v| Vertex {
                 position: v.position,
                 normal: v.normal,
                 joint: v.joint as u32,
                 uv: v.uv,
                 material: v.material,
-                surface: super::character_asset::occlusion::pack_surface(v.surface, visibility),
+                surface: v.surface | (255 << 8) | (v.texture << 16),
             })
             .collect();
         let buffer = |label, contents, usage| {
@@ -146,8 +143,6 @@ impl CharacterRenderer {
                 },
                 texture_entry(1, wgpu::TextureViewDimension::D2Array),
                 texture_entry(4, wgpu::TextureViewDimension::D2Array),
-                texture_entry(5, wgpu::TextureViewDimension::D2Array),
-                texture_entry(6, wgpu::TextureViewDimension::D2Array),
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -159,37 +154,14 @@ impl CharacterRenderer {
         let body = material::array(
             device,
             queue,
-            &[
-                super::character_asset::BODY_PNG,
-                super::character_asset::BODY_DEFINED_PNG,
-            ],
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            "articulated body atlases",
+            &asset.images[..1],
+            "embedded player body atlas",
         );
         let hair = material::array(
             device,
             queue,
-            &super::character_asset::HAIR_PNGS,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            "native-size hair atlases",
-        );
-        let face_layers: Vec<_> = std::iter::once(super::character_asset::CLEAN_FACE_PNG)
-            .chain(super::character_asset::EYE_PNGS)
-            .chain(super::character_asset::MOUTH_PNGS)
-            .collect();
-        let faces = material::array(
-            device,
-            queue,
-            &face_layers,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            "character face features",
-        );
-        let masks = material::array(
-            device,
-            queue,
-            &super::character_asset::IRIS_MASK_PNGS,
-            wgpu::TextureFormat::Rgba8Unorm,
-            "character iris shade masks",
+            &asset.images[1..],
+            "embedded player hair atlases",
         );
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("nearest character pixels"),
@@ -214,14 +186,6 @@ impl CharacterRenderer {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&hair),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&faces),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&masks),
                 },
             ],
         });

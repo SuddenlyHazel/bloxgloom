@@ -197,8 +197,8 @@ pub(super) fn avatar(shot: Shot, target: (i32, i32), height: i32) -> render::Vis
         palettes: [1, 2, 3],
         character: Some(crate::appearance::CharacterRecipe {
             hair: 2,
-            eyes: 5,
-            mouth: 3,
+            eyes: 0,
+            mouth: 0,
             iris: Some([36, 220, 95]),
             ..Default::default()
         }),

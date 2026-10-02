@@ -28,7 +28,11 @@ pub(super) fn pair(
                 buffers,
             },
             primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: if alpha_cutout {
+                    None
+                } else {
+                    Some(wgpu::Face::Back)
+                },
                 ..Default::default()
             },
             depth_stencil: Some(if shadow {

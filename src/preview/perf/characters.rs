@@ -80,8 +80,8 @@ fn scene(count: usize, hair: Option<u8>) -> (Vec<VisualAvatar>, Mat4) {
             character_tool: None,
             character_recipe: hair.map(|hair| CharacterRecipe {
                 hair,
-                eyes: (index % 8) as u8,
-                mouth: (index % 6) as u8,
+                eyes: (index % crate::appearance::EYES.len()) as u8,
+                mouth: (index % crate::appearance::MOUTHS.len()) as u8,
                 iris: index.is_multiple_of(2).then_some([80, 160, 220]),
                 body: (index % 2) as u8,
                 ..Default::default()
@@ -93,7 +93,12 @@ fn scene(count: usize, hair: Option<u8>) -> (Vec<VisualAvatar>, Mat4) {
                 (index / columns) as f32 * 2.5 - grid_height * 0.5,
                 0.0,
             ),
-            cosmetics: [(index % 6) as u8, (index % 8) as u8, (index % 6) as u8, 0],
+            cosmetics: [
+                (index % crate::appearance::MOUTHS.len()) as u8,
+                (index % crate::appearance::EYES.len()) as u8,
+                (index % crate::appearance::MOUTHS.len()) as u8,
+                0,
+            ],
             light_levels: [15, 0, 0, 0],
             bounce: [0; 4],
             glow_bounce: [0; 4],

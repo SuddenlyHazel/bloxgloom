@@ -19,7 +19,7 @@ Voxel skylight travels down open columns and diffuses into caves; placeable glow
 
 The native character editor is available under **Pause → Character**. The articulated animated kit is the only character model, with flat-chest and defined-chest sports-bra bodies, thirteen hairstyles plus no hair, RGB hair color, eight eye styles, six mouths, and optional iris color. Existing skin, shirt, and pants palettes still apply. Applied choices are validated and saved by the server and replicated to peers. See the [character kit guide](assets/models/player/README.md) for animation previews, compatibility, and rendering limits.
 
-The current default save directory is `world-v22/`. The articulated character format changes the player catalog and profile format. Saves from the previous `world-v21/` release remain untouched and are rejected with an incompatibility error; use a fresh directory rather than copying old appearance files. This pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
+The current default save directory is `world-v23/`. The native GLB player changes the character catalog and appearance recipe. Saves from the previous `world-v22/` release remain untouched and are rejected with an incompatibility error; use a fresh directory rather than copying old appearance files. This pre-release project does not provide world-upgrade tooling. Development checks and benchmarks use isolated temporary directories and do not delete repo-local saves.
 
 Blocks, legal block states, items, entity types, and texture layers have namespaced definitions in a startup content catalog. New worlds record their numeric ID mapping in `content.map`; a world refuses to load when an existing ID is reassigned or required content is missing, and multiplayer rejects clients with a different catalog. Save and wire content IDs are widened to 32 bits. Local Luau packages and server-delivered client content are implemented; see the [current scripting reference](SCRIPTING.md).
 
@@ -39,12 +39,12 @@ With a recent Rust toolchain, run a local game with one command:
 cargo run
 ```
 
-This starts a local server and client in the same process and saves edits in `world-v22/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
+This starts a local server and client in the same process and saves edits in `world-v23/`. Cube-face textures live in `assets/textures/blocks/`, leaf and plant cutouts in `assets/textures/foliage/`, and non-block item art in `assets/textures/items/`.
 
 For a dedicated multiplayer server, start the server in one terminal:
 
 ```sh
-cargo run -- server 127.0.0.1:4000 world-v22
+cargo run -- server 127.0.0.1:4000 world-v23
 ```
 
 Start one or more clients in other terminals:
@@ -53,7 +53,7 @@ Start one or more clients in other terminals:
 cargo run -- client 127.0.0.1:4000
 ```
 
-The server defaults to `127.0.0.1:4000` and saves edits in `world-v22/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines and a representative two-player combined gameplay/download workload have passed. The latter does not establish 128-player combined-load performance; see the [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md).
+The server defaults to `127.0.0.1:4000` and saves edits in `world-v23/`. To connect from another computer on your LAN, bind the server to a reachable address (for example `0.0.0.0:4000`) and pass that computer's address to the client. Admission defaults to 128 clients and can be configured up to 256; 128-client loopback TCP baselines and a representative two-player combined gameplay/download workload have passed. The latter does not establish 128-player combined-load performance; see the [Phase 8 acceptance record](docs/modding/PHASE-8-ACCEPTANCE.md).
 
 Client and server diagnostics use `tracing`, with timestamps, levels, module targets,
 thread names, and structured fields. Local play shares one process-wide subscriber.
@@ -283,7 +283,7 @@ Run `cargo run --release -- chest-preview chest-previews` for Chest/Hopper block
 
 Inventory screens are now registered content shared by Chest, Hopper, Kiln, and extensions. Run `cargo run --release -- inventory-preview bloxgloom:kiln inventory-previews` to preview a registered screen.
 
-To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v22-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
+To try the separate extension package, run `cargo run --release --features lifecycle-fixture`. This uses `world-v23-fixture/` and installs the package on both local server and client. In F4, enter `give fixture:tall_store 1`. Place the two-block store, then right-click either half to open its nine-slot screen. Enter `spawn fixture:copperling` to create an orange patrol creature; right-click it to pause/resume. Enter `give fixture:crusher 1` for a stick-fueled processor that turns one stone into two gravel, with top input and bottom output automation. Creatures, containers, and machine work persist across restart. This is a development registration seam, not a dynamic mod loader. See [registered inventories](docs/modding/REGISTERED-INVENTORIES.md), [dynamic entities](docs/modding/DYNAMIC-ENTITIES.md), and [registered machines](docs/modding/REGISTERED-MACHINES.md).
 
 Run `cargo run -- drop-animation-preview drop-frames` to inspect the pop, hover, and pickup states as three headless GPU renders.
 

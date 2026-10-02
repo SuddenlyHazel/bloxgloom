@@ -1,7 +1,7 @@
 //! Check the production WGSL tint functions against the byte-exact CPU contract.
 use wgpu::util::DeviceExt;
 #[test]
-fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
+fn gpu_native_hair_color_preserves_linear_shading_alpha_and_fixed_accessories() {
     let instance = wgpu::Instance::default();
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).unwrap();
@@ -9,7 +9,7 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
     let functions = &source
         [source.find("fn srgb_to_linear").unwrap()..source.find("fn character_albedo").unwrap()];
     let source = format!(
-        "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(tint_iris(vec3f(1.0,127.0,255.0),f32(id.x)),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}"
+        "{functions}\n@group(0) @binding(0) var<storage,read_write> result:array<vec4f>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {{ result[id.x]=vec4f(srgb_to_linear(vec3f(f32(id.x))/255.0),1.0); result[id.x+256u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),false); result[id.x+512u]=shade_hair(vec4f(0.1,0.3,0.7,0.45),vec3f(f32(id.x)),true); }}"
     );
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
@@ -82,13 +82,8 @@ fn gpu_iris_tint_matches_srgb_byte_math_including_half_ties() {
         assert!((floats[(byte + 512) * 4 + 3] - 0.45).abs() < 0.00001);
     }
     for shade in 0..256 {
-        for (channel, base) in [1.0f32, 127.0, 255.0].into_iter().enumerate() {
-            let v = if shade <= 128 {
-                base * shade as f32 / 128.0
-            } else {
-                base + (255.0 - base) * (shade - 128) as f32 / 127.0
-            };
-            let srgb = (v + 0.5).floor() / 255.0;
+        for channel in 0..3 {
+            let srgb = shade as f32 / 255.0;
             let expected = if srgb <= 0.04045 {
                 srgb / 12.92
             } else {

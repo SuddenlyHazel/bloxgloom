@@ -367,15 +367,6 @@ fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
             );
         }
     }
-    let closed = crate::appearance::CharacterRecipe { eyes: 4, ..default };
-    assert_eq!(
-        render(closed),
-        render(crate::appearance::CharacterRecipe {
-            iris: Some([255, 0, 0]),
-            ..closed
-        }),
-        "closed eyes must not be tinted"
-    );
     assert_ne!(
         original,
         render(crate::appearance::CharacterRecipe { hair: 0, ..default })
@@ -401,13 +392,13 @@ fn different_recipes_color_only_selected_irises_and_swap_hair_per_instance() {
             );
         }
     }
-    assert_ne!(
-        original,
-        render(crate::appearance::CharacterRecipe {
-            eyes: 5,
-            mouth: 5,
+    assert!(!crate::appearance::CharacterRecipe { eyes: 1, ..default }.valid());
+    assert!(
+        !crate::appearance::CharacterRecipe {
+            mouth: 1,
             ..default
-        })
+        }
+        .valid()
     );
 }
 

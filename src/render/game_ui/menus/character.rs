@@ -25,18 +25,6 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
             choice(ui, "Body", &crate::appearance::BODIES, &mut recipe.body);
             choice(ui, "Hair", &crate::appearance::HAIR, &mut recipe.hair);
             color(ui, "Hair color", &mut recipe.hair_color);
-            choice(
-                ui,
-                "Eyes",
-                crate::render::character_eye_names(),
-                &mut recipe.eyes,
-            );
-            choice(
-                ui,
-                "Mouth",
-                crate::render::character_mouth_names(),
-                &mut recipe.mouth,
-            );
             let mut custom = recipe.iris.is_some();
             if ui.checkbox(&mut custom, "Custom iris color").changed() {
                 recipe.iris = custom.then_some(recipe.iris.unwrap_or([110, 160, 210]));

@@ -1,44 +1,21 @@
-//! Native-size pixel atlases. Character artwork never enters terrain resampling.
+//! Upload decoded embedded GLB images at their native dimensions.
+use crate::render::model_asset::Image;
 use wgpu::util::DeviceExt;
-
-pub(super) fn decode(png: &[u8]) -> (u32, u32, Vec<u8>) {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().expect("builtin character PNG header");
-    let mut bytes = vec![0; reader.output_buffer_size().expect("bounded builtin PNG")];
-    let info = reader
-        .next_frame(&mut bytes)
-        .expect("builtin character PNG pixels");
-    let rgba = match info.color_type {
-        png::ColorType::Rgba => bytes[..info.buffer_size()].to_vec(),
-        png::ColorType::Rgb => bytes[..info.buffer_size()]
-            .chunks_exact(3)
-            .flat_map(|rgb| [rgb[0], rgb[1], rgb[2], 255])
-            .collect(),
-        _ => panic!("builtin character PNG must be RGB/RGBA"),
-    };
-    (info.width, info.height, rgba)
-}
-
 pub(super) fn array(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    layers: &[&[u8]],
-    format: wgpu::TextureFormat,
+    layers: &[Image],
     label: &str,
 ) -> wgpu::TextureView {
-    assert!(!layers.is_empty() && layers.len() <= 64);
-    let (width, height, _) = decode(layers[0]);
-    assert!(width <= 512 && height <= 512);
-    let mut pixels = Vec::with_capacity((width * height * 4) as usize * layers.len());
-    for layer in layers {
-        let (layer_width, layer_height, rgba) = decode(layer);
+    let (width, height) = (layers[0].width, layers[0].height);
+    let mut pixels = Vec::new();
+    for image in layers {
         assert_eq!(
-            (layer_width, layer_height),
+            (image.width, image.height),
             (width, height),
-            "face features must retain 32-pixel UVs"
+            "GLB player atlas dimensions differ"
         );
-        pixels.extend(rgba);
+        pixels.extend_from_slice(&image.rgba);
     }
     let texture = device.create_texture_with_data(
         queue,
@@ -52,7 +29,7 @@ pub(super) fn array(
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         },

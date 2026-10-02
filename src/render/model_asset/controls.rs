@@ -244,7 +244,7 @@ impl Model {
 }
 
 impl Tint {
-    fn targets(&self, model: &Model) -> Result<Vec<usize>> {
+    pub(crate) fn targets(&self, model: &Model) -> Result<Vec<usize>> {
         let materials = resolve(
             &self.materials,
             model.materials.iter().map(|m| m.name.clone()),

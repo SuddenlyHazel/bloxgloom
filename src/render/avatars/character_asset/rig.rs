@@ -1,8 +1,10 @@
-//! Native glTF skin order. Keep these names in sync with the offline converter.
+//! Named GLB actor joints. Cube groups are folded into this bounded render rig.
 use super::{JOINT_COUNT, LocalPose};
 use glam::{EulerRot, Mat4, Quat};
 
+#[cfg(test)]
 pub(in crate::render::avatars) const ROOT: usize = 0;
+#[cfg(test)]
 pub(in crate::render::avatars) const PELVIS: usize = 1;
 pub(in crate::render::avatars) const SPINE: usize = 2;
 pub(in crate::render::avatars) const CHEST: usize = 3;
@@ -38,3 +40,36 @@ pub(super) fn apply_look(pose: &mut [LocalPose; JOINT_COUNT], look: [f32; 2]) {
     let look = clamp_look([yaw + look[0], pitch + look[1]]);
     pose[HEAD].rotation = Quat::from_euler(EulerRot::YXZ, look[0], look[1], roll);
 }
+
+pub(super) const NAMES: [&str; JOINT_COUNT] = [
+    "root",
+    "pelvis",
+    "spine",
+    "chest",
+    "neck",
+    "head",
+    "clavicle_R",
+    "upper_arm_R",
+    "forearm_R",
+    "hand_R",
+    "grip_R",
+    "thigh_R",
+    "shin_R",
+    "foot_R",
+    "toe_R",
+    "eye_R",
+    "pupil_R",
+    "brow_R",
+    "clavicle_L",
+    "upper_arm_L",
+    "forearm_L",
+    "hand_L",
+    "grip_L",
+    "thigh_L",
+    "shin_L",
+    "foot_L",
+    "toe_L",
+    "eye_L",
+    "pupil_L",
+    "brow_L",
+];
