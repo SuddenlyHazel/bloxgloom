@@ -15,6 +15,9 @@ pub(crate) struct Generator {
 }
 
 impl Generator {
+    pub(crate) fn is_builtin(&self) -> bool {
+        self.contributors.is_empty()
+    }
     pub(crate) fn new(mut contributors: Vec<Registration>) -> io::Result<Self> {
         validate(&contributors).map_err(generation_error)?;
         contributors.sort_by(|a, b| a.key.cmp(&b.key));

@@ -10,6 +10,7 @@ use crate::storage::{SavedEdits, Storage};
 
 mod cache;
 mod generation;
+pub(crate) mod lod;
 mod owner_apply;
 mod palette;
 mod terrain;

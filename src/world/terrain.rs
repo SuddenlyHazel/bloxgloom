@@ -520,3 +520,71 @@ fn mix(mut value: u64) -> u64 {
     value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
     value ^ (value >> 31)
 }
+
+/// Shared exact builtin sampler for distant summaries. Reuses surface and tree
+/// caches across columns, avoiding per-voxel terrain and decoration discovery.
+pub(super) struct LodSampler {
+    seed: u64,
+    patterns: HashMap<(i64, i64), [u8; 64]>,
+    trees: HashMap<(i64, i64), Option<Tree>>,
+}
+impl LodSampler {
+    pub(super) fn new(seed: u64) -> Self {
+        Self {
+            seed,
+            patterns: HashMap::new(),
+            trees: HashMap::new(),
+        }
+    }
+    pub(super) fn column(&mut self, x: i64, z: i64, bottom: i32, top: i32) -> Vec<BlockId> {
+        let column = terrain_column(x, z, self.seed);
+        let pattern = surface_pattern(x, z, self.seed, &mut self.patterns);
+        let mut trees = Vec::new();
+        for cz in (z - TREE_RADIUS).div_euclid(TREE_CELL)..=(z + TREE_RADIUS).div_euclid(TREE_CELL)
+        {
+            for cx in
+                (x - TREE_RADIUS).div_euclid(TREE_CELL)..=(x + TREE_RADIUS).div_euclid(TREE_CELL)
+            {
+                if let Some(tree) = *self
+                    .trees
+                    .entry((cx, cz))
+                    .or_insert_with(|| tree_anchor(cx, cz, self.seed))
+                {
+                    trees.push(tree);
+                }
+            }
+        }
+        (bottom..top)
+            .map(|y| {
+                let y = i64::from(y);
+                let ground = generated_block_with_pattern(x, y, z, column, pattern, self.seed);
+                if ground != AIR {
+                    return ground;
+                }
+                let mut leaf = false;
+                for tree in &trees {
+                    match tree_piece(*tree, x, y, z) {
+                        Some(WOOD) => return WOOD,
+                        Some(LEAVES) => leaf = true,
+                        _ => {}
+                    }
+                }
+                if leaf {
+                    return LEAVES;
+                }
+                if y == column.height + 1 {
+                    let soil = generated_block_with_pattern(
+                        x,
+                        column.height,
+                        z,
+                        column,
+                        pattern,
+                        self.seed,
+                    );
+                    return ground_plant(x, z, self.seed, column.biome, soil);
+                }
+                AIR
+            })
+            .collect()
+    }
+}
