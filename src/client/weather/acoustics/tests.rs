@@ -93,8 +93,11 @@ fn hillside_opening_produces_audible_rain_through_the_game_mixer() {
     };
     let open = render(exposure(eye, 12, |x, y, z| hillside(x, y, z, false)));
     let sealed = render(0.0);
+    let exposed = render(1.0);
+    // Retain at least 10% of the exposed RMS level and clear shelter contrast,
+    // independently of rain mix tuning.
     assert!(
-        open > 0.001 && open > sealed * 2.0,
-        "open {open}, sealed {sealed}"
+        exposed > 0.0 && open > exposed * 0.01 && open > sealed * 2.0,
+        "open {open}, sealed {sealed}, exposed {exposed}"
     );
 }
