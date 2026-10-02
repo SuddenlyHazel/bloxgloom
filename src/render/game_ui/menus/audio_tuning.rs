@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Intent>) {
     let mut config = frame.settings.rain_audio;
     ui.heading("Rain tuning");
-    ui.label(RichText::new("Changes apply live and save locally. Use the Rain preview to compare materials; select Off to hear world weather.").color(MUTED));
+    ui.label(RichText::new("Changes apply live and save locally. Rain, wind noise and insects are separate layers. Rain preview includes wind; Off follows world weather.").color(MUTED));
     ui.horizontal_wrapped(|ui| {
         if ui.button("Copy audio settings").clicked() {
             ui.ctx().copy_text(config.export(
@@ -17,8 +17,11 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
             let time = ui.input(|i| i.time);
             ui.data_mut(|data| data.insert_temp(egui::Id::new("rain-settings-copied"), time));
         }
-        if ui.button("Reset rain defaults").clicked() {
+        if ui.button("Reset tuning defaults").clicked() {
             config = RainConfig::default();
+        }
+        if ui.button("Mute rain / wind / insects").clicked() {
+            config.mute_ambient();
         }
         let copied = ui.data(|data| data.get_temp::<f64>(egui::Id::new("rain-settings-copied")));
         if copied.is_some_and(|time| ui.input(|i| i.time) - time < 3.0) {
@@ -35,7 +38,9 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
         "×",
     );
     slider(ui, "Impact reverb", &mut config.reverb_gain, 0.0..=4.0, "×");
-    ui.label(RichText::new("Set Rain bed to 0 to isolate impacts; set Individual drops to 0 to isolate the diffuse bed.").small().color(MUTED));
+    slider(ui, "Wind noise", &mut config.wind_gain, 0.0..=4.0, "×");
+    slider(ui, "Insects", &mut config.insect_gain, 0.0..=4.0, "×");
+    ui.label(RichText::new("To isolate rain, mute Wind noise and Insects. Then mute Rain bed for impacts only, or Individual drops for bed only. Thunder and gameplay sounds use Effects.").small().color(MUTED));
     egui::CollapsingHeader::new("Arrival, distance and gust controls").show(ui, |ui| {
         slider(ui, "Maximum drop rate", &mut config.max_drops_per_s, 0.0..=2000.0, "/s");
         slider(ui, "Gust modulation", &mut config.sheet_depth, 0.0..=2.0, "×");

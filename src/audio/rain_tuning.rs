@@ -1,4 +1,4 @@
-//! Persistent, exportable local rain synthesis profiles. Never affects world weather.
+//! Persistent local rain profiles and companion ambient gains. Never affects world weather.
 use crate::audio::rain_scene::RAIN_MATERIALS;
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -71,6 +71,10 @@ pub struct RainConfig {
     pub gain: f32,
     pub drop_gain: f32,
     pub reverb_gain: f32,
+    #[serde(default = "default_wind_gain")]
+    pub wind_gain: f32,
+    #[serde(default = "default_insect_gain")]
+    pub insect_gain: f32,
     pub use_block_profiles: bool,
     pub max_drops_per_s: f32,
     pub bed_gain: f32,
@@ -79,6 +83,13 @@ pub struct RainConfig {
     pub max_distance_m: f32,
     pub surfaces: [Surface; RAIN_MATERIALS],
 }
+const fn default_wind_gain() -> f32 {
+    0.35
+}
+const fn default_insect_gain() -> f32 {
+    1.0
+}
+
 impl Default for RainConfig {
     fn default() -> Self {
         let mut water = Surface::solid("Water", 0.37, 0.15, [1000.0; 2], [1000.0; 2], 0.0, 0.0);
@@ -91,6 +102,8 @@ impl Default for RainConfig {
             gain: 0.5,
             drop_gain: 1.0,
             reverb_gain: 1.0,
+            wind_gain: default_wind_gain(),
+            insect_gain: default_insect_gain(),
             use_block_profiles: true,
             max_drops_per_s: 900.0,
             // Keep the continuous far-rain wash behind the discrete surface impacts.
@@ -191,7 +204,9 @@ pub(crate) fn range(value: f32, low: f32, high: f32) -> bool {
 }
 impl RainConfig {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
-        if !range(self.drop_gain, 0.0, 4.0)
+        if !range(self.wind_gain, 0.0, 4.0)
+            || !range(self.insect_gain, 0.0, 4.0)
+            || !range(self.drop_gain, 0.0, 4.0)
             || !range(self.reverb_gain, 0.0, 4.0)
             || !range(self.gain, 0.0, 4.0)
             || !range(self.max_drops_per_s, 0.0, 2000.0)
@@ -250,6 +265,15 @@ impl RainConfig {
         } else {
             Self::default()
         }
+    }
+
+    pub(crate) fn mute_ambient(&mut self) {
+        self.gain = 0.0;
+        self.bed_gain = 0.0;
+        self.drop_gain = 0.0;
+        self.reverb_gain = 0.0;
+        self.wind_gain = 0.0;
+        self.insect_gain = 0.0;
     }
 
     pub(crate) fn export(self, master: f32, ambient: f32, effects: f32) -> String {

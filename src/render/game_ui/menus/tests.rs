@@ -375,11 +375,18 @@ fn rain_audio_copy_exports_current_tuning_and_reset_dispatches_live_defaults() {
             )
         );
         label_center(&output.shapes, "Copied!");
-        let pos = label_center(&output.shapes, "Reset rain defaults");
+        let pos = label_center(&output.shapes, "Reset tuning defaults");
         draw(click(pos, true));
         let (_, intents) = draw(click(pos, false));
         assert!(
             matches!(&intents[..], [Intent::RainAudio(profile)] if **profile == Default::default())
         );
+        let output = draw(vec![]).0;
+        let pos = label_center(&output.shapes, "Mute rain / wind / insects");
+        draw(click(pos, true));
+        let (_, intents) = draw(click(pos, false));
+        let mut muted = frame.settings.rain_audio;
+        muted.mute_ambient();
+        assert!(matches!(&intents[..], [Intent::RainAudio(profile)] if **profile == muted));
     }
 }

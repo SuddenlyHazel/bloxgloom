@@ -45,3 +45,34 @@ fn invalid_profiles_cannot_reach_the_synth() {
         0.0
     );
 }
+
+#[test]
+fn previous_exports_preserve_zero_rain_and_gain_companion_controls() {
+    let zero = RainConfig {
+        gain: 0.0,
+        bed_gain: 0.0,
+        drop_gain: 0.0,
+        reverb_gain: 0.0,
+        max_drops_per_s: 0.0,
+        sheet_depth: 0.0,
+        min_distance_m: 0.25,
+        max_distance_m: 0.25,
+        ..Default::default()
+    };
+    let mut old = serde_json::to_value(zero).unwrap();
+    let object = old.as_object_mut().unwrap();
+    object.remove("wind_gain");
+    object.remove("insect_gain");
+    let decoded: RainConfig = serde_json::from_value(old).unwrap();
+    let decoded = decoded.sanitized();
+    assert_eq!(decoded, zero);
+    let mut muted = decoded;
+    muted.mute_ambient();
+    assert_eq!(muted.wind_gain, 0.0);
+    assert_eq!(muted.insect_gain, 0.0);
+    assert_eq!(muted.sanitized(), muted);
+    assert_eq!(
+        muted.surfaces, zero.surfaces,
+        "mute must preserve tuned material profiles"
+    );
+}

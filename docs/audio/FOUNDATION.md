@@ -17,8 +17,13 @@ session retirement; it does not announce rain or a storm to other players.
 
 The **Rain tuning** section applies live and persists locally across previews,
 rejoins and restarts. **Rain bed** controls the diffuse far-rain wash independently
-of **Individual drops** and **Impact reverb**; set either bed or drops to zero to
-compare them. The starting bed gain is 0.10. Expand the arrival/distance/gust and
+of **Individual drops** and **Impact reverb**. **Wind noise** and **Insects** are
+separate ambient layers with their own gains; Rain preview includes wind. To
+compare bed and drops, first mute wind/insects, then set either bed or drops to
+zero. **Mute rain / wind / insects** silences all three layers while keeping
+thunder and gameplay effects available through Effects. Rain and insect reverb
+returns are independent and obey their layer's mute. The starting bed gain is
+0.10 and wind gain is 0.35. Expand the arrival/distance/gust and
 material sections for click, resonance, filter and bubble controls. Material
 coverage weights and the wind-facing checkbox affect the local preview; live
 impacts use exposed world blocks and rotate with the camera. Custom block sound
@@ -28,7 +33,9 @@ is disabled; each material's volume applies either way.
 **Copy audio settings** sends the complete rain profile and Master/Ambient/Effects
 mix to the native clipboard as `bloxgloom-rain-audio-v1` JSON, including the material
 array's name/order mapping. Paste it into a tuning discussion to propose defaults.
-**Reset rain defaults** resets the rain profile while keeping the volume mix.
+**Reset tuning defaults** resets the rain profile and wind/insect gains while
+keeping the Master/Ambient/Effects volume mix. Previous local profiles retain
+their rain values and receive defaults for the new wind/insect controls.
 
 Render reproducible stereo PCM without an audio device:
 

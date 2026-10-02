@@ -23,7 +23,8 @@ pub(super) struct Procedural {
     wind: Wind,
     storm: Storm,
     thunder: Thunder,
-    reverb: Reverb,
+    rain_reverb: Reverb,
+    insect_reverb: Reverb,
     weather: Weather,
     lightning: Rng,
     lightning_started: bool,
@@ -46,7 +47,8 @@ impl Procedural {
             wind: Wind::new(seed),
             storm: Storm::new(seed),
             thunder: Thunder::new(seed),
-            reverb: Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16),
+            rain_reverb: Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16),
+            insect_reverb: Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16),
             weather: Weather::default(),
             lightning: Rng::new(seed, 0xa54f_f53a),
             lightning_started: false,
@@ -81,7 +83,8 @@ impl Procedural {
         self.rain.set_scene(self.world.map(|_| self.scene.clone()));
         self.wind = Wind::new(self.seed);
         self.storm = Storm::new(self.seed);
-        self.reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
+        self.rain_reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
+        self.insect_reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
         self.frame = 0;
         self.lightning_started = self.thunder.active_voices() != 0;
     }
@@ -203,11 +206,24 @@ impl Procedural {
         let (rain, send) = self.rain.next(Listener::default());
         let wind = self.wind.next();
         let (bugs, insect_send) = self.insects.next();
-        let wet = self.reverb.next(send + insect_send);
+        // Separate returns let each layer mute its existing reflections too.
+        let rain_wet = self.rain_reverb.next(send);
+        let insect_wet = self.insect_reverb.next(insect_send);
+        let rain_return = if self.rain_config.gain > 0.0
+            && self.rain_config.drop_gain > 0.0
+            && self.rain_config.reverb_gain > 0.0
+        {
+            0.12
+        } else {
+            0.0
+        };
         let target_exposure = self.world.map_or(1.0, |w| w.exposure);
         self.exposure += (target_exposure - self.exposure) / (0.3 * 44_100.0);
         let ambient = std::array::from_fn(|i| {
-            let sample = rain[i] + wind[i] + bugs[i] + 0.12 * wet[i];
+            let sample = rain[i]
+                + self.rain_config.wind_gain * wind[i]
+                + self.rain_config.insect_gain * (bugs[i] + 0.12 * insect_wet[i])
+                + rain_return * rain_wet[i];
             // Sheltered listeners still hear muted outdoor weather; this is a
             // presentation approximation rather than voxel acoustic tracing.
             self.indoor_filter[i] += 0.06 * (sample - self.indoor_filter[i]);

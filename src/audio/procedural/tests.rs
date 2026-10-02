@@ -205,3 +205,41 @@ fn changing_preview_keeps_live_rain_profile_and_world_listener() {
         }
     }
 }
+
+#[test]
+fn insect_volume_mutes_active_calls_and_their_own_reflections() {
+    for (material, daylight) in [
+        (crate::audio::rain_scene::RainMaterial::Dirt, 0.0),
+        (crate::audio::rain_scene::RainMaterial::Leaf, 1.0),
+    ] {
+        let mut engine = Procedural::new(1);
+        engine.set_scene(crate::audio::rain_scene::RainScene::patch(material));
+        engine.set_listener([0.0, 1.6, 0.0], 0.0);
+        engine.set_world(Some(WeatherSound {
+            exposure: 1.0,
+            daylight,
+            ..Default::default()
+        }));
+        let mut config = crate::audio::rain_tuning::RainConfig {
+            gain: 0.0,
+            wind_gain: 0.0,
+            ..Default::default()
+        };
+        engine.set_rain_config(config);
+        let mut energy = 0.0;
+        for _ in 0..3 * 44_100 {
+            energy += engine
+                .next(Preset::Off)
+                .0
+                .into_iter()
+                .map(|s| s * s)
+                .sum::<f32>();
+        }
+        assert!(energy > 1e-4);
+        config.insect_gain = 0.0;
+        engine.set_rain_config(config);
+        for _ in 0..4410 {
+            assert_eq!(engine.next(Preset::Off).0, [0.0; 2]);
+        }
+    }
+}

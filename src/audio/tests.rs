@@ -212,3 +212,115 @@ fn world_weather_mixer_is_partition_independent_and_reset_silences_it() {
     a.render(&mut whole);
     assert!(whole.iter().flatten().all(|x| *x == 0.0));
 }
+
+#[test]
+fn zero_rain_settings_leave_wind_audible_but_ambient_mute_silences_the_full_mixer() {
+    use rain_tuning::RainConfig;
+    let zero_rain = RainConfig {
+        gain: 0.0,
+        bed_gain: 0.0,
+        drop_gain: 0.0,
+        reverb_gain: 0.0,
+        max_drops_per_s: 0.0,
+        min_distance_m: 0.25,
+        max_distance_m: 0.25,
+        sheet_depth: 0.0,
+        wind_gain: 1.0,
+        ..Default::default()
+    };
+    assert_eq!(
+        zero_rain.sanitized(),
+        zero_rain,
+        "user's zero settings must not reset to defaults"
+    );
+    for world_weather in [
+        None,
+        Some(WeatherSound {
+            rain_mm_h: 35.0,
+            wind_m_s: 12.0,
+            exposure: 0.4,
+            ..Default::default()
+        }),
+    ] {
+        let mut mixer = Mixer::new(23);
+        mixer.set_controls(Controls {
+            master: 1.0,
+            ambient: 1.0,
+            effects: 1.0,
+            preset: Preset::Rain,
+        });
+        if let Some(weather) = world_weather {
+            assert!(mixer.command(Command::Weather(Some(weather))));
+            assert!(
+                mixer.command(Command::RainScene(rain_scene::RainScene::patch(
+                    rain_scene::RainMaterial::Leaf
+                )))
+            );
+        }
+        mixer.set_rain_config(zero_rain);
+        let mut samples = vec![[0.0; 2]; SAMPLE_RATE as usize];
+        mixer.render(&mut samples);
+        let rms = (samples
+            .iter()
+            .flatten()
+            .map(|v| f64::from(*v).powi(2))
+            .sum::<f64>()
+            / samples.len() as f64
+            / 2.0)
+            .sqrt();
+        assert!(
+            rms > 0.001,
+            "wind should reproduce the reported residual noise: {rms}"
+        );
+        let mut muted = zero_rain;
+        muted.mute_ambient();
+        mixer.set_rain_config(muted);
+        mixer.render(&mut samples);
+        assert!(
+            samples.iter().skip(4096).flatten().all(|v| v.abs() < 1e-7),
+            "all ambient layers must mute including shelter filters and limiter delay"
+        );
+        assert!(mixer.command(Command::Click(1)));
+        mixer.render(&mut samples);
+        assert!(
+            samples.iter().flatten().any(|v| v.abs() > 0.001),
+            "ambient mute must preserve gameplay effects"
+        );
+    }
+}
+
+#[test]
+fn muting_active_rain_clears_its_reverb_return_even_in_world_weather() {
+    let mut mixer = Mixer::new(13);
+    mixer.set_controls(Controls {
+        master: 1.0,
+        ambient: 1.0,
+        effects: 1.0,
+        ..Default::default()
+    });
+    mixer.command(Command::Weather(Some(WeatherSound {
+        rain_mm_h: 35.0,
+        wind_m_s: 3.0,
+        exposure: 1.0,
+        ..Default::default()
+    })));
+    mixer.command(Command::RainScene(rain_scene::RainScene::patch(
+        rain_scene::RainMaterial::Metal,
+    )));
+    let mut config = rain_tuning::RainConfig {
+        wind_gain: 0.0,
+        insect_gain: 0.0,
+        ..Default::default()
+    };
+    mixer.set_rain_config(config);
+    let mut samples = vec![[0.0; 2]; SAMPLE_RATE as usize];
+    mixer.render(&mut samples);
+    assert!(samples.iter().flatten().any(|v| v.abs() > 0.001));
+    config.gain = 0.0;
+    mixer.set_rain_config(config);
+    mixer.render(&mut samples);
+    assert!(
+        samples.iter().skip(1024).flatten().all(|v| *v == 0.0),
+        "muted rain must not leak through existing reverb"
+    );
+}
