@@ -225,7 +225,7 @@ it excludes active rain, live audio and presentation.
 World rain now uses exposed resident voxel surfaces rather than the default
 material mix. Wood, leaves, soft terrain and hard surfaces feed material-specific
 impacts at their actual distance/bearing. Nearby grass/moss and canopy habitat
-also supply spatial cricket and dog-day cicada ambience, gated by the shared
+also supply spatial cricket and configurable cicada ambience, gated by the shared
 world clock and weather. Leaf cover keeps surrounding weather audible, while
 solid roofs soften it. See the [audio integration and listening probes](../audio/FOUNDATION.md#world-space-rain-surfaces).
 

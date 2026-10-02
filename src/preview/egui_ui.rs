@@ -1,6 +1,7 @@
 //! Headless screenshots of the exact egui proof document used in live play.
 
 use super::*;
+mod audio;
 
 pub fn render_egui_previews(directory: &Path) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(directory)?;
@@ -125,6 +126,11 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         (UiScreen::Settings, "settings"),
         (UiScreen::Graphics, "graphics"),
         (UiScreen::Audio, "audio"),
+        (UiScreen::Audio, "audio-wind"),
+        (UiScreen::Audio, "audio-cicadas"),
+        (UiScreen::Audio, "audio-thunder"),
+        (UiScreen::Audio, "audio-spatial"),
+        (UiScreen::Audio, "audio-weather"),
         (UiScreen::Character, "character"),
         (UiScreen::Admin, "admin"),
         (UiScreen::Package, "package"),
@@ -234,26 +240,34 @@ async fn render(directory: &Path, root: Option<&Path>) -> Result<(), Box<dyn Err
         let mut search = String::new();
         let mut filter = render::game_ui::SlotFilter::All;
         let mut intents = Vec::new();
-        let mut output = context.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(width as f32, height as f32),
-                )),
-                ..Default::default()
-            },
-            |ui| {
-                render::game_ui::draw_screen(
-                    ui,
-                    &frame,
-                    crate::content::catalog(),
-                    atlas.as_ref().map(egui::TextureHandle::id),
-                    &mut search,
-                    &mut filter,
-                    &mut intents,
-                );
-            },
-        );
+        let mut draw = |events| {
+            context.run_ui(
+                egui::RawInput {
+                    events,
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width as f32, height as f32),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    render::game_ui::draw_screen(
+                        ui,
+                        &frame,
+                        crate::content::catalog(),
+                        atlas.as_ref().map(egui::TextureHandle::id),
+                        &mut search,
+                        &mut filter,
+                        &mut intents,
+                    );
+                },
+            )
+        };
+        let mut output = if label.starts_with("audio-") {
+            audio::prepare(label, egui::vec2(width as f32, height as f32), &mut draw)?
+        } else {
+            draw(Vec::new())
+        };
         for (id, deltas) in output.textures_delta.set.drain() {
             for delta in &deltas {
                 renderer.update_texture(&device, &queue, id, delta);

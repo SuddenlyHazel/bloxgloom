@@ -47,6 +47,8 @@ impl Cricket {
     }
 }
 pub(super) struct Crickets {
+    config: crate::audio::rain_tuning::CricketTone,
+    listener: Listener,
     rng: Rng,
     voices: [Cricket; VOICES],
 }
@@ -56,12 +58,31 @@ impl Crickets {
         let mut voices = std::array::from_fn(|_| Cricket::new(&mut rng));
         voices[0].singing = true;
         voices[0].until_chirp = 0;
-        Self { rng, voices }
+        Self {
+            config: Default::default(),
+            listener: Default::default(),
+            rng,
+            voices,
+        }
     }
-    pub fn place(&mut self, sources: &[Option<[f32; 3]>; VOICES], eye: [f32; 3], yaw: f32) {
+    pub fn wake(&mut self) {
+        self.voices[0].singing = true;
+        self.voices[0].until_chirp = 0;
+    }
+    pub fn configure(&mut self, config: crate::audio::rain_tuning::CricketTone) {
+        self.config = config;
+    }
+    pub fn place(
+        &mut self,
+        sources: &[Option<[f32; 3]>; VOICES],
+        eye: [f32; 3],
+        yaw: f32,
+        listener: Listener,
+    ) {
+        self.listener = listener;
         for (voice, source) in self.voices.iter_mut().zip(sources) {
             if let Some(source) = source {
-                super::place(&mut voice.spatial, *source, eye, yaw);
+                super::place(&mut voice.spatial, *source, eye, yaw, listener);
             }
         }
     }
@@ -92,7 +113,8 @@ impl Crickets {
                 let within = voice.chirp_samples % voice.pulse_samples;
                 voice.chirp_samples += 1;
                 if within == 0 {
-                    let pitch = 4500.0 * (1.0 + 0.3 * 0.35 * voice.pitch_offset);
+                    let pitch = self.config.pitch_hz
+                        * (1.0 + 0.3 * self.config.pitch_variation * voice.pitch_offset);
                     voice.oscillator = Oscillator::new(pitch);
                     let end = 2.0 * (TAU * pitch * 0.97 / SAMPLE_RATE).cos();
                     voice.glide =
@@ -109,13 +131,17 @@ impl Crickets {
                             / (voice.sounding_samples - attack) as f32
                     };
                     sample = if *enabled {
-                        1.315 * gain * envelope * (carrier - 0.22 * carrier.powi(3))
+                        1.315
+                            * gain
+                            * self.config.gain
+                            * envelope
+                            * (carrier - 0.22 * carrier.powi(3))
                     } else {
                         0.0
                     };
                 }
             }
-            send += voice.spatial.emit(Listener::default(), bus, sample);
+            send += voice.spatial.emit(self.listener, bus, sample);
         }
         send
     }

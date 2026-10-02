@@ -217,3 +217,26 @@ fn latest_rain_geometry_retries_queue_pressure_and_retires_with_session() {
     assert!(state.rain_scene.is_none());
     assert!(!state.scene_dirty);
 }
+
+#[test]
+fn direct_preview_selection_preserves_world_inputs_and_thunder_rejects_invalid_values() {
+    let config = Config::default();
+    let mut state = State::new(&config);
+    state.update_weather(20.0, 5.0, 0.7, 1.0, 0.8);
+    let original = state.world;
+    state.select_preview(Preset::Rain, &config);
+    assert_eq!(state.preset(), Preset::Rain);
+    assert_eq!(state.world, original);
+    state.sent.borrow_mut().clear();
+    state.test_thunder(1800.0, -0.4);
+    state.test_thunder(f32::NAN, 0.0);
+    state.test_thunder(100.0, 0.0);
+    assert!(
+        matches!(&state.sent.borrow()[..],[Command::Thunder {distance,angle}] if *distance==1800.0 && *angle == -0.4)
+    );
+    state.select_preview(Preset::Off, &config);
+    assert_eq!(state.world, original);
+    assert!(
+        matches!(state.sent.borrow().last(),Some(Command::Weather(Some(w))) if Some(*w)==original)
+    );
+}

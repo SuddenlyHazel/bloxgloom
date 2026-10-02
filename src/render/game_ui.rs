@@ -46,6 +46,8 @@ pub(crate) enum Intent {
     JoinAction,
     CharacterRecipe(Option<crate::appearance::CharacterRecipe>),
     CharacterClip(u8),
+    AudioPreview(u8),
+    AudioThunder { distance: f32, angle: f32 },
     RainAudio(Box<crate::audio::rain_tuning::RainConfig>),
 }
 

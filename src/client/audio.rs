@@ -84,9 +84,18 @@ impl State {
     }
     pub(super) fn change_preview(&mut self, increase: bool, config: &Config) {
         self.preset = Preset::from_index(((self.preset as u8) + if increase { 1 } else { 3 }) % 4);
+        self.select_preview(self.preset, config);
+    }
+    pub(super) fn select_preview(&mut self, preset: Preset, config: &Config) {
+        self.preset = preset;
         self.set_volumes(config);
         self.sent_world = None;
         self.send_weather();
+    }
+    pub(super) fn test_thunder(&self, distance: f32, angle: f32) {
+        if (200.0..=15000.0).contains(&distance) && angle.is_finite() {
+            self.send_command(Command::Thunder { distance, angle });
+        }
     }
     pub(super) fn update_rain_scene(&mut self, scene: RainScene) {
         if self.rain_scene.as_deref() != Some(&scene) {

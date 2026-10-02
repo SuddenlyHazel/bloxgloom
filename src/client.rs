@@ -2198,6 +2198,17 @@ impl ClientApp {
                         session.apply_egui(intent);
                     }
                 }
+                crate::render::GameUiIntent::AudioPreview(index) => {
+                    if self.screen == UiScreen::Audio {
+                        self.audio
+                            .select_preview(crate::audio::Preset::from_index(index), &self.config);
+                    }
+                }
+                crate::render::GameUiIntent::AudioThunder { distance, angle } => {
+                    if self.screen == UiScreen::Audio {
+                        self.audio.test_thunder(distance, angle);
+                    }
+                }
                 crate::render::GameUiIntent::RainAudio(profile) => {
                     if self.screen == UiScreen::Audio {
                         self.config.rain_audio = profile.sanitized();

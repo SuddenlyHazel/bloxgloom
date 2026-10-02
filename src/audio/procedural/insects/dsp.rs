@@ -41,6 +41,11 @@ impl Resonator {
             ..Self::default()
         }
     }
+    pub fn tune(&mut self, frequency: f32, q: f32) {
+        let tuned = Self::new(frequency, q);
+        self.coefficient = tuned.coefficient;
+        self.radius_squared = tuned.radius_squared;
+    }
     pub fn next(&mut self, input: f32) -> f32 {
         let output = self.coefficient * self.state[0] - self.radius_squared * self.state[1] + input
             - self.input[1];

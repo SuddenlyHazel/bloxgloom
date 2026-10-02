@@ -311,6 +311,9 @@ fn live_rain_tuning_persists_and_old_configs_keep_native_defaults() {
     config.rain_audio.bed_gain = 0.03;
     config.rain_audio.drop_gain = 1.5;
     config.rain_audio.surfaces[9].lowpass_hz = 2300.0;
+    config.rain_audio.advanced.wind.brightness = 2.0;
+    config.rain_audio.advanced.cicadas.species = crate::audio::rain_tuning::CicadaSpecies::Pharaoh;
+    config.rain_audio.advanced.preview.manual = true;
     config.save(&path).unwrap();
     assert_eq!(Config::load(&path), config);
     assert_eq!(

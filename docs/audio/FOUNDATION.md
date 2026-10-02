@@ -1,7 +1,7 @@
 # Client audio foundation
 
 Bloxgloom now has native client audio output, a bounded mixer, prepared WAV clips
-and procedural rain, wind, thunder, crickets and dog-day cicadas. The audio worker owns device discovery,
+and procedural rain, wind, thunder, crickets and ten cicada species. The audio worker owns device discovery,
 synthesis, mixing and resampling. The device callback consumes prepared stereo
 frames from a lock-free ring, converts the device sample format and counts errors.
 It does not run Luau, decode files, allocate, log or acquire application locks.
@@ -38,6 +38,27 @@ array's name/order mapping. Paste it into a tuning discussion to propose default
 **Reset tuning defaults** resets the rain profile and wind/insect gains while
 keeping the Master/Ambient/Effects volume mix. Previous local profiles retain
 their rain values and receive defaults for the new wind/insect controls.
+
+Additional collapsible sections expose wind brightness, rumble, stereo width and
+directional balance; separate cricket/cicada volumes, pitch, call/click rates,
+chorus, placement and weather thresholds; thunder volume, reverb gain/decay and
+preview strike scatter; ear spacing, head shadow and rear filtering; and separate
+ambient reverb decay, damping and returns. These apply live on the synthesis
+worker. Ongoing drops retain their oscillators while spatial changes retarget them.
+World insects retain real habitat positions: distance controls gate those sources,
+while source spread applies only to preview placement.
+
+**Audition crickets** and **Audition cicadas** start a dry, calm, warm held-weather
+preview at night or in daylight. **Trigger thunder** uses the editable test distance
+and bearing, even with ambient preview Off. The **Local weather preview lab** has
+held weather, storm climate/gusts and the full cell shape controls. **Stop preview /
+follow world** restores server-driven audio. These weather controls never alter
+world weather or send weather commands to the server.
+
+All additional controls are included under `rain.advanced` in clipboard exports and
+local preferences. Missing sections receive defaults without changing existing rain
+values. Reset tuning defaults resets all sound profiles and preview parameters;
+Master/Ambient/Effects remain unchanged.
 
 Render reproducible stereo PCM without an audio device:
 
@@ -102,7 +123,7 @@ removes voices and clears procedural/reverb/limiter state.
 | Prepared device ring | 4,096 stereo frames; normal fill target roughly 1,024 |
 | Worker mix block | 256 frames |
 | Rain impacts | 128 active voices, four modes per impact |
-| Insect individuals | Four crickets and four dog-day cicadas, separate from clip/rain pools |
+| Insect individuals | Four crickets and four cicadas of the selected species, separate from clip/rain pools |
 | Configured base rain rate | Up to 2,000/s; default 900/s; gusts modulate arrivals |
 | Thunder | Two strikes, 256 segments each, six echo reflectors |
 | Sound-only storm cells | Four |
@@ -135,13 +156,15 @@ Ported models include:
 - Tortuous-channel thunder with N-wave pulses, distance/air filtering, seeded
   echo reflectors, stereo panning and quarter-rate reverb.
 
-The storm driver adapts the upstream **default** squall shape: passing rain cells,
-a trailing rain band, gust fronts and lightning scattered around each cell. Strikes
-outside the 15 km audible range are skipped, rather than moved nearer. It uses a 60× preview clock and
-does not drive the live insect layers or model world temperature/cooling.
-Local previews retain the upstream default material mix; live world rain uses
-the voxel surface integration below. Outdoor shelter and synchronized weather
-are supplied by the client presentation path.
+The configurable storm driver includes passing cells, heavy cores, trailing rain,
+gust fronts, outflow, temperature/cooling and lightning scattered around each cell.
+The preview clock defaults to 60×. Its weather, climate and shape controls apply
+only to local audio previews; server weather remains authoritative. A held-weather
+mode lets previews use explicit rain, wind, temperature and lightning values.
+Strikes outside the 15 km audible range are skipped rather than moved nearer.
+Local previews retain the default material mix; live rain and insect placement use
+exposed world blocks. Outdoor shelter and synchronized weather come from the client
+presentation path.
 
 Thunder follows the upstream convention of starting at its first audible arrival;
 it preserves channel-relative propagation timing, but does not wait the entire
@@ -149,9 +172,8 @@ strike distance divided by sound speed before playback. Echo reflectors are seed
 synthetic scenery, without voxel-world acoustic tracing. Rain's head model is
 analytic, without measured HRTFs, elevation or live head tracking.
 
-Not ported: standalone white/pink noise layers, hum generators, the other nine
-cicada species, the source desktop GUI/Arduino host and every configurable storm
-control. Cricket and dog-day cicada integration is described below.
+Not ported: standalone white/pink noise layers, hum generators and the source
+desktop GUI/Arduino host. Insect integration is described below.
 The port is a documented weather-synthesis subset, rather than full API parity.
 
 ## Verification and next work
@@ -357,14 +379,17 @@ silence. Subjective quality is for the listening pass; these checks verify behav
 ## Spatial insect ambience
 
 The native world ambience now includes four persistent cricket individuals and
-four dog-day cicadas adapted from the same pinned upstream revision. Crickets
+four cicadas of a selected species adapted from the same pinned upstream revision. Crickets
 retain three-to-five-pulse chirps, pitch differences, a falling carrier per pulse,
 slightly different/jittered call periods and exponentially distributed singing
 and silent bouts. Dog-day cicadas retain their resonant tymbal clicks, jittered
 click intervals, 10–18-second held calls, 2–4 Hz throbbing, swells, falling pitch
 and click rate during wind-down, random rests and a diffuse stereo chorus. Both
-send to the shared rain reverb and use the same ear-delay/head/rear-filter path.
-The other nine upstream cicada species remain a separate extension.
+send to their own reverb and use the same ear-delay/head/rear-filter path.
+The species selector also includes Minminzemi, Higurashi, Aburazemi, Niiniizemi,
+Kumazemi, Pharaoh, Scissor grinder, Cigale grise and Green grocer. Each uses its
+upstream phrase, click rate and body resonance; selecting a species sets its natural
+pitch, which remains editable.
 
 Known exposed grass/moss tops supply cricket habitat; leaf canopy tops supply
 cicada habitat. Snow, sand, hard roofs and unknown chunks do not invent insects.
@@ -465,7 +490,7 @@ See [the current Luau contract](../../SCRIPTING.md#weather-hooks-and-block-acous
 and [rain collector example](../../fixtures/rain-collector/README.md). A reproducible
 `audio-material-preview custom` renders that collector's profile through the
 same production mixer. This adds material/habitat authoring, not new full-world
-acoustic tracing or additional cicada synthesis families.
+acoustic tracing. The expanded local tuning controls and species are described above.
 
 
 The collector custom-profile probe rendered eight seconds of stereo audio in

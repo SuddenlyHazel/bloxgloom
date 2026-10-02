@@ -1,4 +1,5 @@
 //! Live rain controls; all values travel through the client's local config worker.
+mod advanced;
 use super::*;
 use crate::audio::rain_tuning::{RainConfig, Surface};
 use std::ops::RangeInclusive;
@@ -59,6 +60,12 @@ pub(super) fn draw(ui: &mut egui::Ui, frame: &UiFrame<'_>, intents: &mut Vec<Int
             });
         }
     });
+    advanced::draw(
+        ui,
+        &mut config.advanced,
+        frame.settings.audio_preset,
+        intents,
+    );
     if config != frame.settings.rain_audio {
         intents.push(Intent::RainAudio(Box::new(config.sanitized())));
     }

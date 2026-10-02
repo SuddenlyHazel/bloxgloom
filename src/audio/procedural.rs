@@ -82,11 +82,13 @@ impl Procedural {
             .set_listener(self.listener_position, self.listener_yaw);
         self.rain.set_scene(self.world.map(|_| self.scene.clone()));
         self.wind = Wind::new(self.seed);
-        self.storm = Storm::new(self.seed);
+        self.storm = Storm::with_config(self.seed, self.rain_config.advanced.preview);
+        self.wind.configure(self.rain_config.advanced.wind);
         self.rain_reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
         self.insect_reverb = Reverb::new([739, 953, 1151, 1327, 1471, 1663], 44_100.0, 0.65, 0.16);
         self.frame = 0;
         self.lightning_started = self.thunder.active_voices() != 0;
+        self.configure_layers();
     }
     pub fn set_world(&mut self, weather: Option<WeatherSound>) {
         self.world = weather.map(WeatherSound::sanitized);
@@ -97,6 +99,19 @@ impl Procedural {
         self.rain
             .configure(self.rain_config)
             .expect("sanitized rain profile");
+        self.configure_layers();
+        self.frame = 0;
+    }
+    fn configure_layers(&mut self) {
+        let a = self.rain_config.advanced;
+        self.wind.configure(a.wind);
+        self.insects.configure(a);
+        self.storm.configure(a.preview);
+        self.thunder.configure(a.thunder);
+        self.rain_reverb
+            .configure(44_100.0, a.reverb.rain_decay_s, a.reverb.rain_damping);
+        self.insect_reverb
+            .configure(44_100.0, a.reverb.insect_decay_s, a.reverb.insect_damping);
     }
     pub fn set_scene(&mut self, scene: Arc<RainScene>) -> bool {
         if !scene.valid() {
@@ -118,20 +133,25 @@ impl Procedural {
         self.world.is_some()
     }
     fn follow(&mut self, preset: Preset) {
-        self.weather = match preset {
-            Preset::Storm => self.storm.tick(),
-            Preset::Rain => Weather {
-                rain: 10.0,
-                wind: 3.0,
-                mean_wind: 3.0,
-                ..Weather::default()
-            },
-            Preset::Wind => Weather {
-                wind: 10.0,
-                mean_wind: 10.0,
-                ..Weather::default()
-            },
-            Preset::Off => Weather::default(),
+        let preview = self.rain_config.advanced.preview;
+        self.weather = if self.world.is_none() && preview.manual && preset != Preset::Off {
+            self.storm.fixed_tick()
+        } else {
+            match preset {
+                Preset::Storm => self.storm.tick(),
+                Preset::Rain => Weather {
+                    rain: 10.0,
+                    wind: 3.0,
+                    mean_wind: 3.0,
+                    ..Weather::default()
+                },
+                Preset::Wind => Weather {
+                    wind: 10.0,
+                    mean_wind: 10.0,
+                    ..Weather::default()
+                },
+                Preset::Off => Weather::default(),
+            }
         };
         if let Some(target) = self.world {
             // 100 Hz control clock: half-second convergence, independent of blocks.
@@ -152,8 +172,27 @@ impl Procedural {
         }
         self.rain
             .set_listener(self.listener_position, self.listener_yaw);
-        self.insects
-            .follow(self.world, self.listener_position, self.listener_yaw);
+        if self.world.is_some() {
+            self.insects
+                .follow(self.world, self.listener_position, self.listener_yaw);
+        } else {
+            self.insects.preview(
+                WeatherSound {
+                    rain_mm_h: self.weather.rain,
+                    wind_m_s: self.weather.wind,
+                    bearing: self.weather.bearing,
+                    daylight: preview.fixed.daylight,
+                    exposure: 1.0,
+                },
+                if preset == Preset::Storm || preview.manual {
+                    self.weather.temperature
+                } else {
+                    preview.fixed.temperature_c
+                },
+                self.listener_position,
+                self.listener_yaw,
+            );
+        }
         let w = self.weather;
         // Values come from bounded native presets, not unvalidated author input.
         self.rain
@@ -164,7 +203,7 @@ impl Procedural {
                 wind_bearing_rad: w.bearing,
             })
             .expect("bounded native weather");
-        self.wind.follow(w.wind, w.bearing);
+        self.wind.follow(w.wind, w.bearing - self.listener_yaw);
     }
     pub fn trigger_thunder(&mut self, distance: f32, angle: f32) -> bool {
         let accepted = self.thunder.trigger(distance, angle);
@@ -188,22 +227,27 @@ impl Procedural {
             self.follow(preset);
         }
         self.frame = (self.frame + 1) % 441;
-        if self.world.is_none() && preset == Preset::Storm && self.weather.lightning > 0.0 {
+        if self.world.is_none()
+            && (preset == Preset::Storm || self.rain_config.advanced.preview.manual)
+            && self.weather.lightning > 0.0
+        {
             let strike = !self.lightning_started
                 || lightning_hit(self.lightning.next_u32(), self.weather.lightning);
             self.lightning_started = true;
             if strike {
                 let x = self.weather.distance * self.weather.angle.sin()
-                    + 4000.0 * self.lightning.gaussian();
+                    + self.rain_config.advanced.thunder.scatter_m * self.lightning.gaussian();
                 let y = self.weather.distance * self.weather.angle.cos()
-                    + 4000.0 * self.lightning.gaussian();
+                    + self.rain_config.advanced.thunder.scatter_m * self.lightning.gaussian();
                 let distance = x.hypot(y).max(200.0);
                 if distance <= 15_000.0 {
                     self.thunder.trigger(distance, x.atan2(y));
                 }
             }
         }
-        let (rain, send) = self.rain.next(Listener::default());
+        let (rain, send) = self
+            .rain
+            .next(Listener::from(self.rain_config.advanced.listener));
         let wind = self.wind.next();
         let (bugs, insect_send) = self.insects.next();
         // Separate returns let each layer mute its existing reflections too.
@@ -213,7 +257,7 @@ impl Procedural {
             && self.rain_config.drop_gain > 0.0
             && self.rain_config.reverb_gain > 0.0
         {
-            0.12
+            self.rain_config.advanced.reverb.rain_return
         } else {
             0.0
         };
@@ -222,7 +266,8 @@ impl Procedural {
         let ambient = std::array::from_fn(|i| {
             let sample = rain[i]
                 + self.rain_config.wind_gain * wind[i]
-                + self.rain_config.insect_gain * (bugs[i] + 0.12 * insect_wet[i])
+                + self.rain_config.insect_gain
+                    * (bugs[i] + self.rain_config.advanced.reverb.insect_return * insect_wet[i])
                 + rain_return * rain_wet[i];
             // Sheltered listeners still hear muted outdoor weather; this is a
             // presentation approximation rather than voxel acoustic tracing.

@@ -16,6 +16,11 @@ impl Reverb {
             alpha,
         }
     }
+    pub fn configure(&mut self, rate: f32, decay: f32, alpha: f32) {
+        self.feedback =
+            std::array::from_fn(|i| 0.001f32.powf(self.lines[i].len() as f32 / (decay * rate)));
+        self.alpha = alpha;
+    }
     pub fn next(&mut self, send: f32) -> [f32; 2] {
         for i in 0..6 {
             self.damping[i] += self.alpha * (self.lines[i][self.positions[i]] - self.damping[i]);
@@ -44,3 +49,6 @@ impl Reverb {
         ]
     }
 }
+
+#[cfg(test)]
+mod tests;

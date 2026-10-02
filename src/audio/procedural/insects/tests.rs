@@ -85,3 +85,67 @@ fn habitat_sources_are_stable_under_scene_order_and_listener_movement() {
     energy(&mut b, 8);
     assert!(energy(&mut b, 1) < 1e-10);
 }
+
+#[test]
+fn insect_knobs_control_real_habitats_and_preview_uses_only_local_sources() {
+    let mut insects = Insects::new(42);
+    let night = WeatherSound {
+        exposure: 1.0,
+        ..Default::default()
+    };
+    let mut config = crate::audio::rain_tuning::Advanced::default();
+    config.crickets.tone.min_temperature_c = 35.0;
+    insects.configure(config);
+    insects.set_scene(&RainScene::patch(RainMaterial::Dirt));
+    insects.follow(Some(night), [0.0, 1.6, 0.0], 0.0);
+    assert!(!insects.allowed[0]);
+    config.crickets.tone.min_temperature_c = 13.0;
+    config.crickets.tone.call_rate_scale = 2.0;
+    config.crickets.placement.max_distance_m = 0.25;
+    insects.configure(config);
+    insects.follow(Some(night), [0.0, 1.6, 0.0], 0.0);
+    assert_eq!(insects.enabled[0], [false; VOICES]);
+    let world_sources = insects.cricket_sources;
+    config.crickets.placement.min_distance_m = 2.0;
+    config.crickets.placement.max_distance_m = 4.0;
+    insects.configure(config);
+    insects.preview(night, 30.0, [0.0, 1.6, 0.0], 0.0);
+    assert_eq!(
+        world_sources, insects.cricket_sources,
+        "preview must preserve world anchors"
+    );
+    assert_eq!(insects.call_rate, 2.0 * (7.2 * 30.0 - 32.0) / 60.0);
+    assert!(energy(&mut insects, 2) > 0.001);
+    insects.set_scene(&RainScene::default());
+    insects.follow(Some(night), [0.0, 1.6, 0.0], 0.0);
+    assert_eq!(insects.enabled, [[false; VOICES]; 2]);
+}
+
+#[test]
+fn cricket_pitch_knob_changes_actual_call_frequency() {
+    let count = |pitch| {
+        let mut insects = Insects::new(42);
+        let mut config = crate::audio::rain_tuning::Advanced::default();
+        config.crickets.tone.pitch_hz = pitch;
+        config.crickets.tone.pitch_variation = 0.0;
+        insects.configure(config);
+        insects.set_scene(&RainScene::patch(RainMaterial::Dirt));
+        insects.follow(Some(WeatherSound::default()), [0.0, 1.6, 0.0], 0.0);
+        let mut crossings = 0;
+        let mut previous = 0.0;
+        for _ in 0..22050 {
+            let v = insects.next().0[0];
+            if v.abs() > 0.000001 {
+                if v * previous < 0.0 {
+                    crossings += 1;
+                }
+                previous = v;
+            }
+        }
+        crossings
+    };
+    let low = count(2000.0);
+    let high = count(8000.0);
+    assert!(low > 100);
+    assert!(high > low * 2, "{low} vs {high}");
+}

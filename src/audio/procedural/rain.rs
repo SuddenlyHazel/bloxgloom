@@ -61,6 +61,7 @@ struct DropVoice {
     distance_m: f32,
     world_angle_rad: f32,
     listener_yaw: f32,
+    listener: Listener,
     lowpass_alpha: f32,
     lowpass: [f32; 2],
     tail: u32,
@@ -439,6 +440,7 @@ impl Rain {
             distance_m: drop.distance_m,
             world_angle_rad: drop.angle_rad + self.scene.yaw,
             listener_yaw: self.scene.yaw,
+            listener,
             lowpass_alpha,
             lowpass: [0.0; 2],
             tail: 256,
@@ -541,13 +543,14 @@ impl Rain {
         let mut index = 0;
         while index < self.voices.len() {
             let voice = &mut self.voices[index];
-            if voice.listener_yaw != self.scene.yaw {
+            if voice.listener_yaw != self.scene.yaw || voice.listener != listener {
                 voice.spatial.retarget(
                     voice.distance_m,
                     voice.world_angle_rad - self.scene.yaw,
                     listener,
                 );
                 voice.listener_yaw = self.scene.yaw;
+                voice.listener = listener;
             }
             let mut source = 0.0;
             for mode in &mut voice.modes {

@@ -72,6 +72,7 @@ impl Default for Voice {
 /// Two fixed strike voices. `next` performs no allocation or locking.
 /// A full pool rejects a strike rather than replacing a sounding channel.
 pub struct Thunder {
+    config: crate::audio::rain_tuning::ThunderProfile,
     rng: Rng,
     echo_rng: Rng,
     voices: [Voice; 2],
@@ -96,6 +97,7 @@ impl Thunder {
             }
         });
         Self {
+            config: Default::default(),
             rng: Rng::new(seed, 0x2545_f491),
             echo_rng: Rng::new(seed, 0x6a09_e667),
             voices: std::array::from_fn(|_| Voice::default()),
@@ -107,6 +109,11 @@ impl Thunder {
             reverb_previous: [0.0; 2],
             reverb_current: [0.0; 2],
         }
+    }
+    pub fn configure(&mut self, config: crate::audio::rain_tuning::ThunderProfile) {
+        self.config = config;
+        self.reverb
+            .configure(RATE / 4.0, config.reverb_decay_s, 0.5);
     }
     pub fn rejected(&self) -> u64 {
         self.rejected
@@ -159,11 +166,11 @@ impl Thunder {
         }
         let blend = self.reverb_phase as f32 / 4.0;
         for (channel, sample) in sum.iter_mut().enumerate() {
-            *sample += 0.5
+            *sample += self.config.reverb_gain
                 * (self.reverb_previous[channel]
                     + blend * (self.reverb_current[channel] - self.reverb_previous[channel]));
         }
-        sum.map(limit)
+        sum.map(|x| limit(x * self.config.gain))
     }
 }
 

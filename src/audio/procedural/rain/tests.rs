@@ -316,3 +316,32 @@ fn drop_volume_and_reverb_are_independent_of_the_diffuse_bed() {
     assert!(bed_energy > 0.0);
     assert!(drop_energy > 0.0);
 }
+
+#[test]
+fn changing_spatial_hearing_retargets_sounding_drops_without_respawning() {
+    let mut rain = Rain::new(23);
+    rain.start_drop(drop(1), Listener::default()).unwrap();
+    for _ in 0..8 {
+        rain.next(Listener::default());
+    }
+    let centered = Listener {
+        width_m: 0.0,
+        head_amount: 0.0,
+        rear_amount: 0.0,
+    };
+    rain.next(centered);
+    assert_eq!(rain.stats.generated, 1);
+    assert_eq!(rain.voices[0].listener, centered);
+    let mut spatial = rain.voices[0].spatial;
+    let mut bus = Bus::default();
+    let mut energy = [0.0; 2];
+    for n in 0..256 {
+        spatial.emit(centered, &mut bus, if n == 0 { 1.0 } else { 0.0 });
+        let sample = bus.next();
+        for ear in 0..2 {
+            energy[ear] += sample[ear].powi(2);
+        }
+    }
+    assert_eq!(energy[0], energy[1]);
+    assert!(energy[0] > 0.0);
+}

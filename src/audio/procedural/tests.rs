@@ -243,3 +243,51 @@ fn insect_volume_mutes_active_calls_and_their_own_reflections() {
         }
     }
 }
+
+#[test]
+fn local_weather_lab_cannot_override_world_weather_or_schedule_world_lightning() {
+    let mut engine = Procedural::new(7);
+    let mut config = crate::audio::rain_tuning::RainConfig::default();
+    config.advanced.preview.manual = true;
+    config.advanced.preview.fixed.rain_mm_h = 150.0;
+    config.advanced.preview.fixed.wind_m_s = 35.0;
+    config.advanced.preview.fixed.lightning_per_min = 30.0;
+    engine.set_rain_config(config);
+    engine.set_world(Some(WeatherSound {
+        rain_mm_h: 0.0,
+        wind_m_s: 0.0,
+        ..Default::default()
+    }));
+    for _ in 0..1000 {
+        assert_eq!(engine.next(Preset::Storm).1, [0.0; 2]);
+    }
+    assert_eq!(engine.weather.rain, 0.0);
+    assert_eq!(engine.weather.wind, 0.0);
+    assert_eq!(engine.weather.lightning, 0.0);
+    engine.set_world(None);
+    engine.frame = 0;
+    engine.next(Preset::Rain);
+    assert_eq!(engine.weather.rain, 150.0);
+    assert!(engine.weather.wind > 0.0);
+}
+
+#[test]
+fn thunder_volume_mutes_existing_voices_and_returns() {
+    let mut engine = Procedural::new(27);
+    assert!(engine.trigger_thunder(200.0, 0.7));
+    let mut audible = false;
+    for _ in 0..44100 {
+        audible |= engine.next(Preset::Off).1.iter().any(|v| v.abs() > 0.0001);
+    }
+    assert!(audible);
+    let mut config = engine.rain_config;
+    config.advanced.thunder.gain = 0.0;
+    engine.set_rain_config(config);
+    for _ in 0..44100 {
+        assert_eq!(engine.next(Preset::Off).1, [0.0; 2]);
+    }
+    config.advanced.thunder.gain = 1.0;
+    config.advanced.thunder.reverb_gain = 0.0;
+    engine.set_rain_config(config);
+    assert!(engine.next(Preset::Off).1.iter().all(|v| v.is_finite()));
+}

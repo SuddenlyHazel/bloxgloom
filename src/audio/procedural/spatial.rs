@@ -2,11 +2,20 @@
 //! MIT Copyright 2026 kvmet; see third-party/NoiseMachine-LICENSE.
 use super::dsp::SAMPLE_RATE;
 use std::f32::consts::PI;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Listener {
     pub width_m: f32,
     pub head_amount: f32,
     pub rear_amount: f32,
+}
+impl From<crate::audio::rain_tuning::ListenerProfile> for Listener {
+    fn from(p: crate::audio::rain_tuning::ListenerProfile) -> Self {
+        Self {
+            width_m: p.width_m,
+            head_amount: p.head_amount,
+            rear_amount: p.rear_amount,
+        }
+    }
 }
 impl Default for Listener {
     fn default() -> Self {

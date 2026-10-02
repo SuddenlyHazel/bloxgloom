@@ -311,6 +311,15 @@ fn rain_audio_copy_exports_current_tuning_and_reset_dispatches_live_defaults() {
             ..Default::default()
         };
         frame.settings.rain_audio.bed_gain = 0.037;
+        frame.settings.rain_audio.advanced.cicadas.species =
+            crate::audio::rain_tuning::CicadaSpecies::Higurashi;
+        frame
+            .settings
+            .rain_audio
+            .advanced
+            .preview
+            .climate
+            .gust_intensity = 0.8;
         frame.settings.rain_audio.surfaces[9].modes[0].frequency_hz = 470.0;
         let draw = |events| {
             let mut intents = Vec::new();

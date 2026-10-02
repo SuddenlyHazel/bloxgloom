@@ -1,5 +1,7 @@
 //! Persistent local rain profiles and companion ambient gains. Never affects world weather.
 use crate::audio::rain_scene::RAIN_MATERIALS;
+mod advanced;
+pub use advanced::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SurfaceMode {
@@ -68,6 +70,8 @@ impl Surface {
 }
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RainConfig {
+    #[serde(default)]
+    pub advanced: Advanced,
     pub gain: f32,
     pub drop_gain: f32,
     pub reverb_gain: f32,
@@ -99,6 +103,7 @@ impl Default for RainConfig {
         water.bubble_gain = [1.2, 2.5];
         water.bubble_decay = [3.0, 8.0];
         Self {
+            advanced: Advanced::default(),
             gain: 2.35,
             drop_gain: 3.25,
             reverb_gain: 1.0,
@@ -204,7 +209,8 @@ pub(crate) fn range(value: f32, low: f32, high: f32) -> bool {
 }
 impl RainConfig {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
-        if !range(self.wind_gain, 0.0, 4.0)
+        if !self.advanced.valid()
+            || !range(self.wind_gain, 0.0, 4.0)
             || !range(self.insect_gain, 0.0, 4.0)
             || !range(self.drop_gain, 0.0, 4.0)
             || !range(self.reverb_gain, 0.0, 4.0)
@@ -257,6 +263,7 @@ impl RainConfig {
 impl RainConfig {
     /// Restore display names and reject unsafe/nonfinite DSP parameters as one profile.
     pub(crate) fn sanitized(mut self) -> Self {
+        self.advanced = self.advanced.sanitized();
         for (surface, default) in self.surfaces.iter_mut().zip(Self::default().surfaces) {
             surface.name = default.name;
         }

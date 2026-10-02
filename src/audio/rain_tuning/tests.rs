@@ -76,3 +76,29 @@ fn previous_exports_preserve_zero_rain_and_gain_companion_controls() {
         "mute must preserve tuned material profiles"
     );
 }
+
+#[test]
+fn advanced_profiles_export_and_old_preferences_fill_missing_sections() {
+    let mut config = RainConfig::default();
+    config.advanced.cicadas.species = CicadaSpecies::Higurashi;
+    config.advanced.cicadas.tone.pitch_hz = 6000.0;
+    config.advanced.wind.brightness = 2.0;
+    config.advanced.preview.manual = true;
+    config.advanced.preview.fixed.rain_mm_h = 0.0;
+    let exported: serde_json::Value = serde_json::from_str(&config.export(1.0, 1.0, 1.0)).unwrap();
+    let decoded: RainConfig = serde_json::from_value(exported["rain"].clone()).unwrap();
+    assert_eq!(decoded.sanitized(), config);
+    let mut old = exported["rain"].clone();
+    old.as_object_mut().unwrap().remove("advanced");
+    let decoded: RainConfig = serde_json::from_value(old).unwrap();
+    assert_eq!(decoded.sanitized().advanced, Advanced::default());
+    assert_eq!(decoded.sanitized().gain, config.gain);
+    config.advanced.wind.brightness = f32::NAN;
+    config.advanced.preview.shape.build_share = 0.9;
+    config.advanced.preview.shape.decay_share = 0.9;
+    let sanitized = config.sanitized();
+    assert_eq!(sanitized.advanced.wind, WindProfile::default());
+    assert_eq!(sanitized.advanced.preview.shape, StormShape::default());
+    assert_eq!(sanitized.advanced.cicadas, config.advanced.cicadas);
+    assert_eq!(sanitized.gain, 2.35);
+}
