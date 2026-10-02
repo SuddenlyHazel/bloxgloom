@@ -10,7 +10,13 @@ struct Voice {
     gain: f32,
     pitch: f32,
     expires: Option<Instant>,
+    pending: Option<Arc<crate::audio::Clip>>,
+    looping: bool,
+    deadline: Instant,
 }
+
+#[cfg(test)]
+mod tests;
 #[derive(Default)]
 pub(super) struct Voices {
     clips: Arc<crate::audio::sounds::Clips>,
@@ -49,7 +55,9 @@ impl State {
             let key = (server, event.owner, event.voice);
             match event.kind {
                 Kind::Stop => {
-                    if let Some(voice) = self.voices.active.remove(&key) {
+                    if let Some(voice) = self.voices.active.remove(&key)
+                        && voice.pending.is_none()
+                    {
                         self.voices.stopping.insert(voice.id);
                     }
                 }
@@ -60,12 +68,14 @@ impl State {
                 } => {
                     if let Some(v) = self.voices.active.get(&key) {
                         let at = position.unwrap_or(v.position);
-                        if self.send_command(Command::Update {
-                            id: v.id,
-                            position: Some(at),
-                            gain,
-                            pitch,
-                        }) {
+                        if v.pending.is_some()
+                            || self.send_command(Command::Update {
+                                id: v.id,
+                                position: Some(at),
+                                gain,
+                                pitch,
+                            })
+                        {
                             let v = self.voices.active.get_mut(&key).unwrap();
                             if let Some(expiry) = v.expires {
                                 v.expires = Some(
@@ -96,11 +106,15 @@ impl State {
                         if looping {
                             continue;
                         }
-                        if let Some(v) = self.voices.active.remove(&key) {
+                        if let Some(v) = self.voices.active.remove(&key)
+                            && v.pending.is_none()
+                        {
                             self.voices.stopping.insert(v.id);
                         }
                     }
-                    if self.voices.active.len() + self.voices.stopping.len() >= 32 {
+                    if self.voices.active.len() + self.voices.stopping.len()
+                        >= crate::audio::MAX_CLIP_VOICES
+                    {
                         continue;
                     }
                     let Some(next) = self.next_voice.checked_add(1) else {
@@ -109,17 +123,20 @@ impl State {
                     let id = self.next_voice;
                     self.next_voice = next;
                     let clip = Arc::clone(&self.voices.clips[&clip]);
-                    let expires = (!looping).then(|| {
+                    let waiting = self.obstruction.enabled();
+                    let expires = (!waiting && !looping).then(|| {
                         now + Duration::from_secs_f32(clip.duration_seconds() / pitch + 0.1)
                     });
-                    if self.send_command(Command::Play {
-                        id,
-                        clip,
-                        position: Some(position),
-                        gain,
-                        pitch,
-                        looping,
-                    }) {
+                    if waiting
+                        || self.send_command(Command::Play {
+                            id,
+                            clip: clip.clone(),
+                            position: Some(position),
+                            gain,
+                            pitch,
+                            looping,
+                        })
+                    {
                         self.voices.active.insert(
                             key,
                             Voice {
@@ -129,6 +146,9 @@ impl State {
                                 gain,
                                 pitch,
                                 expires,
+                                pending: waiting.then_some(clip),
+                                looping,
+                                deadline: now + Duration::from_millis(100),
                             },
                         );
                     }
@@ -181,20 +201,93 @@ impl State {
         for (key, stop) in remove {
             if let Some(v) = self.voices.active.remove(&key)
                 && stop
+                && v.pending.is_none()
             {
                 self.voices.stopping.insert(v.id);
             }
         }
         for (key, at, id, gain, pitch) in moves {
-            if self.send_command(Command::Update {
-                id,
-                position: Some(at),
-                gain,
-                pitch,
-            }) {
+            if self.voices.active[&key].pending.is_some()
+                || self.send_command(Command::Update {
+                    id,
+                    position: Some(at),
+                    gain,
+                    pitch,
+                })
+            {
                 self.voices.active.get_mut(&key).unwrap().position = at;
             }
         }
         self.flush_stops();
+    }
+
+    pub(super) fn obstruction_sources(&self) -> Vec<super::obstruction::Source> {
+        self.voices
+            .active
+            .values()
+            .map(|voice| super::obstruction::Source {
+                id: voice.id,
+                position: voice.position,
+            })
+            .collect()
+    }
+
+    pub(super) fn apply_obstruction(
+        &mut self,
+        id: u64,
+        position: [f32; 3],
+        gain: f32,
+        lowpass_hz: f32,
+        now: Instant,
+    ) -> bool {
+        let Some((key, voice)) = self.voices.active.iter().find(|(_, voice)| voice.id == id) else {
+            return false;
+        };
+        if !super::obstruction_state::position_matches(voice.position, position) {
+            return false;
+        }
+        let key = key.clone();
+        if let Some(clip) = &voice.pending {
+            let expires = (!voice.looping).then(|| {
+                now + Duration::from_secs_f32(clip.duration_seconds() / voice.pitch + 0.1)
+            });
+            if !self.send_command(Command::PlayObstructed {
+                clip: clip.clone(),
+                position: voice.position,
+                gain: voice.gain,
+                pitch: voice.pitch,
+                looping: voice.looping,
+                id,
+                transmission: gain,
+                lowpass_hz,
+            }) {
+                return false;
+            }
+            let voice = self.voices.active.get_mut(&key).unwrap();
+            voice.pending = None;
+            voice.expires = expires;
+            true
+        } else {
+            self.send_command(Command::Obstruction {
+                id,
+                gain,
+                lowpass_hz,
+            })
+        }
+    }
+
+    pub(super) fn start_overdue_obstruction(&mut self, now: Instant) {
+        let overdue: Vec<_> = self
+            .voices
+            .active
+            .values()
+            .filter(|voice| voice.pending.is_some() && now >= voice.deadline)
+            .map(|voice| (voice.id, voice.position))
+            .collect();
+        for (id, position) in overdue {
+            // Missing/slow geometry never produces an initially unfiltered
+            // one-shot. A subsequent worker result can smoothly reopen it.
+            self.apply_obstruction(id, position, 0.35, 2400.0, now);
+        }
     }
 }

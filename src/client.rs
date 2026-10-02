@@ -1818,6 +1818,12 @@ impl ClientApp {
         for batch in sounds.chunks(32) {
             self.play_sounds(false, None, batch.to_vec(), now);
         }
+        self.audio.poll_obstruction(
+            self.camera().position.to_array(),
+            &self.chunks,
+            &self.catalog,
+            now,
+        );
         let mut parameter_updates = self
             .package_ui
             .as_mut()

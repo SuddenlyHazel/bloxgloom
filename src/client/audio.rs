@@ -7,9 +7,12 @@ use crate::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod obstruction;
+mod obstruction_state;
 mod voices;
 pub(super) struct State {
     voices: voices::Voices,
+    obstruction: obstruction_state::State,
     #[cfg(test)]
     sent: std::cell::RefCell<Vec<Command>>,
     #[cfg(test)]
@@ -36,6 +39,7 @@ impl State {
         Self {
             output,
             voices: Default::default(),
+            obstruction: obstruction_state::State::new(),
             #[cfg(test)]
             sent: Default::default(),
             #[cfg(test)]
@@ -171,6 +175,7 @@ impl State {
     }
     pub(super) fn retire_session(&mut self, config: &Config) {
         self.voices = Default::default();
+        self.obstruction.retire();
         self.preset = Preset::Off;
         self.world = None;
         self.rain_scene = None;

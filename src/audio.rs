@@ -2,6 +2,7 @@
 mod clip;
 mod limiter;
 mod mixer;
+mod obstruction;
 pub(crate) mod output;
 mod preview;
 mod procedural;
@@ -15,6 +16,7 @@ pub(crate) use preview::{
 };
 use std::sync::Arc;
 pub(crate) const SAMPLE_RATE: u32 = 44_100;
+pub(crate) const MAX_CLIP_VOICES: usize = 32;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum Preset {
@@ -125,11 +127,29 @@ pub(crate) enum Command {
         looping: bool,
         id: u64,
     },
+    /// Start a positional voice with transmission already resolved, so short
+    /// impacts cannot finish before their first obstruction result arrives.
+    PlayObstructed {
+        clip: Arc<Clip>,
+        position: [f32; 3],
+        gain: f32,
+        pitch: f32,
+        looping: bool,
+        id: u64,
+        transmission: f32,
+        lowpass_hz: f32,
+    },
     Update {
         id: u64,
         position: Option<[f32; 3]>,
         gain: f32,
         pitch: f32,
+    },
+    /// Presentation-only transmission, computed from streamed voxel geometry.
+    Obstruction {
+        id: u64,
+        gain: f32,
+        lowpass_hz: f32,
     },
     Click(u64),
     Stop(u64),
