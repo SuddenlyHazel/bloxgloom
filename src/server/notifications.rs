@@ -2,7 +2,9 @@
 //! never wait for advisory callbacks, and replay never impersonates a live event.
 use super::entities::{EntityCommit, EntityDelta, EntityLocation, EntityPublicView};
 use crate::{content::Catalog, inventory::Inventory, server::durable::BlockDelta};
-use bloxgloom_host_api::gameplay::{Committed, CommittedBlock, CommittedEntity, Entity};
+use bloxgloom_host_api::gameplay::{
+    Committed, CommittedBlock, CommittedEntity, Entity, WeatherChanged,
+};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::mpsc::{self, SyncSender},
@@ -12,7 +14,11 @@ use std::{
 const QUEUE: usize = 32;
 const MAX_EVENT_BYTES: usize = 256 * 1024;
 
-pub(super) struct Lane(Option<SyncSender<Committed>>);
+enum Event {
+    Committed(Committed),
+    Weather(WeatherChanged),
+}
+pub(super) struct Lane(Option<SyncSender<Event>>);
 
 impl Lane {
     pub(super) fn new(catalog: &Catalog) -> std::io::Result<Self> {
@@ -20,7 +26,7 @@ impl Lane {
         if observers.is_empty() {
             return Ok(Self(None));
         }
-        let (sender, receiver) = mpsc::sync_channel::<Committed>(QUEUE);
+        let (sender, receiver) = mpsc::sync_channel::<Event>(QUEUE);
         thread::Builder::new()
             .name("gameplay-observers".into())
             .spawn(move || {
@@ -31,8 +37,9 @@ impl Lane {
                 while let Ok(event) = receiver.recv() {
                     for (registration, enabled) in &mut active {
                         if *enabled
-                            && catch_unwind(AssertUnwindSafe(|| {
-                                registration.observer.on_commit(&event)
+                            && catch_unwind(AssertUnwindSafe(|| match &event {
+                                Event::Committed(event) => registration.observer.on_commit(event),
+                                Event::Weather(event) => registration.observer.on_weather(event),
                             }))
                             .is_err()
                         {
@@ -44,6 +51,24 @@ impl Lane {
                 }
             })?;
         Ok(Self(Some(sender)))
+    }
+
+    pub(super) fn weather(
+        &self,
+        previous: crate::weather::WeatherSnapshot,
+        current: crate::weather::WeatherSnapshot,
+    ) {
+        if (previous.revision, previous.to, previous.transition_start_ms)
+            == (current.revision, current.to, current.transition_start_ms)
+        {
+            return;
+        }
+        if let Some(sender) = &self.0 {
+            let _ = sender.try_send(Event::Weather(WeatherChanged {
+                previous: previous.observation(previous.elapsed_ms),
+                current: current.observation(current.elapsed_ms),
+            }));
+        }
     }
 
     pub(super) fn enqueue(
@@ -132,11 +157,11 @@ impl Lane {
         }
         // Overflow/disconnect affects only advisory observations. The WAL and
         // replicated committed state have already been applied at this point.
-        let _ = sender.try_send(Committed {
+        let _ = sender.try_send(Event::Committed(Committed {
             blocks: public_blocks,
             entities: public_entities,
             inventory,
-        });
+        }));
     }
 }
 

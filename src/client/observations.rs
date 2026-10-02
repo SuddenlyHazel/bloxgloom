@@ -43,6 +43,19 @@ impl ClientApp {
         );
     }
 
+    pub(super) fn observe_weather(&mut self, snapshot: crate::weather::WeatherSnapshot) {
+        if !snapshot.valid()
+            || self.observations.weather.is_some_and(|old| {
+                snapshot.revision < old.revision || snapshot.elapsed_ms < old.elapsed_ms
+            })
+        {
+            return;
+        }
+        Arc::make_mut(&mut self.observations).weather =
+            Some(snapshot.observation(snapshot.elapsed_ms));
+        self.publish_extra_observations("replica:weather", "weather=updated".into());
+    }
+
     pub(super) fn observe_time(&mut self, elapsed_ms: u64) {
         Arc::make_mut(&mut self.observations).world = Some(WorldView {
             elapsed_ms,

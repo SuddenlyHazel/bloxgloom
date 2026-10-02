@@ -21,13 +21,27 @@ pub(crate) fn render_material_preview(
     seed: u32,
 ) -> io::Result<()> {
     use super::rain_scene::{RainMaterial, RainScene};
-    let material = if profile == "split" {
+    let material = if profile == "custom" {
+        RainMaterial::Metal
+    } else if profile == "split" {
         RainMaterial::Wood
     } else {
         RainMaterial::parse(profile)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown rain material"))?
     };
     let mut scene = RainScene::patch(material);
+    if profile == "custom" {
+        for tile in &mut std::sync::Arc::make_mut(&mut scene).tiles {
+            tile.impact = Some(bloxgloom_host_api::content::ImpactProfile {
+                gain: 0.8,
+                click: 0.55,
+                frequency_hz: [450., 1100.],
+                damping_per_s: [180., 350.],
+                resonance: 0.65,
+                lowpass_hz: 5000.,
+            });
+        }
+    }
     if profile == "split" {
         for tile in &mut std::sync::Arc::make_mut(&mut scene).tiles {
             if tile.centre[2] > 0.0 {

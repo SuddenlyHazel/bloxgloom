@@ -69,6 +69,7 @@ pub(super) fn invoke(
             players: &players,
             action_id: None,
             clock: Some(state.world_time.capture()),
+            weather: Some(state.weather.capture()),
             actor: Some((event.profile, inventory)),
             actor_position: event.player.as_ref().map(|p| p.position),
             admin: false,

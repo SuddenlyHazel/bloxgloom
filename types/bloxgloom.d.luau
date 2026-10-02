@@ -76,6 +76,7 @@ export type BloxStartupHost = {
     -- Optional command facet: empty-target only; action key is its name.
     register_action: (key: string, revision: number, label: string, target_kind: "empty" | "item" | "block" | "entity", target_key: string?, module: string, command: BloxCommand?) -> (),
     -- Readonly advisory post-WAL callback; actions/v1, at most eight/package.
+    register_weather_observer: (key: string, revision: number, module: string) -> (),
     register_committed_observer: (key: string, revision: number, module: string) -> (),
     register_handler: (key: string, revision: number, event: "BlockRemoved" | "BlockPlaced" | "NeighborChanged" | "EntityTick" | "PickupRequested", target: string, module: string) -> (),
     register_entity: (key: string, schema_version: number, state_bytes: number, public_bytes: number, initial_delay_ticks: number?) -> (),
@@ -170,7 +171,28 @@ export type BloxMachineDeclaration = {
     ports: {BloxMachinePort}?,
 }
 
+export type BloxImpactProfile = {
+    gain: number, -- 0..2
+    click: number, -- 0..2
+    frequency_hz: {number}, -- exactly two, 50..16000
+    damping_per_s: {number}, -- exactly two, 10..2000
+    resonance: number, -- 0..2
+    lowpass_hz: number, -- 100..18000
+}
+export type BloxAcoustics = {
+    surface: "water" | "dirt" | "leaf" | "stone" | "concrete" | "glass" | "metal" | "plastic" | "asphalt" | "roof" | "wood",
+    habitat: ("none" | "ground" | "canopy")?,
+    impact: BloxImpactProfile?,
+}
+export type BloxWeather = {
+    kind: "clear" | "rain" | "storm" | "storm_mild" | "storm_severe",
+    revision_lo: number, revision_hi: number,
+    elapsed_ms_lo: number, elapsed_ms_hi: number,
+    rain_mm_h: number, wind_m_s: number, cloud: number, transition: number,
+}
+export type BloxWeatherChanged = {kind: "WeatherChanged", previous: BloxWeather, current: BloxWeather}
 export type BloxBlockOptions = {
+    acoustics: BloxAcoustics?,
     flammable: boolean?,
     supports_plant: boolean?,
     solid: boolean?,
@@ -391,6 +413,10 @@ export type BloxGameplayContext = {
     --- Absolute feet position, players/v1 authority. Host fences final terrain and resets old movement input/prediction.
     teleport_player: (session: BloxSessionId, x: number, y: number, z: number) -> (),
     --- Available in gameplay action callbacks; captured phase, with read-your-writes.
+    --- One captured historical weather view. Staged overrides appear after commit.
+    weather: () -> BloxWeather,
+    --- Authenticated operator only; duration integer 0..60000 ms, same durable transaction.
+    admin_set_weather: (kind: "clear" | "rain" | "storm" | "storm_mild" | "storm_severe", transition_ms: number) -> (),
     world_time: () -> {elapsed_ms: number, cycle_ms: number},
     --- Integer 0 <= phase < cycle_ms; operator-selected admin profile, atomic with this action.
     admin_set_time: (elapsed_ms: number) -> (),
@@ -578,6 +604,7 @@ export type BloxClientPlayerEvent = {
 export type BloxReplicaSnapshot = {
     inventory: BloxReplicaInventory?,
     world: BloxReplicaWorld?,
+    weather: BloxWeather?,
     --- Up to 64 recent installed block observations. No procedural fallback.
     blocks: {BloxReplicaBlock},
     blocks_truncated: boolean,

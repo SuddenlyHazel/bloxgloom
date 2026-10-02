@@ -482,6 +482,7 @@ impl Extension for BlockExtension {
 }
 fn switch_block() -> Block {
     Block {
+        acoustics: None,
         key: "test:switch".into(),
         name: "SWITCH".into(),
         swatch: [0.5; 4],

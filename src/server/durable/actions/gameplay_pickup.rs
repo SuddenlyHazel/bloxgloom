@@ -67,6 +67,7 @@ pub(super) fn plan(
             players: &[],
             action_id: None,
             clock: None,
+            weather: Some(state.weather.capture()),
             actor: Some((profile, &original)),
             actor_position: Some(position),
             admin: false,

@@ -1,0 +1,15 @@
+format 2
+package rain
+version 1.0.0
+entry main
+requires bloxgloom:content/v1
+requires bloxgloom:actions/v1
+module server main server/main.luau
+module server collector server/collector.luau
+module server weather server/weather.luau
+module client client_startup client/client_startup.luau
+module client sounds client/sounds.luau
+asset texture collector assets/textures/collector.png
+asset sound motor assets/sounds/motor.wav
+asset sound start assets/sounds/start.wav
+asset sound complete assets/sounds/complete.wav

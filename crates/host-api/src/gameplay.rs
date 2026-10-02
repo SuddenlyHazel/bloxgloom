@@ -16,6 +16,7 @@ mod player_operations;
 mod players;
 mod profile_state;
 mod sounds;
+mod weather;
 pub use clock::WorldTime;
 pub use definition::{EntityDefinition, EntityState};
 pub use entities::{Entity, EntityChange, EntitySpawn};
@@ -23,11 +24,12 @@ pub use handlers::{Event, EventKind, Handler, HandlerRegistration, RemovalCause}
 pub use inventory::{Components, InventoryId, PickupTransfer, Slot, Stack};
 pub use motion::{MotionChange, MotionCommand, MovingSpawn, SpawnReference};
 pub use observations::{
-    Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration,
+    Committed, CommittedBlock, CommittedEntity, Observer, ObserverRegistration, WeatherChanged,
 };
 pub use player_operations::{PlayerOperation, PlayerOperationKind};
 pub use players::Player;
 pub use profile_state::ProfileCell;
+pub use weather::{Weather, WeatherKind};
 
 pub type Cell = [i32; 3];
 
@@ -137,6 +139,9 @@ pub trait Snapshot {
     }
     fn players(&mut self) -> Result<Vec<Player>, Error> {
         Ok(Vec::new())
+    }
+    fn weather(&mut self) -> Result<Weather, Error> {
+        Err(Error::Invalid("weather unavailable in this context".into()))
     }
     fn world_time(&mut self) -> Result<WorldTime, Error> {
         Err(Error::Invalid(

@@ -131,8 +131,12 @@ fn apply_committed_action_inner(
         .map(|edit| (edit.key, edit.after_snapshot.clone()))
         .collect();
     state.world.apply_prepared_edits(world_edits)?;
+    let mut weather_event = None;
     if let Some(change) = action.weather_change.take() {
+        let previous = state.weather.published();
         state.weather.apply(change)?;
+        weather_event = Some((previous, state.weather.snapshot()));
+        state.weather.mark_published();
         crate::server::weather::publish(state);
     }
     if let Some(change) = action.clock_change.take() {
@@ -247,6 +251,9 @@ fn apply_committed_action_inner(
                 delta.key, delta.version
             ));
         }
+    }
+    if let Some((previous, current)) = weather_event {
+        state.notifications.weather(previous, current);
     }
     state.notifications.enqueue(
         state.world.catalog(),

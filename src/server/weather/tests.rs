@@ -233,3 +233,67 @@ fn severity_transitions_remain_continuous_and_survive_checkpoint() {
     drop(resumed);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn captured_weather_is_stable_and_override_invalidates_admitted_reads() {
+    let root = temporary();
+    let mut clock = Clock::open(&root, 7).unwrap();
+    let capture = clock.capture();
+    assert!(capture.weather.valid());
+    // Clock progress is a captured historical input; explicit changes fence it.
+    clock.started -= Duration::from_secs(2);
+    assert!(capture.stamp.is_current());
+    assert!(clock.capture().weather.elapsed_ms > capture.weather.elapsed_ms);
+    let mut reads = crate::server::durable::TerrainReads::default();
+    reads.weather = Some(capture.stamp);
+    assert!(reads.keys().any(|key| key == state_key()));
+    let change = clock.prepare(4, 0).unwrap();
+    clock.apply(change).unwrap();
+    assert!(!reads.is_current());
+    assert_eq!(clock.capture().weather.rain_mm_h, 54.0);
+    clock.finish().unwrap();
+    drop(clock);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn natural_target_transitions_notify_once_even_when_the_target_kind_repeats() {
+    use bloxgloom_host_api::gameplay::{Committed, Observer, ObserverRegistration, WeatherChanged};
+    struct Witness(SyncSender<WeatherChanged>);
+    impl Observer for Witness {
+        fn on_commit(&self, _: &Committed) {}
+        fn on_weather(&self, event: &WeatherChanged) {
+            let _ = self.0.try_send(*event);
+        }
+    }
+    let root = temporary();
+    let mut clock = Clock::open(&root, 7).unwrap();
+    let before = clock.published();
+    clock.started -= Duration::from_millis(200_000);
+    clock.last_publish -= Duration::from_secs(2);
+    let current = clock.poll().unwrap();
+    assert!(current.transition_start_ms > before.transition_start_ms);
+    let (tx, rx) = mpsc::sync_channel(4);
+    let mut catalog = crate::content::Catalog::builtins();
+    catalog
+        .register_gameplay_observer(ObserverRegistration {
+            key: "witness:weather".into(),
+            version: 1,
+            observer: Arc::new(Witness(tx)),
+        })
+        .unwrap();
+    let lane = crate::server::notifications::Lane::new(&catalog).unwrap();
+    lane.weather(before, current);
+    let event = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(event.current, current.observation(current.elapsed_ms));
+    lane.weather(current, current);
+    assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+    // A new transition toward the same target still carries a distinct start.
+    let mut repeated = current;
+    repeated.transition_start_ms += 1;
+    lane.weather(current, repeated);
+    assert!(rx.recv_timeout(Duration::from_secs(2)).is_ok());
+    clock.finish().unwrap();
+    drop(clock);
+    std::fs::remove_dir_all(root).unwrap();
+}

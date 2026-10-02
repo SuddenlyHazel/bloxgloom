@@ -595,6 +595,7 @@ fn plan_gameplay_removals(
             players: &[],
             action_id: None,
             clock: None,
+            weather: Some(state.weather.capture()),
             actor: Some((actor.0, actor.1)),
             actor_position: Some(actor_position),
             admin: false,

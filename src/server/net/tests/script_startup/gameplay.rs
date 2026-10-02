@@ -30,12 +30,16 @@ mod player_teleport;
 mod players;
 #[path = "gameplay/profile_state.rs"]
 mod profile_state;
+#[path = "gameplay/rain_collector.rs"]
+mod rain_collector;
 #[path = "gameplay/runtime_tools.rs"]
 mod runtime_tools;
 #[path = "gameplay/sounds.rs"]
 mod sounds;
 #[path = "gameplay/vm_latency.rs"]
 mod vm_latency;
+#[path = "gameplay/weather.rs"]
+mod weather;
 
 const PROFILE: u128 = 0x5c71;
 const REGISTER: &str = "return function(h) h.register_action('demo:shift', 1, 'Shift', 'item', 'bloxgloom:stick', 'demo:action') end";
@@ -432,6 +436,7 @@ fn luau_action_planner_errors_and_unavailable_retry_are_atomic() {
                 players: &[],
                 action_id: None,
                 clock: None,
+                weather: None,
                 actor: Some((PROFILE, &inventory)),
                 actor_position: Some([0.5, 80.0, 0.5]),
                 admin: false,

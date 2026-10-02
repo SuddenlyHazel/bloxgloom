@@ -43,6 +43,7 @@ use super::capacity::{
     BLOCKS_PER_PACKAGE as MAX_BLOCKS_PER_PACKAGE, ITEMS_PER_PACKAGE as MAX_ITEMS_PER_PACKAGE,
     TEXTURES_PER_PACKAGE as MAX_TEXTURES_PER_PACKAGE,
 };
+mod acoustics;
 mod block;
 mod composition;
 #[cfg(test)]
@@ -455,8 +456,20 @@ pub(super) fn invoke(
     )?;
     let players =
         super::players::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
-    let observer =
-        super::observers::declarer(lua, Rc::clone(&pending), namespace, Arc::clone(snapshot))?;
+    let observer = super::observers::declarer(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        false,
+    )?;
+    let weather_observer = super::observers::declarer(
+        lua,
+        Rc::clone(&pending),
+        namespace,
+        Arc::clone(snapshot),
+        true,
+    )?;
     let namespace = namespace.to_owned();
     let moving_namespace = namespace.clone();
     let texture_namespace = namespace.clone();
@@ -733,6 +746,7 @@ pub(super) fn invoke(
     host.set("register_generator", generation)?;
     host.set("register_action", action)?;
     host.set("register_committed_observer", observer)?;
+    host.set("register_weather_observer", weather_observer)?;
     host.set("register_player_lifecycle", players)?;
     host.set("register_handler", handler)?;
     host.set("register_system", system)?;

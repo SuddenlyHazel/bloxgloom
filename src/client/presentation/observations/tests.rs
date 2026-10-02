@@ -12,6 +12,7 @@ fn known() -> Observations {
         }),
     });
     Observations {
+        weather: None,
         pending_spawns: Default::default(),
         inventory: Some(InventoryView {
             revision: u64::MAX,
@@ -147,4 +148,23 @@ fn committed_spawn_ordinals_expose_exact_readonly_entity_handles() {
         .set("replica", observations.lua(&lua).unwrap())
         .unwrap();
     lua.load("local launch=replica.actions[1].spawned[1]; assert(launch.ordinal==0); assert(tostring(launch.entity)=='entity:0020000000000001'); assert(not pcall(function() launch.ordinal=1 end)); assert(not pcall(function() replica.actions[1].spawned[1]=nil end))").exec().unwrap();
+}
+
+#[test]
+fn weather_observations_are_optional_readonly_and_reject_nonfinite_values() {
+    let lua = Lua::new();
+    lua.globals()
+        .set("r", Observations::default().lua(&lua).unwrap())
+        .unwrap();
+    lua.load("assert(r.weather==nil)").exec().unwrap();
+    let mut observations = Observations::default();
+    let mut snapshot = crate::weather::WeatherSnapshot::initial(7);
+    snapshot.to = crate::weather::WeatherKind::Rain;
+    observations.weather = Some(snapshot.observation(0));
+    lua.globals()
+        .set("r", observations.lua(&lua).unwrap())
+        .unwrap();
+    lua.load("assert(r.weather.kind=='rain' and r.weather.rain_mm_h==18); assert(not pcall(function() r.weather.kind='clear' end)); assert(r.weather.admin_set_weather==nil)").exec().unwrap();
+    observations.weather.as_mut().unwrap().rain_mm_h = f32::NAN;
+    assert!(observations.lua(&lua).is_err());
 }

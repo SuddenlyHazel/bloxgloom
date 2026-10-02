@@ -181,6 +181,7 @@ pub(super) fn plan(state: &mut State, invocation: Invocation<'_>) -> io::Result<
             players: &players,
             action_id: Some(action_id),
             clock: Some(state.world_time.capture()),
+            weather: Some(state.weather.capture()),
             actor: Some((profile, &before)),
             actor_position: Some(position),
             admin: state.admin_profile == Some(profile),

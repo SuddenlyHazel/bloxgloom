@@ -1,6 +1,6 @@
 //! Readonly post-commit Luau callbacks on the native advisory worker lane.
 use super::{Invocation, Limits, Program, package::PackageSnapshot, startup::Pending};
-use bloxgloom_host_api::gameplay::{Committed, Observer, ObserverRegistration};
+use bloxgloom_host_api::gameplay::{Committed, Observer, ObserverRegistration, WeatherChanged};
 use mlua::{Function, Lua, Value};
 use std::{
     cell::RefCell,
@@ -18,6 +18,7 @@ pub(super) fn declarer(
     pending: Rc<RefCell<Pending>>,
     namespace: &str,
     snapshot: Arc<PackageSnapshot>,
+    weather: bool,
 ) -> mlua::Result<Function> {
     let namespace = namespace.to_owned();
     lua.create_function(move |_, (key, revision, module): (Value, Value, Value)| {
@@ -27,10 +28,10 @@ pub(super) fn declarer(
                 return Err(error);
             }
             if !snapshot.permits_actions(&namespace) {
-                return Err("register_committed_observer requires bloxgloom:actions/v1");
+                return Err("observer registration requires bloxgloom:actions/v1");
             }
             if pending.observers.len() >= 8 {
-                return Err("at most eight committed observers per package");
+                return Err("at most eight observers per package");
             }
             let key = super::values::text(key)?;
             if key.split_once(':').is_none_or(|(owner, local)| {
@@ -39,7 +40,7 @@ pub(super) fn declarer(
                 return Err("observer must belong to its startup package");
             }
             if pending.observers.iter().any(|r| r.key == key) {
-                return Err("duplicate committed observer");
+                return Err("duplicate observer");
             }
             let module = super::values::text(module)?;
             if module.split_once(':').map(|p| p.0) != Some(namespace.as_str())
@@ -49,20 +50,23 @@ pub(super) fn declarer(
             }
             let registration = ObserverRegistration {
                 key,
-                version: snapshot.gameplay_version(
-                    &module,
-                    super::values::integer(revision, 1, u16::MAX.into())? as u16,
-                ),
+                version: {
+                    let revision = super::values::integer(revision, 1, u16::MAX.into())? as u16;
+                    if weather {
+                        snapshot.weather_observer_version(&module, revision)
+                    } else {
+                        snapshot.gameplay_version(&module, revision)
+                    }
+                },
                 observer: Arc::new(ScriptObserver {
+                    weather,
                     snapshot: Arc::clone(&snapshot),
                     module,
                     lifetime: Arc::new(()),
                     realm: NEXT_REALM.fetch_add(1, Ordering::Relaxed),
                 }),
             };
-            registration
-                .validate()
-                .map_err(|_| "invalid committed observer")?;
+            registration.validate().map_err(|_| "invalid observer")?;
             pending.observers.push(registration);
             Ok(())
         })();
@@ -74,6 +78,7 @@ pub(super) fn declarer(
 }
 
 struct ScriptObserver {
+    weather: bool,
     snapshot: Arc<PackageSnapshot>,
     module: String,
     lifetime: Arc<()>,
@@ -85,8 +90,33 @@ thread_local! {
 }
 impl Observer for ScriptObserver {
     fn on_commit(&self, event: &Committed) {
+        if self.weather {
+            return;
+        }
         if let Err(error) = self.invoke(event) {
             tracing::warn!(module = self.module, %error, "committed observer failed");
+        }
+    }
+    fn on_weather(&self, event: &WeatherChanged) {
+        if !self.weather {
+            return;
+        }
+        let seed = event.current.elapsed_ms ^ event.current.revision.rotate_left(17);
+        if let Err(error) = self.run("WeatherChanged", seed, |lua| {
+            let value = lua.create_table()?;
+            value.raw_set("kind", "WeatherChanged")?;
+            value.raw_set(
+                "previous",
+                crate::weather::luau::present(lua, event.previous)?,
+            )?;
+            value.raw_set(
+                "current",
+                crate::weather::luau::present(lua, event.current)?,
+            )?;
+            value.set_readonly(true);
+            Ok(value)
+        }) {
+            tracing::warn!(module = self.module, %error, "weather observer failed");
         }
     }
 }
@@ -94,7 +124,16 @@ impl ScriptObserver {
     fn invoke(&self, event: &Committed) -> Result<(), super::ScriptError> {
         // The world-owned advisory lane serializes these realms. Lifetime tokens
         // prevent a new installation from inheriting the departed world's exports.
-        let seed = events::seed(event);
+        self.run("Committed", events::seed(event), |lua| {
+            events::present(lua, event)
+        })
+    }
+    fn run(
+        &self,
+        kind: &'static str,
+        seed: u64,
+        present: impl FnOnce(&Lua) -> mlua::Result<mlua::Table>,
+    ) -> Result<(), super::ScriptError> {
         REALMS.with(|realms| {
             let mut realms = realms.borrow_mut();
             realms.retain(|_, (owner, _)| owner.strong_count() > 0);
@@ -119,8 +158,8 @@ impl ScriptObserver {
                     invocation: Invocation::Integer,
                 },
                 Limits::default(),
-                super::runtime::Execution::new("Committed", seed, "advisory"),
-                |lua, entry| entry.call::<()>(events::present(lua, event)?),
+                super::runtime::Execution::new(kind, seed, "advisory"),
+                |lua, entry| entry.call::<()>(present(lua)?),
             )
         })
     }

@@ -8,12 +8,14 @@ fn tiles_preserve_material_location_and_turn_with_listener() {
         scene: Some(Arc::new(RainScene {
             tiles: vec![
                 RainTile {
+                    impact: None,
                     centre: [0.0, 1.0, 2.0],
                     material: RainMaterial::Leaf,
                     habitat: crate::audio::rain_scene::Habitat::None,
                     normal: [0.0; 2],
                 },
                 RainTile {
+                    impact: None,
                     centre: [0.0, 1.0, -2.0],
                     material: RainMaterial::Concrete,
                     habitat: crate::audio::rain_scene::Habitat::None,
@@ -41,6 +43,7 @@ fn tiles_preserve_material_location_and_turn_with_listener() {
 #[test]
 fn walls_only_receive_windward_driving_rain_and_empty_scenes_are_silent() {
     let tile = RainTile {
+        impact: None,
         centre: [2.0, 0.0, 0.0],
         material: RainMaterial::Metal,
         habitat: crate::audio::rain_scene::Habitat::None,
@@ -73,6 +76,7 @@ fn listener_turning_does_not_change_world_wall_exposure() {
     let mut sampler = SceneSampler {
         scene: Some(Arc::new(RainScene {
             tiles: vec![RainTile {
+                impact: None,
                 centre: [2.0, 0.0, 0.0],
                 material: RainMaterial::Metal,
                 habitat: crate::audio::rain_scene::Habitat::None,

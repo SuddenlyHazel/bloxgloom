@@ -89,7 +89,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             audio::render_insect_preview(&kind, seconds, std::path::Path::new(&path), seed)?;
         }
         Some("audio-material-preview") => {
-            let usage = "usage: audio-material-preview <water|dirt|leaf|stone|glass|metal|plastic|asphalt|roof|wood|split> <seconds> <output.wav> [seed]";
+            let usage = "usage: audio-material-preview <water|dirt|leaf|stone|glass|metal|plastic|asphalt|roof|wood|split|custom> <seconds> <output.wav> [seed]";
             let profile = args.next().ok_or(usage)?;
             let seconds: f32 = args.next().ok_or(usage)?.parse()?;
             let path = args.next().ok_or(usage)?;

@@ -8,7 +8,7 @@ pub struct WorldTime {
 }
 
 impl Context<'_> {
-    /// Native admin weather control; deliberately not exposed to script bindings.
+    /// Authenticated admin weather control staged in the complete transaction.
     pub fn admin_set_weather(&mut self, kind: u8, transition_ms: u32) -> Result<(), Error> {
         self.charge()?;
         if !self.snapshot.admin() {

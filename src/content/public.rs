@@ -5,6 +5,15 @@ use bloxgloom_host_api::{RegistrationError as Error, content as api};
 mod tests;
 
 impl Catalog {
+    #[cfg(test)]
+    pub(crate) fn test_block_acoustics(&mut self, key: &str, acoustics: api::Acoustics) {
+        self.block_acoustics.insert(key.into(), acoustics);
+    }
+    pub(crate) fn block_acoustics(&self, id: BlockStateId) -> Option<api::Acoustics> {
+        self.block_acoustics
+            .get(self.block(id)?.key.as_ref())
+            .copied()
+    }
     pub(crate) fn public_texture(&mut self, definition: &api::Texture) -> Result<(), Error> {
         self.register_texture(texture_definition(definition))
             .map(|_| ())
@@ -43,6 +52,9 @@ impl Catalog {
         b: &api::Block,
     ) -> Result<(), Error> {
         validate_display(&b.name, b.swatch)?;
+        if b.acoustics.is_some_and(|a| !a.valid()) {
+            return Err(Error("invalid block acoustics".into()));
+        }
         let mut properties = b
             .properties
             .iter()
@@ -89,6 +101,9 @@ impl Catalog {
         let id = BlockTypeId(self.blocks.len() as u32);
         self.public_block_type_at(id, b)?;
         // Canonical property ordering makes assignment independent of declaration order.
+        if let Some(acoustics) = b.acoustics {
+            self.block_acoustics.insert(b.key.clone(), acoustics);
+        }
         let mut states = b.states.clone();
         for state in &mut states {
             state.properties.sort();

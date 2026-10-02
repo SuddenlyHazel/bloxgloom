@@ -56,6 +56,7 @@ fn runtime_tools_action_retry_keeps_module_randomness_across_ticks_and_log_press
                 players: &[],
                 action_id: Some(id),
                 clock: None,
+                weather: None,
                 actor: Some((PROFILE, &inventory)),
                 actor_position: Some([0.5, 80., 0.5]),
                 admin: false,

@@ -2,7 +2,9 @@
 //! These expose the engine's existing voxel geometry and material capabilities;
 //! arbitrary meshes, partial collision boxes and shaders are not supported.
 
+mod acoustics;
 mod drop_policy;
+pub use acoustics::{Acoustics, Habitat, ImpactProfile, RainSurface};
 pub use drop_policy::DropPolicy;
 
 #[derive(Clone, Debug)]
@@ -60,6 +62,7 @@ pub struct Property {
 
 #[derive(Clone, Debug)]
 pub struct Block {
+    pub acoustics: Option<Acoustics>,
     pub key: String,
     pub name: String,
     pub swatch: [f32; 4],

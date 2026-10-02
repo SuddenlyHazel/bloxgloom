@@ -70,7 +70,9 @@ pub(super) fn run_simulation_ticks(
                     .try_send(ServerMessage::WorldTime { elapsed_ms });
             }
         }
+        let previous_weather = state.weather.published();
         if let Some(snapshot) = state.weather.poll() {
+            state.notifications.weather(previous_weather, snapshot);
             for client in state.clients.values() {
                 let _ = client.sender.try_send(ServerMessage::Weather { snapshot });
             }

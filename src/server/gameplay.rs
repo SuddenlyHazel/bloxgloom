@@ -23,6 +23,7 @@ pub(super) struct Participants<'a> {
     pub players: &'a [bloxgloom_host_api::gameplay::Player],
     pub action_id: Option<u128>,
     pub clock: Option<super::world_time::Capture>,
+    pub weather: Option<super::weather::Capture>,
     pub actor: Option<(u128, &'a crate::inventory::Inventory)>,
     pub actor_position: Option<[f32; 3]>,
     pub admin: bool,
@@ -67,6 +68,7 @@ struct WorldSnapshot<'a> {
     players: &'a [bloxgloom_host_api::gameplay::Player],
     action_id: Option<u128>,
     clock: Option<super::world_time::Capture>,
+    weather: Option<super::weather::Capture>,
     world: &'a mut World,
     reads: &'a mut TerrainReads,
     requested: &'a mut Vec<ChunkKey>,
@@ -127,6 +129,14 @@ impl Snapshot for WorldSnapshot<'_> {
     }
     fn sound_registered(&self, key: &str) -> bool {
         self.world.catalog().sounds.contains(key)
+    }
+    fn weather(&mut self) -> Result<bloxgloom_host_api::gameplay::Weather, Error> {
+        let capture = self
+            .weather
+            .as_ref()
+            .ok_or_else(|| Error::Invalid("weather unavailable in this context".into()))?;
+        self.reads.weather = Some(capture.stamp.clone());
+        Ok(capture.weather)
     }
     fn world_time(&mut self) -> Result<bloxgloom_host_api::gameplay::WorldTime, Error> {
         let clock = self
@@ -509,6 +519,7 @@ pub(super) fn plan_with_lifecycles(
         players: participants.players,
         action_id: participants.action_id,
         clock: participants.clock,
+        weather: participants.weather,
         world,
         reads,
         requested,

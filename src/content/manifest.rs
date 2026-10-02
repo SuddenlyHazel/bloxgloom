@@ -297,6 +297,7 @@ impl ContentManifest {
             resolved.owner_systems.insert(entry.id, system.clone());
         }
         resolved.narrow_plants = local.narrow_plants.clone();
+        resolved.block_acoustics = local.block_acoustics.clone();
         resolved.item_components = local.item_components.clone();
         resolved.drop_sizes = local.drop_sizes.clone();
         resolved.drop_animations = local.drop_animations.clone();

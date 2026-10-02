@@ -7,6 +7,7 @@ pub(crate) struct Observations {
     pub(crate) blocks: Vec<BlockView>,
     pub(crate) blocks_truncated: bool,
     pub(crate) world: Option<WorldView>,
+    pub(crate) weather: Option<bloxgloom_host_api::gameplay::Weather>,
     pub(crate) actions: Vec<ActionView>,
     pub(crate) pending_spawns: std::collections::BTreeMap<u128, Vec<crate::protocol::SpawnReceipt>>,
 }
@@ -54,6 +55,9 @@ pub(crate) struct ActionView {
 impl Observations {
     pub(crate) fn validate(&self) -> mlua::Result<()> {
         let bad = super::invalid;
+        if self.weather.is_some_and(|weather| !weather.valid()) {
+            return Err(bad());
+        }
         if self.blocks.len() > 64 || self.actions.len() > 16 || self.pending_spawns.len() > 64 {
             return Err(bad());
         }
@@ -115,6 +119,9 @@ impl Observations {
     pub(crate) fn lua(&self, lua: &Lua) -> mlua::Result<Table> {
         self.validate()?;
         let output = lua.create_table()?;
+        if let Some(weather) = self.weather {
+            output.raw_set("weather", crate::weather::luau::present(lua, weather)?)?;
+        }
         if let Some(inventory) = &self.inventory {
             let view = lua.create_table()?;
             revision(lua, &view, "revision", inventory.revision)?;

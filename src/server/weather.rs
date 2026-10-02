@@ -5,7 +5,11 @@ use crate::weather::{WeatherKind, WeatherSnapshot, mix};
 use std::{
     io,
     path::Path,
-    sync::mpsc::{self, SyncSender},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, SyncSender},
+    },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
@@ -15,9 +19,26 @@ pub(super) const DOMAIN: &str = "bloxgloom:weather";
 pub(super) fn state_key() -> StateKey {
     StateKey::new(DOMAIN, Vec::new())
 }
+#[derive(Clone, Debug)]
+pub(super) struct ReadStamp {
+    revision: Arc<AtomicU64>,
+    captured: u64,
+}
+impl ReadStamp {
+    pub(super) fn is_current(&self) -> bool {
+        self.revision.load(Ordering::Acquire) == self.captured
+    }
+}
+#[derive(Clone)]
+pub(super) struct Capture {
+    pub stamp: ReadStamp,
+    pub weather: bloxgloom_host_api::gameplay::Weather,
+}
 pub(super) struct Clock {
+    revision: Arc<AtomicU64>,
     anchor: Vec<u8>,
     initial: WeatherSnapshot,
+    published: WeatherSnapshot,
     started: Instant,
     last_publish: Instant,
     last_save: Instant,
@@ -39,8 +60,10 @@ impl Clock {
             })?;
         let now = Instant::now();
         Ok(Self {
+            revision: Arc::new(AtomicU64::new(c.snapshot.revision)),
             anchor: c.anchor,
             initial: c.snapshot,
+            published: c.snapshot,
             started: now,
             last_publish: now,
             last_save: now,
@@ -48,12 +71,29 @@ impl Clock {
             worker: Some(worker),
         })
     }
+    pub(super) fn published(&self) -> WeatherSnapshot {
+        self.published
+    }
+    pub(super) fn mark_published(&mut self) {
+        self.published = self.snapshot();
+    }
     pub(super) fn snapshot(&self) -> WeatherSnapshot {
         let s = self.initial;
         let elapsed = s
             .elapsed_ms
             .saturating_add(self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
         advance(s, elapsed)
+    }
+
+    pub(super) fn capture(&self) -> Capture {
+        let snapshot = self.snapshot();
+        Capture {
+            stamp: ReadStamp {
+                revision: self.revision.clone(),
+                captured: snapshot.revision,
+            },
+            weather: snapshot.observation(snapshot.elapsed_ms),
+        }
     }
 
     pub(super) fn prepare(&self, kind: u8, transition_ms: u32) -> io::Result<Change> {
@@ -91,6 +131,8 @@ impl Clock {
         // anchor keeps its captured time; the live projection retains progress.
         self.initial.elapsed_ms = self.initial.elapsed_ms.max(elapsed_ms);
         self.anchor = c.after;
+        self.revision
+            .store(self.initial.revision, Ordering::Release);
         self.started = Instant::now();
         self.last_save = self.started - Duration::from_secs(5);
         Ok(())
@@ -115,6 +157,7 @@ impl Clock {
         }
         self.last_publish = Instant::now();
         let s = self.snapshot();
+        self.published = s;
         self.initial = s;
         self.started = self.last_publish;
         Some(s)

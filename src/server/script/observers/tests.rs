@@ -66,6 +66,7 @@ fn observer_entries_retain_imports_and_reset_after_failure_or_world_retirement()
     fs::write(root.join("demo/main.luau"), "local cache=import('demo:cache'); return function(e) cache.count+=1; assert(e.blocks[1].cell[1]==cache.count) end").unwrap();
     let snapshot = Arc::new(PackageSnapshot::discover(&root).unwrap());
     let observer = || ScriptObserver {
+        weather: false,
         snapshot: Arc::clone(&snapshot),
         module: "demo:main".into(),
         lifetime: Arc::new(()),
@@ -90,4 +91,18 @@ fn observer_entries_retain_imports_and_reset_after_failure_or_world_retirement()
     drop(second);
     observer().invoke(&event(1)).unwrap();
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn weather_views_are_readonly_and_preserve_large_clock_and_revision() {
+    let mut snapshot = crate::weather::WeatherSnapshot::initial(7);
+    snapshot.to = crate::weather::WeatherKind::StormSevere;
+    snapshot.elapsed_ms = u64::MAX;
+    snapshot.revision = u64::MAX;
+    let weather = snapshot.observation(snapshot.elapsed_ms);
+    let lua = Lua::new();
+    lua.globals()
+        .set("w", crate::weather::luau::present(&lua, weather).unwrap())
+        .unwrap();
+    lua.load("assert(w.kind=='storm_severe' and w.rain_mm_h==54 and w.wind_m_s==30); assert(w.revision_lo==4294967295 and w.revision_hi==4294967295); assert(w.elapsed_ms_hi==4294967295); assert(not pcall(function() w.rain_mm_h=0 end)); assert(w.admin_set_weather==nil)").exec().unwrap();
 }

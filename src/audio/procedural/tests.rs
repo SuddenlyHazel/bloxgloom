@@ -139,3 +139,48 @@ fn material_scenes_produce_distinct_spectra_and_empty_geometry_has_no_fake_rain(
     );
     assert_eq!(render(None), (0.0, 0.0, 0));
 }
+
+#[test]
+fn spatial_custom_profiles_change_actual_impacts_and_zero_gain_silences_them() {
+    use crate::audio::rain_scene::{ImpactProfile, RainMaterial, RainScene};
+    let render = |gain| {
+        let mut scene = RainScene::patch(RainMaterial::Metal);
+        for tile in &mut Arc::make_mut(&mut scene).tiles {
+            tile.impact = Some(ImpactProfile {
+                gain,
+                click: 0.55,
+                frequency_hz: [450., 1100.],
+                damping_per_s: [180., 350.],
+                resonance: 0.65,
+                lowpass_hz: 5000.,
+            });
+        }
+        let mut engine = Procedural::new(13);
+        engine.set_listener([0., 1.6, 0.], 0.);
+        engine.set_scene(scene);
+        engine.set_world(Some(WeatherSound {
+            rain_mm_h: 30.,
+            exposure: 1.,
+            ..Default::default()
+        }));
+        let mut out = Vec::with_capacity(22_050);
+        for _ in 0..22_050 {
+            let (sample, _) = engine.next(Preset::Off);
+            assert!(sample.into_iter().all(f32::is_finite));
+            out.push(sample);
+        }
+        assert!(engine.rain.stats().generated > 0);
+        out
+    };
+    let audible = render(0.8);
+    assert!(audible.iter().flatten().any(|v| v.abs() > 0.001));
+    assert_eq!(
+        audible,
+        render(0.8),
+        "custom impacts lost deterministic synthesis"
+    );
+    assert!(
+        render(0.).iter().flatten().all(|v| *v == 0.),
+        "tile custom gain was ignored in favor of preset metal"
+    );
+}

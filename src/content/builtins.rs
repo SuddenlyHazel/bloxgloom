@@ -746,6 +746,7 @@ fn block(
         "tall_grass",
     ];
     api::Block {
+        acoustics: None,
         key: format!("bloxgloom:{key}"),
         name: name.into(),
         swatch,

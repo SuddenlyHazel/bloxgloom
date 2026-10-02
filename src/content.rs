@@ -213,6 +213,7 @@ pub enum RegistrationError {
 
 #[derive(Clone, Debug)]
 pub struct Catalog {
+    block_acoustics: HashMap<String, bloxgloom_host_api::content::Acoustics>,
     pub(crate) sounds: HashSet<String>,
     player_appearance: Option<bloxgloom_host_api::appearance::Appearance>,
     player_selection: Option<player::Selection>,
@@ -279,6 +280,7 @@ pub struct Catalog {
 impl Catalog {
     pub fn new() -> Self {
         Self {
+            block_acoustics: Default::default(),
             sounds: [
                 "bloxgloom:break",
                 "bloxgloom:place",
@@ -775,6 +777,12 @@ impl Catalog {
             hash_bytes(&mut hash, &id.to_le_bytes());
             hash_bytes(&mut hash, key.as_bytes());
             hash_bytes(&mut hash, &fingerprint.to_le_bytes());
+        }
+        let mut acoustics = self.block_acoustics.iter().collect::<Vec<_>>();
+        acoustics.sort_unstable_by_key(|(key, _)| *key);
+        for (key, acoustics) in acoustics {
+            hash_bytes(&mut hash, key.as_bytes());
+            hash_bytes(&mut hash, &acoustics.bytes());
         }
         hash
     }

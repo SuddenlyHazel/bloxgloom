@@ -25,11 +25,19 @@ pub struct Committed {
     pub inventory: Option<(u128, u64)>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct WeatherChanged {
+    pub previous: super::Weather,
+    pub current: super::Weather,
+}
+
 pub trait Observer: Send + Sync + 'static {
     /// Runs on a bounded, off-coordinator delivery lane. Cannot amend or veto
     /// the commit; a handler needing authoritative follow-up uses a scheduled
     /// durable decision rather than mutating process-global state here.
     fn on_commit(&self, event: &Committed);
+    /// Advisory live target changes, including natural transitions. Not replayed.
+    fn on_weather(&self, _event: &WeatherChanged) {}
 }
 
 #[derive(Clone)]

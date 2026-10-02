@@ -1083,6 +1083,7 @@ impl ClientApp {
             }
             ServerMessage::Weather { snapshot } => {
                 self.weather.synchronize(snapshot, Instant::now());
+                self.observe_weather(snapshot);
             }
             ServerMessage::WorldTime { elapsed_ms } => {
                 self.world_time.synchronize(elapsed_ms);

@@ -37,6 +37,7 @@ impl bloxgloom_host_api::Extension for BurnExtension {
     ) -> Result<(), bloxgloom_host_api::RegistrationError> {
         use bloxgloom_host_api::content::{Block, BlockState, FaceTextures, Geometry, Material};
         registrar.block(Block {
+            acoustics: None,
             key: "test:fire_fuel".into(),
             name: "FIRE FUEL".into(),
             swatch: [0.4, 0.6, 0.3, 1.0],

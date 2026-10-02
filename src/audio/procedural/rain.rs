@@ -516,10 +516,19 @@ impl Rain {
         }
         self.arrival_probability = (self.played_per_s / SAMPLE_RATE) * self.sheet_peak;
     }
+    #[cfg(test)]
     pub(super) fn start_drop(
         &mut self,
         drop: Droplet,
         listener: Listener,
+    ) -> Result<(), &'static str> {
+        self.start_profiled_drop(drop, listener, None)
+    }
+    fn start_profiled_drop(
+        &mut self,
+        drop: Droplet,
+        listener: Listener,
+        impact: Option<bloxgloom_host_api::content::ImpactProfile>,
     ) -> Result<(), &'static str> {
         if drop.surface >= RAIN_MATERIALS
             || !range(drop.radius_m, 0.0004, 0.0029)
@@ -537,7 +546,7 @@ impl Rain {
             self.stats.dropped = self.stats.dropped.saturating_add(1);
             return Err("rain voice capacity");
         }
-        let surface = self.config.surfaces[drop.surface];
+        let surface = impact.map_or(self.config.surfaces[drop.surface], custom_surface);
         let radius_ratio = drop.radius_m / 0.0005;
         let amplitude = surface.gain
             * 0.004375
@@ -621,7 +630,8 @@ impl Rain {
         let vertical = tile.map_or(self.config.surfaces[surface_index].vertical, |t| {
             t.normal != [0.0; 2]
         });
-        let surface = self.config.surfaces[surface_index];
+        let impact = tile.and_then(|t| t.impact);
+        let surface = impact.map_or(self.config.surfaces[surface_index], custom_surface);
         let d = diameter(
             if vertical {
                 &self.wall_size_cdf
@@ -662,7 +672,7 @@ impl Rain {
                 return;
             }
         }
-        let _ = self.start_drop(
+        let _ = self.start_profiled_drop(
             Droplet {
                 surface: surface_index,
                 radius_m: d * 0.0005,
@@ -676,6 +686,7 @@ impl Rain {
                 angle_rad: angle,
             },
             listener,
+            impact,
         );
     }
     pub(super) fn next(&mut self, listener: Listener) -> ([f32; 2], f32) {
@@ -778,6 +789,20 @@ impl RainConfig {
         }
         Ok(())
     }
+}
+
+fn custom_surface(p: bloxgloom_host_api::content::ImpactProfile) -> Surface {
+    let mut surface = Surface::solid(
+        "Custom",
+        0.0,
+        p.click,
+        p.frequency_hz,
+        p.damping_per_s,
+        p.resonance,
+        p.lowpass_hz,
+    );
+    surface.gain = p.gain;
+    surface
 }
 
 #[cfg(test)]

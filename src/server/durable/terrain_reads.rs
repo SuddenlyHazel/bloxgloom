@@ -7,6 +7,7 @@ type PlayerPoses = BTreeMap<u64, ([f32; 3], u64, bool)>;
 #[derive(Clone, Debug, Default)]
 pub(in crate::server) struct TerrainReads {
     pub clock: Option<crate::server::world_time::ReadStamp>,
+    pub weather: Option<crate::server::weather::ReadStamp>,
     profiles: BTreeMap<(crate::server::registry::SystemId, u128), Option<u64>>,
     inventories: BTreeMap<u128, u64>,
     terrain: BTreeMap<ChunkKey, ChunkReadStamp>,
@@ -199,6 +200,9 @@ impl TerrainReads {
         for ((system, profile), revision) in other.profiles {
             self.profile(&system, profile, revision)?;
         }
+        if self.weather.is_none() {
+            self.weather = other.weather;
+        }
         if self.clock.is_none() {
             self.clock = other.clock;
         }
@@ -214,7 +218,10 @@ impl TerrainReads {
         Ok(())
     }
     pub fn is_current(&self) -> bool {
-        self.terrain.values().all(ChunkReadStamp::is_current)
+        self.weather
+            .as_ref()
+            .is_none_or(crate::server::weather::ReadStamp::is_current)
+            && self.terrain.values().all(ChunkReadStamp::is_current)
             && self
                 .clock
                 .as_ref()
@@ -224,6 +231,7 @@ impl TerrainReads {
         self.terrain.is_empty()
             && self.entities.is_empty()
             && self.clock.is_none()
+            && self.weather.is_none()
             && self.profiles.is_empty()
             && self.inventories.is_empty()
             && self.players.is_none()
@@ -246,6 +254,11 @@ impl TerrainReads {
                     crate::server::parallel::OwnerKey::Profile(*profile),
                 )
             }))
+            .chain(
+                self.weather
+                    .iter()
+                    .map(|_| crate::server::weather::state_key()),
+            )
             .chain(
                 self.clock
                     .iter()

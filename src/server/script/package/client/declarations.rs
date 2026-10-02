@@ -5,6 +5,7 @@
 use super::*;
 use bloxgloom_host_api::{composition, content};
 use content::{DropAnimation, DropPolicy, DropSize, Geometry, Material, TagKind, TagMember};
+pub(super) mod acoustics;
 pub(super) mod anchored;
 mod appearance;
 mod components;
@@ -558,7 +559,8 @@ impl ClientBundle {
         let result = super::players::wrap(result, declarations)?;
         let result = super::observers::wrap(result, declarations)?;
         let result = anchored::wrap(result, declarations)?;
-        moving::wrap(result, declarations)
+        let result = moving::wrap(result, declarations)?;
+        acoustics::wrap(result, declarations)
     }
 
     /// Fresh session definitions, never installed in the process-global catalog.

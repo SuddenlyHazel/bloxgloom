@@ -12,6 +12,7 @@ pub(in crate::server::script) fn cube(
     options: Value,
 ) -> Result<Block, &'static str> {
     let mut block = Block {
+        acoustics: None,
         key,
         name,
         swatch: [1.0; 4],
@@ -35,7 +36,7 @@ pub(in crate::server::script) fn cube(
     let mut properties = None;
     let mut states = None;
     for (index, pair) in options.pairs::<Value, Value>().enumerate() {
-        if index >= 13 {
+        if index >= 14 {
             return Err("too many block options");
         }
         let (key, value) = pair.map_err(|_| "invalid block option")?;
@@ -43,6 +44,7 @@ pub(in crate::server::script) fn cube(
             return Err("invalid block option key");
         };
         match key.as_bytes().as_ref() {
+            b"acoustics" => block.acoustics = Some(super::acoustics::decode(value)?),
             b"flammable" => block.flammable = boolean(value)?,
             b"supports_plant" => block.supports_plant = boolean(value)?,
             b"solid" => block.solid = boolean(value)?,

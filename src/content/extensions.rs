@@ -6,6 +6,7 @@ impl Catalog {
     pub(crate) fn extension_cube(&mut self, definition: &CubeBlock) -> Result<(), ApiError> {
         use bloxgloom_host_api::content::*;
         self.public_block(&Block {
+            acoustics: None,
             key: definition.key.clone(),
             name: definition.name.clone(),
             swatch: [0.55, 0.33, 0.14, 1.0],

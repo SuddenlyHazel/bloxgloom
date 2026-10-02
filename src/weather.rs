@@ -1,4 +1,5 @@
 //! Shared deterministic presentation contract for server-owned weather.
+pub(crate) mod luau;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum WeatherKind {
@@ -75,6 +76,31 @@ pub struct Lightning {
     pub position: [f32; 3],
 }
 impl WeatherSnapshot {
+    pub(crate) fn observation(self, elapsed_ms: u64) -> bloxgloom_host_api::gameplay::Weather {
+        use bloxgloom_host_api::gameplay::{Weather, WeatherKind as Kind};
+        let sample = self.sample_at(elapsed_ms);
+        Weather {
+            kind: match self.to {
+                WeatherKind::Clear => Kind::Clear,
+                WeatherKind::Rain => Kind::Rain,
+                WeatherKind::Storm => Kind::Storm,
+                WeatherKind::StormMild => Kind::StormMild,
+                WeatherKind::StormSevere => Kind::StormSevere,
+            },
+            revision: self.revision,
+            elapsed_ms,
+            rain_mm_h: sample.rain * 30.0,
+            wind_m_s: sample.wind,
+            cloud: sample.cloud,
+            transition: if self.transition_duration_ms == 0 {
+                1.0
+            } else {
+                (elapsed_ms.saturating_sub(self.transition_start_ms) as f32
+                    / self.transition_duration_ms as f32)
+                    .clamp(0.0, 1.0)
+            },
+        }
+    }
     pub(crate) fn initial(seed: u64) -> Self {
         Self {
             elapsed_ms: 0,

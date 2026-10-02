@@ -322,6 +322,10 @@ impl PackageSnapshot {
         self.execution_identity(b"luau-action-v1", entry, &revision.to_le_bytes())
     }
 
+    pub(super) fn weather_observer_version(&self, entry: &str, revision: u16) -> u64 {
+        self.execution_identity(b"luau-weather-observer-v1", entry, &revision.to_le_bytes())
+    }
+
     pub(super) fn system_schema(&self, entry: &str, schema: u32, revision: u16) -> u64 {
         let mut identity = schema.to_le_bytes().to_vec();
         identity.extend(revision.to_le_bytes());

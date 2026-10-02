@@ -9,7 +9,7 @@ use std::io;
 /// not a compiler patch version: compatible compiler updates keep this value.
 // Contract 10 adds package WAV assets and scripted sound commands. Older
 // clients reject the offer before any payload download.
-pub const CLIENT_RUNTIME_VERSION: u32 = 10;
+pub const CLIENT_RUNTIME_VERSION: u32 = 11;
 
 pub const MAX_BUNDLE_PART: usize = 60 * 1024;
 

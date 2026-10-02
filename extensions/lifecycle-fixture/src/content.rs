@@ -57,6 +57,7 @@ impl Extension for Content {
             palette: vec![(b'c', [0.8, 0.4, 0.2, 1.0]), (b'g', [1.0, 0.8, 0.4, 1.0])],
         })?;
         let mut lamp = Block {
+            acoustics: None,
             key: LAMP.into(),
             name: "COPPER LAMP".into(),
             swatch: [0.8, 0.4, 0.2, 1.0],
@@ -111,6 +112,7 @@ impl Extension for Content {
             components: Components::None,
         })?;
         r.block(Block {
+            acoustics: None,
             key: REED.into(),
             name: "COPPER REED".into(),
             swatch: [0.4, 0.7, 0.3, 1.0],

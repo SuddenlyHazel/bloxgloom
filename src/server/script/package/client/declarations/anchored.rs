@@ -34,6 +34,12 @@ pub(in crate::server::script::package::client) fn decode(
 ) -> Result<ClientBundle, ScriptError> {
     let mut reader = Reader(&bytes[MAGIC.len()..]);
     let inner = reader.field(MAX_BUNDLE_BYTES)?;
+    // Compatibility wrappers descend strictly in version, bounding recursion.
+    if inner.get(..8) == Some(b"BGCLIENT")
+        && inner.get(8).is_some_and(|version| *version >= MAGIC[8])
+    {
+        return Err(invalid());
+    }
     if inner.starts_with(MAGIC) {
         return Err(invalid());
     }

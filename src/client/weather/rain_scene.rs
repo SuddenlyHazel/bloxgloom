@@ -11,7 +11,9 @@ fn material(catalog: &Catalog, id: BlockStateId) -> Option<RainMaterial> {
     if !block.solid {
         return None;
     }
-    Some(if block.cutout {
+    Some(if let Some(acoustics) = catalog.block_acoustics(id) {
+        acoustics.surface
+    } else if block.cutout {
         RainMaterial::Leaf
     } else if block.key == "bloxgloom:wood" {
         RainMaterial::Wood
@@ -43,21 +45,31 @@ pub(super) fn sample(
     let bottom = (eye.y.floor() as i32).saturating_sub(16);
     for z in oz..oz + 16 {
         for x in ox..ox + 16 {
+            let mut foliage_habitat = None;
             for y in (bottom..=top).rev() {
                 let Some(id) = block(x, y, z) else {
                     break;
                 };
                 let Some(material) = material(catalog, id) else {
+                    if foliage_habitat.is_none() {
+                        foliage_habitat = catalog.block_acoustics(id).map(|a| a.habitat);
+                    }
                     continue;
                 };
-                let habitat = if id == world::GRASS || id == world::MOSS {
-                    Habitat::Ground
-                } else if material == RainMaterial::Leaf {
-                    Habitat::Canopy
-                } else {
-                    Habitat::None
-                };
+                let declared = catalog.block_acoustics(id);
+                let habitat = foliage_habitat
+                    .or(declared.map(|a| a.habitat))
+                    .unwrap_or_else(|| {
+                        if id == world::GRASS || id == world::MOSS {
+                            Habitat::Ground
+                        } else if material == RainMaterial::Leaf {
+                            Habitat::Canopy
+                        } else {
+                            Habitat::None
+                        }
+                    });
                 scene.tiles.push(RainTile {
+                    impact: declared.and_then(|a| a.impact),
                     centre: [x as f32 + 0.5, y as f32 + 1.0, z as f32 + 0.5],
                     material,
                     habitat,
@@ -70,6 +82,7 @@ pub(super) fn sample(
                         .is_some_and(|id| catalog.block_flags(id) & crate::content::SOLID == 0)
                     {
                         scene.tiles.push(RainTile {
+                            impact: declared.and_then(|a| a.impact),
                             centre: [
                                 x as f32 + 0.5 + dx as f32 * 0.5,
                                 y as f32 + 0.5,

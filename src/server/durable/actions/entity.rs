@@ -829,6 +829,7 @@ fn plan_reaction_removal(
             players: &[],
             action_id: None,
             clock: None,
+            weather: Some(state.weather.capture()),
             actor: None,
             actor_position: None,
             admin: false,

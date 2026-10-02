@@ -479,6 +479,7 @@ fn luau_inventory_capacity_failures_and_delayed_drop_leave_every_slot_unchanged(
             players: &[],
             action_id: None,
             clock: None,
+            weather: None,
             actor: Some((PROFILE, &inventory)),
             actor_position: Some([0.5, 80.0, 0.5]),
             admin: false,

@@ -37,6 +37,7 @@ pub(in crate::server) fn invoke(
         players: participants.players,
         action_id: None,
         clock: participants.clock,
+        weather: participants.weather,
         world,
         reads,
         requested,
