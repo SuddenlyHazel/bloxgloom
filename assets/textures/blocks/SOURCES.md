@@ -8,8 +8,22 @@ NAPP is by the NAPP team: https://napplab.com/.
 `source/import_napp.py` imports the block PNGs at 128×128 with Lanczos filtering.
 Grass uses a fixed green tint (RGB 145, 189, 89); its tinted alpha overlay is
 composited over the supplied dirt side before resizing. Source `moss_block.png`
-maps to our `moss.png`. Normal (`_n`) and specular (`_s`) companion maps are not
-imported: the current material pipeline consumes albedo only.
+maps to our `moss.png`. Normal (`_n`) and specular (`_s`) companions are imported
+as linear data with box filtering and registered after the existing builtin
+texture IDs. All three maps remain at the renderer's 128×128 resolution.
+
+The material pipeline pairs catalog keys by suffix: a registered `pack:rock`
+can have registered `pack:rock_n` and `pack:rock_s` textures, independently.
+Their bytes participate in the normal catalog handshake. Missing maps preserve
+the original shading. Normals use RGB tangent vectors with green pointing down
+the image (confirmed against this pack's alpha height gradients). Specular red
+controls smoothness and green controls metallic reflectance, following the
+oldPBR convention: https://shaders.properties/current/how-to/pbr_standards/.
+Specular highlights use the sun, voxel sky visibility, and sun shadows.
+
+Normal alpha retains the supplied height data; specular blue/alpha are retained
+in the assets. Height displacement, parallax, and extra emission channels are
+not interpreted by this first normal/specular implementation.
 
 To reproduce from the original local pack:
 

@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+pub(super) mod companions;
 pub(super) mod resources;
 
 use crate::content;

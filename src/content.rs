@@ -12,6 +12,7 @@ mod anchored;
 pub(crate) mod appearance;
 mod builtins;
 pub(crate) mod client_metadata;
+mod companions;
 pub(crate) mod composition;
 pub(crate) mod creatures;
 pub(crate) mod declarations;

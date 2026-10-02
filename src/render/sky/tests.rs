@@ -13,8 +13,10 @@ fn atmospheric_sky_shader_validates_without_a_gpu() {
 #[test]
 fn weather_fog_shaders_validate_without_a_gpu() {
     let terrain = format!(
-        "{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{}",
+        "{}\n{}\n{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{}",
         crate::render::custom::TYPES,
+        include_str!("../material/relief.wgsl"),
+        include_str!("../material/companions.wgsl"),
         include_str!("../pipeline.wgsl")
     );
     let character = crate::render::avatars::character_shader(crate::content::catalog());

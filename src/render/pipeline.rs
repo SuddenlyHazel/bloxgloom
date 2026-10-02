@@ -46,7 +46,7 @@ pub(crate) fn create_voxel_pipeline_with_catalog(
         "material texture array admitted"
     );
     let source = format!(
-        "{}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
+        "{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\nfn bg_vertex(input: BgVertex, layer: u32) -> BgVertex {{ return input; }}\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface {{ return input; }}\n{SHADER}",
         custom::TYPES
     );
     Ok(create_voxel_pipeline_source(
@@ -73,7 +73,11 @@ pub(crate) fn create_custom_voxel_pipeline(
         maximum_bytes = material::resources::MAX_ARRAY_BYTES,
         "material texture array admitted"
     );
-    let source = format!("{}\n{}\n{SHADER}", custom::TYPES, custom::compose(prepared));
+    let source = format!(
+        "{}\n{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\n{SHADER}",
+        custom::TYPES,
+        custom::compose(prepared)
+    );
     let owners = prepared
         .materials
         .iter()
@@ -146,9 +150,14 @@ fn create_voxel_pipeline_source(
     });
     // Decode and build mips off the window thread. The verified catalog owns
     // bounded PNG bytes; no package image work belongs in a frame or event.
-    let mips = std::thread::scope(|scope| {
+    let (mips, companions) = std::thread::scope(|scope| {
         scope
-            .spawn(|| material::material_mips_for(catalog))
+            .spawn(|| {
+                (
+                    material::material_mips_for(catalog),
+                    material::companions::prepare(catalog),
+                )
+            })
             .join()
             .expect("verified material tiles decode")
     });
@@ -185,6 +194,25 @@ fn create_voxel_pipeline_source(
     let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
         dimension: Some(wgpu::TextureViewDimension::D2Array),
         ..Default::default()
+    });
+    let normal_view = material::companions::upload(
+        device,
+        queue,
+        &companions.normal,
+        material::texture_layers_for(catalog),
+        "voxel normal maps",
+    );
+    let specular_view = material::companions::upload(
+        device,
+        queue,
+        &companions.specular,
+        material::texture_layers_for(catalog),
+        "voxel specular maps",
+    );
+    let map_flags = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("frozen material companion flags"),
+        contents: bytemuck::cast_slice(&companions.flags),
+        usage: wgpu::BufferUsages::STORAGE,
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("nearest repeating voxel tiles"),
@@ -224,6 +252,36 @@ fn create_voxel_pipeline_source(
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
     });
     let emission = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -246,6 +304,18 @@ fn create_voxel_pipeline_source(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: emission.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(&normal_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(&specular_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: map_flags.as_entire_binding(),
             },
         ],
     });
@@ -319,7 +389,10 @@ pub(crate) fn create_sun_shadow_pipelines(
     prepared: Option<&custom::Prepared>,
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
     let hooks = prepared.map_or_else(|| String::from("fn bg_vertex(input: BgVertex, layer: u32) -> BgVertex { return input; }\nfn bg_surface(input: BgSurface, layer: u32) -> BgSurface { return input; }"), custom::compose);
-    let source = super::daylight::shader(&format!("{}\n{hooks}\n{SHADER}", custom::TYPES));
+    let source = super::daylight::shader(&format!(
+        "{}\n{RELIEF_SHADER}\n{DETAIL_SHADER}\n{hooks}\n{SHADER}",
+        custom::TYPES
+    ));
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("shared voxel sun casters"),
         source: wgpu::ShaderSource::Wgsl(source.into()),
@@ -377,4 +450,6 @@ pub(crate) fn create_sun_shadow_pipelines(
     )
 }
 
+const RELIEF_SHADER: &str = include_str!("material/relief.wgsl");
+const DETAIL_SHADER: &str = include_str!("material/companions.wgsl");
 const SHADER: &str = include_str!("pipeline.wgsl");

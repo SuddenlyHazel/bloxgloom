@@ -12,7 +12,8 @@ const fn bytes_per_layer() -> u64 {
     }
     bytes
 }
-pub(crate) const BYTES_PER_LAYER: u64 = bytes_per_layer();
+// Albedo, normal and specular arrays all have a full mip chain.
+pub(crate) const BYTES_PER_LAYER: u64 = bytes_per_layer() * 3;
 pub(crate) const MAX_ARRAY_LAYERS: u32 = (MAX_ARRAY_BYTES / BYTES_PER_LAYER) as u32;
 
 #[derive(Debug, PartialEq, Eq)]

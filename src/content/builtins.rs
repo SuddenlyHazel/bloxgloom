@@ -209,6 +209,8 @@ impl Catalog {
             catalog.embedded_texture(&texture);
         }
 
+        super::companions::register(&mut catalog);
+
         let blocks = [
             block(world::AIR, "air", "AIR", [0.0; 4], [0, 0, 0]),
             block(

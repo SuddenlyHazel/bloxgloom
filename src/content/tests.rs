@@ -128,7 +128,7 @@ fn nonmonotonic_registration_never_truncates_prior_definitions() {
 #[test]
 fn builtin_catalog_preserves_default_state_and_item_ids() {
     let catalog = Catalog::builtins();
-    assert_eq!(catalog.textures().len(), 27);
+    assert_eq!(catalog.textures().len(), 45);
     for id in 0..=world::MAX_BUILTIN_BLOCK.0 {
         let state = BlockStateId(id);
         assert!(catalog.block(state).is_some());
@@ -185,7 +185,7 @@ fn registration_rejects_collisions_and_invalid_state_schema() {
             emission_strength: 0.0,
         })
         .unwrap();
-    assert_eq!(layer, TextureId(27));
+    assert_eq!(layer, TextureId(45));
     let marble = BlockDef {
         id: BlockTypeId(16),
         key: "example:marble".into(),
