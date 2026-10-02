@@ -34,18 +34,26 @@ impl Worker {
         let (completed, results) = mpsc::sync_channel(8);
         let current = Arc::new(Mutex::new(HashMap::new()));
         let revisions = Arc::clone(&current);
+        // An idle lane must not keep a retired session's catalog alive.
+        // Prepare texture colors lazily, on the first actual mesh job.
+        let catalog = Arc::downgrade(&catalog);
         thread::Builder::new()
             .name("distant-mesh".into())
             .spawn(move || {
-                let colors = lod::FaceColors::new(&catalog);
+                let mut colors = None;
                 while let Ok(job) = receiver.recv() {
                     let valid =
                         || revisions.lock().unwrap().get(&job.tile.key) == Some(&job.generation);
                     if !valid() {
                         continue;
                     }
+                    let Some(catalog) = catalog.upgrade() else {
+                        return;
+                    };
+                    let colors = colors.get_or_insert_with(|| lod::FaceColors::new(&catalog));
                     let neighbors: Vec<_> = job.neighbors.iter().map(AsRef::as_ref).collect();
-                    let mesh = lod::mesh(&job.tile, &neighbors, &catalog, &colors);
+                    let mesh = lod::mesh(&job.tile, &neighbors, &catalog, colors);
+                    drop(catalog);
                     let mut result = Result {
                         key: job.tile.key,
                         generation: job.generation,
@@ -95,5 +103,11 @@ impl Worker {
     pub fn stop(&mut self) {
         self.clear();
         self.jobs = None;
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
