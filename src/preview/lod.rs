@@ -169,6 +169,16 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             },
             crate::daylight::CYCLE_MS * 3 / 4,
         ),
+        (
+            "bridge-cave-ready-3d",
+            Camera {
+                position: Vec3::new(42.0, 14.0, -16.0),
+                yaw: 2.0,
+                pitch: -0.08,
+                ..camera
+            },
+            crate::daylight::INITIAL_MS,
+        ),
     ] {
         let atmosphere = render::daylight::Atmosphere::at(time);
         gpu.prepare(
@@ -177,7 +187,10 @@ async fn render_async(directory: &Path, horizon: u16) -> Result<(), Box<dyn Erro
             width,
             height,
             atmosphere,
-            std::iter::empty(),
+            // Known-empty ready near geometry removes only this 3D volume.
+            // The bridge at y=16 remains visible over its x/z footprint.
+            std::iter::once(world::ChunkKey { x: 0, y: 0, z: 0 })
+                .filter(|_| name == "bridge-cave-ready-3d"),
         );
         queue.write_buffer(
             &sky_buffer,
