@@ -195,7 +195,8 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
                 }
             }
         };
-        for peer in [&mut first, &mut second] {
+        let mut gpu_qa = crate::render::lod::qa::EditGpu::from_env();
+        for (client, peer) in [&mut first, &mut second].into_iter().enumerate() {
             protocol::write_client(&mut *peer, &ClientMessage::LodRequest { request: 1, key })
                 .unwrap();
             let tile = receive_tile(peer, 1);
@@ -205,6 +206,11 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
                     .iter()
                     .any(|s| s.bottom <= 95 && s.top > 95 && s.state == crate::world::GLOWSTONE)
             );
+            if client == 0
+                && let Some(qa) = &mut gpu_qa
+            {
+                qa.warm(&tile);
+            }
         }
         let started = Instant::now();
         protocol::write_client(
@@ -219,7 +225,7 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
             },
         )
         .unwrap();
-        for peer in [&mut first, &mut second] {
+        for (client, peer) in [&mut first, &mut second].into_iter().enumerate() {
             let revision = loop {
                 match protocol::read_server(&mut *peer).unwrap() {
                     ServerMessage::LodInvalidate {
@@ -243,6 +249,11 @@ fn committed_edit_refreshes_two_distant_clients_without_waiting_for_checkpoint()
                     .iter()
                     .any(|s| s.bottom <= 95 && s.top > 95 && s.state == crate::world::GLOWSTONE)
             );
+            if client == 0
+                && let Some(qa) = &mut gpu_qa
+            {
+                qa.updated(&tile, started);
+            }
         }
         eprintln!(
             "LOD committed edit to two refreshed clients: {}ms",

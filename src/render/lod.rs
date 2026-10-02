@@ -9,4 +9,6 @@ pub(crate) use gpu::Gpu;
 pub(crate) use mesh::{Mesh, mesh};
 pub(crate) use selection::desired_tiles;
 #[cfg(test)]
+pub(crate) mod qa;
+#[cfg(test)]
 mod tests;

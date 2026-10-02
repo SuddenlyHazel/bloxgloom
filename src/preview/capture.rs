@@ -1,6 +1,6 @@
 //! Optional offscreen image readback, kept outside measured render work.
 use super::*;
-pub(super) fn save_texture(
+pub(crate) fn save_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: &wgpu::Texture,
@@ -8,6 +8,17 @@ pub(super) fn save_texture(
     height: u32,
     path: &Path,
 ) -> Result<(), Box<dyn Error>> {
+    save_and_read(device, queue, color, width, height, path).map(|_| ())
+}
+
+pub(crate) fn save_and_read(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    color: &wgpu::Texture,
+    width: u32,
+    height: u32,
+    path: &Path,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let row_bytes = width.checked_mul(4).ok_or("capture row size overflow")?;
     let stride = row_bytes
         .checked_add(255)
@@ -65,5 +76,5 @@ pub(super) fn save_texture(
         fs::create_dir_all(parent)?;
     }
     write_png(path, width, height, &pixels)?;
-    Ok(())
+    Ok(pixels)
 }
