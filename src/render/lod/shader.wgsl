@@ -20,5 +20,7 @@ struct Out { @builtin(position) position:vec4f,@location(0) relative:vec3f,@loca
     for(var probe=0u;probe<16384u;probe++){
         let c=coverage[index];if c.w==0 {break;}if all(c.xyz==k){discard;}index=(index+1u)&16383u;
     }
-    return vec4f(bg_apply_fog(v.color,v.relative,v.sky),1.0);
+    // Outdoor air scatters even an unlit distant wall toward the horizon.
+    // A sheltered viewer still sees sealed, unlit interiors remain dark.
+    return vec4f(bg_apply_fog(v.color,v.relative,max(v.sky,camera.eye.w)),1.0);
 }

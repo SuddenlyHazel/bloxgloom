@@ -121,6 +121,8 @@ pub struct RenderStats {
     pub uploaded_chunks: usize,
     pub pending_chunks: usize,
     pub drawn_triangles: usize,
+    pub lod_tiles: usize,
+    pub lod_bytes: usize,
 }
 pub struct Renderer {
     catalog: Arc<Catalog>,
@@ -171,6 +173,9 @@ pub struct Renderer {
 impl Renderer {
     pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), lod::Mesh> {
         self.lod.enqueue(mesh)
+    }
+    pub(crate) fn discard_obsolete_lod(&mut self, key: crate::lod::TileKey, minimum: u64) {
+        self.lod.discard_obsolete(key, minimum);
     }
     pub(crate) fn remove_lod_tile(&mut self, key: crate::lod::TileKey) {
         self.lod.remove(key);
@@ -599,6 +604,8 @@ impl Renderer {
         let mut stats = RenderStats {
             uploaded_chunks,
             pending_chunks: self.pending.len(),
+            lod_tiles: self.lod.selected_count(),
+            lod_bytes: self.lod.resident_bytes(),
             ..Default::default()
         };
         if self.size.width == 0 || self.size.height == 0 {

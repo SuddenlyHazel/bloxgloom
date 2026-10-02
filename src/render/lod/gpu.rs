@@ -141,9 +141,13 @@ impl Gpu {
             return Err(mesh);
         }
         if self
-            .tiles
-            .get(&mesh.key)
-            .is_some_and(|t| t.revision > mesh.revision)
+            .pending
+            .iter()
+            .any(|m| m.key == mesh.key && m.revision > mesh.revision)
+            || self
+                .tiles
+                .get(&mesh.key)
+                .is_some_and(|t| t.revision > mesh.revision)
         {
             return Ok(());
         }
@@ -232,6 +236,10 @@ impl Gpu {
     pub(crate) fn set_horizon(&mut self, horizon: u16) {
         self.horizon = horizon;
     }
+    pub(crate) fn discard_obsolete(&mut self, key: TileKey, minimum: u64) {
+        self.pending
+            .retain(|m| m.key != key || m.revision >= minimum);
+    }
     pub(crate) fn remove(&mut self, key: TileKey) {
         self.tiles.remove(&key);
         self.pending.retain(|m| m.key != key);
@@ -240,6 +248,12 @@ impl Gpu {
         self.tiles.clear();
         self.pending.clear();
         self.selected.clear();
+    }
+    pub(crate) fn resident_bytes(&self) -> usize {
+        self.tiles.values().map(|t| t.bytes).sum()
+    }
+    pub(crate) fn selected_count(&self) -> usize {
+        self.selected.len()
     }
     pub(crate) fn ready_keys(&self) -> impl Iterator<Item = TileKey> + '_ {
         self.tiles.keys().copied()
