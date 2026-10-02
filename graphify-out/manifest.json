@@ -924,9 +924,9 @@
     "semantic_hash": ""
   },
   "src/content/builtins.rs": {
-    "mtime": 1790909241.398453,
-    "seen": 1790909619.745163,
-    "ast_hash": "05e2d2adfb990d96c78bac450d197ff9",
+    "mtime": 1790912206.9693153,
+    "seen": 1790912286.417312,
+    "ast_hash": "52e8700a3d068a352cae5e8da0e5a5e4",
     "semantic_hash": ""
   },
   "src/content/client_metadata.rs": {
@@ -1056,9 +1056,9 @@
     "semantic_hash": ""
   },
   "src/content/tests.rs": {
-    "mtime": 1790909241.3998687,
-    "seen": 1790909619.745194,
-    "ast_hash": "971412b7161787bea23cd6f703d6d714",
+    "mtime": 1790912206.9706457,
+    "seen": 1790912286.417401,
+    "ast_hash": "7ac303cdaebf6a6cd2aa03b690e5213d",
     "semantic_hash": ""
   },
   "src/gameplay.rs": {
@@ -1482,9 +1482,9 @@
     "semantic_hash": "baafdc3221bd166a8d630f7e244931a3"
   },
   "src/render/tests.rs": {
-    "mtime": 1790872778.97605,
-    "seen": 1790906849.5092852,
-    "ast_hash": "f35ae827faba01c93991595e1c3f3b85",
+    "mtime": 1790912238.3409903,
+    "seen": 1790912286.4180522,
+    "ast_hash": "b3b29405a6df922324c2d9f5acb02dbb",
     "semantic_hash": ""
   },
   "src/render/visibility.rs": {
@@ -4038,15 +4038,15 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/SOURCES.md": {
-    "mtime": 1790910777.2326033,
-    "seen": 1790910838.355395,
-    "ast_hash": "dd5dbd123c2ac37205ed7fa7cab88c57",
+    "mtime": 1790912238.3391685,
+    "seen": 1790912286.418711,
+    "ast_hash": "50334ccab42336baebf014cb1c43fd23",
     "semantic_hash": ""
   },
   "assets/textures/foliage/SOURCES.md": {
-    "mtime": 1790260768.9565592,
-    "seen": 1790906849.509831,
-    "ast_hash": "ec109fcb41e1a20d9b885c92b32159b5",
+    "mtime": 1790912238.3402033,
+    "seen": 1790912286.4187121,
+    "ast_hash": "9c6354af7cd6051e6496345bfd28bda4",
     "semantic_hash": ""
   },
   "docs/modding/ANCHORED-BEHAVIORS.md": {
@@ -4404,15 +4404,15 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/wood_side.png": {
-    "mtime": 1790260725.1557229,
-    "seen": 1790906849.509999,
-    "ast_hash": "8ba6c5e10078563763d9e101c8fe4dc1",
+    "mtime": 1790912238.9210188,
+    "seen": 1790912286.4189382,
+    "ast_hash": "3e4ca880907775ed5a396a7cfdf620e5",
     "semantic_hash": ""
   },
   "assets/textures/blocks/wood_top.png": {
-    "mtime": 1790260730.8383646,
-    "seen": 1790906849.5100002,
-    "ast_hash": "29bee506098285a1d0ee015f0eb22556",
+    "mtime": 1790912238.92821,
+    "seen": 1790912286.418941,
+    "ast_hash": "da0827e754a9154f5492a22f3432b975",
     "semantic_hash": ""
   },
   "assets/textures/foliage/fern.png": {
@@ -4440,9 +4440,9 @@
     "semantic_hash": ""
   },
   "assets/textures/foliage/leaves.png": {
-    "mtime": 1790260734.8798099,
-    "seen": 1790906849.510004,
-    "ast_hash": "1c081e8f543a0711d04e2b138a2df4f7",
+    "mtime": 1790912238.9363885,
+    "seen": 1790912286.4189482,
+    "ast_hash": "a2120d3e0920f2ffccfe5e5c759eb82b",
     "semantic_hash": ""
   },
   "assets/textures/foliage/source/broadleaf-leaves-concept.png": {
@@ -4506,9 +4506,9 @@
     "semantic_hash": ""
   },
   "assets/textures/items/stick.png": {
-    "mtime": 1790259598.7753973,
-    "seen": 1790906849.510015,
-    "ast_hash": "e6069d51d1ae4d22cac9ae8ab7ba480e",
+    "mtime": 1790912238.9397807,
+    "seen": 1790912286.4189599,
+    "ast_hash": "8335b4870811e269398c172989eda30c",
     "semantic_hash": ""
   },
   "assets/textures/items/stick.svg": {
@@ -8292,15 +8292,15 @@
     "semantic_hash": ""
   },
   "assets/textures/blocks/source/import_napp.py": {
-    "mtime": 1790909773.3745334,
-    "seen": 1790909795.908271,
-    "ast_hash": "b9a3e134f41c3a41c7077100f8a2b0bf",
+    "mtime": 1790912206.9682503,
+    "seen": 1790912286.416147,
+    "ast_hash": "99fc53556aa2eafcaf7bb523877d6114",
     "semantic_hash": ""
   },
   "src/content/companions.rs": {
-    "mtime": 1790909405.9527545,
-    "seen": 1790909619.745165,
-    "ast_hash": "3c64702054c86be7fa20d072f7353093",
+    "mtime": 1790912206.9697301,
+    "seen": 1790912286.4173179,
+    "ast_hash": "6032cf7cf6a6af2146a8553aa9968c6c",
     "semantic_hash": ""
   },
   "src/render/material/companions.rs": {
@@ -8310,9 +8310,9 @@
     "semantic_hash": ""
   },
   "src/render/material/companions/tests.rs": {
-    "mtime": 1790910208.7566767,
-    "seen": 1790910290.209155,
-    "ast_hash": "f35b7cc3f2927b9f44dae13becb4ea28",
+    "mtime": 1790912206.9713407,
+    "seen": 1790912286.4180229,
+    "ast_hash": "9533d86e6244c8c1e86916c4b3c17f10",
     "semantic_hash": ""
   },
   "src/render/material/companions/tests/gpu.rs": {
@@ -8445,6 +8445,48 @@
     "mtime": 1790911743.6821198,
     "seen": 1790911833.839166,
     "ast_hash": "c1bf4c01523b1f7d225bc6b71465ab8a",
+    "semantic_hash": ""
+  },
+  "assets/textures/items/SOURCES.md": {
+    "mtime": 1790912238.3404934,
+    "seen": 1790912286.418714,
+    "ast_hash": "3125e862e3359f9232caa1dd115736f6",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/wood_side_n.png": {
+    "mtime": 1790912238.9536037,
+    "seen": 1790912286.4189389,
+    "ast_hash": "5517a8a53d87f16563c82900b9fa37d2",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/wood_side_s.png": {
+    "mtime": 1790912238.9663801,
+    "seen": 1790912286.4189389,
+    "ast_hash": "9e34db7435a4e2248783ff6cffb0e186",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/wood_top_n.png": {
+    "mtime": 1790912238.9772995,
+    "seen": 1790912286.418941,
+    "ast_hash": "f43a3620b717d9cb064408e4cb460dff",
+    "semantic_hash": ""
+  },
+  "assets/textures/blocks/wood_top_s.png": {
+    "mtime": 1790912238.9912913,
+    "seen": 1790912286.418942,
+    "ast_hash": "218ede232c50e5aa940f8e07117cfa24",
+    "semantic_hash": ""
+  },
+  "assets/textures/items/stick_n.png": {
+    "mtime": 1790912238.9987922,
+    "seen": 1790912286.418962,
+    "ast_hash": "e39466665d292e800672248fe7f08dbb",
+    "semantic_hash": ""
+  },
+  "assets/textures/items/stick_s.png": {
+    "mtime": 1790912239.014969,
+    "seen": 1790912286.418963,
+    "ast_hash": "eac550ac51ae1950175cbb62b0628cea",
     "semantic_hash": ""
   }
 }
