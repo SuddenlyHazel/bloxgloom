@@ -126,15 +126,15 @@ fn trim_cache(path: &std::path::Path) {
     }
 }
 fn build(world: &World, root: &std::path::Path, job: &Job) -> io::Result<LodTile> {
-    if let Some(children) = &job.children {
-        if let Ok(tile) = crate::lod::reduce_parent(
+    if let Some(children) = &job.children
+        && let Ok(tile) = crate::lod::reduce_parent(
             job.key,
             job.revision,
             [&children[0], &children[1], &children[2], &children[3]],
             world.catalog(),
-        ) {
-            return Ok(tile);
-        }
+        )
+    {
+        return Ok(tile);
     }
     let bounds = job
         .key
