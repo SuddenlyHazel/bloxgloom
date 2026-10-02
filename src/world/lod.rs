@@ -19,6 +19,9 @@ pub(crate) fn builtin_lod_tile(
     build(key, revision, seed, catalog, &[])
 }
 impl World {
+    pub(crate) fn lod_max_level(&self) -> u8 {
+        if self.generator.is_builtin() { 4 } else { 3 }
+    }
     pub(crate) fn lod_builtin_summary(
         &self,
         key: TileKey,
@@ -163,7 +166,7 @@ fn build(
             spans,
         });
     }
-    let mut tile = LodTile {
+    let tile = LodTile {
         key,
         revision,
         columns,
@@ -177,28 +180,7 @@ fn build(
             (width as u32 - 1).max((top - bottom) as u32)
         },
     };
-    if tile.validate(catalog).is_err() {
-        // Remove material boundaries only. No occupied interval or cave gap is
-        // discarded; the upper material and exposed-surface light win.
-        for column in &mut tile.columns {
-            let mut spans: Vec<Span> = Vec::new();
-            for s in &column.spans {
-                if let Some(last) = spans.last_mut()
-                    && last.top == s.bottom
-                {
-                    last.top = s.top;
-                    last.state = s.state;
-                    last.sky = s.sky;
-                    last.glow = last.glow.max(s.glow);
-                } else {
-                    spans.push(*s);
-                }
-            }
-            column.spans = spans;
-        }
-    }
-    tile.validate(catalog)?;
-    Ok(tile)
+    tile.into_render_summary(catalog)
 }
 
 #[cfg(test)]

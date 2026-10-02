@@ -160,6 +160,5 @@ pub fn extract(
         columns,
         geometric_error: width as u32 - 1,
     };
-    tile.validate(catalog)?;
-    Ok(tile)
+    tile.into_render_summary(catalog)
 }

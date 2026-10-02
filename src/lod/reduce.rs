@@ -115,6 +115,5 @@ pub fn reduce_parent(
         columns,
         geometric_error,
     };
-    tile.validate(catalog)?;
-    Ok(tile)
+    tile.into_render_summary(catalog)
 }

@@ -247,3 +247,115 @@ fn hostile_vertical_extent_cannot_overflow_mesh_dimensions() {
     };
     assert!(tile.validate(&catalog).is_err());
 }
+
+#[test]
+fn composed_contributor_bridge_survives_bounded_render_extraction() {
+    use bloxgloom_host_api::generation::{
+        Context, Contributor, GenerationError, Output, Registration,
+    };
+    use std::sync::Arc;
+    struct Bridge;
+    impl Contributor for Bridge {
+        fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
+            for z in 0..16 {
+                for x in 0..16 {
+                    if context.world_position([x, 0, z])?[1] == 80 {
+                        output.set([x, 0, z], "bloxgloom:wood")?;
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+    let catalog = Catalog::builtins();
+    let registration = Registration {
+        key: "test:bridge".into(),
+        revision: 1,
+        contributor: Arc::new(Bridge),
+    };
+    let mut chunks = Vec::new();
+    for z in -2..0 {
+        for x in -2..0 {
+            for y in -4..6 {
+                chunks.push(
+                    crate::world::generate_chunk_with_contributors(
+                        ChunkKey { x, y, z },
+                        1,
+                        &catalog,
+                        std::slice::from_ref(&registration),
+                    )
+                    .unwrap(),
+                );
+            }
+        }
+    }
+    let tile = extract(
+        TileKey {
+            level: 0,
+            x: -1,
+            z: -1,
+        },
+        1,
+        &chunks,
+        &catalog,
+    )
+    .unwrap();
+    tile.validate(&catalog).unwrap();
+    assert_eq!(tile.columns.len(), TILE_COLUMNS);
+    for c in &tile.columns {
+        assert!(c.known(-64, 96));
+        assert!(
+            c.spans
+                .iter()
+                .any(|s| s.bottom == 80 && s.top == 81 && s.state == WOOD)
+        );
+        assert!(c.spans.iter().all(|s| s.top <= 74 || s.bottom >= 80));
+    }
+}
+
+#[test]
+fn render_budget_simplification_cannot_erase_invalid_data_or_air_gaps() {
+    let catalog = Catalog::builtins();
+    let mut tile = LodTile {
+        key: TileKey {
+            level: 0,
+            x: 0,
+            z: 0,
+        },
+        revision: 1,
+        columns: vec![Column::default(); TILE_COLUMNS],
+        geometric_error: 0,
+    };
+    tile.columns[0] = Column {
+        coverage: vec![Interval {
+            bottom: 0,
+            top: 100,
+        }],
+        spans: (0..33)
+            .map(|i| Span {
+                bottom: i,
+                top: i + 1,
+                state: if i % 2 == 0 { STONE } else { WOOD },
+                sky: 0,
+                glow: 0,
+            })
+            .collect(),
+    };
+    let reduced = tile.clone().into_render_summary(&catalog).unwrap();
+    assert_eq!(reduced.columns[0].spans.len(), 1);
+    assert_eq!(
+        (
+            reduced.columns[0].spans[0].bottom,
+            reduced.columns[0].spans[0].top
+        ),
+        (0, 33)
+    );
+    tile.columns[0].spans[0].state = crate::content::BlockStateId(u32::MAX);
+    assert!(tile.clone().into_render_summary(&catalog).is_err());
+    tile.columns[0].spans[0].state = STONE;
+    for s in &mut tile.columns[0].spans {
+        s.bottom *= 2;
+        s.top = s.bottom + 1;
+    }
+    assert!(tile.into_render_summary(&catalog).is_err());
+}

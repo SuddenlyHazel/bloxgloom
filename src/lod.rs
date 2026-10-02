@@ -131,17 +131,57 @@ impl LodTile {
             .sum::<usize>()
     }
     pub fn validate(&self, catalog: &Catalog) -> Result<(), String> {
+        self.validate_structure(catalog)?;
+        let spans: usize = self.columns.iter().map(|c| c.spans.len()).sum();
+        let coverage: usize = self.columns.iter().map(|c| c.coverage.len()).sum();
+        if self
+            .columns
+            .iter()
+            .any(|c| c.spans.len() > MAX_SPANS_PER_COLUMN)
+        {
+            return Err("LOD column exceeds span budget".into());
+        }
+        if spans > MAX_TILE_SPANS
+            || coverage > MAX_TILE_COVERAGE
+            || self.encoded_bytes() > MAX_TILE_BYTES
+        {
+            return Err("LOD tile exceeds payload budget".into());
+        }
+        Ok(())
+    }
+
+    /// Fit a render summary by discarding internal material boundaries only.
+    /// Accurate occupancy and all unknown/known intervals are preserved. If
+    /// these alone exceed admission caps, callers publish unavailable instead.
+    pub(crate) fn into_render_summary(mut self, catalog: &Catalog) -> Result<Self, String> {
+        self.validate_structure(catalog)?;
+        if self.validate(catalog).is_err() {
+            for column in &mut self.columns {
+                let mut spans: Vec<Span> = Vec::new();
+                for s in &column.spans {
+                    if let Some(last) = spans.last_mut()
+                        && last.top == s.bottom
+                    {
+                        last.top = s.top;
+                        last.state = s.state;
+                        last.sky = s.sky;
+                        last.glow = last.glow.max(s.glow);
+                    } else {
+                        spans.push(*s);
+                    }
+                }
+                column.spans = spans;
+            }
+        }
+        self.validate(catalog)?;
+        Ok(self)
+    }
+
+    fn validate_structure(&self, catalog: &Catalog) -> Result<(), String> {
         if self.key.bounds().is_none() || self.columns.len() != TILE_COLUMNS {
             return Err("invalid LOD tile bounds or column count".into());
         }
-        let mut spans = 0;
-        let mut coverage = 0;
         for c in &self.columns {
-            spans += c.spans.len();
-            coverage += c.coverage.len();
-            if c.spans.len() > MAX_SPANS_PER_COLUMN {
-                return Err("LOD column exceeds span budget".into());
-            }
             if c.coverage.iter().any(|v| v.bottom >= v.top)
                 || c.coverage.windows(2).any(|v| v[0].top >= v[1].bottom)
             {
@@ -165,12 +205,6 @@ impl LodTile {
                     return Err("invalid LOD span".into());
                 }
             }
-        }
-        if spans > MAX_TILE_SPANS
-            || coverage > MAX_TILE_COVERAGE
-            || self.encoded_bytes() > MAX_TILE_BYTES
-        {
-            return Err("LOD tile exceeds payload budget".into());
         }
         Ok(())
     }
