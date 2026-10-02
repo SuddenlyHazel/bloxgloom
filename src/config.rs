@@ -20,6 +20,55 @@ const MIN_SCALE: f32 = 0.75;
 const MAX_SCALE: f32 = 2.0;
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+/// Local quality choice for directional sun shadows, independent of voxel lighting.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SunShadowQuality {
+    Off,
+    Low,
+    #[default]
+    Medium,
+    High,
+}
+
+impl SunShadowQuality {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "off" => Some(Self::Off),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+        }
+    }
+
+    pub const fn cycle(self, increase: bool) -> Self {
+        match (self, increase) {
+            (Self::Off, true) | (Self::Medium, false) => Self::Low,
+            (Self::Low, true) | (Self::High, false) => Self::Medium,
+            (Self::Medium, true) | (Self::Off, false) => Self::High,
+            (Self::High, true) | (Self::Low, false) => Self::Off,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
     pub sensitivity: f32,
@@ -28,6 +77,7 @@ pub struct Config {
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
+    pub sun_shadow_quality: SunShadowQuality,
     pub exposure: f32,
     pub post_processing: bool,
     pub bloom_enabled: bool,
@@ -51,6 +101,7 @@ impl Default for Config {
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
+            sun_shadow_quality: SunShadowQuality::default(),
             exposure: 1.0,
             post_processing: true,
             bloom_enabled: true,
@@ -165,6 +216,7 @@ impl Config {
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
+            sun_shadow_quality: self.sun_shadow_quality,
             exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
@@ -209,6 +261,10 @@ impl Config {
             bindings::letter(self.bindings.kiln_fuel).expect("sanitized kiln fuel binding"),
             bindings::letter(self.bindings.drop).expect("sanitized drop binding"),
         );
+        text.push_str(&format!(
+            "sun_shadow_quality={}\n",
+            self.sun_shadow_quality.as_str()
+        ));
         text.push_str(&format!(
             "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
             self.audio_master, self.audio_ambient, self.audio_effects
@@ -308,6 +364,11 @@ fn parse_config(contents: &str) -> Config {
             "bounced_gi" => {
                 if let Ok(enabled) = value.parse::<bool>() {
                     config.bounced_gi = enabled;
+                }
+            }
+            "sun_shadow_quality" => {
+                if let Some(quality) = SunShadowQuality::parse(value) {
+                    config.sun_shadow_quality = quality;
                 }
             }
             "selected_slot" => {

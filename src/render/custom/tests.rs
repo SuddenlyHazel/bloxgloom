@@ -338,3 +338,14 @@ fn material_fragment(input: BgSurface) -> BgSurface {
             .unwrap();
     }
 }
+
+#[test]
+fn gpu_custom_cutout_alpha_receives_matching_light_in_color_and_caster_passes() {
+    let prepared = Prepared { materials: vec![Material {
+        owner: "test:lit_cutout".into(), layers: vec![2], textures: vec![2], parameters: vec![],
+        version: 2, vertex_offset: 0.0,
+        shader: "fn material_fragment(input: BgSurface) -> BgSurface { var result = input; result.albedo = vec4f(0.8,0.8,0.8,select(0.0,1.0,input.light.x > 0.7)); return result; }".into(),
+    }] };
+    shader::validate(&prepared.materials[0].shader).unwrap();
+    crate::render::sun_shadow::gpu_tests::verify_custom_alpha(&prepared);
+}

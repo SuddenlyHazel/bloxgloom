@@ -152,8 +152,19 @@ pub(super) async fn run_perf_benchmark_async(
     let post = render::post::PostProcess::new(&device, PERF_WIDTH, PERF_HEIGHT, FORMAT);
     let (sky_pipeline, sky_buffer, sky_group) =
         render::create_sky_pipeline(&device, render::post::HDR_FORMAT);
-    let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
+    let (pipeline, cutout_pipeline, camera_buffer, _camera_group, texture_group) =
         render::create_voxel_pipeline(&device, &queue, render::post::HDR_FORMAT);
+    let shadow_quality = super::sun_shadow::quality()?;
+    let mut sun_shadows =
+        render::sun_shadow::SunShadows::new(&device, &camera_buffer, shadow_quality);
+    let camera_group = sun_shadows.camera_group.clone();
+    let sun_pipelines = render::create_sun_shadow_pipelines(&device, &pipeline, None);
+    eprintln!(
+        "sun shadows: {} ({}px, {}m); GPU timestamps include shadow pass",
+        shadow_quality.as_str(),
+        sun_shadows.projection.settings.resolution,
+        sun_shadows.projection.settings.distance
+    );
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
@@ -370,11 +381,45 @@ pub(super) async fn run_perf_benchmark_async(
             bytemuck::cast_slice(&render::target_outline_vertices(target_block)),
         );
 
+        sun_shadows.update(
+            &queue,
+            camera,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+        );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless perf frame"),
         });
         let first_query = u32::try_from(samples.len() * 2)?;
         let frame_query_set = query_set.as_ref();
+        if let Some(mut pass) = sun_shadows.begin_timed(
+            &mut encoder,
+            frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
+                query_set: set,
+                beginning_of_pass_write_index: Some(first_query),
+                end_of_pass_write_index: None,
+            }),
+        ) {
+            pass.set_bind_group(0, &sun_shadows.caster_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
+            for cutout in [false, true] {
+                pass.set_pipeline(if cutout {
+                    &sun_pipelines.1
+                } else {
+                    &sun_pipelines.0
+                });
+                for (key, mesh) in &gpu_meshes {
+                    if !sun_shadows.projection.contains_chunk(*key, 0.0) {
+                        continue;
+                    }
+                    let mesh = if cutout { &mesh.cutout } else { &mesh.opaque };
+                    if let Some(mesh) = mesh {
+                        pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+                        pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..mesh.indices, 0, 0..1);
+                    }
+                }
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("opaque chunks"),
@@ -397,7 +442,8 @@ pub(super) async fn run_perf_benchmark_async(
                 }),
                 timestamp_writes: frame_query_set.map(|set| wgpu::RenderPassTimestampWrites {
                     query_set: set,
-                    beginning_of_pass_write_index: Some(first_query),
+                    beginning_of_pass_write_index: (!sun_shadows.projection.enabled)
+                        .then_some(first_query),
                     end_of_pass_write_index: None,
                 }),
                 ..Default::default()

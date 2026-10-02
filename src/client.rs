@@ -630,6 +630,9 @@ impl ClientApp {
                 self.config.bloom_strength =
                     (self.config.bloom_strength + sign * 0.02).clamp(0.0, 1.0)
             }
+            SettingId::SunShadows => {
+                self.config.sun_shadow_quality = self.config.sun_shadow_quality.cycle(increase);
+            }
             SettingId::Sensitivity => {
                 self.config.sensitivity =
                     (self.config.sensitivity + sign * 0.00025).clamp(0.0002, 0.01);
@@ -876,6 +879,8 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
+                UiControl::Decrease(SettingId::SunShadows),
+                UiControl::Increase(SettingId::SunShadows),
                 UiControl::Back,
             ],
         }
@@ -1847,6 +1852,7 @@ impl ClientApp {
                 exposure: self.config.exposure,
                 bloom_enabled: self.config.bloom_enabled,
                 bloom_strength: self.config.bloom_strength,
+                sun_shadow_quality: self.config.sun_shadow_quality,
                 sensitivity: self.config.sensitivity,
                 fov_degrees: self.config.fov_degrees,
                 view_distance: self.effective_view_distance,
@@ -1975,6 +1981,7 @@ impl ClientApp {
             );
             renderer.set_avatars(&visual_avatars);
             renderer.set_contact_shadows(&contact_shadows);
+            renderer.configure_sun_shadows(self.config.sun_shadow_quality);
             renderer.configure_post(
                 self.config.post_processing,
                 self.config.exposure,

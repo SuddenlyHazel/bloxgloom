@@ -4,7 +4,11 @@ use glam::{Mat4, Vec3};
 
 /// Compose the same calibrated lighting function into each opaque surface shader.
 pub(super) fn shader(source: &str) -> String {
-    super::fog::shader(&format!("{}\n{source}", include_str!("daylight.wgsl")))
+    super::fog::shader(&format!(
+        "{}\n{}\n{source}",
+        include_str!("daylight.wgsl"),
+        super::sun_shadow::SHADER
+    ))
 }
 
 #[derive(Clone, Copy)]
