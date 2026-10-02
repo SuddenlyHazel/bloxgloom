@@ -320,13 +320,6 @@ fn draw_image(
         view_formats: &[],
     });
     let depth = depth_texture.create_view(&Default::default());
-    let stride = (width * 4).div_ceil(256) * 256;
-    let read = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("LOD preview readback"),
-        size: u64::from(stride) * u64::from(height),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -356,46 +349,8 @@ fn draw_image(
         gpu.draw(&mut pass);
     }
     post.encode(device, queue, &mut encoder, &view);
-    encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture: &color,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &read,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(stride),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    let submission = queue.submit(Some(encoder.finish()));
-    let (sender, receiver) = mpsc::channel();
-    read.map_async(wgpu::MapMode::Read, .., move |v| {
-        let _ = sender.send(v);
-    });
-    device.poll(wgpu::PollType::Wait {
-        submission_index: Some(submission),
-        timeout: Some(std::time::Duration::from_secs(30)),
-    })?;
-    receiver.recv()??;
-    let mapped = read.get_mapped_range(..)?;
-    let mut pixels = vec![];
-    for row in mapped.chunks_exact(stride as usize) {
-        pixels.extend_from_slice(&row[..(width * 4) as usize]);
-    }
-    drop(mapped);
-    read.unmap();
-    write_png(path, width, height, &pixels)?;
-    Ok(())
+    queue.submit(Some(encoder.finish()));
+    super::capture::save_texture(device, queue, &color, width, height, path)
 }
 
 fn touches(a: TileKey, b: TileKey) -> bool {

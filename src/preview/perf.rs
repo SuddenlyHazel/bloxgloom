@@ -158,6 +158,9 @@ pub(super) async fn run_perf_benchmark_async(
     let (target_pipeline, target_camera_buffer, target_camera_group, target_vertices) =
         render::create_target_pipeline(&device, FORMAT);
     let mut ui_renderer = ui::UiRenderer::new(&device, &queue, FORMAT);
+    let capture_path = std::env::var_os("BLOXGLOOM_PERF_IMAGE")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
     let color = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("headless perf color"),
         size: wgpu::Extent3d {
@@ -169,7 +172,12 @@ pub(super) async fn run_perf_benchmark_async(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | if capture_path.is_some() {
+                wgpu::TextureUsages::COPY_SRC
+            } else {
+                wgpu::TextureUsages::empty()
+            },
         view_formats: &[],
     });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
@@ -710,6 +718,12 @@ pub(super) async fn run_perf_benchmark_async(
         "measurement: offscreen {}x{}, {} upload-ramp + {} steady frames, no vsync; CPU is submit-side work (staging + GPU buffer creation + UI preparation + encode + queue submit), excludes GPU completion and present; GPU timestamps cover world pass including cutout foliage through final HUD pass end, excluding CPU staging and buffer-upload copies; samples do not wait per frame, one final GPU wait is used for timestamp readback",
         PERF_WIDTH, PERF_HEIGHT, upload_frame_count, steady_done,
     );
+    // Copy/readback follows all measured submissions and timestamp resolution;
+    // the optional image never enters CPU/GPU percentile samples.
+    if let Some(path) = capture_path {
+        super::capture::save_texture(&device, &queue, &color, PERF_WIDTH, PERF_HEIGHT, &path)?;
+        eprintln!("final-frame image: {}", path.display());
+    }
     Ok(())
 }
 

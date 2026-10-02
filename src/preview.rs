@@ -14,6 +14,7 @@ pub use visuals::render_visual_previews;
 mod egui_ui;
 pub use block::render_block_preview;
 pub use egui_ui::{render_egui_previews, render_package_egui_previews};
+mod capture;
 mod lod;
 mod perf;
 pub(crate) use lod::render_lod_previews;
