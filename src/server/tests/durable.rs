@@ -498,6 +498,7 @@ fn same_profile_actions_remain_fifo_while_the_first_wal_write_is_pending() {
                 _ => None,
             },
             DurableRequest::Pickup { .. }
+            | DurableRequest::Ecology { .. }
             | DurableRequest::Expire
             | DurableRequest::EntityTick { .. }
             | DurableRequest::EntityWake { .. } => None,

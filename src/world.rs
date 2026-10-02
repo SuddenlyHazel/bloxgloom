@@ -13,6 +13,7 @@ mod generation;
 pub(crate) mod lod;
 mod owner_apply;
 mod palette;
+mod sky;
 mod terrain;
 use cache::ChunkCache;
 pub use generation::generate_chunk;
@@ -53,9 +54,7 @@ pub const YELLOW_FLOWER: BlockId = crate::content::BlockStateId(12);
 pub const BLUE_FLOWER: BlockId = crate::content::BlockStateId(13);
 pub const FERN: BlockId = crate::content::BlockStateId(14);
 pub const TALL_GRASS: BlockId = crate::content::BlockStateId(15);
-#[cfg(test)]
 pub const WOOD_X: BlockId = crate::content::BlockStateId(256);
-#[cfg(test)]
 pub const WOOD_Z: BlockId = crate::content::BlockStateId(257);
 pub const MAX_BUILTIN_BLOCK: BlockId = TALL_GRASS;
 
@@ -309,6 +308,7 @@ pub struct World {
     catalog: Arc<crate::content::Catalog>,
     generator: Arc<Generator>,
     cache: ChunkCache,
+    sky_ceiling: sky::Ceiling,
     /// Per-key epochs exist only while asynchronous loads for that key are in flight.
     edit_epochs: HashMap<ChunkKey, u64>,
     in_flight_by_key: HashMap<ChunkKey, usize>,
@@ -355,7 +355,8 @@ impl World {
             ));
         }
         let generator = Arc::new(Generator::new(contributors)?);
-        let storage = Storage::with_generation(path, seed, catalog, &generator)?;
+        let storage = Storage::with_generation(&path, seed, catalog, &generator)?;
+        let sky_ceiling = sky::Ceiling::open(&path, &storage)?;
         let catalog = storage.catalog_arc();
         Ok(Self {
             seed,
@@ -363,6 +364,7 @@ impl World {
             catalog,
             generator,
             cache: ChunkCache::new(max_cached_chunks),
+            sky_ceiling,
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
             in_flight_loads: HashMap::new(),
@@ -385,6 +387,7 @@ impl World {
             catalog: Arc::clone(&self.catalog),
             generator: Arc::clone(&self.generator),
             cache: ChunkCache::new(1),
+            sky_ceiling: sky::Ceiling::default(),
             edit_epochs: HashMap::new(),
             in_flight_by_key: HashMap::new(),
             in_flight_loads: HashMap::new(),
@@ -670,6 +673,7 @@ impl World {
             return Err(error);
         }
         self.pending_snapshots.remove(&key);
+        self.sky_ceiling.update(key, !loaded.edits.is_empty());
         if let Some(entry) = self.cache.get_mut(&key) {
             let mut state = entry.write();
             state.chunk = Arc::new(loaded.chunk);
@@ -963,8 +967,13 @@ impl World {
     }
 
     fn cache_loaded_chunk(&mut self, loaded: LoadedChunk) -> bool {
-        self.cache
-            .insert(loaded.chunk.key, Arc::new(loaded.chunk), loaded.edits)
+        let key = loaded.chunk.key;
+        let edited = !loaded.edits.is_empty();
+        let installed = self.cache.insert(key, Arc::new(loaded.chunk), loaded.edits);
+        if installed {
+            self.sky_ceiling.update(key, edited);
+        }
+        installed
     }
 
     fn ensure_loaded(&mut self, key: ChunkKey) -> io::Result<()> {

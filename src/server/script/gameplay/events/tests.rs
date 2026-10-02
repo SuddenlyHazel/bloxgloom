@@ -96,6 +96,7 @@ fn every_public_removal_cause_preserves_its_exact_luau_context() {
     };
     for (cause, expected) in [
         (RemovalCause::Break, "Break"),
+        (RemovalCause::Transformation, "Transformation"),
         (RemovalCause::Replacement, "Replacement"),
         (RemovalCause::SupportLoss, "SupportLoss"),
         (RemovalCause::WorldEdit, "WorldEdit"),

@@ -217,6 +217,14 @@ impl World {
         for receipt in receipts {
             versions.push((receipt.key, receipt.new_version));
             if receipt.changed {
+                let edited = !self
+                    .cache
+                    .get(&receipt.key)
+                    .unwrap()
+                    .read()
+                    .edits
+                    .is_empty();
+                self.sky_ceiling.update(receipt.key, edited);
                 self.bump_edit_epoch(receipt.key)?;
                 self.advance_prepared_revision(receipt.key)?;
                 self.pending_snapshots.insert(

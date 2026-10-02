@@ -71,6 +71,7 @@ impl bloxgloom_host_api::gameplay::Handler for Harvest {
             cause,
             bloxgloom_host_api::gameplay::RemovalCause::AnchoredBreak
                 | bloxgloom_host_api::gameplay::RemovalCause::Burn
+                | bloxgloom_host_api::gameplay::RemovalCause::Transformation
         ) {
             return Ok(());
         }

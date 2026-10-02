@@ -288,6 +288,10 @@ pub(super) struct PublishEffects {
 
 #[derive(Clone)]
 pub(super) enum DurableRequest {
+    Ecology {
+        cell: [i32; 3],
+        rule: crate::server::ecology::Rule,
+    },
     Command {
         id: u64,
         message: ClientMessage,

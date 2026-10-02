@@ -184,6 +184,7 @@ pub(super) fn fields_with_command(
                 "cause",
                 match cause {
                     RemovalCause::Break => "Break",
+                    RemovalCause::Transformation => "Transformation",
                     RemovalCause::Replacement => "Replacement",
                     RemovalCause::SupportLoss => "SupportLoss",
                     RemovalCause::WorldEdit => "WorldEdit",

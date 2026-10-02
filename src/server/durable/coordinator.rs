@@ -383,6 +383,9 @@ fn process_queue(
                         if let Some(profile) = action.profile {
                             blocked_profiles.insert(profile);
                         }
+                        if let DurableRequest::Ecology { cell, .. } = &request {
+                            state.ecology.finished(*cell);
+                        }
                     }
                     Ok(false) => {
                         cancel_prepared_entities(state, &action);
@@ -697,6 +700,7 @@ fn durable_request_profile(state: &State, request: &DurableRequest) -> Option<u1
             state.clients.get(id).map(|client| client.profile)
         }
         DurableRequest::Expire
+        | DurableRequest::Ecology { .. }
         | DurableRequest::EntityTick { .. }
         | DurableRequest::EntityWake { .. } => None,
     }
@@ -926,6 +930,7 @@ fn queue_woken_entity_ticks(state: &mut State) {
 fn finish_noncommand_request(state: &mut State, request: &DurableRequest) {
     match request {
         DurableRequest::Command { .. } => {}
+        DurableRequest::Ecology { cell, .. } => state.ecology.finished(*cell),
         DurableRequest::Pickup { id } => {
             state.durability.retry_pickups.remove(id);
         }

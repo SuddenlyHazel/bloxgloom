@@ -139,6 +139,23 @@ pub(super) fn register_builtin_systems(registry: &mut SystemRegistry) -> io::Res
         )
         .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
     registry
+        .register_coordinator_adapter(
+            SystemDescriptor::new(
+                id("ecology")?,
+                Phase::Simulation,
+                OwnerPartition::Global,
+                1,
+                4,
+            )
+            .read(resource("world")?)
+            .read(resource("world_time")?)
+            .write(resource("ecology_timers")?)
+            .write(resource("deferred_actions")?)
+            .after(movement.clone()),
+            adapters::ecology,
+        )
+        .map_err(|error| io::Error::other(format!("system registry: {error:?}")))?;
+    registry
         .register_handler_with_driver(
             SystemDescriptor::new(
                 fire_delivery,

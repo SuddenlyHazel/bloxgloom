@@ -17,6 +17,8 @@ pub enum EventKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RemovalCause {
+    /// A natural conversion replaces a block without harvesting its contents.
+    Transformation,
     Break,
     Replacement,
     SupportLoss,

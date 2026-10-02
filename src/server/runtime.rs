@@ -561,6 +561,9 @@ fn commit_block_effects(state: &mut State, tick: TickId) -> io::Result<()> {
     let mut output = EffectBuffer::new(tick, 0, state.pending_block_changes.len())
         .map_err(|error| io::Error::other(format!("block effect buffer: {error:?}")))?;
     for &cell in &state.pending_block_changes {
+        if let Some(block) = state.world.cached_block(cell.x, cell.y, cell.z) {
+            state.ecology.changed([cell.x, cell.y, cell.z], block);
+        }
         output
             .emit(Effect::BlockChanged { cell })
             .map_err(|error| io::Error::other(format!("block effect emission: {error:?}")))?;

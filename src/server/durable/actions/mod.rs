@@ -9,6 +9,7 @@ use bloxgloom_host_api::gameplay::RemovalCause;
 
 mod admin;
 pub(in crate::server) mod anchored;
+mod ecology;
 pub(in crate::server) mod entity;
 mod gameplay_action;
 pub(in crate::server) mod gameplay_fire;
@@ -30,6 +31,7 @@ pub(in crate::server) fn plan_durable_request(
     tick: TickId,
 ) -> io::Result<Option<CommitAction>> {
     match request {
+        DurableRequest::Ecology { cell, rule } => ecology::plan(state, *cell, *rule, tick),
         DurableRequest::Command { id, message, .. } => {
             let Some(client) = state.clients.get(id) else {
                 return Ok(None);

@@ -9,6 +9,7 @@ mod checkpoint_stream;
 mod chunk_loader;
 mod drops;
 mod durable;
+mod ecology;
 mod effects;
 mod entities;
 mod session_ids;
@@ -225,6 +226,7 @@ struct State {
     pending_block_changes: Vec<CellCoord>,
     durability: Durability,
     fire: FireRuntime,
+    ecology: ecology::Runtime,
     recovered_tick: u64,
     world_time: world_time::Clock,
     weather: weather::Clock,
@@ -662,6 +664,7 @@ fn server_state_with_startup(
         pending_block_changes: Vec::new(),
         durability,
         fire,
+        ecology: ecology::Runtime::default(),
         recovered_tick,
         world_time,
         weather,

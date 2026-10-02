@@ -33,6 +33,10 @@ pub(in crate::server) fn fire_source(context: &mut CoordinatorContext<'_>) -> io
     crate::server::durable::fire::run_source(context.state, context.tick)
 }
 
+pub(in crate::server) fn ecology(context: &mut CoordinatorContext<'_>) -> io::Result<()> {
+    crate::server::ecology::advance(context.state, context.tick)
+}
+
 pub(in crate::server) fn interaction_commit(
     context: &mut CoordinatorContext<'_>,
 ) -> io::Result<()> {
