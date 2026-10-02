@@ -239,3 +239,27 @@ fn unknown_child_height_cannot_remove_parent_bridge() {
         vec![key]
     );
 }
+
+#[test]
+fn refinement_requests_complete_sibling_families_at_negative_boundaries() {
+    for position in [
+        glam::Vec3::ZERO,
+        glam::Vec3::new(-0.1, 80.0, -512.1),
+        glam::Vec3::new(511.9, 0.0, 32.1),
+    ] {
+        for max_level in [3, 4] {
+            for horizon in [512, 1024] {
+                for quality in 0..=2 {
+                    let keys = desired_tiles(position, horizon, quality, max_level);
+                    assert!(keys.len() <= 128);
+                    let set: HashSet<_> = keys.iter().copied().collect();
+                    for key in keys.iter().filter(|k| k.level < max_level) {
+                        for sibling in key.parent().unwrap().children().unwrap() {
+                            assert!(set.contains(&sibling));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

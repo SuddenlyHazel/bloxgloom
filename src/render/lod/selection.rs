@@ -1,7 +1,7 @@
 use crate::lod::TileKey;
 use glam::Vec3;
-/// Stable nested rings, coarsest first. Tile membership only changes at tile
-/// boundaries; retain uploaded ancestors until replacement coverage is ready.
+/// Nested rings, coarsest and nearest first. Refinements always request complete
+/// sibling families so an uploaded parent can actually retire near the camera.
 pub(crate) fn desired_tiles(
     position: Vec3,
     horizon: u16,
@@ -11,8 +11,9 @@ pub(crate) fn desired_tiles(
     if horizon == 0 {
         return vec![];
     }
-    let horizon = horizon.min(1024);
     let max_level = max_level.clamp(3, 4);
+    // Contributor generation advertises the smaller independent work horizon.
+    let horizon = horizon.min(if max_level == 3 { 512 } else { 1024 });
     let mut out = Vec::new();
     for level in (2 - quality.min(2)..=max_level).rev() {
         let width = 32i32 << level;
@@ -21,18 +22,25 @@ pub(crate) fn desired_tiles(
         else {
             continue;
         };
-        let cx = center.x;
-        let cz = center.z;
-        let radius = if level == max_level {
-            (i32::from(horizon) + width - 1) / width
+        let (minx, minz, count) = if level == max_level {
+            let radius = (i32::from(horizon) + width - 1) / width;
+            (center.x - radius, center.z - radius, 2 * radius + 1)
         } else {
-            1
+            // Align to two children per parent in each axis, including all four
+            // parents around the center instead of indefinitely waiting for a
+            // missing sibling at a 3x3 ring edge. Euclidean division keeps this
+            // symmetric across negative world coordinates.
+            (
+                (center.x - 1).div_euclid(2) * 2,
+                (center.z - 1).div_euclid(2) * 2,
+                4,
+            )
         };
-        for z in cz - radius..=cz + radius {
-            for x in cx - radius..=cx + radius {
-                let k = TileKey { level, x, z };
-                if k.bounds().is_some() {
-                    out.push(k);
+        for z in minz..minz + count {
+            for x in minx..minx + count {
+                let key = TileKey { level, x, z };
+                if key.bounds().is_some() {
+                    out.push(key);
                 }
             }
         }
