@@ -1,0 +1,8 @@
+{
+  "clip": "nod", "seconds": 0.4,
+  "look": {
+    "variants": {"eyes": "sleepy"},
+    "layers": {"hat": true, "mouth": false},
+    "tints": {"body": {"rgb": [230, 110, 145], "mode": "replace"}}
+  }
+}

@@ -80,6 +80,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "world-v22"
     };
     match args.next().as_deref() {
+        Some("model-preview") => {
+            let usage =
+                "usage: model-preview <model.glb> <output.png> [controls.json] [preview.json]";
+            let model = args.next().ok_or(usage)?;
+            let output = args.next().ok_or(usage)?;
+            let controls = args.next();
+            let options = args.next();
+            if args.next().is_some() {
+                return Err(usage.into());
+            }
+            preview::model::render(
+                std::path::Path::new(&model),
+                std::path::Path::new(&output),
+                controls.as_deref().map(std::path::Path::new),
+                options.as_deref().map(std::path::Path::new),
+            )?;
+        }
         Some("audio-insect-preview") => {
             let usage =
                 "usage: audio-insect-preview <crickets|cicadas> <seconds> <output.wav> [seed]";

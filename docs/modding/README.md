@@ -16,6 +16,8 @@ impact on larger mods.
 - [Commands](COMMANDS.md): bounded text/numeric arguments and canonical aliases.
 - [Custom machine processing](MACHINE-PROCESSING.md): atomic exact-stack transformations.
 - [Item visuals](item-visuals.md): bitmap icons and per-stack presentation callbacks.
+- [Native GLB models](AUTHORED-MODELS.md): authored clips, appearance layers and
+  color controls in the import/preview foundation; in-game registration follows.
 
 - [Package composition](PACKAGE-COMPOSITION.md): larger content budgets, multiple
   owner systems and contributors, with the runnable

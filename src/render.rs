@@ -17,6 +17,8 @@ mod material;
 pub(crate) mod weather;
 pub(crate) use material::resources::required_limits as material_device_limits;
 mod mesh;
+pub(crate) mod model_asset;
+pub(crate) mod model_renderer;
 pub(crate) mod parameters;
 mod preparation;
 pub(crate) use preparation::{Preparation, Ready as ReadyVisuals};

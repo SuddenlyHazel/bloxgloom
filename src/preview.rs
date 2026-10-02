@@ -1,5 +1,6 @@
 //! Headless GPU renders of the world and each interface screen.
 mod actors;
+pub(crate) mod model;
 mod third_person;
 pub use third_person::{
     render_first_person_previews, render_gameplay_animation_previews, render_third_person_previews,

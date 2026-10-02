@@ -1,5 +1,10 @@
 # Articulated characters
 
+A new [native GLB import and preview foundation](../../../docs/modding/AUTHORED-MODELS.md)
+preserves authored clips and named appearance controls for future player/creature
+models. It can inspect a GLB directly with `model-preview`; the in-game builtin
+family described below remains installed during this preparation stage.
+
 The articulated family is the game's only player renderer. There is no Classic/Authored switch or legacy fallback. A palette-only player snapshot resolves to the default articulated recipe.
 
 ## Appearance
