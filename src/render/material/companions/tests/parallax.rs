@@ -1,7 +1,7 @@
 //! Read back the production height trace against analytic synthetic surfaces.
 use wgpu::util::DeviceExt;
 
-const CASES: usize = 11;
+const CASES: usize = 15;
 const FIXTURE: &str = r#"
 @group(0) @binding(0) var<storage, read_write> result: array<vec4f>;
 @group(0) @binding(1) var material_normal: texture_2d_array<f32>;
@@ -14,13 +14,18 @@ const FIXTURE: &str = r#"
         var view = normalize(vec3f(0.6, 0.0, 0.8));
         var distance = 2.0;
         var mip = 0.0;
+        var settings = vec4f(0.035, 32.0, 32.0, 0.0);
         if id.x == 5u { view.x = -view.x; }
         if id.x == 6u { distance = 32.0; }
         if id.x == 7u { mip = 4.0; }
         if id.x == 8u { view = vec3f(1.0, 0.0, 0.0); }
         if id.x == 9u { view = vec3f(0.0, 0.0, 1.0); }
         if id.x == 10u { view = vec3f(0.6, 0.0, -0.8); }
-        let ray = bg_parallax_ray(view, distance, mip);
+        if id.x == 11u { settings.x = 0.0; }
+        if id.x == 12u { settings.x = 0.07; }
+        if id.x == 13u { distance = 24.0; settings.y = 16.0; }
+        if id.x == 14u { distance = 24.0; settings.y = 64.0; }
+        let ray = bg_parallax_ray(view, distance, mip, settings);
         result[id.x] = vec4f(bg_parallax_trace(uv, 1, vec2f(0.0), vec2f(0.0), ray, 16u), ray);
     }
 }
@@ -172,8 +177,10 @@ fn gpu_height_trace_intersects_surfaces_and_fades_without_grazing_instability() 
     assert!((rows[3][0] - ramp_expected).abs() < 1e-5);
     assert!(rows[4][0] < 0.6 && rows[5][0] > 0.6);
     assert!((rows[4][0] + rows[5][0] - 1.2).abs() < 1e-5);
-    for row in &rows[6..] {
+    for row in rows[6..12].iter().chain([&rows[13]]) {
         assert!((row[0] - 0.6).abs() < 1e-5);
         assert_eq!(&row[2..], &[0.0, 0.0]);
     }
+    assert!((0.6 - rows[12][0] - 2.0 * (0.6 - rows[4][0])).abs() < 1e-5);
+    assert!((rows[14][0] - rows[4][0]).abs() < 1e-5);
 }

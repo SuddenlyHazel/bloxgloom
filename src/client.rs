@@ -618,6 +618,17 @@ impl ClientApp {
             return;
         }
         match setting {
+            SettingId::Parallax => self.config.parallax.enabled = !self.config.parallax.enabled,
+            SettingId::ParallaxDepth => {
+                self.config.parallax.depth += sign * 0.005;
+            }
+            SettingId::ParallaxDistance => {
+                self.config.parallax.distance += sign * 8.0;
+            }
+            SettingId::ParallaxQuality => {
+                self.config.parallax.steps =
+                    (self.config.parallax.steps as i32 + sign as i32 * 4).clamp(12, 64) as u32;
+            }
             SettingId::AudioMaster => {
                 self.config.audio_master = (self.config.audio_master + sign * 0.05).clamp(0.0, 1.0)
             }
@@ -907,6 +918,14 @@ impl ClientApp {
                 UiControl::Increase(SettingId::LodHorizon),
                 UiControl::Decrease(SettingId::LodQuality),
                 UiControl::Increase(SettingId::LodQuality),
+                UiControl::Decrease(SettingId::Parallax),
+                UiControl::Increase(SettingId::Parallax),
+                UiControl::Decrease(SettingId::ParallaxDepth),
+                UiControl::Increase(SettingId::ParallaxDepth),
+                UiControl::Decrease(SettingId::ParallaxDistance),
+                UiControl::Increase(SettingId::ParallaxDistance),
+                UiControl::Decrease(SettingId::ParallaxQuality),
+                UiControl::Increase(SettingId::ParallaxQuality),
                 UiControl::Back,
             ],
         }
@@ -1953,6 +1972,7 @@ impl ClientApp {
                 latency_ms: None,
             }),
             settings: UiSettings {
+                parallax: self.config.parallax,
                 audio_master: self.config.audio_master,
                 audio_ambient: self.config.audio_ambient,
                 audio_effects: self.config.audio_effects,

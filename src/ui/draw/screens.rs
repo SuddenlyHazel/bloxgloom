@@ -361,6 +361,31 @@ impl UiBuilder<'_> {
                 ["COARSE", "BALANCED", "DETAILED"][usize::from(frame.settings.lod_quality.min(2))]
                     .into(),
             ),
+            (
+                SettingId::Parallax,
+                "PARALLAX",
+                if frame.settings.parallax.enabled {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+                .into(),
+            ),
+            (
+                SettingId::ParallaxDepth,
+                "PARALLAX DEPTH",
+                format!("{:.1}%", frame.settings.parallax.depth * 100.0),
+            ),
+            (
+                SettingId::ParallaxDistance,
+                "PARALLAX DISTANCE",
+                format!("{:.0} BLOCKS", frame.settings.parallax.distance),
+            ),
+            (
+                SettingId::ParallaxQuality,
+                "PARALLAX QUALITY",
+                format!("{} SAMPLES", frame.settings.parallax.steps),
+            ),
         ];
         let rows: &[_] = if frame.screen == UiScreen::Audio {
             &audio_rows
@@ -370,15 +395,7 @@ impl UiBuilder<'_> {
             &general_rows
         };
         let top = panel.y + (if compact { 74.0 } else { 116.0 }) * self.scale;
-        let row_height = if compact {
-            (if frame.screen == UiScreen::Graphics {
-                30.0
-            } else {
-                36.0
-            }) * self.scale
-        } else {
-            (52.0 * self.scale).clamp(42.0, 58.0)
-        };
+        let row_height = layout.settings_row_height();
         let control_x = panel.x + panel.width * if compact { 0.46 } else { 0.49 };
         let minus_w = (42.0 * self.scale).clamp(34.0, 48.0);
         let value_w = if compact {
@@ -391,8 +408,14 @@ impl UiBuilder<'_> {
             self.text(
                 label,
                 panel.x + (if compact { 20.0 } else { 32.0 }) * self.scale,
-                y + (if compact { 9.0 } else { 10.0 }) * self.scale,
-                if compact { 0.68 } else { 0.82 },
+                y + row_height * 0.25,
+                if frame.screen == UiScreen::Graphics {
+                    0.55
+                } else if compact {
+                    0.68
+                } else {
+                    0.82
+                },
                 TEXT,
                 24,
             );

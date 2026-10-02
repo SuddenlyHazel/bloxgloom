@@ -128,10 +128,15 @@ fn create_voxel_pipeline_source(
     });
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera matrix"),
-        size: 128,
+        size: 144,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    queue.write_buffer(
+        &camera_buffer,
+        128,
+        bytemuck::cast_slice(&crate::config::parallax::Parallax::default().uniform()),
+    );
     let camera_layout = super::sun_shadow::camera_layout(device);
     let camera_group = super::sun_shadow::fallback_camera_group(device, &camera_buffer);
     let texture = device.create_texture(&wgpu::TextureDescriptor {

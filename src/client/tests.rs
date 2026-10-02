@@ -251,6 +251,43 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
 }
 
 #[test]
+fn parallax_controls_update_live_frame_and_save_without_remeshing() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("bloxgloom-parallax-controls-{unique}"));
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config::default(),
+        path.clone(),
+    );
+    app.screen = UiScreen::Graphics;
+    for setting in [
+        SettingId::ParallaxDepth,
+        SettingId::ParallaxDistance,
+        SettingId::ParallaxQuality,
+    ] {
+        app.activate_control(None, UiControl::Increase(setting));
+        assert!(app.focus_order().contains(&UiControl::Increase(setting)));
+    }
+    assert!(app.config.parallax.depth > 0.035);
+    assert_eq!(app.config.parallax.distance, 40.0);
+    assert_eq!(app.config.parallax.steps, 36);
+    let enabled = app.config.parallax;
+    app.activate_control(None, UiControl::Decrease(SettingId::Parallax));
+    assert!(!app.config.parallax.enabled);
+    assert_eq!(app.config.parallax.uniform()[0], 0.0);
+    app.activate_control(None, UiControl::Increase(SettingId::Parallax));
+    assert_eq!(app.config.parallax, enabled);
+    assert!(app.pending_mesh.is_empty());
+    assert!(app.pending_commands.is_empty());
+    app.config_writer.finish();
+    assert_eq!(Config::load(&path), app.config);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn sun_shadow_controls_cycle_save_and_remain_independent_of_post_and_audio() {
     use crate::config::SunShadowQuality;
     let unique = std::time::SystemTime::now()
@@ -284,17 +321,25 @@ fn sun_shadow_controls_cycle_save_and_remain_independent_of_post_and_audio() {
     assert_eq!(app.focused_control, Some(decrease));
     app.advance_focus(false);
     assert_eq!(app.focused_control, Some(increase));
-    let lod_controls = [
+    let graphics_controls = [
         UiControl::Decrease(SettingId::LodHorizon),
         UiControl::Increase(SettingId::LodHorizon),
         UiControl::Decrease(SettingId::LodQuality),
         UiControl::Increase(SettingId::LodQuality),
+        UiControl::Decrease(SettingId::Parallax),
+        UiControl::Increase(SettingId::Parallax),
+        UiControl::Decrease(SettingId::ParallaxDepth),
+        UiControl::Increase(SettingId::ParallaxDepth),
+        UiControl::Decrease(SettingId::ParallaxDistance),
+        UiControl::Increase(SettingId::ParallaxDistance),
+        UiControl::Decrease(SettingId::ParallaxQuality),
+        UiControl::Increase(SettingId::ParallaxQuality),
     ];
-    for control in lod_controls.into_iter().chain([UiControl::Back]) {
+    for control in graphics_controls.into_iter().chain([UiControl::Back]) {
         app.advance_focus(false);
         assert_eq!(app.focused_control, Some(control));
     }
-    for control in lod_controls.into_iter().rev().chain([increase]) {
+    for control in graphics_controls.into_iter().rev().chain([increase]) {
         app.advance_focus(true);
         assert_eq!(app.focused_control, Some(control));
     }

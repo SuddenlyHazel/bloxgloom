@@ -10,7 +10,7 @@ fn bg_parallax_trace(uv: vec2f, layer: i32, dx: vec2f, dy: vec2f,
     var depth = 0.0;
     var gap = 1.0 - textureSampleGrad(material_normal, material_sampler, current_uv, layer, dx, dy).a;
     if gap <= 0.0 { return uv; }
-    for (var i = 0u; i < 32u; i += 1u) {
+    for (var i = 0u; i < 64u; i += 1u) {
         let previous_uv = current_uv;
         let previous_gap = gap;
         current_uv -= step_uv;
@@ -31,15 +31,15 @@ fn bg_material_coordinates(input: VertexOutput, parallax: bool) -> MaterialCoord
     let px = dpdx(input.world_position);
     let py = dpdy(input.world_position);
     let unchanged = MaterialCoordinates(input.uv, dx, dy);
-    if !parallax || (material_map_flags[u32(input.layer)] & 1u) == 0u
+    if !parallax || camera.parallax.x <= 0.0 || (material_map_flags[u32(input.layer)] & 1u) == 0u
         || abs(dx.x * dy.y - dx.y * dy.x) < 0.000000000001 { return unchanged; }
     let eye = camera.eye.xyz - input.world_position;
     let distance = length(eye);
     let frame = bg_texture_frame(input.normal, px, py, dx, dy);
     let view = transpose(frame) * (eye / max(distance, 0.0001));
     let mip = log2(max(1.0, max(length(dx), length(dy)) * 128.0));
-    let ray = bg_parallax_ray(view, distance, mip);
+    let ray = bg_parallax_ray(view, distance, mip, camera.parallax);
     if dot(ray, ray) < 0.000000000001 { return unchanged; }
-    let steps = u32(mix(32.0, 12.0, clamp(view.z, 0.0, 1.0)));
+    let steps = u32(mix(camera.parallax.z, 12.0, clamp(view.z, 0.0, 1.0)));
     return MaterialCoordinates(bg_parallax_trace(input.uv, input.layer, dx, dy, ray, steps), dx, dy);
 }

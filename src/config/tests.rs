@@ -23,6 +23,12 @@ fn config_round_trips_through_explicit_path() {
         fullscreen: true,
         bounced_gi: true,
         sun_shadow_quality: SunShadowQuality::High,
+        parallax: parallax::Parallax {
+            enabled: false,
+            depth: 0.085,
+            distance: 64.0,
+            steps: 48,
+        },
         exposure: 1.25,
         post_processing: false,
         bloom_enabled: false,
@@ -44,6 +50,25 @@ fn config_round_trips_through_explicit_path() {
 
     assert_eq!(Config::load(&path), config);
     fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn parallax_settings_validate_old_files_bad_values_and_shader_bounds() {
+    assert_eq!(
+        parse_config("version=1\n").parallax,
+        parallax::Parallax::default()
+    );
+    let settings = parse_config(
+        "version=1\nparallax_enabled=false\nparallax_depth=99\nparallax_distance=1\nparallax_steps=999\n",
+    ).parallax;
+    assert!(!settings.enabled);
+    assert_eq!(settings.depth, 0.15);
+    assert_eq!(settings.distance, 8.0);
+    assert_eq!(settings.steps, 64);
+    assert_eq!(settings.uniform(), [0.0, 8.0, 64.0, 0.0]);
+    let invalid =
+        parse_config("version=1\nparallax_depth=NaN\nparallax_distance=inf\nparallax_steps=bad\n");
+    assert_eq!(invalid.parallax, parallax::Parallax::default());
 }
 
 #[test]

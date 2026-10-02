@@ -202,6 +202,31 @@ fn settings_rows(
                 "Distant detail",
                 ["Coarse", "Balanced", "Detailed"][usize::from(settings.lod_quality.min(2))].into(),
             ),
+            (
+                SettingId::Parallax,
+                "Parallax",
+                if settings.parallax.enabled {
+                    "On"
+                } else {
+                    "Off"
+                }
+                .into(),
+            ),
+            (
+                SettingId::ParallaxDepth,
+                "Parallax depth",
+                format!("{:.1}%", settings.parallax.depth * 100.0),
+            ),
+            (
+                SettingId::ParallaxDistance,
+                "Parallax distance",
+                format!("{:.0} blocks", settings.parallax.distance),
+            ),
+            (
+                SettingId::ParallaxQuality,
+                "Parallax quality",
+                format!("{} samples", settings.parallax.steps),
+            ),
         ]
     } else {
         vec![

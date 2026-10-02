@@ -16,8 +16,8 @@ fn bg_normal_frame(flat: vec3f, px: vec3f, py: vec3f, ux: vec2f, uy: vec2f,
 
 // Height 1 is the original face plane; lower heights recede into the block.
 // Fade undersampled and distant detail, and suppress unstable grazing offsets.
-fn bg_parallax_ray(view: vec3f, distance: f32, mip: f32) -> vec2f {
-    let scale = 0.035 * (1.0-smoothstep(16.0, 32.0, distance))
+fn bg_parallax_ray(view: vec3f, distance: f32, mip: f32, settings: vec4f) -> vec2f {
+    let scale = settings.x * (1.0-smoothstep(settings.y * 0.5, settings.y, distance))
         * (1.0-smoothstep(2.0, 4.0, mip)) * smoothstep(0.08, 0.20, view.z);
     return view.xy / max(view.z, 0.12) * scale;
 }

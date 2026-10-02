@@ -345,15 +345,7 @@ impl UiLayout {
                 },
             );
         }
-        let row_height = if compact {
-            (if self.screen == UiScreen::Graphics {
-                30.0
-            } else {
-                36.0
-            }) * self.scale
-        } else {
-            (52.0 * self.scale).clamp(42.0, 58.0)
-        };
+        let row_height = self.settings_row_height();
         let top = panel.y + (if compact { 74.0 } else { 116.0 }) * self.scale;
         let label_width = panel.width * if compact { 0.46 } else { 0.49 };
         let control_x = panel.x + label_width;
@@ -379,6 +371,10 @@ impl UiLayout {
                 SettingId::SunShadows,
                 SettingId::LodHorizon,
                 SettingId::LodQuality,
+                SettingId::Parallax,
+                SettingId::ParallaxDepth,
+                SettingId::ParallaxDistance,
+                SettingId::ParallaxQuality,
             ]
         } else {
             &[
@@ -468,6 +464,19 @@ impl UiLayout {
             desired_height * self.scale,
             14.0 * self.scale,
         )
+    }
+
+    pub(super) fn settings_row_height(&self) -> f32 {
+        let panel = self.settings_panel();
+        let compact = panel.height < 500.0 * self.scale;
+        if self.screen == UiScreen::Graphics {
+            // Leave the header, footer and Back button clear in legacy previews.
+            (panel.height - if compact { 122.0 } else { 196.0 } * self.scale) / 11.0
+        } else if compact {
+            36.0 * self.scale
+        } else {
+            (52.0 * self.scale).clamp(42.0, 58.0)
+        }
     }
 
     pub(super) fn settings_panel(&self) -> UiRect {

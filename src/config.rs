@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::protocol::{MAX_VIEW_DISTANCE, MIN_VIEW_DISTANCE};
 pub(crate) mod bindings;
+pub(crate) mod parallax;
 use bindings::{Bindings, NamedBindings};
 
 const CONFIG_VERSION: u32 = 1;
@@ -82,6 +83,7 @@ pub struct Config {
     pub fullscreen: bool,
     pub bounced_gi: bool,
     pub sun_shadow_quality: SunShadowQuality,
+    pub parallax: parallax::Parallax,
     pub exposure: f32,
     pub post_processing: bool,
     pub bloom_enabled: bool,
@@ -108,6 +110,7 @@ impl Default for Config {
             fullscreen: false,
             bounced_gi: false,
             sun_shadow_quality: SunShadowQuality::default(),
+            parallax: parallax::Parallax::default(),
             exposure: 1.0,
             post_processing: true,
             bloom_enabled: true,
@@ -225,6 +228,7 @@ impl Config {
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
             sun_shadow_quality: self.sun_shadow_quality,
+            parallax: self.parallax.sanitized(),
             exposure: clamp_finite(self.exposure, 0.25, 4.0, 1.0),
             post_processing: self.post_processing,
             bloom_enabled: self.bloom_enabled,
@@ -273,6 +277,7 @@ impl Config {
             "sun_shadow_quality={}\n",
             self.sun_shadow_quality.as_str()
         ));
+        text.push_str(&self.parallax.serialize());
         text.push_str(&format!(
             "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
             self.audio_master, self.audio_ambient, self.audio_effects
@@ -305,6 +310,9 @@ fn parse_config(contents: &str) -> Config {
         };
         let key = key.trim();
         let value = value.trim();
+        if config.parallax.parse(key, value) {
+            continue;
+        }
         if let Some(action) = key.strip_prefix("bind_action.") {
             if config.named_bindings.0.len() >= 64 && !config.named_bindings.0.contains_key(action)
             {

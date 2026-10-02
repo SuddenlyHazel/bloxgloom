@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn graphics_settings_do_not_offer_a_model_override() {
     let rows = settings_rows(crate::ui::UiSettings::default(), true);
-    assert_eq!(rows.len(), 7);
+    assert_eq!(rows.len(), 11);
     assert!(rows.iter().all(|row| row.1 != "Characters"));
 }
 
@@ -64,6 +64,10 @@ fn native_graphics_rows_show_each_sun_shadow_quality_without_replacing_post_cont
                 SettingId::SunShadows,
                 SettingId::LodHorizon,
                 SettingId::LodQuality,
+                SettingId::Parallax,
+                SettingId::ParallaxDepth,
+                SettingId::ParallaxDistance,
+                SettingId::ParallaxQuality,
             ]
         );
         assert_eq!(rows[4].1, "Sun shadows");
@@ -133,6 +137,10 @@ fn native_graphics_adjusters_dispatch_their_own_controls() {
             ("Sun shadows", SettingId::SunShadows),
             ("Distant terrain", SettingId::LodHorizon),
             ("Distant detail", SettingId::LodQuality),
+            ("Parallax", SettingId::Parallax),
+            ("Parallax depth", SettingId::ParallaxDepth),
+            ("Parallax distance", SettingId::ParallaxDistance),
+            ("Parallax quality", SettingId::ParallaxQuality),
         ] {
             if size.y < 500.0 && setting == SettingId::LodQuality {
                 // Compact native menus intentionally scroll. Exercise that

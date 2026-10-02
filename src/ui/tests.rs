@@ -380,6 +380,10 @@ fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
             SettingId::SunShadows,
             SettingId::LodHorizon,
             SettingId::LodQuality,
+            SettingId::Parallax,
+            SettingId::ParallaxDepth,
+            SettingId::ParallaxDistance,
+            SettingId::ParallaxQuality,
         ] {
             controls.extend([UiControl::Decrease(setting), UiControl::Increase(setting)]);
         }

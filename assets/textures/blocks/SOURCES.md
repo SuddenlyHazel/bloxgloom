@@ -23,12 +23,20 @@ Specular highlights use the sun, voxel sky visibility, and sun shadows.
 
 Normal alpha supplies height for parallax occlusion mapping on opaque blocks.
 White is the face plane; darker heights recede up to 0.035 texture tiles.
-The bounded 12–32-step trace fades from 16 to 32 world units, also fading
+The default 12–32-step trace fades from 16 to 32 world units, also fading
 undersampled and grazing-angle detail. Albedo, normal, specular, and material
 hooks use the same shifted UVs and original mip gradients. Cutout alpha and
 sun casters retain their original coordinates. This changes apparent surface
 depth; geometry, silhouettes, collisions, and world state stay voxel-based.
 Specular blue/alpha remain in the assets; extra emission channels are unused.
+
+Graphics settings expose a live parallax toggle, depth (0–15% of a texture
+tile), fade distance (8–96 blocks), and maximum ray samples (12–64). Values
+are saved locally. Fading begins halfway to the selected distance; disabling
+parallax preserves the other values for immediate comparisons.
+The supplied sand and grass-top companions have constant white height alpha,
+so parallax adds no depth there. Dirt has only a narrow height range; stone
+and gravel provide more useful surfaces for testing the effect.
 
 To reproduce from the original local pack:
 

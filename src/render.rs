@@ -668,6 +668,11 @@ impl Renderer {
         }
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            128,
+            bytemuck::cast_slice(&ui_frame.settings.parallax.uniform()),
+        );
         if let Some(gpu) = &mut self.material_gpu {
             gpu.update(&self.queue);
         }
