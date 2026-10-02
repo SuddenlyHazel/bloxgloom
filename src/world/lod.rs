@@ -156,17 +156,12 @@ fn build(
                 });
             }
         }
-        if let Some(last) = spans.last_mut()
-            && joined
-                .last()
-                .is_some_and(|v| v.bottom <= last.top && v.top > last.top)
-        {
-            last.sky = 15;
-        }
-        columns.push(Column {
+        let mut column = Column {
             coverage: joined,
             spans,
-        });
+        };
+        crate::lod::skylight::assign(&mut column, catalog);
+        columns.push(column);
     }
     let tile = LodTile {
         key,

@@ -182,6 +182,30 @@ fn flat_roof_caps_merge_without_filling_openings() {
 }
 
 #[test]
+fn detailed_ring_extends_past_near_chunks_with_complete_sibling_families() {
+    for position in [glam::Vec3::ZERO, glam::Vec3::new(-97.0, 0.0, -129.0)] {
+        let tiles = desired_tiles(position, 512, 1, 4);
+        let detailed: Vec<_> = tiles.iter().filter(|k| k.level == 1).collect();
+        assert_eq!(detailed.len(), 36);
+        for key in &detailed {
+            let parent = key.parent().unwrap();
+            assert!(tiles.contains(&parent));
+            assert!(parent.children().unwrap().iter().all(|k| tiles.contains(k)));
+        }
+        for (dx, dz) in [(-96, 0), (96, 0), (0, -96), (0, 96)] {
+            let key =
+                TileKey::containing(1, position.x as i32 + dx, position.z as i32 + dz).unwrap();
+            assert!(
+                tiles.contains(&key),
+                "missing detail at {position:?} offset {dx},{dz}"
+            );
+        }
+    }
+    let wide_horizon = desired_tiles(glam::Vec3::ZERO, 1024, 1, 4);
+    assert_eq!(wide_horizon.iter().filter(|k| k.level == 1).count(), 16);
+}
+
+#[test]
 fn sky_lit_roof_does_not_light_its_retained_cavity() {
     let catalog = crate::content::catalog();
     let colors = FaceColors::new(catalog);
@@ -209,6 +233,38 @@ fn sky_lit_roof_does_not_light_its_retained_cavity() {
         .collect();
     assert!(!ceiling.is_empty());
     assert!(ceiling.iter().all(|v| v[9] == 0.0));
+}
+
+#[test]
+fn foliage_undersides_and_adjacent_outdoor_walls_receive_sky() {
+    let catalog = crate::content::catalog();
+    let colors = FaceColors::new(catalog);
+    let mut tile = fixture(TileKey {
+        level: 0,
+        x: 0,
+        z: 0,
+    });
+    tile.columns[0] = column(&[(0, 8)]);
+    tile.columns[0].spans[0].sky = 15;
+    tile.columns[1] = column(&[(0, 4), (10, 12)]);
+    tile.columns[1].spans[0].sky = 11;
+    tile.columns[1].spans[1].sky = 15;
+    tile.columns[1].spans[1].state = crate::world::LEAVES;
+    let mesh = mesh(&tile, &[], catalog, &colors).unwrap();
+    let wall: Vec<_> = mesh
+        .vertices
+        .chunks_exact(11)
+        .filter(|v| v[0] == 1.0 && v[3] == 1.0 && v[1] >= 4.0)
+        .collect();
+    assert!(!wall.is_empty());
+    assert!(wall.iter().all(|v| v[9] > 0.0));
+    let underside: Vec<_> = mesh
+        .vertices
+        .chunks_exact(11)
+        .filter(|v| v[1] == 10.0 && v[4] == -1.0)
+        .collect();
+    assert!(!underside.is_empty());
+    assert!(underside.iter().all(|v| v[9] == 1.0));
 }
 
 #[test]

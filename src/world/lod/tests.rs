@@ -70,8 +70,13 @@ fn coarse_tiles_are_deterministic_and_dark_beneath_top_surface() {
             .any(|c| c.spans.iter().any(|s| s.state == STONE && s.sky == 0))
     );
     for c in &first.columns {
-        for s in c.spans.iter().take(c.spans.len().saturating_sub(1)) {
-            assert_eq!(s.sky, 0);
+        for (i, s) in c.spans.iter().enumerate() {
+            if c.spans[i + 1..]
+                .iter()
+                .any(|roof| catalog.state(roof.state).unwrap().flags & OPAQUE != 0)
+            {
+                assert_eq!(s.sky, 0);
+            }
         }
     }
 }

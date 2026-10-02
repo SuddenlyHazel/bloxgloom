@@ -4,6 +4,7 @@ use crate::content::{BlockStateId, Catalog};
 
 mod extract;
 mod reduce;
+pub(crate) mod skylight;
 #[cfg(test)]
 mod tests;
 pub use extract::extract;

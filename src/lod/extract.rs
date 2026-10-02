@@ -127,15 +127,7 @@ pub fn extract(
             }
         }
         c.spans = joined;
-        // Only the highest surface beneath observed air receives approximate sky.
-        // A coverage gap above it remains unknown and therefore dark.
-        if let Some(last) = c.spans.last_mut()
-            && c.coverage
-                .last()
-                .is_some_and(|v| v.bottom <= last.top && v.top > last.top)
-        {
-            last.sky = 15;
-        }
+        super::skylight::assign(c, catalog);
     }
     let mut groups: Vec<Vec<&Column>> = vec![Vec::new(); TILE_COLUMNS];
     for ((x, z), c) in &fine {

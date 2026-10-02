@@ -60,7 +60,15 @@ pub(crate) fn mesh(
                         y,
                         span.state,
                         side,
-                        if side < 0 { 0 } else { span.sky },
+                        if side < 0
+                            && catalog
+                                .state(span.state)
+                                .is_some_and(|s| s.flags & crate::content::OPAQUE != 0)
+                        {
+                            0
+                        } else {
+                            span.sky
+                        },
                         span.glow,
                     ))
                     .or_insert([false; 1024])[x + 32 * z] = true;
@@ -124,7 +132,7 @@ pub(crate) fn mesh(
                                     }
                                 }
                             }
-                            let intervals = side_light(intervals, neighbor, span.sky);
+                            let intervals = side_light(intervals, neighbor, span.sky, catalog);
                             if intervals != previous {
                                 for &(bottom, top, sky) in &previous {
                                     let pos = if axis == 0 {
@@ -216,8 +224,15 @@ fn side_light(
     intervals: Vec<(i32, i32)>,
     neighbor: Option<&Column>,
     sky: u8,
+    catalog: &Catalog,
 ) -> Vec<(i32, i32, u8)> {
-    let Some(top) = neighbor.and_then(|n| n.spans.last()) else {
+    let Some(top) = neighbor.and_then(|n| {
+        n.spans.iter().rev().find(|s| {
+            catalog
+                .state(s.state)
+                .is_some_and(|state| state.flags & crate::content::OPAQUE != 0)
+        })
+    }) else {
         return intervals.into_iter().map(|(b, t)| (b, t, sky)).collect();
     };
     intervals

@@ -26,14 +26,20 @@ pub(crate) fn desired_tiles(
             let radius = (i32::from(horizon) + width - 1) / width;
             (center.x - radius, center.z - radius, 2 * radius + 1)
         } else {
-            // Align to two children per parent in each axis, including all four
-            // parents around the center instead of indefinitely waiting for a
-            // missing sibling at a 3x3 ring edge. Euclidean division keeps this
-            // symmetric across negative world coordinates.
+            // Keep complete sibling families, including at negative coordinates.
+            // Extend the finest ring beyond the normal near-chunk band so trees
+            // and cliffs do not immediately jump to broad coarse cells.
+            // The 1,024-block skyline uses the spare residency budget itself.
+            let count = if horizon <= 512 && quality == 1 && level == 1 {
+                6
+            } else {
+                4
+            };
+            let offset = count / 2 - 1;
             (
-                (center.x - 1).div_euclid(2) * 2,
-                (center.z - 1).div_euclid(2) * 2,
-                4,
+                (center.x - offset).div_euclid(2) * 2,
+                (center.z - offset).div_euclid(2) * 2,
+                count,
             )
         };
         for z in minz..minz + count {

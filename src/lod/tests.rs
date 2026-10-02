@@ -5,6 +5,52 @@ fn chunk(y: i32, fill: crate::world::BlockId) -> Chunk {
     Chunk::from_blocks(ChunkKey { x: -1, y, z: -1 }, 1, vec![fill; CHUNK_VOLUME])
 }
 #[test]
+fn foliage_transmits_sky_but_solid_roofs_and_unknown_gaps_do_not() {
+    let catalog = Catalog::builtins();
+    let ground = Span {
+        bottom: 0,
+        top: 4,
+        state: STONE,
+        sky: 0,
+        glow: 0,
+    };
+    let canopy = Span {
+        bottom: 8,
+        top: 10,
+        state: crate::world::LEAVES,
+        sky: 0,
+        glow: 0,
+    };
+    let mut column = Column {
+        coverage: vec![Interval { bottom: 0, top: 16 }],
+        spans: vec![ground, canopy],
+    };
+    skylight::assign(&mut column, &catalog);
+    assert_eq!(column.spans[1].sky, 15);
+    assert_eq!(column.spans[0].sky, 11);
+    column.spans = vec![
+        ground,
+        Span {
+            state: STONE,
+            ..canopy
+        },
+    ];
+    skylight::assign(&mut column, &catalog);
+    assert_eq!(column.spans[1].sky, 15);
+    assert_eq!(column.spans[0].sky, 0);
+    column.spans = vec![ground, canopy];
+    column.coverage = vec![
+        Interval { bottom: 0, top: 4 },
+        Interval { bottom: 8, top: 16 },
+    ];
+    skylight::assign(&mut column, &catalog);
+    assert_eq!(column.spans[0].sky, 0);
+    column.spans = vec![ground, canopy];
+    column.coverage = vec![Interval { bottom: 0, top: 10 }];
+    skylight::assign(&mut column, &catalog);
+    assert!(column.spans.iter().all(|s| s.sky == 0));
+}
+#[test]
 fn euclidean_keys_and_checked_edges() {
     let key = TileKey::containing(0, -1, -33).unwrap();
     assert_eq!((key.x, key.z), (-1, -2));
