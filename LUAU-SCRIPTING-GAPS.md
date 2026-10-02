@@ -503,7 +503,7 @@ The [audio contract](docs/audio/SCRIPTING.md) records bounds and exact API field
 The [audio timer machine](fixtures/audio-machine/README.md) demonstrates a running
 loop reconstructed from current public state, transactional start/completion clips
 and cleanup on removal. Dedicated process-machine/creature callback signatures,
-geometry-aware occlusion/reverb, buses, streamed music and device recovery are
+geometry-derived reverb, buses, streamed music and device recovery are
 separate remaining work. No save conversion or imported models are introduced.
 
 #### Implemented extension: weather and acoustic authoring
@@ -532,6 +532,15 @@ persistent weather-driven fill and entity-linked running audio.
 See [current scripting contract](SCRIPTING.md#weather-hooks-and-block-acoustics)
 and [playable fixture](fixtures/rain-collector/README.md). Dedicated process-machine,
 anchored, generator and owner-system hosts have not gained this weather read API.
+Positional packaged clips now use bounded voxel obstruction from authoritative
+resident client chunks on a dedicated worker. Material and thickness reduce gain
+and high frequencies; nearby openings and porous leaves remain audible. Initial
+one-shots start with their obstruction profile applied, and moving loops update
+smoothly. Session, terrain and position fences reject stale results. See the
+[positional obstruction contract](docs/audio/FOUNDATION.md#positional-clip-obstruction)
+for sampling bounds, conservative fallback and collector listening checks.
+Procedural rain/thunder retain their existing exposure model.
+
 Full acoustic tracing, geometry-derived reverb, material authoring beyond these
 bounded profiles, climate and additional insect species remain separate scope.
 

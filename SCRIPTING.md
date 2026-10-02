@@ -1069,6 +1069,15 @@ before play on preparation workers.
 
 Server sounds publish after commit. Failed actions and receipt replay produce no
 new audio. Break/place, pickup and interaction have stock committed cues.
+Positional clips and entity-linked loops use client voxel obstruction: walls
+reduce volume and soften high frequencies, leaves remain porous, and a bounded
+one-bend search admits nearby openings. Authored gain/pitch remain independent
+of obstruction. Short positional starts may wait up to 100 ms for an initial
+terrain sample; far sources or stalled sampling use conservative muffling.
+This is presentation only, with no additional Luau command or server authority.
+Rain and thunder retain their separate native shelter model. See
+[positional obstruction](docs/audio/FOUNDATION.md#positional-clip-obstruction)
+for sampling bounds, material behavior and limitations.
 See [the audio contract](docs/audio/SCRIPTING.md) for exact fields, resource bounds,
 join/retry semantics and remaining work, and [the timer-machine example](fixtures/audio-machine/README.md).
 

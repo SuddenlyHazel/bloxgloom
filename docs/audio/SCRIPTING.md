@@ -93,8 +93,15 @@ full. Presentation overload may drop new sounds; it does not alter authoritative
 state or action receipts. Playback controls and stops glide over about 20 ms.
 
 There is horizontal panning and inverse-distance attenuation, with the existing
-limiter and Effects/Master volume controls. Occlusion, reverb, buses, compression,
-streamed music, device selection and hot-plug recovery remain follow-up work.
+limiter and Effects/Master volume controls. Positional voices now use
+[voxel obstruction](FOUNDATION.md#positional-clip-obstruction): an off-thread
+worker samples resident authoritative terrain, material/thickness-dependent
+transmission and nearby one-bend openings. Obstruction gain and lowpass glide
+over approximately 100 ms independently of authored gain/pitch. Positional starts
+may wait up to 100 ms for an initial sample; sources beyond 32 metres or stalled
+sampling use conservative muffling. Nonpositional playback stays independent of
+terrain. Geometry-based reverb, buses, compression, streamed music, device
+selection and hot-plug recovery remain follow-up work.
 Weather continues to use its native procedural path. Luau now supplies captured
 weather reads, advisory transition hooks and authorized admin controls, while block
 `acoustics` metadata selects native/custom impact profiles and insect habitats.
