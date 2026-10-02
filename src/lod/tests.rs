@@ -260,7 +260,7 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
             for z in 0..16 {
                 for x in 0..16 {
                     if context.world_position([x, 0, z])?[1] == 80 {
-                        output.set([x, 0, z], "bloxgloom:wood")?;
+                        output.set([x, 0, z], "bloxgloom:wood[axis=y]")?;
                     }
                 }
             }
