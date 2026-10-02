@@ -20,7 +20,8 @@ pub(super) struct Job {
 }
 pub(super) struct Result {
     pub generation: u64,
-    pub mesh: Mesh,
+    pub key: TileKey,
+    pub mesh: std::result::Result<Mesh, String>,
 }
 pub(super) struct Worker {
     jobs: Option<SyncSender<Job>>,
@@ -46,6 +47,7 @@ impl Worker {
                     let neighbors: Vec<_> = job.neighbors.iter().map(AsRef::as_ref).collect();
                     let mesh = lod::mesh(&job.tile, &neighbors, &catalog, &colors);
                     let mut result = Result {
+                        key: job.tile.key,
                         generation: job.generation,
                         mesh,
                     };

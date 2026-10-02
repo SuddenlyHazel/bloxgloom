@@ -33,6 +33,7 @@ pub(super) struct State {
     next_request: u64,
     next_build: u64,
     quality: u8,
+    max_level: u8,
     center: Option<[i32; 2]>,
     wanted: Vec<TileKey>,
     tiles: HashMap<TileKey, Arc<LodTile>>,
@@ -54,6 +55,7 @@ impl State {
             next_request: 1,
             next_build: 1,
             quality: 1,
+            max_level: 4,
             center: None,
             wanted: vec![],
             tiles: HashMap::new(),
@@ -66,9 +68,10 @@ impl State {
             worker: Worker::new(catalog),
         }
     }
-    pub(super) fn status(&mut self, session: u64, horizon: u16) {
+    pub(super) fn status(&mut self, session: u64, horizon: u16, max_level: u8) {
         if session != 0 && session == self.session {
             self.horizon = horizon.min(self.configured.unwrap_or(0));
+            self.max_level = max_level.clamp(3, 4);
             self.center = None;
         }
     }
@@ -191,7 +194,7 @@ impl State {
         if moved || self.quality != quality {
             self.center = Some(center);
             self.quality = quality;
-            self.wanted = desired_tiles(position, self.horizon, quality);
+            self.wanted = desired_tiles(position, self.horizon, quality, self.max_level);
             self.wanted.truncate(MAX_TILES);
             let wanted: HashSet<_> = self.wanted.iter().copied().collect();
             let removed: Vec<_> = self
@@ -216,20 +219,31 @@ impl State {
             let Ok(result) = self.worker.results.try_recv() else {
                 break;
             };
-            if result.mesh.revision < self.minimum.get(&result.mesh.key).copied().unwrap_or(0)
-                || self.builds.get(&result.mesh.key) != Some(&result.generation)
-            {
+            let key = result.key;
+            if self.builds.get(&key) != Some(&result.generation) {
                 continue;
             }
-            let key = result.mesh.key;
-            if renderer.enqueue_lod_mesh(result.mesh).is_err() {
-                // Admission pressure must not cause continuous remeshing.
-                self.mesh_retry
-                    .insert(key, Instant::now() + Duration::from_secs(2));
-                self.pending_mesh.insert(key);
-            }
             self.builds.remove(&key);
+            match result.mesh {
+                Ok(mesh) => {
+                    if mesh.revision < self.minimum.get(&key).copied().unwrap_or(0) {
+                        continue;
+                    }
+                    if renderer.enqueue_lod_mesh(mesh).is_err() {
+                        self.mesh_retry
+                            .insert(key, Instant::now() + Duration::from_secs(2));
+                        self.pending_mesh.insert(key);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(?key, %error, "distant mesh unavailable within resource budget");
+                    self.mesh_retry
+                        .insert(key, Instant::now() + Duration::from_secs(60));
+                    self.pending_mesh.insert(key);
+                }
+            }
         }
+
         for _ in 0..2 {
             let Some(key) = self
                 .wanted
@@ -307,6 +321,12 @@ impl State {
 }
 
 fn neighboring(a: TileKey, b: TileKey) -> bool {
-    a.level == b.level
-        && (i64::from(a.x) - i64::from(b.x)).abs() + (i64::from(a.z) - i64::from(b.z)).abs() <= 1
+    if a == b {
+        return true;
+    }
+    let (Some(a), Some(b)) = (a.bounds(), b.bounds()) else {
+        return false;
+    };
+    ((a[2] == b[0] || b[2] == a[0]) && a[1] < b[3] && b[1] < a[3])
+        || ((a[3] == b[1] || b[3] == a[1]) && a[0] < b[2] && b[0] < a[2])
 }

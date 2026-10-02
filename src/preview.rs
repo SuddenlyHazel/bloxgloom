@@ -14,7 +14,9 @@ pub use visuals::render_visual_previews;
 mod egui_ui;
 pub use block::render_block_preview;
 pub use egui_ui::{render_egui_previews, render_package_egui_previews};
+mod lod;
 mod perf;
+pub(crate) use lod::render_lod_previews;
 
 pub(crate) use perf::characters::run_character_benchmark;
 use perf::run_perf_benchmark_async;
@@ -505,7 +507,21 @@ pub fn run_perf_benchmark(
     radius: u8,
     bounced: bool,
 ) -> Result<(), Box<dyn Error>> {
-    pollster::block_on(run_perf_benchmark_async(steady_frames, radius, bounced))
+    pollster::block_on(run_perf_benchmark_async(steady_frames, radius, bounced, 0))
+}
+
+pub(crate) fn run_lod_benchmark(
+    steady_frames: usize,
+    radius: u8,
+    horizon: u16,
+    bounced: bool,
+) -> Result<(), Box<dyn Error>> {
+    pollster::block_on(run_perf_benchmark_async(
+        steady_frames,
+        radius,
+        bounced,
+        horizon,
+    ))
 }
 
 struct PreviewOutput {

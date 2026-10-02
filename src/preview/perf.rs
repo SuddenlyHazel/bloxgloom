@@ -33,7 +33,11 @@ pub(super) async fn run_perf_benchmark_async(
     steady_frames: usize,
     radius: u8,
     bounced: bool,
+    lod_horizon: u16,
 ) -> Result<(), Box<dyn Error>> {
+    if !matches!(lod_horizon, 0 | 512 | 1024) {
+        return Err("LOD horizon must be 0, 512 or 1024".into());
+    }
     if steady_frames == 0 {
         return Err("steady frame count must be at least 1".into());
     }
@@ -55,7 +59,7 @@ pub(super) async fn run_perf_benchmark_async(
     let grid_width = u32::from(radius) * 2 + 1;
     let requested_chunks = grid_width * grid_width * 3;
     let max_frames = usize::try_from(requested_chunks)?
-        .checked_add(steady_frames)
+        .checked_add(steady_frames + 128)
         .ok_or("frame count overflow")?;
     let max_queries = u32::try_from(max_frames.checked_mul(2).ok_or("query count overflow")?)?;
     if timestamp_supported && max_queries > wgpu::QUERY_SET_MAX_QUERIES {
@@ -201,6 +205,16 @@ pub(super) async fn run_perf_benchmark_async(
         fov_y_radians: 70.0f32.to_radians(),
     };
     let matrix = render::view_projection(camera, PERF_WIDTH, PERF_HEIGHT);
+    let mut lod_gpu = render::lod::Gpu::new(&device, render::post::HDR_FORMAT);
+    lod_gpu.set_horizon(lod_horizon);
+    let (lod_meshes, lod_summary_bytes) = if lod_horizon > 0 {
+        super::lod::terrain_meshes(camera, lod_horizon)?
+    } else {
+        (vec![], 0)
+    };
+    let lod_mesh_bytes: usize = lod_meshes.iter().map(render::lod::Mesh::byte_len).sum();
+    let mut lod_source: VecDeque<_> = lod_meshes.into();
+    let mut near_ready = std::collections::HashSet::new();
 
     let mut precomputed_source = precomputed_meshes;
     let mut mesher_results = VecDeque::<ChunkMesh>::with_capacity(MESHER_RESULT_CAPACITY);
@@ -220,7 +234,8 @@ pub(super) async fn run_perf_benchmark_async(
         let loading = !precomputed_source.is_empty()
             || !mesher_results.is_empty()
             || !pending_upload.is_empty()
-            || !pending_render.is_empty();
+            || !pending_render.is_empty()
+            || !lod_source.is_empty();
         if !loading && steady_done >= steady_frames {
             break;
         }
@@ -265,6 +280,7 @@ pub(super) async fn run_perf_benchmark_async(
                 break;
             }
             let mesh = pending_render.pop_front().unwrap();
+            near_ready.insert(mesh.key);
             if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 gpu_meshes.remove(&mesh.key);
                 continue;
@@ -298,6 +314,24 @@ pub(super) async fn run_perf_benchmark_async(
             uploaded_bytes += mesh_bytes;
         }
 
+        if uploaded_chunks < render::UPLOAD_MESHES_PER_FRAME
+            && let Some(mesh) = lod_source.pop_front()
+        {
+            lod_gpu
+                .enqueue(mesh)
+                .map_err(|_| "LOD benchmark exceeded GPU residency budget")?;
+            if lod_gpu.upload(&device) == 0 {
+                return Err("LOD benchmark upload stalled".into());
+            }
+        }
+        lod_gpu.prepare(
+            &queue,
+            camera,
+            PERF_WIDTH,
+            PERF_HEIGHT,
+            render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS),
+            near_ready.iter().copied(),
+        );
         let ui_frame = UiFrame {
             show_crosshair: true,
             character: None,
@@ -350,10 +384,15 @@ pub(super) async fn run_perf_benchmark_async(
         queue.write_buffer(
             &camera_buffer,
             0,
-            bytemuck::cast_slice(
-                &render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
-                    .camera_data(matrix, camera.position),
-            ),
+            bytemuck::cast_slice(&{
+                let mut data = render::daylight::Atmosphere::at(crate::daylight::INITIAL_MS)
+                    .camera_data(matrix, camera.position);
+                if lod_horizon > 0 {
+                    data[28] = f32::from(lod_horizon) * 0.65;
+                    data[29] = f32::from(lod_horizon);
+                }
+                data
+            }),
         );
         queue.write_buffer(
             &target_camera_buffer,
@@ -418,7 +457,10 @@ pub(super) async fn run_perf_benchmark_async(
                 }
                 final_visible += 1;
             }
+            final_triangles += lod_gpu.draw(&mut pass);
             pass.set_pipeline(&cutout_pipeline);
+            pass.set_bind_group(0, &camera_group, &[]);
+            pass.set_bind_group(1, &texture_group, &[]);
             for (key, mesh) in &gpu_meshes {
                 if !render::chunk_visible(matrix, *key) {
                     continue;
@@ -632,6 +674,10 @@ pub(super) async fn run_perf_benchmark_async(
         .map(|sample| sample.triangles)
         .max()
         .unwrap_or_default();
+    eprintln!(
+        "LOD benchmark: horizon={lod_horizon} summary-bytes={lod_summary_bytes} mesh-bytes={lod_mesh_bytes} gpu-tiles={}",
+        lod_gpu.ready_keys().count()
+    );
     eprintln!(
         "headless scene: seed=0x{SEED:016x}, radius={radius}, requested={requested_chunks}, nonempty={nonempty_meshes}, gpu-resident={} ({} uploaded), final-visible={final_visible} / max-visible={max_visible}, final-triangles={final_triangles} / max-triangles={max_triangles}, mesh-bytes={mesh_bytes}, upload-bytes={total_upload_bytes}, max-upload/frame={max_uploaded_frame} chunks / {max_upload_bytes_frame} bytes (budget {} bytes), peak-queued={peak_pending_chunks}",
         gpu_meshes.len(),

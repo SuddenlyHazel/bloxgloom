@@ -259,7 +259,8 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
         fn generate(&self, context: Context, output: &mut Output) -> Result<(), GenerationError> {
             for z in 0..16 {
                 for x in 0..16 {
-                    if context.world_position([x, 0, z])?[1] == 80 {
+                    let position = context.world_position([x, 0, z])?;
+                    if position[1] == 80 && position[2] == 0 {
                         output.set([x, 0, z], "bloxgloom:wood[axis=y]")?;
                     }
                 }
@@ -274,8 +275,8 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
         contributor: Arc::new(Bridge),
     };
     let mut chunks = Vec::new();
-    for z in -2..0 {
-        for x in -2..0 {
+    for z in 0..2 {
+        for x in 0..2 {
             for y in -4..6 {
                 chunks.push(
                     crate::world::generate_chunk_with_contributors(
@@ -292,8 +293,8 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
     let tile = extract(
         TileKey {
             level: 0,
-            x: -1,
-            z: -1,
+            x: 0,
+            z: 0,
         },
         1,
         &chunks,
@@ -302,12 +303,13 @@ fn composed_contributor_bridge_survives_bounded_render_extraction() {
     .unwrap();
     tile.validate(&catalog).unwrap();
     assert_eq!(tile.columns.len(), TILE_COLUMNS);
-    for c in &tile.columns {
+    for (index, c) in tile.columns.iter().enumerate() {
         assert!(c.known(-64, 96));
-        assert!(
+        assert_eq!(
             c.spans
                 .iter()
-                .any(|s| s.bottom == 80 && s.top == 81 && s.state == WOOD)
+                .any(|s| s.bottom == 80 && s.top == 81 && s.state == WOOD),
+            index < TILE_SIZE
         );
         assert!(c.spans.iter().all(|s| s.top <= 74 || s.bottom >= 80));
     }

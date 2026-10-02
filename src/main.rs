@@ -8,8 +8,8 @@ mod gameplay;
 mod inventory;
 mod items;
 mod lighting;
-mod logging;
 mod lod;
+mod logging;
 mod physics;
 mod preview;
 mod protocol;
@@ -599,6 +599,51 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             preview::run_character_benchmark(frames, actors, hair)?;
+        }
+        Some("lod-preview") => {
+            let directory = args.next().unwrap_or_else(|| "lod-previews".into());
+            let horizon = args
+                .next()
+                .map(|v| v.parse::<u16>())
+                .transpose()?
+                .unwrap_or(512);
+            if args.next().is_some() {
+                return Err("usage: lod-preview [output-dir] [512|1024]".into());
+            }
+            preview::render_lod_previews(std::path::Path::new(&directory), horizon)?;
+        }
+        Some("lod-perf") => {
+            let frames = args
+                .next()
+                .map(|v| v.parse::<usize>())
+                .transpose()?
+                .unwrap_or(300);
+            let radius = args
+                .next()
+                .map(|v| v.parse::<u8>())
+                .transpose()?
+                .unwrap_or(6);
+            let horizon = args
+                .next()
+                .map(|v| v.parse::<u16>())
+                .transpose()?
+                .unwrap_or(512);
+            let bounced = match args.next().as_deref() {
+                None | Some("voxel") => false,
+                Some("bounced") => true,
+                _ => {
+                    return Err(
+                        "usage: lod-perf [frames] [near-radius] [0|512|1024] [voxel|bounced]"
+                            .into(),
+                    );
+                }
+            };
+            if args.next().is_some() {
+                return Err(
+                    "usage: lod-perf [frames] [near-radius] [0|512|1024] [voxel|bounced]".into(),
+                );
+            }
+            preview::run_lod_benchmark(frames, radius, horizon, bounced)?;
         }
         Some("perf") => {
             let steady_frames = args

@@ -1037,7 +1037,11 @@ impl ClientApp {
             ServerMessage::LodInvalidateAll { session, revision } => {
                 self.lod.invalidate_all(session, revision)
             }
-            ServerMessage::LodStatus { session, horizon } => self.lod.status(session, horizon),
+            ServerMessage::LodStatus {
+                session,
+                horizon,
+                max_level,
+            } => self.lod.status(session, horizon, max_level),
             ServerMessage::LodTile {
                 session,
                 request,

@@ -91,3 +91,36 @@ fn teleport_reset_cancels_requests_without_reusing_request_identity() {
     assert_eq!(state.next_request, 5);
     state.retire();
 }
+
+#[test]
+fn mixed_detail_boundary_neighbors_are_remeshed_without_overlapping_ancestors() {
+    let coarse = TileKey {
+        level: 2,
+        x: 0,
+        z: 0,
+    };
+    assert!(neighboring(
+        coarse,
+        TileKey {
+            level: 1,
+            x: 2,
+            z: 0
+        }
+    ));
+    assert!(!neighboring(
+        coarse,
+        TileKey {
+            level: 1,
+            x: 0,
+            z: 0
+        }
+    ));
+    assert!(!neighboring(
+        coarse,
+        TileKey {
+            level: 1,
+            x: 2,
+            z: 2
+        }
+    ));
+}
