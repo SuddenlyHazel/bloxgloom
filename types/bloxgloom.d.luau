@@ -59,6 +59,22 @@ declare extern type BloxTick with
     function elapsed_since(self, earlier: BloxTick): number
 end
 
+--- Frozen tag expansions. Unknown tags fail the callback, even if caught with pcall.
+export type BloxTagQueries = {
+    tag_contains: (kind: "block" | "item", tag: string, member: string) -> boolean,
+    --- Zero-based offset, 1..128 page size; returns sorted keys and total membership.
+    tag_members: (kind: "block" | "item", tag: string, offset: number?, limit: number?) -> ({string}, number),
+}
+--- Historical environment captured before scheduled work. This is not a direct-sunlight query.
+export type BloxEnvironmentQueries = {
+    world_time: () -> {elapsed_ms: number, cycle_ms: number},
+    weather: () -> BloxWeather,
+}
+export type BloxItemIcon = {rows: {string}, palette: {[string]: {number}}}
+export type BloxItemVisualInput = {item: string, count: number, component_version: number, components: string}
+export type BloxItemVisual = {icon: BloxItemIcon?, drop_scale: number?}
+export type BloxItemVisualCallback = (BloxItemVisualInput) -> BloxItemVisual
+
 --- Startup registration services. Definitions are frozen before gameplay; methods use dot calls.
 --- Registration methods expire when startup returns; never retain this host.
 export type BloxStartupHost = {
@@ -68,6 +84,7 @@ export type BloxStartupHost = {
     register_block: (key: string, name: string, package_texture: string, options: BloxBlockOptions?) -> (),
     --- At most 512 total/package, including all block-created items.
     register_item: (key: string, name: string, texture: string, options: BloxItemOptions?) -> (),
+    register_item_icon: (own_item: string, icon: BloxItemIcon) -> (),
     -- A member is a namespaced definition key or "#namespace:tag".
     -- At most 32 tags per package and 32 members per tag; cycles fail startup.
     register_tag: (key: string, kind: "block" | "item", members: {string}) -> (),
@@ -121,7 +138,7 @@ export type BloxAnchoredEvent =
     | {kind: "Validate", state: string}
     | {kind: "Public", state: string}
     | {kind: "Interact", state: string, request: string}
-    | {kind: "React", state: string, anchor: BloxTriple, tick: BloxTick, cells: {BloxAnchoredCell}}
+    | ({kind: "React", state: string, anchor: BloxTriple, tick: BloxTick, cells: {BloxAnchoredCell}} & BloxTagQueries & BloxEnvironmentQueries)
     | {kind: "Refund", state: string, cause: "Broken" | "Reaction" | "WorldEdit", maximum: number}
 --- Initialize/Interact return private bytes; Public returns public bytes.
 --- Validate returns true/nil or false; React returns nil, {state=bytes} or {remove=true}.
@@ -248,12 +265,28 @@ export type BloxPlayerAppearance = {
 
 -- Ordered positional schema, at most 8 fields and 130 encoded bytes in total.
 -- Keys: u8 length + namespaced ASCII bytes (3..max_bytes, max_bytes <= 128).
--- Counts: one byte, 1..128. Defaults make trailing text arguments optional;
+-- Text: nonempty UTF-8 without control characters, max_bytes=1..128.
+-- Integer: inclusive bounds within +/-9007199254740991 (exact Luau numbers).
+-- Number: inclusive finite bounds; NaN/infinity are rejected, -0 normalized.
+-- Counts: one byte, 1..128. Defaults make trailing count arguments optional;
 -- wire/event.arguments always includes every field with explicit default values.
 export type BloxCommandArgument = { kind: "item_key" | "entity_key", max_bytes: number }
+    | { kind: "text", max_bytes: number }
+    | { kind: "integer" | "number", min: number, max: number }
     | { kind: "count", default: number? }
     | { kind: "player" }
-export type BloxCommand = { permission: "Player" | "Admin", arguments: { BloxCommandArgument }? }
+-- At most four globally unique aliases, each 1..32 lowercase ASCII letters,
+-- digits or underscores. Builtin command names are reserved. Aliases resolve
+-- on the client to the canonical namespaced action; they are not wire identities.
+-- Example descriptor: {permission="Admin", aliases={"tune"}, arguments={
+--     {kind="text", max_bytes=48}, {kind="integer", min=-10, max=10},
+--     {kind="number", min=0, max=1}}}
+-- Command entry: tune "rain intensity" -2 0.5
+export type BloxCommand = {
+    permission: "Player" | "Admin",
+    arguments: { BloxCommandArgument }?,
+    aliases: { string }?,
+}
 
 --- Chunk coordinates, or a fixed-width hexadecimal owner identity (16 digits for entity, 32 for profile).
 export type BloxSystemSeed = { x: number, y: number, z: number, data: string }
@@ -294,6 +327,7 @@ export type BloxGenerationContext = {
     set_block: (lx: number, ly: number, lz: number, state_key: string) -> (),
 }
 
+export type BloxQueriedBlock = BloxBlock & {cell: BloxTriple}
 export type BloxBlock = {
     state: string,
     block_type: string,
@@ -325,7 +359,7 @@ export type BloxActionEvent = {
 --- Removal decisions include deterministic random in [0,1), plus legacy exact halves.
 export type BloxRemovedEvent = {
     kind: "BlockRemoved", cell: BloxTriple, previous: BloxBlock,
-    cause: "Break" | "Replacement" | "SupportLoss" | "WorldEdit" | "Burn" | "AnchoredBreak",
+    cause: "Break" | "Replacement" | "SupportLoss" | "WorldEdit" | "Burn" | "AnchoredBreak" | "Transformation",
     random: number, random_lo: number, random_hi: number,
 }
 export type BloxPlacedEvent = {kind: "BlockPlaced", cell: BloxTriple, previous: BloxBlock, placed: BloxBlock}
@@ -394,7 +428,7 @@ export type BloxProfileCell = {
 }
 --- Invocation-bound authority. Saved methods expire after this attempt.
 --- Authoritative module state is fresh on retries; persist decisions through host state.
-export type BloxGameplayContext = {
+export type BloxGameplayContext = BloxTagQueries & {
     --- Explicit canonical-token decoding; a profile handle grants no authority.
     profile_id: (canonical_token: string) -> BloxProfileId,
     --- Own registered service, players/v1. Captures live or offline profile revision; readonly binary values.
@@ -430,6 +464,8 @@ export type BloxGameplayContext = {
     --- Deterministic sample in [0, 1). Optional sequence is an integer in 0..4294967295; defaults to zero.
     random: (x: number, y: number, z: number, sequence: number?) -> number,
     block: (x: number, y: number, z: number) -> BloxBlock,
+    --- Integer dimensions, at most 64 cells; unknown terrain rejects the callback.
+    blocks: (x: number, y: number, z: number, width: number, height: number, depth: number) -> {BloxQueriedBlock},
     set_block: (x: number, y: number, z: number, state_key: string) -> (),
     --- Stage an exact-count move between 0-indexed player inventory slots. Returns false if the move cannot be made.
     transfer: (from_slot: number, to_slot: number, count: number) -> boolean,
@@ -497,7 +533,7 @@ export type BloxStack = { item: string, count: number, components: { version: nu
 export type BloxSlot = { stack: BloxStack?, insert: boolean, extract: boolean }
 
 --- Durable owner planner input. Owner identity is selected by owner_kind; mutations use captured revisions.
-export type BloxOwnerContext = {
+export type BloxOwnerContext = BloxTagQueries & BloxEnvironmentQueries & {
 
     --- Private persisted owner state bytes captured for this plan.
     data: string,
@@ -516,6 +552,7 @@ export type BloxOwnerContext = {
     send: (x: number, y: number, z: number, binary_payload: string) -> (),
     entities: {BloxOwnerEntity}?,
     block_info: (x: number, y: number, z: number) -> BloxBlock,
+    blocks: (x: number, y: number, z: number, width: number, height: number, depth: number) -> {BloxQueriedBlock},
     spawn_drop: (x: number, y: number, z: number, item: string, count: number, delay_ms: number) -> (),
     spawn_entity: (key: string, x: number, y: number, z: number, state: string) -> (),
     spawn_moving_entity: (key: string, options: BloxMovingSpawn) -> BloxSpawnReference,
@@ -566,6 +603,8 @@ export type BloxVisualParameterValue = number | boolean | {number}
 
 --- Session-local presentation setup. These methods cannot edit authoritative world or inventory state.
 export type BloxClientStartupHost = {
+    --- Read-only stack presentation runs off the window thread; count-only for world drops.
+    set_item_visual_handler: (own_item: string, own_client_module: string) -> (),
     --- Set text on an owned document/node identity, such as "demo:controls/title".
     set_text: (owned_document_node: string, ascii_text: string) -> (),
     --- Set explicit local state for an owned document. This is presentation state, not saved gameplay state.
@@ -746,7 +785,7 @@ export type BloxReplicaCommand =
         r: number, g: number, b: number, size: number?, lifetime_ms: number? }
 
 --- Creature callback input. Tick services read captured terrain; interaction requests carry binary bytes.
-export type BloxCreatureContext = {
+export type BloxCreatureContext = (BloxTagQueries & BloxEnvironmentQueries & {
     event: "tick",
     data: string,
     id: BloxEntityId,
@@ -758,7 +797,7 @@ export type BloxCreatureContext = {
     clear: (x: number, y: number, z: number) -> boolean,
     grounded: (x: number, y: number, z: number) -> boolean,
     walk_edge: (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) -> boolean,
-} | {
+}) | {
     event: "interact",
     data: string,
     request: string,
@@ -771,19 +810,42 @@ export type BloxCreatureNeighbour = {
     public: string,
 }
 --- Machine planner input. tick and due are exact logical simulation times.
-export type BloxMachineContext = {
+export type BloxMachineContext = BloxTagQueries & BloxEnvironmentQueries & {
     data: string,
     tick: BloxTick,
     due: BloxTick,
     fuel: number,
     progress: number,
-    --- Readonly 1-indexed slots; nil means empty. Item is the negotiated numeric catalog ID.
+    --- Readonly 1-indexed authoritative owned slots; nil means empty.
     slots: {BloxMachineSlot?},
 }
-export type BloxMachineSlot = {item: number, count: number, has_components: boolean}
+export type BloxMachineSlot = {
+    --- Namespaced registered item key.
+    item: string,
+    count: number,
+    has_components: boolean,
+    --- Exact read-only binary payload owned by this machine, never peer inventory data.
+    components: BloxComponents?,
+}
+
+--- One-based own slot; count is 1..128 and cannot exceed its captured stack.
+--- The host captures the full exact preimage; scripts cannot supply a trusted expectation.
+export type BloxMachineTransformInput = {slot: number, count: number}
+--- One-based own destination; registered item/schema and slot filters still apply.
+--- Only exact component matches merge; the resulting stack cannot exceed 128.
+export type BloxMachineTransformOutput = {
+    slot: number, item: string, count: number, components: BloxComponents?,
+}
+--- Consume at least one item from 1..8 distinct input slots; 0..8 distinct outputs.
+--- Dense lists. All inventory changes commit atomically, including retries/recovery.
+export type BloxMachineTransformation = {
+    kind: "transform",
+    inputs: {BloxMachineTransformInput},
+    outputs: {BloxMachineTransformOutput},
+}
 
 --- Ordered work proposals; the host resolves exact finite stacks and permitted peers.
-export type BloxMachineWork = {kind: "process"} | {
+export type BloxMachineWork = {kind: "process"} | BloxMachineTransformation | {
     kind: "transfer", offset: BloxTriple, port: string, peer_port: string?,
     push: boolean, count: number?, source_slot: number?, destination_slot: number?,
     item: string?, same_as_slot: number?,

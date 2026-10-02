@@ -12,6 +12,11 @@ impact on larger mods.
 
 ## Try authoring now
 
+- [Read services](READ-SERVICES.md): runtime tags, captured daylight/weather and bounded terrain queries.
+- [Commands](COMMANDS.md): bounded text/numeric arguments and canonical aliases.
+- [Custom machine processing](MACHINE-PROCESSING.md): atomic exact-stack transformations.
+- [Item visuals](item-visuals.md): bitmap icons and per-stack presentation callbacks.
+
 - [Package composition](PACKAGE-COMPOSITION.md): larger content budgets, multiple
   owner systems and contributors, with the runnable
   [farming-scale package](../../fixtures/farming-scale/README.md).

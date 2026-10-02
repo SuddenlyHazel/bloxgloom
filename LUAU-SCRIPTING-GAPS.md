@@ -1,8 +1,9 @@
 # Luau scripting gaps
 
-Current assessment: October 1, 2026, after Phase 8, runtime tools, player services,
+Current assessment: October 2, 2026, after Phase 8, runtime tools, player services,
 dynamic UI, anchored entities, typed client replicas and the VM lifetime work
-recorded in section 6, plus the package composition work in section 7.
+recorded in section 6, plus package composition in section 7 and the smaller
+composable API goal below.
 
 All eight phases of the approved non-deferred modding plan are complete. That
 delivers a substantial baseline for content, gameplay, generation, persistent
@@ -530,8 +531,9 @@ physical/audio capacity limits are preserved. The rain collector demonstrates
 persistent weather-driven fill and entity-linked running audio.
 
 See [current scripting contract](SCRIPTING.md#weather-hooks-and-block-acoustics)
-and [playable fixture](fixtures/rain-collector/README.md). Dedicated process-machine,
-anchored, generator and owner-system hosts have not gained this weather read API.
+and [playable fixture](fixtures/rain-collector/README.md). Scheduled machine,
+creature, anchored reaction and owner-system callbacks now share captured
+clock/weather reads; deterministic generators remain independent of runtime weather.
 Positional packaged clips now use bounded voxel obstruction from authoritative
 resident client chunks on a dedicated worker. Material and thickness reduce gain
 and high frequencies; nearby openings and porous leaves remain audible. Initial
@@ -995,26 +997,49 @@ and load probes, typed editor checks and inspected release GPU previews passed.
 Cold/cached join, movement/action, memory and paired renderer measurements are
 recorded in the composition reference.
 
-Motion/audio, imported models, tag-query services, command-schema expansion,
-persistent disk bundle caching, marketplaces/CDNs and hot reload remain separate
-projects. Save conversion remains excluded during this prerelease.
+Motion/audio, imported models, persistent disk bundle caching, marketplaces/CDNs
+and hot reload remain separate projects. Runtime tags and command-schema
+expansion are now implemented in the smaller API goal below. Save conversion remains excluded during this prerelease.
 
 ## Smaller composability gaps
 
-- Tags can be declared, but there is no general Luau runtime tag-query service.
-- Command schemas support player targets, item keys, entity keys and counts,
-  without general text/numeric arguments or aliases.
-- Daylight reads are available in gameplay actions and moving callbacks. Admin
-  clock control remains an authorized action; other scheduled planners and
-  callbacks use logical ticks.
-- Typed local inventory/block/world/action observations are implemented with
-  readonly bounded snapshots, real-listener acceptance and production UI previews;
-  see the
-  [typed replica scope and verification](docs/modding/TYPED-REPLICAS.md).
-  General world queries and remote-player inventory access are outside that scope.
-- Machine callbacks select declared transformations; they do not expose a
-  general arbitrary inventory-processing planner.
-- Native item-icon callbacks and per-stack render callbacks are not Luau bindings.
+Implemented smaller API goal (October 2, 2026):
+
+- Runtime block/item tag membership and bounded sorted paging are available in
+  gameplay and scheduled callbacks against frozen catalog expansions.
+- Command schemas support bounded UTF-8 text, exact integers, finite numbers
+  and declared aliases, in addition to player/item/entity/count arguments.
+  Aliases resolve to canonical action identities; server authorization remains
+  authoritative. See [commands](docs/modding/COMMANDS.md).
+- Gameplay and scheduled machine/creature/anchored-reaction/owner callbacks share
+  captured daylight/weather reads with stale-override fences. Generation stays
+  seed/chunk deterministic. Gameplay and world-reading owner callbacks have
+  bounded spatial block queries; unloaded terrain is unavailable, never air.
+  See [read services](docs/modding/READ-SERVICES.md).
+- Typed local inventory/block/world/action observations remain implemented with
+  readonly bounded snapshots. Unbounded world scans and private remote-player
+  inventory queries remain outside the public read contract.
+- Machine callbacks can propose custom owned-slot transformations with exact
+  input preimages and computed output counts/components. The host validates
+  registered schemas, filters, capacity and atomic durable replacement. Current
+  machine declaration shapes remain bounded to the existing two/three slots.
+  See [machine processing](docs/modding/MACHINE-PROCESSING.md).
+- Startup bitmap item icons and worker-based per-stack icon/drop-scale callbacks
+  are Luau bindings. Inventory callbacks receive exact components; world drops
+  expose count only because their current presentation snapshot omits components.
+  See [item visuals](docs/modding/item-visuals.md).
+
+Verification: 1,601 game tests and 49 host API tests passed (10 existing game
+tests ignored), including real nonblocking listener negotiation, authorization,
+transaction rollback, entity-tick batching and restart. Formatting, strict
+all-target/all-feature Clippy and the release build passed. The updated Luau
+editor definitions were checked against typed read/command/machine examples and
+the anchored callback fixture; an egui preview of the callback-selected item
+icon was generated and inspected. Source commits: `5cdc7dd` (commands),
+`80f23b1` (machines), `ef895d0` (item visuals), `3baaa47` (read services).
+
+Remaining smaller gaps:
+
 - Package delivery has an in-memory cache, but no persistent disk bundle cache.
 - Native fire propagation/delivery still has its explicitly deferred migration.
 

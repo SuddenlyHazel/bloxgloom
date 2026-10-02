@@ -233,7 +233,8 @@ create plain items; do not assume components survive placement/harvest.
 members. A member is a definition key or `"#namespace:tag"`. Forward references
 resolve during installation. Missing references, wrong kinds and cycles fail.
 Machine item filters can use item tags. Block tags provide validated composition
-metadata; no general Luau tag-query service is bound.
+metadata. Runtime callback queries are documented in
+[read services](docs/modding/READ-SERVICES.md).
 
 ## Player rules and appearance
 
@@ -1122,3 +1123,10 @@ fingerprint, while save block/schema identities remain unchanged. The scene
 stays bounded to 768 faces and synthesis to 128 active impacts.
 
 See `fixtures/rain-collector/README.md` for an example combining these contracts.
+
+## Additional composable APIs
+
+- [Runtime tags, captured environments and bounded terrain queries](docs/modding/READ-SERVICES.md).
+- [Typed command arguments and canonical aliases](docs/modding/COMMANDS.md).
+- [Transactional machine processing and exact components](docs/modding/MACHINE-PROCESSING.md).
+- [Bitmap item icons and worker-based per-stack presentation](docs/modding/item-visuals.md).
