@@ -11,6 +11,7 @@ pub(crate) mod fire;
 mod fog;
 pub(crate) mod game_ui;
 mod hooks;
+pub(crate) mod lod;
 mod material;
 pub(crate) mod weather;
 pub(crate) use material::resources::required_limits as material_device_limits;
@@ -157,6 +158,9 @@ pub struct Renderer {
     fire: fire::FireRenderer,
     game_ui: game_ui::GameUi,
     meshes: HashMap<ChunkKey, GpuMesh>,
+    ready_near: std::collections::HashSet<ChunkKey>,
+    lod: lod::Gpu,
+    lod_horizon: u16,
     pending: HashMap<ChunkKey, ChunkMesh>,
     pending_order: VecDeque<ChunkKey>,
     pending_immediate: std::collections::HashSet<ChunkKey>,
@@ -165,6 +169,20 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    pub(crate) fn enqueue_lod_mesh(&mut self, mesh: lod::Mesh) -> Result<(), lod::Mesh> {
+        self.lod.enqueue(mesh)
+    }
+    pub(crate) fn remove_lod_tile(&mut self, key: crate::lod::TileKey) {
+        self.lod.remove(key);
+    }
+    pub(crate) fn clear_lod(&mut self) {
+        self.lod.clear();
+    }
+    pub(crate) fn set_lod_horizon(&mut self, horizon: u16) {
+        self.lod_horizon = horizon;
+        self.lod.set_horizon(horizon);
+    }
+
     pub(crate) fn set_visual_parameter(
         &mut self,
         update: &parameters::Update,
@@ -261,6 +279,7 @@ impl Renderer {
         let (pipeline, cutout_pipeline, camera_buffer, camera_group, texture_group) =
             create_voxel_pipeline_with_catalog(&device, &queue, post::HDR_FORMAT, &catalog)
                 .map_err(RendererError::Materials)?;
+        let lod = lod::Gpu::new(&device, post::HDR_FORMAT);
         let fire = fire::FireRenderer::new(&device, &camera_buffer);
         let rain =
             fire::FireRenderer::with_capacity(&device, &camera_buffer, weather::MAX_VERTEX_BYTES);
@@ -334,6 +353,9 @@ impl Renderer {
             fire,
             game_ui,
             meshes: HashMap::new(),
+            ready_near: std::collections::HashSet::new(),
+            lod,
+            lod_horizon: 0,
             pending: HashMap::new(),
             pending_order: VecDeque::new(),
             pending_immediate: std::collections::HashSet::new(),
@@ -474,6 +496,7 @@ impl Renderer {
     }
 
     pub fn remove_chunk(&mut self, key: ChunkKey) {
+        self.ready_near.remove(&key);
         self.pending_immediate.remove(&key);
         self.meshes.remove(&key);
         self.pending.remove(&key);
@@ -512,6 +535,7 @@ impl Renderer {
             } else {
                 0
             };
+            self.ready_near.insert(key);
             if mesh.indices.is_empty() && mesh.cutout_indices.is_empty() {
                 self.meshes.remove(&key);
                 continue;
@@ -559,6 +583,17 @@ impl Renderer {
     ) -> Result<RenderStats, RendererError> {
         let uploaded_chunks = self.upload_pending();
         let atmosphere = self.weather.atmosphere(self.atmosphere);
+        if uploaded_chunks < UPLOAD_MESHES_PER_FRAME {
+            self.lod.upload(&self.device);
+        }
+        self.lod.prepare(
+            &self.queue,
+            camera,
+            self.config.width,
+            self.config.height,
+            atmosphere,
+            self.ready_near.iter().copied(),
+        );
         self.rain
             .set_mesh(&self.queue, &self.weather.vertices(camera));
         let mut stats = RenderStats {
@@ -580,11 +615,13 @@ impl Renderer {
                 atmosphere,
             )),
         );
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&atmosphere.camera_data(view_projection, camera.position)),
-        );
+        let mut camera_data = atmosphere.camera_data(view_projection, camera.position);
+        if self.lod_horizon > 0 {
+            camera_data[28] = f32::from(self.lod_horizon) * 0.65;
+            camera_data[29] = f32::from(self.lod_horizon);
+        }
+        self.queue
+            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&camera_data));
         if let Some(gpu) = &mut self.material_gpu {
             gpu.update(&self.queue);
         }
@@ -654,6 +691,7 @@ impl Renderer {
             pass.set_pipeline(&self.sky_pipeline);
             pass.set_bind_group(0, &self.sky_group, &[]);
             pass.draw(0..3, 0..1);
+            stats.drawn_triangles += self.lod.draw(&mut pass);
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_group, &[]);
             pass.set_bind_group(1, &self.texture_group, &[]);

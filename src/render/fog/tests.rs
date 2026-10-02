@@ -102,7 +102,7 @@ fn gpu_storm_fog_preserves_near_contrast_and_obscures_distant_shadows() {
 }
 
 const COMPUTE_FIXTURE: &str = r#"
-struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f };
+struct Camera { view_projection: mat4x4f, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<storage, read_write> result: array<vec4f>;
 @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3u) {

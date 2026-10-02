@@ -1,5 +1,5 @@
 
-struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f };
+struct Camera { view_projection: mat4x4<f32>, sun: vec4f, horizon: vec4f, eye: vec4f, fog_range: vec4f };
 @group(0) @binding(0) var<uniform> camera: Camera;
 struct VertexInput {
     @location(0) position: vec3<f32>,

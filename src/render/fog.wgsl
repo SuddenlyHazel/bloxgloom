@@ -5,7 +5,7 @@ fn bg_weather_fog(distance: f32, density: f32) -> f32 {
 }
 fn bg_apply_fog(color: vec3f, world: vec3f, sky: f32) -> vec3f {
     let distance = length(world - camera.eye.xyz);
-    let background = smoothstep(38.0, 135.0, distance);
+    let background = smoothstep(camera.fog_range.x, camera.fog_range.y, distance);
     let background_color = mix(vec3f(0.006, 0.009, 0.016), camera.horizon.xyz, sky);
     let clear_color = mix(color, background_color, background);
     // Storm scattering converges to the air's color, regardless of the
