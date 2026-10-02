@@ -13,3 +13,7 @@ fn bg_surface_light(normal: vec3f, sun: vec4f, sky: f32, glow: f32,
         + glow * glow * vec3f(1.0, 0.57, 0.23)
         + mix(glow_bounce, bounce, sun.w) * (1.35 * visibility);
 }
+
+fn bg_direct_light(normal: vec3f, sun: vec4f, sky: f32) -> vec3f {
+    return sky * sun.w * max(dot(normal, normalize(sun.xyz)), 0.0) * vec3f(0.72, 0.67, 0.56);
+}

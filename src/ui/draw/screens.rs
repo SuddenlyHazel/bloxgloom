@@ -211,7 +211,7 @@ impl UiBuilder<'_> {
                 if frame.screen == UiScreen::Audio {
                     "LOCAL PREVIEW - NOT WORLD WEATHER"
                 } else if frame.screen == UiScreen::Graphics {
-                    "TONE MAPPING / EXPOSURE / BLOOM"
+                    "SUN SHADOWS / EXPOSURE / BLOOM"
                 } else {
                     "LOCAL CLIENT OPTIONS"
                 },
@@ -341,6 +341,11 @@ impl UiBuilder<'_> {
                 "BLOOM STRENGTH",
                 format!("{:.0}%", frame.settings.bloom_strength * 100.0),
             ),
+            (
+                SettingId::SunShadows,
+                "SUN SHADOWS",
+                frame.settings.sun_shadow_quality.label().to_uppercase(),
+            ),
         ];
         let rows: &[_] = if frame.screen == UiScreen::Audio {
             &audio_rows
@@ -412,7 +417,7 @@ impl UiBuilder<'_> {
             self.text(
                 "POST OFF BYPASSES EXPOSURE + BLOOM",
                 panel.x + 20.0 * self.scale,
-                top + 4.0 * row_height + 6.0 * self.scale,
+                top + graphics_rows.len() as f32 * row_height + 6.0 * self.scale,
                 if compact { 0.55 } else { 0.65 },
                 MUTED,
                 40,

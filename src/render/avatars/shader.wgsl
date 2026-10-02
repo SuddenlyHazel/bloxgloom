@@ -19,13 +19,14 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip: vec4<f32>,
     @location(0) color: vec3<f32>,
+    @location(1) direct: vec3f,
     @location(2) sky: f32,
     @location(3) world_position: vec3f,
 };
 
 // REGISTERED_PALETTES
 
-@vertex fn vs_main(input: VertexInput) -> VertexOutput {
+fn avatar_vertex(input: VertexInput, shadow: bool) -> VertexOutput {
     var output: VertexOutput;
     var local = input.local;
     if input.part == 10u { local.y += max(0.0, input.pose.y) * 0.045; }
@@ -50,6 +51,7 @@ struct VertexOutput {
     let world = rotated + input.origin;
     normal = normalize(normal);
     output.clip = camera.view_projection * vec4<f32>(world, 1.0);
+    if shadow { output.clip = bg_shadow.view_projection * vec4f(world, 1.0); }
     var albedo = SKINS[min(input.cosmetics.x, 31u)];
     if input.part == 1u { albedo = SHIRTS[min(input.cosmetics.y, 31u)]; }
     if input.part == 2u { albedo = PANTS[min(input.cosmetics.z, 31u)]; }
@@ -62,11 +64,21 @@ struct VertexOutput {
     let glow_bounce = vec3<f32>(f32(input.glow_bounce.x), f32(input.glow_bounce.y), f32(input.glow_bounce.z)) / 255.0;
     let light = bg_surface_light(normal, camera.sun, sky, glow, bounce, glow_bounce, 1.0);
     output.color = albedo * input.tint * light;
+    output.direct = albedo * input.tint * bg_direct_light(normal, camera.sun, sky);
     output.world_position = world;
     output.sky = sky;
     return output;
 }
 
+@vertex fn vs_main(input: VertexInput) -> VertexOutput {
+    return avatar_vertex(input, false);
+}
+
+@vertex fn vs_shadow(input: VertexInput) -> @builtin(position) vec4f {
+    return avatar_vertex(input, true).clip;
+}
+
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4f(bg_apply_fog(input.color, input.world_position, input.sky), 1.0);
+    let color = input.color - input.direct * (1.0 - bg_sun_visibility(input.world_position));
+    return vec4f(bg_apply_fog(color, input.world_position, input.sky), 1.0);
 }

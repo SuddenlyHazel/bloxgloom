@@ -251,6 +251,70 @@ fn graphics_controls_apply_save_and_preserve_values_while_disabled() {
 }
 
 #[test]
+fn sun_shadow_controls_cycle_save_and_remain_independent_of_post_and_audio() {
+    use crate::config::SunShadowQuality;
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "bloxgloom-sun-shadow-controls-{}-{unique}",
+        std::process::id()
+    ));
+    let mut app = ClientApp::new(
+        Network::disconnected_for_test(),
+        Config {
+            post_processing: false,
+            bloom_enabled: false,
+            audio_master: 0.35,
+            ..Config::default()
+        },
+        path.clone(),
+    );
+    let original = app.config.clone();
+    app.activate_control(None, UiControl::OpenSettings);
+    app.activate_control(None, UiControl::ToggleSettingsPage);
+    let decrease = UiControl::Decrease(SettingId::SunShadows);
+    let increase = UiControl::Increase(SettingId::SunShadows);
+    let controls = app.focus_order();
+    assert_eq!(controls.iter().filter(|&&c| c == increase).count(), 1);
+    assert_eq!(controls.iter().filter(|&&c| c == decrease).count(), 1);
+    app.focused_control = Some(UiControl::Increase(SettingId::BloomStrength));
+    app.advance_focus(false);
+    assert_eq!(app.focused_control, Some(decrease));
+    app.advance_focus(false);
+    assert_eq!(app.focused_control, Some(increase));
+    app.advance_focus(false);
+    assert_eq!(app.focused_control, Some(UiControl::Back));
+    app.advance_focus(true);
+    assert_eq!(app.focused_control, Some(increase));
+    for expected in [
+        SunShadowQuality::High,
+        SunShadowQuality::Off,
+        SunShadowQuality::Low,
+    ] {
+        app.activate_control(None, increase);
+        assert_eq!(app.config.sun_shadow_quality, expected);
+    }
+    app.activate_control(None, decrease);
+    assert_eq!(app.config.sun_shadow_quality, SunShadowQuality::Off);
+    app.activate_control(None, decrease);
+    assert_eq!(app.config.sun_shadow_quality, SunShadowQuality::High);
+    let expected = Config {
+        sun_shadow_quality: SunShadowQuality::High,
+        ..original
+    };
+    assert_eq!(app.config, expected);
+    assert!(
+        app.pending_mesh.is_empty(),
+        "sun shadow quality must not remesh terrain"
+    );
+    app.config_writer.finish();
+    assert_eq!(Config::load(&path), expected);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn audio_controls_survive_character_settings_reconciliation() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -6,6 +6,7 @@ use std::{sync::mpsc, thread};
 pub(crate) struct Ready {
     material: Option<(pipeline::VoxelPipelines, custom::Gpu)>,
     effect: Option<effects::Effect>,
+    sun_pipelines: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
 }
 
 pub(crate) struct Preparation {
@@ -49,6 +50,9 @@ impl Renderer {
             self.cutout_pipeline = cutout;
             self.material_gpu = Some(gpu);
         }
+        if let Some(pipelines) = ready.sun_pipelines {
+            self.sun_pipelines = pipelines;
+        }
         if let Some(effect) = ready.effect {
             self.post.install_prepared_effect(&self.device, effect);
         }
@@ -69,7 +73,8 @@ impl Preparation {
             .name("package-gpu-preparation".into())
             .spawn(move || {
                 let ready = (|| {
-                    let material = material
+                    let prepared_material = material;
+                    let material = prepared_material
                         .as_ref()
                         .map(|m| {
                             pipeline::create_custom_voxel_pipeline(
@@ -85,7 +90,18 @@ impl Preparation {
                         .as_ref()
                         .map(|e| effects::Effect::prepare(&device, e))
                         .transpose()?;
-                    Ok(Ready { material, effect })
+                    let sun_pipelines = material.as_ref().map(|(pipelines, _)| {
+                        pipeline::create_sun_shadow_pipelines(
+                            &device,
+                            &pipelines.0,
+                            prepared_material.as_ref(),
+                        )
+                    });
+                    Ok(Ready {
+                        material,
+                        effect,
+                        sun_pipelines,
+                    })
                 })();
                 let _ = tx.send(ready);
             })
