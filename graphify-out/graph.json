@@ -85375,7 +85375,7 @@
       "file_type": "code",
       "norm_label": "measure_ui_prepare()",
       "source_file": "src/preview.rs",
-      "source_location": "L1945"
+      "source_location": "L1942"
     },
     {
       "id": "src_preview_preview_frame",
@@ -114948,7 +114948,7 @@
       "file_type": "code",
       "norm_label": "write_png()",
       "source_file": "src/preview.rs",
-      "source_location": "L2014"
+      "source_location": "L2011"
     },
     {
       "id": "src_server_journal_codec_invalid_data",
@@ -115564,7 +115564,7 @@
       "file_type": "code",
       "norm_label": "print_percentiles()",
       "source_file": "src/preview/perf.rs",
-      "source_location": "L781"
+      "source_location": "L778"
     },
     {
       "id": "src_preview_perf_rs_box",
@@ -115685,7 +115685,7 @@
       "file_type": "code",
       "norm_label": "surface_height()",
       "source_file": "src/preview.rs",
-      "source_location": "L2036"
+      "source_location": "L2033"
     },
     {
       "id": "src_server_outbound_outboundqueue_snapshot",
@@ -122012,7 +122012,7 @@
       "node_kind": "heading",
       "norm_label": "acceptance measurements",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L173"
+      "source_location": "L175"
     },
     {
       "id": "docs_audio_foundation_client_audio_foundation",
@@ -122036,7 +122036,7 @@
       "node_kind": "heading",
       "norm_label": "mixer and native playback contract",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L67"
+      "source_location": "L69"
     },
     {
       "id": "docs_audio_foundation_noisemachine_adaptation",
@@ -122048,7 +122048,7 @@
       "node_kind": "heading",
       "norm_label": "noisemachine adaptation",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L115"
+      "source_location": "L117"
     },
     {
       "id": "docs_audio_foundation_open_shelter_entrances",
@@ -122060,7 +122060,7 @@
       "node_kind": "heading",
       "norm_label": "open shelter entrances",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L435"
+      "source_location": "L437"
     },
     {
       "id": "docs_audio_foundation_package_acoustic_authoring",
@@ -122072,7 +122072,7 @@
       "node_kind": "heading",
       "norm_label": "package acoustic authoring",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L453"
+      "source_location": "L455"
     },
     {
       "id": "docs_audio_foundation_packaged_scripting_extension",
@@ -122084,7 +122084,7 @@
       "node_kind": "heading",
       "norm_label": "packaged scripting extension",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L206"
+      "source_location": "L208"
     },
     {
       "id": "docs_audio_foundation_positional_clip_obstruction",
@@ -122096,7 +122096,7 @@
       "node_kind": "heading",
       "norm_label": "positional clip obstruction",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L215"
+      "source_location": "L217"
     },
     {
       "id": "docs_audio_foundation_spatial_insect_ambience",
@@ -122108,7 +122108,7 @@
       "node_kind": "heading",
       "norm_label": "spatial insect ambience",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L355"
+      "source_location": "L357"
     },
     {
       "id": "docs_audio_foundation_try_it",
@@ -122132,7 +122132,7 @@
       "node_kind": "heading",
       "norm_label": "verification and next work",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L155"
+      "source_location": "L157"
     },
     {
       "id": "docs_audio_foundation_world_audio_integration_acceptance_october_1_2026",
@@ -122144,7 +122144,7 @@
       "node_kind": "heading",
       "norm_label": "world-audio integration acceptance \u2014 october 1, 2026",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L406"
+      "source_location": "L408"
     },
     {
       "id": "docs_audio_foundation_world_space_rain_surfaces",
@@ -122156,7 +122156,7 @@
       "node_kind": "heading",
       "norm_label": "world-space rain surfaces",
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L293"
+      "source_location": "L295"
     },
     {
       "id": "docs_audio_scripting",
@@ -125247,7 +125247,7 @@
       "file_type": "code",
       "norm_label": "set_preview_block()",
       "source_file": "src/preview.rs",
-      "source_location": "L2024"
+      "source_location": "L2021"
     },
     {
       "id": "src_server_effects_registered_tests",
@@ -202567,7 +202567,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/preview.rs",
-      "source_location": "L1957",
+      "source_location": "L1954",
       "weight": 1.0
     },
     {
@@ -202639,7 +202639,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/preview/perf.rs",
-      "source_location": "L677",
+      "source_location": "L674",
       "weight": 1.0
     },
     {
@@ -300571,7 +300571,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -300583,7 +300583,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -300595,7 +300595,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -300931,7 +300931,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/preview.rs",
-      "source_location": "L2014",
+      "source_location": "L2011",
       "weight": 1.0
     },
     {
@@ -300943,7 +300943,7 @@
       "confidence_score": 1.0,
       "context": "generic_arg",
       "source_file": "src/preview.rs",
-      "source_location": "L2014",
+      "source_location": "L2011",
       "weight": 1.0
     },
     {
@@ -401623,7 +401623,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/preview.rs",
-      "source_location": "L1945",
+      "source_location": "L1942",
       "weight": 1.0
     },
     {
@@ -401635,7 +401635,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/preview.rs",
-      "source_location": "L1945",
+      "source_location": "L1942",
       "weight": 1.0
     },
     {
@@ -402415,7 +402415,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -402427,7 +402427,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -402667,7 +402667,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "src/preview.rs",
-      "source_location": "L2014",
+      "source_location": "L2011",
       "weight": 1.0
     },
     {
@@ -464623,7 +464623,7 @@
       "confidence_score": 1.0,
       "context": "return_type",
       "source_file": "src/preview.rs",
-      "source_location": "L2014",
+      "source_location": "L2011",
       "weight": 1.0
     },
     {
@@ -505438,7 +505438,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L115",
+      "source_location": "L117",
       "weight": 1.0
     },
     {
@@ -505449,7 +505449,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L155",
+      "source_location": "L157",
       "weight": 1.0
     },
     {
@@ -505460,7 +505460,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L173",
+      "source_location": "L175",
       "weight": 1.0
     },
     {
@@ -505471,7 +505471,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L206",
+      "source_location": "L208",
       "weight": 1.0
     },
     {
@@ -505482,7 +505482,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L215",
+      "source_location": "L217",
       "weight": 1.0
     },
     {
@@ -505493,7 +505493,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L293",
+      "source_location": "L295",
       "weight": 1.0
     },
     {
@@ -505504,7 +505504,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L355",
+      "source_location": "L357",
       "weight": 1.0
     },
     {
@@ -505515,7 +505515,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L453",
+      "source_location": "L455",
       "weight": 1.0
     },
     {
@@ -505526,7 +505526,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L67",
+      "source_location": "L69",
       "weight": 1.0
     },
     {
@@ -505537,7 +505537,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L406",
+      "source_location": "L408",
       "weight": 1.0
     },
     {
@@ -505548,7 +505548,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L435",
+      "source_location": "L437",
       "weight": 1.0
     },
     {
@@ -520376,7 +520376,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/preview.rs",
-      "source_location": "L1945",
+      "source_location": "L1942",
       "weight": 1.0
     },
     {
@@ -520387,7 +520387,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/preview.rs",
-      "source_location": "L2014",
+      "source_location": "L2011",
       "weight": 1.0
     },
     {
@@ -520398,7 +520398,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/preview.rs",
-      "source_location": "L2024",
+      "source_location": "L2021",
       "weight": 1.0
     },
     {
@@ -520409,7 +520409,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/preview.rs",
-      "source_location": "L2036",
+      "source_location": "L2033",
       "weight": 1.0
     },
     {
@@ -521157,7 +521157,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/preview/perf.rs",
-      "source_location": "L781",
+      "source_location": "L778",
       "weight": 1.0
     },
     {
@@ -615229,7 +615229,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L164",
+      "source_location": "L166",
       "weight": 1.0
     },
     {
@@ -615240,7 +615240,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L167",
+      "source_location": "L169",
       "weight": 1.0
     },
     {
@@ -615251,7 +615251,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L462",
+      "source_location": "L464",
       "weight": 1.0
     },
     {
@@ -615262,7 +615262,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/audio/FOUNDATION.md",
-      "source_location": "L463",
+      "source_location": "L465",
       "weight": 1.0
     },
     {
@@ -642199,5 +642199,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "5daf8acc6e5584d15ce38b1a19f587a31be8e7f8"
+  "built_at_commit": "f9e73b046ae2076f5273ac3f21e0f38da883d8d6"
 }
