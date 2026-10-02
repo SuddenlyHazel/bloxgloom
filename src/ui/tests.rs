@@ -377,6 +377,8 @@ fn graphics_controls_fit_and_hit_test_at_both_ui_scales() {
             SettingId::Exposure,
             SettingId::Bloom,
             SettingId::BloomStrength,
+            SettingId::LodHorizon,
+            SettingId::LodQuality,
         ] {
             controls.extend([UiControl::Decrease(setting), UiControl::Increase(setting)]);
         }

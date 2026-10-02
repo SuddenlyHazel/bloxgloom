@@ -17,6 +17,10 @@ impl ClientApp {
         } else if reset > self.movement_reset {
             self.movement_reset = reset;
             self.unacked.clear();
+            self.lod.reset();
+            if let Some(renderer) = &mut self.renderer {
+                renderer.clear_lod();
+            }
             self.position = Vec3::from_array(position);
             if !self.network.send(ClientMessage::MovementReady {
                 session,

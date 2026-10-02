@@ -17,6 +17,8 @@ fn config_round_trips_through_explicit_path() {
         sensitivity: 0.006,
         fov_degrees: 92.5,
         view_distance: 5,
+        lod_horizon: 1024,
+        lod_quality: 2,
         scale: 1.25,
         fullscreen: true,
         bounced_gi: true,
@@ -206,4 +208,15 @@ fn audio_volumes_default_sanitize_and_round_trip_without_a_preview_preset() {
         (0.8, 0.6, 0.0)
     );
     assert_eq!(parse_config(&bounded.serialize()), bounded);
+}
+
+#[test]
+fn lod_settings_reject_unbounded_work_and_preserve_disable() {
+    let off = parse_config("version=1\nlod_horizon=0\nlod_quality=255\n");
+    assert_eq!(off.lod_horizon, 0);
+    assert_eq!(off.lod_quality, 2);
+    assert_eq!(
+        parse_config("version=1\nlod_horizon=65535\n").lod_horizon,
+        1024
+    );
 }

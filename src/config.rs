@@ -25,6 +25,10 @@ pub struct Config {
     pub sensitivity: f32,
     pub fov_degrees: f32,
     pub view_distance: u8,
+    /// Zero disables distant terrain; supported horizons are 512 and 1024 blocks.
+    pub lod_horizon: u16,
+    /// 0 coarse, 1 balanced, 2 detailed.
+    pub lod_quality: u8,
     pub scale: f32,
     pub fullscreen: bool,
     pub bounced_gi: bool,
@@ -48,6 +52,8 @@ impl Default for Config {
             sensitivity: 0.002,
             fov_degrees: 70.0,
             view_distance: 3,
+            lod_horizon: 512,
+            lod_quality: 1,
             scale: 1.0,
             fullscreen: false,
             bounced_gi: false,
@@ -162,6 +168,8 @@ impl Config {
             view_distance: self
                 .view_distance
                 .clamp(MIN_VIEW_DISTANCE, MAX_VIEW_DISTANCE),
+            lod_horizon: sanitize_lod_horizon(self.lod_horizon),
+            lod_quality: self.lod_quality.min(2),
             scale: clamp_finite(self.scale, MIN_SCALE, MAX_SCALE, 1.0),
             fullscreen: self.fullscreen,
             bounced_gi: self.bounced_gi,
@@ -212,6 +220,10 @@ impl Config {
         text.push_str(&format!(
             "audio_master={}\naudio_ambient={}\naudio_effects={}\n",
             self.audio_master, self.audio_ambient, self.audio_effects
+        ));
+        text.push_str(&format!(
+            "lod_horizon={}\nlod_quality={}\n",
+            self.lod_horizon, self.lod_quality
         ));
         for (action, key) in &self.named_bindings.0 {
             text.push_str(&format!(
@@ -291,6 +303,16 @@ fn parse_config(contents: &str) -> Config {
             }
             "fov_degrees" => {
                 config.fov_degrees = parse_clamped_float(value, MIN_FOV, MAX_FOV, 70.0);
+            }
+            "lod_horizon" => {
+                if let Ok(horizon) = value.parse::<u16>() {
+                    config.lod_horizon = sanitize_lod_horizon(horizon);
+                }
+            }
+            "lod_quality" => {
+                if let Ok(quality) = value.parse::<u8>() {
+                    config.lod_quality = quality.min(2);
+                }
             }
             "view_distance" => {
                 if let Ok(radius) = value.parse::<i64>() {
@@ -403,3 +425,11 @@ fn user_home() -> Option<PathBuf> {
 #[cfg(test)]
 #[path = "config/tests.rs"]
 mod tests;
+
+fn sanitize_lod_horizon(horizon: u16) -> u16 {
+    match horizon {
+        0 => 0,
+        1..=512 => 512,
+        _ => 1024,
+    }
+}

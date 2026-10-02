@@ -341,6 +341,21 @@ impl UiBuilder<'_> {
                 "BLOOM STRENGTH",
                 format!("{:.0}%", frame.settings.bloom_strength * 100.0),
             ),
+            (
+                SettingId::LodHorizon,
+                "DISTANT TERRAIN",
+                if frame.settings.lod_horizon == 0 {
+                    "OFF".into()
+                } else {
+                    format!("{} BLOCKS", frame.settings.lod_horizon)
+                },
+            ),
+            (
+                SettingId::LodQuality,
+                "DISTANT DETAIL",
+                ["COARSE", "BALANCED", "DETAILED"][usize::from(frame.settings.lod_quality.min(2))]
+                    .into(),
+            ),
         ];
         let rows: &[_] = if frame.screen == UiScreen::Audio {
             &audio_rows

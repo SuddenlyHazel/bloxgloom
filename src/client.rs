@@ -274,6 +274,7 @@ pub(crate) use lifecycle::tests::exercise_join_lifecycle;
 pub(crate) use lifecycle::tests::exercise_player_services;
 #[cfg(test)]
 pub(crate) use movement::teleport_tests::exercise_player_teleport;
+mod lod;
 mod mesh_queue;
 mod observations;
 pub(crate) mod presentation;
@@ -323,6 +324,7 @@ struct ClientApp {
     inventory_source: Option<u8>,
     network: Network,
     mesher: Mesher,
+    lod: lod::State,
     config: Config,
     audio: audio::State,
     config_writer: ConfigWriter,
@@ -408,6 +410,7 @@ impl ClientApp {
             player_services: None,
             player_parameter_updates: BTreeMap::new(),
             drop_animator: DropAnimator::new(now, Arc::clone(&catalog)),
+            lod: lod::State::new(Arc::clone(&catalog)),
             catalog,
             inventory: Inventory::default(),
             fire_animator: FireAnimator::new(),
@@ -635,6 +638,19 @@ impl ClientApp {
             SettingId::BloomStrength => {
                 self.config.bloom_strength =
                     (self.config.bloom_strength + sign * 0.02).clamp(0.0, 1.0)
+            }
+            SettingId::LodHorizon => {
+                self.config.lod_horizon = match (self.config.lod_horizon, increase) {
+                    (0, true) => 512,
+                    (512, true) => 1024,
+                    (1024, false) => 512,
+                    (512, false) => 0,
+                    (value, _) => value,
+                };
+            }
+            SettingId::LodQuality => {
+                self.config.lod_quality =
+                    (i32::from(self.config.lod_quality) + sign as i32).clamp(0, 2) as u8;
             }
             SettingId::Sensitivity => {
                 self.config.sensitivity =
@@ -882,6 +898,10 @@ impl ClientApp {
                 UiControl::Increase(SettingId::Bloom),
                 UiControl::Decrease(SettingId::BloomStrength),
                 UiControl::Increase(SettingId::BloomStrength),
+                UiControl::Decrease(SettingId::LodHorizon),
+                UiControl::Increase(SettingId::LodHorizon),
+                UiControl::Decrease(SettingId::LodQuality),
+                UiControl::Increase(SettingId::LodQuality),
                 UiControl::Back,
             ],
         }
@@ -1014,6 +1034,25 @@ impl ClientApp {
             return;
         }
         match message {
+            ServerMessage::LodInvalidateAll { session, revision } => {
+                self.lod.invalidate_all(session, revision)
+            }
+            ServerMessage::LodStatus { session, horizon } => self.lod.status(session, horizon),
+            ServerMessage::LodTile {
+                session,
+                request,
+                tile,
+            } => self.lod.accept(session, request, tile),
+            ServerMessage::LodUnavailable {
+                session,
+                request,
+                key,
+            } => self.lod.unavailable(session, request, key),
+            ServerMessage::LodInvalidate {
+                session,
+                key,
+                revision,
+            } => self.lod.invalidate(session, key, revision),
             ServerMessage::ContentManifestPart { .. }
             | ServerMessage::BundleOffer { .. }
             | ServerMessage::BundlePart { .. } => {
@@ -1468,6 +1507,18 @@ impl ClientApp {
                 self.urgent_mesh.remove(&key);
             }
         }
+        if self.pending_commands.is_empty()
+            && let Some(renderer) = &mut self.renderer
+        {
+            self.lod.update(
+                self.position,
+                self.config.lod_horizon,
+                self.config.lod_quality,
+                self.actions.epoch,
+                renderer,
+                |message| self.network.send(message),
+            );
+        }
         let Some(seed) = self.world_seed else {
             return;
         };
@@ -1898,6 +1949,8 @@ impl ClientApp {
                 sensitivity: self.config.sensitivity,
                 fov_degrees: self.config.fov_degrees,
                 view_distance: self.effective_view_distance,
+                lod_horizon: self.config.lod_horizon,
+                lod_quality: self.config.lod_quality,
                 scale: self.config.scale,
                 fullscreen: self.config.fullscreen,
                 bounced_gi: self.config.bounced_gi,
@@ -2034,6 +2087,8 @@ impl ClientApp {
                             uploads = stats.uploaded_chunks,
                             pending_uploads = stats.pending_chunks,
                             cached_chunks = self.chunks.len(),
+                            lod_tiles = self.lod.cached_tiles(),
+                            lod_horizon = self.lod.horizon,
                             "client frame statistics"
                         );
                         self.last_report = now;

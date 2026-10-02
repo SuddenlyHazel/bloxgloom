@@ -17,6 +17,7 @@ impl ClientApp {
             lane.close(self.failure.as_deref().unwrap_or("session retired"));
         }
         self.player_parameter_updates.clear();
+        self.lod.retire();
         self.network.retire();
         self.player_roster.clear();
         self.roster_revision = 0;
